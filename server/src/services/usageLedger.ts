@@ -7,7 +7,7 @@ import { getAgency } from "@realenhance/shared/agencies.js";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 
-export type ReservationStatus = "reserved" | "consumed" | "released" | "partially_released";
+export type ReservationStatus = "reserved" | "committed" | "consumed" | "released" | "partially_released";
 
 export interface UsageSnapshot {
   includedLimit: number;
@@ -231,25 +231,6 @@ export async function reserveAllowance(params: {
     const reservedFromIncluded = allocations.reduce((sum, a) => sum + a.fromIncluded, 0);
     const reservedFromAddon = allocations.reduce((sum, a) => sum + a.fromAddon, 0);
 
-    // Apply deductions
-    await client.query(
-      `UPDATE agency_month_usage
-       SET included_used = included_used + $1,
-           addon_used = addon_used + $2,
-           updated_at = NOW()
-       WHERE agency_id = $3 AND yyyymm = $4`,
-      [reservedFromIncluded, reservedFromAddon, params.agencyId, monthKey]
-    );
-
-    // addon_images_balance is legacy; bundles are tracked in Redis. Keep update for backward compatibility.
-    await client.query(
-      `UPDATE agency_accounts
-         SET addon_images_balance = addon_images_balance - $1,
-             updated_at = NOW()
-       WHERE agency_id = $2`,
-      [reservedFromAddon, params.agencyId]
-    );
-
     const stage1Alloc = allocations.find((a) => a.stage === "1") || { fromIncluded: 0, fromAddon: 0 };
     const stage2Alloc = allocations.find((a) => a.stage === "2") || { fromIncluded: 0, fromAddon: 0 };
 
@@ -284,11 +265,7 @@ export async function reserveAllowance(params: {
       ]
     );
 
-    const snapshot = buildSnapshot(
-      { ...usage, included_used: usage.included_used + reservedFromIncluded, addon_used: usage.addon_used + reservedFromAddon, included_limit: usage.included_limit },
-      remainingAddon,
-      monthKey
-    );
+    const snapshot = buildSnapshot(usage, addonRemaining, monthKey);
 
     return {
       ...snapshot,
@@ -296,6 +273,80 @@ export async function reserveAllowance(params: {
       status: "reserved",
       reservedImages: params.requiredImages,
     };
+  });
+}
+
+export async function commitReservation(params: { jobId: string }): Promise<void> {
+  await withTransaction(async (client) => {
+    const res = await client.query(
+      `SELECT * FROM job_reservations WHERE job_id = $1 FOR UPDATE`,
+      [params.jobId]
+    );
+    if (res.rowCount === 0) return;
+
+    const jr = res.rows[0];
+    const status = String(jr.reservation_status || "");
+
+    // Idempotency: commit can be safely retried.
+    if (status === "committed" || status === "consumed" || status === "released" || status === "partially_released") {
+      return;
+    }
+
+    if (status !== "reserved") {
+      return;
+    }
+
+    const reserveIncluded = Math.max(0, Number(jr.reserved_from_included || 0));
+    const reserveAddon = Math.max(0, Number(jr.reserved_from_addon || 0));
+
+    if (reserveIncluded > 0 || reserveAddon > 0) {
+      await client.query(
+        `UPDATE agency_month_usage
+           SET included_used = included_used + $1,
+               addon_used = addon_used + $2,
+               updated_at = NOW()
+         WHERE agency_id = $3 AND yyyymm = $4`,
+        [reserveIncluded, reserveAddon, jr.agency_id, jr.yyyymm]
+      );
+
+      // addon_images_balance is legacy; bundles are tracked in Redis. Keep update for backward compatibility.
+      await client.query(
+        `UPDATE agency_accounts
+           SET addon_images_balance = addon_images_balance - $1,
+               updated_at = NOW()
+         WHERE agency_id = $2`,
+        [reserveAddon, jr.agency_id]
+      );
+    }
+
+    await client.query(
+      `UPDATE job_reservations
+         SET reservation_status = 'committed',
+             updated_at = NOW()
+       WHERE job_id = $1`,
+      [params.jobId]
+    );
+  });
+}
+
+export async function releaseReservation(params: { jobId: string }): Promise<void> {
+  await withTransaction(async (client) => {
+    const res = await client.query(
+      `SELECT reservation_status FROM job_reservations WHERE job_id = $1 FOR UPDATE`,
+      [params.jobId]
+    );
+    if (res.rowCount === 0) return;
+
+    const status = String(res.rows[0].reservation_status || "");
+    if (status === "reserved") {
+      await client.query(
+        `UPDATE job_reservations
+           SET reservation_status = 'released',
+               updated_at = NOW()
+         WHERE job_id = $1`,
+        [params.jobId]
+      );
+    }
   });
 }
 
@@ -318,6 +369,25 @@ export async function finalizeReservation(params: {
     // ✅ No reservation = no billing. This catches all non-billable jobs including edits.
     if (res.rowCount === 0) return;
     const jr = res.rows[0];
+
+    const rs = String(jr.reservation_status || "");
+    if (rs === "consumed" || rs === "released") {
+      return;
+    }
+
+    // If a job never reached commit, there was never a deduction to refund.
+    if (rs === "reserved") {
+      await client.query(
+        `UPDATE job_reservations
+           SET reservation_status = 'released',
+               stage12_consumed = FALSE,
+               stage2_consumed = FALSE,
+               updated_at = NOW()
+         WHERE job_id = $1`,
+        [params.jobId]
+      );
+      return;
+    }
 
     // Lock usage & account
     const usageRes = await client.query(

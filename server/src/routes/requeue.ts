@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 import crypto from "crypto";
 import { readJsonFile } from "../services/jsonStore.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
-import { finalizeReservation, reserveAllowance } from "../services/usageLedger.js";
+import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
 import { getUserById } from "../services/users.js";
 
 type ImagesState = Record<string, any>;
@@ -79,9 +79,11 @@ export function requeueRouter() {
         options,
       }, jobId as any);
 
+      await commitReservation({ jobId });
+
       return res.json({ ok: true, jobId: enqueued.jobId });
     } catch (enqueueErr) {
-      await finalizeReservation({ jobId, stage12Success: false, stage2Success: false }).catch(() => {});
+      await releaseReservation({ jobId }).catch(() => {});
       throw enqueueErr;
     }
   });
@@ -143,9 +145,11 @@ export function requeueRouter() {
         options,
       }, jobId as any);
 
+      await commitReservation({ jobId });
+
       return res.json({ ok: true, jobId: enqueued.jobId });
     } catch (enqueueErr) {
-      await finalizeReservation({ jobId, stage12Success: false, stage2Success: false }).catch(() => {});
+      await releaseReservation({ jobId }).catch(() => {});
       throw enqueueErr;
     }
   });

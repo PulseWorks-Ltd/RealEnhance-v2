@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { enqueueStoredEnhanceJob, getJob, updateJob } from "../services/jobs.js";
-import { reserveAllowance } from "../services/usageLedger.js";
+import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
 import { getUserById } from "../services/users.js";
 
 function deriveRequiredCreditsFromJobPayload(payload: any): number {
@@ -146,8 +146,11 @@ export function enhanceRouter() {
 
       const enqueued = await enqueueStoredEnhanceJob(jobId);
       if (!enqueued.enqueued) {
+        await releaseReservation({ jobId });
         return res.status(409).json({ error: "enqueue_failed" });
       }
+
+      await commitReservation({ jobId });
 
       return res.json({ status: "processing", jobId });
     } catch (err: any) {

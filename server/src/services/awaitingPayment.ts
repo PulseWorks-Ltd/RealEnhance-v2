@@ -1,5 +1,5 @@
 import { getUserById } from "./users.js";
-import { getUsageSnapshot, reserveAllowance } from "./usageLedger.js";
+import { commitReservation, getUsageSnapshot, releaseReservation, reserveAllowance } from "./usageLedger.js";
 import { enqueueStoredEnhanceJob, listAwaitingPaymentEnhanceJobs } from "./jobs.js";
 import { getTrialSummary } from "./trials.js";
 
@@ -58,7 +58,10 @@ export async function releaseAwaitingPaymentJobs(userId: string): Promise<{
 
       const enqueued = await enqueueStoredEnhanceJob(pending.jobId);
       if (enqueued.enqueued) {
+        await commitReservation({ jobId: pending.jobId });
         releasedJobIds.push(pending.jobId);
+      } else {
+        await releaseReservation({ jobId: pending.jobId });
       }
     } catch (err: any) {
       if (err?.code === "QUOTA_EXCEEDED") {

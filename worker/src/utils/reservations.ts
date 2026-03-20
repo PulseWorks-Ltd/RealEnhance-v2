@@ -26,6 +26,21 @@ export async function finalizeReservationFromWorker(params: {
       return;
     }
 
+    // Reservation never committed means no prior deduction exists.
+    // Mark as released and exit without touching usage counters.
+    if (rs === "reserved") {
+      await client.query(
+        `UPDATE job_reservations
+           SET reservation_status = 'released',
+               stage12_consumed = FALSE,
+               stage2_consumed = FALSE,
+               updated_at = NOW()
+         WHERE job_id = $1`,
+        [params.jobId]
+      );
+      return;
+    }
+
     const usageRes = await client.query(
       `SELECT * FROM agency_month_usage WHERE agency_id = $1 AND yyyymm = $2 FOR UPDATE`,
       [jr.agency_id, jr.yyyymm]

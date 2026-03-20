@@ -11,7 +11,7 @@ import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
-import { reserveAllowance, finalizeReservation, getUsageSnapshot } from "../services/usageLedger.js";
+import { reserveAllowance, commitReservation, releaseReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
@@ -284,7 +284,7 @@ export function uploadRouter() {
     const releaseReservations = async () => {
       for (const jobId of reservedJobs) {
         try {
-          await finalizeReservation({ jobId, stage12Success: false, stage2Success: false });
+          await releaseReservation({ jobId });
         } catch (e) {
           console.error(`[upload] failed to release reservation for ${jobId}`, e);
         }
@@ -803,18 +803,24 @@ export function uploadRouter() {
         const { jobId: awaitingJobId } = await createAwaitingPaymentEnhanceJob(jobPayload, jobId);
         jobs.push({ jobId: awaitingJobId, imageId });
       } else {
-        const { jobId: enqueuedJobId } = await enqueueEnhanceJob(jobPayload, jobId);
+        try {
+          const { jobId: enqueuedJobId } = await enqueueEnhanceJob(jobPayload, jobId);
+          await commitReservation({ jobId });
 
-        const idx = reservedJobs.indexOf(jobId);
-        if (idx >= 0) {
-          reservedJobs.splice(idx, 1);
-        }
-        const trialIdx = trialReservedJobs.indexOf(jobId);
-        if (trialIdx >= 0) {
-          trialReservedJobs.splice(trialIdx, 1);
-        }
+          const idx = reservedJobs.indexOf(jobId);
+          if (idx >= 0) {
+            reservedJobs.splice(idx, 1);
+          }
+          const trialIdx = trialReservedJobs.indexOf(jobId);
+          if (trialIdx >= 0) {
+            trialReservedJobs.splice(trialIdx, 1);
+          }
 
-        jobs.push({ jobId: enqueuedJobId, imageId });
+          jobs.push({ jobId: enqueuedJobId, imageId });
+        } catch (enqueueErr) {
+          await releaseReservations();
+          throw enqueueErr;
+        }
       }
 
       // Track usage for analytics (non-blocking)
