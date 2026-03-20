@@ -8119,6 +8119,46 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return normalized || "unknown";
       };
 
+      const detectMaterialOpeningFromSignals = (result: {
+        status?: string;
+        reason?: string;
+        advisorySignals?: string[];
+      } | null | undefined): boolean => {
+        if (!result) return false;
+
+        const materialTokens = new Set([
+          "opening_removed",
+          "opening_relocated",
+          "opening_resized",
+          "opening_infilled",
+          "opening_sealed",
+          "door_or_closet_partial_occlusion_not_allowed",
+          "window_occlusion_exceeds_partial_threshold",
+          "light_anchor_opening_infilled",
+          "light_anchor_opening_removed",
+          "light_anchor_opening_relocated",
+          "opening_resize_ge_0_30",
+        ]);
+
+        const splitTokens = (value: string): string[] =>
+          String(value || "")
+            .split(/[|,;]/g)
+            .map((token) => normalizeValidatorReason(token))
+            .filter(Boolean);
+
+        const reasonTokens = splitTokens(result.reason || "");
+        const advisoryTokens = Array.isArray(result.advisorySignals)
+          ? result.advisorySignals.flatMap((signal) => splitTokens(String(signal || "")))
+          : [];
+
+        return [...reasonTokens, ...advisoryTokens].some((token) => {
+          for (const marker of materialTokens) {
+            if (token === marker || token.startsWith(`${marker}_`)) return true;
+          }
+          return false;
+        });
+      };
+
       const clamp01 = (value: number): number => {
         if (!Number.isFinite(value)) return 0;
         return Math.max(0, Math.min(1, value));
@@ -8298,6 +8338,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
       let openingStructuralSignalDetected = false;
+      let openingAuthoritativeFail = false;
 
       type Stage2GateValidator = "openings" | "fixtures" | "floor" | "envelope";
       let currentValidator: Stage2GateValidator = "openings";
@@ -8329,7 +8370,44 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         openingSignatureSignalDetected = (opRes.advisorySignals || [])
           .map((signal) => normalizeValidatorReason(String(signal || "")))
           .some((signal) => signal === "opening_signature_mismatch");
-        openingPass = true;
+        const hasMaterialOpeningViolation =
+          opRes.hardFail === true ||
+          detectMaterialOpeningFromSignals({
+            status: opRes.status,
+            reason: opRes.reason,
+            advisorySignals: opRes.advisorySignals,
+          });
+
+        if (hasMaterialOpeningViolation) {
+          openingAuthoritativeFail = true;
+          openingPass = false;
+          stage2GateFailure = {
+            validator: "openings",
+            reason: opRes.reason || "material_opening_change_detected",
+          };
+          nLog("[VALIDATOR_HARD_FAIL]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "openings",
+            reason: stage2GateFailure.reason,
+            confidence: opRes.confidence,
+            source: "opening_validator",
+          });
+          nLog("[STAGE2_VALIDATION_FAIL] openings");
+          nLog("[STAGE2_VALIDATION_SKIP] skipping remaining validators");
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "openingValidator",
+            result: "FAIL",
+            reason: normalizeValidatorReason(stage2GateFailure.reason),
+          });
+        } else {
+          openingPass = true;
+        }
+
         const openingSignals = extractOpeningSignals(opRes);
         const openingConfidence = evaluateOpeningStructuralConfidence(openingSignals);
         const openingReason = openingConfidence.reason;
@@ -8553,11 +8631,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       if (stage2GateFailure) {
-        const gateRetryReason = `stage2_validation_${stage2GateFailure.validator}`;
+        const gateRetryReason = openingAuthoritativeFail
+          ? "opening_authoritative_fail"
+          : `stage2_validation_${stage2GateFailure.validator}`;
         stage2LocalReasons.push(gateRetryReason);
         pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
         pendingStage2RetryStrategy = "NORMAL";
         pendingStage2RetryReason = gateRetryReason;
+
+        if (openingAuthoritativeFail) {
+          nLog("[STAGE2_OPENING_AUTHORITATIVE_FAIL]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            reason: "opening_authoritative_fail",
+            source: "opening_validator",
+            validatorReason: stage2GateFailure.reason,
+          });
+        }
 
         setStage2AttemptValidation(path2, "local", [
           gateRetryReason,
