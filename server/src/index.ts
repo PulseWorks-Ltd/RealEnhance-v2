@@ -47,6 +47,7 @@ import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 import { ensureS3Ready } from "./utils/s3.js";
 import { pool } from "./db/index.js";
+import { runMigrations } from "./db/migrate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -173,6 +174,8 @@ async function initializeAsyncServices(): Promise<void> {
 async function main() {
   const STUCK_RECOVERY_SCAN_INTERVAL_MS = Math.max(60_000, Number(process.env.STUCK_RECOVERY_SCAN_INTERVAL_MS || 5 * 60 * 1000));
   let stuckRecoveryTimer: NodeJS.Timeout | null = null;
+
+  await runMigrations();
 
   // ---------------- Redis ----------------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL || undefined });

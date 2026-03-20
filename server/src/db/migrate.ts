@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import { fileURLToPath } from "url";
 import { pool } from "./index.js";
 
 async function waitForDatabase(maxRetries = 30, delayMs = 2000) {
@@ -52,7 +53,7 @@ async function applyMigration(filePath: string, filename: string) {
   }
 }
 
-async function main() {
+export async function runMigrations() {
   const migrationsDir = path.join(path.dirname(new URL(import.meta.url).pathname), "migrations");
   await ensureSchemaTable();
   const applied = await getApplied();
@@ -66,10 +67,20 @@ async function main() {
     await applyMigration(fullPath, file);
   }
   console.log("[migrate] done");
+}
+
+async function main() {
+  await runMigrations();
   await pool.end();
 }
 
-main().catch((err) => {
-  console.error("[migrate] fatal", err);
-  process.exit(1);
-});
+const isDirectRun =
+  typeof process.argv[1] === "string" &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectRun) {
+  main().catch((err) => {
+    console.error("[migrate] fatal", err);
+    process.exit(1);
+  });
+}
