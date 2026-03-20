@@ -66,7 +66,7 @@ export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete
  * - "stage-ready": Structured retain declutter (preserve anchors, remove secondary items)
  */
 export type DeclutterMode = "light" | "stage-ready";
-export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "sunroom" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "exterior" | "other" | "unknown" | "auto";
+export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "sunroom" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "other" | "unknown" | "auto";
 export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
 export interface RetryExecutionPlan {
     runStage1A: boolean;

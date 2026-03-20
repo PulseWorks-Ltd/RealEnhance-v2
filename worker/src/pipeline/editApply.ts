@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { regionEditWithGemini } from "../ai/gemini";
 import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
+import { validateMaskAnchorOverlap } from "../validators/maskAnchorValidator";
 
 const MIN_PROJECTION_DILATE_PX = 3;
 const MAX_PROJECTION_DILATE_PX = 12;
@@ -166,6 +167,7 @@ export interface ApplyEditArgs {
   instruction: string;        // user’s natural-language instruction
   restoreFromPath?: string;   // optional path to original/enhanced image for restore mode
   stage1AReferencePath?: string; // optional Stage-1A enhanced reference image (remove mode)
+  onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;
 }
 
 /**
@@ -179,6 +181,7 @@ export async function applyEdit({
   instruction,
   restoreFromPath,
   stage1AReferencePath,
+  onAnchorValidation,
 }: ApplyEditArgs): Promise<string> {
     console.log("[editApply] Starting edit", {
       baseImagePath,
@@ -394,6 +397,22 @@ export async function applyEdit({
         tolerance: ">1.0%",
       });
     }
+
+    if (mode === "Add") {
+      try {
+        const anchorResult = await validateMaskAnchorOverlap({
+          baseImagePath,
+          finalImagePath: outPath,
+          maskBuffer: maskPngBuffer!,
+        });
+        onAnchorValidation?.(anchorResult);
+      } catch (anchorErr) {
+        console.warn("[editApply] maskAnchorCheck_failed", {
+          error: (anchorErr as any)?.message || String(anchorErr),
+        });
+      }
+    }
+
     console.log("[editApply] Saved enforced region edit image to", outPath);
     return outPath;
   }

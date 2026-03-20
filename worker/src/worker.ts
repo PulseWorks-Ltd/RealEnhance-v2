@@ -10580,6 +10580,8 @@ const worker = new Worker(
 
           const openingProtectedPromptSuffix =
             "Additional constraint:\nDo not modify windows, doors, or architectural openings.";
+          const anchorCorrectionPromptSuffix =
+            "ADDITIONAL CORRECTION:\nEnsure the object is placed within the masked region and not relocated elsewhere in the room.";
 
           // Download restore source if provided (for pixel-level restoration)
           let restoreFromPath: string | undefined;
@@ -10661,12 +10663,22 @@ const worker = new Worker(
             let attempt = 1;
             const maxAttempts = 2;
             let lastSummary: any = null;
+            const editRetryInfo: { anchorFail: boolean } = { anchorFail: false };
 
             while (true) {
-              const attemptInstruction =
-                attempt === 1
-                  ? prompt
-                  : `${prompt}\n\n${openingProtectedPromptSuffix}`;
+              const retrySuffixes: string[] = [];
+              if (attempt > 1) {
+                retrySuffixes.push(openingProtectedPromptSuffix);
+                if (editRetryInfo.anchorFail) {
+                  retrySuffixes.push(anchorCorrectionPromptSuffix);
+                }
+              }
+              const attemptInstruction = retrySuffixes.length > 0
+                ? `${prompt}\n\n${retrySuffixes.join("\n\n")}`
+                : prompt;
+
+              let anchorPassed: boolean | undefined;
+              let anchorOverlapPct: number | undefined;
 
               outPath = await applyEdit({
                 baseImagePath: basePath,
@@ -10675,6 +10687,10 @@ const worker = new Worker(
                 instruction: attemptInstruction,
                 restoreFromPath: restoreFromPath || basePath,
                 stage1AReferencePath,
+                onAnchorValidation: (result) => {
+                  anchorPassed = result.passed;
+                  anchorOverlapPct = result.overlapPct;
+                },
               });
 
               const outsideMaskChangedPct = await computeOutsideMaskChangedPct({
@@ -10683,6 +10699,7 @@ const worker = new Worker(
                 mask: maskBuf,
               });
               const outsideMaskLeakSeverity = classifyOutsideLeakPct(outsideMaskChangedPct);
+              const anchorFail = isAddMode && anchorPassed === false;
 
               let openingFail = false;
               if (runEditOpeningsValidation) {
@@ -10735,6 +10752,8 @@ const worker = new Worker(
                 outsideMaskChangedPct,
                 outsideMaskLeakSeverity,
                 openingFail,
+                anchorFail,
+                anchorOverlapPct,
                 openingSummary: openingsValidationSummary,
                 totals: {
                   total: regionEditRolloutTelemetry.total,
@@ -10751,7 +10770,7 @@ const worker = new Worker(
                 },
               });
 
-              if (!openingFail) {
+              if (!openingFail && !anchorFail) {
                 break;
               }
 
@@ -10774,7 +10793,7 @@ const worker = new Worker(
                 }
 
                 const regionEditErr: any = new Error(
-                  `region_edit_openings_validation_failed: reason=${String(openingsValidationSummary?.reason || "unknown")}`
+                  `region_edit_validation_failed: openings=${openingFail ? "true" : "false"},anchor=${anchorFail ? "true" : "false"},reason=${String(openingsValidationSummary?.reason || "unknown")}`
                 );
                 regionEditErr.regionEditReview = {
                   resultUrl: failedReviewUrl,
@@ -10783,16 +10802,23 @@ const worker = new Worker(
                   reviewUrl: failedReviewUrl,
                   maskUrl: failedMaskUrl,
                   openingSummary: openingsValidationSummary,
+                  anchorSummary: {
+                    passed: anchorPassed,
+                    overlapPct: anchorOverlapPct,
+                  },
                   attempt,
                 };
                 throw regionEditErr;
               }
 
               regionEditRolloutTelemetry.retries += 1;
+              editRetryInfo.anchorFail = anchorFail;
               nLog("[worker-region-edit] Openings validation failed, retrying with reinforced prompt", {
                 jobId: regionPayload.jobId,
                 attempt,
                 nextAttempt: attempt + 1,
+                openingFail,
+                anchorFail,
               });
               attempt += 1;
             }
