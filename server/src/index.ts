@@ -175,7 +175,12 @@ async function main() {
   const STUCK_RECOVERY_SCAN_INTERVAL_MS = Math.max(60_000, Number(process.env.STUCK_RECOVERY_SCAN_INTERVAL_MS || 5 * 60 * 1000));
   let stuckRecoveryTimer: NodeJS.Timeout | null = null;
 
-  await runMigrations();
+  try {
+    await runMigrations();
+  } catch (err) {
+    console.error("[startup] migration failed:", err);
+    process.exit(1);
+  }
 
   // ---------------- Redis ----------------
   const redisClient: RedisClientType = createRedisClient({ url: REDIS_URL || undefined });
