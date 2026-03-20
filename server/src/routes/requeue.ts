@@ -10,11 +10,11 @@ type ImagesState = Record<string, any>;
 export function requeueRouter() {
   const r = Router();
 
-  // Lightweight helper to find an image by base filename for the current user
-  function findImageByFilename(userId: string, filename: string) {
+  // Lightweight helper to find images by base filename for the current user
+  function findImagesByFilename(userId: string, filename: string) {
     const images = readJsonFile<ImagesState>("images.json", {});
     const values = Object.values(images) as any[];
-    return values.find((img) => {
+    return values.filter((img) => {
       if (!img) return false;
       if (img.ownerUserId !== userId) return false;
       const orig = img.originalPath || img?.versions?.original;
@@ -33,8 +33,17 @@ export function requeueRouter() {
       return res.status(400).json({ error: "missing_filename" });
     }
 
-    const img = findImageByFilename(sessUser.id, filename);
-    if (!img) return res.status(404).json({ error: "image_not_found" });
+    const matchingImages = findImagesByFilename(sessUser.id, filename);
+    if (matchingImages.length === 0) return res.status(404).json({ error: "image_not_found" });
+    if (matchingImages.length > 1) {
+      return res.status(409).json({
+        error: "ambiguous_filename",
+        message: "Multiple images match this filename. Retry by jobId instead.",
+        matches: matchingImages.length,
+      });
+    }
+
+    const img = matchingImages[0];
 
     const prevOptions = (img?.meta as any) || {};
     const options = {

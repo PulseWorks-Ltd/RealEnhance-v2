@@ -10,6 +10,7 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
 import path from "path";
+import { randomUUID } from "node:crypto";
 
 export interface S3UploadResult {
   key: string;
@@ -59,7 +60,7 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   if (!bucket) throw new Error("S3_BUCKET not configured");
 
   const prefix = (process.env.S3_PREFIX || "realenhance/originals").replace(/\/+$/, "");
-  const key = `${prefix}/${Date.now()}-${path.basename(localPath)}`.replace(/^\//, "");
+  const key = `${prefix}/${Date.now()}-${randomUUID()}-${path.basename(localPath)}`.replace(/^\//, "");
   const buf = fs.readFileSync(localPath);
   const contentType = guessMime(localPath);
   const size = buf.length;

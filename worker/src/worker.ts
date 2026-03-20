@@ -127,7 +127,7 @@ import { VALIDATOR_FOCUS } from "./config";
 import { createTempTracker, type TempTracker } from "./utils/tempTracker";
 import { cleanupTempFiles } from "./utils/sharp-utils";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
-import { finalizeReservationFromWorker } from "./utils/reservations.js";
+import { finalizeReservationFromWorker, startStaleCommittedReservationSweepLoop } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
 import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
@@ -10420,6 +10420,7 @@ nLog('\n'); // Force flush
 
 // Keep billing eventually consistent via non-blocking ledger retries.
 startBillingFinalizationRetryLoop();
+startStaleCommittedReservationSweepLoop();
 
 // BullMQ stalled detection instrumentation.
 _queueEventsRef = new QueueEvents(JOB_QUEUE_NAME, {
@@ -10469,7 +10470,7 @@ const worker = new Worker(
       });
       return;
     }
-    if (existingStatus === "failed" || existingStatus === "complete" || existingStatus === "completed") {
+    if (existingStatus === "failed" || existingStatus === "complete" || existingStatus === "completed" || existingStatus === "cancelled") {
       nLog("[WORKER] Skipping terminal job execution", {
         jobId,
         status: existingStatus,

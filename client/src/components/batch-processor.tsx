@@ -100,9 +100,15 @@ function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedSta
   return images.length;
 }
 
-// Generate a stable ID for a file based on its properties (not array index)
+const fileIdMap = new WeakMap<File, string>();
+
+// Generate a stable per-file-instance ID so duplicate files remain independent in UI state.
 function getFileId(f: File): string {
-  return `${f.name}:${f.size}:${f.lastModified}`;
+  const existing = fileIdMap.get(f);
+  if (existing) return existing;
+  const id = `local_${crypto.randomUUID()}`;
+  fileIdMap.set(f, id);
+  return id;
 }
 
 // Clamp a number into [0,1]; return null when not finite
@@ -1341,7 +1347,7 @@ export default function BatchProcessor({
     const prev = previousFileCountRef.current;
     const isNewBatch = prev === 0 && files.length > 0 && runState !== 'running';
     if (isNewBatch) {
-      const newClientBatchId = `client-batch-${Date.now()}`;
+      const newClientBatchId = `client-batch-${Date.now()}-${crypto.randomUUID()}`;
       clientBatchIdRef.current = newClientBatchId;
       setClientBatchId(newClientBatchId);
     }
@@ -4102,7 +4108,7 @@ export default function BatchProcessor({
     }
 
     const activeClientBatchId = clientBatchIdRef.current || (() => {
-      const gen = `client-batch-${Date.now()}`;
+      const gen = `client-batch-${Date.now()}-${crypto.randomUUID()}`;
       clientBatchIdRef.current = gen;
       setClientBatchId(gen);
       return gen;
@@ -5750,25 +5756,16 @@ export default function BatchProcessor({
       return;
     }
     
-    // Deduplicate by name+size
     setFiles(prev => {
-      const existing = new Set(prev.map(f => `${f.name}-${f.size}`));
-      const unique = validFiles.filter(f => !existing.has(`${f.name}-${f.size}`));
-      
-      if (unique.length !== validFiles.length) {
-        rejectionReasons.push(`${validFiles.length - unique.length} duplicate(s)`);
-      }
-      
-      // Show aggregated feedback
       if (rejectionReasons.length > 0) {
         toast({
-          title: unique.length > 0 ? `Added ${unique.length} file(s)` : "Files skipped",
+          title: `Added ${validFiles.length} file(s)`,
           description: `Skipped: ${rejectionReasons.join(', ')}`,
-          variant: unique.length > 0 ? "default" : "destructive",
+          variant: "default",
         });
       }
-      
-      return [...prev, ...unique];
+
+      return [...prev, ...validFiles];
     });
     
     // Context-safe tab switch for the unified workspace
@@ -5825,25 +5822,16 @@ export default function BatchProcessor({
       return;
     }
     
-    // Deduplicate by name+size
     setFiles(prev => {
-      const existing = new Set(prev.map(f => `${f.name}-${f.size}`));
-      const unique = validFiles.filter(f => !existing.has(`${f.name}-${f.size}`));
-      
-      if (unique.length !== validFiles.length) {
-        rejectionReasons.push(`${validFiles.length - unique.length} duplicate(s)`);
-      }
-      
-      // Show aggregated feedback
       if (rejectionReasons.length > 0) {
         toast({
-          title: unique.length > 0 ? `Added ${unique.length} file(s)` : "Files skipped",
+          title: `Added ${validFiles.length} file(s)`,
           description: `Skipped: ${rejectionReasons.join(', ')}`,
-          variant: unique.length > 0 ? "default" : "destructive",
+          variant: "default",
         });
       }
-      
-      return [...prev, ...unique];
+
+      return [...prev, ...validFiles];
     });
     
     // Context-safe tab switch for the unified workspace

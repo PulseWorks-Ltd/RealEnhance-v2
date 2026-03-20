@@ -1,6 +1,17 @@
 import { consumeBundleImages, getTotalBundleRemaining } from "@realenhance/shared/usage/imageBundles.js";
 import { withTransaction } from "../db/index.js";
 
+const STALE_COMMITTED_SWEEP_INTERVAL_MS = Math.max(
+  60_000,
+  Number(process.env.STALE_COMMITTED_SWEEP_INTERVAL_MS || 5 * 60 * 1000)
+);
+const STALE_COMMITTED_TTL_MS = Math.max(
+  10 * 60 * 1000,
+  Number(process.env.STALE_COMMITTED_TTL_MS || 30 * 60 * 1000)
+);
+
+let staleCommittedSweepTimer: NodeJS.Timeout | null = null;
+
 export async function finalizeReservationFromWorker(params: {
   jobId: string;
   stage12Success: boolean;
@@ -224,4 +235,59 @@ export async function finalizeReservationFromWorker(params: {
       [newStatus, consumeStage12, consumeStage2, params.jobId]
     );
   });
+}
+
+export async function reconcileStaleCommittedReservations(limit = 100): Promise<{ scanned: number; refunded: number }> {
+  const cutoffIso = new Date(Date.now() - STALE_COMMITTED_TTL_MS).toISOString();
+  const staleJobs = await withTransaction(async (client) => {
+    const res = await client.query(
+      `SELECT job_id
+         FROM job_reservations
+        WHERE reservation_status = 'committed'
+          AND updated_at < $1
+        ORDER BY updated_at ASC
+        LIMIT $2`,
+      [cutoffIso, Math.max(1, limit)]
+    );
+    return res.rows.map((r) => String((r as any).job_id || "")).filter(Boolean);
+  });
+
+  let refunded = 0;
+  for (const jobId of staleJobs) {
+    try {
+      await finalizeReservationFromWorker({
+        jobId,
+        stage12Success: false,
+        stage2Success: false,
+      });
+      refunded += 1;
+      console.warn(`[STALE_COMMITTED_REFUND] jobId=${jobId} ttlMs=${STALE_COMMITTED_TTL_MS}`);
+    } catch (err) {
+      console.error(`[STALE_COMMITTED_REFUND_ERROR] jobId=${jobId}`, err);
+    }
+  }
+
+  return { scanned: staleJobs.length, refunded };
+}
+
+export function startStaleCommittedReservationSweepLoop(): void {
+  if (staleCommittedSweepTimer) return;
+
+  const runSweep = async () => {
+    try {
+      const result = await reconcileStaleCommittedReservations();
+      if (result.scanned > 0) {
+        console.log(
+          `[STALE_COMMITTED_SWEEP] scanned=${result.scanned} refunded=${result.refunded} ttlMs=${STALE_COMMITTED_TTL_MS}`
+        );
+      }
+    } catch (err) {
+      console.error("[STALE_COMMITTED_SWEEP_ERROR]", err);
+    }
+  };
+
+  runSweep().catch(() => {});
+  staleCommittedSweepTimer = setInterval(() => {
+    runSweep().catch(() => {});
+  }, STALE_COMMITTED_SWEEP_INTERVAL_MS);
 }

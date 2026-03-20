@@ -5,7 +5,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
-import { createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
+import { cancelEnqueuedJob, createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
@@ -33,7 +33,10 @@ const upload = multer({
       }
     },
     filename(_req, file, cb) {
-      cb(null, file.originalname);
+      const ext = path.extname(file.originalname || "");
+      const base = path.basename(file.originalname || "upload", ext).replace(/[^a-zA-Z0-9._-]/g, "_");
+      const uniqueName = `${Date.now()}-${crypto.randomUUID()}-${base}${ext}`;
+      cb(null, uniqueName);
     },
   }),
   limits: { fileSize: 25 * 1024 * 1024 }, // 25MB
@@ -278,6 +281,7 @@ export function uploadRouter() {
     await fs.mkdir(userDir, { recursive: true });
 
     const jobs: Array<{ jobId: string; imageId: string }> = [];
+    const stagedJobs: Array<{ jobId: string; imageId: string; jobPayload: any }> = [];
     const reservedJobs: string[] = [];
     const trialReservedJobs: string[] = [];
 
@@ -799,38 +803,60 @@ export function uploadRouter() {
         },
       };
 
-      if (requiresPayment) {
-        const { jobId: awaitingJobId } = await createAwaitingPaymentEnhanceJob(jobPayload, jobId);
-        jobs.push({ jobId: awaitingJobId, imageId });
-      } else {
-        try {
-          const { jobId: enqueuedJobId } = await enqueueEnhanceJob(jobPayload, jobId);
-          await commitReservation({ jobId });
+      stagedJobs.push({ jobId, imageId, jobPayload });
+    }
 
-          const idx = reservedJobs.indexOf(jobId);
-          if (idx >= 0) {
-            reservedJobs.splice(idx, 1);
-          }
-          const trialIdx = trialReservedJobs.indexOf(jobId);
-          if (trialIdx >= 0) {
-            trialReservedJobs.splice(trialIdx, 1);
-          }
+    // Batch-wide finalization: only enqueue/commit after every image has passed pre-processing.
+    if (requiresPayment) {
+      for (const staged of stagedJobs) {
+        const { jobId: awaitingJobId } = await createAwaitingPaymentEnhanceJob(staged.jobPayload, staged.jobId);
+        jobs.push({ jobId: awaitingJobId, imageId: staged.imageId });
 
-          jobs.push({ jobId: enqueuedJobId, imageId });
-        } catch (enqueueErr) {
-          await releaseReservations();
-          throw enqueueErr;
-        }
+        // Track usage for analytics (non-blocking)
+        recordUsageEvent({
+          userId: sessUser.id,
+          jobId: staged.jobId,
+          imageId: staged.imageId,
+          stage: "1A", // Upload always starts with stage 1A
+          imagesProcessed: 1,
+        });
       }
+    } else {
+      const enqueuedJobIds: string[] = [];
+      try {
+        // Enqueue everything first; if any enqueue fails, release all still-reserved credits.
+        for (const staged of stagedJobs) {
+          const { jobId: enqueuedJobId } = await enqueueEnhanceJob(staged.jobPayload, staged.jobId);
+          enqueuedJobIds.push(enqueuedJobId);
+          jobs.push({ jobId: enqueuedJobId, imageId: staged.imageId });
+        }
 
-      // Track usage for analytics (non-blocking)
-      recordUsageEvent({
-        userId: sessUser.id,
-        jobId,
-        imageId,
-        stage: "1A", // Upload always starts with stage 1A
-        imagesProcessed: 1,
-      });
+        // Commit all reservations only after the full batch has been enqueued.
+        for (const jobId of reservedJobs) {
+          await commitReservation({ jobId });
+        }
+
+        // Trial reservations are only released on pre-processing/enqueue failure.
+        trialReservedJobs.length = 0;
+        reservedJobs.length = 0;
+
+        for (const staged of stagedJobs) {
+          // Track usage for analytics (non-blocking)
+          recordUsageEvent({
+            userId: sessUser.id,
+            jobId: staged.jobId,
+            imageId: staged.imageId,
+            stage: "1A", // Upload always starts with stage 1A
+            imagesProcessed: 1,
+          });
+        }
+      } catch (enqueueErr) {
+        for (const enqueuedJobId of enqueuedJobIds) {
+          await cancelEnqueuedJob(enqueuedJobId, "batch_enqueue_failed");
+        }
+        await releaseReservations();
+        throw enqueueErr;
+      }
     }
 
     // Enforce retention limit for agency (silent, non-blocking)

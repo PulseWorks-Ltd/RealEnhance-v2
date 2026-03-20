@@ -554,6 +554,31 @@ export async function enqueueStoredJob(jobId: string): Promise<{ enqueued: boole
   return { enqueued: true };
 }
 
+export async function cancelEnqueuedJob(jobId: string, reason = "batch_enqueue_failed"): Promise<void> {
+  const normalizedJobId = String(jobId || "").trim();
+  if (!normalizedJobId) return;
+
+  try {
+    const q = queue();
+    const qJob = await q.getJob(normalizedJobId);
+    if (qJob) {
+      try {
+        await qJob.remove();
+      } catch (removeErr) {
+        console.warn(`[JOB_CANCEL] failed to remove queue job ${normalizedJobId}:`, (removeErr as any)?.message || removeErr);
+      }
+    }
+  } catch (queueErr) {
+    console.warn(`[JOB_CANCEL] queue lookup failed for ${normalizedJobId}:`, (queueErr as any)?.message || queueErr);
+  }
+
+  await updateJob(normalizedJobId as any, {
+    status: "cancelled",
+    cancelReason: reason,
+    cancelledAt: new Date().toISOString(),
+  });
+}
+
 export async function scanAndRecoverStuckJobs(): Promise<{ scanned: number; recovered: number }> {
   let scanned = 0;
   let recovered = 0;
