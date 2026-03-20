@@ -65,6 +65,57 @@ const STAGE1A_VALIDATION_CRITERIA = `
 - If wall verticals or floor horizontals no longer align (warping, rotation), return passed=false.
 `;
 
+const STAGE1A_OPENING_EXISTENCE_INTEGRITY_CHECK = `
+OPENING EXISTENCE INTEGRITY CHECK (CRITICAL)
+
+You must determine whether any NEW openings (windows, doors, or voids) have appeared in the image.
+
+Compare BEFORE vs AFTER carefully.
+
+FAIL if ANY of the following occurred:
+- A wall region that was solid in the input now resembles a window, door, or opening
+- A bright rectangular region appears where no opening existed before
+- A “covered”, “blinded”, or “blown-out” area suggests a newly created opening
+- Light sources appear to originate from a location that was previously a solid wall
+
+IMPORTANT:
+A hidden or obscured opening is still an opening.
+
+If the AFTER image introduces any opening not present in BEFORE → hardFail = true
+
+This is a strict structural rule.
+`;
+
+function hasStage1AOpeningSuspicion(evidence?: ValidationEvidence): boolean {
+  if (!evidence) return false;
+
+  const maskedEdgeDrift = Number(evidence.drift?.maskedEdgePercent ?? 0);
+  const structuralDegreeChange = Number(evidence.drift?.angleDegrees ?? 0);
+  const openingCountChanged =
+    evidence.openings.windowsBefore !== evidence.openings.windowsAfter ||
+    evidence.openings.doorsBefore !== evidence.openings.doorsAfter;
+
+  const localFlagsText = (evidence.localFlags || []).join(" ").toLowerCase();
+  const explicitStructuralSignal =
+    localFlagsText.includes("masked_edge") ||
+    localFlagsText.includes("maskededgedrift") ||
+    localFlagsText.includes("structuraldegreechange") ||
+    localFlagsText.includes("wall_drift") ||
+    localFlagsText.includes("opening_drift");
+
+  const brightnessWallSpike =
+    /(bright|brightness|blown[- ]?out|highlight|overexpos|hotspot)/.test(localFlagsText) &&
+    /(wall|surface|opening|window)/.test(localFlagsText);
+
+  return (
+    openingCountChanged ||
+    maskedEdgeDrift >= 20 ||
+    structuralDegreeChange >= 3 ||
+    explicitStructuralSignal ||
+    brightnessWallSpike
+  );
+}
+
 /**
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
  */
@@ -159,6 +210,7 @@ function gateEvidenceForGemini(stage: "1B" | "2", evidence: ValidationEvidence, 
  */
 function buildAdjudicatorPrompt(
   basePrompt: string,
+  stage: "1A" | "1B" | "2",
   evidence?: ValidationEvidence,
   riskLevel?: RiskLevel
 ): string {
@@ -227,9 +279,13 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 - Only evaluate permanent architectural structure.`;
 
   const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
+  const stage1AOpeningIntegrityBlock =
+    stage === "1A" && hasStage1AOpeningSuspicion(evidence)
+      ? `\n\n${STAGE1A_OPENING_EXISTENCE_INTEGRITY_CHECK.trim()}`
+      : "";
   const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} (advisory only; not proof of failure).` : "";
 
-  return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${riskContext}`;
+  return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
 }
 
 export type GeminiSemanticVerdict = {
@@ -2752,7 +2808,7 @@ export async function runGeminiSemanticValidator(opts: {
   if (opts.stage === "2" && opts.validationMode) {
     debugInfo("Stage2 validator mode", { validationMode: opts.validationMode });
   }
-  const prompt = buildAdjudicatorPrompt(basePrompt, opts.evidence, opts.riskLevel);
+  const prompt = buildAdjudicatorPrompt(basePrompt, opts.stage, opts.evidence, opts.riskLevel);
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
   const model = opts.modelOverride || getModelForRisk(opts.riskLevel);

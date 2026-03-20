@@ -59,6 +59,7 @@ Do NOT alter:
 * depth or perceived depth
 
 Do not convert flat surfaces into openings or add voids.
+Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.
 
 ---
 

@@ -31,6 +31,7 @@ YOU MUST NOT:
 • Change furniture, décor, wall art, or clutter
 • Change any kitchen, bench, shelf, or table items
 • Change curtains, blinds, windows, doors, or cabinetry
+• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.
 • Change wall colours, flooring, or fixed features
 • Modify room layout, geometry, or perspective
 • Add artificial lighting sources
@@ -99,6 +100,7 @@ YOU MUST NOT:
 • Change furniture, décor, wall art, or clutter
 • Change any kitchen, bench, shelf, or table items
 • Change curtains, blinds, windows, doors, or cabinetry
+• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.
 • Change wall colours, flooring, or fixed features
 • Modify room layout, geometry, or perspective
 • Add artificial lighting sources
@@ -168,6 +170,7 @@ YOU MUST NOT:
 • Change plants, trees, grass, or landscaping layout
 • Change sky content, cloud shapes, sun position, or weather
 • Change reflections in windows or doors
+• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.
 • Modify perspective, camera angle, or lens distortion
 • Add artificial lighting, lens flares, or sun rays
 • Stylise, dramatise, or apply HDR effects
