@@ -472,6 +472,17 @@ CRITICAL PRIORITY 4: FIT-FIRST DENSITY CONTROL
 - Prefer fewer, correctly scaled items over adding extra furniture/decor.
 - Keep at least one clear path from entry to the main window/opening.
 
+STRUCTURAL CONFLICT RESOLUTION
+
+When staging conflicts with structure or openings:
+- First, reposition or reorient items within the space
+- If needed, use appropriately scaled alternatives
+- Reduce secondary items before removing primary furniture
+- Only omit items when no structurally safe placement is possible
+
+Maintain a complete, intentional, and professionally staged appearance.
+Avoid leaving the room sparse unless absolutely necessary.
+
 OPENING SAFETY (MANDATORY)
 - Never place art, mirrors, shelving, cabinets, or decor on top of windows, glazed doors, or door openings.
 - Only place wall art on uninterrupted wall segments with no opening behind or directly adjacent.
@@ -664,6 +675,22 @@ export async function runStage2GenerationAttempt(
   const STAGE2_PROMPT_NANO_BANANA = `Virtual Staging Instructions for nano banana (or Pro)
 
 As an advanced virtual staging AI, your only role is to add realistic, correctly-scaled furniture and decor to the provided room photo. You are to act only as an decorator, placing items within the unchanging physical structure of the room.
+
+STRUCTURAL PRIORITY RULE — NON-NEGOTIABLE
+
+Structural integrity is the highest-priority requirement.
+
+You must preserve all architectural elements exactly:
+
+* walls, ceilings, floors, doors, windows, openings, built-ins, and camera geometry.
+
+If staging conflicts with structure:
+
+* structure always takes priority,
+* but you must still produce a high-quality, fully staged, listing-ready result.
+
+Do not default to sparse or minimal staging.
+Instead, adapt placement, scale, and composition to resolve conflicts.
 
 I. Allowed Items:
 You are allowed to add, but are not limited to, the following categories of items:
