@@ -78,6 +78,10 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
       currentPeriodEnd: data.currentPeriodEnd,
       // Grandfather flag
       billingGrandfatheredUntil: data.billingGrandfatheredUntil,
+      // Agency promo metadata
+      promoCreditsGranted: data.promoCreditsGranted === "true",
+      // Agency UI metadata
+      upgradeBannerSeen: data.upgradeBannerSeen === "true",
       // Metadata
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
@@ -117,6 +121,13 @@ export async function updateAgency(agency: Agency): Promise<void> {
       "billingGrandfatheredUntil",
     ] as const;
 
+    if (typeof agency.upgradeBannerSeen === "boolean") {
+      data.upgradeBannerSeen = String(agency.upgradeBannerSeen);
+    }
+    if (typeof agency.promoCreditsGranted === "boolean") {
+      data.promoCreditsGranted = String(agency.promoCreditsGranted);
+    }
+
     // Persist optional fields when present.
     for (const field of optionalFields) {
       const value = agency[field];
@@ -128,10 +139,16 @@ export async function updateAgency(agency: Agency): Promise<void> {
     await client.hSet(key, data);
 
     // Remove optional fields that are intentionally absent so stale values do not linger.
-    const fieldsToDelete = optionalFields.filter((field) => {
+    const fieldsToDelete: string[] = optionalFields.filter((field) => {
       const value = agency[field];
       return !(typeof value === "string" && value.trim().length > 0);
     });
+    if (typeof agency.upgradeBannerSeen !== "boolean") {
+      fieldsToDelete.push("upgradeBannerSeen");
+    }
+    if (typeof agency.promoCreditsGranted !== "boolean") {
+      fieldsToDelete.push("promoCreditsGranted");
+    }
     if (fieldsToDelete.length > 0) {
       await client.hDel(key, fieldsToDelete);
     }

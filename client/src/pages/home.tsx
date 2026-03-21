@@ -1,6 +1,6 @@
 // client/src/pages/home.tsx
 import BatchProcessor from "@/components/batch-processor";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,9 +14,49 @@ export default function Home() {
   const [dismissingWelcome, setDismissingWelcome] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
   const [hasSelectedImages, setHasSelectedImages] = useState(false);
+  const [agencyOnboarding, setAgencyOnboarding] = useState<{
+    promoCreditsGranted: boolean;
+  } | null>(null);
 
-  const shouldShowWelcome = !!user && user.hasSeenWelcome === false;
+  const isAgencyOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
+  const shouldShowWelcome = !!user
+    && user.hasSeenWelcome === false
+    && isAgencyOwnerOrAdmin
+    && agencyOnboarding?.promoCreditsGranted === true;
   const isUnverified = !!user && user.emailVerified !== true;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAgencyOnboarding = async () => {
+      if (!user?.agencyId || !(user.role === "owner" || user.role === "admin")) {
+        setAgencyOnboarding(null);
+        return;
+      }
+
+      try {
+        const res = await apiFetch("/api/agency/info");
+        if (!res.ok) {
+          if (!cancelled) setAgencyOnboarding(null);
+          return;
+        }
+
+        const data = await res.json();
+        if (!cancelled) {
+          setAgencyOnboarding({
+            promoCreditsGranted: data?.agency?.promoCreditsGranted === true,
+          });
+        }
+      } catch {
+        if (!cancelled) setAgencyOnboarding(null);
+      }
+    };
+
+    loadAgencyOnboarding();
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.agencyId, user?.role]);
 
   const dismissWelcome = async () => {
     try {

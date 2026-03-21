@@ -43,6 +43,24 @@ const stripe = process.env.STRIPE_SECRET_KEY
 
 const PROMO_SIGNUP_SOURCE = "promo_signup";
 const PROMO_SIGNUP_BUNDLE_CODE: BundleCode = "BUNDLE_20";
+const NEW_AGENCY_ONBOARDING_WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
+
+async function hasSignupPromoCredits(agencyId: string): Promise<boolean> {
+  const result = await withTransaction(async (client) => {
+    return client.query(
+      `SELECT 1 FROM addon_purchases WHERE agency_id = $1 AND source = $2 LIMIT 1`,
+      [agencyId, PROMO_SIGNUP_SOURCE]
+    );
+  });
+  return (result.rowCount ?? 0) > 0;
+}
+
+function isAgencyInInitialOnboarding(createdAt: string | undefined): boolean {
+  if (!createdAt) return false;
+  const createdAtMs = Date.parse(createdAt);
+  if (Number.isNaN(createdAtMs)) return false;
+  return Date.now() - createdAtMs <= NEW_AGENCY_ONBOARDING_WINDOW_MS;
+}
 
 export async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): Promise<boolean> {
   if (!Number.isFinite(credits) || credits <= 0) return false;
@@ -111,6 +129,10 @@ export async function grantSignupPromoCreditsOnce(agencyId: string, credits: num
   });
 
   if (granted) {
+    const agency = await getAgency(agencyId);
+    if (agency && agency.promoCreditsGranted !== true) {
+      await updateAgency({ ...agency, promoCreditsGranted: true });
+    }
     console.log(`[AGENCY_PROMO_CREDITS_GRANTED] agencyId=${agencyId} credits=${credits}`);
   }
 
@@ -254,6 +276,14 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
     const activeUsers = await countActiveAgencyUsers(user.agencyId);
     const trial = await getTrialSummary(user.agencyId);
     const usage = await getUsageSnapshot(user.agencyId);
+    const derivedPromoCreditsGranted = await hasSignupPromoCredits(user.agencyId);
+    const promoCreditsGranted = agency.promoCreditsGranted === true || derivedPromoCreditsGranted;
+    // Opportunistically backfill explicit metadata for older agencies.
+    if (promoCreditsGranted && agency.promoCreditsGranted !== true) {
+      await updateAgency({ ...agency, promoCreditsGranted: true });
+      agency.promoCreditsGranted = true;
+    }
+    const isNew = isAgencyInInitialOnboarding(agency.createdAt);
     const planTier = agency.planTier ?? null;
     const plan = planTier ? getStripePlan(planTier as PlanTier) : null;
     const now = Date.now();
@@ -275,7 +305,12 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
       : "No Plan";
 
     res.json({
-      agency,
+      agency: {
+        ...agency,
+        isNew,
+        promoCreditsGranted,
+        upgradeBannerSeen: agency.upgradeBannerSeen === true,
+      },
       activeUsers, // For informational purposes only - no limits
       trial,
       subscription: {
@@ -298,6 +333,30 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
   } catch (err) {
     console.error("[AGENCY] Get info error:", err);
     res.status(500).json({ error: "Failed to get agency info" });
+  }
+});
+
+/**
+ * POST /api/agency/upgrade-banner-seen
+ * Mark the one-time trial-upgrade banner as seen for this agency
+ */
+router.post("/upgrade-banner-seen", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user as UserRecord;
+    const agency = await getAgency(user.agencyId!);
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    await updateAgency({
+      ...agency,
+      upgradeBannerSeen: true,
+    });
+
+    return res.json({ ok: true, upgradeBannerSeen: true });
+  } catch (err) {
+    console.error("[AGENCY] Failed to mark upgrade banner seen:", err);
+    return res.status(500).json({ error: "Failed to update banner state" });
   }
 });
 

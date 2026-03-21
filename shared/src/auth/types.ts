@@ -32,6 +32,12 @@ export interface Agency {
   // Grandfather flag for agencies migrated from direct debit
   billingGrandfatheredUntil?: string; // ISO date
 
+  // Whether signup promo credits were granted to this agency
+  promoCreditsGranted?: boolean;
+
+  // UI metadata for one-time agency-level upgrade banner display
+  upgradeBannerSeen?: boolean;
+
   createdAt: string;
   updatedAt?: string;
 }

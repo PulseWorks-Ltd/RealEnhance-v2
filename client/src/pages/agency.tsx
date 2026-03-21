@@ -58,6 +58,9 @@ interface AgencyInfo {
   agencyId: string;
   name: string;
   planTier: "starter" | "pro" | "agency" | null;
+  isNew?: boolean;
+  promoCreditsGranted?: boolean;
+  upgradeBannerSeen?: boolean;
   subscriptionStatus: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
@@ -132,6 +135,32 @@ export default function AgencyPage() {
 
   const isAdminOrOwner = agencyInfo && (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin");
   const isAdmin = Boolean(isAdminOrOwner);
+  const shouldShowConvertedUpgradeBanner = Boolean(
+    agencyInfo
+    && isAdmin
+    && agencyInfo.trial?.status === "converted"
+    && agencyInfo.upgradeBannerSeen !== true
+  );
+
+  useEffect(() => {
+    if (!shouldShowConvertedUpgradeBanner) return;
+
+    let cancelled = false;
+    const markBannerSeen = async () => {
+      try {
+        const res = await apiFetch("/api/agency/upgrade-banner-seen", { method: "POST" });
+        if (cancelled || !res.ok) return;
+        setAgencyInfo((prev) => (prev ? { ...prev, upgradeBannerSeen: true } : prev));
+      } catch {
+        // Keep the banner visible if persistence fails.
+      }
+    };
+
+    markBannerSeen();
+    return () => {
+      cancelled = true;
+    };
+  }, [shouldShowConvertedUpgradeBanner]);
 
   const scrollToBilling = () => {
     setActiveTab("billing");
@@ -187,6 +216,9 @@ export default function AgencyPage() {
         agencyId: infoData.agency.agencyId,
         name: infoData.agency.name,
         planTier: infoData.agency.planTier ?? null,
+        isNew: infoData.agency.isNew === true,
+        promoCreditsGranted: infoData.agency.promoCreditsGranted === true,
+        upgradeBannerSeen: infoData.agency.upgradeBannerSeen === true,
         subscriptionStatus: infoData.agency.subscriptionStatus,
         stripeCustomerId: infoData.agency.stripeCustomerId,
         stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
@@ -556,7 +588,10 @@ export default function AgencyPage() {
 
         <TabsContent value="billing" className="space-y-6">
           {/* Trial Banner */}
-          {agencyInfo.trial && agencyInfo.trial.status !== "none" && (
+          {agencyInfo.trial
+            && agencyInfo.trial.status !== "none"
+            && (agencyInfo.trial.status !== "converted" || shouldShowConvertedUpgradeBanner)
+            && (
             <Card className="border-gold-400 bg-gold-50">
               <CardContent className="py-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
