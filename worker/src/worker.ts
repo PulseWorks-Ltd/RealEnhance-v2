@@ -8323,7 +8323,6 @@ All openings must remain identical in position and size to the original image.`;
         });
       }
 
-
       const localPrecheckSignals: Stage2LocalSignals = {
         structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm)),
         wallDrift: clamp01(semanticWallDriftNorm),
@@ -9189,6 +9188,60 @@ All openings must remain identical in position and size to the original image.`;
             retry: attempt + 1,
             retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
             reason: `${retryReason}:${normalizedFinalReason}`,
+          });
+          continue;
+        }
+
+        const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
+        const fallbackStage = fallback1B ? "1B" : "1A";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `${retryReason}_exhausted`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallback1B || path1A;
+        stage2CandidatePath = path2;
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
+      }
+
+      const hasStructuralOpeningChange =
+        typeof semanticOpeningsDeltaNorm === "number" &&
+        semanticOpeningsDeltaNorm !== 0;
+
+      if (hasStructuralOpeningChange) {
+        console.warn("[Stage2Guard] Blocking due to opening change", {
+          semanticOpeningsDelta: semanticOpeningsDeltaNorm,
+        });
+
+        const retryReason = "stage2_guard_opening_change";
+        stage2LocalReasons.push(retryReason);
+
+        setStage2AttemptValidation(path2, "openings", [
+          retryReason,
+          `semanticOpeningsDelta:${semanticOpeningsDeltaNorm}`,
+        ]);
+
+        mergeAttemptValidation("2", attempt, {
+          final: {
+            result: "FAILED",
+            finalHard: true,
+            finalCategory: "openings",
+            retryTriggered: attempt < MAX_STAGE2_RETRIES,
+            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+            retryStrategy: "NORMAL",
+            reason: `semanticOpeningsDelta:${semanticOpeningsDeltaNorm}`,
+          },
+        });
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, retryReason);
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: retryReason,
           });
           continue;
         }
