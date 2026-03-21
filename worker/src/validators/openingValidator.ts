@@ -42,6 +42,39 @@ function evaluateDoorFunctionalBlockage(
   return overlapRatio > 0.5 && !preservesVerticalOpening && !preservesFloorVisibility;
 }
 
+function toOpeningRegionType(input: StructuralBaseline["openings"][number]["type"]): "window" | "door" | null {
+  if (input === "window") return "window";
+  if (input === "door" || input === "closet_door" || input === "walkthrough") return "door";
+  return null;
+}
+
+function normalizeBbox01(input: [number, number, number, number]): [number, number, number, number] {
+  let x1 = clamp01(Number(input[0]));
+  let y1 = clamp01(Number(input[1]));
+  let x2 = clamp01(Number(input[2]));
+  let y2 = clamp01(Number(input[3]));
+  if (x2 < x1) [x1, x2] = [x2, x1];
+  if (y2 < y1) [y1, y2] = [y2, y1];
+  return [x1, y1, x2, y2];
+}
+
+function buildOpeningRegions(openings: StructuralBaseline["openings"]): Array<{
+  bbox: [number, number, number, number];
+  type: "window" | "door";
+}> {
+  if (!Array.isArray(openings) || openings.length === 0) return [];
+  return openings
+    .map((opening) => {
+      const mappedType = toOpeningRegionType(opening.type);
+      if (!mappedType) return null;
+      return {
+        bbox: normalizeBbox01(opening.bbox),
+        type: mappedType,
+      };
+    })
+    .filter((region): region is { bbox: [number, number, number, number]; type: "window" | "door" } => region !== null);
+}
+
 function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -215,6 +248,7 @@ export async function runOpeningValidator(
       : 0;
     const openingResizeHardFail = areaDelta >= 0.3;
     const openingResizeAdvisory = deterministic.summary.openingResized && areaDelta > 0 && areaDelta < 0.3;
+    const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
     let hardFail =
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingSealed ||
@@ -281,6 +315,7 @@ export async function runOpeningValidator(
       confidence: deterministic.summary.confidence,
       hardFail,
       advisorySignals,
+      openingRegions,
     };
   }
 
@@ -645,7 +680,11 @@ If any opening appears reduced, expanded, or reshaped:
 
   try {
     if (openingSignal.suspiciousOpeningGeometry) {
-      return await runWithModel(OPENING_MODEL_ESCALATION);
+      const result = await runWithModel(OPENING_MODEL_ESCALATION);
+      return {
+        ...result,
+        openingRegions: [],
+      };
     }
 
     const flashResult = await runWithModel(OPENING_MODEL_PRIMARY);
@@ -654,7 +693,10 @@ If any opening appears reduced, expanded, or reshaped:
     indicates an obvious architectural violation.
     */
     if (flashResult.status === "fail") {
-      return flashResult;
+      return {
+        ...flashResult,
+        openingRegions: [],
+      };
     }
 
     /*
@@ -663,7 +705,10 @@ If any opening appears reduced, expanded, or reshaped:
     opening boundary movement, etc.)
     */
     const proResult = await runWithModel(OPENING_MODEL_ESCALATION);
-    return proResult;
+    return {
+      ...proResult,
+      openingRegions: [],
+    };
   } catch (error: any) {
     throw new Error(`validator_error_opening:${error?.message || String(error)}`);
   }

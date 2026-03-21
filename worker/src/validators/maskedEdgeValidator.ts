@@ -25,6 +25,77 @@ export interface MaskedEdgeResult {
   closedOpenings: number;
   maskedEdgeDrift: number;
   edgeOpeningRisk: number;
+  maskedDriftRegions: Array<{
+    bbox: [number, number, number, number];
+    score: number;
+  }>;
+}
+
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(1, value));
+}
+
+function computeMaskedDriftRegions(
+  originalMask: Buffer,
+  enhancedMask: Buffer,
+  width: number,
+  height: number,
+  topN = 5
+): Array<{ bbox: [number, number, number, number]; score: number }> {
+  try {
+    if (width <= 0 || height <= 0) return [];
+
+    // Coarse spatial localization over a stable grid to highlight highest-drift zones.
+    const cols = 8;
+    const rows = 8;
+    const cells: Array<{ x0: number; y0: number; x1: number; y1: number; score: number }> = [];
+
+    for (let gy = 0; gy < rows; gy++) {
+      const y0 = Math.floor((gy * height) / rows);
+      const y1 = Math.floor(((gy + 1) * height) / rows);
+      for (let gx = 0; gx < cols; gx++) {
+        const x0 = Math.floor((gx * width) / cols);
+        const x1 = Math.floor(((gx + 1) * width) / cols);
+        const w = Math.max(0, x1 - x0);
+        const h = Math.max(0, y1 - y0);
+        const area = w * h;
+        if (area <= 0) continue;
+
+        let diffCount = 0;
+        for (let y = y0; y < y1; y++) {
+          const rowOffset = y * width;
+          for (let x = x0; x < x1; x++) {
+            const idx = rowOffset + x;
+            const orig = originalMask[idx] > 0;
+            const enh = enhancedMask[idx] > 0;
+            if (orig !== enh) diffCount++;
+          }
+        }
+
+        const score = diffCount / area;
+        if (score > 0) {
+          cells.push({ x0, y0, x1, y1, score });
+        }
+      }
+    }
+
+    return cells
+      .sort((a, b) => b.score - a.score)
+      .slice(0, Math.max(0, topN))
+      .map((cell) => ({
+        bbox: [
+          clamp01(cell.x0 / width),
+          clamp01(cell.y0 / height),
+          clamp01(cell.x1 / width),
+          clamp01(cell.y1 / height),
+        ],
+        score: Number(cell.score.toFixed(4)),
+      }));
+  } catch (err) {
+    console.warn("[maskedEdge] Drift region extraction error:", err);
+    return [];
+  }
 }
 
 function detectEdgeOpening(mask: Buffer, width: number, height: number): number {
@@ -344,6 +415,12 @@ export async function runMaskedEdgeValidator({
       closedOpenings,
       maskedEdgeDrift: maskedDrift,
       edgeOpeningRisk,
+      maskedDriftRegions: computeMaskedDriftRegions(
+        originalStructure.mask,
+        enhancedStructure.mask,
+        width,
+        height
+      ),
     };
 
     // LOG-ONLY OUTPUT (NO BLOCKING)
@@ -379,6 +456,7 @@ export async function runMaskedEdgeValidator({
       closedOpenings: 0,
       maskedEdgeDrift: 0,
       edgeOpeningRisk: 0,
+      maskedDriftRegions: [],
     };
   }
 }

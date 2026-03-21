@@ -8273,6 +8273,8 @@ All openings must remain identical in position and size to the original image.`;
       let semanticOpeningsDeltaNorm = 0;
       let maskedEdgeDriftNorm = 0;
       let edgeOpeningRiskNorm = 0;
+      let maskedDriftRegions: Array<{ bbox: [number, number, number, number]; score: number }> = [];
+      let openingRegions: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }> = [];
 
       try {
         const [semanticSignals, maskedSignals] = await Promise.all([
@@ -8300,6 +8302,9 @@ All openings must remain identical in position and size to the original image.`;
         );
         maskedEdgeDriftNorm = clamp01(Number(maskedSignals?.maskedEdgeDrift ?? 0));
         edgeOpeningRiskNorm = clamp01(Number(maskedSignals?.edgeOpeningRisk ?? 0));
+        maskedDriftRegions = Array.isArray(maskedSignals?.maskedDriftRegions)
+          ? maskedSignals.maskedDriftRegions
+          : [];
 
         nLog("[STAGE2_LOCAL_SIGNALS]", {
           jobId: payload.jobId,
@@ -8308,6 +8313,7 @@ All openings must remain identical in position and size to the original image.`;
           semanticOpeningsDelta: semanticOpeningsDeltaNorm,
           maskedEdgeDrift: maskedEdgeDriftNorm,
           edgeOpeningRisk: edgeOpeningRiskNorm,
+          maskedDriftRegions,
         });
       } catch (localGateErr: any) {
         nLog("[STAGE2_LOCAL_SIGNALS_ERROR]", {
@@ -8382,6 +8388,7 @@ All openings must remain identical in position and size to the original image.`;
         currentValidator = "openings";
         const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
         appendAdvisories("openings", opRes.advisorySignals || []);
+        openingRegions = Array.isArray(opRes.openingRegions) ? opRes.openingRegions : [];
         openingSignatureSignalDetected = (opRes.advisorySignals || [])
           .map((signal) => normalizeValidatorReason(String(signal || "")))
           .some((signal) => signal === "opening_signature_mismatch");
@@ -8815,12 +8822,16 @@ All openings must remain identical in position and size to the original image.`;
               advisorySignals: stage2AdvisorySignals,
               openingStructuralSignalFlag: openingStructuralSignalDetected,
               openingStructuralSignal: openingStructuralSignal || null,
+              maskedDriftRegions,
+              openingRegions,
             });
             compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
               validationMode: stage2ValidationMode,
               advisorySignals: stage2AdvisorySignals,
               openingStructuralSignal: openingStructuralSignalDetected,
               openingStructuralSignalContext: openingStructuralSignal,
+              maskedDriftRegions,
+              openingRegions,
               modelOverride: "gemini-2.5-pro",
             });
           }

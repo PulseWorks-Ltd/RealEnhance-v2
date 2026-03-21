@@ -87,6 +87,8 @@ export async function checkCompliance(
     advisorySignals?: string[];
     openingStructuralSignal?: boolean | OpeningStructuralSignal;
     openingStructuralSignalContext?: OpeningStructuralSignal;
+    maskedDriftRegions?: Array<{ bbox: [number, number, number, number]; score: number }>;
+    openingRegions?: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }>;
     modelOverride?: string;
   }
 ): Promise<ComplianceVerdict> {
@@ -101,6 +103,22 @@ export async function checkCompliance(
     ? [
         "ADVISORY SIGNALS FROM LOCAL VALIDATORS (focus review here):",
         ...opts.advisorySignals.map((signal) => `- ${signal}`),
+      ]
+    : [];
+  const maskedDriftRegionsContext = Array.isArray(opts?.maskedDriftRegions) && opts.maskedDriftRegions.length > 0
+    ? [
+        "MASKED DRIFT REGIONS (normalized bbox [x1,y1,x2,y2], score):",
+        ...opts.maskedDriftRegions.map((region, idx) =>
+          `- drift_region_${idx + 1}: bbox=[${region.bbox.map((v) => Number(v).toFixed(3)).join(",")}], score=${Number(region.score).toFixed(3)}`
+        ),
+      ]
+    : [];
+  const openingRegionsContext = Array.isArray(opts?.openingRegions) && opts.openingRegions.length > 0
+    ? [
+        "DETECTED OPENING REGIONS (normalized bbox [x1,y1,x2,y2], type):",
+        ...opts.openingRegions.map((region, idx) =>
+          `- opening_region_${idx + 1}: type=${region.type}, bbox=[${region.bbox.map((v) => Number(v).toFixed(3)).join(",")}]`
+        ),
       ]
     : [];
   const openingStructuralContext = openingStructuralSignalContext
@@ -141,6 +159,8 @@ export async function checkCompliance(
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
     ...advisoryContext,
+    ...maskedDriftRegionsContext,
+    ...openingRegionsContext,
     ...openingStructuralGuidance,
     ...openingStructuralContext,
     ...openingRelocatedResizedGuidance,
@@ -188,6 +208,8 @@ export async function checkCompliance(
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
     ...advisoryContext,
+    ...maskedDriftRegionsContext,
+    ...openingRegionsContext,
     ...openingStructuralGuidance,
     ...openingStructuralContext,
     ...openingRelocatedResizedGuidance,
