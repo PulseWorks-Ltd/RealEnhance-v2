@@ -207,6 +207,28 @@ export async function runOpeningValidator(
     const baselineById = new Map((baseline.openings || []).map((opening) => [String(opening.id), opening]));
     const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
 
+    const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
+      ? Number(deterministic.summary.semanticOpeningAreaDeltaPct)
+      : 0;
+    const openingResizeHardFail = areaDelta >= 0.3;
+    const openingResizeAdvisory = deterministic.summary.openingResized && areaDelta > 0 && areaDelta < 0.3;
+
+    // Partial occlusion from staging (furniture, decor, camera angle)
+    // is allowed. Only fail when the opening is functionally or
+    // structurally lost (sealed, removed, or no longer readable as an opening).
+    const hasStrongStructuralOpeningEvidence =
+      deterministic.summary.openingRemoved ||
+      deterministic.summary.openingInfilled ||
+      deterministic.summary.openingSealed ||
+      deterministic.summary.openingRelocated ||
+      deterministic.summary.openingClassMismatch ||
+      deterministic.summary.openingBandMismatch;
+    const hasSemanticOpeningChangeSignal =
+      deterministic.summary.openingResized ||
+      deterministic.summary.openingStateChanged === true ||
+      deterministic.summary.openingApertureExpanded === true ||
+      areaDelta >= 0.2;
+
     let strictDoorOcclusionFail = false;
     let strictWindowOcclusionFail = false;
 
@@ -230,24 +252,19 @@ export async function runOpeningValidator(
       if (baseOpening.type !== "window") {
         if (retention < 0.9) {
           const isFunctionallyBlocked = evaluateDoorFunctionalBlockage(baseOpening, matchedOpening, retention);
-          if (isFunctionallyBlocked) {
+          if (isFunctionallyBlocked && (hasStrongStructuralOpeningEvidence || hasSemanticOpeningChangeSignal)) {
             strictDoorOcclusionFail = true;
           }
         }
       } else {
         // Window partial occlusion can be tolerated only when clearly partial.
-        // Near-full occlusion is treated as structural failure.
-        if (retention < OPENING_WINDOW_MIN_RETENTION) {
+        // Near-full occlusion only fails when structural or semantic change evidence is present.
+        if (retention < OPENING_WINDOW_MIN_RETENTION && retention < 0.65 && (hasStrongStructuralOpeningEvidence || hasSemanticOpeningChangeSignal)) {
           strictWindowOcclusionFail = true;
         }
       }
     }
 
-    const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
-      ? Number(deterministic.summary.semanticOpeningAreaDeltaPct)
-      : 0;
-    const openingResizeHardFail = areaDelta >= 0.3;
-    const openingResizeAdvisory = deterministic.summary.openingResized && areaDelta > 0 && areaDelta < 0.3;
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
     let hardFail =
       deterministic.summary.openingRemoved ||
