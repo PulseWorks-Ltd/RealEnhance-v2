@@ -12,6 +12,7 @@ import {
   hasStage1BStructuralSignal,
   isStage1BMinorReconstructionSignal,
 } from "./stageAwareConfig";
+import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
 
 const logger = console;
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
@@ -283,6 +284,10 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 - Ignore shadows.
 - Ignore color variation.
 - Only evaluate permanent architectural structure.`;
+
+  if (!STRUCTURAL_SIGNALS_ACTIVE) {
+    return `${basePrompt}${structuralFocusRules}`;
+  }
 
   const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
   const stage1AOpeningIntegrityBlock =
@@ -2814,7 +2819,17 @@ export async function runGeminiSemanticValidator(opts: {
   if (opts.stage === "2" && opts.validationMode) {
     debugInfo("Stage2 validator mode", { validationMode: opts.validationMode });
   }
-  const prompt = buildAdjudicatorPrompt(basePrompt, opts.stage, opts.evidence, opts.riskLevel);
+  const evidenceForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.evidence : undefined;
+  const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.riskLevel : undefined;
+  if (!STRUCTURAL_SIGNALS_ACTIVE) {
+    debugInfo("[STRUCTURAL_SIGNALS_LOG_ONLY] Gemini prompt evidence injection disabled", {
+      mode: STRUCTURAL_SIGNALS_MODE,
+      stage: opts.stage,
+      hadEvidence: !!opts.evidence,
+      hadRisk: !!opts.riskLevel,
+    });
+  }
+  const prompt = buildAdjudicatorPrompt(basePrompt, opts.stage, evidenceForGemini, riskForGemini);
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
   const model = opts.modelOverride || getModelForRisk(opts.riskLevel);
@@ -2927,16 +2942,17 @@ export async function runGeminiSemanticValidator(opts: {
       });
     }
 
-    const windowsDelta = opts.evidence
-      ? (opts.evidence.openings.windowsAfter - opts.evidence.openings.windowsBefore)
+    const decisionEvidence = STRUCTURAL_SIGNALS_ACTIVE ? opts.evidence : undefined;
+    const windowsDelta = decisionEvidence
+      ? (decisionEvidence.openings.windowsAfter - decisionEvidence.openings.windowsBefore)
       : 0;
-    const doorsDelta = opts.evidence
-      ? (opts.evidence.openings.doorsAfter - opts.evidence.openings.doorsBefore)
+    const doorsDelta = decisionEvidence
+      ? (decisionEvidence.openings.doorsAfter - decisionEvidence.openings.doorsBefore)
       : 0;
-    const structuralDeviationDeg = Number(opts.evidence?.drift?.angleDegrees ?? 0);
+    const structuralDeviationDeg = Number(decisionEvidence?.drift?.angleDegrees ?? 0);
     const semanticOpeningsDeltaTotal = Math.abs(windowsDelta) + Math.abs(doorsDelta);
-    const semanticWallDriftPct = Number(opts.evidence?.drift?.wallPercent ?? 0);
-    const topologyResultRaw = (opts.evidence as any)?.topologyResult;
+    const semanticWallDriftPct = Number(decisionEvidence?.drift?.wallPercent ?? 0);
+    const topologyResultRaw = (decisionEvidence as any)?.topologyResult;
     const topologyResult = typeof topologyResultRaw === "string"
       ? topologyResultRaw.toUpperCase()
       : topologyResultRaw;

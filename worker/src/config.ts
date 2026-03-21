@@ -18,3 +18,14 @@
  */
 export const VALIDATOR_FOCUS =
   process.env.VALIDATOR_FOCUS === "1" || process.env.VALIDATOR_FOCUS === "true";
+
+export type StructuralSignalsMode = "log_only" | "active";
+
+const STRUCTURAL_SIGNALS_MODE_RAW = String(process.env.STRUCTURAL_SIGNALS_MODE || "log_only")
+  .trim()
+  .toLowerCase();
+
+export const STRUCTURAL_SIGNALS_MODE: StructuralSignalsMode =
+  STRUCTURAL_SIGNALS_MODE_RAW === "active" ? "active" : "log_only";
+
+export const STRUCTURAL_SIGNALS_ACTIVE = STRUCTURAL_SIGNALS_MODE === "active";

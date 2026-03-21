@@ -31,6 +31,7 @@ import { buildValidationBuffers, type ValidationBuffers } from "./validationBuff
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
+import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
 
 // Re-export the normalized adapter for downstream consumers
 export { normalizeValidatorResult, type NormalizedValidatorResult, type NormalizedCheck } from "./normalizedResult";
@@ -125,6 +126,7 @@ async function runGeminiWithConsensus(
   input: Parameters<typeof runGeminiSemanticValidator>[0],
   derivedWarnings: number
 ): Promise<GeminiConsensusResult> {
+  const effectiveDerivedWarnings = STRUCTURAL_SIGNALS_ACTIVE ? derivedWarnings : 0;
   const resultA = await runGeminiSemanticValidator({
     ...input,
     modelOverride: PRIMARY_VALIDATOR_MODEL,
@@ -134,13 +136,13 @@ async function runGeminiWithConsensus(
   };
 
   const validatorConfidence = Number.isFinite(resultA.confidence) ? resultA.confidence : 0;
-  const consensusEnabled = derivedWarnings >= 3 || validatorConfidence < FLASH_ACCEPT_CONFIDENCE;
+  const consensusEnabled = effectiveDerivedWarnings >= 3 || validatorConfidence < FLASH_ACCEPT_CONFIDENCE;
   if (!consensusEnabled) {
     return {
       verdict: resultA,
       validatorResults,
       consensusEnabled,
-      derivedWarnings,
+      derivedWarnings: effectiveDerivedWarnings,
       flashVerdict: resultA,
       flashConfidence: validatorConfidence,
       fallbackToFlash: false,
@@ -160,7 +162,7 @@ async function runGeminiWithConsensus(
       verdict: resultA,
       validatorResults,
       consensusEnabled,
-      derivedWarnings,
+      derivedWarnings: effectiveDerivedWarnings,
       flashVerdict: resultA,
       flashConfidence: validatorConfidence,
       fallbackToFlash: true,
@@ -175,7 +177,7 @@ async function runGeminiWithConsensus(
       verdict: resultA,
       validatorResults,
       consensusEnabled,
-      derivedWarnings,
+      derivedWarnings: effectiveDerivedWarnings,
       flashVerdict: resultA,
       proVerdict: resultB,
       flashConfidence: validatorConfidence,
@@ -190,7 +192,7 @@ async function runGeminiWithConsensus(
     verdict: resultB,
     validatorResults,
     consensusEnabled,
-    derivedWarnings,
+    derivedWarnings: effectiveDerivedWarnings,
     flashVerdict: resultA,
     proVerdict: resultB,
     flashConfidence: validatorConfidence,
@@ -1161,6 +1163,19 @@ export async function runUnifiedValidation(
   } else {
     if (!earlyExit) validatorPath.push("gemini");
     try {
+      const geminiEvidence = STRUCTURAL_SIGNALS_ACTIVE ? evidence : undefined;
+      const geminiRiskLevel = STRUCTURAL_SIGNALS_ACTIVE ? riskLevel : undefined;
+      const consensusDerivedWarnings = STRUCTURAL_SIGNALS_ACTIVE ? warnings.length : 0;
+      if (!STRUCTURAL_SIGNALS_ACTIVE) {
+        nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
+          mode: STRUCTURAL_SIGNALS_MODE,
+          stage,
+          jobId: jobId || "unknown",
+          action: "strip_local_signal_influence_for_gemini",
+          originalDerivedWarnings: warnings.length,
+          effectiveDerivedWarnings: consensusDerivedWarnings,
+        });
+      }
       nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} risk=${riskLevel} base=${originalPath} cand=${enhancedPath}`);
       const geminiConsensus = await runGeminiWithConsensus({
         basePath: originalPath,
@@ -1170,9 +1185,9 @@ export async function runUnifiedValidation(
         sourceStage,
         validationMode,
         stage1BValidationMode,
-        evidence,
-        riskLevel,
-      }, warnings.length);
+        evidence: geminiEvidence,
+        riskLevel: geminiRiskLevel,
+      }, consensusDerivedWarnings);
       const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;
       escalated = geminiConsensus.consensusEnabled;
@@ -1392,7 +1407,7 @@ export async function runUnifiedValidation(
 
   let blockSource: "local" | "gemini" | null = geminiHardFail
     ? "gemini"
-    : ((mode === "enforce" && !allPassed) ? "local" : null);
+    : ((STRUCTURAL_SIGNALS_ACTIVE && mode === "enforce" && !allPassed) ? "local" : null);
 
   if (stage2DirectHardFail) {
     blockSource = "local";

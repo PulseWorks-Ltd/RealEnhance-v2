@@ -123,7 +123,7 @@ import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
-import { VALIDATOR_FOCUS } from "./config";
+import { VALIDATOR_FOCUS, STRUCTURAL_SIGNALS_MODE, STRUCTURAL_SIGNALS_ACTIVE } from "./config";
 import { createTempTracker, type TempTracker } from "./utils/tempTracker";
 import { cleanupTempFiles } from "./utils/sharp-utils";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
@@ -7886,7 +7886,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const useReinforcedRetry = pendingStage2RetryStrategy === "REINFORCED" && !stage2ReinforcedRetryUsed;
         let structuralConstraintBlock = "";
         const openingAuthoritativeRetry =
-          retryAttempt === 1 && pendingStage2RetryReason === "opening_authoritative_fail";
+          STRUCTURAL_SIGNALS_ACTIVE &&
+          retryAttempt === 1 &&
+          pendingStage2RetryReason === "opening_authoritative_fail";
 
         if (openingAuthoritativeRetry) {
           const openingProtectionConstraint = `CRITICAL: Do NOT remove, resize, relocate, or occlude ANY windows or doors.
@@ -8315,6 +8317,17 @@ All openings must remain identical in position and size to the original image.`;
           edgeOpeningRisk: edgeOpeningRiskNorm,
           maskedDriftRegions,
         });
+
+        if (!STRUCTURAL_SIGNALS_ACTIVE) {
+          nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
+            mode: STRUCTURAL_SIGNALS_MODE,
+            jobId: payload.jobId,
+            attempt,
+            semanticOpeningsDelta: semanticOpeningsDeltaNorm,
+            maskedEdgeDrift: maskedEdgeDriftNorm,
+            wallDrift: semanticWallDriftNorm,
+          });
+        }
       } catch (localGateErr: any) {
         nLog("[STAGE2_LOCAL_SIGNALS_ERROR]", {
           jobId: payload.jobId,
@@ -8655,84 +8668,101 @@ All openings must remain identical in position and size to the original image.`;
         const gateRetryReason = openingAuthoritativeFail
           ? "opening_authoritative_fail"
           : `stage2_validation_${stage2GateFailure.validator}`;
-        stage2LocalReasons.push(gateRetryReason);
-        pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
-        pendingStage2RetryStrategy = "NORMAL";
-        pendingStage2RetryReason = gateRetryReason;
 
-        if (openingAuthoritativeFail) {
-          nLog("[STAGE2_OPENING_AUTHORITATIVE_FAIL]", {
+        if (!STRUCTURAL_SIGNALS_ACTIVE) {
+          stage2LocalReasons.push(`advisory_${gateRetryReason}`);
+          nLog("[STAGE2_VALIDATION_ADVISORY] local_gate mode=log-only action=proceed_to_gemini", {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt,
-            reason: "opening_authoritative_fail",
-            source: "opening_validator",
-            validatorReason: stage2GateFailure.reason,
-          });
-        }
-
-        setStage2AttemptValidation(path2, "local", [
-          gateRetryReason,
-          stage2GateFailure.reason,
-        ]);
-
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: stage2GateFailure.validator,
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            retryStrategy: "NORMAL",
+            validator: stage2GateFailure.validator,
             reason: stage2GateFailure.reason,
-          },
-        });
+            structuralSignalsMode: STRUCTURAL_SIGNALS_MODE,
+          });
+          setStage2AttemptValidation(path2, "local", [
+            `advisory_${gateRetryReason}`,
+            stage2GateFailure.reason,
+          ]);
+        } else {
+          stage2LocalReasons.push(gateRetryReason);
+          pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
+          pendingStage2RetryStrategy = "NORMAL";
+          pendingStage2RetryReason = gateRetryReason;
 
-        if (attempt < MAX_STAGE2_RETRIES) {
+          if (openingAuthoritativeFail) {
+            nLog("[STAGE2_OPENING_AUTHORITATIVE_FAIL]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              reason: "opening_authoritative_fail",
+              source: "opening_validator",
+              validatorReason: stage2GateFailure.reason,
+            });
+          }
+
+          setStage2AttemptValidation(path2, "local", [
+            gateRetryReason,
+            stage2GateFailure.reason,
+          ]);
+
+          mergeAttemptValidation("2", attempt, {
+            final: {
+              result: "FAILED",
+              finalHard: true,
+              finalCategory: stage2GateFailure.validator,
+              retryTriggered: attempt < MAX_STAGE2_RETRIES,
+              retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+              retryStrategy: "NORMAL",
+              reason: stage2GateFailure.reason,
+            },
+          });
+
+          if (attempt < MAX_STAGE2_RETRIES) {
+            nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              signalDetected: openingSignatureSignalDetected,
+              decision: "retry",
+              decisionPath: "stage2_gate_failure",
+              validator: stage2GateFailure.validator,
+              reason: normalizeValidatorReason(stage2GateFailure.reason),
+            });
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, gateRetryReason);
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: gateRetryReason,
+            });
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `${gateRetryReason}_exhausted`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
           nLog("[OPENING_SIGNATURE_TELEMETRY]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt,
             signalDetected: openingSignatureSignalDetected,
-            decision: "retry",
-            decisionPath: "stage2_gate_failure",
+            decision: "reject",
+            decisionPath: "stage2_gate_failure_exhausted",
             validator: stage2GateFailure.validator,
             reason: normalizeValidatorReason(stage2GateFailure.reason),
           });
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, gateRetryReason);
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: gateRetryReason,
-          });
-          continue;
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
         }
-
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = `${gateRetryReason}_exhausted`;
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        nLog("[OPENING_SIGNATURE_TELEMETRY]", {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          signalDetected: openingSignatureSignalDetected,
-          decision: "reject",
-          decisionPath: "stage2_gate_failure_exhausted",
-          validator: stage2GateFailure.validator,
-          reason: normalizeValidatorReason(stage2GateFailure.reason),
-        });
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
       }
 
       const localSignals: Stage2LocalSignals = {
@@ -8799,13 +8829,19 @@ All openings must remain identical in position and size to the original image.`;
       const finalConfirmMode: "block" | "log" = geminiSemanticValidatorMode === "log" ? "log" : "block";
       if (validationStage === "2") {
         try {
-          if (stage2AdvisorySignals.length === 0) {
+          const complianceAdvisorySignals = STRUCTURAL_SIGNALS_ACTIVE ? stage2AdvisorySignals : [];
+          const complianceOpeningStructuralSignal = STRUCTURAL_SIGNALS_ACTIVE ? openingStructuralSignalDetected : false;
+          const complianceOpeningSignalContext = STRUCTURAL_SIGNALS_ACTIVE ? openingStructuralSignal : undefined;
+          const complianceMaskedDriftRegions = STRUCTURAL_SIGNALS_ACTIVE ? maskedDriftRegions : [];
+          const complianceOpeningRegions = STRUCTURAL_SIGNALS_ACTIVE ? openingRegions : [];
+
+          if (complianceAdvisorySignals.length === 0) {
             nLog("[GEMINI_ESCALATION]", {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt,
               action: "skip",
-              reason: "no_advisories",
+              reason: STRUCTURAL_SIGNALS_ACTIVE ? "no_advisories" : "structural_signals_log_only",
             });
           } else {
             const ai = getGeminiClient();
@@ -8817,20 +8853,20 @@ All openings must remain identical in position and size to the original image.`;
               attempt,
               action: "run",
               model: "gemini-2.5-pro",
-              advisoryCount: stage2AdvisorySignals.length,
-              advisorySignals: stage2AdvisorySignals,
-              openingStructuralSignalFlag: openingStructuralSignalDetected,
-              openingStructuralSignal: openingStructuralSignal || null,
-              maskedDriftRegions,
-              openingRegions,
+              advisoryCount: complianceAdvisorySignals.length,
+              advisorySignals: complianceAdvisorySignals,
+              openingStructuralSignalFlag: complianceOpeningStructuralSignal,
+              openingStructuralSignal: complianceOpeningSignalContext || null,
+              maskedDriftRegions: complianceMaskedDriftRegions,
+              openingRegions: complianceOpeningRegions,
             });
             compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
               validationMode: stage2ValidationMode,
-              advisorySignals: stage2AdvisorySignals,
-              openingStructuralSignal: openingStructuralSignalDetected,
-              openingStructuralSignalContext: openingStructuralSignal,
-              maskedDriftRegions,
-              openingRegions,
+              advisorySignals: complianceAdvisorySignals,
+              openingStructuralSignal: complianceOpeningStructuralSignal,
+              openingStructuralSignalContext: complianceOpeningSignalContext,
+              maskedDriftRegions: complianceMaskedDriftRegions,
+              openingRegions: complianceOpeningRegions,
               modelOverride: "gemini-2.5-pro",
             });
           }
@@ -9209,53 +9245,63 @@ All openings must remain identical in position and size to the original image.`;
         semanticOpeningsDeltaNorm !== 0;
 
       if (hasStructuralOpeningChange) {
-        console.warn("[Stage2Guard] Blocking due to opening change", {
-          semanticOpeningsDelta: semanticOpeningsDeltaNorm,
-        });
-
-        const retryReason = "stage2_guard_opening_change";
-        stage2LocalReasons.push(retryReason);
-
-        setStage2AttemptValidation(path2, "openings", [
-          retryReason,
-          `semanticOpeningsDelta:${semanticOpeningsDeltaNorm}`,
-        ]);
-
-        mergeAttemptValidation("2", attempt, {
-          final: {
-            result: "FAILED",
-            finalHard: true,
-            finalCategory: "openings",
-            retryTriggered: attempt < MAX_STAGE2_RETRIES,
-            retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-            retryStrategy: "NORMAL",
-            reason: `semanticOpeningsDelta:${semanticOpeningsDeltaNorm}`,
-          },
-        });
-
-        if (attempt < MAX_STAGE2_RETRIES) {
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, retryReason);
-          logEvent("STAGE_RETRY", {
+        if (!STRUCTURAL_SIGNALS_ACTIVE) {
+          nLog("[STAGE2_VALIDATION_ADVISORY] opening_change mode=log-only action=proceed_to_gemini", {
             jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: retryReason,
+            imageId: payload.imageId,
+            attempt,
+            semanticOpeningsDelta: semanticOpeningsDeltaNorm,
+            structuralSignalsMode: STRUCTURAL_SIGNALS_MODE,
           });
-          continue;
-        }
+        } else {
+          console.warn("[Stage2Guard] Blocking due to opening change", {
+            semanticOpeningsDelta: semanticOpeningsDeltaNorm,
+          });
 
-        const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
-        const fallbackStage = fallback1B ? "1B" : "1A";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = `${retryReason}_exhausted`;
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallback1B || path1A;
-        stage2CandidatePath = path2;
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
+          const retryReason = "stage2_guard_opening_change";
+          stage2LocalReasons.push(retryReason);
+
+          setStage2AttemptValidation(path2, "openings", [
+            retryReason,
+            `semanticOpeningsDelta:${semanticOpeningsDeltaNorm}`,
+          ]);
+
+          mergeAttemptValidation("2", attempt, {
+            final: {
+              result: "FAILED",
+              finalHard: true,
+              finalCategory: "openings",
+              retryTriggered: attempt < MAX_STAGE2_RETRIES,
+              retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
+              retryStrategy: "NORMAL",
+              reason: `semanticOpeningsDelta:${semanticOpeningsDeltaNorm}`,
+            },
+          });
+
+          if (attempt < MAX_STAGE2_RETRIES) {
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, retryReason);
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: retryReason,
+            });
+            continue;
+          }
+
+          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
+          const fallbackStage = fallback1B ? "1B" : "1A";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `${retryReason}_exhausted`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallback1B || path1A;
+          stage2CandidatePath = path2;
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
+        }
       }
 
       nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);
