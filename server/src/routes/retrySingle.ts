@@ -508,8 +508,13 @@ export function retrySingleRouter() {
             source: auth.source,
           });
 
-          if (auth.source === "queue" && parentStatus !== auth.status) {
-            await updateJob(parentJobId as any, { status: auth.status });
+          if (
+            auth.source === "queue" &&
+            (auth.status === "completed" || auth.status === "failed") &&
+            parentStatus !== auth.status
+          ) {
+            const persistedStatus = auth.status === "completed" ? "complete" : "failed";
+            await updateJob(parentJobId as any, { status: persistedStatus });
           }
 
           if (!(auth.status === "completed" || auth.status === "failed")) {
