@@ -1,4 +1,5 @@
 import { Router, type Request, type Response, type RequestHandler } from "express";
+import { Queue } from "bullmq";
 import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as fss from "node:fs";
@@ -6,7 +7,7 @@ import * as path from "node:path";
 import * as crypto from "node:crypto";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser } from "../services/users.js";
-import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
+import { enqueueEnhanceJob, getJob, updateJob } from "../services/jobs.js";
 import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
@@ -14,6 +15,8 @@ import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { consumeFreeRetryCount } from "../services/usageLedger.js";
+import { JOB_QUEUE_NAME } from "../shared/constants.js";
+import { REDIS_URL } from "../config.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -112,6 +115,46 @@ async function isRetrySourceReachable(url: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function normalizePersistedJobStatus(raw: unknown): "completed" | "failed" | "processing" | "queued" | "awaiting_payment" | "unknown" {
+  const status = String(raw || "").toLowerCase();
+  if (status === "complete" || status === "completed" || status === "done") return "completed";
+  if (status === "failed" || status === "error" || status === "cancelled") return "failed";
+  if (status === "processing" || status === "active") return "processing";
+  if (status === "queued" || status === "waiting" || status === "waiting-children" || status === "delayed") return "queued";
+  if (status === "awaiting_payment") return "awaiting_payment";
+  return "unknown";
+}
+
+async function resolveAuthoritativeStatus(jobId: string): Promise<{
+  status: "completed" | "failed" | "processing" | "queued" | "awaiting_payment" | "unknown";
+  source: "persisted" | "queue";
+}> {
+  const persisted = await getJob(jobId);
+  const persistedStatus = normalizePersistedJobStatus((persisted as any)?.status);
+
+  if (persistedStatus === "completed" || persistedStatus === "failed") {
+    return { status: persistedStatus, source: "persisted" };
+  }
+
+  const queue = new Queue(JOB_QUEUE_NAME, {
+    connection: { url: REDIS_URL },
+  });
+
+  try {
+    const job = await queue.getJob(jobId);
+    const state = await job?.getState();
+    if (state === "completed" || state === "failed") {
+      return { status: state, source: "queue" };
+    }
+  } catch {
+    // Ignore queue lookup errors and fall back to persisted state.
+  } finally {
+    await queue.close().catch(() => {});
+  }
+
+  return { status: persistedStatus, source: "persisted" };
 }
 
 const CANONICAL_ROOM_TYPES = new Set([
@@ -388,22 +431,6 @@ export function retrySingleRouter() {
         });
       }
 
-      // ✅ PATCH 2: Idempotency guard (30-second window)
-      if (parentJobId) {
-        const retryKey = `retry:${sessUser.id}:${parentJobId}:${Math.floor(Date.now() / 30000)}`;
-        const redis = getRedis();
-        const exists = await redis.get(retryKey);
-        if (exists) {
-          console.log(`[retry-single] Duplicate retry suppressed: ${retryKey}`);
-          return res.status(409).json({ 
-            success: false, 
-            error: "duplicate_retry",
-            message: "Duplicate retry suppressed" 
-          });
-        }
-        await redis.setEx(retryKey, 35, "1");
-      }
-
       // Optional tuning
       const temperature = parseNumber(body.temperature);
       const topP = parseNumber(body.topP);
@@ -471,16 +498,26 @@ export function retrySingleRouter() {
             (parentJob as any)?.queueStatus ||
             ""
           ).toLowerCase();
-          const parentStatus =
-            parentStatusRaw === "complete" ? "completed" :
-            parentStatusRaw === "error" || parentStatusRaw === "cancelled" ? "failed" :
-            parentStatusRaw;
-          if (!(parentStatus === "completed" || parentStatus === "failed")) {
+          const parentStatus = normalizePersistedJobStatus(parentStatusRaw);
+          const auth = await resolveAuthoritativeStatus(parentJobId);
+
+          console.log("[RETRY_ELIGIBILITY]", {
+            jobId: parentJobId,
+            persisted: parentStatus,
+            authoritative: auth.status,
+            source: auth.source,
+          });
+
+          if (auth.source === "queue" && parentStatus !== auth.status) {
+            await updateJob(parentJobId as any, { status: auth.status });
+          }
+
+          if (!(auth.status === "completed" || auth.status === "failed")) {
             return res.status(409).json({
               success: false,
               error: "retry_not_allowed_for_job_state",
               message: "Retry is only allowed for completed or failed jobs.",
-              status: parentStatus || "unknown",
+              status: auth.status || "unknown",
             });
           }
 
@@ -1092,6 +1129,22 @@ export function retrySingleRouter() {
 
       // Free retries must never create allowance reservations or billing ledger entries.
       // Manual retry charge finalization is skipped in worker when retryType === "manual_retry".
+
+      // Idempotency guard (30-second window) is applied only after eligibility and immediately before enqueue.
+      if (parentJobId) {
+        const retryKey = `retry:${sessUser.id}:${parentJobId}:${Math.floor(Date.now() / 30000)}`;
+        const redis = getRedis();
+        const lock = await redis.set(retryKey, "1", { EX: 35, NX: true });
+        if (!lock) {
+          console.log(`[retry-single] Duplicate retry suppressed: ${retryKey}`);
+          return res.status(409).json({
+            success: false,
+            error: "duplicate_retry",
+            message: "Duplicate retry suppressed"
+          });
+        }
+        console.log(`[retry-single] Lock acquired: ${retryKey}`);
+      }
 
       const result = await enqueueEnhanceJob({
         userId: sessUser.id,

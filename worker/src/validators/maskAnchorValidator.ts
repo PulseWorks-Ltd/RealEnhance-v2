@@ -3,8 +3,7 @@ import sharp from "sharp";
 const logger = console;
 
 const DIFF_THRESHOLD = 12;
-const MIN_OVERLAP_PCT = 0.1;
-const MIN_CHANGED_PIXELS = 500;
+const MIN_OVERLAP_PCT = 0.65;
 
 export async function validateMaskAnchorOverlap(params: {
   baseImagePath: string;
@@ -71,13 +70,6 @@ export async function validateMaskAnchorOverlap(params: {
     overlapPct,
     totalChangedPixels,
   });
-
-  if (totalChangedPixels < MIN_CHANGED_PIXELS) {
-    return {
-      passed: true,
-      overlapPct,
-    };
-  }
 
   return {
     passed: overlapPct >= MIN_OVERLAP_PCT,

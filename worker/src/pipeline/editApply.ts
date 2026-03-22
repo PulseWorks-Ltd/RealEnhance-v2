@@ -6,15 +6,15 @@ import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { validateMaskAnchorOverlap } from "../validators/maskAnchorValidator";
 
-const MIN_PROJECTION_DILATE_PX = 3;
-const MAX_PROJECTION_DILATE_PX = 12;
+const MIN_PROJECTION_DILATE_PX = 2;
+const MAX_PROJECTION_DILATE_PX = 4;
 
 function allowedMaskArtifactPathForOutput(outPath: string): string {
   return `${outPath}.allowed-mask.png`;
 }
 
 function projectionDilatePx(width: number, height: number): number {
-  const scaled = Math.round(Math.max(width, height) * 0.006);
+  const scaled = Math.round(Math.max(width, height) * 0.0025);
   return Math.max(MIN_PROJECTION_DILATE_PX, Math.min(MAX_PROJECTION_DILATE_PX, scaled || 5));
 }
 

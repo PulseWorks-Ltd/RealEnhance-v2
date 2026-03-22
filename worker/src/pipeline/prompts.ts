@@ -23,8 +23,9 @@ STRUCTURAL RULES (STRICT):
 - You must treat all walls, ceilings, floors, windows, doors, openings, built-in joinery and fixed vents as UNCHANGEABLE structure.
 - You must NOT resize, move, add or remove any window, door, wall, opening, bulkhead, or ceiling vent.
 - You must NOT change the position, size or number of windows or doors.
-- Outside the mask region, the image must remain visually identical except for minimal boundary adjustments required for realism.
-- If the user instruction would normally require structural changes (for example "remove the window"), interpret it in the least structural way possible (for example, cover the window completely with matching curtains or blinds) instead of changing the wall or opening.`
+- You must NOT modify walls, ceilings, floors, windows, doors, or camera viewpoint.
+- Outside the mask region, the image must remain visually identical except strictly minimal connected extension needed for natural 3D object depth.
+- If the user instruction conflicts with these structural constraints, do NOT modify those structures.`
     : `
 STRUCTURAL RULES:
 - Minimise changes to fixed architectural elements (walls, windows, doors, ceilings, vents).
@@ -49,9 +50,9 @@ USER INSTRUCTION (the edit should originate from where EDIT_MASK_IMAGE shows WHI
 MASK SPATIAL INTERPRETATION (IMPORTANT):
 - The WHITE mask defines the origin and anchor region of the edit.
 - All edits must originate from within this region.
-- The edit may extend slightly beyond the white region ONLY where required for natural depth, perspective, or shadow continuity.
-- Any such extension must be minimal and directly connected to the masked region.
-- You must NOT modify unrelated areas or distant surfaces outside the mask.
+- Treat the WHITE mask as the only editable region.
+- You may extend slightly beyond the WHITE mask ONLY to complete the natural depth of the inserted object.
+- Any extension must be minimal, directly connected to the masked region, and never applied to unrelated surfaces.
 
 REFERENCE IMAGE RULES (IF OPTIONAL_REFERENCE_IMAGE IS PROVIDED):
 - Use OPTIONAL_REFERENCE_IMAGE only to preserve structure/openings continuity.
@@ -65,7 +66,7 @@ STRUCTURAL SAFEGUARD:
 
 MASK BOUNDARY RULES (HARD):
 - Treat the mask boundary as a hard edit boundary.
-- Do NOT blend, feather, or modify pixels outside the WHITE mask region unless a later explicit ADD MODE geometry rule permits strictly necessary object depth extension.
+- Do NOT blend, feather, or modify pixels outside the WHITE mask region except for strictly necessary connected object-depth completion.
 - Do NOT modify nearby surfaces, other walls, or unrelated objects outside the WHITE mask.
 - Do NOT expand edits to structural elements (windows, doors, openings, mouldings) outside the WHITE mask.
 

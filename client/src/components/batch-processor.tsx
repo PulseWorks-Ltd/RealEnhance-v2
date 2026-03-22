@@ -4463,8 +4463,8 @@ export default function BatchProcessor({
 
   // Retry dialog handlers
   const handleOpenRetryDialog = (imageIndex: number) => {
-    const status = String(results[imageIndex]?.status || "").toLowerCase();
-    if (!(status === "failed" || status === "completed")) {
+    const isTerminal = results[imageIndex]?.isTerminal === true;
+    if (!isTerminal) {
       toast({
         title: "Retry unavailable",
         description: "Retry is only allowed for completed or failed jobs.",
@@ -7175,7 +7175,7 @@ export default function BatchProcessor({
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isRetryActive = isRetrying || !!result?.retryInFlight;
                         const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
-                        const isRetryStatusTerminal = status === "failed" || status === "completed";
+                        const isRetryStatusTerminal = result?.isTerminal === true;
                         const canRetryThisImage = isRetryStatusTerminal;
                         const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
@@ -7662,7 +7662,7 @@ export default function BatchProcessor({
                     setPreviewImage(null);
                     handleOpenRetryDialog(index);
                   }}
-                  disabled={!(["failed", "completed"].includes(String(results[previewImage.index]?.status || "").toLowerCase())) || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  disabled={results[previewImage.index]?.isTerminal !== true || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
                   className="rounded-lg bg-action-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-action-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-retry-from-preview"
                 >

@@ -3,7 +3,7 @@ import type { JobId } from "@realenhance/shared/types";
 import { getEvidenceGatingVariant } from "../validators/evidenceGating";
 
 export function isTerminalStatus(status: string | undefined): boolean {
-  return status === "complete" || status === "failed" || status === "error" || status === "FAILED_FINAL" || status === "cancelled";
+  return status === "complete" || status === "completed" || status === "failed" || status === "error" || status === "FAILED_FINAL" || status === "cancelled";
 }
 
 export async function safeWriteJobStatus(
