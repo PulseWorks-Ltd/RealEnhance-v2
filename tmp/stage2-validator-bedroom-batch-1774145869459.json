@@ -1,0 +1,262 @@
+{
+  "summary": {
+    "total": 9,
+    "ok": 9,
+    "errors": 0,
+    "hardFail": 9,
+    "geminiHardFail": 0,
+    "elapsedMs": 87479
+  },
+  "results": [
+    {
+      "id": "02",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.427,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.633 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.123 < 0.6",
+        "Structural IoU too low: 0.082 < 0.25",
+        "Gemini structure: One ceiling downlight present in the BEFORE image has been removed in the AFTER image., The identity (presence and arrangement) of built-in ceiling lighting fixtures has changed."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_size_change",
+        "Edge IoU: 0.123 (threshold: 0.6)",
+        "Structural IoU: 0.082 (threshold: 0.25)",
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 11175
+    },
+    {
+      "id": "03",
+      "baseline": "Bedroom 03.jpg",
+      "enhanced": "Bedroom 03 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.501,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 0.98,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.360 < 0.97",
+        "Window validation failed: window_count_change",
+        "Global edge IoU too low: 0.284 < 0.6",
+        "Gemini structure: All architectural elements including walls, openings (window, door), ceiling, floor, and permanent fixtures (downlights, door handle, curtain system valence) remain unchanged in their position, size, and silhouette., No camera shift or perspective distortion is detected; the geometric envelope of the room is identical between the BEFORE and AFTER images., The staging introduces furniture (bed, nightstands, dresser, rug) and decor, which are considered non-structural changes."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_count_change",
+        "Edge IoU: 0.284 (threshold: 0.6)",
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 7868
+    },
+    {
+      "id": "06",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.444,
+      "riskLevel": "HIGH",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.428 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.221 < 0.6",
+        "Structural IoU too low: 0.139 < 0.25",
+        "Gemini structure: The built-in shelving unit on the back wall has been significantly altered. In the BEFORE image, it appears as a fixed unit with continuous vertical supports and multiple shelves. In the AFTER image, it has been changed to a floating shelf system with a different silhouette and footprint, violating the rule that built-in anchors must preserve their exact footprint and silhouette."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_position_change",
+        "Edge IoU: 0.221 (threshold: 0.6)",
+        "Structural IoU: 0.139 (threshold: 0.25)",
+        "Gemini flagged structure",
+        "stage2_direct_advisory: anchor_hvac_changed"
+      ],
+      "elapsedMs": 11153
+    },
+    {
+      "id": "07",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.439,
+      "riskLevel": "HIGH",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.373 < 0.97",
+        "Window validation failed: window_count_change",
+        "Global edge IoU too low: 0.122 < 0.6",
+        "Gemini structure: No structural changes detected., The room's architectural elements (walls, ceiling, floor, window) remain identical in position, size, and form., No camera shift or perspective distortion is observed., The staging successfully introduces furniture and decor appropriate for a bedroom, fulfilling the 'FULL_STAGE_ONLY' mode without violating structural integrity."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_count_change",
+        "Edge IoU: 0.122 (threshold: 0.6)",
+        "Gemini flagged structure",
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "elapsedMs": 7916
+    },
+    {
+      "id": "09",
+      "baseline": "Bedroom 09.jpg",
+      "enhanced": "Bedroom 09 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.467,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.490 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.272 < 0.6",
+        "Structural IoU too low: 0.228 < 0.25",
+        "Gemini structure: All permanent architectural features including walls, openings (windows), ceiling plane, and curtain systems remain unchanged., No camera shift or perspective distortion detected., The room has been appropriately staged with furniture and decor, fulfilling the 'FULL_STAGE_ONLY' mode requirements without structural violations., No built-in elements were detected or altered."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_size_change",
+        "Edge IoU: 0.272 (threshold: 0.6)",
+        "Structural IoU: 0.228 (threshold: 0.25)",
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 8771
+    },
+    {
+      "id": "11",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "local",
+      "score": 0.445,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.568 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.179 < 0.6",
+        "Structural IoU too low: 0.157 < 0.25"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "unknown",
+        "window_position_change",
+        "Edge IoU: 0.179 (threshold: 0.6)",
+        "Structural IoU: 0.157 (threshold: 0.25)"
+      ],
+      "elapsedMs": 9330
+    },
+    {
+      "id": "12",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.439,
+      "riskLevel": "HIGH",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.565 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.149 < 0.6",
+        "Structural IoU too low: 0.101 < 0.25",
+        "Gemini structure: All architectural elements including walls, openings (sliding door/window, interior doorway), ceiling, and floor remain unchanged., Built-in fixtures like the air conditioning unit, ceiling light fixture, and the curtain system are preserved in their exact position and silhouette., There is no detectable camera shift or alteration in the geometric envelope., The staging introduces furniture and decor appropriate for a bedroom, which falls under non-structural changes."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_size_change",
+        "Edge IoU: 0.149 (threshold: 0.6)",
+        "Structural IoU: 0.101 (threshold: 0.25)",
+        "Gemini flagged structure",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed"
+      ],
+      "elapsedMs": 10545
+    },
+    {
+      "id": "14",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.415,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.633 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.071 < 0.6",
+        "Structural IoU too low: 0.022 < 0.25",
+        "Gemini structure: No structural identity violations detected., The geometric envelope, including wall positions, corners, ceiling plane, and room dimensions, remains unchanged., Windows and their relative positions to walls are preserved., The partial door/door frame on the right is unchanged., The existing ceiling light fixture is preserved., Existing curtain systems are preserved; no new systems were added, nor were existing ones removed., No camera shift or perspective alteration was observed., The room has been successfully staged with furniture appropriate for a bedroom, which is consistent with the FULL_STAGE_ONLY mode and does not constitute a structural violation."
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "window_size_change",
+        "Edge IoU: 0.071 (threshold: 0.6)",
+        "Structural IoU: 0.022 (threshold: 0.25)",
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 14171
+    },
+    {
+      "id": "16",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "local",
+      "score": 0.56,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "style_only",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.752 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.392 < 0.6"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "No structural changes detected.",
+        "Geometric envelope verification passed: walls, openings, ceiling, floor, and camera perspective are identical.",
+        "The room has been meaningfully staged as a bedroom without altering any permanent architectural features.",
+        "window_size_change",
+        "Edge IoU: 0.392 (threshold: 0.6)"
+      ],
+      "elapsedMs": 6549
+    }
+  ]
+}

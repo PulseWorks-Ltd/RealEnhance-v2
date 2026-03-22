@@ -1,0 +1,190 @@
+{
+  "summary": {
+    "total": 9,
+    "ok": 9,
+    "errors": 0,
+    "hardFail": 3,
+    "geminiHardFail": 0,
+    "elapsedMs": 92143
+  },
+  "results": [
+    {
+      "id": "02",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.853,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.633 < 0.97",
+        "Gemini structure: The type and appearance of the recessed ceiling downlights have changed. In the BEFORE image, there are two distinct downlights with a warm glow. In the AFTER image, the downlights are replaced with different, more flush, and modern types, with one of the original positions appearing empty or significantly altered and the visible one being of a different identity. This constitutes a change in permanent ceiling fixtures., Specifically, the rule 'Added ceiling fixtures (pendants, fans, downlights)' and 'Removed ceiling fixtures' is violated, as the original fixtures appear to have been removed and different ones added, and the rule 'lighting/plumbing/curtain system or built-in identity changes' applies."
+      ],
+      "warnings": [
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 10491
+    },
+    {
+      "id": "03",
+      "baseline": "Bedroom 03.jpg",
+      "enhanced": "Bedroom 03 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.744,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "furniture_change",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "furniture_change"
+      ],
+      "elapsedMs": 14342
+    },
+    {
+      "id": "06",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.771,
+      "riskLevel": "HIGH",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.428 < 0.97",
+        "Gemini structure: The built-in shelving unit located to the right of the wardrobe (between the wardrobe and the window) has been altered. In the BEFORE image, the shelves are integrated, thicker, and have a distinct silhouette. In the AFTER image, these have been replaced by thinner, floating shelves. This constitutes a change in a built-in's footprint and silhouette, which is a structural violation according to the rule: 'Built-in anchors must preserve exact footprint and silhouette'."
+      ],
+      "warnings": [
+        "Gemini flagged structure",
+        "stage2_direct_advisory: anchor_hvac_changed"
+      ],
+      "elapsedMs": 8924
+    },
+    {
+      "id": "07",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.749,
+      "riskLevel": "HIGH",
+      "geminiCategory": "style_only",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "No structural elements (walls, openings, ceiling, floor) have been altered.",
+        "The camera viewpoint and perspective remain unchanged.",
+        "No built-in fixtures were added, removed, or modified.",
+        "The room has been fully staged with furniture, which is an expected change for FULL_STAGE_ONLY mode and is not a structural violation.",
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "elapsedMs": 8054
+    },
+    {
+      "id": "09",
+      "baseline": "Bedroom 09.jpg",
+      "enhanced": "Bedroom 09 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.796,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.490 < 0.97",
+        "Gemini structure: The geometric envelope, including walls, ceiling, floor, and window positions, remains identical between the BEFORE and AFTER images., No structural elements such as walls, openings, or built-ins have been added, removed, or resized., The camera viewpoint and perspective are consistent, indicating no camera shift., Existing permanent fixtures like the ceiling downlight, wall outlets, and window curtains/blinds are unchanged., The room has been appropriately staged with furniture (bed, bedside tables, dresser, rug) suitable for a bedroom, fulfilling the full-stage expectation."
+      ],
+      "warnings": [
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 9145
+    },
+    {
+      "id": "11",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.827,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown"
+      ],
+      "elapsedMs": 11000
+    },
+    {
+      "id": "12",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.826,
+      "riskLevel": "HIGH",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed"
+      ],
+      "elapsedMs": 9581
+    },
+    {
+      "id": "14",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.853,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "The window blinds that were present in the BEFORE image have been removed in the AFTER image. According to the decision rules, 'Curtain/drape removal' is a structural hard-fail condition."
+      ],
+      "elapsedMs": 10015
+    },
+    {
+      "id": "16",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.901,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown"
+      ],
+      "elapsedMs": 10590
+    }
+  ]
+}

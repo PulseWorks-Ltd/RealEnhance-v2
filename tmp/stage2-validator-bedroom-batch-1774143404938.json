@@ -1,0 +1,163 @@
+{
+  "summary": {
+    "total": 9,
+    "ok": 9,
+    "errors": 0,
+    "hardFail": 0,
+    "geminiHardFail": 0,
+    "elapsedMs": 1787
+  },
+  "results": [
+    {
+      "id": "02",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.653,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [],
+      "elapsedMs": 295
+    },
+    {
+      "id": "03",
+      "baseline": "Bedroom 03.jpg",
+      "enhanced": "Bedroom 03 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.544,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [],
+      "elapsedMs": 324
+    },
+    {
+      "id": "06",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.571,
+      "riskLevel": "HIGH",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "stage2_direct_advisory: anchor_hvac_changed"
+      ],
+      "elapsedMs": 377
+    },
+    {
+      "id": "07",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.549,
+      "riskLevel": "HIGH",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "elapsedMs": 224
+    },
+    {
+      "id": "09",
+      "baseline": "Bedroom 09.jpg",
+      "enhanced": "Bedroom 09 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.596,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [],
+      "elapsedMs": 175
+    },
+    {
+      "id": "11",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.627,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [],
+      "elapsedMs": 101
+    },
+    {
+      "id": "12",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.626,
+      "riskLevel": "HIGH",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed"
+      ],
+      "elapsedMs": 109
+    },
+    {
+      "id": "14",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.653,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [],
+      "elapsedMs": 106
+    },
+    {
+      "id": "16",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.701,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": null,
+      "geminiConfidence": null,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [],
+      "elapsedMs": 76
+    }
+  ]
+}

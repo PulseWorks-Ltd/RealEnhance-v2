@@ -429,16 +429,27 @@ export async function runUnifiedValidation(
         forceGemini = true;
         reasons.push(`Perceptual diff failed: SSIM ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
         evidence.localFlags.push(`ssim_failed: ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
-        nLog(`[perceptual-diff] FAIL → early exit, escalating directly to Gemini`);
+        nLog(`[perceptual-diff] FAIL → continue full validator chain and escalate to Gemini`);
       }
     } catch (err) {
-      console.warn("[perceptual-diff] Error computing SSIM (fail-open):", err);
+      console.warn("[perceptual-diff] Error computing SSIM (fail-closed):", err);
+      perceptualFailed = true;
+      forceGemini = true;
+      reasons.push("Perceptual diff validator error");
+      evidence.localFlags.push("ssim_validator_error");
+      results.perceptualDiff = {
+        name: "perceptualDiff",
+        passed: false,
+        score: 0,
+        message: "Perceptual diff validator error",
+        details: { error: String(err) },
+      };
     }
   }
 
   // ===== EARLY EXIT TRACKING =====
-  // When the cheap gate (SSIM) fails, skip local validators 1–2 and go straight to Gemini.
-  const earlyExit = perceptualFailed;
+  // Deterministic mode: never skip structural validators based on SSIM.
+  const earlyExit = false;
   const validatorPath: string[] = ["perceptualDiff"];
   if (earlyExit) {
     validatorPath.push("gemini");
@@ -446,9 +457,8 @@ export async function runUnifiedValidation(
   }
 
   // ===== STAGE-AWARE VALIDATION PATH =====
-  // When enabled, use the new stage-aware validator for Stage 2
-  // Skipped on early exit (SSIM gate fail → direct Gemini escalation)
-  if (!earlyExit && stageAwareConfig.enabled && stage === "2") {
+  // When enabled, use the new stage-aware validator for Stage 2.
+  if (stageAwareConfig.enabled && stage === "2") {
     nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
 
     // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
@@ -525,8 +535,8 @@ export async function runUnifiedValidation(
   let enhancedLineCount = 0;
   let stage2OcclusionAllowance: { structIoU: number; threshold: number; reasons: string[] } | null = null;
 
-  // Run local validators for evidence collection — skipped on early exit (SSIM gate fail).
-  if (!earlyExit) {
+  // Run local validators for evidence collection.
+  {
     try {
       buffers = await buildValidationBuffers(originalPath, enhancedPath, {
         blurSigma: Number(process.env.GLOBAL_EDGE_PREBLUR || 0.8),
@@ -569,14 +579,15 @@ export async function runUnifiedValidation(
           reasons.push(`Window validation failed: ${windowResult.reason}`);
         }
       } catch (err) {
-        console.warn("[unified-validator] Window validation error:", err);
+        console.warn("[unified-validator] Window validation error (fail-closed):", err);
         results.windows = {
           name: "windows",
-          passed: true, // Fail-open
-          score: 0.5,
-          message: "Window validator error (fail-open)",
+          passed: false,
+          score: 0,
+          message: "Window validator error",
           details: { error: String(err) },
         };
+        reasons.push("Window validation error");
       }
     }
 
@@ -596,14 +607,15 @@ export async function runUnifiedValidation(
         reasons.push(`Wall validation failed: ${wallResult.reason}`);
       }
     } catch (err) {
-      console.warn("[unified-validator] Wall validation error:", err);
+      console.warn("[unified-validator] Wall validation error (fail-closed):", err);
       results.walls = {
         name: "walls",
-        passed: true, // Fail-open
-        score: 0.5,
-        message: "Wall validator error (fail-open)",
+        passed: false,
+        score: 0,
+        message: "Wall validator error",
         details: { error: String(err) },
       };
+      reasons.push("Wall validation error");
     }
 
     // ===== 3. GLOBAL EDGE IoU =====
@@ -635,14 +647,15 @@ export async function runUnifiedValidation(
         reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
       }
     } catch (err) {
-      console.warn("[unified-validator] Global edge validation error:", err);
+      console.warn("[unified-validator] Global edge validation error (fail-closed):", err);
       results.globalEdge = {
         name: "globalEdge",
-        passed: true, // Fail-open
-        score: 0.5,
-        message: "Global edge validator error (fail-open)",
+        passed: false,
+        score: 0,
+        message: "Global edge validator error",
         details: { error: String(err) },
       };
+      reasons.push("Global edge validation error");
     }
 
     // ===== 4. STRUCTURAL IoU WITH MASK (Stage 2 only) =====
@@ -730,14 +743,15 @@ export async function runUnifiedValidation(
           warnings.push("dimension_normalized");
         }
       } catch (err) {
-        console.warn("[unified-validator] Structural mask validation error:", err);
+        console.warn("[unified-validator] Structural mask validation error (fail-closed):", err);
         results.structuralMask = {
           name: "structuralMask",
-          passed: true, // Fail-open
-          score: 0.5,
-          message: "Structural mask validator error (fail-open)",
+          passed: false,
+          score: 0,
+          message: "Structural mask validator error",
           details: { error: String(err) },
         };
+        reasons.push("Structural mask validation error");
       }
     }
 
@@ -784,32 +798,23 @@ export async function runUnifiedValidation(
         },
       };
       if (!lineResult.passed) {
-        const openingsIntact = (results.windows?.passed !== false) && (results.walls?.passed !== false) && (results.structuralMask?.passed !== false);
-        if (openingsIntact) {
-          // Downgrade to warning when openings/boundaries still pass
-          warnings.push(`Line/edge deviation (openings intact): ${lineResult.score.toFixed(3)}`);
-          results.lineEdge.message = `Line deviation warning (openings intact)`;
-          results.lineEdge.passed = true;
-        } else {
-          reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
-        }
+        reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
       }
     } catch (err) {
-      console.warn("[unified-validator] Line/edge validation error:", err);
+      console.warn("[unified-validator] Line/edge validation error (fail-closed):", err);
       results.lineEdge = {
         name: "lineEdge",
-        passed: true, // Fail-open
-        score: 0.5,
-        message: "Line/edge validator error (fail-open)",
+        passed: false,
+        score: 0,
+        message: "Line/edge validator error",
         details: { error: String(err) },
       };
+      reasons.push("Line/edge validation error");
     }
-  } // end if (!earlyExit)
+  }
 
   // Track which local validators were actually executed
-  if (!earlyExit) {
-    validatorPath.push("structural", "geometry");
-  }
+  validatorPath.push("structural", "geometry");
 
   // ===== ANCHOR REGION VALIDATORS =====
   // Binary flag detectors for high-value structural anchors
@@ -967,18 +972,19 @@ export async function runUnifiedValidation(
 
       nLog(`[unified-validator] Anchors: island=${anchorResult.islandChanged} hvac=${anchorResult.hvacChanged} cabinetry=${anchorResult.cabinetryChanged} lighting=${anchorResult.lightingChanged}`);
     } catch (err) {
-      console.warn("[unified-validator] Anchor validation error (fail-open):", err);
+      console.warn("[unified-validator] Anchor validation error (fail-closed):", err);
       results.anchors = {
         name: "anchors",
-        passed: true,
-        score: 0.5,
-        message: "Anchor validator error (fail-open)",
+        passed: false,
+        score: 0,
+        message: "Anchor validator error",
         details: { error: String(err) },
       };
+      reasons.push("Anchor validation error");
     }
   }
 
-  if (stage === "2" && stage2OcclusionAllowance && results.structuralMask) {
+  if (false && stage === "2" && stage2OcclusionAllowance && results.structuralMask) {
     const anchorEvidencePresent = evidence.anchorChecks && Object.values(evidence.anchorChecks).some(Boolean);
     if (!anchorEvidencePresent) {
       nLog("[STAGE2_OCCLUSION_ALLOWANCE]", {
@@ -1052,7 +1058,7 @@ export async function runUnifiedValidation(
   });
 
   nLog(`[unified-validator] Geometry Profile: ${softScene ? "SOFT" : "STRICT"}`);
-  if (softScene) {
+  if (false && softScene) {
     nLog(`[unified-validator] Soft geometry detected - applying relaxed thresholds for bedroom-type scene`);
     nLog(`[unified-validator]   - roomType: ${roomType}`);
     nLog(`[unified-validator]   - windowCount: ${windowCount}`);
@@ -1061,7 +1067,8 @@ export async function runUnifiedValidation(
   }
 
   // ===== APPLY SOFT GEOMETRY OVERRIDES =====
-  if (softScene) {
+  // Deterministic mode: never downgrade structural failures.
+  if (false && softScene) {
     if (results.windows && !results.windows.passed) {
       const reason = results.windows.details?.reason;
       if (reason === "window_size_change") {
@@ -1152,6 +1159,7 @@ export async function runUnifiedValidation(
     .some(([, r]) => r && r.passed === false);
 
   const shouldRunGemini =
+    stage === "2" ||
     forceGemini ||
     geminiPolicy === "always" ||
     (geminiPolicy === "on_local_fail" && localFailed);
@@ -1210,7 +1218,7 @@ export async function runUnifiedValidation(
       }
 
       const semantic = summarizeGeminiSemantic(geminiResult);
-      const geminiHardFail = semantic.hardFail && geminiMode === "block";
+      const geminiHardFail = semantic.hardFail;
 
       results.geminiSemantic = {
         name: "geminiSemantic",
@@ -1237,14 +1245,15 @@ export async function runUnifiedValidation(
 
       nLog(`[unified-validator] [Gemini] verdict cat=${geminiResult.category} hardFail=${semantic.hardFail} geminiMode=${geminiMode} conf=${geminiResult.confidence}`);
     } catch (err) {
-      console.warn("[unified-validator] Gemini semantic check failed open", err);
+      console.warn("[unified-validator] Gemini semantic check failed (fail-closed)", err);
       results.geminiSemantic = {
         name: "geminiSemantic",
-        passed: true,
-        score: 0.5,
-        message: "Gemini semantic error (fail-open)",
-        details: { error: String(err), mode: geminiMode },
+        passed: false,
+        score: 0,
+        message: "Gemini semantic error (fail-closed)",
+        details: { error: String(err), mode: "block" },
       };
+      reasons.push("Gemini semantic validation unavailable");
     }
   }
 
@@ -1272,8 +1281,7 @@ export async function runUnifiedValidation(
 
   const failedValidators = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff");
   const allPassed = failedValidators.length === 0;
-  const geminiHardFail = results.geminiSemantic && results.geminiSemantic.details && (results.geminiSemantic.details as any).mode === "block" && results.geminiSemantic.passed === false;
-  const localFailures = failedValidators.length;
+  const geminiHardFail = results.geminiSemantic && results.geminiSemantic.passed === false;
 
   // Update evidence with final aggregate
   evidence.unifiedScore = aggregateScore;
@@ -1407,61 +1415,13 @@ export async function runUnifiedValidation(
 
   let blockSource: "local" | "gemini" | null = geminiHardFail
     ? "gemini"
-    : ((STRUCTURAL_SIGNALS_ACTIVE && mode === "enforce" && !allPassed) ? "local" : null);
+    : (!allPassed ? "local" : null);
 
   if (stage2DirectHardFail) {
     blockSource = "local";
   }
 
-  // ===== STAGE2 SEMANTIC OVERRIDE GATE =====
-  // Allow Gemini semantic PASS to downgrade local failures when structural evidence is clean.
-  if (blockSource === "local" && stage === "2") {
-    const semanticKnown = typeof results.geminiSemantic?.passed === "boolean";
-    const semanticPass = semanticKnown && results.geminiSemantic?.passed === true;
-
-    const anchorChecks = evidence.anchorChecks;
-    const anchorValues = anchorChecks ? Object.values(anchorChecks) : null;
-    const anchorsChanged = (!anchorValues || anchorValues.some((v) => typeof v !== "boolean"))
-      ? null
-      : anchorValues.some((v) => v === true);
-
-    const windowsBefore = evidence.openings.windowsBefore;
-    const windowsAfter = evidence.openings.windowsAfter;
-    const doorsBefore = evidence.openings.doorsBefore;
-    const doorsAfter = evidence.openings.doorsAfter;
-    const openingsChanged = (typeof windowsBefore !== "number" || typeof windowsAfter !== "number" || typeof doorsBefore !== "number" || typeof doorsAfter !== "number")
-      ? null
-      : (Math.abs(windowsBefore - windowsAfter) !== 0 || Math.abs(doorsBefore - doorsAfter) !== 0);
-
-    const structuralMaskPassed = (typeof results.structuralMask?.passed !== "boolean") ? null : results.structuralMask.passed === true;
-    const wallsPassed = (typeof results.walls?.passed !== "boolean") ? null : results.walls.passed === true;
-
-    let rejectReason: "anchors" | "openings" | "removal" | "semantic_fail" | "missing_signal" | null = null;
-    if (!semanticKnown) {
-      rejectReason = "missing_signal";
-    } else if (!semanticPass) {
-      rejectReason = "semantic_fail";
-    } else if (anchorsChanged === null) {
-      rejectReason = "missing_signal";
-    } else if (anchorsChanged) {
-      rejectReason = "anchors";
-    } else if (openingsChanged === null) {
-      rejectReason = "missing_signal";
-    } else if (openingsChanged) {
-      rejectReason = "openings";
-    } else if (structuralMaskPassed === null || wallsPassed === null) {
-      rejectReason = "missing_signal";
-    } else if (!structuralMaskPassed || !wallsPassed) {
-      rejectReason = "removal";
-    }
-
-    if (rejectReason) {
-      nLog(`[STAGE2_SEMANTIC_OVERRIDE_GATE] rejected reason=${rejectReason}`);
-    } else {
-      blockSource = null;
-      nLog(`[STAGE2_SEMANTIC_OVERRIDE_GATE] activated localFailures=${localFailures} anchorsChanged=false openingsChanged=false semantic=PASS`);
-    }
-  }
+  // Deterministic mode: no semantic override of local failures.
 
   // Handle blocking logic
   if (blockSource) {
