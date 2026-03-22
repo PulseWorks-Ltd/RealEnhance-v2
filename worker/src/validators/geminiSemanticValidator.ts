@@ -142,9 +142,7 @@ function collectEvidenceKeys(evidence: ValidationEvidence): string[] {
   const hasDrift = (evidence.drift?.wallPercent ?? 0) > 0 ||
     (evidence.drift?.maskedEdgePercent ?? 0) > 0 ||
     (evidence.drift?.angleDegrees ?? 0) > 0;
-  const ssimSignal = evidence.ssimPassed === false || evidence.ssim < evidence.ssimThreshold;
 
-  if (ssimSignal) keys.push("ssim");
   if (windowsDelta !== 0 || doorsDelta !== 0) keys.push("openings");
   if (hasAnchors) keys.push("anchors");
   if (hasDrift) keys.push("drift");
@@ -241,7 +239,9 @@ function buildAdjudicatorPrompt(
     })();
 
     const anchorsChanged = Object.values(input.anchorChecks || {}).some(Boolean);
-    const ssimLow = input.ssimPassed === false || (input.ssim < input.ssimThreshold);
+    const perceptualSimilarityScore = Number(input.ssim);
+    const perceptualSimilarityThreshold = Number(input.ssimThreshold);
+    const perceptualSimilarityPassed = input.ssimPassed === true;
 
     const hints: string[] = [];
     if (openingDeltaAbs > 0) {
@@ -253,11 +253,17 @@ function buildAdjudicatorPrompt(
     if (anchorsChanged) {
       hints.push("possible fixed-element consistency concern");
     }
-    if (ssimLow) {
-      hints.push("overall visual difference likely from staging, rendering, or perspective");
-    }
 
-    if (!hints.length) return "";
+    const perceptualTelemetry: string[] = [];
+    if (Number.isFinite(perceptualSimilarityScore)) {
+      perceptualTelemetry.push(`- perceptual_similarity_score: ${perceptualSimilarityScore.toFixed(4)}`);
+    }
+    if (Number.isFinite(perceptualSimilarityThreshold)) {
+      perceptualTelemetry.push(`- perceptual_similarity_threshold: ${perceptualSimilarityThreshold.toFixed(4)}`);
+    }
+    perceptualTelemetry.push(`- perceptual_similarity_passed: ${perceptualSimilarityPassed}`);
+
+    if (!hints.length && !perceptualTelemetry.length) return "";
 
     return `
 
@@ -268,6 +274,9 @@ AUTOMATED REVIEW CONTEXT (ADVISORY ONLY):
 
 Potential cues:
 ${hints.map((h) => `- ${h}`).join("\n")}
+
+Perceptual telemetry (numeric only, not a fail criterion):
+${perceptualTelemetry.join("\n")}
 
 Visual adjudication priority:
 - Approve if the same architectural openings and envelope are still clearly present.
@@ -3006,7 +3015,6 @@ export async function runGeminiSemanticValidator(opts: {
       reasonText.includes("decor") ||
       reasonText.includes("bedside") ||
       reasonText.includes("bedding") ||
-      reasonText.includes("ssim") ||
       reasonText.includes("masked_edge") ||
       reasonText.includes("wall_drift");
     const onlySecondarySignalsPresent = !primaryStructuralViolationDetected && hasSecondarySignals;

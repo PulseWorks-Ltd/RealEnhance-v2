@@ -20,6 +20,16 @@ const OPENING_WINDOW_EXTREME_OCCLUSION_RETENTION = Number(process.env.OPENING_WI
 const OPENING_DOOR_EXTREME_OCCLUSION_RETENTION = Number(process.env.OPENING_DOOR_EXTREME_OCCLUSION_RETENTION || 0.4);
 const OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD = Number(process.env.OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD || 0.25);
 
+type BaselineOpenings = {
+  openings: Array<{
+    id: string;
+    type: "window" | "door" | "closet_door" | "opening";
+    visibility: "full" | "partial";
+    approximateLocation: "left" | "center" | "right" | "rear" | "unknown";
+    size: "small" | "medium" | "large" | "unknown";
+  }>;
+};
+
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
@@ -79,6 +89,62 @@ function buildOpeningRegions(openings: StructuralBaseline["openings"]): Array<{
     .filter((region): region is { bbox: [number, number, number, number]; type: "window" | "door" } => region !== null);
 }
 
+function toBaselineOpeningType(input: string): "window" | "door" | "closet_door" | "opening" {
+  const value = String(input || "").toLowerCase();
+  if (value === "window") return "window";
+  if (value === "closet_door") return "closet_door";
+  if (value === "door") return "door";
+  return "opening";
+}
+
+function classifyBaselineVisibility(opening: StructuralBaseline["openings"][number]): "full" | "partial" {
+  const [x1, y1, x2, y2] = normalizeBbox01(opening.bbox);
+  const touchesImageEdge = x1 <= 0.01 || y1 <= 0.01 || x2 >= 0.99 || y2 >= 0.99;
+  return touchesImageEdge ? "partial" : "full";
+}
+
+function classifyBaselineLocation(opening: StructuralBaseline["openings"][number]): "left" | "center" | "right" | "rear" | "unknown" {
+  if (typeof opening.wallIndex === "number" && opening.wallIndex >= 2) return "rear";
+  const [x1, , x2] = normalizeBbox01(opening.bbox);
+  const cx = (x1 + x2) / 2;
+  if (cx < 0.33) return "left";
+  if (cx > 0.67) return "right";
+  if (Number.isFinite(cx)) return "center";
+  return "unknown";
+}
+
+function classifyBaselineSize(opening: StructuralBaseline["openings"][number]): "small" | "medium" | "large" | "unknown" {
+  const area = Number(opening.area_pct);
+  if (!Number.isFinite(area) || area <= 0) return "unknown";
+  if (area < 0.03) return "small";
+  if (area < 0.1) return "medium";
+  return "large";
+}
+
+function extractBaselineOpenings(baseline?: StructuralBaseline | null): BaselineOpenings {
+  if (!baseline || !Array.isArray(baseline.openings)) return { openings: [] };
+  return {
+    openings: baseline.openings.map((opening, index) => ({
+      id: String(opening.id || `opening_${index + 1}`),
+      type: toBaselineOpeningType(opening.type),
+      visibility: classifyBaselineVisibility(opening),
+      approximateLocation: classifyBaselineLocation(opening),
+      size: classifyBaselineSize(opening),
+    })),
+  };
+}
+
+function inferIssueTypeFromComparison(params: {
+  anyRemoved: boolean;
+  anyAlteredMajor: boolean;
+  anyRelocated: boolean;
+}): ValidationIssueType {
+  if (params.anyRemoved) return ISSUE_TYPES.OPENING_REMOVED;
+  if (params.anyAlteredMajor) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+  if (params.anyRelocated) return ISSUE_TYPES.OPENING_ANOMALY;
+  return ISSUE_TYPES.NONE;
+}
+
 function inferOpeningIssueType(params: {
   pass: boolean;
   hardFail: boolean;
@@ -109,25 +175,79 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     throw new Error("validator_error_invalid_json");
   }
 
-  if (typeof parsed?.ok !== "boolean") {
+  const passRaw = typeof parsed?.pass === "boolean"
+    ? parsed.pass
+    : typeof parsed?.ok === "boolean"
+      ? parsed.ok
+      : undefined;
+
+  if (typeof passRaw !== "boolean") {
     throw new Error("validator_error_invalid_schema");
   }
 
+  const details = Array.isArray(parsed?.details)
+    ? parsed.details.map((entry: any, idx: number) => ({
+        id: String(entry?.id || `opening_${idx + 1}`),
+        classification: String(entry?.classification || "unknown").toLowerCase(),
+        reason: String(entry?.reason || "").trim(),
+      }))
+    : [];
+
+  const anyRemoved = details.some((entry: any) => entry.classification === "removed") || String(parsed?.issueType || "") === "opening_removed";
+  const anyAlteredMajor = details.some((entry: any) => entry.classification === "altered") || String(parsed?.issueType || "") === "opening_altered";
+  const anyOccluded = details.some((entry: any) => entry.classification === "occluded");
+  const anyRelocated = details.some((entry: any) => entry.classification === "relocated") || /relocat/i.test(String(parsed?.reason || ""));
+
+  const issueType = inferIssueTypeFromComparison({
+    anyRemoved,
+    anyAlteredMajor,
+    anyRelocated,
+  });
+  const confidenceRaw = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
+  let confidence = clamp01(confidenceRaw);
+
+  if (anyRemoved) {
+    confidence = Math.max(0.9, confidence);
+  } else if (anyAlteredMajor) {
+    confidence = Math.max(0.8, Math.min(0.95, confidence || 0.85));
+  } else if (anyRelocated) {
+    confidence = Math.min(confidence || 0.6, 0.6);
+  }
+
+  // Occlusion alone is never a fail condition.
+  const pass = anyRemoved || anyAlteredMajor
+    ? false
+    : anyOccluded
+      ? true
+      : passRaw;
+
   const reason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
     ? parsed.reason.trim()
-    : parsed.ok ? "openings_preserved" : "openings_changed";
-  const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
-  const hardFail = parsed.ok ? false : confidence >= 0.85;
-  const advisorySignals = parsed.ok ? [] : [reason];
-  const issueType = inferOpeningIssueType({
-    pass: parsed.ok,
-    hardFail,
+    : pass
+      ? anyRelocated ? "openings_preserved_with_relocation_review" : "openings_preserved"
+      : anyRemoved
+        ? "opening_removed"
+        : "opening_altered";
+
+  const advisorySignals = pass
+    ? anyRelocated
+      ? ["opening_relocation_review"]
+      : []
+    : [reason];
+
+  const hardFail = !pass && (anyRemoved || anyAlteredMajor);
+  const comparisonResult = {
+    pass,
+    issueType,
+    confidence,
+    details,
     reason,
-    advisorySignals,
-  });
+  };
+
+  console.log("[OPENINGS_COMPARISON]", comparisonResult);
 
   return {
-    status: parsed.ok ? "pass" : "fail",
+    status: pass ? "pass" : "fail",
     reason,
     confidence,
     hardFail,
@@ -235,6 +355,9 @@ export async function runOpeningValidator(
   afterImageUrl: string,
   baseline?: StructuralBaseline | null
 ): Promise<OpeningValidatorResult> {
+  const baselineOpenings = extractBaselineOpenings(baseline || null);
+  console.log("[OPENINGS_BASELINE]", baselineOpenings);
+
   if (baseline && Array.isArray(baseline.openings) && baseline.openings.length > 0) {
     const deterministic = await validateOpeningPreservation(baseline, afterImageUrl);
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
@@ -315,18 +438,17 @@ export async function runOpeningValidator(
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
-      deterministic.summary.openingRelocated ||
       deterministic.summary.openingClassMismatch ||
       deterministic.summary.openingBandMismatch ||
-      relocationDetected ||
-      openingSizeReductionHardFail ||
-      strictDoorOcclusionFail ||
-      strictWindowOcclusionFail;
+      openingSizeReductionHardFail;
 
     const reasonParts: string[] = [];
     const advisorySignals: string[] = [];
     if (deterministic.summary.openingRemoved) reasonParts.push("opening_removed");
-    if (deterministic.summary.openingRelocated || relocationDetected) reasonParts.push("opening_relocated");
+    if (deterministic.summary.openingRelocated || relocationDetected) {
+      advisorySignals.push("opening_relocated_review");
+      reasonParts.push("opening_relocated_review");
+    }
     if (openingSizeReductionDetected || deterministic.summary.openingResized) {
       reasonParts.push("opening_resized");
       if (openingSizeReductionDetected && !openingSizeReductionHardFail && maxSizeReductionDelta > 0) {
@@ -341,29 +463,30 @@ export async function runOpeningValidator(
     if ((deterministic.summary as any).openingSignatureMismatch === true) {
       advisorySignals.push("opening_signature_mismatch");
     }
-    if (strictDoorOcclusionFail) reasonParts.push("door_or_closet_blocked");
-    if (strictWindowOcclusionFail) reasonParts.push("window_occlusion_exceeds_partial_threshold");
+    if (strictDoorOcclusionFail) advisorySignals.push("door_or_closet_occluded_review");
+    if (strictWindowOcclusionFail) advisorySignals.push("window_occlusion_review");
 
     const microCheckRisk =
       !hardFail && (
         openingSizeReductionHardFail ||
         deterministic.summary.openingResized ||
-        areaDelta >= 0.25 ||
-        strictWindowOcclusionFail ||
-        strictDoorOcclusionFail
+        areaDelta >= 0.25
       );
 
     if (microCheckRisk) {
       const micro = await runOpeningLightAnchorMicroCheck(beforeImageUrl, afterImageUrl);
       if (micro && micro.confidence >= 0.8 && (micro.openingInfilled || micro.openingRemoved || micro.openingRelocated)) {
-        hardFail = true;
-        reasonParts.push(
-          micro.openingInfilled
-            ? "light_anchor_opening_infilled"
-            : micro.openingRemoved
-              ? "light_anchor_opening_removed"
-              : "light_anchor_opening_relocated"
-        );
+        if (micro.openingInfilled || micro.openingRemoved) {
+          hardFail = true;
+          reasonParts.push(
+            micro.openingInfilled
+              ? "light_anchor_opening_infilled"
+              : "light_anchor_opening_removed"
+          );
+        } else {
+          advisorySignals.push("light_anchor_opening_relocated_review");
+          reasonParts.push("light_anchor_opening_relocated_review");
+        }
         advisorySignals.push(`light_anchor_microcheck_confidence:${micro.confidence.toFixed(3)}`);
         if (micro.analysis) {
           advisorySignals.push(`light_anchor_microcheck_analysis:${micro.analysis.replace(/\|/g, "/")}`);
@@ -373,17 +496,43 @@ export async function runOpeningValidator(
 
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
     const reason = reasonParts.join("|");
-    const issueType = inferOpeningIssueType({
+    const relocationOnly = !hardFail && (deterministic.summary.openingRelocated || relocationDetected);
+    const issueType = hardFail
+      ? inferOpeningIssueType({
+          pass: false,
+          hardFail,
+          reason,
+          advisorySignals,
+        })
+      : ISSUE_TYPES.NONE;
+    const comparisonResult = {
       pass: !hardFail,
-      hardFail,
+      issueType,
+      confidence: relocationOnly
+        ? Math.min(Number(deterministic.summary.confidence || 0), 0.6)
+        : Number(deterministic.summary.confidence || 0),
       reason,
-      advisorySignals,
-    });
+      details: baselineOpenings.openings.map((opening) => ({
+        id: opening.id,
+        classification: hardFail
+          ? reason.includes("opening_removed") || reason.includes("opening_infilled") || reason.includes("opening_sealed")
+            ? "removed"
+            : reason.includes("opening_size_reduction") || reason.includes("opening_resized")
+              ? "altered"
+              : "present"
+          : reason.includes("occlusion")
+            ? "occluded"
+            : "present",
+        reason,
+      })),
+    };
+
+    console.log("[OPENINGS_COMPARISON]", comparisonResult);
 
     return {
       status: hardFail ? "fail" : "pass",
       reason,
-      confidence: deterministic.summary.confidence,
+      confidence: comparisonResult.confidence,
       hardFail,
       issueType,
       issueTier: classifyIssueTier(issueType),
@@ -402,308 +551,63 @@ export async function runOpeningValidator(
     suspiciousOpeningGeometry: false,
   }));
 
-  let prompt = `You are validating whether two images represent the exact same physical room architecture.
-
-Compare the BASELINE image and the STAGED image.
-
-GLOBAL RULE
-The staged image must represent the exact same physical room architecture as the baseline image.
-Furniture, decor, and staging objects may change.
-Architectural structure may NOT change.
-
-OPENING RULE (CRITICAL)
-Treat windows, doors, sliding doors, closet doors, archways, balcony openings, and hallway openings as structural voids in wall planes.
-If an architectural opening exists in the baseline image, it must remain visible in the staged image in approximately the same size and position.
-
-Opening Verification Step (Required)
-First identify all architectural openings present in
-the baseline image.
-
-These may include:
-* windows
-* doors
-* closet doors
-* sliding doors
-* hallway openings
-* archways
-* balcony openings
-* passage openings
-
-For each opening identified in the baseline image,
-verify that the same opening still exists in the
-staged image.
-
-Opening inventory step (internal reasoning):
-Before making a decision, identify all architectural openings visible in the baseline image.
-
-Architectural openings include:
-windows, doors, sliding doors, closet doors, archways, balcony openings, and hallway openings.
-
-For each opening determine:
-* type (window, door, closet door, etc.)
-* approximate position on the wall (left/center/right or relative to wall corners)
-* approximate width relative to the wall
-* approximate height relative to the wall
-
-Then verify that each of those same openings still exists in the staged image in approximately the same location and size.
-
-Verification step:
-For each opening identified in the baseline inventory, explicitly verify whether the same opening is visible in the staged image.
-If any baseline opening cannot be located or is replaced by continuous wall surface, the staged image must fail.
-
-Missing Opening Rule
-If any baseline opening cannot be located in the
-staged image, the image must fail.
-
-An opening is considered missing if:
-* it is replaced by continuous wall surface
-* it is sealed, filled, or walled over
-* it disappears behind furniture with no visible
-  opening geometry remaining
-
-Opening invariant rule:
-If any architectural opening from the baseline inventory:
-* disappears
-* becomes continuous wall surface
-* becomes sealed or infilled
-* changes width or height significantly
-* relocates on the wall
-* is replaced by a different type of opening
-then set ok=false.
-
-Occlusion handling:
-Windows, doors, sliding doors, and closet openings may be partially occluded by furniture, decor, or curtains introduced during staging.
-This is acceptable if the opening frame, position, and surrounding wall geometry still indicate that the opening exists.
-Do NOT fail when an opening is partially hidden by furniture.
-Fail ONLY when the opening itself disappears structurally, becomes wall, is sealed, resized, or relocated.
-
-Occlusion Rule
-Furniture or decor may partially block an opening.
-
-However the opening must still be visually detectable
-in the wall geometry.
-
-Acceptable occlusion:
-* bed covering lower portion of a window
-* sofa partially covering doorway edge
-* decor partially blocking a closet door
-
-Unacceptable occlusion:
-* furniture completely covering the opening region
-* the opening cannot be located visually
-* the region appears as continuous flat wall
-
-If the baseline opening cannot be located because it is
-fully hidden by furniture or appears replaced by wall
-surface, assume the opening has been removed and
-return ok=false.
-
-PARTIAL OPENING DETECTION (CRITICAL)
-
-If any portion of a window frame, door frame, sliding door frame,
-or doorway opening is visible in the baseline image,
-the validator must treat the opening as present.
-
-Even if the opening is partially cropped by the camera frame,
-the visible portion of the opening must remain visible
-in the staged image.
-
-If the visible edges of that opening disappear,
-or are replaced by continuous wall surface,
-the opening has been removed and the image must fail.
-
-Do NOT assume the rest of the opening exists outside the frame.
-
-EDGE-FRAME OPENING DETECTION (CRITICAL)
-
-Architectural openings may appear partially at the edge of the camera frame.
-
-If any portion of a window frame, door frame, sliding door frame,
-or doorway boundary touches the image edge in the baseline image,
-the validator must treat this as evidence that the opening continues
-outside the camera view.
-
-The validator must assume the opening extends beyond the frame
-unless strong evidence proves otherwise.
-
-Edge indicators of an opening include:
-
-* vertical door frame touching the image edge
-* horizontal window sill touching the image edge
-* partial closet door frame cut off by the camera border
-* doorway trim partially visible at the image boundary
-* visible opening depth leading into another space
-
-If these edge indicators exist in the baseline image,
-the staged image must preserve the same visible boundary.
-
-Return ok=false if:
-
-* the edge frame disappears
-* the edge frame becomes continuous wall
-* the opening boundary becomes flat wall surface
-* the visible edge of the opening shrinks or is replaced by furniture
-
-Do NOT assume the opening disappears simply because
-the camera cropped it.
-
-If the baseline shows frame evidence at the image edge,
-the staged image must show the same frame evidence.
-
-OPENING BOUNDARY PRESERVATION
-
-For every architectural opening detected in the baseline image
-(window, door, closet door, sliding door, hallway opening):
-
-1. Identify the visible edges of the opening.
-2. Compare those edges in the staged image.
-
-Return ok=false if any of the following occur:
-
-* opening edges disappear
-* opening edges move closer together
-* wall surface replaces part of the opening
-* the opening width decreases
-* the opening height decreases
-* the opening shape changes
-
-All architectural openings must preserve their visible boundaries.
-
-VERTICAL EDGE INVARIANT (CRITICAL)
-
-For each doorway-like opening (door, closet door, sliding door, walkthrough),
-identify the left and right vertical boundary lines in BASELINE.
-
-If any required vertical boundary line terminates, fades into, or disappears
-into continuous flat wall surface in STAGED, treat this as infill/removal
-and return ok=false.
-
-If a doorway appears partially hidden but no vertical frame boundary remains
-visible on either side, this is NOT valid occlusion. It is structural removal.
-
-WINDOW GEOMETRY PRESERVATION (CRITICAL)
-
-If a window is visible in the baseline image,
-its approximate width and height relative to the wall
-must remain consistent.
-
-Fail the validation if the staged image shows:
-
-* window width reduced
-* window height reduced
-* window geometry altered
-* window edges moved closer together
-* window converted into a narrow slot window
-* window partially replaced by wall surface
-* window shape materially altered
-
-Even moderate reductions in window width or height
-should be treated as structural modification.
-
-Furniture placement must NEVER cause windows to shrink.
-
-FURNITURE OCCLUSION RULE
-
-Furniture may partially block an opening,
-but it must not alter the geometry of the opening.
-
-If furniture appears to reduce the visible size
-of a window or doorway, assume the opening
-has been structurally modified.
-
-In this situation return ok=false.
-
-STRICT OCCLUSION POLICY (MANDATORY)
-
-- Full occlusion of any opening (window, door, closet door, walkthrough) = FAIL.
-- Occlusion by artwork, wall art, mirrors, decor objects, or decorative panels = FAIL.
-- Partial occlusion by large furniture is allowed ONLY for windows.
-- Partial occlusion of doors, closet doors, sliding doors, or walkthrough openings by furniture = FAIL.
-- Even when partial window occlusion is present, the opening must remain clearly visible and fully functional.
-
-OCCLUSION VS REPLACEMENT (MANDATORY)
-
-Furniture or artwork may sit IN FRONT of an opening, but must never become
-the wall itself.
-
-If an object is flush against a region that was an opening in BASELINE,
-and the frame/boundary of that opening is no longer visible on any side
-of the object, this is replacement/infill, not occlusion.
-
-In that case return ok=false.
-
-SPATIAL ANCHOR VALIDATION (MANDATORY)
-
-Use stable structural openings as anchors (for example a sliding glass door,
-large exterior window, or fixed doorway).
-
-Compare relative spacing from those anchors to nearby openings.
-If anchor-to-opening spacing increases because an intermediate opening
-disappears or becomes wall, return ok=false.
-
-Do not excuse this as perspective drift when anchor geometry is preserved.
-
-GLOBAL LIGHT ANCHOR (MANDATORY)
-
-Identify the primary external light-source opening in BASELINE
-(for example a sliding glass door or dominant exterior window).
-
-If that region in STAGED is no longer a penetrative opening and appears as:
-- continuous wall,
-- wall-mounted decor/artwork,
-- or an artificial light source substitute (lamp/sconce),
-then this is opening infill/removal and must FAIL.
-
-An opening is not validly occluded when the wall plane behind foreground
-objects becomes continuous and opaque across the previous opening boundary.
-
-LEFT-TO-RIGHT OPENING SEQUENCE (MANDATORY)
-
-For each visible wall, compare architectural token order from left to right.
-Example tokenization:
-BEFORE: [Sliding Door] -> [Wall + AC] -> [Internal Doorway] -> [Corner]
-AFTER:  [Solid Wall]   -> [Wall + AC] -> [Internal Doorway] -> [Corner]
-
-If the ordered sequence changes because an opening token is replaced by
-continuous wall, return ok=false.
-
-Closet-door strictness:
-Closet doors/openings may not disappear or be replaced by wall surface.
-Any occlusion by artwork or decor is not allowed.
-Large furniture covering any meaningful part of a closet opening should be treated as suspicious and fail unless the closet opening remains clearly and fully evidenced.
-
-Set ok=false if ANY opening or built-in invariant is violated:
-* window opening removed, added, resized, relocated, blocked, sealed, or infilled
-* window opening replaced by continuous wall surface
-* door/sliding-door opening removed, added, resized, relocated, sealed, or walled over
-* closet door or closet opening removed, added, resized, relocated, sealed, hidden by walling, or replaced by flat wall
-* doorway/archway/hallway opening disappears or becomes wall
-* any baseline opening disappears or is materially transformed into solid wall
-* built-ins moved/resized/removed/added (built-in cabinetry, kitchen islands, fireplaces, wall shelving, recessed wall units)
-
-Perspective/cropping differences are allowed ONLY when all baseline openings remain present and consistent.
-
-Ignore:
-* movable furniture/decor changes
-* lighting/color/rendering differences
-* temporary occlusions caused by staging objects when opening geometry is still clearly preserved
-
+  let prompt = `You are a structural validation system.
+
+Your task is to verify that ALL architectural openings from a baseline image are preserved in a staged image.
+
+You are given:
+1) The baseline image
+2) The staged image
+3) A structured list of baseline openings
+
+BASELINE_OPENINGS_JSON:
+${JSON.stringify(baselineOpenings)}
+
+You MUST follow this exact process:
+
+STEP 1 - PER-OPENING VERIFICATION
+For EACH opening in the baseline list:
+1) Locate the opening in the staged image using approximate position and surrounding structure.
+2) Classify as ONE of:
+- PRESENT: clearly visible and intact
+- OCCLUDED: partially blocked by furniture but still exists
+- ALTERED: size, shape, or proportions changed
+- REMOVED: cannot be identified or replaced by wall/structure
+
+STEP 2 - CONTINUITY CHECK
+For EACH opening ask:
+"Does a continuous opening path still exist where this opening was?"
+If NO, classify as REMOVED even if visually ambiguous.
+
+STEP 3 - RELOCATION RULE
+ONLY classify as RELOCATED if:
+- opening clearly exists in a different location
+- AND original location no longer contains the opening
+
+DO NOT classify as relocated when opening is partially occluded, perspective changed, or furniture overlaps the opening.
+If uncertain, DO NOT use RELOCATED.
+
+STEP 4 - FINAL DECISION
+Rules:
+- ANY REMOVED -> FAIL (CRITICAL)
+- ANY ALTERED (major) -> FAIL (CRITICAL)
+- OCCLUDED -> PASS
+- PRESENT -> PASS
+
+Do NOT assume an opening exists unless clearly visible.
+If an opening cannot be confirmed, treat as REMOVED.
+
+STEP 5 - OUTPUT FORMAT
 Return JSON only:
 {
-  "ok": true|false,
-  "reason": "short explanation",
-  "confidence": 0.0-1.0,
-  "openingRemoved": true|false,
-  "openingRelocated": true|false,
-  "openingInfilled": true|false,
-  "openingResized": true|false,
-  "analysis": "short structural analysis",
-  "openingCount": { "before": number, "after": number },
-  "detectedOpenings": [
+  "pass": boolean,
+  "issueType": "opening_removed" | "opening_altered" | "none",
+  "confidence": number,
+  "details": [
     {
-      "type": "window|door|closet_door|walkthrough|unknown",
-      "position": "brief location text",
-      "status": "preserved|occluded|removed|infilled|relocated|resized"
+      "id": "...",
+      "classification": "present|occluded|altered|removed",
+      "reason": "..."
     }
   ]
 }`;
@@ -720,8 +624,8 @@ Focus specifically on:
 - whether wall surfaces have expanded into former openings
 
 If any opening appears reduced, expanded, or reshaped:
-→ return passed=false
-→ failReasons=["opening_geometry_changed"]`;
+→ set pass=false
+→ set issueType="opening_altered"`;
   }
 
   const runWithModel = async (model: string): Promise<OpeningValidatorResult> => {

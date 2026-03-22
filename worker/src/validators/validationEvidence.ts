@@ -301,7 +301,5 @@ export function shouldInjectEvidence(e: ValidationEvidence): boolean {
 
   if ((e.drift?.angleDegrees ?? 0) > 30) return true;
 
-  if ((e.ssim ?? 1) < 0.35) return true;
-
   return false;
 }

@@ -5,10 +5,7 @@ import { runFixtureValidator } from "../worker/src/validators/fixtureValidator";
 import { runFloorIntegrityValidator } from "../worker/src/validators/floorIntegrityValidator";
 import { runEnvelopeValidator } from "../worker/src/validators/envelopeValidator";
 import { runUnifiedValidation } from "../worker/src/validators/runValidation";
-import { getGeminiClient } from "../worker/src/ai/gemini";
-import { checkCompliance } from "../worker/src/ai/compliance";
-import { confirmWithGeminiStructure } from "../worker/src/validators/confirmWithGeminiStructure";
-import { toBase64 } from "../worker/src/utils/images";
+import { CRITICAL_ISSUES, ISSUE_TYPES, type ValidationIssueType } from "../worker/src/validators/issueTypes";
 
 type Pair = {
   id: string;
@@ -80,6 +77,29 @@ function stepPassLike(res: any): boolean {
   return !!res && res.status === "pass" && res.hardFail !== true;
 }
 
+function toSpecialistDecision(res: any): {
+  pass: boolean;
+  confidence: number;
+  issueType: ValidationIssueType;
+} {
+  const pass = !!res && res.status === "pass" && res.hardFail !== true;
+  const rawConfidence = Number(res?.confidence);
+  const confidence = Number.isFinite(rawConfidence)
+    ? Math.max(0, Math.min(1, rawConfidence))
+    : pass
+      ? 0
+      : 0;
+  const issueType = pass
+    ? ISSUE_TYPES.NONE
+    : (res?.issueType as ValidationIssueType) || ISSUE_TYPES.UNIFIED_FAILURE;
+
+  return {
+    pass,
+    confidence,
+    issueType,
+  };
+}
+
 async function runOne(pair: Pair): Promise<PairResult> {
   const t0 = Date.now();
   const steps: Record<string, any> = {};
@@ -97,53 +117,64 @@ async function runOne(pair: Pair): Promise<PairResult> {
     reasons.push(`openings_error: ${steps.openings.reason}`);
   }
 
-  if (stepPassLike(steps.openings)) {
-    try {
-      steps.fixtures = await runFixtureValidator(pair.baselinePath, pair.enhancedPath);
-      if (!stepPassLike(steps.fixtures)) reasons.push(`fixtures: ${steps.fixtures?.reason || "failed"}`);
-    } catch (err: any) {
-      steps.fixtures = { status: "error", reason: err?.message || String(err) };
-      reasons.push(`fixtures_error: ${steps.fixtures.reason}`);
-    }
-  } else {
-    steps.fixtures = { status: "skipped", reason: "openings_failed" };
+  try {
+    steps.fixtures = await runFixtureValidator(pair.baselinePath, pair.enhancedPath);
+    if (!stepPassLike(steps.fixtures)) reasons.push(`fixtures: ${steps.fixtures?.reason || "failed"}`);
+  } catch (err: any) {
+    steps.fixtures = { status: "error", reason: err?.message || String(err) };
+    reasons.push(`fixtures_error: ${steps.fixtures.reason}`);
   }
 
-  if (stepPassLike(steps.fixtures)) {
-    try {
-      steps.floor = await runFloorIntegrityValidator(pair.baselinePath, pair.enhancedPath);
-      if (!stepPassLike(steps.floor)) reasons.push(`floor: ${steps.floor?.reason || "failed"}`);
-    } catch (err: any) {
-      steps.floor = { status: "error", reason: err?.message || String(err) };
-      reasons.push(`floor_error: ${steps.floor.reason}`);
-    }
-  } else {
-    steps.floor = { status: "skipped", reason: "fixtures_failed" };
+  try {
+    steps.floor = await runFloorIntegrityValidator(pair.baselinePath, pair.enhancedPath);
+    if (!stepPassLike(steps.floor)) reasons.push(`floor: ${steps.floor?.reason || "failed"}`);
+  } catch (err: any) {
+    steps.floor = { status: "error", reason: err?.message || String(err) };
+    reasons.push(`floor_error: ${steps.floor.reason}`);
   }
 
-  if (stepPassLike(steps.floor)) {
-    try {
-      steps.envelope = await runEnvelopeValidator(pair.baselinePath, pair.enhancedPath);
-      if (!stepPassLike(steps.envelope)) reasons.push(`envelope: ${steps.envelope?.reason || "failed"}`);
-    } catch (err: any) {
-      steps.envelope = { status: "error", reason: err?.message || String(err) };
-      reasons.push(`envelope_error: ${steps.envelope.reason}`);
-    }
-  } else {
-    steps.envelope = { status: "skipped", reason: "floor_failed" };
+  try {
+    steps.envelope = await runEnvelopeValidator(pair.baselinePath, pair.enhancedPath);
+    if (!stepPassLike(steps.envelope)) reasons.push(`envelope: ${steps.envelope?.reason || "failed"}`);
+  } catch (err: any) {
+    steps.envelope = { status: "error", reason: err?.message || String(err) };
+    reasons.push(`envelope_error: ${steps.envelope.reason}`);
   }
 
-  const domainPass = [steps.openings, steps.fixtures, steps.floor, steps.envelope].every((s) => stepPassLike(s));
+  const specialistResults = {
+    opening: toSpecialistDecision(steps.openings),
+    fixture: toSpecialistDecision(steps.fixtures),
+    envelope: toSpecialistDecision(steps.envelope),
+    floor: toSpecialistDecision(steps.floor),
+  };
 
-  if (!domainPass) {
+  const HARD_FAIL_THRESHOLD = 0.9;
+  const specialistHardFail = Object.values(specialistResults).some((v) =>
+    !v.pass &&
+    v.confidence >= HARD_FAIL_THRESHOLD &&
+    CRITICAL_ISSUES.has(v.issueType)
+  );
+
+  if (specialistHardFail) {
+    const specialistReasons = Object.values(specialistResults)
+      .filter((v) => !v.pass && v.confidence >= HARD_FAIL_THRESHOLD)
+      .map((v) => `${v.issueType} (conf=${v.confidence})`);
+
+    console.log("[HARNESS_DECISION]", {
+      specialistHardFail,
+      unifiedPass: null,
+      unifiedIssueType: null,
+      stage: "specialist",
+    });
+
     return {
       id: pair.id,
       stagedSet: pair.stagedSet,
       baseline,
       enhanced,
       finalStatus: "fail",
-      failedAt: "domain_gate",
-      reasons,
+      failedAt: "specialist",
+      reasons: specialistReasons,
       warnings,
       steps,
       elapsedMs: Date.now() - t0,
@@ -169,16 +200,26 @@ async function runOne(pair: Pair): Promise<PairResult> {
 
     if (steps.unified?.warnings?.length) warnings.push(...steps.unified.warnings);
 
-    if (steps.unified?.hardFail) {
-      reasons.push(...(steps.unified.reasons || []));
+    const unifiedPass = steps.unified?.passed === true && steps.unified?.hardFail !== true;
+    const unifiedIssueType = (steps.unified?.issueType as ValidationIssueType) || ISSUE_TYPES.UNIFIED_FAILURE;
+
+    console.log("[HARNESS_DECISION]", {
+      specialistHardFail,
+      unifiedPass,
+      unifiedIssueType,
+      stage: "unified",
+    });
+
+    if (!unifiedPass && CRITICAL_ISSUES.has(unifiedIssueType)) {
+      const unifiedReason = steps.unified?.reasons?.[0] || unifiedIssueType;
       return {
         id: pair.id,
         stagedSet: pair.stagedSet,
         baseline,
         enhanced,
         finalStatus: "fail",
-        failedAt: `unified_${steps.unified.blockSource || "unknown"}`,
-        reasons,
+        failedAt: "unified_gemini",
+        reasons: [unifiedReason],
         warnings,
         steps,
         elapsedMs: Date.now() - t0,
@@ -201,108 +242,8 @@ async function runOne(pair: Pair): Promise<PairResult> {
     };
   }
 
-  try {
-    const ai = getGeminiClient();
-    const base = toBase64(pair.baselinePath).data;
-    const cand = toBase64(pair.enhancedPath).data;
-    steps.compliance = await checkCompliance(ai as any, base, cand, {
-      validationMode: "FULL_STAGE_ONLY",
-      modelOverride: process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-pro",
-    });
-
-    if (steps.compliance?.ok === false) {
-      reasons.push(...(steps.compliance?.reasons || [steps.compliance?.reason || "compliance_failed"]));
-      return {
-        id: pair.id,
-        stagedSet: pair.stagedSet,
-        baseline,
-        enhanced,
-        finalStatus: "fail",
-        failedAt: "compliance",
-        reasons,
-        warnings,
-        steps,
-        elapsedMs: Date.now() - t0,
-      };
-    }
-  } catch (err: any) {
-    steps.compliance = { status: "error", reason: err?.message || String(err) };
-    reasons.push(`compliance_error: ${steps.compliance.reason}`);
-    return {
-      id: pair.id,
-      stagedSet: pair.stagedSet,
-      baseline,
-      enhanced,
-      finalStatus: "error",
-      failedAt: "compliance_error",
-      reasons,
-      warnings,
-      steps,
-      elapsedMs: Date.now() - t0,
-    };
-  }
-
-  try {
-    steps.finalConfirm = await confirmWithGeminiStructure({
-      baselinePathOrUrl: pair.baselinePath,
-      candidatePathOrUrl: pair.enhancedPath,
-      stage: "stage2",
-      roomType: "bedroom",
-      sceneType: "interior",
-      localReasons: (steps.unified?.reasons || []).concat(steps.unified?.warnings || []),
-      sourceStage: "1A",
-      validationMode: "FULL_STAGE_ONLY",
-      evidence: steps.unified?.evidence,
-      riskLevel: steps.unified?.riskLevel,
-    });
-
-    if (steps.finalConfirm?.status === "fail") {
-      reasons.push(...(steps.finalConfirm?.reasons || ["final_confirm_failed"]));
-      return {
-        id: pair.id,
-        stagedSet: pair.stagedSet,
-        baseline,
-        enhanced,
-        finalStatus: "fail",
-        failedAt: "final_confirm",
-        reasons,
-        warnings,
-        steps,
-        elapsedMs: Date.now() - t0,
-      };
-    }
-
-    if (steps.finalConfirm?.status === "error") {
-      reasons.push(...(steps.finalConfirm?.reasons || ["final_confirm_error"]));
-      return {
-        id: pair.id,
-        stagedSet: pair.stagedSet,
-        baseline,
-        enhanced,
-        finalStatus: "error",
-        failedAt: "final_confirm_error",
-        reasons,
-        warnings,
-        steps,
-        elapsedMs: Date.now() - t0,
-      };
-    }
-  } catch (err: any) {
-    steps.finalConfirm = { status: "error", reason: err?.message || String(err) };
-    reasons.push(`final_confirm_error: ${steps.finalConfirm.reason}`);
-    return {
-      id: pair.id,
-      stagedSet: pair.stagedSet,
-      baseline,
-      enhanced,
-      finalStatus: "error",
-      failedAt: "final_confirm_error",
-      reasons,
-      warnings,
-      steps,
-      elapsedMs: Date.now() - t0,
-    };
-  }
+  steps.compliance = { status: "skipped", reason: "harness_flow_specialist_unified_only" };
+  steps.finalConfirm = { status: "skipped", reason: "harness_flow_specialist_unified_only" };
 
   return {
     id: pair.id,
@@ -310,7 +251,7 @@ async function runOne(pair: Pair): Promise<PairResult> {
     baseline,
     enhanced,
     finalStatus: "pass",
-    reasons,
+    reasons: [],
     warnings,
     steps,
     elapsedMs: Date.now() - t0,

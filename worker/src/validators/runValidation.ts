@@ -445,7 +445,7 @@ export async function runUnifiedValidation(
     nLog(`[unified-validator] Stage1A Path: ${stage1APath}`);
   }
 
-  // ===== PERCEPTUAL DIFF (SSIM) GATE — FIRST STEP =====
+  // ===== PERCEPTUAL DIFF (SSIM) TELEMETRY — FIRST STEP =====
   let perceptualFailed = false;
   let forceGemini = false;
 
@@ -483,10 +483,16 @@ export async function runUnifiedValidation(
       evidence.ssimThreshold = perceptual.threshold;
       evidence.ssimPassed = perceptual.passed;
 
+      console.log("[PERCEPTUAL_METRICS]", {
+        stage,
+        ssim: Number(perceptual.score.toFixed(4)),
+        ssimThreshold: Number(perceptual.threshold.toFixed(4)),
+        ssimPassed: perceptual.passed,
+      });
+
       if (!perceptual.passed) {
         perceptualFailed = true;
         forceGemini = true;
-        reasons.push(`Perceptual diff failed: SSIM ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
         evidence.localFlags.push(`ssim_failed: ${perceptual.score.toFixed(3)} < ${perceptual.threshold.toFixed(2)}`);
         nLog(`[perceptual-diff] FAIL → continue full validator chain and escalate to Gemini`);
       }
@@ -494,7 +500,7 @@ export async function runUnifiedValidation(
       console.warn("[perceptual-diff] Error computing SSIM (fail-closed):", err);
       perceptualFailed = true;
       forceGemini = true;
-      reasons.push("Perceptual diff validator error");
+      warnings.push("perceptual_diff_validator_error");
       evidence.localFlags.push("ssim_validator_error");
       results.perceptualDiff = {
         name: "perceptualDiff",

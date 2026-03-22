@@ -1,0 +1,3962 @@
+{
+  "summary": {
+    "total": 18,
+    "pass": 0,
+    "fail": 18,
+    "error": 0,
+    "bySet": {
+      "Bedroom (Staged)": {
+        "total": 9,
+        "pass": 0,
+        "fail": 9,
+        "error": 0
+      },
+      "Bedroom (Staged 2)": {
+        "total": 9,
+        "pass": 0,
+        "fail": 9,
+        "error": 0
+      }
+    },
+    "elapsedMs": 23594
+  },
+  "results": [
+    {
+      "id": "02",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.618 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.344,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.618 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.133 < 0.6",
+            "Structural IoU too low: 0.055 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.6179694545375461,
+              "message": "SSIM 0.618 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.6179694545375461,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.13265894983038634,
+              "message": "Edge IoU: 0.133 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.13265894983038634,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.054835437330928764,
+              "message": "Structural IoU: 0.055 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.054835437330928764,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 74819,
+                  "intersectionPixels": 973,
+                  "unionPixels": 17744
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.639,
+              "message": "✓ Structural validation passed (score: 0.639, elapsed: 21ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 30905,
+                "enhancedEdgeCount": 54102,
+                "edgeOverlap": 0.223,
+                "linePreservation": 1.5
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.09505784342660129,
+                  "islandEdgeClusterDrift": 0.8527870414483087,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.060953776041666664,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 0.8527870414483087,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-02",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.6179694545375461,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 86.73410501696137,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.618 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.618 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.133 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.055 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3443298524050146,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 86.7% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1446
+    },
+    {
+      "id": "02",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.633 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.344,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.633 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.123 < 0.6",
+            "Structural IoU too low: 0.082 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.6330951201685004,
+              "message": "SSIM 0.633 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.6330951201685004,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.12281002914811293,
+              "message": "Edge IoU: 0.123 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.12281002914811293,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.08160453188394702,
+              "message": "Structural IoU: 0.082 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.08160453188394702,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 74819,
+                  "intersectionPixels": 1066,
+                  "unionPixels": 13063
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.587,
+              "message": "✓ Structural validation passed (score: 0.587, elapsed: 30ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 30905,
+                "enhancedEdgeCount": 48345,
+                "edgeOverlap": 0.219,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.011870418913963267,
+                  "islandEdgeClusterDrift": 0.7326315789473684,
+                  "islandRectMassDelta": 0.06640625,
+                  "islandMidToneDelta": 0.0032958984375,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.06640625,
+                  "islandMaskedEdgeDrift": 0.7326315789473684,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.1055684694617796
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-02",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.6330951201685004,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 87.7189970851887,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.633 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.633 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.123 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.082 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3440770201860517,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 87.7% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1421
+    },
+    {
+      "id": "03",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 03.jpg",
+      "enhanced": "Bedroom 03 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.360 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.42,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.360 < 0.97",
+            "Window validation failed: window_count_change",
+            "Global edge IoU too low: 0.284 < 0.6",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.36049700138058627,
+              "message": "SSIM 0.360 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.36049700138058627,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 342
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_count_change",
+              "details": {
+                "ok": false,
+                "reason": "window_count_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.28438635302713566,
+              "message": "Edge IoU: 0.284 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.28438635302713566,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.46235525270682665,
+              "message": "Structural IoU: 0.462 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.46235525270682665,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1024,
+                  "baseHeight": 683,
+                  "candWidth": 1024,
+                  "candHeight": 683,
+                  "dimensionMismatch": false,
+                  "maskPixels": 84937,
+                  "intersectionPixels": 33180,
+                  "unionPixels": 71763
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.683,
+              "message": "✓ Structural validation passed (score: 0.683, elapsed: 12ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 37567,
+                "enhancedEdgeCount": 56134,
+                "edgeOverlap": 0.333,
+                "linePreservation": 1.333
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.10530214840726787,
+                  "islandEdgeClusterDrift": 0.3654135338345865,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.10083150584795321,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.75,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.3654135338345865,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.06830145305154964
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-03",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.36049700138058627,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 71.56136469728644,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.360 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.360 (threshold 0.97)",
+              "windows: window_count_change",
+              "globalEdge: Edge IoU: 0.284 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.4197483510707093,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 71.6% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 783
+    },
+    {
+      "id": "04",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 04.jpg",
+      "enhanced": "Bedroom 04 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.398 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.322,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.398 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.076 < 0.6",
+            "Structural IoU too low: 0.070 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.39778322385411474,
+              "message": "SSIM 0.398 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.39778322385411474,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 288
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.07647915004473584,
+              "message": "Edge IoU: 0.076 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.07647915004473584,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.07030326900354471,
+              "message": "Structural IoU: 0.070 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.07030326900354471,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1344,
+                  "baseHeight": 768,
+                  "candWidth": 1344,
+                  "candHeight": 768,
+                  "dimensionMismatch": false,
+                  "maskPixels": 42415,
+                  "intersectionPixels": 357,
+                  "unionPixels": 5078
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.673,
+              "message": "✓ Structural validation passed (score: 0.673, elapsed: 10ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 14427,
+                "enhancedEdgeCount": 42623,
+                "edgeOverlap": 0.184,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.2545002015750807,
+                  "islandEdgeClusterDrift": 1.1652688702516034,
+                  "islandRectMassDelta": 0.01171875,
+                  "islandMidToneDelta": 0.011500218531468532,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0.01171875,
+                  "islandMaskedEdgeDrift": 1.1652688702516034,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.03211291735953211
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-04",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.39778322385411474,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 92.35208499552641,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.398 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.398 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.076 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.070 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3220290051625563,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 92.4% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1640
+    },
+    {
+      "id": "05",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 05.jpg",
+      "enhanced": "Bedroom 05 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.583 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.363,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.583 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.179 < 0.6",
+            "Structural IoU too low: 0.112 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5834822209635785,
+              "message": "SSIM 0.583 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5834822209635785,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 288
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.17919028019445202,
+              "message": "Edge IoU: 0.179 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.17919028019445202,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.11235620785402618,
+              "message": "Structural IoU: 0.112 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.11235620785402618,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1344,
+                  "baseHeight": 768,
+                  "candWidth": 1344,
+                  "candHeight": 768,
+                  "dimensionMismatch": false,
+                  "maskPixels": 59316,
+                  "intersectionPixels": 1133,
+                  "unionPixels": 10084
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.685,
+              "message": "✓ Structural validation passed (score: 0.685, elapsed: 11ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 27983,
+                "enhancedEdgeCount": 45464,
+                "edgeOverlap": 0.337,
+                "linePreservation": 3
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.3603014975792107,
+                  "islandEdgeClusterDrift": 1.528205128205128,
+                  "islandRectMassDelta": 0.05859375,
+                  "islandMidToneDelta": 0.1081271701388889,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0.05859375,
+                  "islandMaskedEdgeDrift": 1.528205128205128,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.0838800136509807
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-05",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5834822209635785,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 82.08097198055479,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.583 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.583 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.179 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.112 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3626312664217112,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 82.1% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1296
+    },
+    {
+      "id": "06",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.445 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.372,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.445 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.237 < 0.6",
+            "Structural IoU too low: 0.173 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.44486417829606645,
+              "message": "SSIM 0.445 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.44486417829606645,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.23672641005644732,
+              "message": "Edge IoU: 0.237 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.23672641005644732,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.1728395061728395,
+              "message": "Structural IoU: 0.173 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.1728395061728395,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 78134,
+                  "intersectionPixels": 224,
+                  "unionPixels": 1296
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.702,
+              "message": "✓ Structural validation passed (score: 0.702, elapsed: 15ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 36494,
+                "enhancedEdgeCount": 58728,
+                "edgeOverlap": 0.254,
+                "linePreservation": 3
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.0706472810034267,
+                  "islandEdgeClusterDrift": 0.6154727793696274,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.06573486328125,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 0.6154727793696274,
+                  "hvacRegionDrift": 0.2752293577981652,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-06",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.44486417829606645,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 76.32735899435527,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.445 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.445 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.237 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.173 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.37216633422955325,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 76.3% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 2122
+    },
+    {
+      "id": "06",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.428 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "stage2_direct_advisory: anchor_hvac_changed"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.361,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.428 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.221 < 0.6",
+            "Structural IoU too low: 0.139 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "stage2_direct_advisory: anchor_hvac_changed"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.4283930591160395,
+              "message": "SSIM 0.428 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.4283930591160395,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.22133571472599703,
+              "message": "Edge IoU: 0.221 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.22133571472599703,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.13927125506072874,
+              "message": "Structural IoU: 0.139 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.13927125506072874,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 78134,
+                  "intersectionPixels": 172,
+                  "unionPixels": 1235
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.682,
+              "message": "✓ Structural validation passed (score: 0.682, elapsed: 14ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 36494,
+                "enhancedEdgeCount": 38336,
+                "edgeOverlap": 0.206,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed, anchor:hvac_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": true,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.06528102553274129,
+                  "islandEdgeClusterDrift": 0.5937136204889406,
+                  "islandRectMassDelta": 0.12109375,
+                  "islandMidToneDelta": 0.09120686848958333,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.12109375,
+                  "islandMaskedEdgeDrift": 0.5937136204889406,
+                  "hvacRegionDrift": 0.6553672316384181,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-06",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.4283930591160395,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 77.8664285274003,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": true,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.428 < 0.97",
+              "anchor:island_changed",
+              "anchor:hvac_changed",
+              "perceptualDiff: SSIM 0.428 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.221 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.139 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3609672498907908,
+            "unifiedPassed": false
+          },
+          "riskLevel": "HIGH",
+          "riskTriggers": [
+            "HIGH: HVAC/heat pump anchor changed",
+            "HIGH: local validator flagged structural issue"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1955
+    },
+    {
+      "id": "07",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.477 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.336,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.477 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.080 < 0.6",
+            "Structural IoU too low: 0.121 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "stage2_direct_advisory: anchor_cabinetry_changed"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.476540425089504,
+              "message": "SSIM 0.477 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.476540425089504,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.07995540727746674,
+              "message": "Edge IoU: 0.080 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.07995540727746674,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.12117283108138847,
+              "message": "Structural IoU: 0.121 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.12117283108138847,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 800,
+                  "baseHeight": 600,
+                  "candWidth": 800,
+                  "candHeight": 600,
+                  "dimensionMismatch": false,
+                  "maskPixels": 65430,
+                  "intersectionPixels": 5327,
+                  "unionPixels": 43962
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.656,
+              "message": "✓ Structural validation passed (score: 0.656, elapsed: 13ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.9,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 30895,
+                "enhancedEdgeCount": 51229,
+                "edgeOverlap": 0.14,
+                "linePreservation": 1.5
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed, anchor:cabinetry_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": true,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.034673817213453854,
+                  "islandEdgeClusterDrift": 1.8702460850111857,
+                  "islandRectMassDelta": 0.041666666666666685,
+                  "islandMidToneDelta": 0.03277587890625,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.041666666666666685,
+                  "islandMaskedEdgeDrift": 1.8702460850111857,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 1,
+                  "lightingPositionDrift": 0.057607726859081755
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-07",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.476540425089504,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 92.00445927225333,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": true,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.477 < 0.97",
+              "anchor:island_changed",
+              "anchor:cabinetry_changed",
+              "perceptualDiff: SSIM 0.477 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.080 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.121 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3362330751506011,
+            "unifiedPassed": false
+          },
+          "riskLevel": "HIGH",
+          "riskTriggers": [
+            "HIGH: cabinetry anchor changed",
+            "HIGH: local validator flagged structural issue"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 508
+    },
+    {
+      "id": "07",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.373 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.356,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.373 < 0.97",
+            "Window validation failed: window_count_change",
+            "Global edge IoU too low: 0.122 < 0.6",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "stage2_direct_advisory: anchor_cabinetry_changed"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.373265321870239,
+              "message": "SSIM 0.373 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.373265321870239,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_count_change",
+              "details": {
+                "ok": false,
+                "reason": "window_count_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.12155549489690619,
+              "message": "Edge IoU: 0.122 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.12155549489690619,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.25613705212577037,
+              "message": "Structural IoU: 0.256 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.25613705212577037,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 800,
+                  "baseHeight": 600,
+                  "candWidth": 800,
+                  "candHeight": 600,
+                  "dimensionMismatch": false,
+                  "maskPixels": 65430,
+                  "intersectionPixels": 12260,
+                  "unionPixels": 47865
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.642,
+              "message": "✓ Structural validation passed (score: 0.642, elapsed: 15ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0.5,
+                "originalEdgeCount": 30895,
+                "enhancedEdgeCount": 65812,
+                "edgeOverlap": 0.167,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed, anchor:cabinetry_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": true,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.08502170454130967,
+                  "islandEdgeClusterDrift": 1.9011082693947143,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.02001953125,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 1.9011082693947143,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0.75,
+                  "lightingPositionDrift": 0.03447197795617676
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-07",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.373265321870239,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 87.84445051030939,
+              "angleDegrees": 0.5
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": true,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.373 < 0.97",
+              "anchor:island_changed",
+              "anchor:cabinetry_changed",
+              "perceptualDiff: SSIM 0.373 (threshold 0.97)",
+              "windows: window_count_change",
+              "globalEdge: Edge IoU: 0.122 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.3558875346596327,
+            "unifiedPassed": false
+          },
+          "riskLevel": "HIGH",
+          "riskTriggers": [
+            "HIGH: cabinetry anchor changed",
+            "HIGH: local validator flagged structural issue"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 578
+    },
+    {
+      "id": "09",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 09.jpg",
+      "enhanced": "Bedroom 09 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.490 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.384,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.490 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.272 < 0.6",
+            "Structural IoU too low: 0.228 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.489553770274679,
+              "message": "SSIM 0.490 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.489553770274679,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.27191208604981987,
+              "message": "Edge IoU: 0.272 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.27191208604981987,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.22819418511603093,
+              "message": "Structural IoU: 0.228 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.22819418511603093,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1152,
+                  "baseHeight": 896,
+                  "candWidth": 1152,
+                  "candHeight": 896,
+                  "dimensionMismatch": false,
+                  "maskPixels": 100436,
+                  "intersectionPixels": 5133,
+                  "unionPixels": 22494
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.62,
+              "message": "✓ Structural validation passed (score: 0.620, elapsed: 24ms)",
+              "details": {
+                "edgeLoss": 0.034,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0.5,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 54751,
+                "enhancedEdgeCount": 52889,
+                "edgeOverlap": 0.306,
+                "linePreservation": 0.667
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.3690962239982971,
+                  "islandEdgeClusterDrift": 1.5349544072948327,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.0706787109375,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 1.5349544072948327,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-09",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.489553770274679,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 72.80879139501802,
+              "angleDegrees": 0.5
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.490 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.490 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.272 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.228 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3841471927171983,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 72.8% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1894
+    },
+    {
+      "id": "11",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.575 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.366,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.575 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.196 < 0.6",
+            "Structural IoU too low: 0.157 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5746516994903605,
+              "message": "SSIM 0.575 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5746516994903605,
+                "threshold": 0.97,
+                "width": 384,
+                "height": 512
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.19555354400427113,
+              "message": "Edge IoU: 0.196 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.19555354400427113,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.15738719068413393,
+              "message": "Structural IoU: 0.157 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.15738719068413393,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 896,
+                  "baseHeight": 1152,
+                  "candWidth": 896,
+                  "candHeight": 1152,
+                  "dimensionMismatch": false,
+                  "maskPixels": 121290,
+                  "intersectionPixels": 5190,
+                  "unionPixels": 32976
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.606,
+              "message": "✓ Structural validation passed (score: 0.606, elapsed: 19ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 2,
+                "horizontalDeviation": 2,
+                "originalEdgeCount": 47420,
+                "enhancedEdgeCount": 121148,
+                "edgeOverlap": 0.264,
+                "linePreservation": 3
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.03146564567288422,
+                  "islandEdgeClusterDrift": 0.5891829689298044,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.06744384765625,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.5891829689298044,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-11",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5746516994903605,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 80.44464559957288,
+              "angleDegrees": 2
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.575 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.575 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.196 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.157 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.36554443073893084,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 80.4% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1712
+    },
+    {
+      "id": "11",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.568 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.361,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.568 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.179 < 0.6",
+            "Structural IoU too low: 0.157 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.568403355038086,
+              "message": "SSIM 0.568 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.568403355038086,
+                "threshold": 0.97,
+                "width": 384,
+                "height": 512
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.17861865548797792,
+              "message": "Edge IoU: 0.179 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.17861865548797792,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.15700339305911065,
+              "message": "Structural IoU: 0.157 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.15700339305911065,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 864,
+                  "baseHeight": 1184,
+                  "candWidth": 864,
+                  "candHeight": 1184,
+                  "dimensionMismatch": false,
+                  "maskPixels": 121290,
+                  "intersectionPixels": 5275,
+                  "unionPixels": 33598
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.597,
+              "message": "✓ Structural validation passed (score: 0.597, elapsed: 17ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 2,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 47420,
+                "enhancedEdgeCount": 101160,
+                "edgeOverlap": 0.241,
+                "linePreservation": 2.5
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.07797330628237123,
+                  "islandEdgeClusterDrift": 0.6795907377490576,
+                  "islandRectMassDelta": 0.0234375,
+                  "islandMidToneDelta": 0.09236653645833333,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.0234375,
+                  "islandMaskedEdgeDrift": 0.6795907377490576,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-11",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.568403355038086,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 82.1381344512022,
+              "angleDegrees": 2
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.568 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.568 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.179 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.157 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3613872876776886,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 82.1% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1410
+    },
+    {
+      "id": "12",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.600 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.373,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.600 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.203 < 0.6",
+            "Structural IoU too low: 0.152 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+            "stage2_direct_advisory: anchor_fixed_lighting_changed"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5998488399527704,
+              "message": "SSIM 0.600 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5998488399527704,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.20325518089716796,
+              "message": "Edge IoU: 0.203 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.20325518089716796,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.15185012799627648,
+              "message": "Structural IoU: 0.152 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.15185012799627648,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 59234,
+                  "intersectionPixels": 2610,
+                  "unionPixels": 17188
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.665,
+              "message": "✓ Structural validation passed (score: 0.665, elapsed: 14ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 38111,
+                "enhancedEdgeCount": 55540,
+                "edgeOverlap": 0.287,
+                "linePreservation": 4
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed, anchor:lighting_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": true,
+                "details": {
+                  "islandCentroidShift": 0.18483158531501723,
+                  "islandEdgeClusterDrift": 0.26212765957446804,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.0357666015625,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 0.26212765957446804,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.1670414022188868
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-12",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5998488399527704,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 79.6744819102832,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": true
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.600 < 0.97",
+              "anchor:island_changed",
+              "anchor:lighting_changed",
+              "perceptualDiff: SSIM 0.600 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.203 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.152 (threshold: 0.25)",
+              "anchor:lighting_advisory_uncorroborated"
+            ],
+            "unifiedScore": 0.37292162147830493,
+            "unifiedPassed": false
+          },
+          "riskLevel": "HIGH",
+          "riskTriggers": [
+            "HIGH: fixed lighting anchor changed",
+            "HIGH: local validator flagged structural issue"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1273
+    },
+    {
+      "id": "12",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.565 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.355,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.565 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.149 < 0.6",
+            "Structural IoU too low: 0.101 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+            "stage2_direct_advisory: anchor_fixed_lighting_changed"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5649806481682733,
+              "message": "SSIM 0.565 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5649806481682733,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.14858476433763818,
+              "message": "Edge IoU: 0.149 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.14858476433763818,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.10117522977248757,
+              "message": "Structural IoU: 0.101 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.10117522977248757,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 59234,
+                  "intersectionPixels": 1343,
+                  "unionPixels": 13274
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.7,
+              "message": "✓ Structural validation passed (score: 0.700, elapsed: 14ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 38111,
+                "enhancedEdgeCount": 46754,
+                "edgeOverlap": 0.251,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed, anchor:lighting_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": true,
+                "details": {
+                  "islandCentroidShift": 0.16669937701821752,
+                  "islandEdgeClusterDrift": 0.038424591738712856,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.058146158854166664,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 0.038424591738712856,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.16000975027688044
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-12",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5649806481682733,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 85.14152356623619,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": true
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.565 < 0.97",
+              "anchor:island_changed",
+              "anchor:lighting_changed",
+              "perceptualDiff: SSIM 0.565 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.149 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.101 (threshold: 0.25)",
+              "anchor:lighting_advisory_uncorroborated"
+            ],
+            "unifiedScore": 0.35537505303237704,
+            "unifiedPassed": false
+          },
+          "riskLevel": "HIGH",
+          "riskTriggers": [
+            "HIGH: fixed lighting anchor changed",
+            "HIGH: local validator flagged structural issue"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1104
+    },
+    {
+      "id": "14",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.524 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.315,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.524 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.041 < 0.6",
+            "Structural IoU too low: 0.011 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5236391843993691,
+              "message": "SSIM 0.524 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5236391843993691,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.040535815307465535,
+              "message": "Edge IoU: 0.041 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.040535815307465535,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.011393514460999123,
+              "message": "Structural IoU: 0.011 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.011393514460999123,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1152,
+                  "baseHeight": 896,
+                  "candWidth": 1152,
+                  "candHeight": 896,
+                  "dimensionMismatch": false,
+                  "maskPixels": 49159,
+                  "intersectionPixels": 91,
+                  "unionPixels": 7987
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.657,
+              "message": "✓ Structural validation passed (score: 0.657, elapsed: 14ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.9,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 24389,
+                "enhancedEdgeCount": 62646,
+                "edgeOverlap": 0.142,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.1033713319451859,
+                  "islandEdgeClusterDrift": 1.1967871485943775,
+                  "islandRectMassDelta": 0.00390625,
+                  "islandMidToneDelta": 0.03778076171875,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.00390625,
+                  "islandMaskedEdgeDrift": 1.1967871485943775,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.06581927859734944
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-14",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5236391843993691,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 95.94641846925344,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.524 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.524 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.041 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.011 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3153748203280249,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 95.9% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1411
+    },
+    {
+      "id": "14",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.633 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.332,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.633 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.071 < 0.6",
+            "Structural IoU too low: 0.022 < 0.25",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.6325019166606561,
+              "message": "SSIM 0.633 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.6325019166606561,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.07058866744758399,
+              "message": "Edge IoU: 0.071 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.07058866744758399,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.021609276177090655,
+              "message": "Structural IoU: 0.022 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.021609276177090655,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1152,
+                  "baseHeight": 896,
+                  "candWidth": 1152,
+                  "candHeight": 896,
+                  "dimensionMismatch": false,
+                  "maskPixels": 49159,
+                  "intersectionPixels": 123,
+                  "unionPixels": 5692
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.666,
+              "message": "✓ Structural validation passed (score: 0.666, elapsed: 13ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 24389,
+                "enhancedEdgeCount": 56917,
+                "edgeOverlap": 0.165,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.14279794226748327,
+                  "islandEdgeClusterDrift": 1.0536277602523658,
+                  "islandRectMassDelta": 0.00390625,
+                  "islandMidToneDelta": 0.0753173828125,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.00390625,
+                  "islandMaskedEdgeDrift": 1.0536277602523658,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.03242537175547521
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-14",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.6325019166606561,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 92.94113325524161,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.633 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.633 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.071 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.022 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.3319081503258337,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 92.9% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 1344
+    },
+    {
+      "id": "16",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.685 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.449,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.685 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.320 < 0.6",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.6850823738334136,
+              "message": "SSIM 0.685 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.6850823738334136,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 342
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.32013942650552785,
+              "message": "Edge IoU: 0.320 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.32013942650552785,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.4512653254539779,
+              "message": "Structural IoU: 0.451 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.4512653254539779,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1197,
+                  "baseHeight": 800,
+                  "candWidth": 1197,
+                  "candHeight": 800,
+                  "dimensionMismatch": false,
+                  "maskPixels": 111910,
+                  "intersectionPixels": 41923,
+                  "unionPixels": 92901
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.665,
+              "message": "✓ Structural validation passed (score: 0.665, elapsed: 12ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.6,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 41659,
+                "enhancedEdgeCount": 63818,
+                "edgeOverlap": 0.412,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.24715863425270426,
+                  "islandEdgeClusterDrift": 0.7153965785381028,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.022112573099415205,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.7153965785381028,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.01898418895910878
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-16",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.6850823738334136,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 67.98605734944722,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.685 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.685 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.320 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.44940765647936876,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 68.0% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 919
+    },
+    {
+      "id": "16",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.752 < 0.97"
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "fixtures": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "floor": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "envelope": {
+          "status": "error",
+          "reason": "GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation"
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.477,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.752 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.392 < 0.6",
+            "Gemini semantic validation unavailable"
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.7521027392480706,
+              "message": "SSIM 0.752 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.7521027392480706,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 342
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.3915941926408267,
+              "message": "Edge IoU: 0.392 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.3915941926408267,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.4947354794165876,
+              "message": "Structural IoU: 0.495 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.4947354794165876,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1197,
+                  "baseHeight": 800,
+                  "candWidth": 1197,
+                  "candHeight": 800,
+                  "dimensionMismatch": false,
+                  "maskPixels": 111910,
+                  "intersectionPixels": 45860,
+                  "unionPixels": 92696
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.694,
+              "message": "✓ Structural validation passed (score: 0.694, elapsed: 12ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.5,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 41659,
+                "enhancedEdgeCount": 54420,
+                "edgeOverlap": 0.485,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.24161276318477184,
+                  "islandEdgeClusterDrift": 0.45173383317713234,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.049958881578947366,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.45173383317713234,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.019770386676168667
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 0,
+              "message": "Gemini semantic error (fail-closed)",
+              "details": {
+                "error": "Error: GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation",
+                "mode": "block"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-16",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.7521027392480706,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 60.840580735917335,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.752 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.752 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.392 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.4765635069469082,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 60.8% > 55%"
+          ],
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ],
+          "issueType": "room_envelope_changed",
+          "issueTier": "critical"
+        }
+      },
+      "elapsedMs": 771
+    }
+  ]
+}
