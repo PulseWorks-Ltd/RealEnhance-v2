@@ -1,0 +1,187 @@
+{
+  "summary": {
+    "total": 9,
+    "ok": 9,
+    "errors": 0,
+    "hardFail": 2,
+    "geminiHardFail": 0,
+    "elapsedMs": 99496
+  },
+  "results": [
+    {
+      "id": "02",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.853,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "Ceiling fixtures (downlights) have been removed or changed between the BEFORE and AFTER images. In BEFORE, there are two visible recessed downlights. In AFTER, only one recessed downlight is visible, and its position/type may differ from the original. This constitutes a structural identity change."
+      ],
+      "elapsedMs": 10838
+    },
+    {
+      "id": "03",
+      "baseline": "Bedroom 03.jpg",
+      "enhanced": "Bedroom 03 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.744,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown"
+      ],
+      "elapsedMs": 15992
+    },
+    {
+      "id": "06",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.771,
+      "riskLevel": "HIGH",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.428 < 0.97",
+        "Gemini structure: The built-in shelving unit to the right of the wardrobe has been changed. In the BEFORE image, it's a tall, multi-shelf unit, while in the AFTER image, it's replaced by two floating shelves of a different design, size, and position. This constitutes a change to a built-in's footprint, position, or silhouette."
+      ],
+      "warnings": [
+        "Gemini flagged structure",
+        "stage2_direct_advisory: anchor_hvac_changed"
+      ],
+      "elapsedMs": 8296
+    },
+    {
+      "id": "07",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.749,
+      "riskLevel": "HIGH",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown",
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "elapsedMs": 8747
+    },
+    {
+      "id": "09",
+      "baseline": "Bedroom 09.jpg",
+      "enhanced": "Bedroom 09 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.796,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "style_only",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "No structural elements were altered.",
+        "The geometric envelope, including walls, ceiling, floor, and openings, remains unchanged.",
+        "The camera viewpoint and perspective are identical.",
+        "No built-in fixtures were added, removed, or modified."
+      ],
+      "elapsedMs": 8265
+    },
+    {
+      "id": "11",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.827,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "structure",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.568 < 0.97",
+        "Gemini structure: No structural changes detected., The geometric envelope, including walls, ceiling, floor, and openings (windows, doors), remains identical between the BEFORE and AFTER images., Built-in elements, such as the wardrobe and ceiling downlights, preserve their exact footprint and silhouette., There is no evidence of camera shift, wall shifts, opening alterations, or changes to built-in fixtures., The room has been successfully staged with furniture and decor without impacting the permanent architectural structure."
+      ],
+      "warnings": [
+        "Gemini flagged structure"
+      ],
+      "elapsedMs": 11666
+    },
+    {
+      "id": "12",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.826,
+      "riskLevel": "HIGH",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated",
+        "stage2_direct_advisory: anchor_fixed_lighting_changed"
+      ],
+      "elapsedMs": 10974
+    },
+    {
+      "id": "14",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.853,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown"
+      ],
+      "elapsedMs": 8450
+    },
+    {
+      "id": "16",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.901,
+      "riskLevel": "MEDIUM",
+      "geminiCategory": "unknown",
+      "geminiConfidence": 1,
+      "geminiHardFail": false,
+      "reasons": [],
+      "warnings": [
+        "unknown"
+      ],
+      "elapsedMs": 16268
+    }
+  ]
+}
