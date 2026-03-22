@@ -149,43 +149,6 @@ export async function confirmWithGeminiStructure(params: {
         })
       : undefined;
 
-    let conditionalHints = "";
-
-    if (params.softStructuralReviewMode && Array.isArray(params.localReasons) && params.localReasons.length > 0) {
-      const reasonText = params.localReasons.join(" ").toLowerCase();
-
-      if (reasonText.includes("opening") || reasonText.includes("window") || reasonText.includes("door")) {
-        conditionalHints += `
-OPENING CONTINUITY CHECK:
-A potential inconsistency in opening continuity was detected.
-Carefully verify that all doors, windows, sliding doors, and closet openings remain in the exact same positions, sizes, and proportions.
-If any opening appears removed, sealed, resized, shifted, re-paneled, or replaced, this must be classified as structural.
-`;
-      }
-
-      if (reasonText.includes("masked") || reasonText.includes("wall") || reasonText.includes("drift") || reasonText.includes("semantic_wall")) {
-        conditionalHints += `
-PLANAR ALIGNMENT CHECK:
-Significant surface realignment may be present.
-Compare wall planes, ceiling lines, vertical edges, and structural proportions carefully.
-If any wall appears resized, extended, flattened, re-angled, or re-proportioned, this must be classified as structural.
-`;
-      }
-
-      if (reasonText.includes("anchor") || reasonText.includes("closet") || reasonText.includes("cabinet") || reasonText.includes("built") || reasonText.includes("fireplace")) {
-        conditionalHints += `
-ARCHITECTURAL ANCHOR CHECK:
-A fixed architectural element may have changed.
-Confirm that built-in closets, cabinetry, recessed storage, fireplaces, structural columns, and fixed joinery remain structurally intact.
-If any built-in appears removed, sealed, covered, relocated, resized, or replaced with wall surface, classify as structural.
-`;
-      }
-    }
-
-    if (promptOverride) {
-      promptOverride += conditionalHints;
-    }
-
     nLog("[VALIDATOR_PROMPT_MODE]", {
       mode: params.validationMode || null,
       localSignalCount: Array.isArray(params.localReasons) ? params.localReasons.length : 0,

@@ -15,6 +15,9 @@ const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION |
 const OPENING_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
 const OPENING_LIGHT_ANCHOR_MODEL = process.env.GEMINI_OPENING_LIGHT_ANCHOR_MODEL || OPENING_MODEL_PRIMARY;
 const OPENING_WINDOW_MIN_RETENTION = Number(process.env.OPENING_WINDOW_MIN_RETENTION || 0.8);
+const OPENING_WINDOW_EXTREME_OCCLUSION_RETENTION = Number(process.env.OPENING_WINDOW_EXTREME_OCCLUSION_RETENTION || 0.45);
+const OPENING_DOOR_EXTREME_OCCLUSION_RETENTION = Number(process.env.OPENING_DOOR_EXTREME_OCCLUSION_RETENTION || 0.4);
+const OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD = Number(process.env.OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD || 0.25);
 
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -210,8 +213,10 @@ export async function runOpeningValidator(
     const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
       ? Number(deterministic.summary.semanticOpeningAreaDeltaPct)
       : 0;
-    const openingResizeHardFail = areaDelta >= 0.3;
-    const openingResizeAdvisory = deterministic.summary.openingResized && areaDelta > 0 && areaDelta < 0.3;
+    let maxSizeReductionDelta = 0;
+    const openingSizeReductionAdvisoryThreshold = Math.max(0.1, OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD * 0.5);
+    let openingSizeReductionDetected = false;
+    let openingSizeReductionHardFail = false;
 
     // Partial occlusion from staging (furniture, decor, camera angle)
     // is allowed. Only fail when the opening is functionally or
@@ -223,11 +228,6 @@ export async function runOpeningValidator(
       deterministic.summary.openingRelocated ||
       deterministic.summary.openingClassMismatch ||
       deterministic.summary.openingBandMismatch;
-    const hasSemanticOpeningChangeSignal =
-      deterministic.summary.openingResized ||
-      deterministic.summary.openingStateChanged === true ||
-      deterministic.summary.openingApertureExpanded === true ||
-      areaDelta >= 0.2;
 
     let strictDoorOcclusionFail = false;
     let strictWindowOcclusionFail = false;
@@ -246,20 +246,34 @@ export async function runOpeningValidator(
       const baseArea = Math.max(0.01, Number(baseOpening.area_pct || 0));
       const detectedArea = Math.max(0.01, Number(matchedOpening.area_pct || 0));
       const retention = detectedArea / baseArea;
+      const sizeReduction = clamp01((baseArea - detectedArea) / baseArea);
+
+      maxSizeReductionDelta = Math.max(maxSizeReductionDelta, sizeReduction);
+      if (sizeReduction >= openingSizeReductionAdvisoryThreshold) {
+        openingSizeReductionDetected = true;
+      }
+      if (sizeReduction >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
+        openingSizeReductionHardFail = true;
+      }
 
       // Non-window openings (doors/closets/walkthroughs) must remain functionally usable.
       // Minor perspective overlap can be tolerated when usability is preserved.
       if (baseOpening.type !== "window") {
         if (retention < 0.9) {
           const isFunctionallyBlocked = evaluateDoorFunctionalBlockage(baseOpening, matchedOpening, retention);
-          if (isFunctionallyBlocked && (hasStrongStructuralOpeningEvidence || hasSemanticOpeningChangeSignal)) {
+          const extremeOcclusion = retention < OPENING_DOOR_EXTREME_OCCLUSION_RETENTION;
+          if (isFunctionallyBlocked || (extremeOcclusion && hasStrongStructuralOpeningEvidence)) {
             strictDoorOcclusionFail = true;
           }
         }
       } else {
         // Window partial occlusion can be tolerated only when clearly partial.
         // Near-full occlusion only fails when structural or semantic change evidence is present.
-        if (retention < OPENING_WINDOW_MIN_RETENTION && retention < 0.65 && (hasStrongStructuralOpeningEvidence || hasSemanticOpeningChangeSignal)) {
+        if (
+          retention < OPENING_WINDOW_MIN_RETENTION &&
+          retention < OPENING_WINDOW_EXTREME_OCCLUSION_RETENTION &&
+          hasStrongStructuralOpeningEvidence
+        ) {
           strictWindowOcclusionFail = true;
         }
       }
@@ -268,12 +282,13 @@ export async function runOpeningValidator(
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
     let hardFail =
       deterministic.summary.openingRemoved ||
+      deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
       deterministic.summary.openingRelocated ||
       deterministic.summary.openingClassMismatch ||
       deterministic.summary.openingBandMismatch ||
       relocationDetected ||
-      openingResizeHardFail ||
+      openingSizeReductionHardFail ||
       strictDoorOcclusionFail ||
       strictWindowOcclusionFail;
 
@@ -281,13 +296,13 @@ export async function runOpeningValidator(
     const advisorySignals: string[] = [];
     if (deterministic.summary.openingRemoved) reasonParts.push("opening_removed");
     if (deterministic.summary.openingRelocated || relocationDetected) reasonParts.push("opening_relocated");
-    if (deterministic.summary.openingResized) {
+    if (openingSizeReductionDetected || deterministic.summary.openingResized) {
       reasonParts.push("opening_resized");
-      if (openingResizeAdvisory) {
-        advisorySignals.push(`opening_resized_minor:${areaDelta.toFixed(3)}`);
+      if (openingSizeReductionDetected && !openingSizeReductionHardFail && maxSizeReductionDelta > 0) {
+        advisorySignals.push(`opening_resized_minor:${maxSizeReductionDelta.toFixed(3)}`);
       }
-      if (openingResizeHardFail) {
-        reasonParts.push(`opening_resize_ge_0_30:${areaDelta.toFixed(3)}`);
+      if (openingSizeReductionHardFail) {
+        reasonParts.push(`opening_size_reduction_ge_${OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD.toFixed(2)}:${maxSizeReductionDelta.toFixed(3)}`);
       }
     }
     if (deterministic.summary.openingClassMismatch) reasonParts.push("opening_class_mismatch");
@@ -300,8 +315,9 @@ export async function runOpeningValidator(
 
     const microCheckRisk =
       !hardFail && (
+        openingSizeReductionHardFail ||
         deterministic.summary.openingResized ||
-        areaDelta >= 0.2 ||
+        areaDelta >= 0.25 ||
         strictWindowOcclusionFail ||
         strictDoorOcclusionFail
       );

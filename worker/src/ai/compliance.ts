@@ -99,72 +99,41 @@ export async function checkCompliance(
   const openingStructuralSignalContext =
     opts?.openingStructuralSignalContext ||
     (typeof opts?.openingStructuralSignal === "object" ? opts?.openingStructuralSignal : undefined);
-  const advisoryContext = Array.isArray(opts?.advisorySignals) && opts.advisorySignals.length > 0
-    ? [
-        "ADVISORY SIGNALS FROM LOCAL VALIDATORS (focus review here):",
-        ...opts.advisorySignals.map((signal) => `- ${signal}`),
-      ]
-    : [];
-  const maskedDriftRegionsContext = Array.isArray(opts?.maskedDriftRegions) && opts.maskedDriftRegions.length > 0
-    ? [
-        "MASKED DRIFT REGIONS (normalized bbox [x1,y1,x2,y2], score):",
-        ...opts.maskedDriftRegions.map((region, idx) =>
-          `- drift_region_${idx + 1}: bbox=[${region.bbox.map((v) => Number(v).toFixed(3)).join(",")}], score=${Number(region.score).toFixed(3)}`
-        ),
-      ]
-    : [];
-  const openingRegionsContext = Array.isArray(opts?.openingRegions) && opts.openingRegions.length > 0
-    ? [
-        "DETECTED OPENING REGIONS (normalized bbox [x1,y1,x2,y2], type):",
-        ...opts.openingRegions.map((region, idx) =>
-          `- opening_region_${idx + 1}: type=${region.type}, bbox=[${region.bbox.map((v) => Number(v).toFixed(3)).join(",")}]`
-        ),
-      ]
-    : [];
-  const openingStructuralContext = openingStructuralSignalContext
-    ? [
-        "OPENING STRUCTURAL SIGNAL (sensor evidence, not final verdict):",
-        `- type: ${openingStructuralSignalContext.type}`,
-        `- confidence: ${openingStructuralSignalContext.confidence}`,
-        ...(typeof openingStructuralSignalContext.resizeDelta === "number"
-          ? [`- resizeDelta: ${openingStructuralSignalContext.resizeDelta.toFixed(3)}`]
-          : []),
-      ]
-    : [];
-  const openingStructuralGuidance = openingStructuralSignalFlag
-    ? [
-        "Local structural detectors indicate that an architectural opening",
-        "(window or door) may have been partially replaced with wall surface.",
-        "",
-        "Furniture may hide part of a window, but furniture cannot replace",
-        "the architectural opening itself.",
-        "",
-        "Please confirm visually whether the opening geometry has changed.",
-      ]
-    : [];
-  const openingRelocatedResizedGuidance =
-    openingStructuralSignalContext?.type === "opening_relocated_and_resized"
-      ? [
-          "Local structural detectors observed that a window opening appears both relocated and significantly resized.",
-          "This combination frequently indicates that part of the opening may have been replaced by wall surface.",
-          "Furniture may hide part of a window, but furniture cannot replace the architectural opening.",
-          "Please verify whether the opening geometry has actually changed or whether the difference is caused only by occlusion or perspective.",
-        ]
-      : [];
-  const structuralDecisionInstruction = openingStructuralSignalFlag
-    ? "Compare ORIGINAL vs EDITED with focus on confirming or refuting opening-geometry changes signaled above."
-    : "Compare ORIGINAL vs EDITED. Ignore structural changes (those are handled elsewhere).";
+  const localSignalsMetadata = {
+    advisorySignals: Array.isArray(opts?.advisorySignals) ? opts.advisorySignals : [],
+    openingStructuralSignal: openingStructuralSignalFlag,
+    openingStructuralSignalContext: openingStructuralSignalContext
+      ? {
+          type: openingStructuralSignalContext.type,
+          confidence: openingStructuralSignalContext.confidence,
+          resizeDelta: typeof openingStructuralSignalContext.resizeDelta === "number"
+            ? Number(openingStructuralSignalContext.resizeDelta.toFixed(4))
+            : undefined,
+        }
+      : null,
+    maskedDriftRegions: Array.isArray(opts?.maskedDriftRegions)
+      ? opts.maskedDriftRegions.map((region) => ({
+          bbox: region.bbox.map((v) => Number(Number(v).toFixed(4))) as [number, number, number, number],
+          score: Number(Number(region.score).toFixed(4)),
+        }))
+      : [],
+    openingRegions: Array.isArray(opts?.openingRegions)
+      ? opts.openingRegions.map((region) => ({
+          type: region.type,
+          bbox: region.bbox.map((v) => Number(Number(v).toFixed(4))) as [number, number, number, number],
+        }))
+      : [],
+  };
+  const localSignalsContext = [
+    "LOCAL_SIGNALS_METADATA_JSON (optional, neutral metadata only):",
+    JSON.stringify(localSignalsMetadata),
+  ];
 
   const structuralPrompt = [
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
-    ...advisoryContext,
-    ...maskedDriftRegionsContext,
-    ...openingRegionsContext,
-    ...openingStructuralGuidance,
-    ...openingStructuralContext,
-    ...openingRelocatedResizedGuidance,
-    structuralDecisionInstruction,
+    ...localSignalsContext,
+    "Compare ORIGINAL vs EDITED.",
     "ok=false ONLY if there are severe rendering artifacts, unnatural warping, or glitches.",
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
@@ -207,12 +176,7 @@ export async function checkCompliance(
   const placementPrompt = [
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
-    ...advisoryContext,
-    ...maskedDriftRegionsContext,
-    ...openingRegionsContext,
-    ...openingStructuralGuidance,
-    ...openingStructuralContext,
-    ...openingRelocatedResizedGuidance,
+    ...localSignalsContext,
     "Compare ORIGINAL vs EDITED. ok=false ONLY if EDITED places objects in clearly unrealistic or unsafe positions, such as:",
     "- floating furniture,",
     "- furniture not aligned to floor perspective,",

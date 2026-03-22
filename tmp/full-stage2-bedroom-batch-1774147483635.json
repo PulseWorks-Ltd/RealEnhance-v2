@@ -1,0 +1,2995 @@
+{
+  "summary": {
+    "total": 18,
+    "pass": 0,
+    "fail": 18,
+    "error": 0,
+    "bySet": {
+      "Bedroom (Staged)": {
+        "total": 9,
+        "pass": 0,
+        "fail": 9,
+        "error": 0
+      },
+      "Bedroom (Staged 2)": {
+        "total": 9,
+        "pass": 0,
+        "fail": 9,
+        "error": 0
+      }
+    },
+    "elapsedMs": 837548
+  },
+  "results": [
+    {
+      "id": "02",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.618 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.133 < 0.6",
+        "Structural IoU too low: 0.055 < 0.25",
+        "Gemini structure: No structural changes detected. Walls, openings, ceiling, and floor remain immutable., No camera shift or perspective distortion observed., Existing structural elements like recessed lights, window frames, door frame, and wall hook are preserved., The staging introduces furniture and decor without altering the fixed architecture."
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image, including the window and the door, are present and unchanged in the staged image. The differences are limited to furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The architectural structure and all visible fixed installed fixtures, including the recessed ceiling lights and wall outlets, are identical in both images. Only furniture and decor have changed.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor is consistently dark carpet in both images. The staged image adds furniture and a circular rug, but the underlying carpet remains unchanged.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, window, ceiling, and doorway, remains identical. All visible structural elements and wall plane continuity are preserved. Changes are limited to furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.428,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.618 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.133 < 0.6",
+            "Structural IoU too low: 0.055 < 0.25",
+            "Gemini structure: No structural changes detected. Walls, openings, ceiling, and floor remain immutable., No camera shift or perspective distortion observed., Existing structural elements like recessed lights, window frames, door frame, and wall hook are preserved., The staging introduces furniture and decor without altering the fixed architecture."
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.6179694545375461,
+              "message": "SSIM 0.618 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.6179694545375461,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.13265894983038634,
+              "message": "Edge IoU: 0.133 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.13265894983038634,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.054835437330928764,
+              "message": "Structural IoU: 0.055 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.054835437330928764,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 74819,
+                  "intersectionPixels": 973,
+                  "unionPixels": 17744
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.639,
+              "message": "✓ Structural validation passed (score: 0.639, elapsed: 30ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 30905,
+                "enhancedEdgeCount": 54102,
+                "edgeOverlap": 0.223,
+                "linePreservation": 1.5
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.09505784342660129,
+                  "islandEdgeClusterDrift": 0.8527870414483087,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.060953776041666664,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 0.8527870414483087,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 1,
+              "message": "Gemini flagged structure",
+              "details": {
+                "category": "structure",
+                "reasons": [
+                  "No structural changes detected. Walls, openings, ceiling, and floor remain immutable.",
+                  "No camera shift or perspective distortion observed.",
+                  "Existing structural elements like recessed lights, window frames, door frame, and wall hook are preserved.",
+                  "The staging introduces furniture and decor without altering the fixed architecture."
+                ],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "fail"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"reasons\": [\n    \"No structural changes detected. Walls, openings, ceiling, and floor remain immutable.\",\n    \"No camera shift or perspective distortion observed.\",\n    \"Existing structural elements like recessed lights, window frames, door frame, and wall hook are preserved.\",\n    \"The staging introduces furniture and decor without altering the fixed architecture.\"\n  ],\n  \"confidence\": 5,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 3\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-02",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.6179694545375461,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 86.73410501696137,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.618 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.618 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.133 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.055 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.42766318573834794,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 86.7% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 59904
+    },
+    {
+      "id": "02",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 02.jpg",
+      "enhanced": "Bedroom 02 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "openings: A door opening present in the baseline image has been removed and replaced by a continuous wall surface in the staged image. This constitutes a structural change."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "fail",
+          "reason": "A door opening present in the baseline image has been removed and replaced by a continuous wall surface in the staged image. This constitutes a structural change.",
+          "confidence": 1,
+          "hardFail": true,
+          "advisorySignals": [
+            "A door opening present in the baseline image has been removed and replaced by a continuous wall surface in the staged image. This constitutes a structural change."
+          ],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "skipped",
+          "reason": "openings_failed"
+        },
+        "floor": {
+          "status": "skipped",
+          "reason": "fixtures_failed"
+        },
+        "envelope": {
+          "status": "skipped",
+          "reason": "floor_failed"
+        }
+      },
+      "elapsedMs": 9938
+    },
+    {
+      "id": "03",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 03.jpg",
+      "enhanced": "Bedroom 03 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.360 < 0.97",
+        "Window validation failed: window_count_change",
+        "Global edge IoU too low: 0.284 < 0.6"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "No structural or architectural elements (walls, ceiling, floor, window, door opening, built-in fixtures like recessed lights) have been altered, added, or removed.",
+        "The camera viewpoint and perspective remain identical between the BEFORE and AFTER images.",
+        "The geometric envelope of the room is preserved, with no shift in wall positions, ceiling plane, or room dimensions.",
+        "The room has been appropriately staged with furniture, which is expected for 'FULL_STAGE_ONLY' mode and does not constitute a structural violation."
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image are present and unchanged in the staged image.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room architecture, window, and fixed ceiling lights are identical in both images. The staged image adds furniture, which is an allowed change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The underlying structural floor is the same carpet in both images. The rug in the staged image is a movable covering and not a structural change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, ceiling, window opening, and bulkhead above the window, remains identical between the baseline and staged images. No changes to wall planes, recesses, or structural elements are visible. Furniture and decor changes are ignored as per instructions.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.503,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.360 < 0.97",
+            "Window validation failed: window_count_change",
+            "Global edge IoU too low: 0.284 < 0.6"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "No structural or architectural elements (walls, ceiling, floor, window, door opening, built-in fixtures like recessed lights) have been altered, added, or removed.",
+            "The camera viewpoint and perspective remain identical between the BEFORE and AFTER images.",
+            "The geometric envelope of the room is preserved, with no shift in wall positions, ceiling plane, or room dimensions.",
+            "The room has been appropriately staged with furniture, which is expected for 'FULL_STAGE_ONLY' mode and does not constitute a structural violation."
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.36049700138058627,
+              "message": "SSIM 0.360 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.36049700138058627,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 342
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_count_change",
+              "details": {
+                "ok": false,
+                "reason": "window_count_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.28438635302713566,
+              "message": "Edge IoU: 0.284 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.28438635302713566,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.46235525270682665,
+              "message": "Structural IoU: 0.462 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.46235525270682665,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1024,
+                  "baseHeight": 683,
+                  "candWidth": 1024,
+                  "candHeight": 683,
+                  "dimensionMismatch": false,
+                  "maskPixels": 84937,
+                  "intersectionPixels": 33180,
+                  "unionPixels": 71763
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.683,
+              "message": "✓ Structural validation passed (score: 0.683, elapsed: 39ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 37567,
+                "enhancedEdgeCount": 56134,
+                "edgeOverlap": 0.333,
+                "linePreservation": 1.333
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.10530214840726787,
+                  "islandEdgeClusterDrift": 0.3654135338345865,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.10083150584795321,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.75,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.3654135338345865,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.06830145305154964
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: furniture_change",
+              "details": {
+                "category": "furniture_change",
+                "reasons": [
+                  "No structural or architectural elements (walls, ceiling, floor, window, door opening, built-in fixtures like recessed lights) have been altered, added, or removed.",
+                  "The camera viewpoint and perspective remain identical between the BEFORE and AFTER images.",
+                  "The geometric envelope of the room is preserved, with no shift in wall positions, ceiling plane, or room dimensions.",
+                  "The room has been appropriately staged with furniture, which is expected for 'FULL_STAGE_ONLY' mode and does not constitute a structural violation."
+                ],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"furniture_change\",\n  \"reasons\": [\n    \"No structural or architectural elements (walls, ceiling, floor, window, door opening, built-in fixtures like recessed lights) have been altered, added, or removed.\",\n    \"The camera viewpoint and perspective remain identical between the BEFORE and AFTER images.\",\n    \"The geometric envelope of the room is preserved, with no shift in wall positions, ceiling plane, or room dimensions.\",\n    \"The room has been appropriately staged with furniture, which is expected for 'FULL_STAGE_ONLY' mode and does not constitute a structural violation.\"\n  ],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 2\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-03",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.36049700138058627,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 71.56136469728644,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.360 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.360 (threshold 0.97)",
+              "windows: window_count_change",
+              "globalEdge: Edge IoU: 0.284 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.5030816844040426,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 71.6% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 51474
+    },
+    {
+      "id": "04",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 04.jpg",
+      "enhanced": "Bedroom 04 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.398 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.076 < 0.6",
+        "Structural IoU too low: 0.070 < 0.25"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "style_only"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image, including the door, sliding closet, and high window, are present and unchanged in the staged image.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room architecture, including windows, closet, and door, is identical. Fixed fixtures like the ceiling downlight and wall outlets remain unchanged and in the same positions, with some minor occlusion by new furniture.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both images and remains consistent. The rug in the staged image is a movable item.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, closet structure, window placement, and ceiling, remains identical between the baseline and staged images. No structural modifications, wall extensions, or changes in room footprint are observed.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.405,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.398 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.076 < 0.6",
+            "Structural IoU too low: 0.070 < 0.25"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "style_only"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.39778322385411474,
+              "message": "SSIM 0.398 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.39778322385411474,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 288
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.07647915004473584,
+              "message": "Edge IoU: 0.076 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.07647915004473584,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.07030326900354471,
+              "message": "Structural IoU: 0.070 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.07030326900354471,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1344,
+                  "baseHeight": 768,
+                  "candWidth": 1344,
+                  "candHeight": 768,
+                  "dimensionMismatch": false,
+                  "maskPixels": 42415,
+                  "intersectionPixels": 357,
+                  "unionPixels": 5078
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.673,
+              "message": "✓ Structural validation passed (score: 0.673, elapsed: 13ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 14427,
+                "enhancedEdgeCount": 42623,
+                "edgeOverlap": 0.184,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.2545002015750807,
+                  "islandEdgeClusterDrift": 1.1652688702516034,
+                  "islandRectMassDelta": 0.01171875,
+                  "islandMidToneDelta": 0.011500218531468532,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0.01171875,
+                  "islandMaskedEdgeDrift": 1.1652688702516034,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.03211291735953211
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: style_only",
+              "details": {
+                "category": "style_only",
+                "reasons": [],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 1\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-04",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.39778322385411474,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 92.35208499552641,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.398 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.398 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.076 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.070 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.40536233849588965,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 92.4% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 65333
+    },
+    {
+      "id": "05",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 05.jpg",
+      "enhanced": "Bedroom 05 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.583 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.179 < 0.6",
+        "Structural IoU too low: 0.112 < 0.25"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "unknown"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image are present and unchanged in the staged image.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room's architectural structure, including the placement and style of the windows and the recessed ceiling lights, is identical in both images. The changes are limited to the addition of furniture and decorative items, which is permissible.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both the baseline and staged images and remains unchanged.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, windows, and ceiling, remains identical between the baseline and staged images. No structural changes, wall plane extensions, or alterations to room footprint are visible. Furniture and decor changes are ignored as per instructions.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.446,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.583 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.179 < 0.6",
+            "Structural IoU too low: 0.112 < 0.25"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "unknown"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5834822209635785,
+              "message": "SSIM 0.583 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5834822209635785,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 288
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.17919028019445202,
+              "message": "Edge IoU: 0.179 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.17919028019445202,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.11235620785402618,
+              "message": "Structural IoU: 0.112 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.11235620785402618,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1344,
+                  "baseHeight": 768,
+                  "candWidth": 1344,
+                  "candHeight": 768,
+                  "dimensionMismatch": false,
+                  "maskPixels": 59316,
+                  "intersectionPixels": 1133,
+                  "unionPixels": 10084
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.685,
+              "message": "✓ Structural validation passed (score: 0.685, elapsed: 10ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 27983,
+                "enhancedEdgeCount": 45464,
+                "edgeOverlap": 0.337,
+                "linePreservation": 3
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.3603014975792107,
+                  "islandEdgeClusterDrift": 1.528205128205128,
+                  "islandRectMassDelta": 0.05859375,
+                  "islandMidToneDelta": 0.1081271701388889,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0.05859375,
+                  "islandMaskedEdgeDrift": 1.528205128205128,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.0838800136509807
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: unknown",
+              "details": {
+                "category": "unknown",
+                "reasons": [],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": null,\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 4\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-05",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5834822209635785,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 82.08097198055479,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.583 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.583 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.179 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.112 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.44596459975504454,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 82.1% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 55349
+    },
+    {
+      "id": "06",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.445 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.237 < 0.6",
+        "Structural IoU too low: 0.173 < 0.25"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "unknown"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "The architectural structure and all openings (window, closet door) are preserved between the baseline and staged images. The partial occlusion of the window by furniture is acceptable.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room's architecture, including the closet, built-in shelves, window, and ceiling fixture, are identical in both images. The changes are limited to the addition of furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor is the same blue carpet in both the baseline and staged images. The addition of a small rug in the staged image is a non-structural change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, window, built-in shelving recess, and sliding door closet structure, remains identical between the baseline and staged images. No walls have been moved, added, or removed, and no recesses or indentations have been filled or altered.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.455,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.445 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.237 < 0.6",
+            "Structural IoU too low: 0.173 < 0.25"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "unknown"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.44486417829606645,
+              "message": "SSIM 0.445 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.44486417829606645,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.23672641005644732,
+              "message": "Edge IoU: 0.237 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.23672641005644732,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.1728395061728395,
+              "message": "Structural IoU: 0.173 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.1728395061728395,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1184,
+                  "baseHeight": 864,
+                  "candWidth": 1184,
+                  "candHeight": 864,
+                  "dimensionMismatch": false,
+                  "maskPixels": 78134,
+                  "intersectionPixels": 224,
+                  "unionPixels": 1296
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.702,
+              "message": "✓ Structural validation passed (score: 0.702, elapsed: 21ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 36494,
+                "enhancedEdgeCount": 58728,
+                "edgeOverlap": 0.254,
+                "linePreservation": 3
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.0706472810034267,
+                  "islandEdgeClusterDrift": 0.6154727793696274,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.06573486328125,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 0.6154727793696274,
+                  "hvacRegionDrift": 0.2752293577981652,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: unknown",
+              "details": {
+                "category": "unknown",
+                "reasons": [],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": null,\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 1\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-06",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.44486417829606645,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 76.32735899435527,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.445 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.445 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.237 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.173 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.4554996675628866,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 76.3% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 61390
+    },
+    {
+      "id": "06",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 06.jpg",
+      "enhanced": "Bedroom 06 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "envelope: The recessed shelving area to the left of the window in the baseline image has been filled in, creating a continuous flat wall surface in the staged image. This violates the 'Wall Plane Extension Rule' and 'Local Wall-Plane Continuity Check' as a baseline indentation/recess has become a flattened wall surface."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "The architectural structure, including the window, closet door, and built-in shelves, is identical in both images. Changes are limited to furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room's architecture, including the closet, built-in shelves, window, and ceiling fixture, remains unchanged. The only differences are the addition of furniture and decor for staging purposes.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both images and remains unchanged. The rug in the staged image is a movable item.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "fail",
+          "reason": "The recessed shelving area to the left of the window in the baseline image has been filled in, creating a continuous flat wall surface in the staged image. This violates the 'Wall Plane Extension Rule' and 'Local Wall-Plane Continuity Check' as a baseline indentation/recess has become a flattened wall surface.",
+          "confidence": 1,
+          "hardFail": true,
+          "advisorySignals": [
+            "The recessed shelving area to the left of the window in the baseline image has been filled in, creating a continuous flat wall surface in the staged image. This violates the 'Wall Plane Extension Rule' and 'Local Wall-Plane Continuity Check' as a baseline indentation/recess has become a flattened wall surface."
+          ]
+        }
+      },
+      "elapsedMs": 42671
+    },
+    {
+      "id": "07",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "fixtures: A circular flush-mount ceiling light has been added in the staged image, which was not present in the baseline image's plain ceiling."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "The architectural structure is identical. The window in the baseline image is preserved in the staged image with the same size and location, with acceptable partial occlusion by furniture.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "fail",
+          "reason": "A circular flush-mount ceiling light has been added in the staged image, which was not present in the baseline image's plain ceiling.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [
+            "A circular flush-mount ceiling light has been added in the staged image, which was not present in the baseline image's plain ceiling."
+          ]
+        },
+        "floor": {
+          "status": "skipped",
+          "reason": "fixtures_failed"
+        },
+        "envelope": {
+          "status": "skipped",
+          "reason": "floor_failed"
+        }
+      },
+      "elapsedMs": 26218
+    },
+    {
+      "id": "07",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 07.jpg",
+      "enhanced": "Bedroom 07 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.373 < 0.97",
+        "Window validation failed: window_count_change",
+        "Global edge IoU too low: 0.122 < 0.6"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "unknown",
+        "stage2_direct_advisory: anchor_cabinetry_changed"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "The single window present in the baseline image is fully preserved in the staged image with no changes to its size, shape, or location. The partial occlusion by the bed is acceptable.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room architecture, including the window, window frame, blinds, and wall outlet, are identical in both images. The changes are limited to furniture and decor, which is permissible.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both the baseline and staged images. The staged image includes a rug, which is a movable item and not a structural change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, wall planes, window placement, and room proportions are identical between the baseline and staged images. No structural changes, such as altered walls, filled recesses, or changes to fixed architectural elements, are visible. Differences are limited to furniture, decor, and minor perspective adjustments.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.439,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.373 < 0.97",
+            "Window validation failed: window_count_change",
+            "Global edge IoU too low: 0.122 < 0.6"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "unknown",
+            "stage2_direct_advisory: anchor_cabinetry_changed"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.373265321870239,
+              "message": "SSIM 0.373 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.373265321870239,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_count_change",
+              "details": {
+                "ok": false,
+                "reason": "window_count_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.12155549489690619,
+              "message": "Edge IoU: 0.122 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.12155549489690619,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.25613705212577037,
+              "message": "Structural IoU: 0.256 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.25613705212577037,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 800,
+                  "baseHeight": 600,
+                  "candWidth": 800,
+                  "candHeight": 600,
+                  "dimensionMismatch": false,
+                  "maskPixels": 65430,
+                  "intersectionPixels": 12260,
+                  "unionPixels": 47865
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.642,
+              "message": "✓ Structural validation passed (score: 0.642, elapsed: 16ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0.5,
+                "originalEdgeCount": 30895,
+                "enhancedEdgeCount": 65812,
+                "edgeOverlap": 0.167,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed, anchor:cabinetry_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": true,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.08502170454130967,
+                  "islandEdgeClusterDrift": 1.9011082693947143,
+                  "islandRectMassDelta": 0.026041666666666685,
+                  "islandMidToneDelta": 0.02001953125,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.026041666666666685,
+                  "islandMaskedEdgeDrift": 1.9011082693947143,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0.75,
+                  "lightingPositionDrift": 0.03447197795617676
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: unknown",
+              "details": {
+                "category": "unknown",
+                "reasons": [],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": null,\n  \"reasons\": [],\n  \"confidence\": 5,\n  \"violationType\": null,\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 0\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-07",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.373265321870239,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 87.84445051030939,
+              "angleDegrees": 0.5
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": true,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.373 < 0.97",
+              "anchor:island_changed",
+              "anchor:cabinetry_changed",
+              "perceptualDiff: SSIM 0.373 (threshold 0.97)",
+              "windows: window_count_change",
+              "globalEdge: Edge IoU: 0.122 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.439220867992966,
+            "unifiedPassed": false
+          },
+          "riskLevel": "HIGH",
+          "riskTriggers": [
+            "HIGH: cabinetry anchor changed",
+            "HIGH: local validator flagged structural issue"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 59098
+    },
+    {
+      "id": "09",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 09.jpg",
+      "enhanced": "Bedroom 09 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.490 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.272 < 0.6",
+        "Structural IoU too low: 0.228 < 0.25",
+        "Gemini structure: No structural changes were detected between the BEFORE and AFTER images., Architectural elements such as walls, ceiling, floor, windows, and existing built-in fixtures (ceiling downlight, electrical outlets, and light switches) remain identical in position, size, and form., The camera perspective and viewpoint are consistent, indicating no camera shift or envelope geometry drift., The room has been successfully staged with furniture and decor, fulfilling the full-staging requirement without altering any permanent architectural structure."
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image, including two windows and a partial walkthrough opening, are preserved in the staged image. The partial occlusion of one window by a bed is an acceptable staging change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room architecture, windows, recessed ceiling light, and wall outlets are identical in both images. The changes are limited to furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both the baseline and staged images. The rug added in the staged image is a non-structural movable item.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including all walls, windows, and structural features, remains identical between the baseline and staged images. No changes to wall planes, recesses, or room footprint are observed.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.467,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.490 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.272 < 0.6",
+            "Structural IoU too low: 0.228 < 0.25",
+            "Gemini structure: No structural changes were detected between the BEFORE and AFTER images., Architectural elements such as walls, ceiling, floor, windows, and existing built-in fixtures (ceiling downlight, electrical outlets, and light switches) remain identical in position, size, and form., The camera perspective and viewpoint are consistent, indicating no camera shift or envelope geometry drift., The room has been successfully staged with furniture and decor, fulfilling the full-staging requirement without altering any permanent architectural structure."
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.489553770274679,
+              "message": "SSIM 0.490 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.489553770274679,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.27191208604981987,
+              "message": "Edge IoU: 0.272 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.27191208604981987,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.22819418511603093,
+              "message": "Structural IoU: 0.228 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.22819418511603093,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1152,
+                  "baseHeight": 896,
+                  "candWidth": 1152,
+                  "candHeight": 896,
+                  "dimensionMismatch": false,
+                  "maskPixels": 100436,
+                  "intersectionPixels": 5133,
+                  "unionPixels": 22494
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.62,
+              "message": "✓ Structural validation passed (score: 0.620, elapsed: 14ms)",
+              "details": {
+                "edgeLoss": 0.034,
+                "edgeShift": 0.7,
+                "verticalDeviation": 0.5,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 54751,
+                "enhancedEdgeCount": 52889,
+                "edgeOverlap": 0.306,
+                "linePreservation": 0.667
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.3690962239982971,
+                  "islandEdgeClusterDrift": 1.5349544072948327,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.0706787109375,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 1.5349544072948327,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 1,
+              "message": "Gemini flagged structure",
+              "details": {
+                "category": "structure",
+                "reasons": [
+                  "No structural changes were detected between the BEFORE and AFTER images.",
+                  "Architectural elements such as walls, ceiling, floor, windows, and existing built-in fixtures (ceiling downlight, electrical outlets, and light switches) remain identical in position, size, and form.",
+                  "The camera perspective and viewpoint are consistent, indicating no camera shift or envelope geometry drift.",
+                  "The room has been successfully staged with furniture and decor, fulfilling the full-staging requirement without altering any permanent architectural structure."
+                ],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "fail"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"furniture_change\",\n  \"reasons\": [\n    \"No structural changes were detected between the BEFORE and AFTER images.\",\n    \"Architectural elements such as walls, ceiling, floor, windows, and existing built-in fixtures (ceiling downlight, electrical outlets, and light switches) remain identical in position, size, and form.\",\n    \"The camera perspective and viewpoint are consistent, indicating no camera shift or envelope geometry drift.\",\n    \"The room has been successfully staged with furniture and decor, fulfilling the full-staging requirement without altering any permanent architectural structure.\"\n  ],\n  \"confidence\": 1.0,\n  \"violationType\": \"layout_only\",\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 2\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-09",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.489553770274679,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 72.80879139501802,
+              "angleDegrees": 0.5
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.490 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.490 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.272 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.228 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.4674805260505317,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 72.8% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 57992
+    },
+    {
+      "id": "11",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "openings: The sliding closet door on the left wall is partially occluded by furniture (bed), which violates the strict occlusion policy for non-window openings."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "fail",
+          "reason": "The sliding closet door on the left wall is partially occluded by furniture (bed), which violates the strict occlusion policy for non-window openings.",
+          "confidence": 1,
+          "hardFail": true,
+          "advisorySignals": [
+            "The sliding closet door on the left wall is partially occluded by furniture (bed), which violates the strict occlusion policy for non-window openings."
+          ],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "skipped",
+          "reason": "openings_failed"
+        },
+        "floor": {
+          "status": "skipped",
+          "reason": "fixtures_failed"
+        },
+        "envelope": {
+          "status": "skipped",
+          "reason": "floor_failed"
+        }
+      },
+      "elapsedMs": 13588
+    },
+    {
+      "id": "11",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 11.jpg",
+      "enhanced": "Bedroom 11 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.568 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.179 < 0.6",
+        "Structural IoU too low: 0.157 < 0.25"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "unknown"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image, including a sliding closet door and two windows, are present and correctly positioned in the staged image. The furniture placement is consistent with staging and does not alter the underlying structure.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room's architecture, including walls, windows, and the mirrored closet, is identical. The fixed recessed ceiling lights are also present and unchanged in both images. All differences are due to the addition of furniture and decor, which is permissible.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both the baseline and staged images, and it remains unchanged. The room has been furnished, but the underlying floor is consistent.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, windows, doors, and ceiling geometry, remains identical between the baseline and staged images. No walls were moved, altered, or reshaped, and no wall planes were added or removed. All wall plane continuity is preserved, with no recesses filled or new flat surfaces introduced.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.445,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.568 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.179 < 0.6",
+            "Structural IoU too low: 0.157 < 0.25"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "unknown"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.568403355038086,
+              "message": "SSIM 0.568 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.568403355038086,
+                "threshold": 0.97,
+                "width": 384,
+                "height": 512
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.17861865548797792,
+              "message": "Edge IoU: 0.179 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.17861865548797792,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.15700339305911065,
+              "message": "Structural IoU: 0.157 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.15700339305911065,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 864,
+                  "baseHeight": 1184,
+                  "candWidth": 864,
+                  "candHeight": 1184,
+                  "dimensionMismatch": false,
+                  "maskPixels": 121290,
+                  "intersectionPixels": 5275,
+                  "unionPixels": 33598
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.597,
+              "message": "✓ Structural validation passed (score: 0.597, elapsed: 28ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.8,
+                "verticalDeviation": 2,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 47420,
+                "enhancedEdgeCount": 101160,
+                "edgeOverlap": 0.241,
+                "linePreservation": 2.5
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.07797330628237123,
+                  "islandEdgeClusterDrift": 0.6795907377490576,
+                  "islandRectMassDelta": 0.0234375,
+                  "islandMidToneDelta": 0.09236653645833333,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.0234375,
+                  "islandMaskedEdgeDrift": 0.6795907377490576,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: unknown",
+              "details": {
+                "category": "unknown",
+                "reasons": [],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"unknown\",\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 1\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-11",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.568403355038086,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 82.1381344512022,
+              "angleDegrees": 2
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.568 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.568 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.179 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.157 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.4447206210110219,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 82.1% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 76096
+    },
+    {
+      "id": "12",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "envelope: The wall plane to the right of the doorway has been altered. In the baseline image, there is a visible indentation or recess in the wall, creating an offset in the wall plane. In the staged image, this area appears to have been filled or flattened, resulting in a continuous, flat wall surface, which constitutes an architectural modification."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image, including the sliding glass door and the interior doorway, are preserved in the staged image in the correct size and position.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room architecture and all fixed fixtures, including the ceiling light, smoke detector, and wall-mounted HVAC unit, are identical in both images. Changes are limited to furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both images and remains unchanged. The rug added in the staged image is a non-structural, movable item.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "fail",
+          "reason": "The wall plane to the right of the doorway has been altered. In the baseline image, there is a visible indentation or recess in the wall, creating an offset in the wall plane. In the staged image, this area appears to have been filled or flattened, resulting in a continuous, flat wall surface, which constitutes an architectural modification.",
+          "confidence": 1,
+          "hardFail": true,
+          "advisorySignals": [
+            "The wall plane to the right of the doorway has been altered. In the baseline image, there is a visible indentation or recess in the wall, creating an offset in the wall plane. In the staged image, this area appears to have been filled or flattened, resulting in a continuous, flat wall surface, which constitutes an architectural modification."
+          ]
+        }
+      },
+      "elapsedMs": 50096
+    },
+    {
+      "id": "12",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 12.jpg",
+      "enhanced": "Bedroom 12 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "openings: The full-height sliding glass door from the baseline image has been structurally altered into a window in the staged image. The bottom portion of the opening has been infilled with a solid wall, reducing its height."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "fail",
+          "reason": "The full-height sliding glass door from the baseline image has been structurally altered into a window in the staged image. The bottom portion of the opening has been infilled with a solid wall, reducing its height.",
+          "confidence": 1,
+          "hardFail": true,
+          "advisorySignals": [
+            "The full-height sliding glass door from the baseline image has been structurally altered into a window in the staged image. The bottom portion of the opening has been infilled with a solid wall, reducing its height."
+          ],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "skipped",
+          "reason": "openings_failed"
+        },
+        "floor": {
+          "status": "skipped",
+          "reason": "fixtures_failed"
+        },
+        "envelope": {
+          "status": "skipped",
+          "reason": "floor_failed"
+        }
+      },
+      "elapsedMs": 18382
+    },
+    {
+      "id": "14",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.524 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.041 < 0.6",
+        "Structural IoU too low: 0.011 < 0.25"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "No structural changes detected. Walls, openings, ceiling, and floor geometry remain consistent.",
+        "Camera viewpoint and perspective are preserved.",
+        "Existing curtain systems and ceiling fixtures are unchanged, not added or removed.",
+        "No built-in elements have been altered in position or silhouette."
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image are present and correctly positioned in the staged image. The furniture added does not alter the underlying structure.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room architecture and fixed fixtures, including the ceiling light and windows, are identical between the two images. Changes are limited to furniture and decor.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both the baseline and staged images. The addition of a rug in the staged image is a non-structural change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, windows, ceiling, and structural details, remains identical. No walls were moved, no recesses were filled, and no structural elements were altered. The changes are limited to furniture, decor, and lighting.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.399,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.524 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.041 < 0.6",
+            "Structural IoU too low: 0.011 < 0.25"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "No structural changes detected. Walls, openings, ceiling, and floor geometry remain consistent.",
+            "Camera viewpoint and perspective are preserved.",
+            "Existing curtain systems and ceiling fixtures are unchanged, not added or removed.",
+            "No built-in elements have been altered in position or silhouette."
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.5236391843993691,
+              "message": "SSIM 0.524 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.5236391843993691,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 384
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.040535815307465535,
+              "message": "Edge IoU: 0.041 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.040535815307465535,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": false,
+              "score": 0.011393514460999123,
+              "message": "Structural IoU: 0.011 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.011393514460999123,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1152,
+                  "baseHeight": 896,
+                  "candWidth": 1152,
+                  "candHeight": 896,
+                  "dimensionMismatch": false,
+                  "maskPixels": 49159,
+                  "intersectionPixels": 91,
+                  "unionPixels": 7987
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.657,
+              "message": "✓ Structural validation passed (score: 0.657, elapsed: 17ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.9,
+                "verticalDeviation": 0,
+                "horizontalDeviation": 0,
+                "originalEdgeCount": 24389,
+                "enhancedEdgeCount": 62646,
+                "edgeOverlap": 0.142,
+                "linePreservation": 1
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.1033713319451859,
+                  "islandEdgeClusterDrift": 1.1967871485943775,
+                  "islandRectMassDelta": 0.00390625,
+                  "islandMidToneDelta": 0.03778076171875,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.5,
+                  "islandAreaDeltaRatio": 0.00390625,
+                  "islandMaskedEdgeDrift": 1.1967871485943775,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.06581927859734944
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: style_only",
+              "details": {
+                "category": "style_only",
+                "reasons": [
+                  "No structural changes detected. Walls, openings, ceiling, and floor geometry remain consistent.",
+                  "Camera viewpoint and perspective are preserved.",
+                  "Existing curtain systems and ceiling fixtures are unchanged, not added or removed.",
+                  "No built-in elements have been altered in position or silhouette."
+                ],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"reasons\": [\n    \"No structural changes detected. Walls, openings, ceiling, and floor geometry remain consistent.\",\n    \"Camera viewpoint and perspective are preserved.\",\n    \"Existing curtain systems and ceiling fixtures are unchanged, not added or removed.\",\n    \"No built-in elements have been altered in position or silhouette.\"\n  ],\n  \"confidence\": 5,\n  \"violationType\": null,\n  \"builtInDetected\": true,\n  \"structuralAnchorCount\": 4\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-14",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.5236391843993691,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 95.94641846925344,
+              "angleDegrees": 0
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.524 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.524 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.041 (threshold: 0.6)",
+              "structuralMask: Structural IoU: 0.011 (threshold: 0.25)"
+            ],
+            "unifiedScore": 0.39870815366135826,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 95.9% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 53332
+    },
+    {
+      "id": "14",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 14.jpg",
+      "enhanced": "Bedroom 14 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "domain_gate",
+      "reasons": [
+        "openings: An architectural opening, likely a closet door, visible on the far right wall in the baseline image has been removed and replaced with a continuous wall surface in the staged image."
+      ],
+      "warnings": [],
+      "steps": {
+        "openings": {
+          "status": "fail",
+          "reason": "An architectural opening, likely a closet door, visible on the far right wall in the baseline image has been removed and replaced with a continuous wall surface in the staged image.",
+          "confidence": 1,
+          "hardFail": true,
+          "advisorySignals": [
+            "An architectural opening, likely a closet door, visible on the far right wall in the baseline image has been removed and replaced with a continuous wall surface in the staged image."
+          ],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "skipped",
+          "reason": "openings_failed"
+        },
+        "floor": {
+          "status": "skipped",
+          "reason": "fixtures_failed"
+        },
+        "envelope": {
+          "status": "skipped",
+          "reason": "floor_failed"
+        }
+      },
+      "elapsedMs": 17056
+    },
+    {
+      "id": "16",
+      "stagedSet": "Bedroom (Staged 2)",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_gemini",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.685 < 0.97",
+        "Window validation failed: window_position_change",
+        "Global edge IoU too low: 0.320 < 0.6",
+        "Gemini structure: No structural changes detected., No camera shift detected., All architectural elements (walls, windows, ceiling, floor, openings) remain identical in position, size, and form., The room has been appropriately staged with furniture, which falls under non-structural changes."
+      ],
+      "warnings": [
+        "dimension_normalized"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "The staged image correctly preserves all architectural openings from the baseline image. The sliding door and the horizontal window are both present and unchanged in size, shape, and location.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The room's architecture, including windows, doors, and the single ceiling light fixture, remains identical. Furniture and decor have been added, which is permitted.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor material is carpet in both images and remains unchanged.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, window/door placements, and ceiling, remains identical between the baseline and staged images. No structural changes, wall extensions, or filled recesses are visible.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "gemini",
+          "score": 0.533,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.685 < 0.97",
+            "Window validation failed: window_position_change",
+            "Global edge IoU too low: 0.320 < 0.6",
+            "Gemini structure: No structural changes detected., No camera shift detected., All architectural elements (walls, windows, ceiling, floor, openings) remain identical in position, size, and form., The room has been appropriately staged with furniture, which falls under non-structural changes."
+          ],
+          "warnings": [
+            "dimension_normalized"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.6850823738334136,
+              "message": "SSIM 0.685 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.6850823738334136,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 342
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_position_change",
+              "details": {
+                "ok": false,
+                "reason": "window_position_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.32013942650552785,
+              "message": "Edge IoU: 0.320 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.32013942650552785,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.4512653254539779,
+              "message": "Structural IoU: 0.451 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.4512653254539779,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1197,
+                  "baseHeight": 800,
+                  "candWidth": 1197,
+                  "candHeight": 800,
+                  "dimensionMismatch": false,
+                  "maskPixels": 111910,
+                  "intersectionPixels": 41923,
+                  "unionPixels": 92901
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.665,
+              "message": "✓ Structural validation passed (score: 0.665, elapsed: 12ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.6,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 41659,
+                "enhancedEdgeCount": 63818,
+                "edgeOverlap": 0.412,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.24715863425270426,
+                  "islandEdgeClusterDrift": 0.7153965785381028,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.022112573099415205,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.7153965785381028,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.01898418895910878
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": false,
+              "score": 1,
+              "message": "Gemini flagged structure",
+              "details": {
+                "category": "structure",
+                "reasons": [
+                  "No structural changes detected.",
+                  "No camera shift detected.",
+                  "All architectural elements (walls, windows, ceiling, floor, openings) remain identical in position, size, and form.",
+                  "The room has been appropriately staged with furniture, which falls under non-structural changes."
+                ],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "fail"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"reasons\": [\n    \"No structural changes detected.\",\n    \"No camera shift detected.\",\n    \"All architectural elements (walls, windows, ceiling, floor, openings) remain identical in position, size, and form.\",\n    \"The room has been appropriately staged with furniture, which falls under non-structural changes.\"\n  ],\n  \"confidence\": 1.0,\n  \"violationType\": \"layout_only\",\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 0\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged 2)-16",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.6850823738334136,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 67.98605734944722,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.685 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.685 (threshold 0.97)",
+              "windows: window_position_change",
+              "globalEdge: Edge IoU: 0.320 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.532740989812702,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 68.0% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 64006
+    },
+    {
+      "id": "16",
+      "stagedSet": "Bedroom (Staged)",
+      "baseline": "Bedroom 16.jpg",
+      "enhanced": "Bedroom 16 (Enhanced).webp",
+      "finalStatus": "fail",
+      "failedAt": "unified_local",
+      "reasons": [
+        "Perceptual diff failed: SSIM 0.752 < 0.97",
+        "Window validation failed: window_size_change",
+        "Global edge IoU too low: 0.392 < 0.6"
+      ],
+      "warnings": [
+        "dimension_normalized",
+        "furniture_change"
+      ],
+      "steps": {
+        "openings": {
+          "status": "pass",
+          "reason": "All architectural openings from the baseline image, including the sliding glass door and the horizontal window, are present and unchanged in the staged image. The addition of furniture does not alter the room's structure.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": [],
+          "openingRegions": []
+        },
+        "fixtures": {
+          "status": "pass",
+          "reason": "The architectural structure, windows, and the fixed ceiling light fixture are identical in both images. Furniture and decor changes are permitted.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "floor": {
+          "status": "pass",
+          "reason": "The structural floor is carpet in both the baseline and staged images. The addition of furniture does not constitute a structural change.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "envelope": {
+          "status": "pass",
+          "reason": "The architectural envelope, including walls, windows, and structural features, remains identical between the baseline and staged images. No changes in wall plane continuity, extensions, or room footprint are observed. Furniture and decor changes are ignored as per instructions.",
+          "confidence": 1,
+          "hardFail": false,
+          "advisorySignals": []
+        },
+        "unified": {
+          "passed": false,
+          "hardFail": true,
+          "blockSource": "local",
+          "score": 0.56,
+          "reasons": [
+            "Perceptual diff failed: SSIM 0.752 < 0.97",
+            "Window validation failed: window_size_change",
+            "Global edge IoU too low: 0.392 < 0.6"
+          ],
+          "warnings": [
+            "dimension_normalized",
+            "furniture_change"
+          ],
+          "normalized": true,
+          "raw": {
+            "perceptualDiff": {
+              "name": "perceptualDiff",
+              "passed": false,
+              "score": 0.7521027392480706,
+              "message": "SSIM 0.752 (threshold 0.97)",
+              "details": {
+                "passed": false,
+                "score": 0.7521027392480706,
+                "threshold": 0.97,
+                "width": 512,
+                "height": 342
+              }
+            },
+            "windows": {
+              "name": "windows",
+              "passed": false,
+              "score": 0,
+              "message": "window_size_change",
+              "details": {
+                "ok": false,
+                "reason": "window_size_change",
+                "windowCount": 0
+              }
+            },
+            "walls": {
+              "name": "walls",
+              "passed": true,
+              "score": 1,
+              "message": "none",
+              "details": {
+                "ok": true,
+                "reason": "none"
+              }
+            },
+            "globalEdge": {
+              "name": "globalEdge",
+              "passed": false,
+              "score": 0.3915941926408267,
+              "message": "Edge IoU: 0.392 (threshold: 0.6)",
+              "details": {
+                "edgeIoU": 0.3915941926408267,
+                "minEdgeIoU": 0.6
+              }
+            },
+            "structuralMask": {
+              "name": "structuralMask",
+              "passed": true,
+              "score": 0.4947354794165876,
+              "message": "Structural IoU: 0.495 (threshold: 0.25)",
+              "details": {
+                "structIoU": 0.4947354794165876,
+                "minStructIoU": 0.25,
+                "debug": {
+                  "dimensionNormalized": true,
+                  "baseWidth": 1197,
+                  "baseHeight": 800,
+                  "candWidth": 1197,
+                  "candHeight": 800,
+                  "dimensionMismatch": false,
+                  "maskPixels": 111910,
+                  "intersectionPixels": 45860,
+                  "unionPixels": 92696
+                }
+              }
+            },
+            "lineEdge": {
+              "name": "lineEdge",
+              "passed": true,
+              "score": 0.694,
+              "message": "✓ Structural validation passed (score: 0.694, elapsed: 16ms)",
+              "details": {
+                "edgeLoss": 0,
+                "edgeShift": 0.5,
+                "verticalDeviation": 1,
+                "horizontalDeviation": 1,
+                "originalEdgeCount": 41659,
+                "enhancedEdgeCount": 54420,
+                "edgeOverlap": 0.485,
+                "linePreservation": 2
+              }
+            },
+            "anchors": {
+              "name": "anchors",
+              "passed": true,
+              "score": 1,
+              "message": "anchor:island_changed",
+              "details": {
+                "islandChanged": true,
+                "hvacChanged": false,
+                "cabinetryChanged": false,
+                "lightingChanged": false,
+                "details": {
+                  "islandCentroidShift": 0.24161276318477184,
+                  "islandEdgeClusterDrift": 0.45173383317713234,
+                  "islandRectMassDelta": 0,
+                  "islandMidToneDelta": 0.049958881578947366,
+                  "islandDetectedBefore": true,
+                  "islandDetectedConfidenceBefore": 0.25,
+                  "islandAreaDeltaRatio": 0,
+                  "islandMaskedEdgeDrift": 0.45173383317713234,
+                  "hvacRegionDrift": 0,
+                  "cabinetLineDrift": 0,
+                  "lightingPositionDrift": 0.019770386676168667
+                }
+              }
+            },
+            "geminiSemantic": {
+              "name": "geminiSemantic",
+              "passed": true,
+              "score": 1,
+              "message": "Gemini warning: furniture_change",
+              "details": {
+                "category": "furniture_change",
+                "reasons": [],
+                "confidence": 1,
+                "mode": "block",
+                "validator_results": {
+                  "v1": "pass"
+                },
+                "consensusMode": false,
+                "derivedWarnings": 0,
+                "rawText": "```json\n{\n  \"hardFail\": false,\n  \"category\": \"furniture_change\",\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 0\n}\n```"
+              }
+            }
+          },
+          "profile": "STRICT",
+          "evidence": {
+            "jobId": "full-stage2-Bedroom (Staged)-16",
+            "stage": "2",
+            "roomType": "bedroom",
+            "ssim": 0.7521027392480706,
+            "ssimThreshold": 0.97,
+            "ssimPassed": false,
+            "openings": {
+              "windowsBefore": 0,
+              "windowsAfter": 0,
+              "doorsBefore": 0,
+              "doorsAfter": 0
+            },
+            "drift": {
+              "wallPercent": 0,
+              "maskedEdgePercent": 60.840580735917335,
+              "angleDegrees": 1
+            },
+            "anchorChecks": {
+              "islandChanged": false,
+              "hvacChanged": false,
+              "cabinetryChanged": false,
+              "lightingChanged": false
+            },
+            "geometryProfile": "STRONG",
+            "localFlags": [
+              "ssim_failed: 0.752 < 0.97",
+              "anchor:island_changed",
+              "perceptualDiff: SSIM 0.752 (threshold 0.97)",
+              "windows: window_size_change",
+              "globalEdge: Edge IoU: 0.392 (threshold: 0.6)"
+            ],
+            "unifiedScore": 0.5598968402802416,
+            "unifiedPassed": false
+          },
+          "riskLevel": "MEDIUM",
+          "riskTriggers": [
+            "MEDIUM: local validator flagged structural issue (no anchor evidence)",
+            "MEDIUM: masked_edge_drift 60.8% > 55%"
+          ],
+          "modelUsed": "gemini-2.5-flash",
+          "validatorPath": [
+            "perceptualDiff",
+            "structural",
+            "geometry",
+            "gemini"
+          ]
+        }
+      },
+      "elapsedMs": 55618
+    }
+  ]
+}

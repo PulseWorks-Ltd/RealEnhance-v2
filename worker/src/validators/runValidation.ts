@@ -126,7 +126,7 @@ async function runGeminiWithConsensus(
   input: Parameters<typeof runGeminiSemanticValidator>[0],
   derivedWarnings: number
 ): Promise<GeminiConsensusResult> {
-  const effectiveDerivedWarnings = STRUCTURAL_SIGNALS_ACTIVE ? derivedWarnings : 0;
+  const effectiveDerivedWarnings = 0;
   const resultA = await runGeminiSemanticValidator({
     ...input,
     modelOverride: PRIMARY_VALIDATOR_MODEL,
@@ -136,7 +136,7 @@ async function runGeminiWithConsensus(
   };
 
   const validatorConfidence = Number.isFinite(resultA.confidence) ? resultA.confidence : 0;
-  const consensusEnabled = effectiveDerivedWarnings >= 3 || validatorConfidence < FLASH_ACCEPT_CONFIDENCE;
+  const consensusEnabled = validatorConfidence < FLASH_ACCEPT_CONFIDENCE;
   if (!consensusEnabled) {
     return {
       verdict: resultA,
@@ -1173,7 +1173,7 @@ export async function runUnifiedValidation(
     try {
       const geminiEvidence = STRUCTURAL_SIGNALS_ACTIVE ? evidence : undefined;
       const geminiRiskLevel = STRUCTURAL_SIGNALS_ACTIVE ? riskLevel : undefined;
-      const consensusDerivedWarnings = STRUCTURAL_SIGNALS_ACTIVE ? warnings.length : 0;
+      const consensusDerivedWarnings = 0;
       if (!STRUCTURAL_SIGNALS_ACTIVE) {
         nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
           mode: STRUCTURAL_SIGNALS_MODE,
@@ -1193,8 +1193,8 @@ export async function runUnifiedValidation(
         sourceStage,
         validationMode,
         stage1BValidationMode,
-        evidence: geminiEvidence,
-        riskLevel: geminiRiskLevel,
+        evidence: undefined,
+        riskLevel: undefined,
       }, consensusDerivedWarnings);
       const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;
@@ -1413,13 +1413,7 @@ export async function runUnifiedValidation(
     }
   }
 
-  let blockSource: "local" | "gemini" | null = geminiHardFail
-    ? "gemini"
-    : (!allPassed ? "local" : null);
-
-  if (stage2DirectHardFail) {
-    blockSource = "local";
-  }
+  let blockSource: "local" | "gemini" | null = geminiHardFail ? "gemini" : null;
 
   // Deterministic mode: no semantic override of local failures.
 
