@@ -120,6 +120,13 @@ import {
   type StructuralBaseline,
 } from "./validators/openingPreservationValidator";
 import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
+import {
+  classifyIssueTier,
+  CRITICAL_ISSUES,
+  ISSUE_TYPES,
+  type ValidationIssueTier,
+  type ValidationIssueType,
+} from "./validators/issueTypes";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
@@ -8204,6 +8211,58 @@ All openings must remain identical in position and size to the original image.`;
         resizeDelta?: number;
       };
 
+      type SpecialistDecisionResult = {
+        pass: boolean;
+        confidence: number;
+        issueType: ValidationIssueType;
+        issueTier: ValidationIssueTier;
+        severity?: "low" | "medium" | "high";
+      };
+
+      const HIGH_CONFIDENCE_THRESHOLD = 0.9;
+
+      const normalizeSpecialistResult = (params: {
+        validator: "opening" | "fixture" | "envelope" | "floor";
+        status?: string;
+        hardFail?: boolean;
+        reason?: string;
+        confidence?: number;
+        advisorySignals?: string[];
+        issueType?: ValidationIssueType;
+        issueTier?: ValidationIssueTier;
+      }): SpecialistDecisionResult => {
+        const pass = params.status === "pass" && params.hardFail !== true;
+        const rawConfidence = Number(params.confidence);
+        const confidence = Number.isFinite(rawConfidence)
+          ? clamp01(rawConfidence)
+          : pass
+            ? 0
+            : params.hardFail === true
+              ? 0.9
+              : 0.6;
+        const issueType: ValidationIssueType = pass
+          ? ISSUE_TYPES.NONE
+          : (params.issueType || ISSUE_TYPES.UNIFIED_FAILURE);
+        const issueTier: ValidationIssueTier = pass
+          ? "none"
+          : (params.issueTier || classifyIssueTier(issueType));
+        const severity: "low" | "medium" | "high" | undefined = pass
+          ? undefined
+          : confidence >= HIGH_CONFIDENCE_THRESHOLD
+            ? "high"
+            : confidence >= 0.6
+              ? "medium"
+              : "low";
+
+        return {
+          pass,
+          confidence,
+          issueType,
+          issueTier,
+          severity,
+        };
+      };
+
       const extractOpeningSignals = (openingResult: { reason?: string; advisorySignals?: string[] }): OpeningSignals => {
         const reasonTokens = String(openingResult.reason || "")
           .split("|")
@@ -8393,6 +8452,18 @@ All openings must remain identical in position and size to the original image.`;
         envelope: { pass: true, reason: "none" },
       };
 
+      const specialistResults: {
+        opening: SpecialistDecisionResult;
+        fixture: SpecialistDecisionResult;
+        envelope: SpecialistDecisionResult;
+        floor: SpecialistDecisionResult;
+      } = {
+        opening: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        fixture: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        envelope: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        floor: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+      };
+
       try {
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
         const { runOpeningValidator } = await import("./validators/openingValidator.js");
@@ -8400,6 +8471,26 @@ All openings must remain identical in position and size to the original image.`;
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
         const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
+        specialistResults.opening = normalizeSpecialistResult({
+          validator: "opening",
+          status: opRes.status,
+          hardFail: opRes.hardFail,
+          reason: opRes.reason,
+          confidence: opRes.confidence,
+          advisorySignals: opRes.advisorySignals,
+          issueType: opRes.issueType,
+          issueTier: opRes.issueTier,
+        });
+        nLog("[SPECIALIST_CLASSIFICATION]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "opening",
+          pass: specialistResults.opening.pass,
+          confidence: specialistResults.opening.confidence,
+          issueType: specialistResults.opening.issueType,
+          issueTier: specialistResults.opening.issueTier,
+        });
         appendAdvisories("openings", opRes.advisorySignals || []);
         openingRegions = Array.isArray(opRes.openingRegions) ? opRes.openingRegions : [];
         openingSignatureSignalDetected = (opRes.advisorySignals || [])
@@ -8427,6 +8518,8 @@ All openings must remain identical in position and size to the original image.`;
             reason: localSignals.openings.reason,
             confidence: opRes.confidence,
             source: "opening_validator",
+            issueType: specialistResults.opening.issueType,
+            issueTier: specialistResults.opening.issueTier,
           });
           nLog("[STAGE2_VALIDATION_SIGNAL_FAIL] openings");
           logValidatorResult({
@@ -8532,6 +8625,26 @@ All openings must remain identical in position and size to the original image.`;
         });
 
         const fixRes = await runFixtureValidator(validationBasePath, path2);
+        specialistResults.fixture = normalizeSpecialistResult({
+          validator: "fixture",
+          status: fixRes.status,
+          hardFail: fixRes.hardFail,
+          reason: fixRes.reason,
+          confidence: fixRes.confidence,
+          advisorySignals: fixRes.advisorySignals,
+          issueType: fixRes.issueType,
+          issueTier: fixRes.issueTier,
+        });
+        nLog("[SPECIALIST_CLASSIFICATION]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "fixture",
+          pass: specialistResults.fixture.pass,
+          confidence: specialistResults.fixture.confidence,
+          issueType: specialistResults.fixture.issueType,
+          issueTier: specialistResults.fixture.issueTier,
+        });
         appendAdvisories("fixtures", fixRes.advisorySignals || []);
         fixturePass = !(fixRes.hardFail === true || fixRes.status === "fail");
         if (fixRes.hardFail === true || fixRes.status === "fail") {
@@ -8543,6 +8656,8 @@ All openings must remain identical in position and size to the original image.`;
             validator: "fixtures",
             reason: localSignals.fixtures.reason,
             confidence: fixRes.confidence,
+            issueType: specialistResults.fixture.issueType,
+            issueTier: specialistResults.fixture.issueTier,
           });
           nLog("[STAGE2_VALIDATION_SIGNAL_FAIL] fixtures");
           logValidatorResult({
@@ -8567,6 +8682,26 @@ All openings must remain identical in position and size to the original image.`;
         }
 
         const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
+        specialistResults.floor = normalizeSpecialistResult({
+          validator: "floor",
+          status: floorRes.status,
+          hardFail: floorRes.hardFail,
+          reason: floorRes.reason,
+          confidence: floorRes.confidence,
+          advisorySignals: floorRes.advisorySignals,
+          issueType: floorRes.issueType,
+          issueTier: floorRes.issueTier,
+        });
+        nLog("[SPECIALIST_CLASSIFICATION]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "floor",
+          pass: specialistResults.floor.pass,
+          confidence: specialistResults.floor.confidence,
+          issueType: specialistResults.floor.issueType,
+          issueTier: specialistResults.floor.issueTier,
+        });
         appendAdvisories("floor", floorRes.advisorySignals || []);
         floorPass = !(floorRes.hardFail === true || floorRes.status === "fail");
         if (floorRes.hardFail === true || floorRes.status === "fail") {
@@ -8578,6 +8713,8 @@ All openings must remain identical in position and size to the original image.`;
             validator: "floor",
             reason: localSignals.floor.reason,
             confidence: floorRes.confidence,
+            issueType: specialistResults.floor.issueType,
+            issueTier: specialistResults.floor.issueTier,
           });
           nLog("[STAGE2_VALIDATION_SIGNAL_FAIL] floor");
           logValidatorResult({
@@ -8602,6 +8739,26 @@ All openings must remain identical in position and size to the original image.`;
         }
 
         const envRes = await runEnvelopeValidator(validationBasePath, path2);
+        specialistResults.envelope = normalizeSpecialistResult({
+          validator: "envelope",
+          status: envRes.status,
+          hardFail: envRes.hardFail,
+          reason: envRes.reason,
+          confidence: envRes.confidence,
+          advisorySignals: envRes.advisorySignals,
+          issueType: envRes.issueType,
+          issueTier: envRes.issueTier,
+        });
+        nLog("[SPECIALIST_CLASSIFICATION]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "envelope",
+          pass: specialistResults.envelope.pass,
+          confidence: specialistResults.envelope.confidence,
+          issueType: specialistResults.envelope.issueType,
+          issueTier: specialistResults.envelope.issueTier,
+        });
         appendAdvisories("envelope", envRes.advisorySignals || []);
         envelopePass = !(envRes.hardFail === true || envRes.status === "fail");
         if (envRes.hardFail === true || envRes.status === "fail") {
@@ -8613,6 +8770,8 @@ All openings must remain identical in position and size to the original image.`;
             validator: "envelope",
             reason: localSignals.envelope.reason,
             confidence: envRes.confidence,
+            issueType: specialistResults.envelope.issueType,
+            issueTier: specialistResults.envelope.issueTier,
           });
           nLog("[STAGE2_VALIDATION_SIGNAL_FAIL] envelope");
           logValidatorResult({
@@ -8679,6 +8838,43 @@ All openings must remain identical in position and size to the original image.`;
         );
       }
 
+      const highConfidenceFailEntry = Object.entries(specialistResults).find(([, result]) =>
+        result.pass === false &&
+        result.confidence >= HIGH_CONFIDENCE_THRESHOLD &&
+        CRITICAL_ISSUES.has(result.issueType)
+      );
+
+      if (highConfidenceFailEntry) {
+        const [validatorName, result] = highConfidenceFailEntry;
+        const specialistReason = `specialist_high_confidence:${validatorName}:${result.issueType}:${result.confidence.toFixed(3)}`;
+        setStage2AttemptValidation(path2, "local", [specialistReason]);
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(specialistReason));
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: normalizeValidatorReason(specialistReason),
+          });
+          continue;
+        }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `specialist_high_confidence_exhausted:${normalizeValidatorReason(specialistReason)}`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
+      }
+
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
         enhancedPath: path2,
@@ -8695,34 +8891,63 @@ All openings must remain identical in position and size to the original image.`;
         geminiPolicy: stage2GeminiPolicy,
       });
 
-      if (unifiedValidation.hardFail) {
-        const unifiedReason = unifiedValidation.reasons[0] || "stage2_unified_validation_failed";
-        setStage2AttemptValidation(path2, "local", [unifiedReason]);
-        if (attempt < MAX_STAGE2_RETRIES) {
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, normalizeValidatorReason(unifiedReason));
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: normalizeValidatorReason(unifiedReason),
-          });
-          continue;
-        }
+      const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;
 
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = `stage2_unified_validation_exhausted:${normalizeValidatorReason(unifiedReason)}`;
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
+      if (!unifiedPass) {
+        const unifiedReason = unifiedValidation.reasons[0] || "unified_failure";
+        const unifiedIssueType = unifiedValidation.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
+        const unifiedIssueTier = unifiedValidation.issueTier || classifyIssueTier(unifiedIssueType);
+        const unifiedCritical = CRITICAL_ISSUES.has(unifiedIssueType);
+        nLog("[UNIFIED_CLASSIFICATION]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          pass: false,
+          issueType: unifiedIssueType,
+          issueTier: unifiedIssueTier,
+          critical: unifiedCritical,
+          reason: unifiedReason,
+        });
+
+        if (unifiedCritical) {
+          const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
+          setStage2AttemptValidation(path2, "local", [unifiedDecisionReason]);
+          if (attempt < MAX_STAGE2_RETRIES) {
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: normalizeValidatorReason(unifiedDecisionReason),
+            });
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
+        } else {
+          nLog("[UNIFIED_NON_CRITICAL_ADVISORY]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType: unifiedIssueType,
+            issueTier: unifiedIssueTier,
+            reason: unifiedReason,
+            action: "continue",
+          });
+        }
       }
 
       let compositeDecision = "pass";

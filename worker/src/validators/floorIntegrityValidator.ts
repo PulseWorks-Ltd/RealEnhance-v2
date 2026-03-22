@@ -1,5 +1,6 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
+import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type FloorIntegrityValidatorResult = ValidatorOutcome;
@@ -84,13 +85,23 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
     ? parsed.reason.trim()
     : finalOk ? "floor_integrity_preserved" : "floor_integrity_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
+  const advisorySignals = finalOk ? [] : [reason];
+  const tokens = splitIssueTokens(reason, advisorySignals);
+  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+  const issueType = finalOk
+    ? ISSUE_TYPES.NONE
+    : has("floor_changed") || has("floor_integrity") || has("floor")
+      ? ISSUE_TYPES.FLOOR_CHANGED
+      : ISSUE_TYPES.FLOOR_ANOMALY;
 
   return {
     status: finalOk ? "pass" : "fail",
     reason,
     confidence,
     hardFail: false,
-    advisorySignals: finalOk ? [] : [reason],
+    issueType,
+    issueTier: classifyIssueTier(issueType),
+    advisorySignals,
   };
 }
 

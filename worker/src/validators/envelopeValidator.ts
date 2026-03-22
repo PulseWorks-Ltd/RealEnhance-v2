@@ -1,5 +1,6 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
+import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type EnvelopeValidatorResult = ValidatorOutcome;
@@ -26,13 +27,25 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     ? parsed.reason.trim()
     : parsed.ok ? "envelope_preserved" : "envelope_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
+  const advisorySignals = parsed.ok ? [] : [reason];
+  const tokens = splitIssueTokens(reason, advisorySignals);
+  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+  const issueType = parsed.ok
+    ? ISSUE_TYPES.NONE
+    : has("room_envelope_changed")
+      ? ISSUE_TYPES.ROOM_ENVELOPE_CHANGED
+      : has("wall_changed") || has("wall_plane") || has("wall")
+        ? ISSUE_TYPES.WALL_CHANGED
+        : ISSUE_TYPES.ENVELOPE_ANOMALY;
 
   return {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
     hardFail: parsed.ok ? false : confidence >= 0.85,
-    advisorySignals: parsed.ok ? [] : [reason],
+    issueType,
+    issueTier: classifyIssueTier(issueType),
+    advisorySignals,
   };
 }
 

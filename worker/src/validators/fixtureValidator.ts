@@ -1,6 +1,7 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { computeMaterialSignal, computeOpeningGeometrySignal } from "./signalMetrics";
+import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 const logger = console;
@@ -25,13 +26,23 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
     ? parsed.reason.trim()
     : parsed.ok ? "fixtures_preserved" : "fixtures_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
+  const advisorySignals = parsed.ok ? [] : [reason];
+  const tokens = splitIssueTokens(reason, advisorySignals);
+  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+  const issueType = parsed.ok
+    ? ISSUE_TYPES.NONE
+    : has("fixture_changed") || has("ceiling") || has("light") || has("downlight")
+      ? ISSUE_TYPES.FIXTURE_CHANGED
+      : ISSUE_TYPES.FIXTURE_ANOMALY;
 
   return {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
     hardFail: false,
-    advisorySignals: parsed.ok ? [] : [reason],
+    issueType,
+    issueTier: classifyIssueTier(issueType),
+    advisorySignals,
   };
 }
 

@@ -31,6 +31,7 @@ import { buildValidationBuffers, type ValidationBuffers } from "./validationBuff
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
+import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
 import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
 
 // Re-export the normalized adapter for downstream consumers
@@ -70,6 +71,10 @@ export type UnifiedValidationResult = {
   escalated?: boolean;
   /** Ordered list of validators that executed (e.g. ["perceptualDiff","gemini"]) */
   validatorPath?: string[];
+  /** Canonical issue type for the aggregate unified decision */
+  issueType?: ValidationIssueType;
+  /** Canonical issue tier for the aggregate unified decision */
+  issueTier?: ValidationIssueTier;
 };
 
 export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
@@ -90,6 +95,60 @@ export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
   };
 
   return summary;
+}
+
+function inferUnifiedIssueType(params: {
+  hardFail: boolean;
+  geminiVerdict?: GeminiSemanticVerdict | null;
+  reasons: string[];
+}): ValidationIssueType {
+  if (!params.hardFail) return ISSUE_TYPES.NONE;
+
+  const verdict = params.geminiVerdict;
+  const combinedReasons = Array.isArray(params.reasons) ? params.reasons.join("|") : "";
+  const tokens = splitIssueTokens(combinedReasons);
+  const has = (prefix: string): boolean =>
+    tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+  const hasAny = (values: string[]): boolean => values.some((value) => has(value));
+  const hasMajorResizeSignal =
+    has("opening_size_reduction_ge") ||
+    has("opening_resized_major") ||
+    has("opening_resize_ge_0_30");
+  const hasMinorResizeSignal =
+    has("opening_resized_minor") ||
+    has("opening_resized") ||
+    (
+      hasAny(["window", "opening", "door", "resize", "resized", "smaller", "reduced", "narrower"]) &&
+      hasAny(["slight", "slightly", "minor", "small"])
+    );
+
+  if (verdict?.openingRemoved === true || has("opening_removed")) return ISSUE_TYPES.OPENING_REMOVED;
+  if (verdict?.openingInfilled === true || has("opening_infilled") || has("opening_sealed")) return ISSUE_TYPES.OPENING_INFILLED;
+  if (verdict?.openingRelocated === true || has("opening_relocated")) return ISSUE_TYPES.OPENING_RELOCATED;
+  if (hasMajorResizeSignal) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+  if (hasMinorResizeSignal) return ISSUE_TYPES.OPENING_RESIZED_MINOR;
+
+  if (verdict?.violationType === "opening_change") return ISSUE_TYPES.OPENING_REMOVED;
+  if (verdict?.violationType === "wall_change") return ISSUE_TYPES.WALL_CHANGED;
+  if (verdict?.violationType === "camera_shift") return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
+  if (
+    verdict?.violationType === "fixture_change" ||
+    verdict?.violationType === "ceiling_fixture_change" ||
+    verdict?.violationType === "plumbing_change" ||
+    verdict?.violationType === "faucet_change"
+  ) {
+    return ISSUE_TYPES.FIXTURE_CHANGED;
+  }
+
+  if (verdict?.category === "opening_blocked") return ISSUE_TYPES.OPENING_REMOVED;
+  if (verdict?.category === "structure") return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
+
+  if (has("wall") || has("room_envelope_changed")) return ISSUE_TYPES.WALL_CHANGED;
+  if (has("fixture") || has("ceiling") || has("light") || has("faucet") || has("plumbing")) return ISSUE_TYPES.FIXTURE_CHANGED;
+  if (has("floor")) return ISSUE_TYPES.FLOOR_CHANGED;
+  if (has("opening")) return ISSUE_TYPES.OPENING_ANOMALY;
+
+  return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
 }
 
 type GeminiPassFail = "pass" | "fail";
@@ -987,14 +1046,15 @@ export async function runUnifiedValidation(
   if (false && stage === "2" && stage2OcclusionAllowance && results.structuralMask) {
     const anchorEvidencePresent = evidence.anchorChecks && Object.values(evidence.anchorChecks).some(Boolean);
     if (!anchorEvidencePresent) {
+      const allowance = stage2OcclusionAllowance!;
       nLog("[STAGE2_OCCLUSION_ALLOWANCE]", {
-        maskedIoU: stage2OcclusionAllowance.structIoU,
-        threshold: stage2OcclusionAllowance.threshold,
+        maskedIoU: allowance.structIoU,
+        threshold: allowance.threshold,
       });
-      warnings.push(`Structural IoU near threshold: ${stage2OcclusionAllowance.structIoU.toFixed(3)} < ${stage2OcclusionAllowance.threshold}`);
+      warnings.push(`Structural IoU near threshold: ${allowance.structIoU.toFixed(3)} < ${allowance.threshold}`);
       results.structuralMask.passed = true;
       results.structuralMask.message = "Structural IoU near threshold (Stage 2 allowance)";
-      reasons.splice(0, reasons.length, ...reasons.filter(r => !stage2OcclusionAllowance?.reasons.includes(r)));
+      reasons.splice(0, reasons.length, ...reasons.filter(r => !allowance.reasons.includes(r)));
     }
   }
 
@@ -1428,6 +1488,11 @@ export async function runUnifiedValidation(
 
   const hardFail = blockSource !== null;
   const uniqueWarnings = Array.from(new Set(warnings));
+  const issueType: ValidationIssueType = inferUnifiedIssueType({
+    hardFail,
+    geminiVerdict,
+    reasons,
+  });
 
   const finalResult: UnifiedValidationResult = {
     passed: hardFail ? false : true,
@@ -1446,6 +1511,8 @@ export async function runUnifiedValidation(
     earlyExit: earlyExit || undefined,
     escalated: escalated || undefined,
     validatorPath,
+    issueType,
+    issueTier: classifyIssueTier(issueType),
   };
 
   // ===== STRUCTURED PER-CHECK + VERDICT LOGS =====

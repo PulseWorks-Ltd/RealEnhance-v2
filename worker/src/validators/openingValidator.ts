@@ -5,6 +5,7 @@ import {
   type StructuralBaseline,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
+import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueType } from "./issueTypes";
 import { computeOpeningGeometrySignal } from "./signalMetrics";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
@@ -78,6 +79,26 @@ function buildOpeningRegions(openings: StructuralBaseline["openings"]): Array<{
     .filter((region): region is { bbox: [number, number, number, number]; type: "window" | "door" } => region !== null);
 }
 
+function inferOpeningIssueType(params: {
+  pass: boolean;
+  hardFail: boolean;
+  reason?: string;
+  advisorySignals?: string[];
+}): ValidationIssueType {
+  if (params.pass) return ISSUE_TYPES.NONE;
+  const tokens = splitIssueTokens(params.reason, params.advisorySignals);
+  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+
+  if (has("opening_removed") || has("light_anchor_opening_removed")) return ISSUE_TYPES.OPENING_REMOVED;
+  if (has("opening_infilled") || has("light_anchor_opening_infilled")) return ISSUE_TYPES.OPENING_INFILLED;
+  if (has("opening_sealed")) return ISSUE_TYPES.OPENING_SEALED;
+  if (has("opening_relocated") || has("light_anchor_opening_relocated")) return ISSUE_TYPES.OPENING_RELOCATED;
+  if (has("opening_size_reduction_ge") || has("opening_resize_ge_0_30")) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+  if (has("opening_resized")) return ISSUE_TYPES.OPENING_RESIZED_MINOR;
+  if (has("window_occlusion") || has("door_or_closet_blocked") || has("occlusion")) return ISSUE_TYPES.OPENING_OCCLUSION;
+  return params.hardFail ? ISSUE_TYPES.OPENING_RELOCATED : ISSUE_TYPES.OPENING_ANOMALY;
+}
+
 function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -96,13 +117,23 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     ? parsed.reason.trim()
     : parsed.ok ? "openings_preserved" : "openings_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
+  const hardFail = parsed.ok ? false : confidence >= 0.85;
+  const advisorySignals = parsed.ok ? [] : [reason];
+  const issueType = inferOpeningIssueType({
+    pass: parsed.ok,
+    hardFail,
+    reason,
+    advisorySignals,
+  });
 
   return {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
-    hardFail: parsed.ok ? false : confidence >= 0.85,
-    advisorySignals: parsed.ok ? [] : [reason],
+    hardFail,
+    issueType,
+    issueTier: classifyIssueTier(issueType),
+    advisorySignals,
   };
 }
 
@@ -341,12 +372,21 @@ export async function runOpeningValidator(
     }
 
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
+    const reason = reasonParts.join("|");
+    const issueType = inferOpeningIssueType({
+      pass: !hardFail,
+      hardFail,
+      reason,
+      advisorySignals,
+    });
 
     return {
       status: hardFail ? "fail" : "pass",
-      reason: reasonParts.join("|"),
+      reason,
       confidence: deterministic.summary.confidence,
       hardFail,
+      issueType,
+      issueTier: classifyIssueTier(issueType),
       advisorySignals,
       openingRegions,
     };

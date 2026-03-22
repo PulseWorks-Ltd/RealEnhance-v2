@@ -37,20 +37,28 @@ const CAMERA_LOCK_BLOCK = `
 CRITICAL STRUCTURAL FAILURE DETECTED:
 The previous attempt altered camera orientation or perspective.
 Camera position, rotation, and framing are ABSOLUTELY LOCKED.
+Preserve the exact original camera position.
 Do NOT rotate, tilt, shift, zoom, or reframe.
 Perspective must remain identical to input.
 
 If furniture placement is causing perspective warping, prioritize fewer, simpler items to maintain structural integrity.
 `;
 
-const STRUCTURAL_DISTORTION_BLOCK = `
+const STRUCTURAL_DISTORTION_BLOCK_TIER1 = `
 CRITICAL STRUCTURAL FAILURE DETECTED:
 The previous attempt introduced geometric drift or wall/plane distortion.
 Treat the input architecture as immutable.
+Preserve all original wall planes exactly.
 Do NOT reshape, extend, bend, or reinterpret wall/ceiling/floor geometry.
 Maintain exact room proportions and depth.
 
+`;
+
+const STRUCTURAL_DISTORTION_BLOCK_TIER2 = `
+${STRUCTURAL_DISTORTION_BLOCK_TIER1}
+
 If furniture placement is causing structural distortion, reduce furniture quantity and complexity.
+Reduce furniture quantity if necessary.
 Prioritize fewer, simpler items over dense styling.
 `;
 
@@ -101,14 +109,14 @@ export function buildStructuralRetryInjection(opts: {
   if (failureType === "STRUCTURAL_DISTORTION") {
     return {
       retryTier,
-      retryInjection: STRUCTURAL_DISTORTION_BLOCK,
+      retryInjection: retryTier === 1 ? STRUCTURAL_DISTORTION_BLOCK_TIER1 : STRUCTURAL_DISTORTION_BLOCK_TIER2,
     };
   }
 
   if (failureType === "STRUCTURAL_INVARIANT") {
     return {
       retryTier,
-      retryInjection: `${STRUCTURAL_DISTORTION_BLOCK}\n${OPENING_PRESERVATION_BLOCK}`,
+      retryInjection: `${retryTier === 1 ? STRUCTURAL_DISTORTION_BLOCK_TIER1 : STRUCTURAL_DISTORTION_BLOCK_TIER2}\n${OPENING_PRESERVATION_BLOCK}`,
     };
   }
 
