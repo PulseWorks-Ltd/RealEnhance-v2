@@ -88,7 +88,7 @@ export default function Login() {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/20 to-transparent" />
         <div className="absolute bottom-0 left-0 p-10 space-y-3 text-white max-w-xl">
-          <img src="/Logo-light.png" alt="RealEnhance" className="h-10 w-auto drop-shadow" />
+          <img src="/Logo-light-v2.png" alt="RealEnhance" className="h-10 w-auto drop-shadow" />
           <div className="space-y-1">
             <p className="text-sm uppercase tracking-[0.3em] text-emerald-200">RealEnhance</p>
             <p className="text-2xl font-semibold leading-snug">Studio-grade real estate photos in minutes.</p>
@@ -100,7 +100,7 @@ export default function Login() {
       <div className="w-full md:w-1/2 flex items-center justify-center p-6 sm:p-10 md:p-12 bg-white">
         <div className="w-full max-w-md space-y-8 animate-in fade-in slide-in-from-right-2 duration-300">
           <div className="space-y-3">
-            <img src="/Logo-dark.png" alt="RealEnhance" className="h-9 w-auto" />
+            <img src="/Logo-dark-v2.png" alt="RealEnhance" className="h-9 w-auto" />
             <div className="space-y-1">
               <h1 className="text-3xl font-bold text-slate-900">Welcome back</h1>
               <p className="text-sm text-slate-500">Sign in to continue to RealEnhance.</p>
