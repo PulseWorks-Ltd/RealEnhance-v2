@@ -7169,6 +7169,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2SelectedValidationMode = isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
     ? "FULL_STAGE_ONLY"
     : stage2ValidationMode;
+  const isRefreshValidationBehavior = isRefreshValidationFlow && !(
+    isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
+  );
   console.log("STAGE2_VALIDATION_ROUTE", {
     jobId: payload.jobId,
     isRefreshMode,
@@ -8856,7 +8859,7 @@ All openings must remain identical in position and size to the original image.`;
         });
       }
 
-      if (!isRefreshValidationFlow) {
+      if (!isRefreshValidationBehavior) {
         const localSignalsInput: Stage2LocalSignals = {
           structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm, envelopePass ? 0 : 1)),
           wallDrift: clamp01(semanticWallDriftNorm),
@@ -8902,7 +8905,7 @@ All openings must remain identical in position and size to the original image.`;
       if (highConfidenceFailEntry) {
         const [validatorName, result] = highConfidenceFailEntry;
         const specialistReason = `specialist_high_confidence:${validatorName}:${result.issueType}:${result.confidence.toFixed(3)}`;
-        setStage2AttemptValidation(path2, isRefreshValidationFlow ? "specialist" : "local", [specialistReason]);
+        setStage2AttemptValidation(path2, isRefreshValidationBehavior ? "specialist" : "local", [specialistReason]);
         if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
             specialistHardFail: true,
@@ -9038,12 +9041,11 @@ All openings must remain identical in position and size to the original image.`;
       const finalConfirmMode: "block" | "log" = "block";
       if (validationStage === "2") {
         try {
-          const routeToFromEmptyValidation = stage2SelectedValidationMode === "FULL_STAGE_ONLY";
-          const complianceAdvisorySignals = routeToFromEmptyValidation ? [] : stage2AdvisorySignals;
-          const complianceOpeningStructuralSignal = routeToFromEmptyValidation ? false : openingStructuralSignalDetected;
-          const complianceOpeningSignalContext = routeToFromEmptyValidation ? undefined : openingStructuralSignal;
-          const complianceMaskedDriftRegions = routeToFromEmptyValidation ? [] : maskedDriftRegions;
-          const complianceOpeningRegions = routeToFromEmptyValidation ? [] : openingRegions;
+          const complianceAdvisorySignals = isRefreshValidationBehavior ? [] : stage2AdvisorySignals;
+          const complianceOpeningStructuralSignal = isRefreshValidationBehavior ? false : openingStructuralSignalDetected;
+          const complianceOpeningSignalContext = isRefreshValidationBehavior ? undefined : openingStructuralSignal;
+          const complianceMaskedDriftRegions = isRefreshValidationBehavior ? [] : maskedDriftRegions;
+          const complianceOpeningRegions = isRefreshValidationBehavior ? [] : openingRegions;
 
           const ai = getGeminiClient();
           const base1A = toBase64(path1A);
@@ -9055,7 +9057,7 @@ All openings must remain identical in position and size to the original image.`;
             action: "run",
             model: "gemini-2.5-pro",
             refreshMode: isRefreshValidationFlow,
-            localHintsSuppressed: routeToFromEmptyValidation,
+            localHintsSuppressed: isRefreshValidationBehavior,
             advisoryCount: complianceAdvisorySignals.length,
             advisorySignals: complianceAdvisorySignals,
             openingStructuralSignalFlag: complianceOpeningStructuralSignal,
@@ -9503,7 +9505,7 @@ All openings must remain identical in position and size to the original image.`;
         semanticOpeningsDeltaNorm !== 0;
 
       if (hasStructuralOpeningChange) {
-        if (isRefreshValidationFlow || !STRUCTURAL_SIGNALS_ACTIVE) {
+        if (isRefreshValidationBehavior || !STRUCTURAL_SIGNALS_ACTIVE) {
           nLog("[STAGE2_VALIDATION_ADVISORY] opening_change mode=log-only action=proceed_to_gemini", {
             jobId: payload.jobId,
             imageId: payload.imageId,
