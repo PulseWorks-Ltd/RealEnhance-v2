@@ -422,6 +422,7 @@ export async function runUnifiedValidation(
   let stage2AnchorDirectReasons: string[] = [];
   let stage2AnchorDirectEvents: Array<{ source: "anchor"; confidence: number; reasonCode: string }> = [];
   let stage2LightingAnchorChanged = false;
+  const disableIouDecisionSignals = stage === "2" && validationMode === "REFRESH_OR_DIRECT";
   const normalizedStagingStyle = normalizeStagingStyleToken(stagingStyle);
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
@@ -699,28 +700,50 @@ export async function runUnifiedValidation(
 
       // Thresholds by stage
       const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
-      const passed = edgeIoU >= minEdgeIoU;
+      const passed = disableIouDecisionSignals ? true : edgeIoU >= minEdgeIoU;
+      const score = disableIouDecisionSignals ? 1.0 : edgeIoU;
+      const message = disableIouDecisionSignals
+        ? `Edge IoU telemetry: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`
+        : `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`;
 
       results.globalEdge = {
         name: "globalEdge",
         passed,
-        score: edgeIoU,
-        message: `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`,
+        score,
+        message,
         details: { edgeIoU, minEdgeIoU },
       };
-      if (!passed) {
+      nLog("[IOU_TELEMETRY]", {
+        stage,
+        metric: "edgeIoU",
+        value: edgeIoU,
+        threshold: minEdgeIoU,
+        decisionInfluence: disableIouDecisionSignals ? "none" : "active",
+      });
+      if (!passed && !disableIouDecisionSignals) {
         reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
       }
     } catch (err) {
-      console.warn("[unified-validator] Global edge validation error (fail-closed):", err);
-      results.globalEdge = {
-        name: "globalEdge",
-        passed: false,
-        score: 0,
-        message: "Global edge validator error",
-        details: { error: String(err) },
-      };
-      reasons.push("Global edge validation error");
+      if (disableIouDecisionSignals) {
+        console.warn("[unified-validator] Global edge validation error (telemetry-only):", err);
+        results.globalEdge = {
+          name: "globalEdge",
+          passed: true,
+          score: 1.0,
+          message: "Global edge IoU telemetry unavailable",
+          details: { error: String(err) },
+        };
+      } else {
+        console.warn("[unified-validator] Global edge validation error (fail-closed):", err);
+        results.globalEdge = {
+          name: "globalEdge",
+          passed: false,
+          score: 0,
+          message: "Global edge validator error",
+          details: { error: String(err) },
+        };
+        reasons.push("Global edge validation error");
+      }
     }
 
     // ===== 4. STRUCTURAL IoU WITH MASK (Stage 2 only) =====
@@ -755,29 +778,45 @@ export async function runUnifiedValidation(
         if (structResult.structuralIoU !== undefined && structResult.structuralIoU !== null) {
           // IoU was computed successfully
           const structIoU = structResult.structuralIoU;
-          passed = structResult.ok && structIoU >= minStructIoU;
-          score = structIoU;
-          message = `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
-
-          if (!passed) {
-            const iouReason = `Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`;
-            reasons.push(iouReason);
-            if (structResult.reason) {
+          if (disableIouDecisionSignals) {
+            passed = structResult.ok;
+            score = structResult.ok ? 1.0 : 0.0;
+            message = `Structural IoU telemetry: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
+            if (!structResult.ok && structResult.reason) {
               reasons.push(`Reason: ${structResult.reason}`);
             }
-            if (structIoU >= minStructIoU - 0.05) {
-              stage2OcclusionAllowance = {
-                structIoU,
-                threshold: minStructIoU,
-                reasons: [iouReason, ...(structResult.reason ? [`Reason: ${structResult.reason}`] : [])],
-              };
+          } else {
+            passed = structResult.ok && structIoU >= minStructIoU;
+            score = structIoU;
+            message = `Structural IoU: ${structIoU.toFixed(3)} (threshold: ${minStructIoU})`;
+
+            if (!passed) {
+              const iouReason = `Structural IoU too low: ${structIoU.toFixed(3)} < ${minStructIoU}`;
+              reasons.push(iouReason);
+              if (structResult.reason) {
+                reasons.push(`Reason: ${structResult.reason}`);
+              }
+              if (structIoU >= minStructIoU - 0.05) {
+                stage2OcclusionAllowance = {
+                  structIoU,
+                  threshold: minStructIoU,
+                  reasons: [iouReason, ...(structResult.reason ? [`Reason: ${structResult.reason}`] : [])],
+                };
+              }
             }
           }
+          nLog("[IOU_TELEMETRY]", {
+            stage,
+            metric: "structuralIoU",
+            value: structIoU,
+            threshold: minStructIoU,
+            decisionInfluence: disableIouDecisionSignals ? "none" : "active",
+          });
         } else {
           // IoU was skipped - do NOT treat as failure
           const skipReason = structResult.structuralIoUSkipReason || "unknown";
           passed = structResult.ok; // Pass based on semantic checks only
-          score = 0.5; // Neutral score (not 0!)
+          score = disableIouDecisionSignals ? (structResult.ok ? 1.0 : 0.0) : 0.5;
           message = `Structural IoU skipped: ${skipReason}`;
 
           nLog(`[unified-validator] Structural IoU computation skipped: ${skipReason}`);
@@ -808,15 +847,26 @@ export async function runUnifiedValidation(
           warnings.push("dimension_normalized");
         }
       } catch (err) {
-        console.warn("[unified-validator] Structural mask validation error (fail-closed):", err);
-        results.structuralMask = {
-          name: "structuralMask",
-          passed: false,
-          score: 0,
-          message: "Structural mask validator error",
-          details: { error: String(err) },
-        };
-        reasons.push("Structural mask validation error");
+        if (disableIouDecisionSignals) {
+          console.warn("[unified-validator] Structural mask validation error (IoU telemetry-only mode):", err);
+          results.structuralMask = {
+            name: "structuralMask",
+            passed: true,
+            score: 1.0,
+            message: "Structural IoU telemetry unavailable",
+            details: { error: String(err) },
+          };
+        } else {
+          console.warn("[unified-validator] Structural mask validation error (fail-closed):", err);
+          results.structuralMask = {
+            name: "structuralMask",
+            passed: false,
+            score: 0,
+            message: "Structural mask validator error",
+            details: { error: String(err) },
+          };
+          reasons.push("Structural mask validation error");
+        }
       }
     }
 
@@ -1087,7 +1137,7 @@ export async function runUnifiedValidation(
     }
 
     // Edge drift from global edge
-    if (results.globalEdge?.details) {
+    if (!disableIouDecisionSignals && results.globalEdge?.details) {
       const edgeDetails = results.globalEdge.details;
       if (typeof edgeDetails.edgeIoU === "number") {
         // Convert IoU to drift percentage (lower IoU = higher drift)
@@ -1194,7 +1244,7 @@ export async function runUnifiedValidation(
   }
 
   // Edge drift
-  if (results.globalEdge?.details) {
+  if (!disableIouDecisionSignals && results.globalEdge?.details) {
     const edgeDetails = results.globalEdge.details;
     if (typeof edgeDetails.edgeIoU === "number") {
       evidence.drift.maskedEdgePercent = (1 - edgeDetails.edgeIoU) * 100;

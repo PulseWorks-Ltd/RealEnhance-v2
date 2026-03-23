@@ -223,7 +223,7 @@ type ForensicAttemptEntry = {
   retryReason: string;
   retryTrigger: string;
   validatorWarnings: string[];
-  decisionSource: "local" | "gemini" | "consensus";
+  decisionSource: "local" | "gemini" | "consensus" | "specialist";
   compositeDecision: string;
   geminiConfirmation: boolean;
   geminiResult: "pass" | "fail";

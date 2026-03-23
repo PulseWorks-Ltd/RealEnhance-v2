@@ -2816,6 +2816,13 @@ export async function runGeminiSemanticValidator(opts: {
   riskLevel?: RiskLevel;
   deterministicStructureJson?: boolean;
 }): Promise<GeminiSemanticVerdict> {
+  const sanitizePromptForIouLeak = (input: string): string => {
+    return String(input || "")
+      .split("\n")
+      .filter((line) => !/\b(iou|similarity)\b/i.test(line))
+      .join("\n");
+  };
+
   const ai = getGeminiClient();
   const before = toBase64(opts.basePath).data;
   const after = toBase64(opts.candidatePath).data;
@@ -2838,7 +2845,11 @@ export async function runGeminiSemanticValidator(opts: {
       hadRisk: !!opts.riskLevel,
     });
   }
-  const prompt = buildAdjudicatorPrompt(basePrompt, opts.stage, evidenceForGemini, riskForGemini);
+  const rawPrompt = buildAdjudicatorPrompt(basePrompt, opts.stage, evidenceForGemini, riskForGemini);
+  const prompt = sanitizePromptForIouLeak(rawPrompt);
+  if (prompt.toLowerCase().includes("iou") || prompt.toLowerCase().includes("similarity")) {
+    console.warn("IoU LEAK DETECTED IN PROMPT");
+  }
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
   const model = opts.modelOverride || getModelForRisk(opts.riskLevel);
