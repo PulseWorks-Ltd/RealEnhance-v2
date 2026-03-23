@@ -68,13 +68,13 @@ function buildStage2ComplianceContext(mode?: Stage2ValidationMode): string[] {
     return [
       "STAGE2 VALIDATION CONTEXT: FULL_STAGE_ONLY",
       "- BEFORE corresponds to stage-only baseline (typically empty input).",
-      "- AFTER is expected to add appropriate staged furniture while preserving fixed architecture.",
+      "- AFTER is expected to be a realistic staged image.",
     ];
   }
   return [
     "STAGE2 VALIDATION CONTEXT: REFRESH_OR_DIRECT",
     "- BEFORE is structured-retain or light-declutter baseline.",
-    "- AFTER is expected to augment staging while preserving fixed architecture.",
+    "- AFTER is expected to be a realistic staged variant.",
   ];
 }
 
@@ -93,46 +93,16 @@ export async function checkCompliance(
   }
 ): Promise<ComplianceVerdict> {
   const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
-  const openingStructuralSignalFlag = typeof opts?.openingStructuralSignal === "boolean"
-    ? opts?.openingStructuralSignal
-    : !!opts?.openingStructuralSignal;
-  const openingStructuralSignalContext =
-    opts?.openingStructuralSignalContext ||
-    (typeof opts?.openingStructuralSignal === "object" ? opts?.openingStructuralSignal : undefined);
-  const localSignalsMetadata = {
-    advisorySignals: Array.isArray(opts?.advisorySignals) ? opts.advisorySignals : [],
-    openingStructuralSignal: openingStructuralSignalFlag,
-    openingStructuralSignalContext: openingStructuralSignalContext
-      ? {
-          type: openingStructuralSignalContext.type,
-          confidence: openingStructuralSignalContext.confidence,
-          resizeDelta: typeof openingStructuralSignalContext.resizeDelta === "number"
-            ? Number(openingStructuralSignalContext.resizeDelta.toFixed(4))
-            : undefined,
-        }
-      : null,
-    maskedDriftRegions: Array.isArray(opts?.maskedDriftRegions)
-      ? opts.maskedDriftRegions.map((region) => ({
-          bbox: region.bbox.map((v) => Number(Number(v).toFixed(4))) as [number, number, number, number],
-          score: Number(Number(region.score).toFixed(4)),
-        }))
-      : [],
-    openingRegions: Array.isArray(opts?.openingRegions)
-      ? opts.openingRegions.map((region) => ({
-          type: region.type,
-          bbox: region.bbox.map((v) => Number(Number(v).toFixed(4))) as [number, number, number, number],
-        }))
-      : [],
-  };
-  const localSignalsContext = [
-    "LOCAL_SIGNALS_METADATA_JSON (optional, neutral metadata only):",
-    JSON.stringify(localSignalsMetadata),
+  const complianceScopeContext = [
+    "COMPLIANCE SCOPE:",
+    "- Evaluate visual realism, rendering integrity, and placement plausibility only.",
+    "- Ignore architecture, openings, fixed-feature identity, and structural presence/absence.",
   ];
 
   const structuralPrompt = [
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
-    ...localSignalsContext,
+    ...complianceScopeContext,
     "Compare ORIGINAL vs EDITED.",
     "ok=false ONLY if there are severe rendering artifacts, unnatural warping, or glitches.",
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
@@ -176,12 +146,12 @@ export async function checkCompliance(
   const placementPrompt = [
     'Return JSON only: {"ok": true|false, "confidence": 0.0-1.0, "reasons": ["..."]}',
     ...stage2Context,
-    ...localSignalsContext,
+    ...complianceScopeContext,
     "Compare ORIGINAL vs EDITED. ok=false ONLY if EDITED places objects in clearly unrealistic or unsafe positions, such as:",
     "- floating furniture,",
     "- furniture not aligned to floor perspective,",
     "- furniture inappropriately passing through other objects.",
-    "Ignore structural architecture (like walls, windows, fixtures), that is handled elsewhere.",
+    "Ignore all structure/opening/fixed-feature change questions in this check.",
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
 

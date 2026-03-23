@@ -444,6 +444,11 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+function isEdgeOfFrameOpening(opening: StructuralOpening, margin = 0.01): boolean {
+  const [x1, y1, x2, y2] = opening.bbox;
+  return x1 <= margin || y1 <= margin || x2 >= 1 - margin || y2 >= 1 - margin;
+}
+
 function normalizeBbox(
   input: any,
   horizontalBand: HorizontalBand,
@@ -1001,6 +1006,23 @@ export async function validateOpeningPreservation(
     const match = directMatch || fallbackMatch;
 
     if (!match) {
+      const edgeOfFrame = isEdgeOfFrameOpening(baseOpening);
+      if (edgeOfFrame) {
+        outOfFrameOpenings.push(baseOpening.id);
+        analysisNotes.push(
+          `Baseline opening ${baseOpening.id} (${baseOpening.type}) was near frame edge and is not detectable in AFTER; marked out_of_frame (preserved under uncertainty bias).`
+        );
+        openingResults.push({
+          id: baseOpening.id,
+          present: true,
+          sealed: false,
+          relocated: false,
+          outOfFrame: true,
+          confidence: 0.7,
+        });
+        continue;
+      }
+
       openingRemoved = true;
       const likelyInfilled = baseOpening.type !== "window";
       if (likelyInfilled) openingInfilled = true;
@@ -1163,6 +1185,20 @@ export async function validateOpeningPreservation(
     if (!orderedSignatureMismatch) continue;
 
     const anchorReferenced = hasStableAnchorReference(baseline.anchorFixtures, detected.anchorFixtures, wallIndex);
+    const wallOutOfFrameCount = outOfFrameOpenings.filter((openingId) => {
+      const opening = baseline.openings.find((candidate) => candidate.id === openingId);
+      return opening?.wallIndex === wallIndex;
+    }).length;
+
+    if (openingCountDropped && wallOutOfFrameCount > 0 && !anchorReferenced) {
+      analysisNotes.push(
+        `Wall ${wallIndex} opening count dropped but edge-of-frame uncertainty applies (out_of_frame=${wallOutOfFrameCount}); treating as preserved.`
+      );
+      console.log(
+        `[OPENING_SIGNATURE_OUT_OF_FRAME] wall=${wallIndex} opening_drop=true out_of_frame=${wallOutOfFrameCount} anchor_reference=false`
+      );
+      continue;
+    }
 
     // Region-edit mode is more tolerant to sequence-order noise when no stable anchor exists.
     // Only promote to hard structural removal when opening count dropped or anchor-referenced mismatch exists.
@@ -1178,7 +1214,7 @@ export async function validateOpeningPreservation(
 
     openingRemoved = true;
     openingBandMismatch = true;
-    if (anchorReferenced || openingCountDropped) {
+    if (anchorReferenced) {
       openingInfilled = true;
     }
 

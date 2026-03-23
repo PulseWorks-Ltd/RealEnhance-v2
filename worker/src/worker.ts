@@ -5124,7 +5124,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               ? Math.max(1, Math.min(3, Math.floor((s2oCompliance as any).tier)))
               : 1;
             const reasonText = String((s2oCompliance as any).reason || (s2oCompliance.reasons || ["Compliance failed"]).join("; "));
-            const shouldBlock = (s2oCompliance as any).blocking === true || confidence >= COMPLIANCE_BLOCK_THRESHOLD;
             nLog("[COMPLIANCE_GATE_DECISION]", {
               jobId: payload.jobId,
               path: "stage2_only",
@@ -5133,27 +5132,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               tier,
               reason: reasonText,
               mode: geminiSemanticValidatorMode,
-              action: (shouldBlock && geminiSemanticValidatorMode === "block") ? "fallback" : "log-only",
+              action: "log-only",
             });
-            if (shouldBlock && geminiSemanticValidatorMode === "block") {
-              stage2OnlyBlockedReason = `stage2_compliance_exhausted after ${Math.max(1, Number((stage2Result as any)?.attempts || 1))} attempts: ${reasonText}`;
-              nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${Math.max(1, Number((stage2Result as any)?.attempts || 1))} fallback=${stage2OnlyFallbackStage}`);
-              nLog(`[FALLBACK_TO_STAGE${stage2OnlyFallbackStage}] reason=${stage2OnlyBlockedReason}`);
-              mergeAttemptValidation("2", stage2OnlyAttemptNo, {
-                final: {
-                  result: "FAILED",
-                  finalHard: true,
-                  finalCategory: "compliance",
-                  retryTriggered: false,
-                  retriesExhausted: true,
-                  reason: stage2OnlyBlockedReason,
-                },
-              });
-            } else if (shouldBlock && geminiSemanticValidatorMode === "log") {
-              nLog(`[worker] ⚠️  Compliance failure (stage2-only) confidence=${confidence.toFixed(2)} mode=log - ALLOWING job to proceed: ${reasonText}`);
-            } else {
-              nLog(`[worker] ⚠️  Compliance soft-fail (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
-            }
+            nLog(`[worker] ⚠️  Compliance finding (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
           } else {
             nLog(`[AUDIT FIX] Compliance passed (stage2-only) — proceeding to publish`);
           }
@@ -8905,44 +8886,17 @@ All openings must remain identical in position and size to the original image.`;
       if (highConfidenceFailEntry) {
         const [validatorName, result] = highConfidenceFailEntry;
         const specialistReason = `specialist_high_confidence:${validatorName}:${result.issueType}:${result.confidence.toFixed(3)}`;
-        setStage2AttemptValidation(path2, isRefreshValidationBehavior ? "specialist" : "local", [specialistReason]);
-        if (attempt < MAX_STAGE2_RETRIES) {
-          logRefreshValidationTrace({
-            specialistHardFail: true,
-            geminiDecision: "FAIL",
-            finalDecision: "RETRY",
-            reason: specialistReason,
-          });
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, normalizeValidatorReason(specialistReason));
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: normalizeValidatorReason(specialistReason),
-          });
-          continue;
-        }
-
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = `specialist_high_confidence_exhausted:${normalizeValidatorReason(specialistReason)}`;
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        logRefreshValidationTrace({
-          specialistHardFail: true,
-          geminiDecision: "FAIL",
-          finalDecision: "RETRY",
+        nLog("[STAGE2_SPECIALIST_LOG_ONLY] high-confidence specialist signal observed", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: validatorName,
+          confidence: result.confidence,
+          issueType: result.issueType,
+          issueTier: result.issueTier,
           reason: specialistReason,
+          action: "telemetry_only",
         });
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
       }
 
       unifiedValidation = await runUnifiedValidation({
@@ -9137,166 +9091,23 @@ All openings must remain identical in position and size to the original image.`;
               highThreshold: HIGH_CONF,
               medThreshold: MED_CONF,
               mode: finalConfirmMode,
-              action: (complianceBlocking && complianceRetryEligible && finalConfirmMode === "block") ? "retry" : "log-only",
+              action: "log-only",
             });
 
-            if (complianceBlocking && finalConfirmMode === "block") {
-              complianceDecision = "retry";
-              const lastViolationMsg = `Compliance blocking detected: ${reasonText}`;
-              nLog(`[worker] ⚠️  COMPLIANCE RETRY TRIGGER job=${payload.jobId} attempt=${attempt}/${MAX_STAGE2_RETRIES}: ${lastViolationMsg} (confidence: ${confidence.toFixed(2)}, tier: ${tier})`);
-              setStage2AttemptValidation(path2, "gemini", compliance.reasons || [reasonText]);
-              mergeAttemptValidation("2", attempt, {
-                final: {
-                  result: "FAILED",
-                  finalHard: true,
-                  finalCategory: "compliance",
-                  retryTriggered: attempt < MAX_STAGE2_RETRIES,
-                  retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-                  retryStrategy: "NORMAL",
-                  reason: reasonText,
-                },
-              });
-              logEvent("VALIDATION_RESULT", {
-                jobId: payload.jobId,
-                stage: "2",
-                attempt,
-                localPass: unifiedValidation.passed === true,
-                geminiPass: false,
-                confirmPass: null,
-                finalPass: false,
-                violationType: "compliance",
-                retryStrategy: "NORMAL",
-                retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-              });
-
-              if (attempt >= MAX_STAGE2_RETRIES) {
-                const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output
-                  ? stageLineage.stage1B.output
-                  : path1B;
-                const fallbackPath = fallback1B || path1A;
-                const fallbackStage: "1A" | "1B" = fallback1B ? "1B" : "1A";
-
-                stage2Blocked = true;
-                stage2FallbackStage = fallbackStage;
-                stage2BlockedReason = `stage2_compliance_exhausted after ${MAX_STAGE2_RETRIES} attempts: ${reasonText}`;
-                fallbackUsed = fallbackStage === "1B" ? "stage2_compliance_fallback_1b" : "stage2_compliance_fallback_1a";
-                path2 = fallbackPath;
-                stage2CandidatePath = fallbackPath;
-                nLog(`[STAGE2_COMPLIANCE_EXHAUSTED] attempts=${MAX_STAGE2_RETRIES} fallback=${fallbackStage}`);
-                logEvent("FATAL_RETRY_EXHAUSTION", {
-                  jobId: payload.jobId,
-                  stage: "2",
-                  attempts: attempt,
-                  blockedBy: "compliance",
-                  reason: stage2BlockedReason,
-                });
-                emitStage2DecisionBreakdown({
-                  extremeLocalFail: false,
-                  topologyFail: false,
-                  invariantFail: false,
-                  compositeDecision,
-                  geminiConfirmStatus,
-                  complianceDecision,
-                  stage2Blocked,
-                  decisionPoint: "final_block",
-                  reason: "compliance",
-                });
-                logRefreshValidationTrace({
-                  specialistHardFail: false,
-                  geminiDecision: "FAIL",
-                  finalDecision: "RETRY",
-                  reason: reasonText,
-                });
-                nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
-                logValidateFinal(attempt, "reject", attempt - 1);
-                break;
-              }
-
-              emitStage2DecisionBreakdown({
-                extremeLocalFail: false,
-                topologyFail: false,
-                invariantFail: false,
-                compositeDecision,
-                geminiConfirmStatus,
-                complianceDecision,
-                stage2Blocked,
-                decisionPoint: "retry_schedule",
-                reason: reasonText,
-              });
-              logRefreshValidationTrace({
-                specialistHardFail: false,
-                geminiDecision: "FAIL",
-                finalDecision: "RETRY",
-                reason: reasonText,
-              });
-              logValidateFinal(attempt, "retry", attempt);
-              logStage2Retry(attempt, normalizeValidatorReason(reasonText));
-              logEvent("STAGE_RETRY", {
-                jobId: payload.jobId,
-                stage: "2",
-                retry: attempt + 1,
-                retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-                reason: reasonText,
-              });
-              continue;
-            }
-
-            nLog("[COMPLIANCE_SOFT_FAIL_REMOVED] deterministic_blocking=true");
+            complianceDecision = "log-only";
+            nLog("[COMPLIANCE_LOG_ONLY] Stage2 compliance finding recorded; decision authority remains unified Gemini", {
+              jobId: payload.jobId,
+              attempt,
+              confidence,
+              tier,
+              reason: reasonText,
+              complianceBlocking,
+              complianceRetryEligible,
+            });
           }
         } catch (e: any) {
           const complianceErr = e?.message || String(e);
-          nLog("[worker] compliance check error (fail-closed):", complianceErr);
-
-          setStage2AttemptValidation(path2, "gemini", ["compliance_validator_unavailable", complianceErr]);
-          mergeAttemptValidation("2", attempt, {
-            final: {
-              result: "FAILED",
-              finalHard: true,
-              finalCategory: "compliance",
-              retryTriggered: attempt < MAX_STAGE2_RETRIES,
-              retriesExhausted: attempt >= MAX_STAGE2_RETRIES,
-              retryStrategy: "NORMAL",
-              reason: complianceErr,
-            },
-          });
-
-          if (attempt < MAX_STAGE2_RETRIES) {
-            logRefreshValidationTrace({
-              specialistHardFail: false,
-              geminiDecision: "FAIL",
-              finalDecision: "RETRY",
-              reason: complianceErr,
-            });
-            logValidateFinal(attempt, "retry", attempt);
-            logStage2Retry(attempt, "compliance_validator_unavailable");
-            logEvent("STAGE_RETRY", {
-              jobId: payload.jobId,
-              stage: "2",
-              retry: attempt + 1,
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-              reason: "compliance_validator_unavailable",
-            });
-            continue;
-          }
-
-          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1A;
-          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `stage2_compliance_unavailable_exhausted:${normalizeValidatorReason(complianceErr)}`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_compliance_fallback_1b" : "stage2_compliance_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          logRefreshValidationTrace({
-            specialistHardFail: false,
-            geminiDecision: "FAIL",
-            finalDecision: "RETRY",
-            reason: complianceErr,
-          });
-          logValidateFinal(attempt, "reject", attempt - 1);
-          break;
+          nLog("[worker] compliance check error (log-only):", complianceErr);
         }
       }
 

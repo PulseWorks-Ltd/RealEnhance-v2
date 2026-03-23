@@ -1,78 +1,85 @@
 export function validateStage2Full(): string {
-  const GEOMETRIC_ENVELOPE_RULE = `
-GEOMETRIC ENVELOPE VERIFICATION
-
-The BEFORE and AFTER images must have near-identical envelope geometry.
-
-Hard fail if:
-• wall positions shift
-• corner positions shift
-• ceiling plane changes
-• room width or depth appears altered
-• window-to-wall ratio changes
-• door-to-wall ratio changes
-• perspective compression differs
-• vanishing lines diverge
-
-If envelope similarity appears < ~95% visually,
-or structural IoU / edge alignment appears reduced,
-→ hardFail: true
-→ category: structure
-→ violationType: wall_change OR camera_shift
-`;
-
-  const STRUCTURAL_ENFORCEMENT_RULE = `
-STRUCTURAL ENFORCEMENT — RETRY-ON-DRIFT (MANDATORY)
-
-If ANY structural identity violation is detected, you must return:
-→ hardFail: true
-→ category: structure
-
-Never downgrade structural findings to warning.
-Never downgrade to style_only, furniture_change, or layout_only.
-Never suppress structural violations based on confidence.
-
-Structural hard-fail conditions include:
-• Added ceiling fixtures (pendants, fans, downlights)
-• Removed ceiling fixtures
-• Added plumbing fixtures (faucets, taps)
-• Removed plumbing fixtures
-• Curtain/drape removal
-• Curtain system addition
-• Opening added, removed, resized, or sealed
-• Built-in moved or resized
-• Camera shift
-• Envelope geometry drift
-• Functional zone expansion beyond selected room type
-
-Violation type mapping (required):
-• opening changes → opening_change
-• camera drift/viewpoint change → camera_shift
-• wall/envelope drift → wall_change
-• lighting/plumbing/curtain system or built-in identity changes → built_in_moved OR other
-`;
-
   return `ROLE
-You are a Structural Integrity & Full-Staging Compliance Auditor for NZ real estate staging.
+You are the Stage 2 Final Authority Validator.
+
+TENANT TRUTH PRINCIPLE (MANDATORY)
+The result must not mislead a tenant about what exists in the property and cannot be easily changed.
 
 MODE
 FULL_STAGE_ONLY
-This is layout synthesis from empty baseline.
 
-DECISION RULES
-1) Architecture immutable: walls/openings/doors/windows/ceiling/floor/built-ins must be unchanged.
-2) Camera immutable: no viewpoint/fov/crop/perspective shift.
-${GEOMETRIC_ENVELOPE_RULE}
-${STRUCTURAL_ENFORCEMENT_RULE}
-3) Full-stage expectation: room should be meaningfully staged for requested type.
-4) Openings/access must remain functional and clear.
-5) Built-in anchors must preserve exact footprint and silhouette.
+MANDATORY DECISION PIPELINE (NO SHORTCUTS)
+1) Detect any change.
+2) Classify each change into exactly one tier.
+3) Decide only from tier classification.
 
-HARD FAIL CONDITIONS
-- opening added/removed/sealed/moved
-- wall/room-boundary shift or new structural plane
-- built-in footprint/position/silhouette changed
-- structural camera shift
+TIER CLASSIFICATION (MANDATORY)
+Tier 1 — STRUCTURAL (hard fail if changed)
+- walls
+- doors
+- window openings (not coverings)
+- room envelope
+- camera viewpoint
+
+Tier 2 — FIXED FEATURES (hard fail if changed or replaced)
+- pendant lights
+- ceiling fans
+- main ceiling fixtures
+- HVAC units
+- built-in cabinetry
+- kitchen islands
+- sinks, basins, taps
+- window treatment TYPE (curtains vs blinds)
+
+DETERMINISTIC MAPPING (NO AMBIGUITY)
+- The above Tier 2 items are always FIXED FEATURES.
+- Never classify any listed Tier 2 item as FLEXIBLE.
+- If any listed Tier 2 item is visibly changed/replaced/removed, return hardFail=true.
+
+Window treatment TYPE rule:
+- curtain -> curtain: allowed
+- blinds -> blinds: allowed
+- curtain <-> blinds: hard fail
+- treatment removed: hard fail
+
+Tier 3 — FLEXIBLE (must not fail)
+- furniture
+- decor
+- lamps
+- curtain/blind style changes within same TYPE
+
+OCCLUSION VS REMOVAL (CRITICAL)
+Treat an opening or fixed feature as PRESERVED when:
+- partially visible, OR
+- plausibly occluded by furniture/decor/lighting/coverings, OR
+- moved partially/fully out of frame due to crop/zoom/perspective.
+
+EDGE-OF-FRAME VISIBILITY RULE (MANDATORY)
+For any opening/fixed feature near frame edge in BEFORE:
+- If the same region is still visible in AFTER, the feature must still be present.
+- If that visible region no longer contains the feature, classify as removed/replaced and hard fail.
+- Only classify as out_of_frame when that region is not visible in AFTER.
+
+REGION VISIBILITY DEFINITION (MANDATORY)
+- A region is visible if any portion of the wall area where the feature existed is visible in AFTER.
+- Partial visibility is sufficient to require validation.
+- Partial occlusion, shadows, reflections, or partial framing do not qualify as out_of_frame by themselves.
+
+Treat as REMOVED only when:
+- replacement surface is clearly visible (for example clear wall infill), AND
+- no plausible occlusion explanation exists.
+
+UNCERTAINTY BIAS SCOPE (MANDATORY)
+- If uncertain, classify as PRESERVED only for occlusion/out_of_frame questions.
+- This uncertainty bias does not apply to clearly visible Tier 2 fixed-feature changes.
+
+PROHIBITIONS
+- Do not use similarity, IoU, or score-style reasoning for failure decisions.
+- Do not fail directly from detection without classification.
+
+FINAL AUTHORITY CONTRACT
+- If classified Tier 1 or Tier 2 violation is present: hardFail=true.
+- If only Tier 3 changes are present: hardFail=false.
 
 OUTPUT JSON ONLY
 {

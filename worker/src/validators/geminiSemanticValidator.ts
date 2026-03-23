@@ -2835,8 +2835,8 @@ export async function runGeminiSemanticValidator(opts: {
   if (opts.stage === "2" && opts.validationMode) {
     debugInfo("Stage2 validator mode", { validationMode: opts.validationMode });
   }
-  const evidenceForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.evidence : undefined;
-  const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.riskLevel : undefined;
+  const evidenceForGemini = STRUCTURAL_SIGNALS_ACTIVE && opts.stage !== "2" ? opts.evidence : undefined;
+  const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE && opts.stage !== "2" ? opts.riskLevel : undefined;
   if (!STRUCTURAL_SIGNALS_ACTIVE) {
     debugInfo("[STRUCTURAL_SIGNALS_LOG_ONLY] Gemini prompt evidence injection disabled", {
       mode: STRUCTURAL_SIGNALS_MODE,
@@ -2885,6 +2885,34 @@ export async function runGeminiSemanticValidator(opts: {
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
+
+    if (opts.stage === "2") {
+      const category: GeminiSemanticVerdict["category"] =
+        parsed.category === "structure" ||
+        parsed.category === "opening_blocked" ||
+        parsed.category === "furniture_change" ||
+        parsed.category === "style_only"
+          ? parsed.category
+          : "unknown";
+      const violationType: GeminiViolationType = parsed.violationType || "other";
+      const verdict: GeminiSemanticVerdict = {
+        hardFail: parsed.hardFail === true,
+        category,
+        reasons: parsed.reasons || [],
+        confidence: parsed.confidence ?? 0,
+        openingRemoved: parsed.openingRemoved,
+        openingRelocated: parsed.openingRelocated,
+        openingInfilled: parsed.openingInfilled,
+        violationType,
+        builtInDetected: parsed.builtInDetected,
+        structuralAnchorCount: parsed.structuralAnchorCount,
+        rawText: text,
+      };
+
+      const ms = Date.now() - start;
+      debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} stage=2 authority=gemini_raw (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
+      return verdict;
+    }
 
     const lowConfidence = !Number.isFinite(parsed.confidence) || parsed.confidence < MIN_CONFIDENCE;
     let category = parsed.category as GeminiSemanticVerdict["category"];
