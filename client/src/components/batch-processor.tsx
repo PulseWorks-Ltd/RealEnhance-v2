@@ -4463,7 +4463,12 @@ export default function BatchProcessor({
 
   // Retry dialog handlers
   const handleOpenRetryDialog = (imageIndex: number) => {
-    const isTerminal = results[imageIndex]?.isTerminal === true;
+    const status = String(results[imageIndex]?.status || results[imageIndex]?.result?.status || "").toLowerCase();
+    const isTerminal =
+      results[imageIndex]?.isTerminal === true ||
+      status === "completed" ||
+      status === "complete" ||
+      status === "failed";
     if (!isTerminal) {
       toast({
         title: "Retry unavailable",
@@ -4804,7 +4809,12 @@ export default function BatchProcessor({
     }
 
     const status = String(item?.status || item?.result?.status || "").toLowerCase();
-    if (!(status === "failed" || status === "completed")) {
+    const isTerminal =
+      item?.isTerminal === true ||
+      status === "completed" ||
+      status === "complete" ||
+      status === "failed";
+    if (!isTerminal) {
       toast({
         title: "Edit unavailable",
         description: "Edit is only allowed for completed or failed jobs.",
@@ -7175,7 +7185,19 @@ export default function BatchProcessor({
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isRetryActive = isRetrying || !!result?.retryInFlight;
                         const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
-                        const isRetryStatusTerminal = result?.isTerminal === true;
+                        const isRetryStatusTerminal =
+                          result?.isTerminal === true ||
+                          status === "completed" ||
+                          status === "complete" ||
+                          status === "failed";
+                        if (IS_DEV && result?.isTerminal !== true && (status === "completed" || status === "complete" || status === "failed")) {
+                          console.log("Retry eligibility:", {
+                            id: result?.id || result?.jobId || null,
+                            status,
+                            isTerminal: result?.isTerminal,
+                            resolved: isRetryStatusTerminal,
+                          });
+                        }
                         const canRetryThisImage = isRetryStatusTerminal;
                         const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
