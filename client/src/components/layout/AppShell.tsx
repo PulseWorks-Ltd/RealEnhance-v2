@@ -117,7 +117,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         {/* Brand header */}
         <div className="h-16 flex items-center justify-between px-4 border-b border-brand-800">
           <div className="flex items-center flex-1 h-full py-2">
-            <img src="/Logo-dark-v2.png" alt="RealEnhance" className="h-full w-auto object-contain" />
+            <img src="/Logo-light-v2.png" alt="RealEnhance" className="h-full w-auto object-contain" />
           </div>
           <button
             onClick={() => setSidebarOpen(false)}
