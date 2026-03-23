@@ -3525,6 +3525,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     preflightCancelSource = preflightCancelSource === "job_record" ? "job_record+redis" : "redis";
   }
   if (preflightCancelIntent) {
+    nLog("[JOB_CANCELLED]", {
+      jobId: payload.jobId,
+      checkpoint: "preflight",
+      source: preflightCancelSource,
+    });
     nLog("[CANCEL_PREFLIGHT_EXIT]", {
       jobId: payload.jobId,
       source: preflightCancelSource,
@@ -3539,6 +3544,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const stopIfCancelled = async (reason: string): Promise<boolean> => {
     if (!(await isCancelled(payload.jobId))) return false;
+    nLog("[JOB_CANCELLED]", { jobId: payload.jobId, checkpoint: reason });
     nLog("[CANCEL_CHECKPOINT_HIT]", { jobId: payload.jobId, reason });
     await safeWriteJobStatus(
       payload.jobId,
@@ -5796,6 +5802,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     : null;
   const skyModeForStage1A = stage1ASkyModeResult?.mode || "safe";
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
+  if (await stopIfCancelled("pre_stage1a")) return;
   path1A = await runStage1A(canonicalPath, {
     replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
@@ -5925,6 +5932,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // STAGE 1B (optional declutter)
+  if (await stopIfCancelled("pre_stage1b")) return;
   const t1B = Date.now();
   logger.info("STAGE_ENTER", jobLogContext(payload, {
     event: "STAGE_ENTER",
@@ -7290,6 +7298,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           isExteriorScene: sceneLabel === "exterior",
         });
       }
+      if (await stopIfCancelled("pre_stage2")) return;
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
         ? runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (

@@ -16,6 +16,7 @@ async function markCancellingIfActive(jobId: string) {
     const existing = await getJob(jobId);
     if (isTerminalStatus(existing?.status)) return;
     await updateJob(jobId as any, {
+      status: "cancelled",
       errorMessage: "cancel_requested",
       cancelRequested: true,
       cancelledAt: new Date().toISOString(),
@@ -36,6 +37,7 @@ export function cancelRouter() {
       for (const id of ids) {
         await redis.set(cancelKey(id), "1", { EX: 60 * 60 });
         await markCancellingIfActive(id);
+        console.log("[JOB_CANCELLED]", { jobId: id });
         const job = await q.getJob(id);
         if (job) {
           const st = await job.getState();
@@ -129,6 +131,39 @@ export function cancelRouter() {
       res.json({ ok: true, batchId, count: ids.length });
     } catch (err) {
       console.error("[BATCH_CANCELLED] failed", { userId: sessUser.id, batchId, mode: "batchId", error: (err as any)?.message || String(err) });
+      return res.status(500).json({ error: "cancel_failed" });
+    }
+  });
+
+  r.post("/api/batch/:batchId/cancel", async (req, res) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser?.id) {
+      return res.status(401).json({ error: "not_authenticated" });
+    }
+
+    const batchId = String(req.params?.batchId || "").trim();
+    if (!batchId) {
+      return res.status(400).json({ error: "missing_batch_id" });
+    }
+
+    try {
+      const allBatchIds = await listBatchJobIds(batchId);
+      const ids = await listBatchJobIdsForUser(batchId, String(sessUser.id));
+
+      if (!allBatchIds.length || ids.length !== allBatchIds.length) {
+        return res.status(403).json({ error: "forbidden" });
+      }
+
+      if (ids.length) {
+        await cancelJobIds(ids);
+      }
+
+      await deleteBatchState(batchId);
+      console.log("[BATCH_CANCELLED]", { userId: sessUser.id, batchId, count: ids.length, mode: "batchId_param" });
+      console.log("[BATCH_STATE_CLEARED]", { userId: sessUser.id, batchId });
+      res.json({ ok: true, batchId, count: ids.length });
+    } catch (err) {
+      console.error("[BATCH_CANCELLED] failed", { userId: sessUser.id, batchId, mode: "batchId_param", error: (err as any)?.message || String(err) });
       return res.status(500).json({ error: "cancel_failed" });
     }
   });

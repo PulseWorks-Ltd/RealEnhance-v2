@@ -11,7 +11,7 @@ import { getJob } from "../services/jobs.js";
  */
 type UiStatus = "ok" | "warning" | "error";
 type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
-type NormalizedState = "queued" | "awaiting_payment" | "processing" | "completed" | "failed" | "unknown";
+type NormalizedState = "queued" | "awaiting_payment" | "processing" | "completed" | "failed" | "cancelled" | "unknown";
 
 const STUCK_PROCESSING_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -74,7 +74,7 @@ type StatusItem = {
 };
 
 function isTerminalState(state: NormalizedState): boolean {
-  return state === "completed" || state === "failed";
+  return state === "completed" || state === "failed" || state === "cancelled";
 }
 
 function pickAuthoritativeState(
@@ -156,6 +156,7 @@ function normalizePipelineState(raw: string | null | undefined): NormalizedState
   if (s === "awaiting_payment") return "awaiting_payment";
   if (s === "processing" || s === "active") return "processing";
   if (s === "complete" || s === "completed" || s === "done") return "completed";
+  if (s === "cancelled" || s === "canceled" || s === "aborted" || s === "terminated") return "cancelled";
   if (s === "failed" || s === "error") return "failed";
   if (s === "queued" || s === "waiting" || s === "waiting-children" || s === "delayed") return "queued";
   return "unknown";
@@ -568,7 +569,7 @@ export function statusRouter() {
 
       // Check if all jobs are in a terminal state (completed or failed)
       const allDone = items.every((item: StatusItem) =>
-        item.state === 'completed' || item.state === 'failed'
+        item.state === 'completed' || item.state === 'failed' || item.state === 'cancelled'
       );
 
       const base: any = {

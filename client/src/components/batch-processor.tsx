@@ -351,7 +351,7 @@ function deriveUnifiedCompletionState(params: {
   stage1BUrl: string | null;
   stage2Url: string | null;
 }): {
-  status: "complete" | "failed";
+  status: "complete";
   isFallback: boolean;
   fallbackMessage: string | null;
   displayImageUrl: string | null;
@@ -365,19 +365,7 @@ function deriveUnifiedCompletionState(params: {
   const hasStage1B = !!stage1BUrl;
   const hasStage2 = !!stage2Url;
 
-  let status: "complete" | "failed";
-  if (!hasStage1A) {
-    status = "failed";
-  } else if (
-    (requestedFinalStage === "2" && hasStage2) ||
-    (requestedFinalStage === "1B" && hasStage1B)
-  ) {
-    status = "complete";
-  } else if (hasStage1B || hasStage2) {
-    status = "complete";
-  } else {
-    status = "complete";
-  }
+  const status: "complete" = "complete";
 
   const isFallback =
     requestedFinalStage === "2"
@@ -511,8 +499,8 @@ function shouldShowError(result: any): boolean {
     return false;
   }
   
-  // Only show errors for terminal failure states
-  return status === 'failed' || status === 'cancelled' || status === 'timeout';
+  // Only show errors for terminal failure states; cancelled is a non-error terminal state.
+  return status === 'failed' || status === 'timeout';
 }
 
 /**
@@ -3233,9 +3221,11 @@ export default function BatchProcessor({
           const jobParentJobId = it?.job?.parentJobId || it?.job?.parent_job_id || null;
           const parentJobId = it?.parentJobId || it?.parent_job_id || retryInfo?.parentJobId || retryInfo?.parent_job_id || metaParentJobId || jobParentJobId || null;
           const isRetryChildJob = !!(polledId && parentJobId && polledId !== parentJobId);
+          const backendStatus = String(it?.status || "").toLowerCase();
+          const backendExplicitFailed = backendStatus === "failed";
           const incomingRawStatus = String(it?.status || it?.state || it?.jobState || it?.queueStatus || "").toLowerCase();
           const incomingNormalizedStatus = normalizeJobStatus(incomingRawStatus);
-          const incomingTerminalFlag = incomingNormalizedStatus === "completed" || incomingNormalizedStatus === "failed" || incomingNormalizedStatus === "cancelled" || it?.isTerminal === true;
+          const incomingTerminalFlag = incomingNormalizedStatus === "completed" || backendExplicitFailed;
           const imageId = it?.imageId || it?.image_id || it?.meta?.imageId || it?.meta?.image_id || retryInfo?.imageId || retryInfo?.image_id || jobIdToImageIdRef.current[polledId || ''] || null;
           let idx = polledId ? jobIdToIndexRef.current[polledId] : undefined;
           let mappedViaParent = false;
@@ -3281,16 +3271,26 @@ export default function BatchProcessor({
             statusUnknownLoggedRef.current.add(pipelineStatusRaw);
             console.log('[BATCH][status_unknown]', { raw: pipelineStatusRaw });
           }
-          let status = normalizedStatus === "cancelled"
-            ? "failed"
-            : normalizedStatus === "failed"
-              ? "failed"
-              : normalizedStatus === "completed"
-                ? "completed"
-                : normalizedStatus === "awaiting_payment"
-                  ? "awaiting_payment"
-                  : "processing";
-          const isTerminalFlag = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled" || TERMINAL_STATUSES.has(status) || it?.isTerminal === true;
+          let status = normalizedStatus === "completed"
+            ? "completed"
+            : normalizedStatus === "awaiting_payment"
+              ? "awaiting_payment"
+              : "processing";
+
+          // Failure must be backend-authoritative only: do not infer failed from state/jobState/queueStatus.
+          if (backendExplicitFailed) {
+            status = "failed";
+          } else if (normalizedStatus === "failed") {
+            console.warn("[UI_FAILURE_TRIGGER]", {
+              id: key,
+              status: incomingRawStatus,
+              hasOutputs: !!(it?.stageUrls || it?.stage_urls || it?.result?.imageUrl || it?.imageUrl || it?.resultUrl),
+              stage: it?.currentStage || it?.processingStage || it?.stage || null,
+              reason: "ignored_non_authoritative_failure",
+            });
+          }
+
+          const isTerminalFlag = status === "completed" || status === "failed" || TERMINAL_STATUSES.has(status);
           const progress = typeof it?.progress === "number" ? it.progress
             : typeof it?.progressPct === "number" ? it.progressPct
             : typeof it?.progress_percent === "number" ? it.progress_percent
@@ -3361,9 +3361,9 @@ export default function BatchProcessor({
           const targetStage: StageKey = requestedFinalStage;
           const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
-          // Terminal status is presentation-normalized: any usable output is complete; only missing Stage 1A is failed.
-          if (status === "completed" || status === "complete" || status === "failed") {
-            status = unifiedCompletion.status === "failed" ? "failed" : "completed";
+          // Failure must be backend-authoritative only. Missing/partial outputs are transitional.
+          if (status === "completed" || status === "complete") {
+            status = "completed";
           }
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
@@ -3428,6 +3428,12 @@ export default function BatchProcessor({
           })();
 
           if (status === "failed") {
+            console.warn("[UI_FAILURE_TRIGGER]", {
+              id: key,
+              status: pipelineStatusRaw || status,
+              hasOutputs,
+              stage: resultStage || it?.currentStage || it?.processingStage || it?.stage || null,
+            });
             hardFail = true;
             uiStatus = 'error';
           }
@@ -3455,7 +3461,7 @@ export default function BatchProcessor({
             const isQueued = pipelineStatusRaw === "queued" || pipelineStatusRaw === "waiting";
             const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
             // Keep uiOverrideFailed as an internal UI fallback signal; do not inject user-facing warning copy here.
-            const isTerminalNormalized = normalizedStatus === "completed" || normalizedStatus === "failed" || normalizedStatus === "cancelled";
+              const isTerminalNormalized = status === "completed" || status === "failed";
             if (!isTerminalNormalized && !TERMINAL_STATUSES.has(status)) {
               nonTerminalIndices.push(idx);
             }
@@ -3784,10 +3790,10 @@ export default function BatchProcessor({
                 // Preview URL used while processing
                 previewUrl: preserveExistingStage2Artifacts ? (existing.previewUrl || chosenPreview || null) : (chosenPreview || existing.previewUrl || null),
                 // FIX 3: Only show errors for terminal failure states
-                error: (status === "failed" || (it.errorCode && isTerminalFlag))
-                  ? getDisplayError({ status, error: it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
+                error: (resolvedStatus === "failed")
+                  ? getDisplayError({ status: resolvedStatus, error: it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
                   : existing.error,
-                errorCode: (status === "failed" || (it.errorCode && isTerminalFlag)) ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
+                errorCode: (resolvedStatus === "failed") ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
                 blockedStage: blockedStage || existing.blockedStage,
                 fallbackStage: fallbackStage || existing.fallbackStage,
                 validationNote: validationNote || existing.validationNote,
@@ -3940,6 +3946,7 @@ export default function BatchProcessor({
           const r = results[idx];
           if (!r) return false;
           const status = String(r?.status || "").toLowerCase();
+          if (status === "failed") return true;
           const isTerminal = status === "failed" || status === "completed" || status === "complete";
           if (!isTerminal) return false;
 
@@ -3961,8 +3968,6 @@ export default function BatchProcessor({
             stage1BUrl,
             stage2Url,
           });
-
-          if (unifiedCompletion.status === "failed") return true;
           return !!unifiedCompletion.displayImageUrl;
         });
 
@@ -4027,17 +4032,18 @@ export default function BatchProcessor({
                     const existing = copy[idx] || {};
                     copy[idx] = {
                       ...existing,
-                      status: 'failed',
-                      error: existing.error || 'stuck_queued',
-                      errorCode: 'stuck_queued',
+                      // Do not synthesize failure from incomplete polling data.
+                      status: String(existing.status || '').toLowerCase() === 'completed' ? 'completed' : 'processing',
+                      uiOverrideFailed: true,
+                      error: null,
+                      errorCode: undefined,
                     } as any;
-                    processedSetRef.current.add(idx);
                   }
                   return copy;
                 });
-                setProgressText(`Marked ${trulyStuckIndices.length} item(s) as stuck. You can retry them.`);
+                setProgressText(`Some items are taking longer than expected. Processing will continue.`);
                 if (IS_DEV) {
-                  console.warn('[BATCH][poll] marking stuck queued items as failed', { trulyStuckIndices, skippedDueToPartialOutputs: nonTerminalIndices.filter(i => !trulyStuckIndices.includes(i)) });
+                  console.warn('[BATCH][poll] marked stuck queued items as processing fallback (no synthetic failure)', { trulyStuckIndices, skippedDueToPartialOutputs: nonTerminalIndices.filter(i => !trulyStuckIndices.includes(i)) });
                 }
               }
             }
@@ -4110,11 +4116,19 @@ export default function BatchProcessor({
           const j = await res.json();
           // Map to minimal shape expected by UI
           const st = j?.status || j?.state;
-          const status = st === 'complete' || st === 'succeeded' ? 'completed' : st === 'error' || st === 'failed' ? 'failed' : 'processing';
+          const status =
+            st === 'complete' || st === 'completed' || st === 'succeeded'
+              ? 'completed'
+              : st === 'cancelled' || st === 'canceled'
+                ? 'cancelled'
+                : st === 'error' || st === 'failed'
+                  ? 'failed'
+                  : 'processing';
           items.push({ id, status, imageUrl: j?.result?.imageUrl });
         }
         const completed = items.filter(i=>i.status==='completed').length;
-        setProgressText(`Processing images: ${completed}/${ids.length} completed`);
+        const cancelledCount = items.filter(i=>i.status==='cancelled').length;
+        setProgressText(`Processing images: ${completed}/${ids.length} completed${cancelledCount ? `, ${cancelledCount} cancelled` : ''}`);
         for (const it of items) {
           const idx = jobIdToIndexRef.current[it.id];
           if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
@@ -4125,9 +4139,13 @@ export default function BatchProcessor({
             processedSetRef.current.add(idx);
             queueRef.current.push({ index: idx, error: 'Processing failed', jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
           }
+          if (typeof idx === 'number' && it.status === 'cancelled' && !processedSetRef.current.has(idx)) {
+            processedSetRef.current.add(idx);
+            queueRef.current.push({ index: idx, result: { status: 'cancelled', message: 'cancelled' }, jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
+          }
         }
         schedule();
-        if (completed === ids.length) {
+        if (completed + cancelledCount === ids.length) {
           setRunState('done'); setAbortController(null); await refreshUser();
           clearBatchJobState(currentUserId);
           return;
@@ -4148,11 +4166,9 @@ export default function BatchProcessor({
     const ids = cancelIds.length ? cancelIds : jobIds;
     try {
       if (activeClientBatchId) {
-        await fetch(api('/api/batch/cancel'), withDevice({
+        await fetch(api(`/api/batch/${encodeURIComponent(activeClientBatchId)}/cancel`), withDevice({
           method: 'POST',
           credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ batchId: activeClientBatchId }),
           signal: AbortSignal.timeout(15_000)
         }));
       } else if (ids.length) {
@@ -7087,8 +7103,7 @@ export default function BatchProcessor({
                               stage1BUrl,
                               stage2Url,
                             });
-
-                            if (unifiedCompletion.status === "failed") return true;
+                            if (status === "failed") return true;
                             return !!unifiedCompletion.displayImageUrl;
                           }).length;
                           const total = files.length || 0;
@@ -7287,7 +7302,7 @@ export default function BatchProcessor({
                           stage2Url,
                         });
                         const isSuccessStatus = ["completed", "complete", "done"].includes(status);
-                        const isError = unifiedCompletion.status === "failed";
+                        const isError = status === "failed";
                         const targetStage: StageKey = requestedFinalStage;
                         const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
