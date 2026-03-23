@@ -158,8 +158,9 @@ Refine clarity, sharpness, and tonal balance while keeping the image fully reali
 
 YOU MUST:
 • Improve global sharpness and edge clarity gently
-• Improve tonal separation between sky, building, and landscaping
-• Recover minor highlight clipping in bright sky areas if present
+• Improve tonal separation in building and landscaping.
+• Do NOT modify sky unless SKY ENHANCEMENT RULE conditions are met.
+• Recover highlight detail ONLY if clipping is clearly present (pure white with no visible detail) AND sky is confirmed.
 • Improve shadow detail under eaves and shaded zones naturally
 • Reduce compression artefacts
 • Maintain true-to-life exterior colour balance (no artificial saturation)
@@ -218,11 +219,41 @@ export const STAGE1A_PROMPT_EXTERIOR_DAYLIGHT = STAGE1A_PROMPT_EXTERIOR_SKY_STRO
 
 export const SKY_LOCK_BLOCK = `
 
-SKY PRESERVATION (REQUIRED):
-• Do NOT replace, regenerate, repaint, inpaint, or generatively fill the sky.
-• Do NOT introduce blue sky where it does not exist.
-• Preserve roofs, pergolas, patio covers, awnings, and all overhead structures exactly (never remove or open them to sky).
-• If unsure whether a region is sky or structure, treat it as STRUCTURE and leave it unchanged.
+SKY ENHANCEMENT RULE (CONFIDENCE-GATED):
+
+You may enhance the sky ONLY if you are highly confident the region is natural sky.
+
+High confidence indicators:
+• Clear blue sky or natural cloud formations
+• Continuous sky gradient
+• No structural edges, framing, or coverings intersecting the region
+
+If HIGH CONFIDENCE:
+• Improve sky clarity and contrast slightly
+• Recover natural cloud definition
+• Maintain realistic colour (no oversaturation)
+• Preserve natural lighting direction
+• Do NOT replace or generate new sky content
+
+If NOT CERTAIN:
+• Treat the region as STRUCTURE
+• Do NOT modify brightness, contrast, or texture
+• Do NOT attempt to "improve" ambiguous regions
+
+STRICT RULE:
+Never apply partial or "soft" enhancement to uncertain sky regions.
+Only enhance when confident, otherwise leave completely unchanged.
+
+ENHANCEMENT CONSISTENCY RULE:
+
+When sky enhancement is applied:
+• Apply a clean, decisive adjustment (do not apply weak or partial corrections)
+• Maintain natural contrast between sky and structures
+• Avoid low-contrast or hazy outcomes
+• Cloud edges and gradients must remain clearly defined
+
+Do not apply minimal or "safe" adjustments that reduce clarity.
+If enhancement is applied, it must visibly improve definition without altering realism.
 `;
 
 /**

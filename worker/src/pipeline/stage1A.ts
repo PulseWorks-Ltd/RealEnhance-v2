@@ -277,8 +277,13 @@ export async function runStage1A(
     img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.15));
   }
   
-  // 8. Sky enhancement (boost blues for dramatic sky)
-  img = applySkyEnhancement(img);
+  // 8. Sky enhancement (explicit-only): avoid implicit sky edits that can introduce haze.
+  if (sceneType === "exterior" && skyMode === "strong") {
+    img = applySkyEnhancement(img);
+    logIfNotFocusMode("[stage1A] Sky enhancement pre-pass enabled (scene=exterior, skyMode=strong)");
+  } else {
+    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${sceneType || "unknown"}, skyMode=${skyMode})`);
+  }
   
   // 9. Local contrast enhancement (CLAHE-like clarity boost)
   img = img.linear(1.08, -(128 * 0.08));

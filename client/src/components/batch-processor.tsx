@@ -744,6 +744,22 @@ function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed'
   return "processing";
 }
 
+function resolveNonRegressiveStatus(
+  previousRaw: unknown,
+  incomingRaw: unknown
+): 'processing' | 'completed' | 'failed' | 'cancelled' | 'awaiting_payment' {
+  const previous = normalizeJobStatus(String(previousRaw || ""));
+  const incoming = normalizeJobStatus(String(incomingRaw || ""));
+  const priority: Record<'processing' | 'awaiting_payment' | 'completed' | 'failed' | 'cancelled', number> = {
+    processing: 1,
+    awaiting_payment: 1,
+    completed: 3,
+    failed: 3,
+    cancelled: 3,
+  };
+  return priority[incoming] >= priority[previous] ? incoming : previous;
+}
+
 function saveBatchJobState(state: PersistedBatchJob, userId: string | null) {
   try {
     const payload = { ...state, ownerUserId: userId ?? null };
@@ -1032,7 +1048,27 @@ export default function BatchProcessor({
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
-  const [results, setResults] = useState<any[]>([]);
+  const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const [batches, setBatches] = useState<Record<string, any[]>>({});
+  const results = useMemo(() => {
+    if (!activeBatchId) return [];
+    return batches[activeBatchId] || [];
+  }, [activeBatchId, batches]);
+  const setResults = useCallback((updater: React.SetStateAction<any[]>, scopeBatchId?: string | null) => {
+    const targetBatchId = scopeBatchId ?? activeBatchId;
+    if (!targetBatchId) return;
+    setBatches((prev) => {
+      const current = prev[targetBatchId] || [];
+      const next = typeof updater === "function"
+        ? (updater as (prevState: any[]) => any[])(current)
+        : updater;
+      if (prev[targetBatchId] === next) return prev;
+      return {
+        ...prev,
+        [targetBatchId]: next,
+      };
+    });
+  }, [activeBatchId]);
   const [messageByImage, setMessageByImage] = useState<Record<number, string>>({});
   const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
@@ -1269,6 +1305,7 @@ export default function BatchProcessor({
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
 
   const clientBatchIdRef = useRef<string | null>(null);
+  const activePollingBatchIdRef = useRef<string | null>(null);
   const previousFileCountRef = useRef<number>(0);
   
   // ZIP download loading state
@@ -1292,6 +1329,7 @@ export default function BatchProcessor({
   const [editingImages, setEditingImages] = useState<Set<number>>(new Set());
   const [editCompletedImages, setEditCompletedImages] = useState<Set<number>>(new Set());
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
+  const activeRegionEditIndexRef = useRef<number | null>(null);
   const editingImagesRef = useRef<Set<number>>(new Set());
   const preEditResultSnapshotRef = useRef<Record<number, any>>({});
   const preEditDisplayStageSnapshotRef = useRef<Record<number, DisplayOutputKey | undefined>>({});
@@ -2409,6 +2447,9 @@ export default function BatchProcessor({
     if (!userId) {
       console.log("[BATCH_RESTORE_SKIPPED_NO_USER]");
       clearBatchJobState(undefined, { resetUI: true });
+      setActiveBatchId(null);
+      activePollingBatchIdRef.current = null;
+      setBatches({});
       setPendingRestoreSession(null);
       setShowPendingRestoreBanner(false);
       return;
@@ -2426,10 +2467,13 @@ export default function BatchProcessor({
       }
 
       console.log("[BATCH_RESTORE_OK]", { userId, jobId: savedState.jobId });
+      const restoredBatchId = `restored-${savedState.jobId || Date.now()}`;
+      setActiveBatchId(restoredBatchId);
+      activePollingBatchIdRef.current = restoredBatchId;
+      setBatches({ [restoredBatchId]: Array.isArray(savedState.results) ? savedState.results : [] });
       setJobId(savedState.jobId);
       setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
       setRunState(savedState.runState);
-      setResults(savedState.results);
       setProcessedImages(savedState.processedImages);
       setProcessedImagesByIndex(savedState.processedImagesByIndex);
       jobIdToIndexRef.current = savedState.jobIdToIndex || {};
@@ -2696,7 +2740,7 @@ export default function BatchProcessor({
     if (!ids.length) return;
     const controller = new AbortController();
     setAbortController(controller);
-    await pollForBatch(ids, controller);
+    await pollForBatch(ids, controller, activeBatchId);
   };
 
   // Polling function for existing jobs
@@ -2996,7 +3040,7 @@ export default function BatchProcessor({
   };
 
   // Multi-job polling using server batch endpoint
-  const pollForBatch = async (ids: string[], controller: AbortController) => {
+  const pollForBatch = async (ids: string[], controller: AbortController, scopeBatchId?: string | null) => {
     if (currentUserId) {
       localStorage.setItem(makeActiveKey(currentUserId), JSON.stringify(ids));
     }
@@ -3014,6 +3058,9 @@ export default function BatchProcessor({
 
     while (Date.now() < deadline) {
       try {
+        if (scopeBatchId && activePollingBatchIdRef.current && activePollingBatchIdRef.current !== scopeBatchId) {
+          return;
+        }
         if (controller.signal.aborted) return;
         const qs = encodeURIComponent(ids.join(","));
         const pollUrl = api(`/api/status/batch?ids=${qs}`);
@@ -3037,7 +3084,25 @@ export default function BatchProcessor({
           continue;
         }
         const data = await resp.json();
-        const items = Array.isArray(data.items) ? data.items : [];
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        const items = rawItems.filter((it: any) => {
+          const incomingBatchId = String(
+            it?.batchId ||
+            it?.clientBatchId ||
+            it?.meta?.batchId ||
+            it?.meta?.clientBatchId ||
+            it?.result?.batchId ||
+            it?.result?.clientBatchId ||
+            ""
+          ).trim() || null;
+
+          if (!scopeBatchId || !incomingBatchId) return true;
+          if (incomingBatchId !== scopeBatchId) {
+            console.log("[JOB_IGNORED_WRONG_BATCH]", { scopeBatchId, incomingBatchId, jobId: it?.jobId || it?.id || null });
+            return false;
+          }
+          return true;
+        });
 
         // Payment-gated jobs should not look like a stuck processing/preflight state.
         // Surface them as actionable credit-gate flow and stop active polling.
@@ -3154,6 +3219,15 @@ export default function BatchProcessor({
 
         for (const it of items) {
           const polledId = it?.jobId || it?.id || it?.job_id || it?.job?.id || it?.job?.jobId || it?.result?.jobId;
+          const incomingBatchId = String(
+            it?.batchId ||
+            it?.clientBatchId ||
+            it?.meta?.batchId ||
+            it?.meta?.clientBatchId ||
+            it?.result?.batchId ||
+            it?.result?.clientBatchId ||
+            ""
+          ).trim() || null;
           const retryInfo = it?.retryInfo || it?.retry_info || it?.meta?.retryInfo || it?.meta?.retry_info || {};
           const metaParentJobId = it?.meta?.parentJobId || it?.meta?.parent_job_id || null;
           const jobParentJobId = it?.job?.parentJobId || it?.job?.parent_job_id || null;
@@ -3392,6 +3466,10 @@ export default function BatchProcessor({
             setResults(prev => {
               const copy = prev ? [...prev] : [];
               const existing = copy[idx] || {};
+              if (scopeBatchId && incomingBatchId && incomingBatchId !== scopeBatchId) {
+                console.log("[JOB_IGNORED_WRONG_BATCH]", { scopeBatchId, incomingBatchId, jobId: polledId || existing.jobId || null });
+                return copy;
+              }
               const existingJobId = (existing.jobId || existing.result?.jobId || null) as string | null;
 
               // Job-scoped card policy: ignore cross-job updates that are mapped via lineage.
@@ -3505,6 +3583,21 @@ export default function BatchProcessor({
               const existingStatusNorm = normalizeJobStatus(String(existing.status || existing.result?.status || ""));
               const existingIsTerminal = existingStatusNorm === "completed" || existingStatusNorm === "failed" || existingStatusNorm === "cancelled";
               const incomingStatusNorm = status;
+              const existingEditLatestUrl =
+                toDisplayUrl(existing.editLatestUrl) ||
+                toDisplayUrl(existing.result?.editLatestUrl) ||
+                null;
+
+              // If a card is already pinned to an edited output, ignore stale non-edit polling updates.
+              if (
+                existingEditLatestUrl &&
+                existingIsTerminal &&
+                !isRegionEdit &&
+                !isRetryChildJob &&
+                !existing.retryInFlight
+              ) {
+                return copy;
+              }
 
               // Terminal states are immutable: once terminal, ignore any status transition.
               if (existingIsTerminal && existingStatusNorm !== incomingStatusNorm) {
@@ -3608,13 +3701,18 @@ export default function BatchProcessor({
                     null
                   )
                 : (
+                    ((isRegionEdit && completedFinal) ? displayUrl : null) ||
                     resultUrlSafe ||
                     existing.resultUrl ||
                     existing.result?.finalOutputUrl ||
                     existing.result?.resultUrl ||
                     null
                   );
-              const isTerminalStatusForRetry = status === "completed" || status === "failed";
+              const resolvedStatus = resolveNonRegressiveStatus(
+                existing.status || existing.result?.status,
+                status
+              );
+              const isTerminalStatusForRetry = resolvedStatus === "completed" || resolvedStatus === "failed";
               const polledCurrentStage = normalizeCurrentStage(
                 it?.currentStage ||
                 it?.current_stage ||
@@ -3633,12 +3731,13 @@ export default function BatchProcessor({
               );
               copy[idx] = {
                 ...existing,
-                status,
-                progress,
+                status: resolvedStatus,
+                progress: progress ?? existing.progress ?? existing.result?.progress ?? null,
                 currentStage: polledCurrentStage || existing.currentStage || null,
                 resultStage: resultStage ?? existing.resultStage ?? existing.result?.resultStage ?? null,
                 resultUrl: mergedResultUrl,
                 finalOutputUrl: mergedResultUrl,
+                imageUrl: (isRegionEdit && completedFinal) ? (displayUrl || existing.imageUrl || existing.result?.imageUrl || null) : (existing.imageUrl || null),
                 stageUrls: mergedStageUrls,
                 completionSource: preserveExistingStage2Artifacts ? (existing.completionSource || completionSourceResolved) : completionSourceResolved,
                 retryLatestUrl: (isRetryStage2Success ? (stage2Url || displayUrl || existing.retryLatestUrl || null) : (existing.retryLatestUrl || null)),
@@ -3669,10 +3768,10 @@ export default function BatchProcessor({
                   stageUrls: mergedStageUrls,
                   requestedStages: mergedRequestedStages,
                   meta: mergedMeta,
-                  status,
+                  status: resolvedStatus,
                   currentStage: polledCurrentStage || existing.result?.currentStage || existing.currentStage || null,
                   resultStage: resultStage ?? existing.result?.resultStage ?? existing.resultStage ?? null,
-                  progress,
+                  progress: progress ?? existing.result?.progress ?? existing.progress ?? null,
                   warnings: warningList,
                   uiStatus,
                   hardFail,
@@ -3985,7 +4084,7 @@ export default function BatchProcessor({
     setAbortController(controller);
 
     try {
-      await pollForBatch([jobId], controller);
+      await pollForBatch([jobId], controller, activeBatchId);
     } finally {
       // Polling lifecycle ended for this job
       regionEditJobIdsRef.current.delete(jobId);
@@ -4125,6 +4224,25 @@ export default function BatchProcessor({
     }
 
     // Start SSE batch processing
+    const newBatchId = `client-batch-${Date.now()}-${crypto.randomUUID()}`;
+    console.log("[BATCH_SWITCH]", newBatchId);
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setAbortController(null);
+    }
+    activePollingBatchIdRef.current = newBatchId;
+    setActiveBatchId(newBatchId);
+    setBatches({ [newBatchId]: [] });
+    clientBatchIdRef.current = newBatchId;
+    setClientBatchId(newBatchId);
+
+    // Clear all in-flight per-image UI flags from previous batch.
+    setEditingImages(new Set());
+    setEditCompletedImages(new Set());
+    setRetryingImages(new Set());
+    setRetryLoadingImages(new Set());
+    retryInFlightRef.current.clear();
+
     setRunState("running");
     // Pre-size results array with queued placeholders to avoid flicker to error
     setResults(Array.from({ length: files.length }, (_, idx) => ({ index: idx, status: 'queued' })) as any);
@@ -4169,12 +4287,7 @@ export default function BatchProcessor({
       console.assert(!!declutterMode, "[DEV_ASSERT] declutterMode must be non-null when declutter is enabled");
     }
 
-    const activeClientBatchId = clientBatchIdRef.current || (() => {
-      const gen = `client-batch-${Date.now()}-${crypto.randomUUID()}`;
-      clientBatchIdRef.current = gen;
-      setClientBatchId(gen);
-      return gen;
-    })();
+    const activeClientBatchId = newBatchId;
 
     console.log("[BATCH] start payload", {
       clientBatchId: activeClientBatchId,
@@ -4330,7 +4443,7 @@ export default function BatchProcessor({
       });
       
       // Phase 2: Poll multi-job status
-      await pollForBatch(ids, controller);
+      await pollForBatch(ids, controller, activeClientBatchId);
       
     } catch (error: any) {
       setIsUploading(false);
@@ -5661,6 +5774,7 @@ export default function BatchProcessor({
     sceneDetectCacheRef.current = {};
     scenePredictionsByIdRef.current = {};
     clientBatchIdRef.current = null;
+    activePollingBatchIdRef.current = null;
     previousFileCountRef.current = 0;
 
     setFiles([]);
@@ -5672,8 +5786,9 @@ export default function BatchProcessor({
     setJobId("");
     setJobIds([]);
     setCancelIds([]);
+    setActiveBatchId(null);
+    setBatches({});
     setClientBatchId(null);
-    setResults([]);
     setProgressText("");
     setProcessedImages([]);
     setProcessedImagesByIndex({});
@@ -7843,6 +7958,7 @@ export default function BatchProcessor({
               // Force inline processing state immediately for every edit submit.
               const activeEditIndex = editingImageIndex;
               if (activeEditIndex != null && Number.isInteger(activeEditIndex) && activeEditIndex >= 0) {
+                activeRegionEditIndexRef.current = activeEditIndex;
                 preEditResultSnapshotRef.current[activeEditIndex] = results[activeEditIndex];
                 preEditDisplayStageSnapshotRef.current[activeEditIndex] =
                   displayStageByIndex[activeEditIndex] as DisplayOutputKey | undefined;
@@ -7871,11 +7987,12 @@ export default function BatchProcessor({
               setIsEditingInProgress(false);
             }}
             onJobStarted={(jobId: string) => {
-              const activeEditIndex = editingImageIndex;
+              const activeEditIndex = activeRegionEditIndexRef.current ?? editingImageIndex;
               if (activeEditIndex == null) {
                 console.warn('[BatchProcessor] onJobStarted called but editingImageIndex is null');
                 return;
               }
+              activeRegionEditIndexRef.current = activeEditIndex;
               console.log('[BatchProcessor] RegionEditor.onJobStarted', { jobId, editingImageIndex: activeEditIndex });
 
               // Close modal immediately after Enhance submits successfully
@@ -7912,18 +8029,19 @@ export default function BatchProcessor({
             }}
             onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string; shouldAutoClose?: boolean }) => {
               setIsEditingInProgress(false);
-              if (typeof editingImageIndex === 'number' && Number.isInteger(editingImageIndex) && editingImageIndex >= 0) {
-                clearEditFallbackTimer(editingImageIndex);
+              const activeEditIndex = activeRegionEditIndexRef.current ?? editingImageIndex;
+              if (typeof activeEditIndex === 'number' && Number.isInteger(activeEditIndex) && activeEditIndex >= 0) {
+                clearEditFallbackTimer(activeEditIndex);
                 const preservedOriginalUrl =
-                  results[editingImageIndex]?.result?.originalImageUrl ||
-                  results[editingImageIndex]?.result?.originalUrl ||
-                  results[editingImageIndex]?.originalImageUrl ||
-                  results[editingImageIndex]?.originalUrl;
-                const preservedQualityEnhancedUrl = results[editingImageIndex]?.result?.qualityEnhancedUrl || results[editingImageIndex]?.qualityEnhancedUrl;
+                  results[activeEditIndex]?.result?.originalImageUrl ||
+                  results[activeEditIndex]?.result?.originalUrl ||
+                  results[activeEditIndex]?.originalImageUrl ||
+                  results[activeEditIndex]?.originalUrl;
+                const preservedQualityEnhancedUrl = results[activeEditIndex]?.result?.qualityEnhancedUrl || results[activeEditIndex]?.qualityEnhancedUrl;
                 
                 // ✅ PATCH 1: Preserve original stage URLs - never overwrite stage baselines with edit outputs
-                const existingStageUrls = results[editingImageIndex]?.stageUrls || results[editingImageIndex]?.result?.stageUrls || {};
-                const stageSnapshot = preEditStageUrlsRef.current[editingImageIndex] || {};
+                const existingStageUrls = results[activeEditIndex]?.stageUrls || results[activeEditIndex]?.result?.stageUrls || {};
+                const stageSnapshot = preEditStageUrlsRef.current[activeEditIndex] || {};
                 const preservedStage2 =
                   toDisplayUrl(existingStageUrls?.['2']) ||
                   toDisplayUrl(existingStageUrls?.[2]) ||
@@ -7954,7 +8072,7 @@ export default function BatchProcessor({
                 };
                 
                 // ✅ Track edit lineage separately from stage pipeline
-                const editHistory = results[editingImageIndex]?.editHistory || [];
+                const editHistory = results[activeEditIndex]?.editHistory || [];
                 const updatedEditHistory = [
                   ...editHistory,
                   {
@@ -7966,12 +8084,12 @@ export default function BatchProcessor({
                 ];
                 
                 const mergedMeta = {
-                  ...(results[editingImageIndex]?.meta || {}),
-                  ...(results[editingImageIndex]?.result?.meta || {}),
+                  ...(results[activeEditIndex]?.meta || {}),
+                  ...(results[activeEditIndex]?.result?.meta || {}),
                 };
                 
                 setResults(prev => prev.map((r, i) =>
-                  i === editingImageIndex ? {
+                  i === activeEditIndex ? {
                     ...r,
                     image: result.imageUrl,
                     imageUrl: result.imageUrl,
@@ -8014,8 +8132,8 @@ export default function BatchProcessor({
                     filename: r?.filename
                   } : r
                 ));
-                setDisplayStageByIndex(prev => ({ ...prev, [editingImageIndex]: "edited" }));
-                setProcessedImagesByIndex(prev => ({ ...prev, [String(editingImageIndex)]: result.imageUrl }));
+                setDisplayStageByIndex(prev => ({ ...prev, [activeEditIndex]: "edited" }));
+                setProcessedImagesByIndex(prev => ({ ...prev, [String(activeEditIndex)]: result.imageUrl }));
                 setProcessedImages(prev => {
                   const newSet = new Set(prev);
                   newSet.add(result.imageUrl);
@@ -8023,10 +8141,10 @@ export default function BatchProcessor({
                 });
                 toast({
                   title: 'Region edit complete',
-                  description: `Image ${editingImageIndex + 1} edited successfully. You can do more edits or close the modal.`,
+                  description: `Image ${activeEditIndex + 1} edited successfully. You can do more edits or close the modal.`,
                 });
-                delete preEditResultSnapshotRef.current[editingImageIndex];
-                delete preEditDisplayStageSnapshotRef.current[editingImageIndex];
+                delete preEditResultSnapshotRef.current[activeEditIndex];
+                delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
               }
               refreshUser();
               
@@ -8038,51 +8156,57 @@ export default function BatchProcessor({
                 setActiveEditSource(null);
                 setEditingImages(prev => {
                   const next = new Set(prev);
-                  if (editingImageIndex !== null) next.delete(editingImageIndex);
+                  const idx = activeRegionEditIndexRef.current;
+                  if (idx !== null) next.delete(idx);
                   return next;
                 });
+                activeRegionEditIndexRef.current = null;
               }
               // Otherwise keep modal open so user can do more edits
             }}
             onCancel={() => {
               setIsEditingInProgress(false);
-              if (typeof editingImageIndex === 'number') {
-                clearEditFallbackTimer(editingImageIndex);
+              const activeEditIndex = activeRegionEditIndexRef.current ?? editingImageIndex;
+              if (typeof activeEditIndex === 'number') {
+                clearEditFallbackTimer(activeEditIndex);
                 setEditingImages(prev => {
                   const next = new Set(prev);
-                  next.delete(editingImageIndex);
+                  next.delete(activeEditIndex);
                   return next;
                 });
               }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
+              activeRegionEditIndexRef.current = null;
             }}
             onError={(errorMessage?: string) => {
               console.error('[batch-processor] Region edit error:', errorMessage);
               setIsEditingInProgress(false);
-              if (typeof editingImageIndex === 'number') {
-                clearEditFallbackTimer(editingImageIndex);
-                const previousResult = preEditResultSnapshotRef.current[editingImageIndex];
-                const previousDisplayStage = preEditDisplayStageSnapshotRef.current[editingImageIndex];
+              const activeEditIndex = activeRegionEditIndexRef.current ?? editingImageIndex;
+              if (typeof activeEditIndex === 'number') {
+                clearEditFallbackTimer(activeEditIndex);
+                const previousResult = preEditResultSnapshotRef.current[activeEditIndex];
+                const previousDisplayStage = preEditDisplayStageSnapshotRef.current[activeEditIndex];
 
                 if (previousResult) {
-                  setResults(prev => prev.map((r, i) => (i === editingImageIndex ? previousResult : r)));
+                  setResults(prev => prev.map((r, i) => (i === activeEditIndex ? previousResult : r)));
                   if (previousDisplayStage) {
-                    setDisplayStageByIndex(prev => ({ ...prev, [editingImageIndex]: previousDisplayStage }));
+                    setDisplayStageByIndex(prev => ({ ...prev, [activeEditIndex]: previousDisplayStage }));
                   }
                 }
 
-                delete preEditResultSnapshotRef.current[editingImageIndex];
-                delete preEditDisplayStageSnapshotRef.current[editingImageIndex];
+                delete preEditResultSnapshotRef.current[activeEditIndex];
+                delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
                 setEditingImages(prev => {
                   const next = new Set(prev);
-                  next.delete(editingImageIndex);
+                  next.delete(activeEditIndex);
                   return next;
                 });
               }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
               setActiveEditSource(null);
+              activeRegionEditIndexRef.current = null;
               // The error toast is already shown by RegionEditor, so we don't duplicate it here
             }}
           />
