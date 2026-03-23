@@ -345,6 +345,86 @@ function getPerImageStagingAllowed(item: any): boolean {
   return true;
 }
 
+function deriveUnifiedCompletionState(params: {
+  requestedFinalStage: StageKey;
+  stage1AUrl: string | null;
+  stage1BUrl: string | null;
+  stage2Url: string | null;
+}): {
+  status: "complete" | "failed";
+  isFallback: boolean;
+  fallbackMessage: string | null;
+  displayImageUrl: string | null;
+  hasStage1A: boolean;
+  hasStage1B: boolean;
+  hasStage2: boolean;
+  targetUrlPresent: boolean;
+} {
+  const { requestedFinalStage, stage1AUrl, stage1BUrl, stage2Url } = params;
+  const hasStage1A = !!stage1AUrl;
+  const hasStage1B = !!stage1BUrl;
+  const hasStage2 = !!stage2Url;
+
+  let status: "complete" | "failed";
+  if (!hasStage1A) {
+    status = "failed";
+  } else if (
+    (requestedFinalStage === "2" && hasStage2) ||
+    (requestedFinalStage === "1B" && hasStage1B)
+  ) {
+    status = "complete";
+  } else if (hasStage1B || hasStage2) {
+    status = "complete";
+  } else {
+    status = "complete";
+  }
+
+  const isFallback =
+    requestedFinalStage === "2"
+      ? !hasStage2 && hasStage1B
+      : requestedFinalStage === "1B"
+      ? !hasStage1B && hasStage1A
+      : false;
+
+  let fallbackMessage: string | null = null;
+  if (isFallback) {
+    if (requestedFinalStage === "2") {
+      fallbackMessage =
+        "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again.";
+    } else if (requestedFinalStage === "1B") {
+      fallbackMessage =
+        "We couldn’t provide the decluttered image, but here is an enhanced copy of the original. Use Edit to declutter or Retry to try again.";
+    }
+  }
+
+  let displayImageUrl: string | null;
+  if (requestedFinalStage === "2") {
+    displayImageUrl = stage2Url || stage1BUrl || stage1AUrl || null;
+  } else if (requestedFinalStage === "1B") {
+    displayImageUrl = stage1BUrl || stage1AUrl || null;
+  } else {
+    displayImageUrl = stage1AUrl || null;
+  }
+
+  const targetUrlPresent =
+    requestedFinalStage === "2"
+      ? hasStage2
+      : requestedFinalStage === "1B"
+      ? hasStage1B
+      : hasStage1A;
+
+  return {
+    status,
+    isFallback,
+    fallbackMessage,
+    displayImageUrl,
+    hasStage1A,
+    hasStage1B,
+    hasStage2,
+    targetUrlPresent,
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // FIX 2: Filter backend warnings and errors for user-friendly display
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3127,7 +3207,7 @@ export default function BatchProcessor({
             statusUnknownLoggedRef.current.add(pipelineStatusRaw);
             console.log('[BATCH][status_unknown]', { raw: pipelineStatusRaw });
           }
-          const status = normalizedStatus === "cancelled"
+          let status = normalizedStatus === "cancelled"
             ? "failed"
             : normalizedStatus === "failed"
               ? "failed"
@@ -3196,18 +3276,21 @@ export default function BatchProcessor({
           const stagePreview = stage2Url || stage1bUrl || stage1aUrl || null;
           const hasOutputs = !!(stagePreview || resultUrlSafe || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
-          // Determine target stage per image (same logic as UI)
-          const targetStage: StageKey = (() => {
-            if (stage2Expected) return "2";
-            if (declutterRequested) return "1B";
-            return "1A";
-          })();
+          // Target stage and completion interpretation are derived only from requested pipeline + available outputs.
+          const requestedFinalStage: StageKey = stage2Expected ? "2" : (declutterRequested ? "1B" : "1A");
+          const unifiedCompletion = deriveUnifiedCompletionState({
+            requestedFinalStage,
+            stage1AUrl: stage1aUrl,
+            stage1BUrl: stage1bUrl,
+            stage2Url,
+          });
+          const targetStage: StageKey = requestedFinalStage;
+          const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
-          const targetUrlPresent = (() => {
-            if (targetStage === "2") return !!stage2Url;
-            if (targetStage === "1B") return !!stage1bUrl;
-            return !!stage1aUrl;
-          })();
+          // Terminal status is presentation-normalized: any usable output is complete; only missing Stage 1A is failed.
+          if (status === "completed" || status === "complete" || status === "failed") {
+            status = unifiedCompletion.status === "failed" ? "failed" : "completed";
+          }
 
           let uiStatus = uiStatusRaw || (warnings.length ? 'warning' : 'ok');
           if (blockedStage && hasOutputs) uiStatus = 'warning';
@@ -3225,15 +3308,13 @@ export default function BatchProcessor({
             if (displayUrl) completionSource = "region-edit";
           }
           if (!displayUrl && !isRegionEdit) {
-            if (stage2Url) {
-              displayUrl = stage2Url;
-              completionSource = "stage2";
-            } else if (stage1bUrl) {
-              displayUrl = stage1bUrl;
-              completionSource = "stage1b";
-            } else if (stage1aUrl) {
-              displayUrl = stage1aUrl;
-              completionSource = "stage1a";
+            if (unifiedCompletion.displayImageUrl) {
+              displayUrl = unifiedCompletion.displayImageUrl;
+              completionSource = targetStage === "2" && stage2Url
+                ? "stage2"
+                : targetStage === "1B" && stage1bUrl
+                  ? "stage1b"
+                  : "stage1a";
             } else if (it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url) {
               displayUrl = it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || null;
               completionSource = "imageUrl_fallback";
@@ -3249,15 +3330,9 @@ export default function BatchProcessor({
           const completedViaFallback =
             status === "completed" &&
             !!displayUrl &&
-            !targetUrlPresent &&
-            !!(
-              blockedStage ||
-              fallbackStage ||
-              (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
-            );
+            unifiedCompletion.isFallback;
 
-          // FIX: mark fallback terminals as complete even when Stage 2 was requested but safely blocked
-          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit || completedViaFallback);
+          const completedFinal = status === "completed" && !!displayUrl && (unifiedCompletion.status === "complete" || isRegionEdit);
           const completionSourceResolved = isRegionEdit && completedFinal ? "region-edit" : completionSource;
           
           // Log when backend says completed but target not reached (still processing)
@@ -3268,21 +3343,13 @@ export default function BatchProcessor({
             }
           }
 
-          // Missing final URL while marked complete is a warning bug surface
+          // Keep only actionable user-visible warnings; fallback completion is no longer an error path.
           const warningList = (() => {
             const base = warnings.slice();
-              if (status === "completed" && !resultUrlSafe) {
-                base.push("Image Enhancement didn’t finalise. Please retry image.");
+            if (stage2Mismatch) {
+              base.push("Staged output present but wasn’t requested.");
               uiStatus = uiStatus === 'error' ? 'error' : 'warning';
             }
-                if (status === "completed" && targetStage === "2" && !stage2Url) {
-                  base.push("Staged output is missing for this completed job. Please retry image.");
-                  uiStatus = uiStatus === 'error' ? 'error' : 'warning';
-                }
-                if (stage2Mismatch) {
-                  base.push("Staged output present but wasn’t requested.");
-                  uiStatus = uiStatus === 'error' ? 'error' : 'warning';
-                }
             return base;
           })();
 
@@ -3587,6 +3654,8 @@ export default function BatchProcessor({
                 uiStatus,
                 hardFail,
                 uiOverrideFailed,
+                fallbackMessage: unifiedCompletion.fallbackMessage,
+                requestedFinalStage,
                 requestedStages: mergedRequestedStages,
                 meta: mergedMeta,
                 // Preserve prior result object but refresh URLs and status fields
@@ -3607,6 +3676,8 @@ export default function BatchProcessor({
                   warnings: warningList,
                   uiStatus,
                   hardFail,
+                  fallbackMessage: unifiedCompletion.fallbackMessage,
+                  requestedFinalStage,
                   completionSource: preserveExistingStage2Artifacts ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved) : completionSourceResolved,
                   retryLatestUrl: (isRetryStage2Success ? (stage2Url || displayUrl || existing.result?.retryLatestUrl || null) : (existing.result?.retryLatestUrl ?? null)),
                   editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.result?.editLatestUrl ?? null) : (existing.result?.editLatestUrl ?? null),
@@ -3770,7 +3841,8 @@ export default function BatchProcessor({
           const r = results[idx];
           if (!r) return false;
           const status = String(r?.status || "").toLowerCase();
-          if (status === "failed") return true;
+          const isTerminal = status === "failed" || status === "completed" || status === "complete";
+          if (!isTerminal) return false;
 
           const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
           const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
@@ -3778,31 +3850,21 @@ export default function BatchProcessor({
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = getPerImageDeclutterRequested(r);
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
-          const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+          const requestedFinalStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
 
           const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
           const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
           const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
           const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
-          const targetUrlPresent = (
-            (targetStage === "2" && !!stage2Url) ||
-            (targetStage === "1B" && !!stage1BUrl) ||
-            (targetStage === "1A" && !!stage1AUrl)
-          );
+          const unifiedCompletion = deriveUnifiedCompletionState({
+            requestedFinalStage,
+            stage1AUrl,
+            stage1BUrl,
+            stage2Url,
+          });
 
-          const blockedStage = r?.blockedStage || r?.result?.blockedStage || r?.meta?.blockedStage || r?.result?.meta?.blockedStage || null;
-          const fallbackStage = r?.fallbackStage ?? r?.result?.fallbackStage ?? r?.meta?.fallbackStage ?? r?.result?.meta?.fallbackStage ?? null;
-          const resultStageNorm = String(r?.resultStage || r?.result?.resultStage || r?.finalStage || r?.result?.finalStage || "").toUpperCase();
-          const completedViaFallback =
-            (status === "completed" || status === "complete") &&
-            !targetUrlPresent &&
-            !!(stage1AUrl || stage1BUrl || stage2Url) &&
-            !!(
-              blockedStage ||
-              fallbackStage ||
-              (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
-            );
-          return ((status === "completed" || status === "complete") && targetUrlPresent) || completedViaFallback;
+          if (unifiedCompletion.status === "failed") return true;
+          return !!unifiedCompletion.displayImageUrl;
         });
 
         // Use target-aware completion instead of blindly trusting serverSignaledDone
@@ -6886,8 +6948,8 @@ export default function BatchProcessor({
                           const completedCount = results.filter((r, idx) => {
                             if (!r) return false;
                             const status = String(r?.status || "").toLowerCase();
-                            const failed = status === "failed";
-                            const hasError = !!r?.error;
+                            const isTerminal = status === "failed" || status === "completed" || status === "complete";
+                            if (!isTerminal) return false;
                             
                             // Calculate target stage for this image
                             const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
@@ -6896,33 +6958,23 @@ export default function BatchProcessor({
                             const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
                             const declutterRequested = getPerImageDeclutterRequested(r);
                             const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
-                            
-                            const targetStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+                            const requestedFinalStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
                             
                             // Check if target URL is present
                             const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
                             const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
                             const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
                             const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
-                            
-                            const targetUrlPresent = (
-                              (targetStage === "2" && !!stage2Url) ||
-                              (targetStage === "1B" && !!stage1BUrl) ||
-                              (targetStage === "1A" && !!stage1AUrl)
-                            );
 
-                            const blockedStage = r?.blockedStage || r?.result?.blockedStage || r?.meta?.blockedStage || r?.result?.meta?.blockedStage || null;
-                            const fallbackStage = r?.fallbackStage ?? r?.result?.fallbackStage ?? r?.meta?.fallbackStage ?? r?.result?.meta?.fallbackStage ?? null;
-                            const resultStageNorm = String(r?.resultStage || r?.result?.resultStage || r?.finalStage || r?.result?.finalStage || "").toUpperCase();
-                            const completedViaFallback = (status === "completed" || status === "complete") && !targetUrlPresent && !!(stage1AUrl || stage1BUrl || stage2Url) && !!(
-                              blockedStage ||
-                              fallbackStage ||
-                              (targetStage === "2" && (resultStageNorm === "1A" || resultStageNorm === "1B"))
-                            );
-                            
-                            // Count as complete if: reached target OR failed with fallback available
-                            const failedWithFallback = (failed || hasError) && (stage1AUrl || stage1BUrl || stage2Url);
-                            return targetUrlPresent || failedWithFallback || completedViaFallback;
+                            const unifiedCompletion = deriveUnifiedCompletionState({
+                              requestedFinalStage,
+                              stage1AUrl,
+                              stage1BUrl,
+                              stage2Url,
+                            });
+
+                            if (unifiedCompletion.status === "failed") return true;
+                            return !!unifiedCompletion.displayImageUrl;
                           }).length;
                           const total = files.length || 0;
                           const remaining = Math.max(total - completedCount, 0);
@@ -7112,75 +7164,24 @@ export default function BatchProcessor({
                           null;
                         const hasPreviewOutputs = !!(stage2Url || stage1BUrl || stage1AUrl);
                         const hasOutputs = hasPreviewOutputs || !!finalResultUrl;
-                        let derivedUiStatus = uiStatus;
-                        if (derivedUiStatus === "ok" && status === "failed" && hasOutputs) {
-                          derivedUiStatus = "warning";
-                        }
+                        const requestedFinalStage: StageKey = stage2Expected ? "2" : (declutterRequested ? "1B" : "1A");
+                        const unifiedCompletion = deriveUnifiedCompletionState({
+                          requestedFinalStage,
+                          stage1AUrl,
+                          stage1BUrl,
+                          stage2Url,
+                        });
                         const isSuccessStatus = ["completed", "complete", "done"].includes(status);
-                        if (isSuccessStatus && !finalResultUrl && hasPreviewOutputs) {
-                          // Partial outputs arrived but final URL missing: treat as warning while still processing
-                          derivedUiStatus = derivedUiStatus === "error" ? "error" : "warning";
-                        }
-                        const isError = (status === "failed") || derivedUiStatus === "error";
-                        // Determine target stage per image to avoid premature "Complete"
-                        const targetStage: StageKey = (() => {
-                          if (stage2Expected) return "2";
-                          if (declutterRequested) return "1B";
-                          return "1A";
-                        })();
-
-                        const targetUrlPresent = (() => {
-                          if (targetStage === "2") return !!stage2Url;
-                          if (targetStage === "1B") return !!stage1BUrl;
-                          return !!stage1AUrl;
-                        })();
+                        const isError = unifiedCompletion.status === "failed";
+                        const targetStage: StageKey = requestedFinalStage;
+                        const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
                         const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
-                        const fallbackStage = (result?.validation as any)?.fallbackStage || (result?.result?.validation as any)?.fallbackStage || result?.fallbackStage || result?.result?.fallbackStage || result?.meta?.fallbackStage || null;
-                        const stageRank: Record<StageKey, number> = { "1A": 1, "1B": 2, "2": 3 };
-                        const finalStageMeetsTarget = (() => {
-                          if (!resultStage || !finalResultUrl) return false;
-                          return stageRank[resultStage] >= stageRank[targetStage];
-                        })();
-
-                        const fallbackResolvedUrl = (() => {
-                          if (fallbackStage === "1B" && stage1BUrl) return stage1BUrl;
-                          if (fallbackStage === "1A" && stage1AUrl) return stage1AUrl;
-                          if (stage1BUrl) return stage1BUrl;
-                          if (stage1AUrl) return stage1AUrl;
-                          return null;
-                        })();
-                        const fallbackTerminal = isSuccessStatus && !targetUrlPresent && !!fallbackResolvedUrl && !!(
-                          blockedStage ||
-                          fallbackStage ||
-                          (targetStage === "2" && (resultStage === "1A" || resultStage === "1B"))
-                        );
-
-                        const resolvedFinalUrl = (finalResultUrl && finalStageMeetsTarget)
-                          ? finalResultUrl
-                          : (targetUrlPresent ? (targetStage === "2" ? stage2Url : targetStage === "1B" ? stage1BUrl : stage1AUrl) : (fallbackTerminal ? fallbackResolvedUrl : null));
-                        const resolvedFinalStage: StageKey | null = (finalResultUrl && finalStageMeetsTarget)
-                          ? (resultStage as StageKey | null)
-                          : (targetUrlPresent ? targetStage : (fallbackTerminal ? ((fallbackStage === "1B" ? "1B" : fallbackStage === "1A" ? "1A" : (stage1BUrl ? "1B" : "1A")) as StageKey) : null));
+                        const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
                         const isUiComplete = (!isError && targetUrlPresent) || isDone;
-                        
-                        // ✅ FIX #3: Detect intermediate stage processing
-                        // If backend says "completed" but we only have Stage 1A and targeting Stage 2, show as processing
-                        const isIntermediateProcessing = isSuccessStatus && !targetUrlPresent && hasPreviewOutputs && !isError;
-                        const intermediateStageMessage = (() => {
-                          if (!isIntermediateProcessing) return null;
-                          // Determine which stage we're waiting for
-                          if (targetStage === "2") {
-                            // Has Stage 1A, waiting for Stage 2
-                            if (stage1AUrl && !stage1BUrl) return declutterRequested ? "Decluttering..." : "Preparing for staging...";
-                            if (stage1BUrl && !stage2Url) return "Staging image...";
-                          }
-                          if (targetStage === "1B" && stage1AUrl && !stage1BUrl) {
-                            return furnitureReplacement ? "Removing furniture..." : "Decluttering image...";
-                          }
-                          return "Processing next stage...";
-                        })();
+                        const isIntermediateProcessing = false;
+                        const intermediateStageMessage: string | null = null;
                         
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isRetryActive = isRetrying || !!result?.retryInFlight;
@@ -7285,6 +7286,9 @@ export default function BatchProcessor({
                           : isProcessing
                           ? baseProcessingMessage
                           : aiSteps[i] || "Waiting in queue...";
+                        const fallbackMessage = isUiComplete
+                          ? (result?.fallbackMessage || result?.result?.fallbackMessage || unifiedCompletion.fallbackMessage)
+                          : null;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         const safeStage = resolveSafeStageUrl(result);
                         
@@ -7512,9 +7516,9 @@ export default function BatchProcessor({
                                   <p className="text-xs text-slate-500">
                                     {displayStatus}
                                   </p>
-                                  {isError && (stage1BUrl || stage1AUrl) && stage2Expected && (
-                                    <p className="mt-1 text-xs text-rose-600">
-                                      {stage1BUrl ? "We couldn’t provide the staged image, but a decluttered image is available." : "We couldn’t provide the staged image, but an enhanced image is available."}
+                                  {fallbackMessage && (
+                                    <p className="mt-1 text-xs text-amber-700">
+                                      {fallbackMessage}
                                     </p>
                                   )}
                                   {autoInsertedStage1B && (
