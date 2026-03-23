@@ -4,7 +4,6 @@ import sharp from "sharp";
 import { regionEditWithGemini } from "../ai/gemini";
 import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
-import { validateMaskAnchorOverlap } from "../validators/maskAnchorValidator";
 
 const MIN_PROJECTION_DILATE_PX = 2;
 const MAX_PROJECTION_DILATE_PX = 4;
@@ -148,6 +147,48 @@ async function computeOutsideAllowedChangedPct(
   } catch {
     return null;
   }
+}
+
+async function compositeStrictMask(
+  originalImagePath: string,
+  generatedBuffer: Buffer,
+  maskPngBuffer: Buffer,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  const alignedGenerated = await sharp(generatedBuffer)
+    .resize(width, height, { fit: "fill" })
+    .png()
+    .toBuffer();
+
+  const normalizedMask = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .threshold(127, { grayscale: true })
+    .png()
+    .toBuffer();
+
+  const invertedMask = await sharp(normalizedMask)
+    .negate()
+    .png()
+    .toBuffer();
+
+  const originalMasked = await sharp(originalImagePath)
+    .resize(width, height, { fit: "fill" })
+    .png()
+    .composite([{ input: invertedMask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+
+  const generatedMasked = await sharp(alignedGenerated)
+    .composite([{ input: normalizedMask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+
+  return sharp(originalMasked)
+    .composite([{ input: generatedMasked, blend: "over" }])
+    .webp()
+    .toBuffer();
 }
 
 function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "real_leak" | "unknown" {
@@ -323,13 +364,7 @@ export async function applyEdit({
       userInstruction: instruction,
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
-    const removeModeTargetedGuidance = mode === "Remove"
-      ? `\n\nREMOVE MODE TARGETING RULES:\n- Remove only the object(s) inside the WHITE mask region that correspond to the user instruction.\n- Do NOT perform full-room decluttering.\n- Do NOT remove unrelated furniture outside the WHITE mask region.\n- Any changes outside the WHITE mask must be limited strictly to immediate boundary pixels required for seamless blending.\n- No independent edits may occur outside the WHITE mask.`
-      : "";
-    const addModeSpatialGuidance = mode === "Add"
-      ? `\n\nADD MODE SPATIAL CONTRACT:\n- Interpret the WHITE mask as placement intent and anchor zone, not necessarily the full visible 3D object bounds.\n- Floor masks: treat WHITE mask as contact footprint / plan area. The object may extend upward and slightly beyond the mask due to perspective and physical depth, but every ground contact point must lie within WHITE mask pixels.\n- Wall masks: treat WHITE mask as anchor plane region. The object may project outward in depth, but all mounting/attachment points must lie within WHITE mask pixels.\n- Outside-mask edits are allowed only for strictly necessary visible geometry of the same added object.\n- Do NOT blend, feather, or leak edits into unrelated outside-mask regions.\n- Align object perspective, scale, and orientation to room geometry, camera angle, and vanishing lines.`
-      : "";
-    const finalPrompt = `${prompt}${removeModeTargetedGuidance}${addModeSpatialGuidance}`;
+    const finalPrompt = prompt;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);
 
     // 🚀 Call shared Gemini helper
@@ -340,78 +375,32 @@ export async function applyEdit({
       // Optionally pass roomType, sceneType, preserveStructure if needed
     });
 
-    // Enforce 3-zone compositing:
-    // 1) inner mask (strict) + 2) projection ring (soft allowance) => Gemini output
-    // 3) outside region => original base image (hard clamp)
-    const { innerMask, projectionMask, dilatedMask, outsideMask } = await buildMaskRegions(maskPngBuffer!, meta.width, meta.height);
+    // Strict edit compositing only: original * (1 - mask) + generated * mask
+    const effectiveAllowedMask = await sharp(maskPngBuffer!)
+      .removeAlpha()
+      .grayscale()
+      .threshold(127, { grayscale: true })
+      .png()
+      .toBuffer();
     const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
-    await sharp(dilatedMask).png().toFile(allowedMaskArtifactPath);
-    const alignedEdited = await sharp(editedBuffer)
-      .resize(meta.width, meta.height, { fit: "fill" })
-      .png()
-      .toBuffer();
-    const allowedEdited = await sharp(alignedEdited)
-      .composite([
-        {
-          input: dilatedMask,
-          blend: "dest-in",
-        },
-      ])
-      .png()
-      .toBuffer();
-    await sharp(baseImagePath)
-      .composite([
-        {
-          input: allowedEdited,
-          blend: "over",
-        },
-      ])
-      .webp()
-      .toFile(outPath);
+    await sharp(effectiveAllowedMask).png().toFile(allowedMaskArtifactPath);
+    const strictComposite = await compositeStrictMask(
+      baseImagePath,
+      editedBuffer,
+      maskPngBuffer!,
+      meta.width,
+      meta.height,
+    );
+    await sharp(strictComposite).webp().toFile(outPath);
 
-    const regionStats = await Promise.all([
-      sharp(innerMask).stats(),
-      sharp(projectionMask).stats(),
-      sharp(outsideMask).stats(),
-    ]);
-    const outsideAllowedChangedPct = await computeOutsideAllowedChangedPct(baseImagePath, outPath, dilatedMask);
-    const outsideLeakSeverity = classifyOutsideLeakPct(outsideAllowedChangedPct);
+    const maskStats = await sharp(effectiveAllowedMask).stats();
     console.log("[editApply] Enforced mask zones", {
-      innerMaskPixels: regionStats[0].channels[0]?.sum ?? 0,
-      projectionMaskPixels: regionStats[1].channels[0]?.sum ?? 0,
-      outsideMaskPixels: regionStats[2].channels[0]?.sum ?? 0,
-      projectionDilatePx: projectionDilatePx(meta.width, meta.height),
-      outsideAllowedChangedPct,
-      outsideLeakSeverity,
+      enforcementMode: "strict_inner_only",
+      innerMaskPixels: maskStats.channels[0]?.sum ?? 0,
       allowedMaskArtifactPath,
     });
-    if (outsideLeakSeverity === "soft_anomaly") {
-      console.warn("[editApply] mask_enforcement_soft_anomaly", {
-        outsideAllowedChangedPct,
-        tolerance: "0.2-1.0%",
-      });
-    }
-    if (outsideLeakSeverity === "real_leak") {
-      console.warn("[editApply] mask_enforcement_leak_detected", {
-        outsideAllowedChangedPct,
-        tolerance: ">1.0%",
-      });
-    }
 
-    if (mode === "Add") {
-      try {
-        const anchorResult = await validateMaskAnchorOverlap({
-          baseImagePath,
-          finalImagePath: outPath,
-          maskBuffer: maskPngBuffer!,
-        });
-        onAnchorValidation?.(anchorResult);
-      } catch (anchorErr) {
-        console.warn("[editApply] maskAnchorCheck_failed", {
-          error: (anchorErr as any)?.message || String(anchorErr),
-        });
-      }
-    }
+    // Strict manual edit mode intentionally bypasses anchor validation.
 
     console.log("[editApply] Saved enforced region edit image to", outPath);
     return outPath;

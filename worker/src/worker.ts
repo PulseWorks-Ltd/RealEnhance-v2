@@ -10827,6 +10827,15 @@ const worker = new Worker(
           // Normalize mode to capitalized form ("add" -> "Add", "remove" -> "Remove", etc.)
           const rawMode = regionAny.mode || "replace";
           const mode = rawMode.charAt(0).toUpperCase() + rawMode.slice(1).toLowerCase();
+          const isStrictEditMode = mode !== "Restore";
+
+          if (isStrictEditMode) {
+            nLog("[STRICT_EDIT_MODE] active for image", {
+              imageId: regionPayload.imageId,
+              jobId: regionPayload.jobId,
+              mode,
+            });
+          }
 
           nLog("[worker-region-edit] Calling applyEdit with mode:", mode);
 
@@ -10910,10 +10919,10 @@ const worker = new Worker(
             const isAddMode = lowerMode === "add";
             const isReplaceMode = lowerMode === "replace";
             const isRemoveMode = lowerMode === "remove";
-            const runEditOpeningsValidation = isAddMode || isReplaceMode || isRemoveMode;
-            openingsValidationRequiredForPublish = isAddMode || isReplaceMode;
+            const runEditOpeningsValidation = !isStrictEditMode && (isAddMode || isReplaceMode || isRemoveMode);
+            openingsValidationRequiredForPublish = !isStrictEditMode && (isAddMode || isReplaceMode);
             let attempt = 1;
-            const maxAttempts = 2;
+            const maxAttempts = isStrictEditMode ? 1 : 2;
             let lastSummary: any = null;
             const editRetryInfo: { anchorFail: boolean } = { anchorFail: false };
 
@@ -10940,8 +10949,10 @@ const worker = new Worker(
                 restoreFromPath: restoreFromPath || basePath,
                 stage1AReferencePath,
                 onAnchorValidation: (result) => {
-                  anchorPassed = result.passed;
-                  anchorOverlapPct = result.overlapPct;
+                  if (!isStrictEditMode) {
+                    anchorPassed = result.passed;
+                    anchorOverlapPct = result.overlapPct;
+                  }
                 },
               });
 
@@ -10951,7 +10962,7 @@ const worker = new Worker(
                 mask: maskBuf,
               });
               const outsideMaskLeakSeverity = classifyOutsideLeakPct(outsideMaskChangedPct);
-              const anchorFail = isAddMode && anchorPassed === false;
+              const anchorFail = !isStrictEditMode && isAddMode && anchorPassed === false;
 
               let openingFail = false;
               if (runEditOpeningsValidation) {
@@ -10983,9 +10994,10 @@ const worker = new Worker(
                   validator: "edit_openings",
                   passed: true,
                   comparedAgainst: "stage1a",
-                  reason: "validator_not_required_for_mode",
+                  reason: isStrictEditMode ? "strict_edit_mode_validators_skipped" : "validator_not_required_for_mode",
                   mode,
                 };
+                openingsValidationPassedForPublish = true;
               }
 
               lastSummary = openingsValidationSummary;

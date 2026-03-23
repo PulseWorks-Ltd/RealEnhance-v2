@@ -931,16 +931,35 @@ export function retrySingleRouter() {
             : resolvedExecutionPlan.stage2Baseline === "1B"
               ? !!stage1BFromParent
               : !!originalUploadUrlCandidate;
+        const hasDeterministicSelectedBaseline =
+          !!selectedSourceUrl &&
+          !!resolvedExecutionPlan.baselineUrl &&
+          selectedSourceUrl === resolvedExecutionPlan.baselineUrl;
+        const allowSelectedBaselineFallback =
+          !hasCanonicalBaselineArtifact &&
+          hasDeterministicSelectedBaseline &&
+          retryMode !== "full_pipeline_restart";
         const hasBaselineUrl = !!resolvedExecutionPlan.baselineUrl;
         const hasBaselineStage =
           resolvedExecutionPlan.stage2Baseline === "1A"
           || resolvedExecutionPlan.stage2Baseline === "1B"
           || resolvedExecutionPlan.stage2Baseline === "original_upload";
-        if (!hasBaselineUrl || !hasBaselineStage || !hasCanonicalBaselineArtifact) {
+        if (!hasBaselineUrl || !hasBaselineStage || (!hasCanonicalBaselineArtifact && !allowSelectedBaselineFallback)) {
           return res.status(409).json({
             success: false,
             error: "manual_retry_stage2only_payload_invalid",
             message: "Manual retry requires a deterministic Stage 2 baseline with an existing canonical artifact",
+          });
+        }
+
+        if (allowSelectedBaselineFallback) {
+          console.warn("[RETRY_BASELINE_FALLBACK_SELECTED]", {
+            parentJobId,
+            requestedStage,
+            selectedSourceStage,
+            selectedSourceUrl: selectedSourceUrl?.substring(0, 120),
+            stage2Baseline: resolvedExecutionPlan.stage2Baseline,
+            reason: "canonical_stage_url_missing_but_selected_baseline_is_deterministic",
           });
         }
 

@@ -90,11 +90,11 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     throw new Error("No image content in Gemini region edit response");
   }
 
-  const imagePart = usable.content.parts.find(
+  const imageParts = usable.content.parts.filter(
     (p: any) => p.inlineData && p.inlineData.data
   );
 
-  if (!imagePart || !imagePart.inlineData) {
+  if (!imageParts.length) {
     console.error(
       "[gemini.regionEdit] no inlineData image part",
       JSON.stringify(usable.content.parts, null, 2)
@@ -102,8 +102,55 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     throw new Error("No image data in Gemini region edit response");
   }
 
-  const base64Image = imagePart.inlineData.data as string;
-  return Buffer.from(base64Image, "base64");
+  const baseMeta = await require("sharp")(baseImageBuffer).metadata().catch(() => null);
+  const baseWidth = Number(baseMeta?.width || 0);
+  const baseHeight = Number(baseMeta?.height || 0);
+
+  const scoredCandidates = await Promise.all(
+    imageParts.map(async (part: any, index: number) => {
+      const buf = Buffer.from(String(part.inlineData.data || ""), "base64");
+      try {
+        const s = require("sharp")(buf);
+        const meta = await s.metadata();
+        const stats = await s.stats();
+        const width = Number(meta?.width || 0);
+        const height = Number(meta?.height || 0);
+        const channels = Number(meta?.channels || 0);
+
+        const sizePenalty = (baseWidth > 0 && baseHeight > 0 && width > 0 && height > 0)
+          ? Math.abs(width - baseWidth) + Math.abs(height - baseHeight)
+          : 0;
+        const looksMaskLike = channels <= 2;
+        const contrast = Number(stats?.channels?.[0]?.stdev || 0);
+        const lowVariance = contrast < 8;
+
+        const score = (looksMaskLike ? -10_000 : 0) + (lowVariance ? -500 : 0) - sizePenalty;
+        return { index, buf, score, width, height, channels, looksMaskLike, lowVariance };
+      } catch {
+        return { index, buf, score: -50_000, width: 0, height: 0, channels: 0, looksMaskLike: true, lowVariance: true };
+      }
+    })
+  );
+
+  scoredCandidates.sort((a, b) => b.score - a.score);
+  const chosen = scoredCandidates[0] || null;
+  if (!chosen) {
+    throw new Error("No decodable image data in Gemini region edit response");
+  }
+
+  focusLog("GEMINI_REGION_CANDIDATE_PICK", "[gemini.regionEdit] selected candidate", {
+    candidateCount: scoredCandidates.length,
+    chosenIndex: chosen.index,
+    chosenWidth: chosen.width,
+    chosenHeight: chosen.height,
+    chosenChannels: chosen.channels,
+    chosenMaskLike: chosen.looksMaskLike,
+    chosenLowVariance: chosen.lowVariance,
+    baseWidth,
+    baseHeight,
+  });
+
+  return chosen.buf;
 }
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
