@@ -9,6 +9,18 @@ const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "ge
 const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
 const ENVELOPE_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
 
+type EnvelopeReasonCode =
+  | "envelope_visual_ambiguity"
+  | "envelope_insufficient_geometric_evidence"
+  | "envelope_confirmed_structural_change";
+
+function hasClearGeometricChange(parsed: any): boolean {
+  const boundaryLinesMissing = parsed?.boundaryLinesMissing === true;
+  const continuousSurfaceReplacement = parsed?.continuousSurfaceReplacement === true;
+  const noPlausibleVisualExplanation = parsed?.noPlausibleVisualExplanation === true;
+  return boundaryLinesMissing && continuousSurfaceReplacement && noPlausibleVisualExplanation;
+}
+
 function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -23,11 +35,26 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     throw new Error("validator_error_invalid_schema");
   }
 
-  const reason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
+  const envelopeDetectedChange = parsed.ok === false;
+  const geometricCertainty = envelopeDetectedChange ? hasClearGeometricChange(parsed) : false;
+
+  let reasonCode: EnvelopeReasonCode | undefined;
+  if (!envelopeDetectedChange) {
+    reasonCode = undefined;
+  } else if (geometricCertainty) {
+    reasonCode = "envelope_confirmed_structural_change";
+  } else if (parsed?.visualAmbiguity === true) {
+    reasonCode = "envelope_visual_ambiguity";
+  } else {
+    reasonCode = "envelope_insufficient_geometric_evidence";
+  }
+
+  const baseReason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
     ? parsed.reason.trim()
     : parsed.ok ? "envelope_preserved" : "envelope_changed";
+  const reason = reasonCode ? `${reasonCode}: ${baseReason}` : baseReason;
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
-  const advisorySignals = parsed.ok ? [] : [reason];
+  const advisorySignals = parsed.ok ? [] : [reason, ...(reasonCode ? [reasonCode] : [])];
   const tokens = splitIssueTokens(reason, advisorySignals);
   const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
   const issueType = parsed.ok
@@ -38,11 +65,17 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
         ? ISSUE_TYPES.WALL_CHANGED
         : ISSUE_TYPES.ENVELOPE_ANOMALY;
 
+  console.log("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
+    envelopeDetectedChange,
+    geometricCertainty,
+    reason: reasonCode || "envelope_preserved",
+  });
+
   return {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
-    hardFail: parsed.ok ? false : confidence >= 0.85,
+    hardFail: parsed.ok ? false : (geometricCertainty && confidence >= 0.85),
     issueType,
     issueTier: classifyIssueTier(issueType),
     advisorySignals,
@@ -133,7 +166,30 @@ Ignore:
 
 Return JSON only:
 
-{"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
+{
+  "ok":true|false,
+  "reason":"short explanation",
+  "confidence":0.0-1.0,
+  "boundaryLinesMissing": true|false,
+  "continuousSurfaceReplacement": true|false,
+  "noPlausibleVisualExplanation": true|false,
+  "visualAmbiguity": true|false,
+  "reasonCode": "envelope_visual_ambiguity"|"envelope_insufficient_geometric_evidence"|"envelope_confirmed_structural_change"
+}
+
+GEOMETRIC CERTAINTY RULE (MANDATORY)
+Set ok=false only when structural change is supported by clear geometric evidence.
+
+For structural certainty, all must be true:
+1) boundaryLinesMissing
+2) continuousSurfaceReplacement
+3) noPlausibleVisualExplanation
+
+Non-fail certainty guard:
+- If recess/offset is faint but partially visible, do not claim certainty.
+- If edges are reduced but not eliminated, do not claim certainty.
+- If lighting, shadow loss, or smoothing can explain flattening, do not claim certainty.
+- If geometry is ambiguous, set visualAmbiguity=true and do not claim certainty.`;
 
   const runWithModel = async (model: string): Promise<EnvelopeValidatorResult> => {
     const response = await (ai as any).models.generateContent({

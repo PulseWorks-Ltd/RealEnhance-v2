@@ -8523,13 +8523,8 @@ All openings must remain identical in position and size to the original image.`;
         openingSignatureSignalDetected = (opRes.advisorySignals || [])
           .map((signal) => normalizeValidatorReason(String(signal || "")))
           .some((signal) => signal === "opening_signature_mismatch");
-        const hasMaterialOpeningViolation =
-          opRes.hardFail === true ||
-          detectMaterialOpeningFromSignals({
-            status: opRes.status,
-            reason: opRes.reason,
-            advisorySignals: opRes.advisorySignals,
-          });
+        const openingHardFail = opRes.hardFail === true;
+        const hasMaterialOpeningViolation = openingHardFail;
 
         if (hasMaterialOpeningViolation) {
           openingPass = false;
@@ -8560,6 +8555,17 @@ All openings must remain identical in position and size to the original image.`;
         } else {
           openingPass = true;
           localSignals.openings = { pass: true, reason: "none" };
+          if (opRes.status === "fail") {
+            nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] openings reported fail without hardFail", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "openings",
+              reason: opRes.reason || "opening_status_fail_non_blocking",
+              confidence: opRes.confidence,
+              action: "continue_to_unified",
+            });
+          }
         }
 
         const openingSignals = extractOpeningSignals(opRes);
@@ -8673,8 +8679,9 @@ All openings must remain identical in position and size to the original image.`;
           issueTier: specialistResults.fixture.issueTier,
         });
         appendAdvisories("fixtures", fixRes.advisorySignals || []);
-        fixturePass = !(fixRes.hardFail === true || fixRes.status === "fail");
-        if (fixRes.hardFail === true || fixRes.status === "fail") {
+        const fixtureHardFail = fixRes.hardFail === true;
+        fixturePass = !fixtureHardFail;
+        if (fixtureHardFail) {
           localSignals.fixtures = { pass: false, reason: fixRes.reason || "fixture_signal_fail" };
           nLog("[VALIDATOR_HARD_FAIL]", {
             jobId: payload.jobId,
@@ -8697,6 +8704,17 @@ All openings must remain identical in position and size to the original image.`;
           });
         } else {
           localSignals.fixtures = { pass: true, reason: "none" };
+          if (fixRes.status === "fail") {
+            nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] fixtures reported fail without hardFail", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "fixtures",
+              reason: fixRes.reason || "fixture_status_fail_non_blocking",
+              confidence: fixRes.confidence,
+              action: "continue_to_unified",
+            });
+          }
           nLog("[STAGE2_VALIDATION_A] fixtures pass");
           logValidatorResult({
             jobId: payload.jobId,
@@ -8730,8 +8748,9 @@ All openings must remain identical in position and size to the original image.`;
           issueTier: specialistResults.floor.issueTier,
         });
         appendAdvisories("floor", floorRes.advisorySignals || []);
-        floorPass = !(floorRes.hardFail === true || floorRes.status === "fail");
-        if (floorRes.hardFail === true || floorRes.status === "fail") {
+        const floorHardFail = floorRes.hardFail === true;
+        floorPass = !floorHardFail;
+        if (floorHardFail) {
           localSignals.floor = { pass: false, reason: floorRes.reason || "floor_signal_fail" };
           nLog("[VALIDATOR_HARD_FAIL]", {
             jobId: payload.jobId,
@@ -8754,6 +8773,17 @@ All openings must remain identical in position and size to the original image.`;
           });
         } else {
           localSignals.floor = { pass: true, reason: "none" };
+          if (floorRes.status === "fail") {
+            nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] floor reported fail without hardFail", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "floor",
+              reason: floorRes.reason || "floor_status_fail_non_blocking",
+              confidence: floorRes.confidence,
+              action: "continue_to_unified",
+            });
+          }
           nLog("[STAGE2_VALIDATION_B] floor pass");
           logValidatorResult({
             jobId: payload.jobId,
@@ -8787,8 +8817,9 @@ All openings must remain identical in position and size to the original image.`;
           issueTier: specialistResults.envelope.issueTier,
         });
         appendAdvisories("envelope", envRes.advisorySignals || []);
-        envelopePass = !(envRes.hardFail === true || envRes.status === "fail");
-        if (envRes.hardFail === true || envRes.status === "fail") {
+        const envelopeHardFail = envRes.hardFail === true;
+        envelopePass = !envelopeHardFail;
+        if (envelopeHardFail) {
           localSignals.envelope = { pass: false, reason: envRes.reason || "envelope_signal_fail" };
           nLog("[VALIDATOR_HARD_FAIL]", {
             jobId: payload.jobId,
@@ -8811,6 +8842,17 @@ All openings must remain identical in position and size to the original image.`;
           });
         } else {
           localSignals.envelope = { pass: true, reason: "none" };
+          if (envRes.status === "fail") {
+            nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] envelope reported fail without hardFail", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              validator: "envelope",
+              reason: envRes.reason || "envelope_status_fail_non_blocking",
+              confidence: envRes.confidence,
+              action: "continue_to_unified",
+            });
+          }
           nLog("[STAGE2_VALIDATION_B] envelope pass");
           logValidatorResult({
             jobId: payload.jobId,
