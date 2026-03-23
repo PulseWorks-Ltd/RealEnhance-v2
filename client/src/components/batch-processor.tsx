@@ -7618,7 +7618,7 @@ export default function BatchProcessor({
                                             <RefreshCw className={`w-3 h-3 ${retryingImages.has(i) ? 'animate-spin' : ''}`} />
                                             Retry
                                           </button>
-                                          {result.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
+                                          {result?.error && <span className="text-xs text-rose-600 truncate max-w-[200px]">{result.error}</span>}
                                         </div>
                                     ) : (isUiComplete || isEditComplete) ? (
                                        <div className="flex items-center gap-2">
