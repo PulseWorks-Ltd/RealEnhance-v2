@@ -2866,6 +2866,7 @@ export async function runGeminiSemanticValidator(opts: {
       ],
     },
   ];
+  const stageForPostProcessing: "1A" | "1B" | "2" = opts.stage;
 
   try {
     const start = Date.now();
@@ -2976,7 +2977,7 @@ export async function runGeminiSemanticValidator(opts: {
       (category === "furniture_change" || (category === "structure" && (violationType === "layout_only" || violationType === "other"))) &&
       !alwaysHardFail;
 
-    const isStage2Full = opts.stage === "2" && opts.validationMode === "FULL_STAGE_ONLY";
+    const isStage2Full = stageForPostProcessing === "2" && opts.validationMode === "FULL_STAGE_ONLY";
     const stage2FullPrimaryStructuralIdentityViolation = isStage2Full && hasStage2FullPrimaryStructuralIdentityViolation({
       category,
       violationType,
@@ -3006,7 +3007,7 @@ export async function runGeminiSemanticValidator(opts: {
       : topologyResultRaw;
     const topologyPass = topologyResult === "PASS" || topologyResult === true;
 
-    if (opts.validationMode === "FULL_STAGE_ONLY" && opts.stage === "2") {
+    if (opts.validationMode === "FULL_STAGE_ONLY" && stageForPostProcessing === "2") {
       debugLog("[gemini-structure-guard] topology signal", {
         topologyResult,
         topologyResultRaw,
@@ -3063,14 +3064,14 @@ export async function runGeminiSemanticValidator(opts: {
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
       const builtInHardFail = builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
-      hardFail = opts.stage === "2"
+      hardFail = stageForPostProcessing === "2"
         ? primaryStructuralViolationDetected
         : (alwaysHardFail || builtInHardFail);
     }
     else if (category === "opening_blocked") hardFail = parsed.hardFail;
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
 
-    if (opts.stage === "2" && category === "structure") {
+    if (stageForPostProcessing === "2" && category === "structure") {
       const geometricViolation =
         hasWallGeometryDrift ||
         hasCameraShift ||
@@ -3188,7 +3189,7 @@ export async function runGeminiSemanticValidator(opts: {
       rawText: text,
     };
 
-    if (opts.stage === "2") {
+    if (stageForPostProcessing === "2") {
       debugLog(
         `[STRUCTURAL_GEMINI_DECISION] openingViolationDetected=${openingIdentityViolationDetected} hardFail=${verdict.hardFail} downgradeApplied=${downgradeApplied}`
       );
