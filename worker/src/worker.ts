@@ -9041,11 +9041,13 @@ All openings must remain identical in position and size to the original image.`;
       const finalConfirmMode: "block" | "log" = "block";
       if (validationStage === "2") {
         try {
-          const complianceAdvisorySignals = isRefreshValidationBehavior ? [] : stage2AdvisorySignals;
-          const complianceOpeningStructuralSignal = isRefreshValidationBehavior ? false : openingStructuralSignalDetected;
-          const complianceOpeningSignalContext = isRefreshValidationBehavior ? undefined : openingStructuralSignal;
-          const complianceMaskedDriftRegions = isRefreshValidationBehavior ? [] : maskedDriftRegions;
-          const complianceOpeningRegions = isRefreshValidationBehavior ? [] : openingRegions;
+          // Stage 2 local/specialist validators are telemetry-only. Never inject
+          // local advisory signals into compliance adjudication.
+          const complianceAdvisorySignals: string[] = [];
+          const complianceOpeningStructuralSignal = false;
+          const complianceOpeningSignalContext = undefined;
+          const complianceMaskedDriftRegions: Array<{ bbox: [number, number, number, number]; score: number }> = [];
+          const complianceOpeningRegions: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }> = [];
 
           const ai = getGeminiClient();
           const base1A = toBase64(path1A);

@@ -1544,10 +1544,16 @@ export async function runUnifiedValidation(
 
   const hardFail = blockSource !== null;
   const uniqueWarnings = Array.from(new Set(warnings));
+  const stage2ReasonScope = stage === "2"
+    ? reasons.filter((reason) =>
+        reason.startsWith("Gemini ") || reason.toLowerCase().includes("gemini")
+      )
+    : reasons;
+  const issueInferenceReasons = stage2ReasonScope.length > 0 ? stage2ReasonScope : reasons;
   const issueType: ValidationIssueType = inferUnifiedIssueType({
     hardFail,
     geminiVerdict,
-    reasons,
+    reasons: issueInferenceReasons,
   });
 
   const finalResult: UnifiedValidationResult = {
@@ -1555,7 +1561,7 @@ export async function runUnifiedValidation(
     hardFail,
     blockSource,
     score: Math.round(aggregateScore * 1000) / 1000,
-    reasons: hardFail ? reasons : [],
+    reasons: hardFail ? issueInferenceReasons : [],
     warnings: uniqueWarnings,
     normalized: uniqueWarnings.includes("dimension_normalized"),
     raw: results,
