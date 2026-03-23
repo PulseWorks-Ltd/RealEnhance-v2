@@ -3635,6 +3635,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const geminiSemanticValidatorRaw = process.env.ENABLE_GEMINI_SEMANTIC_VALIDATION;
   const geminiSemanticValidatorMode = geminiSemanticValidatorRaw?.trim().toLowerCase() === "block" ? "block" : 
                                        geminiSemanticValidatorRaw?.trim().toLowerCase() === "log" ? "log" : null;
+  const USE_FROM_EMPTY_VALIDATION_FOR_REFRESH = true;
   
   logValidationModes();
 
@@ -3934,8 +3935,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return "unknown";
   };
 
-  const normalizeForensicDecisionSource = (blockedBy?: string | null): "local" | "gemini" | "consensus" => {
+  const normalizeForensicDecisionSource = (blockedBy?: string | null): "local" | "gemini" | "consensus" | "specialist" => {
     const normalized = String(blockedBy || "").toLowerCase();
+    if (normalized === "specialist") return "specialist";
     if (normalized === "gemini") return "gemini";
     if (normalized === "consensus") return "consensus";
     return "local";
@@ -4126,6 +4128,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   const stage2BlockedByPriority = (blockedBy?: string | null): number => {
     if (blockedBy === "gemini") return 3;
+    if (blockedBy === "specialist") return 3;
     if (blockedBy === "consensus") return 2;
     if (blockedBy === "local") return 2;
     if (blockedBy === "timeout") return 1;
@@ -4842,6 +4845,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStageHint: stage2OnlyMeta.sourceStage || undefined,
       });
       const stage2OnlyValidationMode = getStage2ValidationModeFromPromptMode(stage2OnlyRouting.mode);
+      const stage2OnlyIsRefreshMode = stage2OnlyBaseStage === "1B";
+      const stage2OnlySelectedValidationMode = stage2OnlyIsRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
+        ? "FULL_STAGE_ONLY"
+        : stage2OnlyValidationMode;
+      console.log("STAGE2_VALIDATION_ROUTE", {
+        jobId: payload.jobId,
+        isRefreshMode: stage2OnlyIsRefreshMode,
+        routedTo: stage2OnlyIsRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
+          ? "FROM_EMPTY"
+          : stage2OnlyIsRefreshMode
+            ? "REFRESH"
+            : "FROM_EMPTY",
+      });
       logMultiZoneFullMode({
         path: "stage2_only",
         canonicalRoomType: stage2OnlyRouting.canonicalRoomType,
@@ -4851,7 +4867,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[STAGE2_VALIDATOR_MODE]", {
         jobId: payload.jobId,
         path: "stage2_only",
-        validationMode: stage2OnlyValidationMode,
+        validationMode: stage2OnlySelectedValidationMode,
       });
       if (!stage2OnlyMeta.sourceStage && !stage2OnlyMeta.stage1BMode) {
         nLog("[STAGE2_ONLY_MODE_CONTEXT_MISSING]", {
@@ -5012,7 +5028,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stagingStyle: payload.options.stagingStyle || "standard_listing",
           stage1APath: validationBaseline,
           sourceStage: stage2OnlyRouting.sourceStage,
-          validationMode: stage2OnlyValidationMode,
+          validationMode: stage2OnlySelectedValidationMode,
         });
         nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
         const stage2OnlyGeminiRaw = (unifiedRetryValidation.raw?.geminiSemantic as any)?.details || {};
@@ -5100,7 +5116,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const baseRef = toBase64(validationBaseline);
           const enhanced = toBase64(path2);
           const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
-            validationMode: stage2OnlyValidationMode,
+            validationMode: stage2OnlySelectedValidationMode,
           });
           if (s2oCompliance && s2oCompliance.ok === false) {
             const confidence = s2oCompliance.confidence ?? 0.6;
@@ -7147,7 +7163,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
   const stage2ValidationBaseline = path1A;
   const stage2PromptMode = stage2Routing.mode;
+  const isRefreshMode = stage2BaseStage === "1B";
+  const isRefreshValidationFlow = stage2PromptMode === "refresh";
   const stage2ValidationMode = getStage2ValidationModeFromPromptMode(stage2PromptMode);
+  const stage2SelectedValidationMode = isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
+    ? "FULL_STAGE_ONLY"
+    : stage2ValidationMode;
+  console.log("STAGE2_VALIDATION_ROUTE", {
+    jobId: payload.jobId,
+    isRefreshMode,
+    routedTo: isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
+      ? "FROM_EMPTY"
+      : isRefreshMode
+        ? "REFRESH"
+        : "FROM_EMPTY",
+  });
   logMultiZoneFullMode({
     path: "main",
     canonicalRoomType: canonicalRoomTypeForStage2,
@@ -7158,7 +7188,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog("[STAGE2_VALIDATOR_MODE]", {
     jobId: payload.jobId,
     path: "main",
-    validationMode: stage2ValidationMode,
+    validationMode: stage2SelectedValidationMode,
   });
   nLog(`[WORKER] Stage 2 source: baseStage=${stage2BaseStage}, inputPath=${stage2InputPath}`);
   
@@ -7833,6 +7863,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
     };
 
+    const logRefreshValidationTrace = (params: {
+      specialistHardFail: boolean;
+      geminiDecision: "PASS" | "FAIL";
+      finalDecision: "ACCEPT" | "RETRY";
+      reason?: string;
+    }): void => {
+      if (!isRefreshValidationFlow) return;
+      nLog("[STAGE2_REFRESH_TRACE]", {
+        jobId: payload.jobId,
+        mode: "REFRESH",
+        localUsed: false,
+        specialistHardFail: params.specialistHardFail,
+        geminiDecision: params.geminiDecision,
+        finalDecision: params.finalDecision,
+        reason: params.reason || "none",
+      });
+    };
+
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
       logStage2AttemptAnchor(attempt);
       const emitStage2DecisionBreakdown = (params: {
@@ -8407,20 +8455,15 @@ All openings must remain identical in position and size to the original image.`;
       };
 
       const localPrecheckResult = runUnifiedValidator(localPrecheckSignals);
-      if (localPrecheckResult.decision === "RETRY") {
-        const localPrecheckReason = localPrecheckResult.warnings[0] || "local_precheck_severe";
-        nLog("[STAGE2_VALIDATION_FAIL] local_precheck");
-        stage2LocalReasons.push("local_precheck_severe");
-        nLog("[STAGE2_VALIDATION_ADVISORY] local_precheck mode=log-only action=proceed_to_gemini", {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          reason: localPrecheckReason,
-          score: localPrecheckResult.score,
-          severity: localPrecheckResult.severity,
-          warnings: localPrecheckResult.warnings,
-        });
-      }
+      nLog("[STAGE2_VALIDATION_ADVISORY] local_precheck log-only", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        attempt,
+        decision: localPrecheckResult.decision,
+        score: localPrecheckResult.score,
+        severity: localPrecheckResult.severity,
+        warnings: localPrecheckResult.warnings,
+      });
 
       let envelopePass = true;
       let openingPass = true;
@@ -8813,29 +8856,41 @@ All openings must remain identical in position and size to the original image.`;
         });
       }
 
-      const localSignalsInput: Stage2LocalSignals = {
-        structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm, envelopePass ? 0 : 1)),
-        wallDrift: clamp01(semanticWallDriftNorm),
-        maskedEdgeDrift: clamp01(maskedEdgeDriftNorm),
-        edgeOpeningRisk: clamp01(edgeOpeningRiskNorm),
-        openingCountMismatch: clamp01(Math.max(semanticOpeningsDeltaNorm, openingPass ? 0 : 1)),
-        floorPlaneShift: floorPass ? 0 : 1,
-        fixtureMismatch: fixturePass ? 0 : 1,
-        islandDetectionDrift: 0,
-      };
+      if (!isRefreshValidationFlow) {
+        const localSignalsInput: Stage2LocalSignals = {
+          structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm, envelopePass ? 0 : 1)),
+          wallDrift: clamp01(semanticWallDriftNorm),
+          maskedEdgeDrift: clamp01(maskedEdgeDriftNorm),
+          edgeOpeningRisk: clamp01(edgeOpeningRiskNorm),
+          openingCountMismatch: clamp01(Math.max(semanticOpeningsDeltaNorm, openingPass ? 0 : 1)),
+          floorPlaneShift: floorPass ? 0 : 1,
+          fixtureMismatch: fixturePass ? 0 : 1,
+          islandDetectionDrift: 0,
+        };
 
-      const unifiedLocalResult = runUnifiedValidator(localSignalsInput);
-      const formattedSignals = `structuralDegreeChange:${localSignalsInput.structuralDegreeChange.toFixed(4)},wallDrift:${localSignalsInput.wallDrift.toFixed(4)},maskedEdgeDrift:${localSignalsInput.maskedEdgeDrift.toFixed(4)},edgeOpeningRisk:${localSignalsInput.edgeOpeningRisk.toFixed(4)},openingCountMismatch:${localSignalsInput.openingCountMismatch.toFixed(4)},floorPlaneShift:${localSignalsInput.floorPlaneShift.toFixed(4)},fixtureMismatch:${localSignalsInput.fixtureMismatch.toFixed(4)},islandDetectionDrift:${localSignalsInput.islandDetectionDrift.toFixed(4)}`;
+        const unifiedLocalResult = runUnifiedValidator(localSignalsInput);
+        const formattedSignals = `structuralDegreeChange:${localSignalsInput.structuralDegreeChange.toFixed(4)},wallDrift:${localSignalsInput.wallDrift.toFixed(4)},maskedEdgeDrift:${localSignalsInput.maskedEdgeDrift.toFixed(4)},edgeOpeningRisk:${localSignalsInput.edgeOpeningRisk.toFixed(4)},openingCountMismatch:${localSignalsInput.openingCountMismatch.toFixed(4)},floorPlaneShift:${localSignalsInput.floorPlaneShift.toFixed(4)},fixtureMismatch:${localSignalsInput.fixtureMismatch.toFixed(4)},islandDetectionDrift:${localSignalsInput.islandDetectionDrift.toFixed(4)}`;
 
-      if (unifiedLocalResult.severity === "CATASTROPHIC") {
-        const catastrophicReason = unifiedLocalResult.warnings[0] || "catastrophic_structural_change";
-        nLog(
-          `[UNIFIED_VALIDATOR]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nseverity=CATASTROPHIC\nreason=${catastrophicReason}\ndecision=${unifiedLocalResult.decision}`
-        );
+        if (unifiedLocalResult.severity === "CATASTROPHIC") {
+          const catastrophicReason = unifiedLocalResult.warnings[0] || "catastrophic_structural_change";
+          nLog(
+            `[UNIFIED_VALIDATOR]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nseverity=CATASTROPHIC\nreason=${catastrophicReason}\ndecision=${unifiedLocalResult.decision}`
+          );
+        } else {
+          nLog(
+            `[UNIFIED_VALIDATOR]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nseverity=${unifiedLocalResult.severity}\nscore=${unifiedLocalResult.score.toFixed(4)}\nsignals={${formattedSignals}}\ndecision=${unifiedLocalResult.decision}`
+          );
+        }
       } else {
-        nLog(
-          `[UNIFIED_VALIDATOR]\njob_id=${payload.jobId}\nimage_id=${payload.imageId}\nattempt=${attempt}\nseverity=${unifiedLocalResult.severity}\nscore=${unifiedLocalResult.score.toFixed(4)}\nsignals={${formattedSignals}}\ndecision=${unifiedLocalResult.decision}`
-        );
+        nLog("[STAGE2_LOCAL_VALIDATORS_LOG_ONLY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          openingPass,
+          fixturePass,
+          floorPass,
+          envelopePass,
+        });
       }
 
       const highConfidenceFailEntry = Object.entries(specialistResults).find(([, result]) =>
@@ -8847,8 +8902,14 @@ All openings must remain identical in position and size to the original image.`;
       if (highConfidenceFailEntry) {
         const [validatorName, result] = highConfidenceFailEntry;
         const specialistReason = `specialist_high_confidence:${validatorName}:${result.issueType}:${result.confidence.toFixed(3)}`;
-        setStage2AttemptValidation(path2, "local", [specialistReason]);
+        setStage2AttemptValidation(path2, isRefreshValidationFlow ? "specialist" : "local", [specialistReason]);
         if (attempt < MAX_STAGE2_RETRIES) {
+          logRefreshValidationTrace({
+            specialistHardFail: true,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: specialistReason,
+          });
           logValidateFinal(attempt, "retry", attempt);
           logStage2Retry(attempt, normalizeValidatorReason(specialistReason));
           logEvent("STAGE_RETRY", {
@@ -8871,6 +8932,12 @@ All openings must remain identical in position and size to the original image.`;
         fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallbackPath;
         stage2CandidatePath = fallbackPath;
+        logRefreshValidationTrace({
+          specialistHardFail: true,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: specialistReason,
+        });
         logValidateFinal(attempt, "reject", attempt - 1);
         break;
       }
@@ -8887,7 +8954,7 @@ All openings must remain identical in position and size to the original image.`;
         stagingStyle: payload.options.stagingStyle,
         stage1APath: path1A,
         sourceStage: "1A",
-        validationMode: "FULL_STAGE_ONLY",
+        validationMode: stage2SelectedValidationMode,
         geminiPolicy: stage2GeminiPolicy,
       });
 
@@ -8911,8 +8978,14 @@ All openings must remain identical in position and size to the original image.`;
 
         if (unifiedCritical) {
           const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
-          setStage2AttemptValidation(path2, "local", [unifiedDecisionReason]);
+          setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
           if (attempt < MAX_STAGE2_RETRIES) {
+            logRefreshValidationTrace({
+              specialistHardFail: false,
+              geminiDecision: "FAIL",
+              finalDecision: "RETRY",
+              reason: unifiedDecisionReason,
+            });
             logValidateFinal(attempt, "retry", attempt);
             logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
             logEvent("STAGE_RETRY", {
@@ -8935,6 +9008,12 @@ All openings must remain identical in position and size to the original image.`;
           fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
           path2 = fallbackPath;
           stage2CandidatePath = fallbackPath;
+          logRefreshValidationTrace({
+            specialistHardFail: false,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: unifiedDecisionReason,
+          });
           logValidateFinal(attempt, "reject", attempt - 1);
           break;
         } else {
@@ -8959,11 +9038,12 @@ All openings must remain identical in position and size to the original image.`;
       const finalConfirmMode: "block" | "log" = "block";
       if (validationStage === "2") {
         try {
-          const complianceAdvisorySignals = stage2AdvisorySignals;
-          const complianceOpeningStructuralSignal = openingStructuralSignalDetected;
-          const complianceOpeningSignalContext = openingStructuralSignal;
-          const complianceMaskedDriftRegions = maskedDriftRegions;
-          const complianceOpeningRegions = openingRegions;
+          const routeToFromEmptyValidation = stage2SelectedValidationMode === "FULL_STAGE_ONLY";
+          const complianceAdvisorySignals = routeToFromEmptyValidation ? [] : stage2AdvisorySignals;
+          const complianceOpeningStructuralSignal = routeToFromEmptyValidation ? false : openingStructuralSignalDetected;
+          const complianceOpeningSignalContext = routeToFromEmptyValidation ? undefined : openingStructuralSignal;
+          const complianceMaskedDriftRegions = routeToFromEmptyValidation ? [] : maskedDriftRegions;
+          const complianceOpeningRegions = routeToFromEmptyValidation ? [] : openingRegions;
 
           const ai = getGeminiClient();
           const base1A = toBase64(path1A);
@@ -8974,6 +9054,8 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             action: "run",
             model: "gemini-2.5-pro",
+            refreshMode: isRefreshValidationFlow,
+            localHintsSuppressed: routeToFromEmptyValidation,
             advisoryCount: complianceAdvisorySignals.length,
             advisorySignals: complianceAdvisorySignals,
             openingStructuralSignalFlag: complianceOpeningStructuralSignal,
@@ -8982,7 +9064,7 @@ All openings must remain identical in position and size to the original image.`;
             openingRegions: complianceOpeningRegions,
           });
           compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
-            validationMode: stage2ValidationMode,
+            validationMode: stage2SelectedValidationMode,
             advisorySignals: complianceAdvisorySignals,
             openingStructuralSignal: complianceOpeningStructuralSignal,
             openingStructuralSignalContext: complianceOpeningSignalContext,
@@ -9115,6 +9197,12 @@ All openings must remain identical in position and size to the original image.`;
                   decisionPoint: "final_block",
                   reason: "compliance",
                 });
+                logRefreshValidationTrace({
+                  specialistHardFail: false,
+                  geminiDecision: "FAIL",
+                  finalDecision: "RETRY",
+                  reason: reasonText,
+                });
                 nLog(`[FALLBACK_TO_STAGE${fallbackStage}] reason=${stage2BlockedReason}`);
                 logValidateFinal(attempt, "reject", attempt - 1);
                 break;
@@ -9129,6 +9217,12 @@ All openings must remain identical in position and size to the original image.`;
                 complianceDecision,
                 stage2Blocked,
                 decisionPoint: "retry_schedule",
+                reason: reasonText,
+              });
+              logRefreshValidationTrace({
+                specialistHardFail: false,
+                geminiDecision: "FAIL",
+                finalDecision: "RETRY",
                 reason: reasonText,
               });
               logValidateFinal(attempt, "retry", attempt);
@@ -9163,6 +9257,12 @@ All openings must remain identical in position and size to the original image.`;
           });
 
           if (attempt < MAX_STAGE2_RETRIES) {
+            logRefreshValidationTrace({
+              specialistHardFail: false,
+              geminiDecision: "FAIL",
+              finalDecision: "RETRY",
+              reason: complianceErr,
+            });
             logValidateFinal(attempt, "retry", attempt);
             logStage2Retry(attempt, "compliance_validator_unavailable");
             logEvent("STAGE_RETRY", {
@@ -9185,6 +9285,12 @@ All openings must remain identical in position and size to the original image.`;
           fallbackUsed = fallbackStage === "1B" ? "stage2_compliance_fallback_1b" : "stage2_compliance_fallback_1a";
           path2 = fallbackPath;
           stage2CandidatePath = fallbackPath;
+          logRefreshValidationTrace({
+            specialistHardFail: false,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: complianceErr,
+          });
           logValidateFinal(attempt, "reject", attempt - 1);
           break;
         }
@@ -9356,6 +9462,12 @@ All openings must remain identical in position and size to the original image.`;
         });
 
         if (attempt < MAX_STAGE2_RETRIES) {
+          logRefreshValidationTrace({
+            specialistHardFail: false,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: `${retryReason}:${normalizedFinalReason}`,
+          });
           logValidateFinal(attempt, "retry", attempt);
           logStage2Retry(attempt, `${retryReason}:${normalizedFinalReason}`);
           logEvent("STAGE_RETRY", {
@@ -9376,6 +9488,12 @@ All openings must remain identical in position and size to the original image.`;
         fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
         path2 = fallback1B || path1A;
         stage2CandidatePath = path2;
+        logRefreshValidationTrace({
+          specialistHardFail: false,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: `${retryReason}:${normalizedFinalReason}`,
+        });
         logValidateFinal(attempt, "reject", attempt - 1);
         break;
       }
@@ -9385,7 +9503,7 @@ All openings must remain identical in position and size to the original image.`;
         semanticOpeningsDeltaNorm !== 0;
 
       if (hasStructuralOpeningChange) {
-        if (!STRUCTURAL_SIGNALS_ACTIVE) {
+        if (isRefreshValidationFlow || !STRUCTURAL_SIGNALS_ACTIVE) {
           nLog("[STAGE2_VALIDATION_ADVISORY] opening_change mode=log-only action=proceed_to_gemini", {
             jobId: payload.jobId,
             imageId: payload.imageId,
@@ -9472,6 +9590,12 @@ All openings must remain identical in position and size to the original image.`;
           stage2LocalReasons,
           geminiConfirm: null,
         }
+      });
+      logRefreshValidationTrace({
+        specialistHardFail: false,
+        geminiDecision: "PASS",
+        finalDecision: "ACCEPT",
+        reason: "accepted",
       });
       logValidateFinal(attempt, "accept", attempt - 1);
       break;
