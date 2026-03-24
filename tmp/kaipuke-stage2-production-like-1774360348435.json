@@ -1,0 +1,110 @@
+{
+  "summary": {
+    "total": 2,
+    "pass": 2,
+    "fail": 0,
+    "issueTypeGateEnabled": false,
+    "issueTypeGateBlocked": 0,
+    "unifiedEvaluated": 2,
+    "avgElapsedMs": 41257,
+    "totalElapsedMs": 82514
+  },
+  "rows": [
+    {
+      "id": "06",
+      "baseline": "33 Kaipuke - Image 06.jpg",
+      "enhanced": "33 Kaipuke - Image 06 (Staged).jpg",
+      "elapsedMs": 42960,
+      "stage2IssueTypeGateEnabled": false,
+      "stage2IssueTypeGateBlocked": false,
+      "specialistSignals": [
+        {
+          "validator": "openings",
+          "issueType": "none",
+          "reason": "openings_preserved",
+          "confidence": 1,
+          "advisorySignals": []
+        },
+        {
+          "validator": "fixtures",
+          "issueType": "none",
+          "reason": "The room architecture and all fixed installed fixtures including the wall-mounted HVAC unit, recessed ceiling lights, ceiling vent, and smoke detector are identical in both images. Only furniture and decor have been changed, which is permitted.",
+          "confidence": 1,
+          "advisorySignals": []
+        },
+        {
+          "validator": "floor",
+          "issueType": "none",
+          "reason": "The structural wood plank flooring is consistent in material, color, and plank orientation in both images.",
+          "confidence": 1,
+          "advisorySignals": []
+        },
+        {
+          "validator": "envelope",
+          "issueType": "none",
+          "reason": "The architectural envelope of the room, including walls, windows, ceiling, and overall footprint, remains identical between the baseline and staged images. No structural elements have been altered, added, or removed. There are no indications of recesses being filled or wall planes being extended.",
+          "confidence": 1,
+          "advisorySignals": []
+        }
+      ],
+      "unified": {
+        "ran": true,
+        "pass": true,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "reason": null,
+        "elapsedMs": 16437
+      },
+      "finalDecision": "pass"
+    },
+    {
+      "id": "07",
+      "baseline": "33 Kaipuke - Image 07.jpg",
+      "enhanced": "33 Kaipuke - Image 07 (Staged).jpg",
+      "elapsedMs": 39553,
+      "stage2IssueTypeGateEnabled": false,
+      "stage2IssueTypeGateBlocked": false,
+      "specialistSignals": [
+        {
+          "validator": "openings",
+          "issueType": "none",
+          "reason": "openings_preserved",
+          "confidence": 1,
+          "advisorySignals": []
+        },
+        {
+          "validator": "fixtures",
+          "issueType": "none",
+          "reason": "The room's architecture, including walls, windows, and the kitchen island structure, remains identical. All major fixed fixtures such as the three pendant lights, recessed ceiling lights, and the kitchen sink/faucet are present and unchanged in type and location. Furniture, decor, and staging elements have been changed or removed, which is permissible.",
+          "confidence": 1,
+          "advisorySignals": []
+        },
+        {
+          "validator": "floor",
+          "issueType": "none",
+          "reason": "The structural wood flooring, including plank layout and material, is identical in both images. The addition of a rug in the staged image is a non-structural change.",
+          "confidence": 1,
+          "advisorySignals": []
+        },
+        {
+          "validator": "envelope",
+          "issueType": "none",
+          "reason": "The architectural envelope, including walls, windows, ceiling, and room footprint, remains consistent between the baseline and staged images. All visible differences are due to changes in furniture, decor, lighting, and minor perspective/cropping variations, which are permissible.",
+          "confidence": 1,
+          "advisorySignals": []
+        }
+      ],
+      "unified": {
+        "ran": true,
+        "pass": true,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "reason": null,
+        "elapsedMs": 13537
+      },
+      "finalDecision": "pass"
+    }
+  ]
+}
