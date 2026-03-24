@@ -35,7 +35,7 @@ export default function Landing() {
       
       {/* 1. HERO SECTION */}
       <section className="bg-white py-20 lg:py-24">
-        <div className="container mx-auto px-4 grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+        <div className="w-full px-4 sm:px-6 lg:px-10 grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
           
           {/* Left Col (Copy) */}
           <div className="space-y-8">
@@ -87,7 +87,7 @@ export default function Landing() {
 
       {/* 2. SAMPLE GALLERY */}
       <section className="bg-white pb-14">
-        <div className="container mx-auto px-4">
+        <div className="w-full px-4 sm:px-6 lg:px-10">
           <div className="text-center space-y-2 mb-8">
             <h2 className="text-2xl lg:text-3xl font-serif font-semibold text-slate-900">
               Try with Sample Images
@@ -97,7 +97,7 @@ export default function Landing() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {sampleImages.map((sample) => (
               <a
                 key={sample.type}
@@ -134,7 +134,7 @@ export default function Landing() {
 
       {/* 3. THE "WHY REALENHANCE" (Value Props) */}
       <section className="bg-slate-50 py-20">
-        <div className="container mx-auto px-4">
+        <div className="w-full px-4 sm:px-6 lg:px-10">
           <div className="grid md:grid-cols-3 gap-8">
             {[
               {
@@ -167,7 +167,7 @@ export default function Landing() {
 
       {/* 4. HOW IT WORKS (The "Validator" Logic) */}
       <section className="bg-white py-24">
-        <div className="container mx-auto px-4 text-center max-w-4xl">
+        <div className="w-full px-4 sm:px-6 lg:px-10 text-center">
           <h2 className="text-3xl lg:text-4xl font-serif font-bold text-slate-900 mb-16">
             How we protect your listings.
           </h2>
@@ -220,7 +220,7 @@ export default function Landing() {
 
       {/* 5. AUDIENCE SECTION */}
       <section className="bg-slate-900 py-24 text-white">
-        <div className="container mx-auto px-4">
+        <div className="w-full px-4 sm:px-6 lg:px-10">
           <div className="grid md:grid-cols-3 gap-12 divide-y md:divide-y-0 md:divide-x divide-slate-800">
             <div className="px-4">
               <h3 className="text-2xl font-serif font-medium mb-6 text-emerald-400">Real Estate Agents</h3>
