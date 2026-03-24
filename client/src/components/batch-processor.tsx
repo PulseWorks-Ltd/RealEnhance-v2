@@ -351,7 +351,7 @@ function deriveUnifiedCompletionState(params: {
   stage1BUrl: string | null;
   stage2Url: string | null;
 }): {
-  status: "complete";
+  status: "complete" | "failed";
   isFallback: boolean;
   fallbackMessage: string | null;
   displayImageUrl: string | null;
@@ -364,8 +364,6 @@ function deriveUnifiedCompletionState(params: {
   const hasStage1A = !!stage1AUrl;
   const hasStage1B = !!stage1BUrl;
   const hasStage2 = !!stage2Url;
-
-  const status: "complete" = "complete";
 
   const isFallback =
     requestedFinalStage === "2"
@@ -400,6 +398,8 @@ function deriveUnifiedCompletionState(params: {
       : requestedFinalStage === "1B"
       ? hasStage1B
       : hasStage1A;
+
+  const status: "complete" | "failed" = hasStage1A ? "complete" : "failed";
 
   return {
     status,
@@ -1037,26 +1037,61 @@ export default function BatchProcessor({
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
+  const activeBatchIdRef = useRef<string | null>(null);
   const [batches, setBatches] = useState<Record<string, any[]>>({});
-  const results = useMemo(() => {
-    if (!activeBatchId) return [];
-    return batches[activeBatchId] || [];
-  }, [activeBatchId, batches]);
-  const setResults = useCallback((updater: React.SetStateAction<any[]>, scopeBatchId?: string | null) => {
-    const targetBatchId = scopeBatchId ?? activeBatchId;
-    if (!targetBatchId) return;
+  const batchesRef = useRef<Record<string, any[]>>({});
+  useEffect(() => {
+    activeBatchIdRef.current = activeBatchId;
+  }, [activeBatchId]);
+  useEffect(() => {
+    batchesRef.current = batches;
+  }, [batches]);
+
+  const updateBatchResults = useCallback((
+    batchId: string | null | undefined,
+    updater: React.SetStateAction<any[]>,
+    reason: string
+  ) => {
+    const targetBatchId = batchId || null;
+    if (!targetBatchId) {
+      console.warn("[BATCH_WRITE_SKIPPED_NO_BATCH]", {
+        reason,
+        batchId: targetBatchId,
+        activeBatch: activeBatchIdRef.current,
+      });
+      return;
+    }
+
     setBatches((prev) => {
       const current = prev[targetBatchId] || [];
       const next = typeof updater === "function"
         ? (updater as (prevState: any[]) => any[])(current)
         : updater;
+
+      console.log("[BATCH_WRITE]", {
+        reason,
+        target: targetBatchId,
+        active: activeBatchIdRef.current,
+      });
+
       if (prev[targetBatchId] === next) return prev;
-      return {
+      const updated = {
         ...prev,
         [targetBatchId]: next,
       };
+      batchesRef.current = updated;
+      return updated;
     });
-  }, [activeBatchId]);
+  }, []);
+
+  const results = useMemo(() => {
+    if (!activeBatchId) return [];
+    return batches[activeBatchId] || [];
+  }, [activeBatchId, batches]);
+  const setResults = useCallback((updater: React.SetStateAction<any[]>, scopeBatchId?: string | null) => {
+    const targetBatchId = scopeBatchId ?? activeBatchIdRef.current;
+    updateBatchResults(targetBatchId, updater, "setResults");
+  }, [updateBatchResults]);
   const [messageByImage, setMessageByImage] = useState<Record<number, string>>({});
   const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
@@ -2435,9 +2470,13 @@ export default function BatchProcessor({
     if (!userId) {
       console.log("[BATCH_RESTORE_SKIPPED_NO_USER]");
       clearBatchJobState(undefined, { resetUI: true });
+      activeBatchIdRef.current = null;
       setActiveBatchId(null);
       activePollingBatchIdRef.current = null;
-      setBatches({});
+      setBatches(() => {
+        batchesRef.current = {};
+        return {};
+      });
       setPendingRestoreSession(null);
       setShowPendingRestoreBanner(false);
       return;
@@ -2456,9 +2495,14 @@ export default function BatchProcessor({
 
       console.log("[BATCH_RESTORE_OK]", { userId, jobId: savedState.jobId });
       const restoredBatchId = `restored-${savedState.jobId || Date.now()}`;
+      activeBatchIdRef.current = restoredBatchId;
       setActiveBatchId(restoredBatchId);
       activePollingBatchIdRef.current = restoredBatchId;
-      setBatches({ [restoredBatchId]: Array.isArray(savedState.results) ? savedState.results : [] });
+      setBatches(() => {
+        const next = { [restoredBatchId]: Array.isArray(savedState.results) ? savedState.results : [] };
+        batchesRef.current = next;
+        return next;
+      });
       setJobId(savedState.jobId);
       setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
       setRunState(savedState.runState);
@@ -2610,75 +2654,8 @@ export default function BatchProcessor({
   // Listen for global clear requests (logout or manual clear) to reset component state and abort polling
   useEffect(() => {
     const handler = () => {
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort();
-        setAbortController(null);
-      }
-      if (retryTimeoutRef.current) {
-        clearTimeout(retryTimeoutRef.current);
-        retryTimeoutRef.current = null;
-      }
-      queueRef.current = [];
-      processedSetRef.current = new Set();
-      jobIdToIndexRef.current = {};
-      imageIdToIndexRef.current = {};
-      jobIdToImageIdRef.current = {};
-      regionEditJobIdsRef.current = new Set();
-      strictNotifiedRef.current = new Set();
-      statusUnknownLoggedRef.current = new Set();
-      idxMissingLoggedRef.current = new Set();
-      statusHasUrlLoggedRef.current = new Set();
-      statusTargetNotReachedLoggedRef.current = new Set();
-      retryChildMappingLoggedRef.current = new Set();
-      autoFurnitureNoticeLoggedRef.current = new Set();
-      sceneDetectCacheRef.current = {};
-      scenePredictionsByIdRef.current = {};
-      clientBatchIdRef.current = null;
-      previousFileCountRef.current = 0;
-      setJobId("");
-      setJobIds([]);
-      setCancelIds([]);
-      setClientBatchId(null);
-      setResults([]);
-      setProcessedImages([]);
-      setProcessedImagesByIndex({});
-      setRetryingImages(new Set());
-      setRetryLoadingImages(new Set());
-      retryInFlightRef.current.clear();
-      setEditingImages(new Set());
-      setEditCompletedImages(new Set());
-      setDisplayStageByIndex({});
-      setStrictRetryingIndices(new Set());
-      setProgressText("");
-      setMessageByImage({});
-      setAiSteps({});
-      setIsUploading(false);
-      setIsBatchRefining(false);
-      setHasRefinedImages(false);
-      setSelection(new Set());
-      setMetaByIndex({});
-      setImageRoomTypesById({});
-      setImageSceneTypesById({});
-      setManualSceneTypesById({});
-      setManualSceneOverrideById({});
-      setImageSkyReplacementById({});
-      setScenePredictionsById({});
-      setGlobalGoal("");
-      setPropertyAddress("");
-      setPreserveStructure(true);
-      setLinkImages(false);
-      setSelectedImageId(null);
-      setCurrentImageIndex(0);
-      setPreviewImage(null);
-      setEditingImageIndex(null);
-      setActiveEditSource(null);
-      setRegionEditorOpen(false);
-      setRunState("idle");
-      setFiles([]);
-      setPendingRestoreSession(null);
-      setShowPendingRestoreBanner(false);
-      setActiveTab("images");
-      console.log("[BATCH_STATE_CLEARED]", { source: "clear-event" });
+      resetBatchState("images");
+      console.log("[BATCH_STATE_CLEARED]", { source: "clear-event-canonical-reset" });
     };
     window.addEventListener(CLEAR_EVENT, handler);
     return () => window.removeEventListener(CLEAR_EVENT, handler);
@@ -2728,7 +2705,7 @@ export default function BatchProcessor({
     if (!ids.length) return;
     const controller = new AbortController();
     setAbortController(controller);
-    await pollForBatch(ids, controller, activeBatchId);
+    await pollForBatch(ids, controller, activeBatchIdRef.current);
   };
 
   // Polling function for existing jobs
@@ -3046,7 +3023,8 @@ export default function BatchProcessor({
 
     while (Date.now() < deadline) {
       try {
-        if (scopeBatchId && activePollingBatchIdRef.current && activePollingBatchIdRef.current !== scopeBatchId) {
+        const resolvedScopeBatchId = scopeBatchId ?? activeBatchIdRef.current;
+        if (resolvedScopeBatchId && activePollingBatchIdRef.current && activePollingBatchIdRef.current !== resolvedScopeBatchId) {
           return;
         }
         if (controller.signal.aborted) return;
@@ -3084,9 +3062,9 @@ export default function BatchProcessor({
             ""
           ).trim() || null;
 
-          if (!scopeBatchId || !incomingBatchId) return true;
-          if (incomingBatchId !== scopeBatchId) {
-            console.log("[JOB_IGNORED_WRONG_BATCH]", { scopeBatchId, incomingBatchId, jobId: it?.jobId || it?.id || null });
+          if (!resolvedScopeBatchId || !incomingBatchId) return true;
+          if (incomingBatchId !== resolvedScopeBatchId) {
+            console.log("[JOB_IGNORED_WRONG_BATCH]", { scopeBatchId: resolvedScopeBatchId, incomingBatchId, jobId: it?.jobId || it?.id || null });
             return false;
           }
           return true;
@@ -3406,7 +3384,7 @@ export default function BatchProcessor({
             !!displayUrl &&
             unifiedCompletion.isFallback;
 
-          const completedFinal = status === "completed" && !!displayUrl && (unifiedCompletion.status === "complete" || isRegionEdit);
+          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit || unifiedCompletion.isFallback);
           const completionSourceResolved = isRegionEdit && completedFinal ? "region-edit" : completionSource;
           
           // Log when backend says completed but target not reached (still processing)
@@ -3461,19 +3439,20 @@ export default function BatchProcessor({
             const isQueued = pipelineStatusRaw === "queued" || pipelineStatusRaw === "waiting";
             const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
             // Keep uiOverrideFailed as an internal UI fallback signal; do not inject user-facing warning copy here.
-              const isTerminalNormalized = status === "completed" || status === "failed";
-            if (!isTerminalNormalized && !TERMINAL_STATUSES.has(status)) {
+              const isTerminalNormalized = status === "failed" || completedFinal;
+            if (!isTerminalNormalized) {
               nonTerminalIndices.push(idx);
             }
             if (status === "failed" || completedFinal) {
               reachedTargetOrFailedIndices.add(idx);
             }
             const filename = files[idx]?.name || `image-${idx + 1}`;
-            setResults(prev => {
+            const writeBatchId = resolvedScopeBatchId ?? activeBatchIdRef.current;
+            updateBatchResults(writeBatchId, prev => {
               const copy = prev ? [...prev] : [];
               const existing = copy[idx] || {};
-              if (scopeBatchId && incomingBatchId && incomingBatchId !== scopeBatchId) {
-                console.log("[JOB_IGNORED_WRONG_BATCH]", { scopeBatchId, incomingBatchId, jobId: polledId || existing.jobId || null });
+              if (writeBatchId && incomingBatchId && incomingBatchId !== writeBatchId) {
+                console.log("[JOB_IGNORED_WRONG_BATCH]", { scopeBatchId: writeBatchId, incomingBatchId, jobId: polledId || existing.jobId || null });
                 return copy;
               }
               const existingJobId = (existing.jobId || existing.result?.jobId || null) as string | null;
@@ -3802,7 +3781,7 @@ export default function BatchProcessor({
                 retryStage: isTerminalStatusForRetry ? undefined : existing.retryStage,
               };
               return copy;
-            });
+            }, "poll-merge");
 
             if (isTerminalFlag) {
               retryTerminalIndices.add(idx);
@@ -3900,7 +3879,7 @@ export default function BatchProcessor({
                 }
               });
             }
-            if (!isTerminalFlag && !TERMINAL_STATUSES.has(status)) {
+            if (!(status === "failed" || completedFinal)) {
               hasUnmappedNonTerminal = true;
             }
           }
@@ -3938,12 +3917,14 @@ export default function BatchProcessor({
 
         const allTerminal = items.length > 0 && nonTerminalIndices.length === 0 && !hasUnmappedNonTerminal;
         const serverSignaledDone = !!data.done;
+        const convergenceBatchId = scopeBatchId ?? activeBatchIdRef.current;
+        const convergenceResults = convergenceBatchId ? (batchesRef.current[convergenceBatchId] || []) : [];
 
         // ✅ FIX #1: Target-aware completion check
         // Don't stop polling just because backend says "done" - verify all images reached their targets
         const allImagesReachedTargetOrFailed = files.length > 0 && files.every((_, idx) => {
           if (reachedTargetOrFailedIndices.has(idx)) return true;
-          const r = results[idx];
+          const r = convergenceResults[idx];
           if (!r) return false;
           const status = String(r?.status || "").toLowerCase();
           if (status === "failed") return true;
@@ -3968,7 +3949,7 @@ export default function BatchProcessor({
             stage1BUrl,
             stage2Url,
           });
-          return !!unifiedCompletion.displayImageUrl;
+          return !!(unifiedCompletion.targetUrlPresent || unifiedCompletion.isFallback);
         });
 
         // Use target-aware completion instead of blindly trusting serverSignaledDone
@@ -4006,7 +3987,7 @@ export default function BatchProcessor({
               // 2. Haven't reached their target stage yet (legitimately processing)
               const trulyStuckIndices: number[] = [];
               for (const idx of nonTerminalIndices) {
-                const existing = results[idx] || {};
+                const existing = convergenceResults[idx] || {};
                 const hasPartialOutputs = !!(existing.stageUrls?.['1A'] || existing.stageUrls?.stage1A || existing.stageUrls?.['1B'] || existing.stageUrls?.stage1B || existing.stageUrls?.['2'] || existing.stageUrls?.stage2);
                 
                 // Check if item is legitimately in multi-stage pipeline
@@ -4026,7 +4007,7 @@ export default function BatchProcessor({
                 }
               }
               if (trulyStuckIndices.length > 0) {
-                setResults(prev => {
+                updateBatchResults(convergenceBatchId, prev => {
                   const copy = prev ? [...prev] : [];
                   for (const idx of trulyStuckIndices) {
                     const existing = copy[idx] || {};
@@ -4040,7 +4021,7 @@ export default function BatchProcessor({
                     } as any;
                   }
                   return copy;
-                });
+                }, "poll-stuck-fallback");
                 setProgressText(`Some items are taking longer than expected. Processing will continue.`);
                 if (IS_DEV) {
                   console.warn('[BATCH][poll] marked stuck queued items as processing fallback (no synthetic failure)', { trulyStuckIndices, skippedDueToPartialOutputs: nonTerminalIndices.filter(i => !trulyStuckIndices.includes(i)) });
@@ -4090,7 +4071,7 @@ export default function BatchProcessor({
     setAbortController(controller);
 
     try {
-      await pollForBatch([jobId], controller, activeBatchId);
+      await pollForBatch([jobId], controller, activeBatchIdRef.current);
     } finally {
       // Polling lifecycle ended for this job
       regionEditJobIdsRef.current.delete(jobId);
@@ -4116,19 +4097,11 @@ export default function BatchProcessor({
           const j = await res.json();
           // Map to minimal shape expected by UI
           const st = j?.status || j?.state;
-          const status =
-            st === 'complete' || st === 'completed' || st === 'succeeded'
-              ? 'completed'
-              : st === 'cancelled' || st === 'canceled'
-                ? 'cancelled'
-                : st === 'error' || st === 'failed'
-                  ? 'failed'
-                  : 'processing';
+          const status = st === 'complete' || st === 'succeeded' ? 'completed' : st === 'error' || st === 'failed' ? 'failed' : 'processing';
           items.push({ id, status, imageUrl: j?.result?.imageUrl });
         }
         const completed = items.filter(i=>i.status==='completed').length;
-        const cancelledCount = items.filter(i=>i.status==='cancelled').length;
-        setProgressText(`Processing images: ${completed}/${ids.length} completed${cancelledCount ? `, ${cancelledCount} cancelled` : ''}`);
+        setProgressText(`Processing images: ${completed}/${ids.length} completed`);
         for (const it of items) {
           const idx = jobIdToIndexRef.current[it.id];
           if (typeof idx === 'number' && it.status === 'completed' && !processedSetRef.current.has(idx)) {
@@ -4139,13 +4112,9 @@ export default function BatchProcessor({
             processedSetRef.current.add(idx);
             queueRef.current.push({ index: idx, error: 'Processing failed', jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
           }
-          if (typeof idx === 'number' && it.status === 'cancelled' && !processedSetRef.current.has(idx)) {
-            processedSetRef.current.add(idx);
-            queueRef.current.push({ index: idx, result: { status: 'cancelled', message: 'cancelled' }, jobId: it.id, filename: files[idx]?.name || `image-${idx+1}` });
-          }
         }
         schedule();
-        if (completed + cancelledCount === ids.length) {
+        if (completed === ids.length) {
           setRunState('done'); setAbortController(null); await refreshUser();
           clearBatchJobState(currentUserId);
           return;
@@ -4166,9 +4135,11 @@ export default function BatchProcessor({
     const ids = cancelIds.length ? cancelIds : jobIds;
     try {
       if (activeClientBatchId) {
-        await fetch(api(`/api/batch/${encodeURIComponent(activeClientBatchId)}/cancel`), withDevice({
+        await fetch(api('/api/batch/cancel'), withDevice({
           method: 'POST',
           credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ batchId: activeClientBatchId }),
           signal: AbortSignal.timeout(15_000)
         }));
       } else if (ids.length) {
@@ -4247,8 +4218,13 @@ export default function BatchProcessor({
       setAbortController(null);
     }
     activePollingBatchIdRef.current = newBatchId;
+    activeBatchIdRef.current = newBatchId;
     setActiveBatchId(newBatchId);
-    setBatches({ [newBatchId]: [] });
+    setBatches(() => {
+      const next = { [newBatchId]: [] };
+      batchesRef.current = next;
+      return next;
+    });
     clientBatchIdRef.current = newBatchId;
     setClientBatchId(newBatchId);
 
@@ -4261,7 +4237,11 @@ export default function BatchProcessor({
 
     setRunState("running");
     // Pre-size results array with queued placeholders to avoid flicker to error
-    setResults(Array.from({ length: files.length }, (_, idx) => ({ index: idx, status: 'queued' })) as any);
+    updateBatchResults(
+      newBatchId,
+      Array.from({ length: files.length }, (_, idx) => ({ index: idx, status: 'queued' })) as any,
+      "start-placeholders"
+    );
     setProgressText("");
     setJobId("");
     setJobIds([]);
@@ -5791,6 +5771,7 @@ export default function BatchProcessor({
     scenePredictionsByIdRef.current = {};
     clientBatchIdRef.current = null;
     activePollingBatchIdRef.current = null;
+    activeBatchIdRef.current = null;
     previousFileCountRef.current = 0;
 
     setFiles([]);
@@ -5803,7 +5784,10 @@ export default function BatchProcessor({
     setJobIds([]);
     setCancelIds([]);
     setActiveBatchId(null);
-    setBatches({});
+    setBatches(() => {
+      batchesRef.current = {};
+      return {};
+    });
     setClientBatchId(null);
     setProgressText("");
     setProcessedImages([]);
