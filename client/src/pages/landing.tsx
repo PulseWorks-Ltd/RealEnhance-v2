@@ -5,22 +5,28 @@ import { Button } from "@/components/ui/button";
 export default function Landing() {
   const sampleImages = [
     {
-      type: 'interior',
-      label: 'Interior',
+      type: 'bedroom',
+      label: 'Bedroom',
       gradient: 'from-blue-500 to-violet-600',
-      description: 'Living Room Enhancement',
+      description: 'Before: Bedroom Example Baseline. After: Bedroom Example Enhanced.',
+      beforeSrc: '/landing-samples/bedroom-example-baseline.png',
+      afterSrc: '/landing-samples/bedroom-example-enhanced.png',
     },
     {
-      type: 'exterior',
-      label: 'Exterior',
+      type: 'lounge',
+      label: 'Lounge',
       gradient: 'from-emerald-500 to-teal-600',
-      description: 'Home Facade Staging',
+      description: 'Before: Lounge Example Baseline. After: Lounge Example Enhanced.',
+      beforeSrc: '/landing-samples/lounge-example-baseline.png',
+      afterSrc: '/landing-samples/lounge-example-enhanced.jpg',
     },
     {
-      type: 'kitchen',
-      label: 'Kitchen',
+      type: 'messy-living-room',
+      label: 'Living Room',
       gradient: 'from-orange-500 to-rose-600',
-      description: 'Kitchen Declutter',
+      description: 'Before: Messy Living Room. After: Messy Living Room Enhanced.',
+      beforeSrc: '/landing-samples/messy-living-room.png',
+      afterSrc: '/landing-samples/messy-living-room-enhanced.png',
     },
   ] as const;
 
@@ -66,8 +72,8 @@ export default function Landing() {
           <div className="relative">
             <div className="relative rounded-xl overflow-hidden shadow-2xl border-4 border-slate-100 bg-slate-100 aspect-[4/3]">
                <ReactCompareSlider
-                itemOne={<ReactCompareSliderImage src="https://placehold.co/800x600/243b53/ffffff?text=Original+Photo" alt="Before" />}
-                itemTwo={<ReactCompareSliderImage src="https://placehold.co/800x600/e2e8f0/1e293b?text=Enhanced+Result" alt="After" />}
+                itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" />}
+                itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" />}
               />
               <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-white/90 backdrop-blur px-4 py-1.5 rounded-full text-xs font-semibold text-slate-700 shadow-sm border border-slate-200 z-10 pointer-events-none">
                 Interactive Comparison Demo
@@ -98,34 +104,11 @@ export default function Landing() {
                 href="/login"
                 className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:scale-[1.03] border border-slate-200"
               >
-                <div className="relative h-52 bg-gradient-to-br from-slate-100 to-slate-200">
-                  <div className="absolute inset-0 flex">
-                    <div className="flex-1 bg-gradient-to-br from-slate-300 via-slate-400 to-slate-500 relative">
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center space-y-1">
-                          <div className="text-xs font-semibold text-slate-700 uppercase tracking-wider">Before</div>
-                          <div className="w-12 h-12 mx-auto bg-slate-600/20 rounded-lg"></div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="w-0.5 bg-white/80 relative z-10 shadow-lg">
-                      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 bg-white rounded-full shadow-lg flex items-center justify-center border-2 border-slate-200 group-hover:scale-110 transition-transform duration-300">
-                        <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                        </svg>
-                      </div>
-                    </div>
-
-                    <div className={`flex-1 bg-gradient-to-br ${sample.gradient} relative`}>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center space-y-1">
-                          <div className="text-xs font-semibold text-white uppercase tracking-wider">After</div>
-                          <div className="w-12 h-12 mx-auto bg-white/20 rounded-lg backdrop-blur-sm"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                <div className="relative h-52 bg-slate-100">
+                  <ReactCompareSlider
+                    itemOne={<ReactCompareSliderImage src={sample.beforeSrc} alt={`${sample.label} before`} />}
+                    itemTwo={<ReactCompareSliderImage src={sample.afterSrc} alt={`${sample.label} after`} />}
+                  />
                 </div>
 
                 <div className="relative p-5 bg-white">
