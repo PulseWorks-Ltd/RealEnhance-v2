@@ -9661,9 +9661,15 @@ All openings must remain identical in position and size to the original image.`;
           // Ignore
         }
       }
+      const deferredPublishStatus = (() => {
+        const raw = String(latestJob?.status || "").toLowerCase();
+        if (raw === "queued") return "queued";
+        if (raw === "processing") return "processing";
+        return "processing";
+      })();
       await safeWriteJobStatus(
         payload.jobId,
-        { stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } },
+        { status: deferredPublishStatus, stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } },
         "stage1b_deferred_publish"
       );
       // VALIDATOR FOCUS: Log Stage 1B URL

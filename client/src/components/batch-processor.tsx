@@ -3326,6 +3326,12 @@ export default function BatchProcessor({
           const stage2Url = stage2Mismatch ? null : stage2UrlRaw;
           const resultUrlSafe = stage2Mismatch ? null : finalOutputUrl;
           const stagePreview = stage2Url || stage1bUrl || stage1aUrl || null;
+          const incomingProcessingPreviewUrl =
+            toDisplayUrl(it?.imageUrl) ||
+            toDisplayUrl(it?.image) ||
+            toDisplayUrl(extraResult?.imageUrl) ||
+            toDisplayUrl(extraResult?.url) ||
+            null;
           const hasOutputs = !!(stagePreview || resultUrlSafe || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
           // Target stage and completion interpretation are derived only from requested pipeline + available outputs.
@@ -3424,7 +3430,9 @@ export default function BatchProcessor({
 
           // No downgrades: keep processing/queued/failed/completed as reported
           statusCounts[status] = (statusCounts[status] || 0) + 1;
-          const chosenPreview = completedFinal ? displayUrl : (stagePreview || null);
+          const chosenPreview = completedFinal
+            ? displayUrl
+            : (stagePreview || incomingProcessingPreviewUrl || null);
 
           if (typeof idx === "number") {
             const now = Date.now();
@@ -3693,10 +3701,28 @@ export default function BatchProcessor({
                     existing.result?.resultUrl ||
                     null
                   );
+              const existingImageUrl =
+                toDisplayUrl(existing.imageUrl) ||
+                toDisplayUrl(existing.result?.imageUrl) ||
+                null;
               const resolvedStatus = resolveNonRegressiveStatus(
                 existing.status || existing.result?.status,
                 status
               );
+              const resolvedIsTerminal =
+                resolvedStatus === "completed" ||
+                resolvedStatus === "failed" ||
+                resolvedStatus === "cancelled";
+              const mergedImageUrl = (() => {
+                if (isRegionEdit && completedFinal) {
+                  return displayUrl || existingImageUrl || null;
+                }
+                // Accept live processing snapshots, but keep terminal artifacts immutable.
+                if (!resolvedIsTerminal && incomingProcessingPreviewUrl) {
+                  return incomingProcessingPreviewUrl;
+                }
+                return existingImageUrl || null;
+              })();
               const isTerminalStatusForRetry = resolvedStatus === "completed" || resolvedStatus === "failed";
               const polledCurrentStage = normalizeCurrentStage(
                 it?.currentStage ||
@@ -3722,7 +3748,7 @@ export default function BatchProcessor({
                 resultStage: resultStage ?? existing.resultStage ?? existing.result?.resultStage ?? null,
                 resultUrl: mergedResultUrl,
                 finalOutputUrl: mergedResultUrl,
-                imageUrl: (isRegionEdit && completedFinal) ? (displayUrl || existing.imageUrl || existing.result?.imageUrl || null) : (existing.imageUrl || null),
+                imageUrl: mergedImageUrl,
                 stageUrls: mergedStageUrls,
                 completionSource: preserveExistingStage2Artifacts ? (existing.completionSource || completionSourceResolved) : completionSourceResolved,
                 retryLatestUrl: (isRetryStage2Success ? (stage2Url || displayUrl || existing.retryLatestUrl || null) : (existing.retryLatestUrl || null)),
@@ -3745,7 +3771,7 @@ export default function BatchProcessor({
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
                   ...(existing.result || {}),
-                  imageUrl: (completedFinal && !preserveExistingStage2Artifacts) ? (displayUrl || existing.result?.imageUrl) : (existing.result?.imageUrl || undefined),
+                  imageUrl: mergedImageUrl || undefined,
                   finalOutputUrl: mergedResultUrl,
                   resultUrl: mergedResultUrl,
                   originalImageUrl: originalUrl || existing.result?.originalImageUrl || existing.result?.originalUrl || existing.originalImageUrl || existing.originalUrl,
@@ -3765,6 +3791,9 @@ export default function BatchProcessor({
                   completionSource: preserveExistingStage2Artifacts ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved) : completionSourceResolved,
                   retryLatestUrl: (isRetryStage2Success ? (stage2Url || displayUrl || existing.result?.retryLatestUrl || null) : (existing.result?.retryLatestUrl ?? null)),
                   editLatestUrl: isRegionEdit && completedFinal ? (displayUrl ?? existing.result?.editLatestUrl ?? null) : (existing.result?.editLatestUrl ?? null),
+                  previewUrl: preserveExistingStage2Artifacts
+                    ? (existing.result?.previewUrl || existing.previewUrl || chosenPreview || null)
+                    : (chosenPreview || existing.result?.previewUrl || existing.previewUrl || null),
                 },
                 // Preview URL used while processing
                 previewUrl: preserveExistingStage2Artifacts ? (existing.previewUrl || chosenPreview || null) : (chosenPreview || existing.previewUrl || null),
@@ -7480,11 +7509,27 @@ export default function BatchProcessor({
                           shouldPreferPreservedStage2 ||
                           (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
                         const progressivePreviewUrl = stagePreviewUrl || previewUrls[i] || null;
-                        const previewUrl = (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2)
-                          ? progressivePreviewUrl
-                          : canUseRemotePreview
+                        const canonicalPreviewBase =
+                          toDisplayUrl(result?.previewUrl) ||
+                          toDisplayUrl(result?.result?.previewUrl) ||
+                          null;
+                        const nonTerminalPreviewUrl = canonicalPreviewBase
+                          ? (withVersion(
+                              canonicalPreviewBase,
+                              result?.version || result?.updatedAt || result?.statusLastModified
+                            ) || canonicalPreviewBase)
+                          : null;
+                        const previewUrl = (() => {
+                          if (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2) {
+                            return nonTerminalPreviewUrl || progressivePreviewUrl;
+                          }
+                          if (canonicalPreviewBase) {
+                            return canonicalPreviewBase;
+                          }
+                          return canUseRemotePreview
                             ? (enhancedUrl || progressivePreviewUrl)
                             : progressivePreviewUrl;
+                        })();
                         const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
                         const canEditFromDisplayedOutput = !!previewUrl;
                         const canEditThisImage = isRetryStatusTerminal && canEditFromDisplayedOutput;

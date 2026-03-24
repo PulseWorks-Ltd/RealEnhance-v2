@@ -328,7 +328,14 @@ export function statusRouter() {
           return stage1APresent; // Just need Stage 1A
         })();
 
-        const { state: pipelineStatus, source: statusSource } = pickAuthoritativeState(localStatusRaw, state);
+        let { state: pipelineStatus, source: statusSource } = pickAuthoritativeState(localStatusRaw, state);
+        const persistedState = normalizePipelineState(localStatusRaw);
+        const hasPersistedCompletedArtifact =
+          (persistedState === "completed" || localCompleted) && !!resultUrl;
+        if (hasPersistedCompletedArtifact && pipelineStatus !== "completed") {
+          pipelineStatus = "completed";
+          statusSource = "persisted";
+        }
 
         const originalUrl: string | null =
           (rv && rv.originalUrl) || local.originalUrl || null;
@@ -457,6 +464,13 @@ export function statusRouter() {
         // If Stage 2 is not expected (exterior or staging disabled), allow best-available (1B/1A) to define resultUrl/finalStage
         const resolvedResultUrl = resultUrl || (!stage2Expected ? (bestAvailableStage.url || null) : null);
         const resolvedFinalStage = finalStageRaw || (!stage2Expected ? (bestAvailableStage.stage || null) : null);
+
+        if (pipelineStatus === "completed" && !resolvedResultUrl) {
+          console.warn("[INVALID_STATUS_COMPLETED_NO_IMAGE]", { jobId: id });
+        }
+        if (pipelineStatus === "processing" && !!resolvedResultUrl) {
+          console.warn("[INCONSISTENT_STATUS_IMAGE_PRESENT]", { jobId: id });
+        }
 
         const success =
           pipelineStatus === "completed" && typeof resolvedResultUrl === "string";
@@ -768,7 +782,15 @@ export function statusRouter() {
         return stage1APresent;
       })();
       
-      const { state: stateOut, source: statusSource } = pickAuthoritativeState(local?.status || null, state);
+      const localStatusRaw: string | null = local?.status || (rv && rv.status) || null;
+      let { state: stateOut, source: statusSource } = pickAuthoritativeState(localStatusRaw, state);
+      const persistedState = normalizePipelineState(localStatusRaw);
+      const hasPersistedCompletedArtifact =
+        (persistedState === "completed" || localCompleted) && !!resultUrl;
+      if (hasPersistedCompletedArtifact && stateOut !== "completed") {
+        stateOut = "completed";
+        statusSource = "persisted";
+      }
 
       const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl);
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
@@ -807,6 +829,12 @@ export function statusRouter() {
 
       const success =
         stateOut === "completed" && typeof resultUrl === "string";
+      if (stateOut === "completed" && !resultUrl) {
+        console.warn("[INVALID_STATUS_COMPLETED_NO_IMAGE]", { jobId });
+      }
+      if (stateOut === "processing" && !!resultUrl) {
+        console.warn("[INCONSISTENT_STATUS_IMAGE_PRESENT]", { jobId });
+      }
       const terminalMeta = resolveTerminalMetadata(local, stateOut, failedReason);
       const item: StatusItem = {
         id: jobId,
