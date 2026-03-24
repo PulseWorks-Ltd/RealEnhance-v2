@@ -1,9 +1,10 @@
 /**
  * Validation Evidence Packet
  *
- * Structured output from all local validators.
+ * Structured output from all heuristic validators.
  * This is the single source of truth passed to the model adjudicator.
- * Local validators are EVIDENCE GENERATORS, not decision makers.
+ * Heuristic validators are EVIDENCE GENERATORS, not decision makers.
+ * NOTE: localFlags is a legacy field name and stores heuristic/anchor evidence only.
  */
 
 export interface ValidationEvidence {
@@ -24,7 +25,7 @@ export interface ValidationEvidence {
     doorsAfter: number;
   };
 
-  /** Drift metrics from local validators */
+  /** Drift metrics from heuristic validators */
   drift: {
     wallPercent: number;
     maskedEdgePercent: number;
@@ -43,7 +44,7 @@ export interface ValidationEvidence {
   /** Geometry profile detected */
   geometryProfile: "SOFT" | "STRONG";
 
-  /** All flags/reasons from local validators */
+  /** All flags/reasons from heuristic validators (legacy field name) */
   localFlags: string[];
 
   /** Unified validator aggregate score (0-1) */
@@ -145,7 +146,7 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
     triggers.push("HIGH: fixed lighting anchor changed");
   }
 
-  // Check for structure flag from local validators
+  // Check for structure flag from heuristic validators
   const hasStructureFlag = evidence.localFlags.some(f =>
     f.toLowerCase().includes("structure") ||
     f.toLowerCase().includes("opening") ||
@@ -153,9 +154,9 @@ export function classifyRisk(evidence: ValidationEvidence): RiskClassification {
   );
   if (hasStructureFlag) {
     if (anchorEvidencePresent && !isolatedHvacSignal) {
-      triggers.push("HIGH: local validator flagged structural issue");
+      triggers.push("HIGH: heuristic validator flagged structural issue");
     } else {
-      triggers.push("MEDIUM: local validator flagged structural issue (no anchor evidence)");
+      triggers.push("MEDIUM: heuristic validator flagged structural issue (no anchor evidence)");
     }
   }
 

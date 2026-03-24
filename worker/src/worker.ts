@@ -1246,7 +1246,7 @@ async function evaluateStage1BLightPolicy(input: {
   const stage1BCatastrophicConsensusBackstop =
     input.stage1BConsensusClassification.mode === "CATASTROPHIC_BACKSTOP";
 
-  const stage1BLocalSignals: Stage2LocalSignals = {
+  const stage1BHeuristicSignals: Stage2LocalSignals = {
     structuralDegreeChange: Math.max(0, Math.min(1, Math.max(input.stage1BMaskedDriftPct, input.stage1BSemanticWallDriftPct) / 100)),
     wallDrift: Math.max(0, Math.min(1, input.stage1BSemanticWallDriftPct / 100)),
     maskedEdgeDrift: Math.max(0, Math.min(1, input.stage1BMaskedDriftPct / 100)),
@@ -1257,14 +1257,14 @@ async function evaluateStage1BLightPolicy(input: {
     islandDetectionDrift: 0,
   };
 
-  const stage1BLocalPrecheckResult = runUnifiedValidator(stage1BLocalSignals);
-  const stage1BIsCatastrophicLocalFail = stage1BLocalPrecheckResult.severity === "CATASTROPHIC";
+  const stage1BHeuristicPrecheckResult = runUnifiedValidator(stage1BHeuristicSignals);
+  const stage1BIsCatastrophicHeuristicFail = stage1BHeuristicPrecheckResult.severity === "CATASTROPHIC";
 
   const stage1BExtremeHardFail =
     stage1BIsExtremeDeviation ||
     stage1BIsExtremeMaskCollapse ||
     stage1BCatastrophicConsensusBackstop ||
-    stage1BIsCatastrophicLocalFail;
+    stage1BIsCatastrophicHeuristicFail;
 
   nLog("[STAGE1B_EXTREME_GATE]", {
     jobId: input.jobId,
@@ -1274,7 +1274,7 @@ async function evaluateStage1BLightPolicy(input: {
     semanticWallDriftPct: input.stage1BSemanticWallDriftPct,
     isExtremeDeviation: stage1BIsExtremeDeviation,
     isExtremeMaskCollapse: stage1BIsExtremeMaskCollapse,
-    isCatastrophicLocalFail: stage1BIsCatastrophicLocalFail,
+    isCatastrophicHeuristicFail: stage1BIsCatastrophicHeuristicFail,
     consensusDerivedWarnings: input.stage1BConsensusClassification.derivedWarnings,
     consensusMode: input.stage1BConsensusClassification.mode,
     catastrophicConsensusBackstop: stage1BCatastrophicConsensusBackstop,
@@ -1288,7 +1288,7 @@ async function evaluateStage1BLightPolicy(input: {
   let effectiveViolationType =
     stage1BCatastrophicConsensusBackstop
       ? "structural_consensus"
-      : stage1BIsExtremeDeviation || stage1BIsExtremeMaskCollapse || stage1BIsCatastrophicLocalFail
+      : stage1BIsExtremeDeviation || stage1BIsExtremeMaskCollapse || stage1BIsCatastrophicHeuristicFail
         ? "extreme_structural_violation"
         : input.structureResult.violationType;
   const effectiveReasons = [
@@ -1374,7 +1374,7 @@ async function evaluateStage1BFullPolicy(input: {
 }): Promise<Stage1BPolicyDecision> {
   nLog("[STAGE1B_POLICY]", {
     mode: "FULL_FURNITURE_REMOVAL",
-    localValidators: "LOG_ONLY",
+    heuristicValidators: "LOG_ONLY",
     decisionSource: "GEMINI_ONLY",
     attempt: input.attemptNo,
     jobId: input.jobId,
@@ -1387,7 +1387,7 @@ async function evaluateStage1BFullPolicy(input: {
   const stage1BCatastrophicConsensusBackstop =
     input.stage1BConsensusClassification.mode === "CATASTROPHIC_BACKSTOP";
 
-  const stage1BLocalSignals: Stage2LocalSignals = {
+  const stage1BHeuristicSignals: Stage2LocalSignals = {
     structuralDegreeChange: Math.max(0, Math.min(1, Math.max(input.stage1BMaskedDriftPct, input.stage1BSemanticWallDriftPct) / 100)),
     wallDrift: Math.max(0, Math.min(1, input.stage1BSemanticWallDriftPct / 100)),
     maskedEdgeDrift: Math.max(0, Math.min(1, input.stage1BMaskedDriftPct / 100)),
@@ -1398,7 +1398,7 @@ async function evaluateStage1BFullPolicy(input: {
     islandDetectionDrift: 0,
   };
 
-  const stage1BIsCatastrophicLocalFail =
+  const stage1BIsCatastrophicHeuristicFail =
     input.outputCorrupt === true;
   let openingSignal = false;
   let openingAreaDelta = 0;
@@ -1414,7 +1414,7 @@ async function evaluateStage1BFullPolicy(input: {
     semanticWallDriftPct: input.stage1BSemanticWallDriftPct,
     isExtremeDeviation: stage1BIsExtremeDeviation,
     isExtremeMaskCollapse: stage1BIsExtremeMaskCollapse,
-    isCatastrophicLocalFail: stage1BIsCatastrophicLocalFail,
+    isCatastrophicHeuristicFail: stage1BIsCatastrophicHeuristicFail,
     consensusDerivedWarnings: input.stage1BConsensusClassification.derivedWarnings,
     consensusMode: input.stage1BConsensusClassification.mode,
     catastrophicConsensusBackstop: stage1BCatastrophicConsensusBackstop,
@@ -1426,7 +1426,7 @@ async function evaluateStage1BFullPolicy(input: {
       passed: false,
       failReasons: ["invalid_output_corrupt"],
       confidence: 0,
-      source: "LOCAL_CATASTROPHIC",
+      source: "HEURISTIC_CATASTROPHIC",
       jobId: input.jobId,
       attempt: input.attemptNo,
     });
@@ -1489,17 +1489,17 @@ async function evaluateStage1BFullPolicy(input: {
     openingAreaDelta = 0;
   }
 
-  const localSignals: Stage2LocalSignals & { openingAreaDelta?: number } = {
-    ...stage1BLocalSignals,
+  const heuristicSignals: Stage2LocalSignals & { openingAreaDelta?: number } = {
+    ...stage1BHeuristicSignals,
     openingAreaDelta,
   };
 
   let layoutScore = 0;
 
-  if ((localSignals?.structuralDegreeChange ?? 0) > 0.12) layoutScore++;
-  if ((localSignals?.wallDrift ?? 0) > 0.10) layoutScore++;
-  if ((localSignals?.maskedEdgeDrift ?? 0) > 0.10) layoutScore++;
-  if ((localSignals?.openingAreaDelta ?? 0) > 0.15) layoutScore++;
+  if ((heuristicSignals?.structuralDegreeChange ?? 0) > 0.12) layoutScore++;
+  if ((heuristicSignals?.wallDrift ?? 0) > 0.10) layoutScore++;
+  if ((heuristicSignals?.maskedEdgeDrift ?? 0) > 0.10) layoutScore++;
+  if ((heuristicSignals?.openingAreaDelta ?? 0) > 0.15) layoutScore++;
 
   const layoutRisk = layoutScore >= 2;
   const layoutSevere = layoutScore >= 3;
@@ -1508,16 +1508,16 @@ async function evaluateStage1BFullPolicy(input: {
     jobId: input.jobId,
     layoutRisk,
     layoutScore,
-    structuralDegreeChange: localSignals?.structuralDegreeChange,
-    wallDrift: localSignals?.wallDrift,
-    maskedEdgeDrift: localSignals?.maskedEdgeDrift,
-    openingAreaDelta: localSignals?.openingAreaDelta,
+    structuralDegreeChange: heuristicSignals?.structuralDegreeChange,
+    wallDrift: heuristicSignals?.wallDrift,
+    maskedEdgeDrift: heuristicSignals?.maskedEdgeDrift,
+    openingAreaDelta: heuristicSignals?.openingAreaDelta,
   });
 
   const openingSignalPromptAppend = openingSignal
     ? `STRUCTURAL ATTENTION SIGNAL:
 
-Local analysis detected a potential change in opening state or geometry.
+Heuristic analysis detected a potential change in opening state or geometry.
 
 Focus specifically on:
 - whether any doors have changed open/closed state
@@ -8546,7 +8546,7 @@ All openings must remain identical in position and size to the original image.`;
           ? maskedSignals.maskedDriftRegions
           : [];
 
-        nLog("[STAGE2_LOCAL_SIGNALS]", {
+        nLog("[STAGE2_HEURISTIC_SIGNALS]", {
           jobId: payload.jobId,
           attempt,
           semanticWallDrift: semanticWallDriftNorm,
@@ -8567,14 +8567,14 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
       } catch (localGateErr: any) {
-        nLog("[STAGE2_LOCAL_SIGNALS_ERROR]", {
+        nLog("[STAGE2_HEURISTIC_SIGNALS_ERROR]", {
           jobId: payload.jobId,
           attempt,
           error: localGateErr?.message || String(localGateErr),
         });
       }
 
-      const localPrecheckSignals: Stage2LocalSignals = {
+      const heuristicPrecheckSignals: Stage2LocalSignals = {
         structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm)),
         wallDrift: clamp01(semanticWallDriftNorm),
         maskedEdgeDrift: clamp01(maskedEdgeDriftNorm),
@@ -8585,22 +8585,26 @@ All openings must remain identical in position and size to the original image.`;
         islandDetectionDrift: 0,
       };
 
-      const localPrecheckResult = runUnifiedValidator(localPrecheckSignals);
-      nLog("[STAGE2_VALIDATION_ADVISORY] local_precheck log-only", {
+      const heuristicPrecheckResult = runUnifiedValidator(heuristicPrecheckSignals);
+      nLog("[STAGE2_VALIDATION_ADVISORY] heuristic_precheck log-only", {
         jobId: payload.jobId,
         imageId: payload.imageId,
         attempt,
-        decision: localPrecheckResult.decision,
-        score: localPrecheckResult.score,
-        severity: localPrecheckResult.severity,
-        warnings: localPrecheckResult.warnings,
+        decision: heuristicPrecheckResult.decision,
+        score: heuristicPrecheckResult.score,
+        severity: heuristicPrecheckResult.severity,
+        warnings: heuristicPrecheckResult.warnings,
       });
 
       let envelopePass = true;
       let openingPass = true;
       let fixturePass = true;
       let floorPass = true;
-      const stage2AdvisorySignals: string[] = [];
+      // IMPORTANT:
+      // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
+      // Specialist validators (Gemini-based) must NOT be treated as local.
+      // Do not include specialist signals in heuristic filtering or stripping logic.
+      const specialistAdvisorySignals: string[] = [];
       let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
       let openingStructuralSignalDetected = false;
@@ -8609,7 +8613,7 @@ All openings must remain identical in position and size to the original image.`;
       const appendAdvisories = (validator: Stage2SignalValidator, advisories: string[]) => {
         if (!Array.isArray(advisories) || advisories.length === 0) return;
         const normalized = advisories.map((signal) => `${validator}:${normalizeValidatorReason(String(signal || "advisory"))}`);
-        stage2AdvisorySignals.push(...normalized);
+        specialistAdvisorySignals.push(...normalized);
         nLog("[VALIDATOR_ADVISORY]", {
           jobId: payload.jobId,
           imageId: payload.imageId,
@@ -8619,7 +8623,7 @@ All openings must remain identical in position and size to the original image.`;
         });
       };
 
-      const localSignals = {
+      const specialistSignals = {
         openings: { pass: true, reason: "none" },
         fixtures: { pass: true, reason: "none" },
         floor: { pass: true, reason: "none" },
@@ -8675,7 +8679,7 @@ All openings must remain identical in position and size to the original image.`;
 
         if (hasMaterialOpeningViolation) {
           openingPass = false;
-          localSignals.openings = {
+          specialistSignals.openings = {
             pass: false,
             reason: opRes.reason || "material_opening_change_detected",
           };
@@ -8684,7 +8688,7 @@ All openings must remain identical in position and size to the original image.`;
             imageId: payload.imageId,
             attempt,
             validator: "openings",
-            reason: localSignals.openings.reason,
+            reason: specialistSignals.openings.reason,
             confidence: opRes.confidence,
             source: "opening_validator",
             issueType: specialistResults.opening.issueType,
@@ -8697,11 +8701,11 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             validator: "openingValidator",
             result: "FAIL",
-            reason: normalizeValidatorReason(localSignals.openings.reason),
+            reason: normalizeValidatorReason(specialistSignals.openings.reason),
           });
         } else {
           openingPass = true;
-          localSignals.openings = { pass: true, reason: "none" };
+          specialistSignals.openings = { pass: true, reason: "none" };
           if (opRes.status === "fail") {
             nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] openings reported fail without hardFail", {
               jobId: payload.jobId,
@@ -8829,13 +8833,13 @@ All openings must remain identical in position and size to the original image.`;
         const fixtureHardFail = fixRes.hardFail === true;
         fixturePass = !fixtureHardFail;
         if (fixtureHardFail) {
-          localSignals.fixtures = { pass: false, reason: fixRes.reason || "fixture_signal_fail" };
+          specialistSignals.fixtures = { pass: false, reason: fixRes.reason || "fixture_signal_fail" };
           nLog("[VALIDATOR_HARD_FAIL]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt,
             validator: "fixtures",
-            reason: localSignals.fixtures.reason,
+            reason: specialistSignals.fixtures.reason,
             confidence: fixRes.confidence,
             issueType: specialistResults.fixture.issueType,
             issueTier: specialistResults.fixture.issueTier,
@@ -8847,10 +8851,10 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             validator: "fixtureValidator",
             result: "FAIL",
-            reason: normalizeValidatorReason(localSignals.fixtures.reason),
+            reason: normalizeValidatorReason(specialistSignals.fixtures.reason),
           });
         } else {
-          localSignals.fixtures = { pass: true, reason: "none" };
+          specialistSignals.fixtures = { pass: true, reason: "none" };
           if (fixRes.status === "fail") {
             nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] fixtures reported fail without hardFail", {
               jobId: payload.jobId,
@@ -8898,13 +8902,13 @@ All openings must remain identical in position and size to the original image.`;
         const floorHardFail = floorRes.hardFail === true;
         floorPass = !floorHardFail;
         if (floorHardFail) {
-          localSignals.floor = { pass: false, reason: floorRes.reason || "floor_signal_fail" };
+          specialistSignals.floor = { pass: false, reason: floorRes.reason || "floor_signal_fail" };
           nLog("[VALIDATOR_HARD_FAIL]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt,
             validator: "floor",
-            reason: localSignals.floor.reason,
+            reason: specialistSignals.floor.reason,
             confidence: floorRes.confidence,
             issueType: specialistResults.floor.issueType,
             issueTier: specialistResults.floor.issueTier,
@@ -8916,10 +8920,10 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             validator: "floorIntegrityValidator",
             result: "FAIL",
-            reason: normalizeValidatorReason(localSignals.floor.reason),
+            reason: normalizeValidatorReason(specialistSignals.floor.reason),
           });
         } else {
-          localSignals.floor = { pass: true, reason: "none" };
+          specialistSignals.floor = { pass: true, reason: "none" };
           if (floorRes.status === "fail") {
             nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] floor reported fail without hardFail", {
               jobId: payload.jobId,
@@ -8967,13 +8971,13 @@ All openings must remain identical in position and size to the original image.`;
         const envelopeHardFail = envRes.hardFail === true;
         envelopePass = !envelopeHardFail;
         if (envelopeHardFail) {
-          localSignals.envelope = { pass: false, reason: envRes.reason || "envelope_signal_fail" };
+          specialistSignals.envelope = { pass: false, reason: envRes.reason || "envelope_signal_fail" };
           nLog("[VALIDATOR_HARD_FAIL]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt,
             validator: "envelope",
-            reason: localSignals.envelope.reason,
+            reason: specialistSignals.envelope.reason,
             confidence: envRes.confidence,
             issueType: specialistResults.envelope.issueType,
             issueTier: specialistResults.envelope.issueTier,
@@ -8985,10 +8989,10 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             validator: "envelopeValidator",
             result: "FAIL",
-            reason: normalizeValidatorReason(localSignals.envelope.reason),
+            reason: normalizeValidatorReason(specialistSignals.envelope.reason),
           });
         } else {
-          localSignals.envelope = { pass: true, reason: "none" };
+          specialistSignals.envelope = { pass: true, reason: "none" };
           if (envRes.status === "fail") {
             nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] envelope reported fail without hardFail", {
               jobId: payload.jobId,
@@ -9011,12 +9015,12 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        nLog("[STAGE2_LOCAL_VALIDATOR_SIGNALS]", {
+        nLog("[STAGE2_SPECIALIST_SIGNALS]", {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          signals: localSignals,
-          advisorySignals: stage2AdvisorySignals,
+          signals: specialistSignals,
+          advisorySignals: specialistAdvisorySignals,
           nonBlocking: true,
         });
       } catch (err: any) {
@@ -9030,7 +9034,10 @@ All openings must remain identical in position and size to the original image.`;
       }
 
       if (!isRefreshValidationBehavior) {
-        const localSignalsInput: Stage2LocalSignals = {
+        // IMPORTANT:
+        // Heuristic signals are OpenCV/Sharp-derived metrics only.
+        // Specialist Gemini validator outputs are tracked separately via specialistSignals.
+        const heuristicSignalsInput: Stage2LocalSignals = {
           structuralDegreeChange: clamp01(Math.max(semanticWallDriftNorm, maskedEdgeDriftNorm, envelopePass ? 0 : 1)),
           wallDrift: clamp01(semanticWallDriftNorm),
           maskedEdgeDrift: clamp01(maskedEdgeDriftNorm),
@@ -9041,8 +9048,8 @@ All openings must remain identical in position and size to the original image.`;
           islandDetectionDrift: 0,
         };
 
-        const unifiedLocalResult = runUnifiedValidator(localSignalsInput);
-        const formattedSignals = `structuralDegreeChange:${localSignalsInput.structuralDegreeChange.toFixed(4)},wallDrift:${localSignalsInput.wallDrift.toFixed(4)},maskedEdgeDrift:${localSignalsInput.maskedEdgeDrift.toFixed(4)},edgeOpeningRisk:${localSignalsInput.edgeOpeningRisk.toFixed(4)},openingCountMismatch:${localSignalsInput.openingCountMismatch.toFixed(4)},floorPlaneShift:${localSignalsInput.floorPlaneShift.toFixed(4)},fixtureMismatch:${localSignalsInput.fixtureMismatch.toFixed(4)},islandDetectionDrift:${localSignalsInput.islandDetectionDrift.toFixed(4)}`;
+        const unifiedLocalResult = runUnifiedValidator(heuristicSignalsInput);
+        const formattedSignals = `structuralDegreeChange:${heuristicSignalsInput.structuralDegreeChange.toFixed(4)},wallDrift:${heuristicSignalsInput.wallDrift.toFixed(4)},maskedEdgeDrift:${heuristicSignalsInput.maskedEdgeDrift.toFixed(4)},edgeOpeningRisk:${heuristicSignalsInput.edgeOpeningRisk.toFixed(4)},openingCountMismatch:${heuristicSignalsInput.openingCountMismatch.toFixed(4)},floorPlaneShift:${heuristicSignalsInput.floorPlaneShift.toFixed(4)},fixtureMismatch:${heuristicSignalsInput.fixtureMismatch.toFixed(4)},islandDetectionDrift:${heuristicSignalsInput.islandDetectionDrift.toFixed(4)}`;
 
         if (unifiedLocalResult.severity === "CATASTROPHIC") {
           const catastrophicReason = unifiedLocalResult.warnings[0] || "catastrophic_structural_change";
@@ -9055,7 +9062,7 @@ All openings must remain identical in position and size to the original image.`;
           );
         }
       } else {
-        nLog("[STAGE2_LOCAL_VALIDATORS_LOG_ONLY]", {
+        nLog("[STAGE2_SPECIALIST_VALIDATORS_LOG_ONLY]", {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
@@ -9102,6 +9109,7 @@ All openings must remain identical in position and size to the original image.`;
         sourceStage: "1A",
         validationMode: stage2SelectedValidationMode,
         geminiPolicy: stage2GeminiPolicy,
+        specialistAdvisorySignals,
       });
 
       const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;
@@ -9184,8 +9192,11 @@ All openings must remain identical in position and size to the original image.`;
       const finalConfirmMode: "block" | "log" = "block";
       if (validationStage === "2") {
         try {
-          // Stage 2 local/specialist validators are telemetry-only. Never inject
-          // local advisory signals into compliance adjudication.
+          // IMPORTANT:
+          // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
+          // Specialist validators (Gemini-based) are tracked separately.
+          // Stage 2 keeps specialist advisories telemetry-only and does not inject
+          // heuristic or specialist advisory signals into compliance adjudication.
           const complianceAdvisorySignals: string[] = [];
           const complianceOpeningStructuralSignal = false;
           const complianceOpeningSignalContext = undefined;
@@ -9202,7 +9213,7 @@ All openings must remain identical in position and size to the original image.`;
             action: "run",
             model: "gemini-2.5-pro",
             refreshMode: isRefreshValidationFlow,
-            localHintsSuppressed: isRefreshValidationBehavior,
+            heuristicHintsSuppressed: isRefreshValidationBehavior,
             advisoryCount: complianceAdvisorySignals.length,
             advisorySignals: complianceAdvisorySignals,
             openingStructuralSignalFlag: complianceOpeningStructuralSignal,

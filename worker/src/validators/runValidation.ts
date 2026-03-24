@@ -32,7 +32,7 @@ import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
-import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
+import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE, STAGE2_ENABLE_SPECIALIST_ADVISORY } from "../config";
 
 // Re-export the normalized adapter for downstream consumers
 export { normalizeValidatorResult, type NormalizedValidatorResult, type NormalizedCheck } from "./normalizedResult";
@@ -65,7 +65,7 @@ export type UnifiedValidationResult = {
   riskLevel?: RiskLevel;     // Deterministic risk classification
   riskTriggers?: string[];   // Risk trigger reasons
   modelUsed?: string;        // Which Gemini model was used
-  /** true when cheap gate (SSIM) failed and local validators were skipped */
+  /** true when cheap gate (SSIM) failed and heuristic validators were skipped */
   earlyExit?: boolean;
   /** true when Gemini escalation was triggered */
   escalated?: boolean;
@@ -185,7 +185,9 @@ async function runGeminiWithConsensus(
   input: Parameters<typeof runGeminiSemanticValidator>[0],
   derivedWarnings: number
 ): Promise<GeminiConsensusResult> {
-  const effectiveDerivedWarnings = 0;
+  const effectiveDerivedWarnings = Number.isFinite(derivedWarnings)
+    ? Math.max(0, Math.floor(derivedWarnings))
+    : 0;
   const resultA = await runGeminiSemanticValidator({
     ...input,
     modelOverride: PRIMARY_VALIDATOR_MODEL,
@@ -339,6 +341,51 @@ export interface UnifiedValidationParams {
    * - "never": skip Gemini semantic validator entirely
    */
   geminiPolicy?: "always" | "on_local_fail" | "never";
+  /** Stage2 specialist (Gemini-based) advisory signals for non-binding prompt awareness */
+  specialistAdvisorySignals?: string[];
+}
+
+function buildSpecialistObservationHints(signals?: string[]): string[] {
+  if (!Array.isArray(signals) || signals.length === 0) return [];
+
+  const hints = new Set<string>();
+
+  for (const raw of signals) {
+    const value = String(raw || "").trim().toLowerCase();
+    if (!value) continue;
+
+    const domain = value.includes(":") ? value.split(":", 1)[0] : "";
+    const normalized = value
+      .replace(/[0-9]+(\.[0-9]+)?/g, "")
+      .replace(/[_|:]+/g, " ")
+      .replace(/\b(confidence|hardfail|hard fail|fail|failed|error|invalid|retry|threshold|score|status)\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (domain === "fixtures" || /fixture|ceiling|light|pendant|downlight/.test(normalized)) {
+      hints.add("There may be a change in fixed ceiling fixtures worth a closer look.");
+      continue;
+    }
+
+    if (domain === "openings" || /opening|window|door|aperture/.test(normalized)) {
+      hints.add("There may be a change around architectural openings worth a closer look.");
+      continue;
+    }
+
+    if (domain === "floor" || /floor|surface|plane/.test(normalized)) {
+      hints.add("There may be a subtle change around floor surfaces worth a closer look.");
+      continue;
+    }
+
+    if (domain === "envelope" || /envelope|wall|boundary|layout/.test(normalized)) {
+      hints.add("There may be a subtle change around room envelope boundaries worth a closer look.");
+      continue;
+    }
+
+    hints.add("There may be a subtle structural consistency change worth a closer look.");
+  }
+
+  return Array.from(hints).slice(0, 6);
 }
 
 /**
@@ -410,6 +457,7 @@ export async function runUnifiedValidation(
     stage1BValidationMode,
     baseArtifacts,
     geminiPolicy = "always",
+    specialistAdvisorySignals,
   } = params;
 
   const validatorMode = getLocalValidatorMode();
@@ -601,7 +649,7 @@ export async function runUnifiedValidation(
   let enhancedLineCount = 0;
   let stage2OcclusionAllowance: { structIoU: number; threshold: number; reasons: string[] } | null = null;
 
-  // Run local validators for evidence collection.
+  // Run heuristic validators for evidence collection.
   {
     try {
       buffers = await buildValidationBuffers(originalPath, enhancedPath, {
@@ -928,7 +976,7 @@ export async function runUnifiedValidation(
     }
   }
 
-  // Track which local validators were actually executed
+  // Track which heuristic validators were actually executed
   validatorPath.push("structural", "geometry");
 
   // ===== ANCHOR REGION VALIDATORS =====
@@ -1117,7 +1165,7 @@ export async function runUnifiedValidation(
   // ===== BUILD EVIDENCE PACKET =====
   // Populate evidence from all validator results
   {
-    // Opening counts from semantic structure or local validators
+    // Opening counts from semantic structure or heuristic validators
     if (results.windows?.details) {
       const wd = results.windows.details;
       if (typeof wd.baseWindowCount === "number") {
@@ -1270,7 +1318,7 @@ export async function runUnifiedValidation(
 
   // ===== 4b. GEMINI SEMANTIC STRUCTURE CHECK (policy-driven) =====
   // Harden only on architectural/walkway violations; ignore style/furniture changes
-  const localFailed = Object.entries(results)
+  const heuristicFailed = Object.entries(results)
     .filter(([key]) => key !== "geminiSemantic")
     .some(([, r]) => r && r.passed === false);
 
@@ -1278,29 +1326,51 @@ export async function runUnifiedValidation(
     stage === "2" ||
     forceGemini ||
     geminiPolicy === "always" ||
-    (geminiPolicy === "on_local_fail" && localFailed);
+    (geminiPolicy === "on_local_fail" && heuristicFailed);
 
   let escalated = false;
   let geminiModelUsed: string | undefined;
   if (!shouldRunGemini) {
-    nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, localFailed=${localFailed})`);
+    nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, heuristicFailed=${heuristicFailed})`);
   } else {
     if (!earlyExit) validatorPath.push("gemini");
     try {
       const geminiEvidence = STRUCTURAL_SIGNALS_ACTIVE ? evidence : undefined;
       const geminiRiskLevel = STRUCTURAL_SIGNALS_ACTIVE ? riskLevel : undefined;
-      const consensusDerivedWarnings = 0;
+      const stage2SpecialistAdvisoriesEnabled =
+        STAGE2_ENABLE_SPECIALIST_ADVISORY && stage === "2";
+      const specialistObservationHints = stage2SpecialistAdvisoriesEnabled
+        ? buildSpecialistObservationHints(specialistAdvisorySignals)
+        : [];
+      const consensusDerivedWarnings = specialistObservationHints.length;
       if (!STRUCTURAL_SIGNALS_ACTIVE) {
         nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
           mode: STRUCTURAL_SIGNALS_MODE,
           stage,
           jobId: jobId || "unknown",
-          action: "strip_local_signal_influence_for_gemini",
+          action: "strip_heuristic_signal_influence_for_gemini",
           originalDerivedWarnings: warnings.length,
           effectiveDerivedWarnings: consensusDerivedWarnings,
         });
       }
+      if (stage === "2") {
+        nLog("[STAGE2_ADVISORY_INJECTION]", {
+          enabled: stage2SpecialistAdvisoriesEnabled,
+          advisoryCount: specialistObservationHints.length,
+          sourceSpecialistSignals: Array.isArray(specialistAdvisorySignals)
+            ? specialistAdvisorySignals
+            : [],
+          advisories: specialistObservationHints,
+        });
+      }
+      // IMPORTANT:
+      // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
+      // Specialist validators (Gemini-based) must NOT be treated as local.
+      // Keep suppression terminology scoped to heuristic signals only.
       nLog(`[unified-validator] [Gemini] start stage=${stage} scene=${sceneType} mode=${geminiMode} risk=${riskLevel} base=${originalPath} cand=${enhancedPath}`);
+      // IMPORTANT:
+      // Stage2 specialist advisory visibility is feature-flagged and non-binding.
+      // Decision logic and thresholds remain unchanged.
       const geminiConsensus = await runGeminiWithConsensus({
         basePath: originalPath,
         candidatePath: enhancedPath,
@@ -1309,8 +1379,7 @@ export async function runUnifiedValidation(
         sourceStage,
         validationMode,
         stage1BValidationMode,
-        evidence: undefined,
-        riskLevel: undefined,
+        specialistAdvisoryObservations: specialistObservationHints,
       }, consensusDerivedWarnings);
       const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;

@@ -29,3 +29,9 @@ export const STRUCTURAL_SIGNALS_MODE: StructuralSignalsMode =
   STRUCTURAL_SIGNALS_MODE_RAW === "active" ? "active" : "log_only";
 
 export const STRUCTURAL_SIGNALS_ACTIVE = STRUCTURAL_SIGNALS_MODE === "active";
+
+// Default-off safety switch for Phase 2 specialist advisory visibility.
+// When disabled, Unified->Gemini behavior remains unchanged.
+export const STAGE2_ENABLE_SPECIALIST_ADVISORY =
+  process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY === "1" ||
+  process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY === "true";

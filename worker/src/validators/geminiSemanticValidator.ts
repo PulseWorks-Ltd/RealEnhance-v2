@@ -217,7 +217,8 @@ function buildAdjudicatorPrompt(
   basePrompt: string,
   stage: "1A" | "1B" | "2",
   evidence?: ValidationEvidence,
-  riskLevel?: RiskLevel
+  riskLevel?: RiskLevel,
+  specialistAdvisoryObservations?: string[]
 ): string {
   const buildNeutralEvidenceBlock = (input?: ValidationEvidence): string => {
     if (!input) return "";
@@ -294,8 +295,15 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 - Ignore color variation.
 - Only evaluate permanent architectural structure.`;
 
+  const advisoryObservationBlock = Array.isArray(specialistAdvisoryObservations) && specialistAdvisoryObservations.length > 0
+    ? `
+
+Additional Observations (non-binding, for awareness only):
+${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
+    : "";
+
   if (!STRUCTURAL_SIGNALS_ACTIVE) {
-    return `${basePrompt}${structuralFocusRules}`;
+    return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}`;
   }
 
   const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
@@ -305,7 +313,7 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
       : "";
   const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} (advisory only; not proof of failure).` : "";
 
-  return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
+  return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
 }
 
 export type GeminiSemanticVerdict = {
@@ -2814,6 +2822,7 @@ export async function runGeminiSemanticValidator(opts: {
   modelOverride?: string;
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
+  specialistAdvisoryObservations?: string[];
   deterministicStructureJson?: boolean;
 }): Promise<GeminiSemanticVerdict> {
   const sanitizePromptForIouLeak = (input: string): string => {
@@ -2835,8 +2844,15 @@ export async function runGeminiSemanticValidator(opts: {
   if (opts.stage === "2" && opts.validationMode) {
     debugInfo("Stage2 validator mode", { validationMode: opts.validationMode });
   }
+  // IMPORTANT:
+  // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
+  // Specialist validators (Gemini-based) must NOT be treated as local.
+  // Do not include specialist signals in heuristic filtering or stripping logic.
   const evidenceForGemini = STRUCTURAL_SIGNALS_ACTIVE && opts.stage !== "2" ? opts.evidence : undefined;
   const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE && opts.stage !== "2" ? opts.riskLevel : undefined;
+  const specialistAdvisoryObservations = Array.isArray(opts.specialistAdvisoryObservations)
+    ? opts.specialistAdvisoryObservations.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
   if (!STRUCTURAL_SIGNALS_ACTIVE) {
     debugInfo("[STRUCTURAL_SIGNALS_LOG_ONLY] Gemini prompt evidence injection disabled", {
       mode: STRUCTURAL_SIGNALS_MODE,
@@ -2845,7 +2861,26 @@ export async function runGeminiSemanticValidator(opts: {
       hadRisk: !!opts.riskLevel,
     });
   }
-  const rawPrompt = buildAdjudicatorPrompt(basePrompt, opts.stage, evidenceForGemini, riskForGemini);
+  const rawPrompt = buildAdjudicatorPrompt(
+    basePrompt,
+    opts.stage,
+    evidenceForGemini,
+    riskForGemini,
+    specialistAdvisoryObservations
+  );
+  if (opts.stage === "2") {
+    const promptAdvisorySection = specialistAdvisoryObservations.length > 0
+      ? `Additional Observations (non-binding, for awareness only):\n${specialistAdvisoryObservations
+        .map((item) => `- ${item}`)
+        .join("\n")}`
+      : "";
+    debugInfo("[STAGE2_ADVISORY_INJECTION]", {
+      advisoryCount: specialistAdvisoryObservations.length,
+      advisories: specialistAdvisoryObservations,
+      promptSectionIncluded: specialistAdvisoryObservations.length > 0,
+      promptAdvisorySection,
+    });
+  }
   const prompt = sanitizePromptForIouLeak(rawPrompt);
   if (prompt.toLowerCase().includes("iou") || prompt.toLowerCase().includes("similarity")) {
     console.warn("IoU LEAK DETECTED IN PROMPT");
