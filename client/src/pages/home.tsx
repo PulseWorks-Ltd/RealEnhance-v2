@@ -14,6 +14,7 @@ export default function Home() {
   const [dismissingWelcome, setDismissingWelcome] = useState(false);
   const [resendingVerification, setResendingVerification] = useState(false);
   const [hasSelectedImages, setHasSelectedImages] = useState(false);
+  const [allowContentScroll, setAllowContentScroll] = useState(false);
   const [agencyOnboarding, setAgencyOnboarding] = useState<{
     promoCreditsGranted: boolean;
   } | null>(null);
@@ -91,7 +92,10 @@ export default function Home() {
   };
 
   return (
-    <div className="w-full h-full overflow-hidden flex flex-col" data-testid="home-page">
+    <div
+      className={`w-full h-full min-h-0 flex flex-col ${allowContentScroll ? "overflow-y-auto" : "overflow-hidden"}`}
+      data-testid="home-page"
+    >
       {shouldShowWelcome && (
         <Card className="mx-auto mb-3 w-full max-w-4xl border-emerald-200 bg-emerald-50">
           <CardHeader className="pb-2">
@@ -147,7 +151,10 @@ export default function Home() {
       
       {/* Batch Processor - Main Interface */}
       <div className="flex-1 min-h-0 relative">
-        <BatchProcessor onFilesSelectedChange={setHasSelectedImages} />
+        <BatchProcessor
+          onFilesSelectedChange={setHasSelectedImages}
+          onScrollStateChange={setAllowContentScroll}
+        />
       </div>
     </div>
   );

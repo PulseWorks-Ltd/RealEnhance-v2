@@ -1010,8 +1010,10 @@ const BATCH_PHASE_LABELS: Record<BatchPhaseState, string> = {
 
 export default function BatchProcessor({
   onFilesSelectedChange,
+  onScrollStateChange,
 }: {
   onFilesSelectedChange?: (hasFiles: boolean) => void;
+  onScrollStateChange?: (enabled: boolean) => void;
 } = {}) {
   // Staging style preset for the batch - default preserves legacy NZ Standard behavior
   const [stagingStyle, setStagingStyle] = useState<StagingStyle>("standard_listing");
@@ -2462,6 +2464,12 @@ export default function BatchProcessor({
   useEffect(() => {
     onFilesSelectedChange?.(files.length > 0);
   }, [files.length, onFilesSelectedChange]);
+
+  // Enable page-level scrolling only for active processing/results view.
+  useEffect(() => {
+    const shouldEnableScroll = activeTab === "enhance" && runState !== "idle";
+    onScrollStateChange?.(shouldEnableScroll);
+  }, [activeTab, runState, onScrollStateChange]);
 
   // Restore batch job state on component mount
   useEffect(() => {
@@ -7080,7 +7088,7 @@ export default function BatchProcessor({
               </div>
             ) : (
              /* COMMAND CENTER VIEW */
-             <div className="flex-1 h-full min-h-0 overflow-y-auto pr-1">
+             <div className="flex-1 min-h-0 pr-1">
              <div className="max-w-[1600px] mx-auto px-6 lg:px-8 py-8 relative z-10">
                 
                 {/* 1. Header Section */}
@@ -7523,12 +7531,9 @@ export default function BatchProcessor({
                           if (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2) {
                             return nonTerminalPreviewUrl || progressivePreviewUrl;
                           }
-                          if (canonicalPreviewBase) {
-                            return canonicalPreviewBase;
-                          }
                           return canUseRemotePreview
-                            ? (enhancedUrl || progressivePreviewUrl)
-                            : progressivePreviewUrl;
+                            ? (enhancedUrl || canonicalPreviewBase || progressivePreviewUrl)
+                            : (canonicalPreviewBase || progressivePreviewUrl);
                         })();
                         const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
                         const canEditFromDisplayedOutput = !!previewUrl;
