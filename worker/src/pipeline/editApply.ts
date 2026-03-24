@@ -8,6 +8,27 @@ import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 const MIN_PROJECTION_DILATE_PX = 2;
 const MAX_PROJECTION_DILATE_PX = 4;
 
+function normalizeSharpResizePosition(position: unknown): any {
+  const original = position;
+  if (position && typeof position === "object" && !Array.isArray(position)) {
+    return position;
+  }
+
+  if (typeof position === "string") {
+    const canonical = position.trim().toLowerCase().replace(/[_-]+/g, " ");
+    if (canonical === "top left") {
+      const normalized = "left top";
+      console.log("[EDIT_POSITION_NORMALIZED]", { original, normalized });
+      return normalized;
+    }
+    return position;
+  }
+
+  const fallback = "left top";
+  console.log("[EDIT_POSITION_NORMALIZED]", { original, normalized: fallback });
+  return fallback;
+}
+
 function allowedMaskArtifactPathForOutput(outPath: string): string {
   return `${outPath}.allowed-mask.png`;
 }
@@ -29,11 +50,11 @@ async function normalizeMaskToImageSpace(mask: Buffer, width: number, height: nu
   if (needsResize) {
     pipeline = pipeline.resize(width, height, {
       fit: "contain",
-      position: "top-left",
+      position: normalizeSharpResizePosition("top-left"),
       background: { r: 0, g: 0, b: 0, alpha: 1 },
       kernel: sharp.kernel.nearest,
     });
-    console.log("[editApply] Mask normalized with contain/top-left (no geometric distortion)");
+    console.log("[editApply] Mask normalized with contain/left top (no geometric distortion)");
   } else {
     console.log("[editApply] Mask dimensions already match base image");
   }
@@ -114,7 +135,7 @@ async function computeOutsideAllowedChangedPct(
       .grayscale()
       .resize(baseRaw.info.width, baseRaw.info.height, {
         fit: "contain",
-        position: "top-left",
+        position: normalizeSharpResizePosition("top-left"),
         background: { r: 0, g: 0, b: 0, alpha: 1 },
         kernel: sharp.kernel.nearest,
       })

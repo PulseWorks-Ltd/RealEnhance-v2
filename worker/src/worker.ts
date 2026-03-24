@@ -51,6 +51,7 @@ import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { recordEnhancedImageRedis } from "@realenhance/shared";
 import { resolveStageUrl, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
+import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
@@ -147,6 +148,8 @@ import { normalizeMaskBase64, normalizeMaskBufferToPng } from "./utils/mask";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
+const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 2));
+const FREE_COUNTER_TTL_SECONDS = Math.max(24 * 60 * 60, Number(process.env.FREE_COUNTER_TTL_SECONDS || 180 * 24 * 60 * 60));
 // Temporary hard-disable until fairness flow is redesigned for BullMQ active-claim semantics.
 const FAIR_SCHEDULER_ENABLED = false;
 const logger = console;
@@ -272,6 +275,78 @@ function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "
   return "real_leak";
 }
 
+function normalizeSharpResizePosition(position: unknown): any {
+  const original = position;
+  if (position && typeof position === "object" && !Array.isArray(position)) {
+    return position;
+  }
+
+  if (typeof position === "string") {
+    const canonical = position.trim().toLowerCase().replace(/[_-]+/g, " ");
+    if (canonical === "top left") {
+      const normalized = "left top";
+      nLog("[EDIT_POSITION_NORMALIZED]", { original, normalized });
+      return normalized;
+    }
+    return position;
+  }
+
+  const fallback = "left top";
+  nLog("[EDIT_POSITION_NORMALIZED]", { original, normalized: fallback });
+  return fallback;
+}
+
+async function consumeFreeRetryOnGeminiOutput(params: {
+  parentJobId: string;
+  userId?: string;
+}): Promise<{ allowed: boolean; count: number; limit: number }> {
+  const parentJobId = String(params.parentJobId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!parentJobId) return { allowed: false, count: 0, limit: FREE_RETRY_LIMIT };
+
+  const key = `usage:free-retry:${userId || "anon"}:${parentJobId}`;
+  const redis = getRedis();
+  const redisAny = redis as any;
+
+  if (typeof redisAny.eval !== "function") {
+    const current = Number((await redis.get(key)) || 0);
+    if (current >= FREE_RETRY_LIMIT) {
+      return { allowed: false, count: current, limit: FREE_RETRY_LIMIT };
+    }
+    const next = current + 1;
+    await redis.set(key, String(next));
+    if (next === 1 && typeof redisAny.expire === "function") {
+      await redisAny.expire(key, FREE_COUNTER_TTL_SECONDS);
+    }
+    return { allowed: true, count: next, limit: FREE_RETRY_LIMIT };
+  }
+
+  const script = `
+    local key = KEYS[1]
+    local limit = tonumber(ARGV[1])
+    local ttl = tonumber(ARGV[2])
+    local value = redis.call('INCR', key)
+    if ttl > 0 and value == 1 then
+      redis.call('EXPIRE', key, ttl)
+    end
+    if value > limit then
+      redis.call('DECR', key)
+      return {0, value - 1}
+    end
+    return {1, value}
+  `;
+
+  const evalRes = await redisAny.eval(script, {
+    keys: [key],
+    arguments: [String(FREE_RETRY_LIMIT), String(FREE_COUNTER_TTL_SECONDS)],
+  });
+
+  const arr = Array.isArray(evalRes) ? evalRes : [0, 0];
+  const allowed = Number(arr[0] || 0) === 1;
+  const count = Math.max(0, Number(arr[1] || 0));
+  return { allowed, count, limit: FREE_RETRY_LIMIT };
+}
+
 async function computeOutsideMaskChangedPct(opts: {
   baseImagePath: string;
   editedImagePath: string;
@@ -300,7 +375,7 @@ async function computeOutsideMaskChangedPct(opts: {
       .grayscale()
       .resize(baseRaw.info.width, baseRaw.info.height, {
         fit: "contain",
-        position: "top-left",
+        position: normalizeSharpResizePosition("top-left"),
         background: { r: 0, g: 0, b: 0, alpha: 1 },
         kernel: sharp.kernel.nearest,
       })
@@ -4673,6 +4748,63 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return true;
   };
   const isManualRetry = (payload as any).retryType === "manual_retry";
+  let manualRetryAttemptConsumed = false;
+  const consumeManualRetryAttemptIfNeeded = async (stage: string, geminiProducedOutput: boolean) => {
+    if (!isManualRetry || manualRetryAttemptConsumed || !geminiProducedOutput) {
+      return;
+    }
+
+    const parentJobId = String((payload as any).retryParentJobId || "").trim();
+    const userId = String((payload as any).userId || "").trim();
+    if (!parentJobId) {
+      nLog("[FREE_RETRY_CONSUME_SKIPPED]", {
+        jobId: payload.jobId,
+        stage,
+        reason: "missing_parent_job",
+      });
+      return;
+    }
+
+    try {
+      const retryUse = await consumeFreeRetryOnGeminiOutput({ parentJobId, userId });
+      manualRetryAttemptConsumed = true;
+
+      const parentMeta = await getJobMetadata(parentJobId).catch(() => null as any);
+      const parentJob = await getJob(parentJobId).catch(() => null as any);
+      const baseMeta = parentMeta && (parentMeta as any).jobId
+        ? parentMeta
+        : {
+            jobId: parentJobId,
+            userId: (parentJob as any)?.userId || userId || payload.userId,
+            imageId: (parentJob as any)?.imageId || String((payload as any).retryParentImageId || ""),
+            createdAt: (parentJob as any)?.createdAt || new Date().toISOString(),
+          };
+
+      await saveJobMetadata({
+        ...baseMeta,
+        freeRetryCount: retryUse.count,
+        freeRetryLimit: retryUse.limit,
+        freeRetryUsed: retryUse.count >= retryUse.limit,
+        freeRetryUsedAt: retryUse.allowed ? new Date().toISOString() : (baseMeta as any)?.freeRetryUsedAt,
+      } as any);
+
+      nLog("[FREE_RETRY_CONSUMED]", {
+        jobId: payload.jobId,
+        parentJobId,
+        stage,
+        allowed: retryUse.allowed,
+        count: retryUse.count,
+        limit: retryUse.limit,
+      });
+    } catch (consumeErr: any) {
+      nLog("[FREE_RETRY_CONSUME_ERROR]", {
+        jobId: payload.jobId,
+        parentJobId,
+        stage,
+        error: consumeErr?.message || String(consumeErr),
+      });
+    }
+  };
   const retryExecutionPlan = ((payload as any).executionPlan && typeof (payload as any).executionPlan === "object")
     ? ((payload as any).executionPlan as {
         runStage1A?: boolean;
@@ -4943,6 +5075,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage2AttemptId = nextAttemptId;
         },
       });
+      await consumeManualRetryAttemptIfNeeded("stage2_only", Number((stage2Result as any)?.attempts || 0) > 0);
       const path2 = stage2Result.outputPath;
       if (await stopIfCancelled("stage2_only_post_stage2")) return;
       recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
@@ -6347,6 +6480,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...geminiConfig,
         },
       });
+      await consumeManualRetryAttemptIfNeeded("stage1b", true);
 
       nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attempt} using=${candidate}`);
       const stage1BOutputCheck = checkStageOutput(candidate, "1B", payload.jobId);
@@ -7400,6 +7534,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path2 = stage2Outcome;
         commitStageOutput("2", stage2Outcome);
       } else {
+        await consumeManualRetryAttemptIfNeeded("stage2", Number(stage2Outcome?.attempts || 0) > 0);
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
@@ -7503,6 +7638,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
         jobSampling: jobContext.jobSampling,
       });
+      await consumeManualRetryAttemptIfNeeded("stage1b_light_backstop", true);
 
       stage2InputPath = lightPath1B;
       stage2InputResolved = stage2InputPath ?? "";
@@ -7636,6 +7772,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path2 = stage2Outcome;
         commitStageOutput("2", stage2Outcome);
       } else {
+        await consumeManualRetryAttemptIfNeeded("stage2_light_backstop", Number(stage2Outcome?.attempts || 0) > 0);
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
@@ -8012,6 +8149,7 @@ All openings must remain identical in position and size to the original image.`;
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
           });
+          await consumeManualRetryAttemptIfNeeded("stage2_retry_generation", true);
         } catch (retryGenerationErr: any) {
           if (!isStage2RetryableGenerationError(retryGenerationErr)) {
             throw retryGenerationErr;

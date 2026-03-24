@@ -26,7 +26,7 @@ export interface ReservationResult extends UsageSnapshot {
   reservedImages: number;
 }
 
-const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 1));
+const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 2));
 const FREE_EDIT_LIMIT = Math.max(0, Number(process.env.FREE_EDIT_LIMIT || 3));
 const FREE_COUNTER_TTL_SECONDS = Math.max(24 * 60 * 60, Number(process.env.FREE_COUNTER_TTL_SECONDS || 180 * 24 * 60 * 60));
 
@@ -90,6 +90,24 @@ export async function consumeFreeRetryCount(params: {
   if (!parentJobId) return { allowed: false, count: 0, limit: FREE_RETRY_LIMIT };
   const key = `usage:free-retry:${userId || "anon"}:${parentJobId}`;
   return atomicConsumeCounter(key, FREE_RETRY_LIMIT);
+}
+
+export async function getFreeRetryCount(params: {
+  parentJobId: string;
+  userId?: string;
+}): Promise<FreeCounterConsumeResult> {
+  const parentJobId = String(params.parentJobId || "").trim();
+  const userId = String(params.userId || "").trim();
+  if (!parentJobId) return { allowed: false, count: 0, limit: FREE_RETRY_LIMIT };
+  const key = `usage:free-retry:${userId || "anon"}:${parentJobId}`;
+  const redis = getRedis();
+  const rawCount = Number((await redis.get(key)) || 0);
+  const count = Number.isFinite(rawCount) ? Math.max(0, rawCount) : 0;
+  return {
+    allowed: count < FREE_RETRY_LIMIT,
+    count,
+    limit: FREE_RETRY_LIMIT,
+  };
 }
 
 export async function consumeFreeEditCount(params: {

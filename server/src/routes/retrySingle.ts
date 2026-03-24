@@ -14,7 +14,7 @@ import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore"
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
-import { consumeFreeRetryCount } from "../services/usageLedger.js";
+import { getFreeRetryCount } from "../services/usageLedger.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
 
@@ -1087,7 +1087,7 @@ export function retrySingleRouter() {
         console.log(`[RETRY_ROUTING] retryFromStage=${retryFromStage} stage2OnlyMode=${!!effectiveStage2OnlyMode} stagesToRun=${effectiveStagesToRun.join(",") || "none"}`);
       }
 
-      // Free retry contract: exactly one free retry per parent image.
+      // Free retry contract: retry allowance is enforced per parent image.
       // This retry must not reserve additional credit and must be tracked on parent job metadata.
       const agencyId = sessUser.agencyId || null;
       if (!agencyId) {
@@ -1098,10 +1098,10 @@ export function retrySingleRouter() {
         });
       }
 
-      // Enforce one free retry via parent job metadata.
+      // Enforce free retry availability via parent job metadata without consuming here.
       if (parentJobId) {
         try {
-          const retryUse = await consumeFreeRetryCount({
+          const retryUse = await getFreeRetryCount({
             parentJobId,
             userId: sessUser.id,
           });
@@ -1111,7 +1111,7 @@ export function retrySingleRouter() {
               success: false,
               error: "free_retry_exhausted",
               code: "FREE_RETRY_EXHAUSTED",
-              message: "The free retry has already been used for this image. Please submit a new enhancement.",
+              message: "All free retries have been used for this image. Please submit a new enhancement.",
             });
           }
 
@@ -1132,8 +1132,7 @@ export function retrySingleRouter() {
             ...baseMeta,
             freeRetryCount: retryUse.count,
             freeRetryLimit: retryUse.limit,
-            freeRetryUsed: retryUse.count >= 1,
-            freeRetryUsedAt: new Date().toISOString(),
+            freeRetryUsed: retryUse.count >= retryUse.limit,
           } as any);
         } catch (err: any) {
           console.error("[retry-single] free retry metadata update failed:", err);

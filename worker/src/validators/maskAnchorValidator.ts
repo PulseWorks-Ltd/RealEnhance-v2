@@ -5,6 +5,27 @@ const logger = console;
 const DIFF_THRESHOLD = 12;
 const MIN_OVERLAP_PCT = 0.65;
 
+function normalizeSharpResizePosition(position: unknown): any {
+  const original = position;
+  if (position && typeof position === "object" && !Array.isArray(position)) {
+    return position;
+  }
+
+  if (typeof position === "string") {
+    const canonical = position.trim().toLowerCase().replace(/[_-]+/g, " ");
+    if (canonical === "top left") {
+      const normalized = "left top";
+      logger.info("[EDIT_POSITION_NORMALIZED]", { original, normalized });
+      return normalized;
+    }
+    return position;
+  }
+
+  const fallback = "left top";
+  logger.info("[EDIT_POSITION_NORMALIZED]", { original, normalized: fallback });
+  return fallback;
+}
+
 export async function validateMaskAnchorOverlap(params: {
   baseImagePath: string;
   finalImagePath: string;
@@ -31,7 +52,7 @@ export async function validateMaskAnchorOverlap(params: {
     .ensureAlpha()
     .resize(width, height, {
       fit: "contain",
-      position: "top-left",
+      position: normalizeSharpResizePosition("top-left"),
       background: { r: 0, g: 0, b: 0, alpha: 1 },
       kernel: sharp.kernel.nearest,
     })
