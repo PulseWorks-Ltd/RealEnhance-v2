@@ -104,10 +104,10 @@ export default function Landing() {
                 href="/login"
                 className="group relative overflow-hidden rounded-xl bg-white shadow-md hover:shadow-2xl transition-all duration-300 hover:scale-[1.03] border border-slate-200"
               >
-                <div className="relative h-52 bg-slate-100">
+                <div className="relative h-80 bg-slate-100">
                   <ReactCompareSlider
-                    itemOne={<ReactCompareSliderImage src={sample.beforeSrc} alt={`${sample.label} before`} />}
-                    itemTwo={<ReactCompareSliderImage src={sample.afterSrc} alt={`${sample.label} after`} />}
+                    itemOne={<ReactCompareSliderImage src={sample.beforeSrc} alt={`${sample.label} before`} style={{ objectFit: 'contain' }} />}
+                    itemTwo={<ReactCompareSliderImage src={sample.afterSrc} alt={`${sample.label} after`} style={{ objectFit: 'contain' }} />}
                   />
                 </div>
 

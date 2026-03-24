@@ -13,6 +13,7 @@ export function Header() {
   const navigate = useNavigate();
   const location = useLocation();
   const isAuthed = !!authUser;
+  const isLandingRoute = location.pathname === "/";
 
   // Show "Enhance Images" button when not on home page
   const showEnhanceButton = isAuthed && location.pathname !== "/home";
@@ -26,7 +27,9 @@ export function Header() {
       className="sticky top-0 z-50 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60"
       data-testid="header-main"
     >
-      <div className="mx-auto max-w-7xl flex items-center justify-between px-4 py-3">
+      <div className={isLandingRoute
+        ? "w-full flex items-center justify-between px-4 sm:px-6 lg:px-10 py-3"
+        : "mx-auto max-w-7xl flex items-center justify-between px-4 py-3"}>
         {/* Brand */}
         <a href="/" className="flex items-center gap-2.5">
           <img src="/Logo-dark-v2.png" alt="RealEnhance" className="h-8 w-auto" />
