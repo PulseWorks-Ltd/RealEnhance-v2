@@ -131,7 +131,12 @@ import {
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
-import { VALIDATOR_FOCUS, STRUCTURAL_SIGNALS_MODE, STRUCTURAL_SIGNALS_ACTIVE } from "./config";
+import {
+  VALIDATOR_FOCUS,
+  STRUCTURAL_SIGNALS_MODE,
+  STRUCTURAL_SIGNALS_ACTIVE,
+  STAGE2_ENABLE_ISSUETYPE_HARDFAIL,
+} from "./config";
 import { createTempTracker, type TempTracker } from "./utils/tempTracker";
 import { cleanupTempFiles } from "./utils/sharp-utils";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
@@ -8642,6 +8647,37 @@ All openings must remain identical in position and size to the original image.`;
         floor: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
       };
 
+      type SpecialistIssueSignal = {
+        validator: Stage2SignalValidator;
+        issueType?: string;
+        reason?: string;
+        confidence?: number;
+        subtype?: string;
+        advisorySignals?: string[];
+      };
+
+      const specialistIssueSignals: SpecialistIssueSignal[] = [];
+
+      const addSpecialistIssueSignal = (
+        validator: Stage2SignalValidator,
+        result: SpecialistDecisionResult,
+        raw: {
+          reason?: string;
+          confidence?: number;
+          advisorySignals?: string[];
+          subtype?: string;
+        }
+      ) => {
+        specialistIssueSignals.push({
+          validator,
+          issueType: result.issueType,
+          reason: raw.reason,
+          confidence: Number.isFinite(Number(raw.confidence)) ? Number(raw.confidence) : undefined,
+          subtype: raw.subtype,
+          advisorySignals: Array.isArray(raw.advisorySignals) ? raw.advisorySignals : undefined,
+        });
+      };
+
       try {
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
         const { runOpeningValidator } = await import("./validators/openingValidator.js");
@@ -8668,6 +8704,12 @@ All openings must remain identical in position and size to the original image.`;
           confidence: specialistResults.opening.confidence,
           issueType: specialistResults.opening.issueType,
           issueTier: specialistResults.opening.issueTier,
+        });
+        addSpecialistIssueSignal("openings", specialistResults.opening, {
+          reason: opRes.reason,
+          confidence: opRes.confidence,
+          advisorySignals: opRes.advisorySignals,
+          subtype: (opRes as any).subtype,
         });
         appendAdvisories("openings", opRes.advisorySignals || []);
         openingRegions = Array.isArray(opRes.openingRegions) ? opRes.openingRegions : [];
@@ -8829,6 +8871,12 @@ All openings must remain identical in position and size to the original image.`;
           issueType: specialistResults.fixture.issueType,
           issueTier: specialistResults.fixture.issueTier,
         });
+        addSpecialistIssueSignal("fixtures", specialistResults.fixture, {
+          reason: fixRes.reason,
+          confidence: fixRes.confidence,
+          advisorySignals: fixRes.advisorySignals,
+          subtype: (fixRes as any).subtype,
+        });
         appendAdvisories("fixtures", fixRes.advisorySignals || []);
         const fixtureHardFail = fixRes.hardFail === true;
         fixturePass = !fixtureHardFail;
@@ -8898,6 +8946,12 @@ All openings must remain identical in position and size to the original image.`;
           issueType: specialistResults.floor.issueType,
           issueTier: specialistResults.floor.issueTier,
         });
+        addSpecialistIssueSignal("floor", specialistResults.floor, {
+          reason: floorRes.reason,
+          confidence: floorRes.confidence,
+          advisorySignals: floorRes.advisorySignals,
+          subtype: (floorRes as any).subtype,
+        });
         appendAdvisories("floor", floorRes.advisorySignals || []);
         const floorHardFail = floorRes.hardFail === true;
         floorPass = !floorHardFail;
@@ -8966,6 +9020,12 @@ All openings must remain identical in position and size to the original image.`;
           confidence: specialistResults.envelope.confidence,
           issueType: specialistResults.envelope.issueType,
           issueTier: specialistResults.envelope.issueTier,
+        });
+        addSpecialistIssueSignal("envelope", specialistResults.envelope, {
+          reason: envRes.reason,
+          confidence: envRes.confidence,
+          advisorySignals: envRes.advisorySignals,
+          subtype: (envRes as any).subtype,
         });
         appendAdvisories("envelope", envRes.advisorySignals || []);
         const envelopeHardFail = envRes.hardFail === true;
@@ -9093,6 +9153,105 @@ All openings must remain identical in position and size to the original image.`;
           reason: specialistReason,
           action: "telemetry_only",
         });
+      }
+
+      const isFixedCeilingFixture = (signal: SpecialistIssueSignal): boolean => {
+        const detail = [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])]
+          .join(" ")
+          .toLowerCase();
+        return /\b(pendant|ceiling[\s_-]?light|ceiling[\s_-]?fixture|chandelier)\b/.test(detail);
+      };
+
+      const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
+        const issueType = signal.issueType as ValidationIssueType | undefined;
+        if (!issueType || issueType === ISSUE_TYPES.NONE) {
+          return false;
+        }
+
+        const confidence = Number(signal.confidence);
+        const confidenceEligible = !Number.isFinite(confidence) || confidence >= 0.85;
+        if (!confidenceEligible) {
+          return false;
+        }
+
+        if (issueType === ISSUE_TYPES.FIXTURE_CHANGED) {
+          return isFixedCeilingFixture(signal);
+        }
+
+        return CRITICAL_ISSUES.has(issueType);
+      };
+
+      const categoricalBlock = STAGE2_ENABLE_ISSUETYPE_HARDFAIL
+        ? specialistIssueSignals.find(shouldHardFailFromIssueType)
+        : undefined;
+
+      if (categoricalBlock) {
+        const blockedIssueType = (categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE) as ValidationIssueType;
+        const blockedReason = normalizeValidatorReason(categoricalBlock.reason || "issue_type_gate_block");
+        const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
+
+        nLog("[STAGE2_ISSUETYPE_HARDFAIL]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          issueType: blockedIssueType,
+          reason: categoricalBlock.reason,
+          confidence: categoricalBlock.confidence,
+          source: "critical_issues_gate",
+          action: "blocked_pre_unified",
+        });
+
+        // Explicitly mark this attempt as failed by pre-unified issueType gate.
+        unifiedValidation = {
+          passed: false,
+          hardFail: true,
+          blockSource: "critical_issues_gate" as any,
+          reasons: [decisionReason],
+          warnings: [decisionReason],
+          issueType: blockedIssueType,
+          issueTier: classifyIssueTier(blockedIssueType),
+          score: 0,
+        } as any;
+
+        setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logRefreshValidationTrace({
+            specialistHardFail: true,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: decisionReason,
+          });
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: normalizeValidatorReason(decisionReason),
+          });
+          continue;
+        }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `critical_issues_gate_exhausted:${normalizeValidatorReason(decisionReason)}`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        logRefreshValidationTrace({
+          specialistHardFail: true,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: decisionReason,
+        });
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
       }
 
       unifiedValidation = await runUnifiedValidation({

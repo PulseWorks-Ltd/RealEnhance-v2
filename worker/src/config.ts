@@ -35,3 +35,9 @@ export const STRUCTURAL_SIGNALS_ACTIVE = STRUCTURAL_SIGNALS_MODE === "active";
 export const STAGE2_ENABLE_SPECIALIST_ADVISORY =
   process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY === "1" ||
   process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY === "true";
+
+// Default-off safety switch for Stage 2 categorical issueType enforcement.
+// When disabled, pre-unified issueType gate is bypassed.
+export const STAGE2_ENABLE_ISSUETYPE_HARDFAIL =
+  process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL === "1" ||
+  process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL === "true";
