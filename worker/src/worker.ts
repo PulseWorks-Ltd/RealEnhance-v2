@@ -9317,11 +9317,17 @@ All openings must remain identical in position and size to the original image.`;
         });
       }
 
-      const isFixedCeilingFixture = (signal: SpecialistIssueSignal): boolean => {
+      const isTargetCriticalFixtureChange = (signal: SpecialistIssueSignal): boolean => {
         const detail = [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])]
           .join(" ")
           .toLowerCase();
-        return /\b(pendant|ceiling[\s_-]?light|ceiling[\s_-]?fixture|chandelier)\b/.test(detail);
+
+        const hasTargetFixture = /\b(hvac|air[\s_-]?conditioner|a\/c|ac\s+unit|split[\s_-]?unit|ceiling[\s_-]?fan|pendant|chandelier|ceiling[\s_-]?light|ceiling[\s_-]?fixture)\b/.test(detail);
+        const hasMutationSignal = /\b(add(ed|ition)?|remove(d|al)?|replace(d|ment)?|change(d)?|modif(y|ied|ication))\b/.test(detail);
+
+        // If the specialist text names a target fixture class and indicates addition/removal/replacement/change,
+        // classify as categorical hard-fail candidate under the env-gated issueType policy.
+        return hasTargetFixture && hasMutationSignal;
       };
 
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
@@ -9336,8 +9342,8 @@ All openings must remain identical in position and size to the original image.`;
           return false;
         }
 
-        if (issueType === ISSUE_TYPES.FIXTURE_CHANGED) {
-          return isFixedCeilingFixture(signal);
+        if (issueType === ISSUE_TYPES.FIXTURE_CHANGED || issueType === ISSUE_TYPES.HVAC_CHANGED) {
+          return isTargetCriticalFixtureChange(signal);
         }
 
         return CRITICAL_ISSUES.has(issueType);
