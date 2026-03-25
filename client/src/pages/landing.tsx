@@ -34,11 +34,11 @@ export default function Landing() {
     <div className="min-h-screen bg-white font-sans text-slate-600">
       
       {/* 1. HERO SECTION */}
-      <section className="bg-white min-h-[70vh] flex items-center py-10 lg:py-12">
+      <section className="bg-white min-h-[70vh] flex items-center py-12 lg:py-16">
         <div className="max-w-7xl mx-auto w-full px-6 grid md:grid-cols-2 gap-10 lg:gap-12 items-center">
           
           {/* Left Col (Copy) */}
-          <div className="max-w-xl space-y-6">
+          <div className="max-w-xl space-y-5">
             <h1 className="text-4xl md:text-5xl font-semibold text-slate-900 leading-tight">
               Professional real estate photos — without risking misrepresentation.
             </h1>
