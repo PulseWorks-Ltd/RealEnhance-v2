@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type RequestHandler } from "expres
 import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { createHash } from "node:crypto";
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { enqueueEditJob, enqueueRegionEditJob, getJob } from "../services/jobs.js";
 import { computeFallbackVersionKey, getJobMetadata, recordEnhancedImageRedis, saveJobMetadata } from "@realenhance/shared/imageStore";
@@ -72,6 +73,25 @@ function resolveStage1AUrlFromJob(jobRecord: any): string | undefined {
   ].filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 
   return stageOutputCandidates.find((u) => /^https?:\/\//i.test(u));
+}
+
+function isHttpUrl(urlValue?: string): boolean {
+  return !!urlValue && /^https?:\/\//i.test(urlValue);
+}
+
+function canonicalizeUrlForIdentity(urlValue: string): string {
+  try {
+    const parsed = new URL(urlValue);
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return urlValue.split("?")[0].split("#")[0];
+  }
+}
+
+function deriveImageIdFromUrl(urlValue: string): string {
+  const canonicalUrl = canonicalizeUrlForIdentity(urlValue);
+  const digest = createHash("sha1").update(canonicalUrl).digest("hex").slice(0, 24);
+  return `url_${digest}`;
 }
 
 export const regionEditRouter = Router();
@@ -235,10 +255,17 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     // ===== IMAGE LOOKUP =====
+    // URL is authoritative for edit source resolution. Job context is fallback metadata only.
     console.log("[region-edit] Looking up image for user:", sessUser.id);
+    console.debug("[edit-source-resolution]", {
+      sourceUrl: sourceLookupUrl || null,
+      sourceJobId: sourceJobId || null,
+      resolution: "url-first",
+    });
     let sourceEnhancedFromLookup: { id: string; propertyId: string | null; userId: string; agencyId: string } | null = null;
     let foundViaDbFallback = false;
     let resolvedLookupUrl = sourceLookupUrl;
+    let resolvedBy: "url_index" | "source_job_context" | "url_derived_identity" = "url_index";
 
     const findByDb = async (url: string) => {
       if (!sessUser.agencyId) return null;
@@ -260,20 +287,23 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       };
     };
 
-    let found = await findByPublicUrl(sessUser.id, sourceLookupUrl);
-    if (!found) {
-      const dbFallback = await findByDb(sourceLookupUrl);
-      if (dbFallback) {
-        found = dbRecordToFound(dbFallback);
-        sourceEnhancedFromLookup = dbFallback;
-        foundViaDbFallback = true;
-        resolvedLookupUrl = sourceLookupUrl;
-        console.log("[region-edit] Redis miss + DB fallback success", {
-          redisMiss: true,
-          dbFallbackSuccess: true,
-          lookupUrl: sourceLookupUrl,
-        });
-        await tryRehydrateRedisFromDb(dbFallback, sourceLookupUrl);
+    let found: { record: { imageId: string; ownerUserId: string }; versionId: string } | null = null;
+    if (isHttpUrl(sourceLookupUrl)) {
+      found = await findByPublicUrl(sessUser.id, sourceLookupUrl);
+      if (!found) {
+        const dbFallback = await findByDb(sourceLookupUrl);
+        if (dbFallback) {
+          found = dbRecordToFound(dbFallback);
+          sourceEnhancedFromLookup = dbFallback;
+          foundViaDbFallback = true;
+          resolvedLookupUrl = sourceLookupUrl;
+          console.log("[region-edit] Redis miss + DB fallback success", {
+            redisMiss: true,
+            dbFallbackSuccess: true,
+            lookupUrl: sourceLookupUrl,
+          });
+          await tryRehydrateRedisFromDb(dbFallback, sourceLookupUrl);
+        }
       }
     }
 
@@ -306,11 +336,68 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     if (!found) {
       console.error("[region-edit] Image not found for URL:", sourceLookupUrl);
       console.error("[region-edit] Also tried baseImageUrl:", clientBaseImageUrl || "N/A");
-      return res.status(404).json({ success: false, error: "image_not_found" });
+
+      // Fallback 1: use source job only for lineage/context (no requirement that URL is present in job outputs).
+      if (sourceJobId) {
+        try {
+          const sourceJob = await getJob(sourceJobId);
+          const sourceJobImageId = String((sourceJob as any)?.imageId || "").trim();
+          const sourceJobUserId = String((sourceJob as any)?.userId || "").trim();
+          if (sourceJobImageId && sourceJobUserId && sourceJobUserId === sessUser.id) {
+            found = {
+              record: {
+                imageId: sourceJobImageId,
+                ownerUserId: sourceJobUserId,
+              },
+              versionId: "",
+            };
+            resolvedBy = "source_job_context";
+            console.log("[region-edit] Resolved source via sourceJobId context", {
+              sourceJobId,
+              imageId: sourceJobImageId,
+            });
+          }
+        } catch (sourceJobErr) {
+          console.warn("[region-edit] sourceJobId context lookup failed (non-blocking)", {
+            sourceJobId,
+            error: (sourceJobErr as any)?.message || sourceJobErr,
+          });
+        }
+      }
+
+      // Fallback 2: URL-derived identity to keep URL-authoritative edit flow working
+      // even when image index data is missing for retry/edited artifacts.
+      if (!found && isHttpUrl(sourceLookupUrl)) {
+        const derivedImageId = deriveImageIdFromUrl(sourceLookupUrl);
+        found = {
+          record: {
+            imageId: derivedImageId,
+            ownerUserId: sessUser.id,
+          },
+          versionId: "",
+        };
+        resolvedBy = "url_derived_identity";
+        console.warn("[region-edit] Using URL-derived source identity", {
+          sourceLookupUrl: sourceLookupUrl.substring(0, 120),
+          derivedImageId,
+        });
+      }
+
+      if (!found) {
+        return res.status(404).json({ success: false, error: "image_not_found" });
+      }
     }
 
     const record = found.record as any;
     const baseVersionId = found.versionId;
+
+    console.debug("[edit-source-resolution]", {
+      sourceUrl: sourceLookupUrl || null,
+      sourceJobId: sourceJobId || null,
+      resolution: "url-first",
+      resolvedBy,
+      resolvedImageId: record.imageId || record.id || null,
+    });
 
     const editCounterJobId = `edit_counter:${record.imageId || record.id}`;
     const editUse = await consumeFreeEditCount({
