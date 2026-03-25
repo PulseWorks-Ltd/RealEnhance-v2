@@ -34,12 +34,12 @@ export default function Landing() {
     <div className="min-h-screen bg-white font-sans text-slate-600">
       
       {/* 1. HERO SECTION */}
-      <section className="bg-white py-20 lg:py-24">
-        <div className="w-full px-4 sm:px-6 lg:px-10 grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+      <section className="bg-white min-h-[70vh] flex items-center py-10 lg:py-12">
+        <div className="max-w-7xl mx-auto w-full px-6 grid md:grid-cols-2 gap-10 lg:gap-12 items-center">
           
           {/* Left Col (Copy) */}
-          <div className="space-y-8">
-            <h1 className="text-4xl lg:text-5xl font-serif font-bold text-slate-900 leading-tight">
+          <div className="max-w-xl space-y-6">
+            <h1 className="text-4xl md:text-5xl font-semibold text-slate-900 leading-tight">
               Professional real estate photos — without risking misrepresentation.
             </h1>
             <p className="text-lg lg:text-xl text-slate-600 leading-relaxed max-w-lg">
@@ -72,11 +72,11 @@ export default function Landing() {
           </div>
 
           {/* Right Col (Visual) */}
-          <div className="relative">
-            <div className="relative rounded-xl overflow-hidden shadow-2xl border-4 border-slate-100 bg-slate-100 aspect-[4/3]">
+          <div className="relative flex items-center justify-center">
+            <div className="relative w-full h-[420px] md:h-[500px] shadow-lg rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
                <ReactCompareSlider
-                itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" className="object-cover object-[center_72%]" />}
-                itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" className="object-cover object-[center_72%]" />}
+                itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" className="object-cover object-[center_55%]" />}
+                itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" className="object-cover object-[center_55%]" />}
               />
               <div className="absolute top-3 left-3 bg-white/80 backdrop-blur px-3 py-1 text-xs font-medium rounded-full shadow-sm pointer-events-none z-10">
                 Original
@@ -181,8 +181,8 @@ export default function Landing() {
                 text: "Enhance entire listings in minutes with consistent, MLS-ready results."
               }
             ].map((card, i) => (
-              <div key={i} className="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-emerald-200 hover:translate-y-[-2px] transition-all grid grid-cols-[auto,1fr] items-center gap-x-5 gap-y-1">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0 row-span-2">
+              <div key={i} className="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-emerald-200 hover:translate-y-[-2px] transition-all grid grid-cols-[auto,1fr] items-start gap-x-5 gap-y-2">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0 row-span-2 mt-0.5">
                   <card.icon className="w-6 h-6 text-emerald-600" />
                 </div>
                 <h3 className="text-base font-semibold text-slate-900">{card.title}</h3>
@@ -214,7 +214,7 @@ export default function Landing() {
                  <div key={i} className="flex flex-col items-center">
                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 border-4 transition-colors ${
                      item.highlight 
-                        ? "bg-white border-emerald-500 text-emerald-600 shadow-xl scale-110" 
+                        ? "bg-white border-emerald-500 text-emerald-600 shadow-md scale-105" 
                       : "bg-white border-slate-100 text-slate-400"
                    }`}>
                      <item.icon className={`w-6 h-6 ${item.highlight ? "stroke-[2.5px]" : ""}`} />
@@ -223,7 +223,7 @@ export default function Landing() {
                      {item.title}
                    </h4>
                    {item.highlight && (
-                       <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full mt-2">
+                       <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full mt-1">
                          Blocks structural changes
                        </span>
                    )}
