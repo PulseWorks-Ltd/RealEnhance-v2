@@ -48,7 +48,25 @@ type StagingStyle =
   | "lived_in_rental";
 type DisplayOutputKey = StageKey | "retried" | "edited";
 type EditSourceStage = "stage2" | "stage1B" | "stage1A";
-type PreviewModalImage = { url: string; filename: string; originalUrl?: string; index: number };
+type PreviewModalImage = {
+  url: string;
+  filename: string;
+  originalUrl?: string;
+  index: number;
+  context: {
+    jobId: string | null;
+    imageId: string | null;
+    selectedStage: DisplayOutputKey | null;
+    displayUrl: string | null;
+    retryLatestUrl: string | null;
+    editLatestUrl: string | null;
+    stage2Url: string | null;
+    stage1BUrl: string | null;
+    stage1AUrl: string | null;
+    item: any;
+  };
+};
+type EditArtifactKey = DisplayOutputKey | "final" | "original" | null;
 
 type SceneType = "interior" | "exterior";
 type SceneLabel = SceneType;
@@ -4981,27 +4999,137 @@ export default function BatchProcessor({
     const finalUrl = enhancedUrl || previewUrls[index];
     if (!finalUrl) return null;
 
+    const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
+    const selectedStage = (displayStageByIndex[index] as DisplayOutputKey | undefined) || null;
+    const retryLatestUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
+    const editLatestUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
+    const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || null;
+    const stage1BUrl = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || null;
+    const stage1AUrl = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || null;
+
     return {
       url: finalUrl,
       filename: file.name || `Image ${index + 1}`,
       originalUrl,
       index,
+      context: {
+        jobId: result?.jobId || result?.result?.jobId || null,
+        imageId: result?.imageId || result?.result?.imageId || null,
+        selectedStage,
+        displayUrl: finalUrl,
+        retryLatestUrl,
+        editLatestUrl,
+        stage2Url,
+        stage1BUrl,
+        stage1AUrl,
+        item: result,
+      },
     };
   }, [displayStageByIndex, files, previewUrls, results]);
 
   const getEditSourceForIndex = useCallback((imageIndex: number) => {
     const item = results[imageIndex];
-    if (!item) return { url: null, stage: null } as const;
+    if (!item) {
+      return {
+        url: null,
+        stage: null,
+        artifactKey: null,
+        sourceJobId: null,
+      } as const;
+    }
 
     // Edit baseline must match the exact artifact currently rendered in UI.
     const displayed = buildPreviewImage(imageIndex);
     const displayedUrl = toDisplayUrl(displayed?.url);
     const displayedStage = resolveDisplayedStageForEdit(imageIndex);
+
+    const selectedStage = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
+    const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
+    const stage2Url =
+      toDisplayUrl(stageMap?.['2']) ||
+      toDisplayUrl(stageMap?.[2]) ||
+      toDisplayUrl(stageMap?.stage2) ||
+      toDisplayUrl(item?.stage2Url) ||
+      toDisplayUrl(item?.result?.stage2Url) ||
+      null;
+    const stage1BUrl =
+      toDisplayUrl(stageMap?.['1B']) ||
+      toDisplayUrl(stageMap?.['1b']) ||
+      toDisplayUrl(stageMap?.stage1B) ||
+      null;
+    const stage1AUrl =
+      toDisplayUrl(stageMap?.['1A']) ||
+      toDisplayUrl(stageMap?.['1a']) ||
+      toDisplayUrl(stageMap?.['1']) ||
+      toDisplayUrl(stageMap?.stage1A) ||
+      null;
+    const retryLatestUrl =
+      toDisplayUrl(item?.retryLatestUrl) ||
+      toDisplayUrl(item?.result?.retryLatestUrl) ||
+      null;
+    const editLatestUrl =
+      toDisplayUrl(item?.editLatestUrl) ||
+      toDisplayUrl(item?.result?.editLatestUrl) ||
+      null;
+    const finalResultUrl =
+      toDisplayUrl(item?.finalOutputUrl) ||
+      toDisplayUrl(item?.result?.finalOutputUrl) ||
+      toDisplayUrl(item?.resultUrl) ||
+      toDisplayUrl(item?.result?.resultUrl) ||
+      null;
+    const originalUrl =
+      toDisplayUrl(item?.originalImageUrl) ||
+      toDisplayUrl(item?.result?.originalImageUrl) ||
+      toDisplayUrl(item?.originalUrl) ||
+      toDisplayUrl(item?.result?.originalUrl) ||
+      null;
+
+    let artifactKey: EditArtifactKey = null;
+    if (displayedUrl) {
+      if (retryLatestUrl && displayedUrl === retryLatestUrl) artifactKey = "retried";
+      else if (editLatestUrl && displayedUrl === editLatestUrl) artifactKey = "edited";
+      else if (stage2Url && displayedUrl === stage2Url) artifactKey = "2";
+      else if (stage1BUrl && displayedUrl === stage1BUrl) artifactKey = "1B";
+      else if (stage1AUrl && displayedUrl === stage1AUrl) artifactKey = "1A";
+      else if (finalResultUrl && displayedUrl === finalResultUrl) artifactKey = "final";
+      else if (originalUrl && displayedUrl === originalUrl) artifactKey = "original";
+    }
+
+    // If URL matching is ambiguous, preserve explicit user selection only.
+    if (!artifactKey && selectedStage) {
+      artifactKey = selectedStage;
+    }
+
+    // Phase 1 consistency rule:
+    // only pass sourceJobId when it belongs to the same selected artifact lineage.
+    const defaultJobId = item?.jobId || item?.result?.jobId || null;
+    const retryArtifactJobId =
+      item?.retryLatestJobId ||
+      item?.result?.retryLatestJobId ||
+      item?.retryInfo?.jobId ||
+      item?.result?.retryInfo?.jobId ||
+      null;
+    const editedArtifactJobId =
+      item?.editLatestJobId ||
+      item?.result?.editLatestJobId ||
+      null;
+
+    let sourceJobId: string | null = null;
+    if (artifactKey === "1A" || artifactKey === "1B" || artifactKey === "2" || artifactKey === "final") {
+      sourceJobId = defaultJobId;
+    } else if (artifactKey === "retried") {
+      sourceJobId = retryArtifactJobId;
+    } else if (artifactKey === "edited") {
+      sourceJobId = editedArtifactJobId;
+    }
+
     return {
       url: displayedUrl || null,
       stage: mapStageToEditSource(displayedStage),
+      artifactKey,
+      sourceJobId,
     } as const;
-  }, [buildPreviewImage, resolveDisplayedStageForEdit, results]);
+  }, [buildPreviewImage, displayStageByIndex, resolveDisplayedStageForEdit, results]);
 
   // Handle edit image - resolve URL before opening editor
   const handleEditImage = (imageIndex: number) => {
@@ -5044,8 +5172,9 @@ export default function BatchProcessor({
     const resolvedEditSource = getEditSourceForIndex(imageIndex);
     const imageUrl = resolvedEditSource.url;
     const urlSource = resolvedEditSource.stage;
+    const artifactKey = resolvedEditSource.artifactKey;
     const imageId = item?.imageId || item?.result?.imageId || null;
-    const sourceJobId = item?.jobId || item?.result?.jobId || null;
+    const sourceJobId = resolvedEditSource.sourceJobId;
 
     // ✅ Verify URL is non-null before opening editor
     if (!imageUrl) {
@@ -5072,7 +5201,9 @@ export default function BatchProcessor({
       imageId,
       imageIndex,
       stage: urlSource || 'displayed',
+      artifactKey,
       url: imageUrl,
+      sourceJobId: sourceJobId || null,
       completionSource: item?.completionSource || null,
       stageUrls: item?.stageUrls || item?.result?.stageUrls || null,
       resultUrl: item?.resultUrl || null,
@@ -7823,8 +7954,19 @@ export default function BatchProcessor({
       {previewImage && (
         <Modal isOpen={true} onClose={() => setPreviewImage(null)} maxWidth="full" contentClassName="max-w-7xl">
           {(() => {
+            const previewResult = results[previewImage.index];
+            const status = String(previewResult?.status || previewResult?.result?.status || "").toLowerCase();
+            const isRetryActive = retryingImages.has(previewImage.index) || retryLoadingImages.has(previewImage.index) || !!previewResult?.retryInFlight;
+            const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
+            const isRetryStatusTerminal =
+              previewResult?.isTerminal === true ||
+              status === "completed" ||
+              status === "complete" ||
+              status === "failed";
+            const canRetryFromPreview = isRetryStatusTerminal;
             const previewEditSource = getEditSourceForIndex(previewImage.index);
             const canEditFromPreview = !!toDisplayUrl(previewImage.url) || !!previewEditSource.url;
+            const canEditThisPreviewImage = isRetryStatusTerminal && canEditFromPreview;
             return (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
@@ -7840,7 +7982,7 @@ export default function BatchProcessor({
                     setPreviewImage(null);
                     handleEditImage(index);
                   }}
-                  disabled={!(["failed", "completed"].includes(String(results[previewImage.index]?.status || "").toLowerCase())) || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index) || !canEditFromPreview}
+                  disabled={!canEditThisPreviewImage || isRetryStatusActive || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-edit-from-preview"
                 >
@@ -7852,7 +7994,7 @@ export default function BatchProcessor({
                     setPreviewImage(null);
                     handleOpenRetryDialog(index);
                   }}
-                  disabled={results[previewImage.index]?.isTerminal !== true || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  disabled={!canRetryFromPreview || isRetryStatusActive || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
                   className="rounded-lg bg-action-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-action-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-retry-from-preview"
                 >
