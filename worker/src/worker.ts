@@ -6577,6 +6577,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       localEmpty: false,
       geminiHasFurniture: null,
       geminiConfidence: null,
+      hasClutter: null,
       declutterMode: inferredDeclutterMode,
       stage1BRequired: inferredDeclutterMode !== null,
     };
