@@ -5000,7 +5000,7 @@ export default function BatchProcessor({
     if (!finalUrl) return null;
 
     const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-    const selectedStage = (displayStageByIndex[index] as DisplayOutputKey | undefined) || null;
+    const selectedOutputStage = (displayStageByIndex[index] as DisplayOutputKey | undefined) || null;
     const retryLatestUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
     const editLatestUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
     const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || null;
@@ -5015,7 +5015,7 @@ export default function BatchProcessor({
       context: {
         jobId: result?.jobId || result?.result?.jobId || null,
         imageId: result?.imageId || result?.result?.imageId || null,
-        selectedStage,
+        selectedStage: selectedOutputStage,
         displayUrl: finalUrl,
         retryLatestUrl,
         editLatestUrl,
