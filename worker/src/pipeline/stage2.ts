@@ -28,6 +28,7 @@ import { resolveStage2ImageModel } from "../ai/modelResolver";
 const logger = console;
 
 type Stage2RetryReason = "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown";
+type Stage2ModeOverride = "REFRESH" | "FROM_EMPTY";
 
 type Stage2GenerationPlan = {
   model: string;
@@ -572,6 +573,7 @@ export async function runStage2GenerationAttempt(
     stagingStyle?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     promptMode?: "full" | "refresh";
+    stage2Mode?: Stage2ModeOverride;
     curtainRailLikely?: boolean | "unknown";
     jobId: string;
     outputPath: string;
@@ -600,9 +602,11 @@ export async function runStage2GenerationAttempt(
 
   const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
-  const resolvedPromptMode: "full" | "refresh" = opts.promptMode
-    ? opts.promptMode
-    : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+  const resolvedPromptMode: "full" | "refresh" = opts.stage2Mode
+    ? (opts.stage2Mode === "REFRESH" ? "refresh" : "full")
+    : (opts.promptMode
+      ? opts.promptMode
+      : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh"));
 
   let inputForStage2 = basePath;
   let stagingMaskBuffer: Buffer | null = null;
@@ -968,6 +972,7 @@ export async function runStage2(
     stagingStyle?: string;
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     promptMode?: "full" | "refresh";
+    stage2Mode?: Stage2ModeOverride;
     curtainRailLikely?: boolean;
     // Optional callback to surface strict retry status to job updater
     onStrictRetry?: (info: { reasons: string[] }) => void;
@@ -1002,9 +1007,11 @@ export async function runStage2(
 
   const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
-  const resolvedPromptMode: "full" | "refresh" = opts.promptMode
-    ? opts.promptMode
-    : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+  const resolvedPromptMode: "full" | "refresh" = opts.stage2Mode
+    ? (opts.stage2Mode === "REFRESH" ? "refresh" : "full")
+    : (opts.promptMode
+      ? opts.promptMode
+      : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh"));
 
   let layoutContext: LayoutContextResult | null = null;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";
@@ -1037,6 +1044,7 @@ export async function runStage2(
       stagingStyle: opts.stagingStyle,
       sourceStage: opts.sourceStage,
       promptMode: resolvedPromptMode,
+      stage2Mode: opts.stage2Mode,
       curtainRailLikely: opts.curtainRailLikely,
       jobId: opts.jobId,
       outputPath,
