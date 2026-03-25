@@ -181,11 +181,11 @@ export default function Landing() {
                 text: "Enhance entire listings in minutes with consistent, MLS-ready results."
               }
             ].map((card, i) => (
-              <div key={i} className="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md transition-shadow">
-                <div className="w-12 h-12 rounded-lg bg-emerald-50 flex items-center justify-center mb-4">
+              <div key={i} className="p-6 rounded-xl border border-slate-200 bg-white shadow-sm hover:shadow-md hover:border-emerald-200 hover:translate-y-[-2px] transition-all grid grid-cols-[auto,1fr] items-center gap-x-5 gap-y-1">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0 row-span-2">
                   <card.icon className="w-6 h-6 text-emerald-600" />
                 </div>
-                <h3 className="text-lg font-semibold text-slate-900 mb-3">{card.title}</h3>
+                <h3 className="text-base font-semibold text-slate-900">{card.title}</h3>
                 <p className="text-sm text-slate-600 leading-relaxed">{card.text}</p>
               </div>
             ))}
@@ -214,30 +214,30 @@ export default function Landing() {
                  <div key={i} className="flex flex-col items-center">
                    <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 border-4 transition-colors ${
                      item.highlight 
-                      ? "bg-white border-amber-500 text-amber-600 shadow-xl scale-110" 
+                        ? "bg-white border-emerald-500 text-emerald-600 shadow-xl scale-110" 
                       : "bg-white border-slate-100 text-slate-400"
                    }`}>
                      <item.icon className={`w-6 h-6 ${item.highlight ? "stroke-[2.5px]" : ""}`} />
                    </div>
-                   <h4 className={`text-lg font-semibold ${item.highlight ? "text-amber-600" : "text-slate-900"}`}>
+                     <h4 className={`text-lg ${item.highlight ? "text-emerald-700 font-semibold" : "text-slate-900 font-medium"}`}>
                      {item.title}
                    </h4>
                    {item.highlight && (
-                     <p className="text-xs text-amber-700/80 mt-2 font-medium bg-amber-50 px-3 py-1 rounded-full">
-                       Moat: Blocks Structural Changes
-                     </p>
+                       <span className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded-full mt-2">
+                         Blocks structural changes
+                       </span>
                    )}
                  </div>
                ))}
              </div>
           </div>
           
-          <div className="mt-12 p-6 bg-slate-50 rounded-lg border border-slate-100 inline-block">
-             <div className="flex items-start gap-4 text-left max-w-lg mx-auto">
+            <div className="mt-6 bg-white border border-slate-200 rounded-xl shadow-sm p-4 max-w-md mx-auto">
+               <div className="flex items-start gap-4 text-left">
                <ShieldCheck className="w-8 h-8 text-slate-400 flex-shrink-0 mt-0.5" />
                <div>
                   <h5 className="font-semibold text-slate-900 text-sm mb-1">Automatic Compliance Gating</h5>
-                  <p className="text-sm text-slate-600">
+                    <p className="text-sm text-slate-600 leading-relaxed">
                     If the system detects a potential structural change (like a moved window or painted-over door), the image is blocked automatically and flagged for review.
                   </p>
                </div>
