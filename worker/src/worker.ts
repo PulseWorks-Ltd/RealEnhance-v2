@@ -3473,6 +3473,58 @@ process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
  * Maximum reduction: From 3 potential calls → 2 max, 1 typical
  */
 
+type Stage2ValidationPipelineContext<TSpecialistResults = any, TComplianceDecision = any> = {
+  jobId: string;
+  source?: string;
+  runSpecialists: () => Promise<{
+    specialistResults: TSpecialistResults;
+    specialistAdvisorySignals: string[];
+  }>;
+  runUnified: (args: {
+    specialistResults: TSpecialistResults;
+    specialistAdvisorySignals: string[];
+  }) => Promise<UnifiedValidationResult | undefined>;
+  runCompliance: (args: {
+    specialistResults: TSpecialistResults;
+    specialistAdvisorySignals: string[];
+    unifiedValidation: UnifiedValidationResult | undefined;
+  }) => Promise<TComplianceDecision>;
+};
+
+type Stage2ValidationPipelineResult<TSpecialistResults = any, TComplianceDecision = any> = {
+  specialistResults: TSpecialistResults;
+  specialistAdvisorySignals: string[];
+  unifiedValidation: UnifiedValidationResult | undefined;
+  complianceDecision: TComplianceDecision;
+};
+
+async function runStage2ValidationPipeline<TSpecialistResults = any, TComplianceDecision = any>(
+  ctx: Stage2ValidationPipelineContext<TSpecialistResults, TComplianceDecision>
+): Promise<Stage2ValidationPipelineResult<TSpecialistResults, TComplianceDecision>> {
+  console.debug("[STAGE2_VALIDATION_PIPELINE_EXECUTED]", {
+    jobId: ctx.jobId,
+    source: ctx.source || "unknown",
+  });
+
+  const { specialistResults, specialistAdvisorySignals } = await ctx.runSpecialists();
+  const unifiedValidation = await ctx.runUnified({
+    specialistResults,
+    specialistAdvisorySignals,
+  });
+  const complianceDecision = await ctx.runCompliance({
+    specialistResults,
+    specialistAdvisorySignals,
+    unifiedValidation,
+  });
+
+  return {
+    specialistResults,
+    specialistAdvisorySignals,
+    unifiedValidation,
+    complianceDecision,
+  };
+}
+
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Start memory tracking for this job
@@ -5101,7 +5153,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           });
         }
       }
-      const stage2ValidationPassed = stage2Result.validationRisk !== true;
+      let stage2ValidationPassed = stage2Result.validationRisk !== true;
       let stage2OnlyBlockedReason: string | null = null;
       let stage2OnlyFallbackStage: "1A" | "1B" = stage2OnlyBaseStage;
       const stage2OnlyAttemptNo = stage2OnlyAttemptsUsed;
@@ -5156,60 +5208,199 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return;
       }
 
-      try {
-        const effectiveMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
-        nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=${effectiveMode} ═══════════`);
-        unifiedRetryValidation = await runUnifiedValidation({
-          originalPath: validationBaseline,
-          enhancedPath: path2,
-          stage: "2",
-          sceneType: sceneLabel as any,
-          roomType: payload.options.roomType,
-          mode: effectiveMode,
-          geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          stagingStyle: payload.options.stagingStyle || "standard_listing",
-          stage1APath: validationBaseline,
-          sourceStage: stage2OnlyRouting.sourceStage,
-          validationMode: stage2OnlySelectedValidationMode,
-        });
-        nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
-        const stage2OnlyGeminiRaw = (unifiedRetryValidation.raw?.geminiSemantic as any)?.details || {};
-        mergeAttemptValidation("2", stage2OnlyAttemptNo, {
-          local: {
-            passed: unifiedRetryValidation.passed,
-            hardFail: unifiedRetryValidation.hardFail,
-            score: unifiedRetryValidation.score,
-            reasons: unifiedRetryValidation.reasons,
-            warnings: unifiedRetryValidation.warnings,
-          },
-          gemini: {
-            category: stage2OnlyGeminiRaw.category || "unknown",
-            violationType: stage2OnlyGeminiRaw.violationType || "other",
-            hardFail: stage2OnlyGeminiRaw.hardFail === true,
-            confidence: Number.isFinite(stage2OnlyGeminiRaw.confidence) ? stage2OnlyGeminiRaw.confidence : 0,
-            builtInDetected: stage2OnlyGeminiRaw.builtInDetected ?? false,
-            structuralAnchorCount: stage2OnlyGeminiRaw.structuralAnchorCount ?? 0,
-            builtInLowConfidence: stage2OnlyGeminiRaw.builtInLowConfidence ?? false,
-            builtInDowngradeAllowed: stage2OnlyGeminiRaw.builtInDowngradeAllowed ?? false,
-          },
-          confirm: null,
-        });
-        logEvent("VALIDATION_RESULT", {
-          jobId: payload.jobId,
-          stage: "2",
-          attempt: stage2OnlyAttemptNo,
-          localPass: unifiedRetryValidation.passed === true,
-          geminiPass: ((stage2OnlyGeminiRaw.hardFail === true) ? false : true),
-          confirmPass: null,
-          finalPass: stage2ValidationPassed,
-          violationType: stage2OnlyGeminiRaw.violationType || null,
-          retriesRemaining: 0,
-        });
-      } catch (unifiedErr: any) {
-        nLog(`[worker] Unified validation error (stage2-only, non-fatal):`, unifiedErr?.message || unifiedErr);
-      }
+      await runStage2ValidationPipeline({
+        jobId: payload.jobId,
+        source: "stage2_only_retry",
+        runSpecialists: async () => {
+          const specialistAdvisorySignals: string[] = [];
+          const specialistResults: Record<string, any> = {};
+          // ═══ Specialist Validators (opening, fixture, floor, envelope) ═══
+          // Run the same specialist stack as main Stage 2 path while keeping Stage-2-only generation.
+          try {
+            const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
+            const { runOpeningValidator } = await import("./validators/openingValidator.js");
+            const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+            const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
+
+            const specialistHardFailReasons: string[] = [];
+            const appendAdvisories = (validator: "openings" | "fixtures" | "floor" | "envelope", advisories: string[] | undefined) => {
+              if (!Array.isArray(advisories) || advisories.length === 0) return;
+              for (const advisory of advisories) {
+                const normalized = String(advisory || "").trim();
+                if (!normalized) continue;
+                specialistAdvisorySignals.push(`${validator}:${normalized}`);
+              }
+            };
+
+            const opRes = await runOpeningValidator(validationBaseline, path2, structuralBaseline || null);
+            const opHardFail = opRes?.hardFail === true;
+            specialistResults.openings = opRes;
+            if (opHardFail) {
+              specialistHardFailReasons.push(`openings:${String(opRes?.reason || "opening_hard_fail").trim()}`);
+            }
+            appendAdvisories("openings", opRes?.advisorySignals);
+
+            const fixRes = await runFixtureValidator(validationBaseline, path2);
+            const fixHardFail = fixRes?.hardFail === true;
+            specialistResults.fixtures = fixRes;
+            if (fixHardFail) {
+              specialistHardFailReasons.push(`fixtures:${String(fixRes?.reason || "fixture_hard_fail").trim()}`);
+            }
+            appendAdvisories("fixtures", fixRes?.advisorySignals);
+
+            const floorRes = await runFloorIntegrityValidator(validationBaseline, path2);
+            const floorHardFail = floorRes?.hardFail === true;
+            specialistResults.floor = floorRes;
+            if (floorHardFail) {
+              specialistHardFailReasons.push(`floor:${String(floorRes?.reason || "floor_hard_fail").trim()}`);
+            }
+            appendAdvisories("floor", floorRes?.advisorySignals);
+
+            const envRes = await runEnvelopeValidator(validationBaseline, path2);
+            const envHardFail = envRes?.hardFail === true;
+            specialistResults.envelope = envRes;
+            if (envHardFail) {
+              specialistHardFailReasons.push(`envelope:${String(envRes?.reason || "envelope_hard_fail").trim()}`);
+            }
+            appendAdvisories("envelope", envRes?.advisorySignals);
+
+            nLog("[STAGE2_ONLY_SPECIALIST_SIGNALS]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              opening: { status: opRes?.status || "unknown", hardFail: opHardFail, reason: opRes?.reason || "none" },
+              fixture: { status: fixRes?.status || "unknown", hardFail: fixHardFail, reason: fixRes?.reason || "none" },
+              floor: { status: floorRes?.status || "unknown", hardFail: floorHardFail, reason: floorRes?.reason || "none" },
+              envelope: { status: envRes?.status || "unknown", hardFail: envHardFail, reason: envRes?.reason || "none" },
+              advisorySignals: specialistAdvisorySignals,
+            });
+
+            if (specialistHardFailReasons.length > 0) {
+              stage2ValidationPassed = false;
+              stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${specialistHardFailReasons.join("|")}`;
+              nLog("[STAGE2_ONLY_SPECIALIST_BLOCK]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                reasons: specialistHardFailReasons,
+              });
+            }
+          } catch (specialistErr: any) {
+            nLog("[worker] Specialist validation error (stage2-only, non-fatal):", specialistErr?.message || specialistErr);
+          }
+
+          return {
+            specialistResults,
+            specialistAdvisorySignals,
+          };
+        },
+        runUnified: async ({ specialistAdvisorySignals }) => {
+          try {
+            const effectiveMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
+            nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=${effectiveMode} ═══════════`);
+            unifiedRetryValidation = await runUnifiedValidation({
+              originalPath: validationBaseline,
+              enhancedPath: path2,
+              stage: "2",
+              sceneType: sceneLabel as any,
+              roomType: payload.options.roomType,
+              mode: effectiveMode,
+              geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              stagingStyle: payload.options.stagingStyle || "standard_listing",
+              stage1APath: validationBaseline,
+              sourceStage: stage2OnlyRouting.sourceStage,
+              validationMode: stage2OnlySelectedValidationMode,
+              specialistAdvisorySignals,
+            });
+            nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
+            if (unifiedRetryValidation.hardFail === true) {
+              const reason = String(unifiedRetryValidation.reasons?.[0] || "unified_hard_fail").trim();
+              stage2ValidationPassed = false;
+              if (!stage2OnlyBlockedReason) {
+                stage2OnlyBlockedReason = `stage2_unified_hard_fail:${reason}`;
+              }
+            }
+            const stage2OnlyGeminiRaw = (unifiedRetryValidation.raw?.geminiSemantic as any)?.details || {};
+            mergeAttemptValidation("2", stage2OnlyAttemptNo, {
+              local: {
+                passed: unifiedRetryValidation.passed,
+                hardFail: unifiedRetryValidation.hardFail,
+                score: unifiedRetryValidation.score,
+                reasons: unifiedRetryValidation.reasons,
+                warnings: unifiedRetryValidation.warnings,
+              },
+              gemini: {
+                category: stage2OnlyGeminiRaw.category || "unknown",
+                violationType: stage2OnlyGeminiRaw.violationType || "other",
+                hardFail: stage2OnlyGeminiRaw.hardFail === true,
+                confidence: Number.isFinite(stage2OnlyGeminiRaw.confidence) ? stage2OnlyGeminiRaw.confidence : 0,
+                builtInDetected: stage2OnlyGeminiRaw.builtInDetected ?? false,
+                structuralAnchorCount: stage2OnlyGeminiRaw.structuralAnchorCount ?? 0,
+                builtInLowConfidence: stage2OnlyGeminiRaw.builtInLowConfidence ?? false,
+                builtInDowngradeAllowed: stage2OnlyGeminiRaw.builtInDowngradeAllowed ?? false,
+              },
+              confirm: null,
+            });
+            logEvent("VALIDATION_RESULT", {
+              jobId: payload.jobId,
+              stage: "2",
+              attempt: stage2OnlyAttemptNo,
+              localPass: unifiedRetryValidation.passed === true,
+              geminiPass: ((stage2OnlyGeminiRaw.hardFail === true) ? false : true),
+              confirmPass: null,
+              finalPass: stage2ValidationPassed,
+              violationType: stage2OnlyGeminiRaw.violationType || null,
+              retriesRemaining: 0,
+            });
+            return unifiedRetryValidation;
+          } catch (unifiedErr: any) {
+            nLog(`[worker] Unified validation error (stage2-only, non-fatal):`, unifiedErr?.message || unifiedErr);
+            return unifiedRetryValidation;
+          }
+        },
+        runCompliance: async () => {
+          // AUDIT FIX: Compliance gate before publish in stage2-only path
+          // Respects geminiSemanticValidatorMode: null=skip, "log"=log-only, "block"=blocking
+          if (!stage2OnlyBlockedReason && geminiSemanticValidatorMode !== null) {
+            try {
+              const ai = getGeminiClient();
+              const baseRef = toBase64(validationBaseline);
+              const enhanced = toBase64(path2);
+              const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
+                validationMode: stage2OnlySelectedValidationMode,
+              });
+              if (s2oCompliance && s2oCompliance.ok === false) {
+                const confidence = s2oCompliance.confidence ?? 0.6;
+                const tier = Number.isFinite((s2oCompliance as any).tier)
+                  ? Math.max(1, Math.min(3, Math.floor((s2oCompliance as any).tier)))
+                  : 1;
+                const reasonText = String((s2oCompliance as any).reason || (s2oCompliance.reasons || ["Compliance failed"]).join("; "));
+                nLog("[COMPLIANCE_GATE_DECISION]", {
+                  jobId: payload.jobId,
+                  path: "stage2_only",
+                  ok: false,
+                  confidence,
+                  tier,
+                  reason: reasonText,
+                  mode: geminiSemanticValidatorMode,
+                  action: "log-only",
+                });
+                nLog(`[worker] ⚠️  Compliance finding (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
+              } else {
+                nLog(`[AUDIT FIX] Compliance passed (stage2-only) — proceeding to publish`);
+              }
+            } catch (compErr: any) {
+              nLog("[worker] compliance check skipped (stage2-only):", compErr?.message || compErr);
+            }
+          } else if (geminiSemanticValidatorMode === null) {
+            nLog(`[worker] Compliance check skipped (stage2-only) - geminiSemanticValidatorMode=disabled`);
+          }
+
+          return stage2OnlyBlockedReason || "not_run";
+        },
+      });
 
       // ═══ Semantic + Masked Edge Validators (secondary) ═══
       await runSemanticStructureValidator({
@@ -5231,14 +5422,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // (Don't introduce new publish steps; use URLs available post-publish below)
 
       if (!stage2ValidationPassed) {
-        const usedAttempts = Number.isFinite((stage2Result as any)?.attempts)
-          ? Math.max(1, Math.floor((stage2Result as any).attempts))
-          : 1;
-        const maxAttempts = Number.isFinite((stage2Result as any)?.maxAttempts)
-          ? Math.max(1, Math.floor((stage2Result as any).maxAttempts))
-          : usedAttempts;
-        stage2OnlyBlockedReason = `stage2_structural_exhausted after ${usedAttempts}/${maxAttempts} attempts`;
-        nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${usedAttempts} fallback=${stage2OnlyFallbackStage}`);
+        if (!stage2OnlyBlockedReason) {
+          const usedAttempts = Number.isFinite((stage2Result as any)?.attempts)
+            ? Math.max(1, Math.floor((stage2Result as any).attempts))
+            : 1;
+          const maxAttempts = Number.isFinite((stage2Result as any)?.maxAttempts)
+            ? Math.max(1, Math.floor((stage2Result as any).maxAttempts))
+            : usedAttempts;
+          stage2OnlyBlockedReason = `stage2_structural_exhausted after ${usedAttempts}/${maxAttempts} attempts`;
+          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${usedAttempts} fallback=${stage2OnlyFallbackStage}`);
+        } else {
+          nLog("[STAGE2_VALIDATION_BLOCKED]", {
+            jobId: payload.jobId,
+            reason: stage2OnlyBlockedReason,
+            fallback: stage2OnlyFallbackStage,
+          });
+        }
         nLog(`[FALLBACK_TO_STAGE${stage2OnlyFallbackStage}] reason=${stage2OnlyBlockedReason}`);
         mergeAttemptValidation("2", stage2OnlyAttemptNo, {
           final: {
@@ -5250,43 +5449,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             reason: stage2OnlyBlockedReason,
           },
         });
-      }
-
-      // AUDIT FIX: Compliance gate before publish in stage2-only path
-      // Respects geminiSemanticValidatorMode: null=skip, "log"=log-only, "block"=blocking
-      if (!stage2OnlyBlockedReason && geminiSemanticValidatorMode !== null) {
-        try {
-          const ai = getGeminiClient();
-          const baseRef = toBase64(validationBaseline);
-          const enhanced = toBase64(path2);
-          const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
-            validationMode: stage2OnlySelectedValidationMode,
-          });
-          if (s2oCompliance && s2oCompliance.ok === false) {
-            const confidence = s2oCompliance.confidence ?? 0.6;
-            const tier = Number.isFinite((s2oCompliance as any).tier)
-              ? Math.max(1, Math.min(3, Math.floor((s2oCompliance as any).tier)))
-              : 1;
-            const reasonText = String((s2oCompliance as any).reason || (s2oCompliance.reasons || ["Compliance failed"]).join("; "));
-            nLog("[COMPLIANCE_GATE_DECISION]", {
-              jobId: payload.jobId,
-              path: "stage2_only",
-              ok: false,
-              confidence,
-              tier,
-              reason: reasonText,
-              mode: geminiSemanticValidatorMode,
-              action: "log-only",
-            });
-            nLog(`[worker] ⚠️  Compliance finding (stage2-only) confidence=${confidence.toFixed(2)} — proceeding`);
-          } else {
-            nLog(`[AUDIT FIX] Compliance passed (stage2-only) — proceeding to publish`);
-          }
-        } catch (compErr: any) {
-          nLog("[worker] compliance check skipped (stage2-only):", compErr?.message || compErr);
-        }
-      } else if (geminiSemanticValidatorMode === null) {
-        nLog(`[worker] Compliance check skipped (stage2-only) - geminiSemanticValidatorMode=disabled`);
       }
 
       if (stage2OnlyBlockedReason) {
@@ -9349,126 +9511,139 @@ All openings must remain identical in position and size to the original image.`;
       // END NEW SEQUENTIAL VALIDATORS
       // Deterministic Stage 2 requires blocking compliance behavior.
       const finalConfirmMode: "block" | "log" = "block";
-      if (validationStage === "2") {
-        try {
-          // IMPORTANT:
-          // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
-          // Specialist validators (Gemini-based) are tracked separately.
-          // Stage 2 keeps specialist advisories telemetry-only and does not inject
-          // heuristic or specialist advisory signals into compliance adjudication.
-          const complianceAdvisorySignals: string[] = [];
-          const complianceOpeningStructuralSignal = false;
-          const complianceOpeningSignalContext = undefined;
-          const complianceMaskedDriftRegions: Array<{ bbox: [number, number, number, number]; score: number }> = [];
-          const complianceOpeningRegions: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }> = [];
+      const mainValidationPipelineResult = await runStage2ValidationPipeline({
+        jobId: payload.jobId,
+        source: "main_stage2",
+        runSpecialists: async () => ({
+          specialistResults,
+          specialistAdvisorySignals,
+        }),
+        runUnified: async () => unifiedValidation,
+        runCompliance: async ({ unifiedValidation: complianceUnifiedValidation }) => {
+          let decision = "not_run";
+          if (validationStage === "2") {
+            try {
+              // IMPORTANT:
+              // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
+              // Specialist validators (Gemini-based) are tracked separately.
+              // Stage 2 keeps specialist advisories telemetry-only and does not inject
+              // heuristic or specialist advisory signals into compliance adjudication.
+              const complianceAdvisorySignals: string[] = [];
+              const complianceOpeningStructuralSignal = false;
+              const complianceOpeningSignalContext = undefined;
+              const complianceMaskedDriftRegions: Array<{ bbox: [number, number, number, number]; score: number }> = [];
+              const complianceOpeningRegions: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }> = [];
 
-          const ai = getGeminiClient();
-          const base1A = toBase64(path1A);
-          const baseFinal = toBase64(path2);
-          nLog("[GEMINI_ESCALATION]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            action: "run",
-            model: "gemini-2.5-pro",
-            refreshMode: isRefreshValidationFlow,
-            heuristicHintsSuppressed: isRefreshValidationBehavior,
-            advisoryCount: complianceAdvisorySignals.length,
-            advisorySignals: complianceAdvisorySignals,
-            openingStructuralSignalFlag: complianceOpeningStructuralSignal,
-            openingStructuralSignal: complianceOpeningSignalContext || null,
-            maskedDriftRegions: complianceMaskedDriftRegions,
-            openingRegions: complianceOpeningRegions,
-          });
-          compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
-            validationMode: stage2SelectedValidationMode,
-            advisorySignals: complianceAdvisorySignals,
-            openingStructuralSignal: complianceOpeningStructuralSignal,
-            openingStructuralSignalContext: complianceOpeningSignalContext,
-            maskedDriftRegions: complianceMaskedDriftRegions,
-            openingRegions: complianceOpeningRegions,
-            modelOverride: "gemini-2.5-pro",
-          });
+              const ai = getGeminiClient();
+              const base1A = toBase64(path1A);
+              const baseFinal = toBase64(path2);
+              nLog("[GEMINI_ESCALATION]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                action: "run",
+                model: "gemini-2.5-pro",
+                refreshMode: isRefreshValidationFlow,
+                heuristicHintsSuppressed: isRefreshValidationBehavior,
+                advisoryCount: complianceAdvisorySignals.length,
+                advisorySignals: complianceAdvisorySignals,
+                openingStructuralSignalFlag: complianceOpeningStructuralSignal,
+                openingStructuralSignal: complianceOpeningSignalContext || null,
+                maskedDriftRegions: complianceMaskedDriftRegions,
+                openingRegions: complianceOpeningRegions,
+              });
+              compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
+                validationMode: stage2SelectedValidationMode,
+                advisorySignals: complianceAdvisorySignals,
+                openingStructuralSignal: complianceOpeningStructuralSignal,
+                openingStructuralSignalContext: complianceOpeningSignalContext,
+                maskedDriftRegions: complianceMaskedDriftRegions,
+                openingRegions: complianceOpeningRegions,
+                modelOverride: "gemini-2.5-pro",
+              });
 
-          if (compliance && compliance.ok === false) {
-            const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
-            const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
-            const confidence = compliance.confidence ?? 0.6;
-            const anchorChecks = unifiedValidation?.evidence?.anchorChecks;
-              const roomTypeLower = String(payload.options.roomType || "").toLowerCase();
-              const kitchenContext = roomTypeLower.includes("kitchen");
-              const islandAnchorStructural = kitchenContext && !!anchorChecks?.islandChanged;
-            const hasAnchorEvidence = !!anchorChecks && (
-                islandAnchorStructural ||
-              anchorChecks.cabinetryChanged ||
-              anchorChecks.hvacChanged ||
-              anchorChecks.lightingChanged
-            );
-              const primaryStructuralViolationDetected = hasPrimaryStructuralViolation(unifiedValidation);
-            const structuralViolation = !!compliance.structuralViolation;
-            const placementViolation = !!compliance.placementViolation;
-            const tier = Number.isFinite(compliance.tier)
-              ? Math.max(1, Math.min(3, Math.floor(compliance.tier)))
-              : 1;
-            const reasonText = String(
-              compliance.reason
-              || (Array.isArray(compliance.reasons) ? compliance.reasons.join("; ") : "Compliance check failed")
-            );
-            const complianceBlocking = true;
-            const complianceRetryEligible = primaryStructuralViolationDetected;
-            let complianceDecision = "not_run";
+              if (compliance && compliance.ok === false) {
+                const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
+                const MED_CONF = Math.max(0, COMPLIANCE_BLOCK_THRESHOLD - 0.1);
+                const confidence = compliance.confidence ?? 0.6;
+                const anchorChecks = complianceUnifiedValidation?.evidence?.anchorChecks;
+                  const roomTypeLower = String(payload.options.roomType || "").toLowerCase();
+                  const kitchenContext = roomTypeLower.includes("kitchen");
+                  const islandAnchorStructural = kitchenContext && !!anchorChecks?.islandChanged;
+                const hasAnchorEvidence = !!anchorChecks && (
+                    islandAnchorStructural ||
+                  anchorChecks.cabinetryChanged ||
+                  anchorChecks.hvacChanged ||
+                  anchorChecks.lightingChanged
+                );
+                const primaryStructuralViolationDetected = hasPrimaryStructuralViolation(complianceUnifiedValidation);
+                const structuralViolation = !!compliance.structuralViolation;
+                const placementViolation = !!compliance.placementViolation;
+                const tier = Number.isFinite(compliance.tier)
+                  ? Math.max(1, Math.min(3, Math.floor(compliance.tier)))
+                  : 1;
+                const reasonText = String(
+                  compliance.reason
+                  || (Array.isArray(compliance.reasons) ? compliance.reasons.join("; ") : "Compliance check failed")
+                );
+                const complianceBlocking = true;
+                const complianceRetryEligible = primaryStructuralViolationDetected;
 
-            nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
-              jobId: payload.jobId,
-              complianceOk: compliance.ok,
-              complianceConfidence: compliance.confidence,
-              complianceTier: tier,
-              complianceReason: reasonText,
-              complianceReasons: compliance.reasons?.length ?? 0,
-              hasAnchorEvidence,
-              anchorFlags: anchorChecks ?? null,
-              maskedIou: (unifiedValidation as any)?.maskedIou ?? null,
-              lineDrift: (unifiedValidation as any)?.lineDrift ?? null,
-              dimensionDrift: (unifiedValidation as any)?.dimensionDrift ?? null,
-              riskLevel: unifiedValidation?.riskLevel ?? null,
-              stage2Input: stage2InputResolved ?? null,
-              stage1AUrl: pub1AUrl ?? null,
-              stage1BUrl: pub1BUrl ?? null,
-              finalStage2Url: null,
-            });
+                nLog("[STRUCTURE_COMPLIANCE_AUDIT]", {
+                  jobId: payload.jobId,
+                  complianceOk: compliance.ok,
+                  complianceConfidence: compliance.confidence,
+                  complianceTier: tier,
+                  complianceReason: reasonText,
+                  complianceReasons: compliance.reasons?.length ?? 0,
+                  hasAnchorEvidence,
+                  anchorFlags: anchorChecks ?? null,
+                  maskedIou: (complianceUnifiedValidation as any)?.maskedIou ?? null,
+                  lineDrift: (complianceUnifiedValidation as any)?.lineDrift ?? null,
+                  dimensionDrift: (complianceUnifiedValidation as any)?.dimensionDrift ?? null,
+                  riskLevel: complianceUnifiedValidation?.riskLevel ?? null,
+                  stage2Input: stage2InputResolved ?? null,
+                  stage1AUrl: pub1AUrl ?? null,
+                  stage1BUrl: pub1BUrl ?? null,
+                  finalStage2Url: null,
+                });
 
-            nLog("[COMPLIANCE_GATE_DECISION]", {
-              jobId: payload.jobId,
-              ok: compliance.ok,
-              confidence,
-              tier,
-              reason: reasonText,
-              hasAnchorEvidence,
-              primaryStructuralViolationDetected,
-              structuralViolation,
-              placementViolation,
-              highThreshold: HIGH_CONF,
-              medThreshold: MED_CONF,
-              mode: finalConfirmMode,
-              action: "log-only",
-            });
+                nLog("[COMPLIANCE_GATE_DECISION]", {
+                  jobId: payload.jobId,
+                  ok: compliance.ok,
+                  confidence,
+                  tier,
+                  reason: reasonText,
+                  hasAnchorEvidence,
+                  primaryStructuralViolationDetected,
+                  structuralViolation,
+                  placementViolation,
+                  highThreshold: HIGH_CONF,
+                  medThreshold: MED_CONF,
+                  mode: finalConfirmMode,
+                  action: "log-only",
+                });
 
-            complianceDecision = "log-only";
-            nLog("[COMPLIANCE_LOG_ONLY] Stage2 compliance finding recorded; decision authority remains unified Gemini", {
-              jobId: payload.jobId,
-              attempt,
-              confidence,
-              tier,
-              reason: reasonText,
-              complianceBlocking,
-              complianceRetryEligible,
-            });
+                decision = "log-only";
+                nLog("[COMPLIANCE_LOG_ONLY] Stage2 compliance finding recorded; decision authority remains unified Gemini", {
+                  jobId: payload.jobId,
+                  attempt,
+                  confidence,
+                  tier,
+                  reason: reasonText,
+                  complianceBlocking,
+                  complianceRetryEligible,
+                });
+              }
+            } catch (e: any) {
+              const complianceErr = e?.message || String(e);
+              nLog("[worker] compliance check error (log-only):", complianceErr);
+            }
           }
-        } catch (e: any) {
-          const complianceErr = e?.message || String(e);
-          nLog("[worker] compliance check error (log-only):", complianceErr);
-        }
-      }
+          return decision;
+        },
+      });
+      complianceDecision = String(mainValidationPipelineResult.complianceDecision || "not_run");
 
       // --- NEW FIXTURE VALIDATOR (Conditions A & B) ---
       const fixtureKeywordsAB = ["ceiling", "fan", "light", "fixture", "downlight", "vent", "smoke"];

@@ -2385,7 +2385,35 @@ export default function BatchProcessor({
         // Also clear retry tracking Sets if this is a terminal status
         const hasRetryFlags = retryingImages.has(next.index) || retryLoadingImages.has(next.index);
         const isTerminalStatus = next.result?.status === 'completed' || next.result?.status === 'failed';
-        if (hasRetryFlags && isTerminalStatus) {
+        const currentCardJobId =
+          results[next.index]?.jobId ||
+          results[next.index]?.result?.jobId ||
+          null;
+        const incomingJobId = next.jobId || next.result?.jobId || null;
+        const parentJobId =
+          next.result?.parentJobId ||
+          next.result?.parent_job_id ||
+          next.result?.meta?.parentJobId ||
+          next.result?.meta?.parent_job_id ||
+          null;
+        const isRetryChildJob = !!(incomingJobId && parentJobId && incomingJobId !== parentJobId);
+        const isAuthoritativeUpdate = !!(
+          (incomingJobId && currentCardJobId && incomingJobId === currentCardJobId) ||
+          isRetryChildJob
+        );
+        if (IS_DEV && hasRetryFlags && isTerminalStatus) {
+          console.debug("[retry-clear-check]", {
+            index: next.index,
+            polledId: incomingJobId,
+            currentCardJobId,
+            isRetryChildJob,
+            wasUpdateApplied: true,
+            mappedViaParent: false,
+            mappedViaImage: false,
+            isTerminal: isTerminalStatus,
+          });
+        }
+        if (hasRetryFlags && isTerminalStatus && isAuthoritativeUpdate) {
           clearRetryFlags(next.index);
         }
 
@@ -3461,6 +3489,8 @@ export default function BatchProcessor({
             : (stagePreview || incomingProcessingPreviewUrl || null);
 
           if (typeof idx === "number") {
+            let wasUpdateApplied = false;
+            let currentCardJobIdForRetryClear: string | null = null;
             const now = Date.now();
             const activityKey = `${status}|${progress ?? "na"}|${stage1aUrl ? "1" : "0"}|${stage1bUrl ? "1" : "0"}|${stage2Url ? "1" : "0"}|${resultUrlSafe ? "1" : "0"}`;
             const lastActivity = lastActivityByIndexRef.current[idx];
@@ -3490,6 +3520,7 @@ export default function BatchProcessor({
                 return copy;
               }
               const existingJobId = (existing.jobId || existing.result?.jobId || null) as string | null;
+              currentCardJobIdForRetryClear = existingJobId;
 
               // Job-scoped card policy: ignore cross-job updates that are mapped via lineage.
               if (
@@ -3553,6 +3584,8 @@ export default function BatchProcessor({
                       retryLatestUpdatedAt: promotedVersion || Date.now(),
                     },
                   };
+                  wasUpdateApplied = true;
+                  currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
                   if (!retryChildMappingLoggedRef.current.has(`promote:${polledId}:${existingJobId}:${idx}`)) {
                     retryChildMappingLoggedRef.current.add(`promote:${polledId}:${existingJobId}:${idx}`);
                     console.log('[BATCH][retry_child_promoted_retry_latest_url]', {
@@ -3835,10 +3868,34 @@ export default function BatchProcessor({
                 retryInFlight: isTerminalStatusForRetry ? undefined : existing.retryInFlight,
                 retryStage: isTerminalStatusForRetry ? undefined : existing.retryStage,
               };
+              wasUpdateApplied = true;
+              currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
               return copy;
             }, "poll-merge");
 
-            if (isTerminalFlag) {
+            const isAuthoritativeUpdate = !!(
+              (polledId && currentCardJobIdForRetryClear && polledId === currentCardJobIdForRetryClear) ||
+              isRetryChildJob
+            );
+            const shouldClearRetryTerminal =
+              isTerminalFlag &&
+              isAuthoritativeUpdate &&
+              wasUpdateApplied &&
+              !mappedViaParent &&
+              !mappedViaImage;
+            if (IS_DEV && isTerminalFlag) {
+              console.debug("[retry-clear-check]", {
+                index: idx,
+                polledId,
+                currentCardJobId: currentCardJobIdForRetryClear,
+                isRetryChildJob,
+                wasUpdateApplied,
+                mappedViaParent,
+                mappedViaImage,
+                isTerminal: isTerminalFlag,
+              });
+            }
+            if (shouldClearRetryTerminal) {
               retryTerminalIndices.add(idx);
             }
 
@@ -5106,8 +5163,18 @@ export default function BatchProcessor({
     const retryArtifactJobId =
       item?.retryLatestJobId ||
       item?.result?.retryLatestJobId ||
+      item?.retryJobId ||
+      item?.result?.retryJobId ||
       item?.retryInfo?.jobId ||
       item?.result?.retryInfo?.jobId ||
+      null;
+    const retryParentJobId =
+      item?.retrySourceJobId ||
+      item?.result?.retrySourceJobId ||
+      item?.parentJobId ||
+      item?.result?.parentJobId ||
+      item?.meta?.parentJobId ||
+      item?.result?.meta?.parentJobId ||
       null;
     const editedArtifactJobId =
       item?.editLatestJobId ||
@@ -5118,7 +5185,7 @@ export default function BatchProcessor({
     if (artifactKey === "1A" || artifactKey === "1B" || artifactKey === "2" || artifactKey === "final") {
       sourceJobId = defaultJobId;
     } else if (artifactKey === "retried") {
-      sourceJobId = retryArtifactJobId;
+      sourceJobId = retryArtifactJobId || retryParentJobId || defaultJobId;
     } else if (artifactKey === "edited") {
       sourceJobId = editedArtifactJobId;
     }
@@ -7734,7 +7801,25 @@ export default function BatchProcessor({
                                   src={previewUrl} 
                                   alt={file.name} 
                                   className={`h-full w-full object-cover transition-opacity duration-300 ease-in-out animate-in fade-in ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
-                                  onLoad={() => clearRetryFlags(i)}
+                                  onLoad={() => {
+                                    const isRetryActiveNow =
+                                      retryingImages.has(i) ||
+                                      retryLoadingImages.has(i) ||
+                                      !!results[i]?.retryInFlight;
+                                    const confirmedRetryUrl =
+                                      toDisplayUrl(results[i]?.retryLatestUrl) ||
+                                      toDisplayUrl(results[i]?.result?.retryLatestUrl) ||
+                                      null;
+                                    const loadedPreviewUrl = toDisplayUrl(previewUrl);
+                                    const isConfirmedRetryResult = !!(
+                                      loadedPreviewUrl &&
+                                      confirmedRetryUrl &&
+                                      loadedPreviewUrl === confirmedRetryUrl
+                                    );
+                                    if (!isRetryActiveNow || isConfirmedRetryResult) {
+                                      clearRetryFlags(i);
+                                    }
+                                  }}
                                   onError={(e) => {
                                     clearRetryFlags(i);
                                     const localFallback = previewUrls[i] || "";
