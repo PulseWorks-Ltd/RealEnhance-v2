@@ -3933,7 +3933,8 @@ export default function BatchProcessor({
             // rather than waiting for another render/poll cycle to infer it.
             if (isRetryChildJob && status === "completed" && !!stage2Url) {
               setDisplayStageByIndex((prev) => {
-                if (prev[idx] === "retried") return prev;
+                // Only default on first selection; do not override user-selected tabs on later refreshes.
+                if (prev[idx]) return prev;
                 return { ...prev, [idx]: "retried" };
               });
             }
@@ -7578,7 +7579,7 @@ export default function BatchProcessor({
                             resolved: isRetryStatusTerminal,
                           });
                         }
-                        const canRetryThisImage = isRetryStatusTerminal;
+                        const canRetryThisImage = !isRetryStatusActive;
                         const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
@@ -7673,22 +7674,29 @@ export default function BatchProcessor({
                         // Image Preview Logic with stage preference (avoid failed/blocked outputs)
                         const disallowStage2 = !!blockedStage && !stage2Url;
                         const stagePreviewUrl = safeStage.url || stage2Url || stage1BUrl || stage1AUrl || null;
-                        const defaultStage: StageKey | undefined = safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined));
-                        const isRegionEditOutput = result?.completionSource === "region-edit" || result?.result?.completionSource === "region-edit";
                         const editedUrl =
+                          toDisplayUrl(result?.latestEditUrl) ||
+                          toDisplayUrl(result?.result?.latestEditUrl) ||
                           toDisplayUrl(result?.editLatestUrl) ||
                           toDisplayUrl(result?.result?.editLatestUrl) ||
-                          (isRegionEditOutput ? finalResultUrl : null);
-                        const retriedUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
+                          null;
+                        const retriedUrl =
+                          toDisplayUrl(result?.latestRetryUrl) ||
+                          toDisplayUrl(result?.result?.latestRetryUrl) ||
+                          toDisplayUrl(result?.retryLatestUrl) ||
+                          toDisplayUrl(result?.result?.retryLatestUrl) ||
+                          null;
+                        const defaultStage: DisplayOutputKey | undefined = retriedUrl
+                          ? "retried"
+                          : editedUrl
+                            ? "edited"
+                            : (safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined)));
                         const selectedStage = (() => {
                           const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
                           if (disallowStage2 && requested === "2") return defaultStage;
                           if (requested === "2" || requested === "1B" || requested === "1A" || requested === "retried" || requested === "edited") {
                             return requested;
                           }
-                          if (isRegionEditOutput && editedUrl) return "edited";
-                          if (!requested && retriedUrl) return "retried";
-                          if (!requested && editedUrl) return "edited";
                           return requested || defaultStage;
                         })();
                         const stage1BLabel = "Decluttered";
@@ -7697,35 +7705,26 @@ export default function BatchProcessor({
                             stage2Url ? { key: "2" as DisplayOutputKey, label: "Staged", url: stage2Url } : null,
                             stage1BUrl ? { key: "1B" as DisplayOutputKey, label: stage1BLabel, url: stage1BUrl } : null,
                             stage1AUrl ? { key: "1A" as DisplayOutputKey, label: "Enhanced", url: stage1AUrl } : null,
-                            retriedUrl ? { key: "retried" as DisplayOutputKey, label: "Retried", url: retriedUrl } : null,
                             editedUrl ? { key: "edited" as DisplayOutputKey, label: "Edited", url: editedUrl } : null,
+                            retriedUrl ? { key: "retried" as DisplayOutputKey, label: "Retried", url: retriedUrl } : null,
                           ].filter(Boolean) as { key: DisplayOutputKey; label: string; url: string | null }[]
                         );
-                        const defaultUrl = isDone ? (resolvedFinalUrl || stagePreviewUrl || previewUrls[i] || null) : (stagePreviewUrl || previewUrls[i] || null);
                         const displayedUrl = (() => {
-                          if (!selectedStage) return defaultUrl;
-                          const selectedUrl = resolveSelectedDisplayUrlLocal(selectedStage, {
+                          if (!selectedStage) return null;
+                          return resolveSelectedDisplayUrlLocal(selectedStage, {
                             retryLatestUrl: retriedUrl,
                             editLatestUrl: editedUrl,
                             stage2Url,
                             stage1BUrl,
                             stage1AUrl,
                           });
-                          if (selectedStage === "retried") return selectedUrl || null;
-                          if (selectedStage === "edited") return selectedUrl || null;
-                          if (selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A") {
-                            return selectedUrl || null;
-                          }
-                          return defaultUrl;
                         })();
                         const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null, {
                           stage2: preEditSnapshot?.stage2 || null,
                           stage1B: preEditSnapshot?.stage1B || null,
                           stage1A: preEditSnapshot?.stage1A || null,
                         });
-                        const bestDisplayUrl = selectedStage === "retried"
-                          ? (bestAvailable.url || displayedUrl || null)
-                          : (bestAvailable.url || displayedUrl || previewUrls[i] || null);
+                        const bestDisplayUrl = selectedStage ? (displayedUrl || null) : (bestAvailable.url || null);
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const persistedOriginalUrl =
                           result?.result?.originalImageUrl ||
@@ -7763,8 +7762,7 @@ export default function BatchProcessor({
                             : (canonicalPreviewBase || progressivePreviewUrl);
                         })();
                         const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
-                        const canEditFromDisplayedOutput = !!previewUrl;
-                        const canEditThisImage = isRetryStatusTerminal && canEditFromDisplayedOutput;
+                        const canEditThisImage = !isRetryStatusActive;
                         const hasFinalArtifactUrl = !!(
                           finalResultUrl ||
                           stage2Url ||
@@ -8077,10 +8075,9 @@ export default function BatchProcessor({
               status === "completed" ||
               status === "complete" ||
               status === "failed";
-            const canRetryFromPreview = isRetryStatusTerminal;
+            const canRetryFromPreview = !isRetryStatusActive;
             const previewEditSource = getEditSourceForIndex(previewImage.index);
-            const canEditFromPreview = !!toDisplayUrl(previewImage.url) || !!previewEditSource.url;
-            const canEditThisPreviewImage = isRetryStatusTerminal && canEditFromPreview;
+            const canEditThisPreviewImage = !isRetryStatusActive;
             return (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">

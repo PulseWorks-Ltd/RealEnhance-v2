@@ -3267,6 +3267,14 @@ async function completePartialJob(params: {
     return;
   }
 
+  const isManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry";
+  const existingRetryOutputs = Array.isArray((currentJob as any)?.retryOutputs)
+    ? ((currentJob as any).retryOutputs as any[]).filter((v) => typeof v === "string" && v.trim().length > 0)
+    : [];
+  const nextRetryOutputs = isManualRetry && resultUrl
+    ? (existingRetryOutputs.includes(resultUrl) ? existingRetryOutputs : [...existingRetryOutputs, resultUrl])
+    : undefined;
+
   await safeWriteJobStatus(jobId, {
     status: "complete",
     success: true,
@@ -3278,6 +3286,9 @@ async function completePartialJob(params: {
     resultUrl,
     imageUrl: resultUrl,
     message: userMessage,
+    latestRetryUrl: isManualRetry ? resultUrl : undefined,
+    retryLatestUrl: isManualRetry ? resultUrl : undefined,
+    retryOutputs: nextRetryOutputs,
     stageUrls: {
       "1A": pub1AUrl ?? null,
       "1B": pub1BUrl ?? null,
@@ -10913,6 +10924,13 @@ All openings must remain identical in position and size to the original image.`;
   }
 
   const finalHardFail = Boolean(unifiedValidation?.hardFail) || Boolean(stage2Blocked);
+  const isManualRetryCompletion = (payload as any).retryType === "manual_retry";
+  const existingRetryOutputs = Array.isArray((latestJobBeforeCompletion as any)?.retryOutputs)
+    ? ((latestJobBeforeCompletion as any).retryOutputs as any[]).filter((v) => typeof v === "string" && v.trim().length > 0)
+    : [];
+  const nextRetryOutputs = isManualRetryCompletion && committedResultUrl
+    ? (existingRetryOutputs.includes(committedResultUrl) ? existingRetryOutputs : [...existingRetryOutputs, committedResultUrl])
+    : undefined;
 
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state
@@ -10934,6 +10952,9 @@ All openings must remain identical in position and size to the original image.`;
     finalOutputUrl: committedResultUrl,
     resultUrl: committedResultUrl,
     imageUrl: committedResultUrl,
+    latestRetryUrl: isManualRetryCompletion ? committedResultUrl : undefined,
+    retryLatestUrl: isManualRetryCompletion ? committedResultUrl : undefined,
+    retryOutputs: nextRetryOutputs,
     stageUrls: {
       "1A": committedStage1AUrl,
       "1B": committedStage1BUrl,
@@ -11385,6 +11406,12 @@ async function handleEditJob(payload: any) {
   // output record.  parentJobId + baselineStageUsed are stored for lineage.
   const editParentJobId = (payload as any).parentJobId || (payload as any).sourceJobId || undefined;
   const baselineStageUsed: string = (payload as any).baselineStage || "unknown";
+  const existingEditOutputs = Array.isArray((editJob as any)?.editOutputs)
+    ? ((editJob as any).editOutputs as any[]).filter((v) => typeof v === "string" && v.trim().length > 0)
+    : [];
+  const nextEditOutputs = existingEditOutputs.includes(pub.url)
+    ? existingEditOutputs
+    : [...existingEditOutputs, pub.url];
 
   nLog(`[edit] parentJobId=${editParentJobId ?? "none"} baselineStage=${baselineStageUsed}`);
 
@@ -11402,6 +11429,9 @@ async function handleEditJob(payload: any) {
       finalOutputUrl: pub.url,
       resultUrl: pub.url,
       imageUrl: pub.url,
+      latestEditUrl: pub.url,
+      editLatestUrl: pub.url,
+      editOutputs: nextEditOutputs,
       meta: {
         ...payload,
         parentJobId: editParentJobId,
@@ -11934,17 +11964,17 @@ const worker = new Worker(
             return;
           }
 
-          const existingStageUrls = (((reJob as any)?.stageUrls || {}) as Record<string, string | null | undefined>);
-          let resolvedStage: "2" | "1A" | "1B" | "edit" = "2";
-          if (regionPayload.type === "region-edit") {
-            resolvedStage = "2";
-          }
+          const existingEditOutputs = Array.isArray((reJob as any)?.editOutputs)
+            ? ((reJob as any).editOutputs as any[]).filter((v) => typeof v === "string" && v.trim().length > 0)
+            : [];
+          const nextEditOutputs = existingEditOutputs.includes(pub.url)
+            ? existingEditOutputs
+            : [...existingEditOutputs, pub.url];
 
           console.log("STAGE WRITE CHECK", {
-            before: existingStageUrls,
+            before: (reJob as any)?.stageUrls || null,
             after: {
-              ...(existingStageUrls || {}),
-              "2": pub.url,
+              ...(((reJob as any)?.stageUrls || {}) as Record<string, string | null | undefined>),
             },
           });
 
@@ -11953,17 +11983,12 @@ const worker = new Worker(
             {
               status: "complete",
               success: true,
-              stage: resolvedStage,
-              currentStage: resolvedStage,
-              finalStage: resolvedStage,
-              resultStage: resolvedStage,
               finalOutputUrl: pub.url,
               resultUrl: pub.url, // Primary result URL (checked by status endpoint)
               imageUrl: pub.url, // Fallback field
-              stageUrls: {
-                ...existingStageUrls,
-                "2": pub.url,
-              },
+              latestEditUrl: pub.url,
+              editLatestUrl: pub.url,
+              editOutputs: nextEditOutputs,
               originalUrl: baseImageUrl, // Return the original input URL
               maskUrl: pubMask.url, // Return the published mask URL
               imageId: regionPayload.imageId, // Include imageId for tracking

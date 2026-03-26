@@ -286,6 +286,10 @@ export interface JobRecord {
 
   result?: ImageJobResult;
   error?: string;
+  latestEditUrl?: string | null;
+  latestRetryUrl?: string | null;
+  editOutputs?: string[];
+  retryOutputs?: string[];
   meta?: {
     scene?: { label: string; confidence: number };
     [k: string]: any;

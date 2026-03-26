@@ -263,112 +263,25 @@ function isStage1ATainted(parentJob: any, parentMeta: any): boolean {
   );
 }
 
-function resolveRetryBaseline(params: {
-  jobId: string;
-  requestedStage: string;
-  sourceStageRaw: string;
-  sourceUrlRaw: string;
-  stageUrls: Record<string, string | null>;
-  retryLatestUrl?: string;
-  editLatestUrl?: string;
-  stage1BWasRequested: boolean;
-  stage1ATainted?: boolean;
-  originalUploadUrl?: string;
-}): {
-  selectedSourceStage: string | null;
-  selectedSourceUrl: string | null;
-  retryFromStage: string | null;
-  stage2OnlyDisabled: boolean;
-  retryMode: "stage_resume" | "full_pipeline_restart";
-  hardFail: { code: string; message: string } | null;
-} {
-  const {
-    jobId,
-    requestedStage,
-    sourceStageRaw,
-    sourceUrlRaw,
-    stageUrls,
-    retryLatestUrl,
-    editLatestUrl,
-    stage1BWasRequested,
-    stage1ATainted,
-    originalUploadUrl,
-  } = params;
+function resolveRetryBaseline(
+  requestedStage: "1A" | "1B" | "2",
+  stageUrls: Record<string, string | null>,
+): { baselineUrl: string; resolvedStage: "1A" | "1B" } {
+  const order: Array<"1A" | "1B" | "2"> = ["1A", "1B", "2"];
+  const index = order.indexOf(requestedStage);
 
-  let selectedSourceStage: string | null = null;
-  let selectedSourceUrl: string | null = null;
-  let retryFromStage: string | null = null;
-  let stage2OnlyDisabled = false;
-  let retryMode: "stage_resume" | "full_pipeline_restart" = "stage_resume";
-  let hardFail: { code: string; message: string } | null = null;
-
-  let selectedKey: string | null = null;
-  const captureKey = (_message: string, payload: any) => {
-    selectedKey = payload?.selectedKey || null;
-  };
-
-  const resolve = (stage: "1A" | "1B" | "2") =>
-    resolveStageUrl(stageUrls, stage, {
-      context: `retry:${requestedStage}`,
-      logger: captureKey,
-    });
-
-  const stage2Url = resolve("2");
-  const stage1BUrl = resolve("1B");
-  const stage1AUrl = resolve("1A");
-
-  const orderedCandidates: Array<{ stage: string; url: string | null | undefined }> = [
-    // Prefer canonical artifacts from parent lineage first.
-    { stage: "retry_latest", url: retryLatestUrl || null },
-    { stage: "edit_latest", url: editLatestUrl || null },
-    { stage: "2", url: stage2Url },
-    { stage: "1B-stage-ready", url: stage1BUrl },
-    { stage: "1A", url: stage1ATainted ? null : stage1AUrl },
-    // Keep explicit client source as fallback to avoid stale UI payload poisoning.
-    { stage: normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "manual_source", url: sourceUrlRaw || null },
-    { stage: "original_upload", url: originalUploadUrl || null },
-  ];
-
-  const selected = orderedCandidates.find((entry) => typeof entry.url === "string" && entry.url.trim().length > 0) || null;
-
-  if (selected) {
-    selectedSourceStage = selected.stage;
-    selectedSourceUrl = selected.url as string;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const stage = order[i];
+    const url = stageUrls[stage];
+    if (typeof url === "string" && url.trim().length > 0) {
+      return {
+        baselineUrl: url,
+        resolvedStage: stage,
+      };
+    }
   }
 
-  if (!selectedSourceUrl) {
-    hardFail = {
-      code: "retry_baseline_not_found",
-      message: "Unable to resolve retry baseline from latest successful artifacts",
-    };
-  }
-
-  if (selectedSourceStage === "original_upload") {
-    retryFromStage = "1A";
-    stage2OnlyDisabled = true;
-    retryMode = "full_pipeline_restart";
-  } else if (selectedSourceStage === "1A" && requestedStage === "2") {
-    retryFromStage = "1B";
-    stage2OnlyDisabled = true;
-  }
-
-  const keysFound = Object.keys(stageUrls).filter((key) => {
-    const value = stageUrls[key];
-    return typeof value === "string" && value.trim().length > 0;
-  });
-
-  console.log(
-    `[retry-baseline] jobId=${jobId} requestedStage=${requestedStage || "default"} stage1BRequested=${stage1BWasRequested} keysFound=${JSON.stringify(keysFound)} selectedKey=${selectedKey || "none"} selectedUrl=${selectedSourceUrl || "none"} fallback=${stage2OnlyDisabled} reason=${hardFail ? hardFail.code : (selectedSourceUrl ? "alias-match" : "not-found")}`,
-  );
-
-  return {
-    selectedSourceStage,
-    selectedSourceUrl,
-    retryFromStage,
-    stage2OnlyDisabled,
-    retryMode,
-    hardFail,
-  };
+  throw new Error("No valid baseline found for retry");
 }
 
 export function retrySingleRouter() {
@@ -423,11 +336,11 @@ export function retrySingleRouter() {
       const effectiveAllowStaging = requestedStage === "2" ? true : !!allowStaging;
       const useStageSource = !!sourceUrlRaw;
 
-      if (!useStageSource && !parentJobId) {
+      if (!parentJobId) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_requires_stage_source",
-          message: "Manual retry requires a parent job or explicit source URL to resolve stage baseline",
+          message: "Manual retry requires a parent job to resolve canonical stage baseline",
         });
       }
 
@@ -472,10 +385,6 @@ export function retrySingleRouter() {
         if (file && (file as any).path) {
           await fs.unlink((file as any).path).catch(() => {});
         }
-
-        // Defaults when no parent metadata is available
-        selectedSourceStage = normalizeStageLabel(sourceStageRaw) || sourceStageRaw || "stage2";
-        selectedSourceUrl = sourceUrlRaw || undefined;
 
         if (parentJobId) {
           [parentJob, parentMeta] = await Promise.all([
@@ -533,16 +442,6 @@ export function retrySingleRouter() {
 
           const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
           const metaStageUrls = parentMeta?.stageUrls;
-          const retryLatestUrl =
-            (parentJob as any)?.retryLatestUrl ||
-            (parentMeta as any)?.retryLatestUrl ||
-            (parentMeta as any)?.result?.retryLatestUrl ||
-            null;
-          const editLatestUrl =
-            (parentJob as any)?.editLatestUrl ||
-            (parentMeta as any)?.editLatestUrl ||
-            (parentMeta as any)?.result?.editLatestUrl ||
-            null;
           const originalUploadUrl =
             (parentJob as any)?.payload?.remoteOriginalUrl ||
             (parentJob as any)?.remoteOriginalUrl ||
@@ -564,50 +463,42 @@ export function retrySingleRouter() {
             || !!(parentJob as any)?.metadata?.requestedStages?.stage1b
             || !!(parentJob as any)?.options?.declutter;
 
-          const baseline = resolveRetryBaseline({
-            jobId: parentJobId,
-            requestedStage,
-            sourceStageRaw,
-            sourceUrlRaw,
-            stageUrls: allStageUrls,
-            retryLatestUrl: retryLatestUrl || undefined,
-            editLatestUrl: editLatestUrl || undefined,
-            stage1BWasRequested,
-            stage1ATainted: isStage1ATainted(parentJob, parentMeta),
-            originalUploadUrl: originalUploadUrl || undefined,
-          });
+          const canonicalStageUrls: Record<"1A" | "1B" | "2", string | null> = {
+            "1A": resolveStageUrl(allStageUrls, "1A"),
+            "1B": resolveStageUrl(allStageUrls, "1B"),
+            "2": resolveStageUrl(allStageUrls, "2"),
+          };
 
-          if (baseline.hardFail) {
+          let baseline: { baselineUrl: string; resolvedStage: "1A" | "1B" };
+          try {
+            baseline = resolveRetryBaseline(requestedStage, canonicalStageUrls);
+          } catch {
             return res.status(409).json({
               success: false,
-              error: baseline.hardFail.code,
-              message: baseline.hardFail.message,
+              error: "retry_baseline_not_found",
+              message: "No valid baseline found for retry",
             });
           }
 
-          selectedSourceStage = baseline.selectedSourceStage || undefined;
-          selectedSourceUrl = baseline.selectedSourceUrl || undefined;
-          retryFromStage = baseline.retryFromStage || undefined;
-          stage2OnlyDisabled = baseline.stage2OnlyDisabled;
-          retryMode = baseline.retryMode;
+          selectedSourceStage = baseline.resolvedStage;
+          selectedSourceUrl = baseline.baselineUrl;
+          retryFromStage = requestedStage === "2" && baseline.resolvedStage === "1A" ? "1B" : undefined;
+          stage2OnlyDisabled = requestedStage === "2" && baseline.resolvedStage === "1A";
+          retryMode = "stage_resume";
 
-          if (retryMode === "full_pipeline_restart") {
-            console.log(`[RETRY_FALLBACK_FULL_PIPELINE] job=${parentJobId} reason=no_stage1_baseline source=original_upload`);
-          }
+          console.log("RETRY_BASELINE_FINAL", {
+            requestedStage,
+            resolvedStage: baseline.resolvedStage,
+            baselineUrl: baseline.baselineUrl,
+          });
 
           if (stage2OnlyRequested && retryMode !== "full_pipeline_restart") {
             const hasStage1BBaseline =
               !!selectedSourceStage &&
-              (selectedSourceStage === "1B" ||
-                selectedSourceStage === "2" ||
-                selectedSourceStage === "retry_latest" ||
-                selectedSourceStage === "edit_latest" ||
-                selectedSourceStage === "1B-light" ||
-                selectedSourceStage === "1B-stage-ready" ||
-                selectedSourceStage.toLowerCase().startsWith("1b"));
+              selectedSourceStage === "1B";
             const hasStage1ABaseline =
               !!selectedSourceStage &&
-              (selectedSourceStage === "1A" || selectedSourceStage.toLowerCase().startsWith("1a"));
+              selectedSourceStage === "1A";
             const canUseStage1AForStage2 = hasStage1ABaseline && (stage2OnlyDisabled || !stage1BWasRequested);
 
             if (!selectedSourceUrl || (!hasStage1BBaseline && !canUseStage1AForStage2)) {
@@ -622,10 +513,7 @@ export function retrySingleRouter() {
           // ✅ FIX: Set stage1BWasRequested=true when resolved baseline is Stage 1B
           // This ensures worker doesn't fall back to 1A when 1B is the intended baseline
           if (selectedSourceStage &&
-              (selectedSourceStage === "1B" || 
-               selectedSourceStage === "1B-light" || 
-               selectedSourceStage === "1B-stage-ready" ||
-               selectedSourceStage.startsWith("1b"))) {
+              selectedSourceStage === "1B") {
             stage1BWasRequested = true;
           }
           
@@ -635,17 +523,20 @@ export function retrySingleRouter() {
           
           console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} → sourceStage=${selectedSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
           
-          const collectedUrls = Object.values(allStageUrls || {}).filter(Boolean) as string[];
+          const collectedUrls = Object.values(canonicalStageUrls || {}).filter(Boolean) as string[];
 
           if (retryMode !== "full_pipeline_restart" && collectedUrls.length > 0 && !collectedUrls.includes(selectedSourceUrl)) {
             return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Selected source URL does not match recorded job outputs" });
           }
 
           if (collectedUrls.length === 0) {
-            // Fallback to history lookup; allow but warn if missing
             const history = parentMeta?.imageId ? await findByPublicUrlRedis(sessUser.id, selectedSourceUrl).catch(() => null) : null;
             if (!history) {
-              console.warn("[RETRY_META_MISSING_ALLOW]", { jobId: parentJobId, reason: "no_stage_urls_or_history", selectedSourceUrl });
+              return res.status(409).json({
+                success: false,
+                error: "retry_baseline_not_found",
+                message: "No canonical stage outputs found for retry baseline",
+              });
             }
           }
         }
@@ -659,32 +550,22 @@ export function retrySingleRouter() {
         }
 
         if (
-          retryMode !== "full_pipeline_restart" &&
           selectedSourceStage &&
-          selectedSourceStage !== "original_upload" &&
           selectedSourceUrl
         ) {
           const baselineReachable = await isRetrySourceReachable(selectedSourceUrl);
-          if (!baselineReachable && originalUploadUrlCandidate) {
-            selectedSourceStage = "original_upload";
-            selectedSourceUrl = originalUploadUrlCandidate;
-            retryFromStage = "1A";
-            stage2OnlyDisabled = true;
-            retryMode = "full_pipeline_restart";
-            console.log(`[RETRY_FALLBACK_FULL_PIPELINE] job=${parentJobId || "unknown"} reason=baseline_url_unreachable source=original_upload`);
+          if (!baselineReachable) {
+            return res.status(409).json({
+              success: false,
+              error: "retry_baseline_unreachable",
+              message: "Resolved retry baseline URL is not reachable",
+            });
           }
         }
 
         const copyCandidates: Array<{ stage: string; url: string }> = [];
         if (selectedSourceStage && selectedSourceUrl) {
           copyCandidates.push({ stage: selectedSourceStage, url: selectedSourceUrl });
-        }
-        if (
-          originalUploadUrlCandidate &&
-          selectedSourceUrl &&
-          originalUploadUrlCandidate !== selectedSourceUrl
-        ) {
-          copyCandidates.push({ stage: "original_upload", url: originalUploadUrlCandidate });
         }
 
         let copied = false;
@@ -710,13 +591,6 @@ export function retrySingleRouter() {
             selectedSourceStage = candidate.stage;
             selectedSourceUrl = candidate.url;
             copied = true;
-
-            if (candidate.stage === "original_upload" && idx > 0) {
-              retryFromStage = "1A";
-              stage2OnlyDisabled = true;
-              retryMode = "full_pipeline_restart";
-              console.log(`[RETRY_FALLBACK_FULL_PIPELINE] job=${parentJobId || "unknown"} reason=baseline_artifact_missing source=original_upload`);
-            }
           } catch (err: any) {
             lastCopyError = err?.message || "copy_failed";
           }
@@ -886,34 +760,11 @@ export function retrySingleRouter() {
         stage1BWasRequested = true;
       }
 
-      const normalizedSelectedStage = String(selectedSourceStage || "").trim().toLowerCase();
-      const stage2LikeSelection =
-        normalizedSelectedStage === "2" ||
-        normalizedSelectedStage === "retry_latest" ||
-        normalizedSelectedStage === "edit_latest";
-
-      const resolvedBaselineStage: "1A" | "1B" | "original_upload" = stage2LikeSelection
-        ? (stage1BFromParent
-            ? "1B"
-            : (stage1AFromParent
-                ? "1A"
-                : "original_upload"))
-        : normalizeBaselineSourceStage(selectedSourceStage);
-      const selectedLooksLike1A = normalizedSelectedStage.startsWith("1a");
-      const selectedLooksLike1B =
-        normalizedSelectedStage === "1b" ||
-        normalizedSelectedStage === "2" ||
-        normalizedSelectedStage === "retry_latest" ||
-        normalizedSelectedStage === "edit_latest" ||
-        normalizedSelectedStage === "1b-light" ||
-        normalizedSelectedStage === "1b-stage-ready" ||
-        normalizedSelectedStage.startsWith("1b");
+      const resolvedBaselineStage: "1A" | "1B" = selectedSourceStage === "1B" ? "1B" : "1A";
       const resolvedBaselineUrl =
         resolvedBaselineStage === "1A"
-          ? (stage1AFromParent || (selectedLooksLike1A ? selectedSourceUrl : undefined))
-          : resolvedBaselineStage === "1B"
-            ? (stage1BFromParent || (selectedLooksLike1B ? selectedSourceUrl : undefined))
-            : (originalUploadUrlCandidate || (normalizedSelectedStage === "original_upload" ? selectedSourceUrl : undefined));
+          ? stage1AFromParent
+          : stage1BFromParent;
       const resolvedExecutionPlan = {
         runStage1A: effectiveStagesToRun.includes("1A"),
         runStage1B: effectiveStagesToRun.includes("1B"),
@@ -928,23 +779,12 @@ export function retrySingleRouter() {
         const hasCanonicalBaselineArtifact =
           resolvedExecutionPlan.stage2Baseline === "1A"
             ? !!stage1AFromParent
-            : resolvedExecutionPlan.stage2Baseline === "1B"
-              ? !!stage1BFromParent
-              : !!originalUploadUrlCandidate;
-        const hasDeterministicSelectedBaseline =
-          !!selectedSourceUrl &&
-          !!resolvedExecutionPlan.baselineUrl &&
-          selectedSourceUrl === resolvedExecutionPlan.baselineUrl;
-        const allowSelectedBaselineFallback =
-          !hasCanonicalBaselineArtifact &&
-          hasDeterministicSelectedBaseline &&
-          retryMode !== "full_pipeline_restart";
+            : !!stage1BFromParent;
         const hasBaselineUrl = !!resolvedExecutionPlan.baselineUrl;
         const hasBaselineStage =
           resolvedExecutionPlan.stage2Baseline === "1A"
-          || resolvedExecutionPlan.stage2Baseline === "1B"
-          || resolvedExecutionPlan.stage2Baseline === "original_upload";
-        if (!hasBaselineUrl || !hasBaselineStage || (!hasCanonicalBaselineArtifact && !allowSelectedBaselineFallback)) {
+          || resolvedExecutionPlan.stage2Baseline === "1B";
+        if (!hasBaselineUrl || !hasBaselineStage || !hasCanonicalBaselineArtifact) {
           return res.status(409).json({
             success: false,
             error: "manual_retry_stage2only_payload_invalid",
@@ -952,23 +792,10 @@ export function retrySingleRouter() {
           });
         }
 
-        if (allowSelectedBaselineFallback) {
-          console.warn("[RETRY_BASELINE_FALLBACK_SELECTED]", {
-            parentJobId,
-            requestedStage,
-            selectedSourceStage,
-            selectedSourceUrl: selectedSourceUrl?.substring(0, 120),
-            stage2Baseline: resolvedExecutionPlan.stage2Baseline,
-            reason: "canonical_stage_url_missing_but_selected_baseline_is_deterministic",
-          });
-        }
-
         const expectedCanonicalBaselineUrl =
           resolvedExecutionPlan.stage2Baseline === "1A"
             ? stage1AFromParent
-            : resolvedExecutionPlan.stage2Baseline === "1B"
-              ? stage1BFromParent
-              : originalUploadUrlCandidate;
+            : stage1BFromParent;
         if (
           expectedCanonicalBaselineUrl &&
           resolvedExecutionPlan.baselineUrl &&
