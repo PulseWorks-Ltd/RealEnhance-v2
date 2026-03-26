@@ -850,7 +850,8 @@ const getRetryStatusText = (stage?: "1A" | "1B" | "2" | "full" | null): string =
 
 type ProcessingMessageStage = "stage1a" | "stage1b" | "stage2" | "validator" | "retry";
 type BatchPhaseState = "UPLOADING" | "QUEUE_WAIT" | "PROCESSING";
-type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "retry" | "completed";
+type DisplayStageKey = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "finalizing" | "retry" | "completed";
+type LifecycleProgressPhase = "uploading" | "stage1a" | "stage1b" | "stage2" | "validator" | "finalizing";
 
 const MESSAGE_ROTATION_MIN_MS = 7_000;
 const MESSAGE_ROTATION_MAX_MS = 10_000;
@@ -915,6 +916,7 @@ function parseExplicitDisplayStage(raw: unknown): DisplayStageKey | null {
   const text = String(raw || "").toLowerCase();
   if (!text) return null;
   if (text.includes("retry")) return "retry";
+  if (text.includes("finaliz") || text.includes("publish")) return "finalizing";
   if (text.includes("valid") || text.includes("review") || text.includes("compliance") || text.includes("audit")) return "validator";
   if (text.includes("1b") || text.includes("stage1b") || text.includes("declutter")) return "stage1b";
   if (text.includes("2") || text.includes("stage2") || text.includes("staging") || text.includes("design")) return "stage2";
@@ -939,6 +941,7 @@ function resolveActiveStageMessage(params: {
   const stage = normalizeCurrentStage(currentStage);
 
   if (stage.includes("retry")) return "Retrying enhancement...";
+  if (stage.includes("finaliz") || stage.includes("publish")) return "Finalizing result...";
   if (stage.includes("valid") || stage.includes("review") || stage.includes("compliance")) {
     return "Checking quality...";
   }
@@ -989,6 +992,10 @@ function resolveDisplayStageKey(params: {
   if (isRetryActive) return "retry";
   if (isUploading || status === "queued" || status === "waiting") return "uploading";
   if (
+    stageText.includes("finaliz") ||
+    stageText.includes("publish")
+  ) return "finalizing";
+  if (
     stageText.includes("1b") ||
     stageText.includes("stage1b") ||
     stageText.includes("declutter")
@@ -1022,23 +1029,80 @@ function resolveDisplayStageKey(params: {
   return "stage1a";
 }
 
-function toProcessingMessageStage(key: DisplayStageKey): ProcessingMessageStage {
+function toProcessingMessageStage(key: DisplayStageKey | LifecycleProgressPhase): ProcessingMessageStage {
   if (key === "stage1b") return "stage1b";
   if (key === "stage2") return "stage2";
-  if (key === "validator") return "validator";
+  if (key === "validator" || key === "finalizing") return "validator";
   if (key === "retry") return "retry";
   return "stage1a";
 }
 
-const STAGE_PROGRESS: Record<string, number> = {
-  uploading: 10,
-  stage1a: 35,
-  stage1b: 60,
-  stage2: 90,
-  validator: 100,
-  retry: 70,
-  completed: 100,
+const LIFECYCLE_PROGRESS_BANDS: Record<LifecycleProgressPhase, { min: number; max: number; fallback: number }> = {
+  uploading: { min: 0, max: 30, fallback: 20 },
+  stage1a: { min: 30, max: 45, fallback: 38 },
+  stage1b: { min: 45, max: 60, fallback: 55 },
+  stage2: { min: 60, max: 80, fallback: 72 },
+  validator: { min: 80, max: 95, fallback: 88 },
+  finalizing: { min: 95, max: 99, fallback: 97 },
 };
+
+function mapRetryStageToLifecyclePhase(retryStage?: StageKey | "full" | null): LifecycleProgressPhase | null {
+  if (retryStage === "1A") return "stage1a";
+  if (retryStage === "1B") return "stage1b";
+  if (retryStage === "2" || retryStage === "full") return "stage2";
+  return null;
+}
+
+function resolveLifecycleProgressPhase(params: {
+  displayStageKey: DisplayStageKey;
+  currentStage: string;
+  stageSignal?: string;
+  isRetryActive: boolean;
+  retryStage?: StageKey | "full" | null;
+}): LifecycleProgressPhase {
+  const { displayStageKey, currentStage, stageSignal, isRetryActive, retryStage } = params;
+  const stageText = `${currentStage || ""} ${stageSignal || ""}`.toLowerCase();
+
+  if (stageText.includes("finaliz") || stageText.includes("publish")) return "finalizing";
+  if (
+    stageText.includes("valid") ||
+    stageText.includes("review") ||
+    stageText.includes("compliance") ||
+    stageText.includes("audit")
+  ) {
+    return "validator";
+  }
+  if (isRetryActive) {
+    const retryPhase = mapRetryStageToLifecyclePhase(retryStage);
+    if (retryPhase) return retryPhase;
+  }
+  if (displayStageKey === "retry") {
+    return mapRetryStageToLifecyclePhase(retryStage) || "stage2";
+  }
+  if (displayStageKey === "completed" || displayStageKey === "finalizing") return "finalizing";
+  if (displayStageKey === "uploading") return "uploading";
+  if (displayStageKey === "stage1a") return "stage1a";
+  if (displayStageKey === "stage1b") return "stage1b";
+  if (displayStageKey === "validator") return "validator";
+  return "stage2";
+}
+
+function resolveLifecycleProgress(params: {
+  phase: LifecycleProgressPhase;
+  rawProgress?: number | null;
+  isDone: boolean;
+}): number {
+  const { phase, rawProgress, isDone } = params;
+  if (isDone) return 100;
+
+  const band = LIFECYCLE_PROGRESS_BANDS[phase];
+  if (typeof rawProgress === "number" && Number.isFinite(rawProgress)) {
+    const normalized = Math.round(rawProgress);
+    return Math.max(band.min, Math.min(band.max, normalized));
+  }
+
+  return band.fallback;
+}
 
 const STAGE_TITLES: Record<string, string> = {
   uploading: "Preparing Image",
@@ -1046,6 +1110,7 @@ const STAGE_TITLES: Record<string, string> = {
   stage1b: "Simplifying Space",
   stage2: "Applying Design",
   validator: "Quality Review",
+  finalizing: "Finalizing Output",
   retry: "Layout Refinement",
   completed: "Enhancement Complete",
 };
@@ -1146,6 +1211,7 @@ export default function BatchProcessor({
   const messageTimerByImageRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const messageStageByImageRef = useRef<Record<number, ProcessingMessageStage>>({});
   const lastKnownDisplayStageByImageRef = useRef<Record<number, DisplayStageKey>>({});
+  const lastDisplayedProgressByImageRef = useRef<Record<number, number>>({});
   const currentMessageByImageRef = useRef<Record<number, string>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
@@ -1317,7 +1383,14 @@ export default function BatchProcessor({
         lastKnownDisplayStageByImageRef.current[index] = displayStageKey;
       }
 
-      const messageStage = toProcessingMessageStage(resolvedDisplayStage);
+      const lifecycleProgressPhase = resolveLifecycleProgressPhase({
+        displayStageKey: resolvedDisplayStage,
+        currentStage,
+        stageSignal: rawPipelineStatus,
+        isRetryActive,
+        retryStage: item?.retryStage,
+      });
+      const messageStage = toProcessingMessageStage(lifecycleProgressPhase);
 
       if (!messageTimerByImageRef.current[index] || messageStageByImageRef.current[index] !== messageStage) {
         clearMessageTimer(index);
@@ -1343,6 +1416,7 @@ export default function BatchProcessor({
       messageTimerByImageRef.current = {};
       messageStageByImageRef.current = {};
       lastKnownDisplayStageByImageRef.current = {};
+      lastDisplayedProgressByImageRef.current = {};
       currentMessageByImageRef.current = {};
     };
   }, []);
@@ -1350,6 +1424,7 @@ export default function BatchProcessor({
   useEffect(() => {
     if (runState === "idle" && results.length === 0) {
       lastKnownDisplayStageByImageRef.current = {};
+      lastDisplayedProgressByImageRef.current = {};
     }
   }, [runState, results.length]);
 
@@ -5424,6 +5499,7 @@ export default function BatchProcessor({
     retryInFlightRef.current.add(imageIndex);
     setRetryingImages(prev => new Set(prev).add(imageIndex));
     setRetryLoadingImages(prev => new Set(prev).add(imageIndex));
+    delete lastDisplayedProgressByImageRef.current[imageIndex];
 
     // ✅ CRITICAL: Immediately clear ALL error states and UI badges for this image
     setResults(prev => prev.map((r, i) => {
@@ -7705,15 +7781,38 @@ export default function BatchProcessor({
                           lastKnownDisplayStageByImageRef.current[i] = backendDisplayStage;
                         }
 
-                        const stageMessageKey = toProcessingMessageStage(resolvedDisplayStageKey);
+                        const rawProgressValue = typeof result?.progress === "number"
+                          ? result.progress
+                          : typeof result?.result?.progress === "number"
+                          ? result.result.progress
+                          : typeof result?.progressPct === "number"
+                          ? result.progressPct
+                          : typeof result?.result?.progressPct === "number"
+                          ? result.result.progressPct
+                          : null;
+                        const lifecycleProgressPhase = resolveLifecycleProgressPhase({
+                          displayStageKey: resolvedDisplayStageKey,
+                          currentStage,
+                          stageSignal: rawPipelineStatus,
+                          isRetryActive,
+                          retryStage: result?.retryStage,
+                        });
+                        const stageMessageKey = toProcessingMessageStage(lifecycleProgressPhase);
                         const rotatingMessages = STAGE_MESSAGES[stageMessageKey] || STAGE_MESSAGES.stage1a;
                         const rotatingMessage = messageByImage[i] || rotatingMessages[0];
+                        const resolvedProgressValue = resolveLifecycleProgress({
+                          phase: lifecycleProgressPhase,
+                          rawProgress: rawProgressValue,
+                          isDone,
+                        });
+                        const previousProgressValue = lastDisplayedProgressByImageRef.current[i];
                         const stageProgressValue = isDone
                           ? 100
-                          : (STAGE_PROGRESS[resolvedDisplayStageKey] ?? (isProcessing ? 35 : 0));
+                          : Math.max(previousProgressValue ?? 0, resolvedProgressValue);
+                        lastDisplayedProgressByImageRef.current[i] = stageProgressValue;
                         const stageTitle = isDone
                           ? STAGE_TITLES.completed
-                          : (STAGE_TITLES[resolvedDisplayStageKey] || STAGE_TITLES.stage1a);
+                          : (STAGE_TITLES[lifecycleProgressPhase] || STAGE_TITLES[resolvedDisplayStageKey] || STAGE_TITLES.stage1a);
                         const baseProcessingMessage = resolveActiveStageMessage({
                           currentStage,
                           stage2Expected,
