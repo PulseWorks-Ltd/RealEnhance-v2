@@ -39,7 +39,10 @@ DETERMINISTIC MAPPING (NO AMBIGUITY)
 Window treatment TYPE rule:
 - curtain -> curtain: allowed
 - blinds -> blinds: allowed
-- curtain <-> blinds: hard fail
+- blinds -> blinds + curtains: allowed (additive)
+- curtains -> curtains + blinds: allowed (additive)
+- blinds -> curtains: hard fail (replacement)
+- curtains -> blinds: hard fail (replacement)
 - treatment removed: hard fail
 
 Tier 3 — FLEXIBLE (must not fail)
@@ -68,6 +71,12 @@ REGION VISIBILITY DEFINITION (MANDATORY)
 Treat as REMOVED only when:
 - replacement surface is clearly visible (for example clear wall infill), AND
 - no plausible occlusion explanation exists.
+
+OPENING OCCLUSION VS GEOMETRY RULE (MANDATORY)
+- If a window appears smaller due to curtains, blinds, or soft furnishings covering part of it,
+  treat this as occlusion (NOT structural opening change).
+- Classify opening resize/removal only when actual opening geometry changed:
+  frame/edge boundary moved, opening shape changed, or opening position changed.
 
 UNCERTAINTY BIAS SCOPE (MANDATORY)
 - If uncertain, classify as PRESERVED only for occlusion/out_of_frame questions.

@@ -9437,77 +9437,205 @@ All openings must remain identical in position and size to the original image.`;
         return CRITICAL_ISSUES.has(issueType);
       };
 
+      const OPENING_OCCLUSION_GUARD_KEYWORDS = [
+        "curtain",
+        "curtains",
+        "blind",
+        "blinds",
+        "drape",
+        "drapes",
+        "window covering",
+        "window coverings",
+        "window_covering",
+        "window_coverings",
+        "soft furnishing",
+        "soft furnishings",
+      ];
+
+      const normalizeOcclusionGuardText = (value: string): string =>
+        String(value || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[|:,;]+/g, " ")
+          .replace(/\s+/g, " ");
+
+      const hasOpeningOcclusionKeyword = (value: string): boolean => {
+        const normalized = normalizeOcclusionGuardText(value);
+        if (!normalized) return false;
+        return OPENING_OCCLUSION_GUARD_KEYWORDS.some((keyword) => normalized.includes(keyword));
+      };
+
+      const isOpeningEscalationCandidate = (signal: SpecialistIssueSignal): boolean => {
+        const issueType = signal.issueType as ValidationIssueType | undefined;
+        if (
+          issueType === ISSUE_TYPES.OPENING_REMOVED ||
+          issueType === ISSUE_TYPES.OPENING_RESIZED_MAJOR ||
+          issueType === ISSUE_TYPES.OPENING_RESIZED_MINOR
+        ) {
+          return true;
+        }
+
+        const detail = [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])]
+          .map((part) => normalizeOcclusionGuardText(part))
+          .join(" ");
+        return detail.includes("opening_removed") || detail.includes("opening_resized") || detail.includes("opening_resize");
+      };
+
+      const shouldApplyOpeningOcclusionGuard = (
+        signal: SpecialistIssueSignal,
+        allSignals: SpecialistIssueSignal[],
+        allAdvisories: string[]
+      ): { apply: boolean; occlusionHints: string[] } => {
+        if (!isOpeningEscalationCandidate(signal)) {
+          return { apply: false, occlusionHints: [] };
+        }
+
+        const occlusionHints = new Set<string>();
+
+        const collectIfOcclusionHint = (source: string, value: string) => {
+          const normalized = normalizeOcclusionGuardText(value);
+          if (!normalized) return;
+          if (hasOpeningOcclusionKeyword(normalized)) {
+            occlusionHints.add(`${source}:${normalized.slice(0, 120)}`);
+          }
+        };
+
+        collectIfOcclusionHint("opening.reason", signal.reason || "");
+        collectIfOcclusionHint("opening.subtype", signal.subtype || "");
+        (signal.advisorySignals || []).forEach((entry) => collectIfOcclusionHint("opening.advisory", String(entry || "")));
+
+        allAdvisories.forEach((entry) => collectIfOcclusionHint("specialist.advisory", String(entry || "")));
+
+        allSignals
+          .filter((entry) => entry.validator === "fixtures" || entry.validator === "openings")
+          .forEach((entry) => {
+            collectIfOcclusionHint(`${entry.validator}.reason`, entry.reason || "");
+            collectIfOcclusionHint(`${entry.validator}.subtype`, entry.subtype || "");
+            (entry.advisorySignals || []).forEach((advisory) =>
+              collectIfOcclusionHint(`${entry.validator}.advisory`, String(advisory || ""))
+            );
+          });
+
+        if (jobContext.curtainRailLikely === true) {
+          occlusionHints.add("scene:curtain_rail_likely");
+        }
+
+        return {
+          apply: occlusionHints.size > 0,
+          occlusionHints: Array.from(occlusionHints),
+        };
+      };
+
       const categoricalBlock = STAGE2_ENABLE_ISSUETYPE_HARDFAIL
         ? specialistIssueSignals.find(shouldHardFailFromIssueType)
         : undefined;
 
       if (categoricalBlock) {
+        const openingOcclusionGuard = shouldApplyOpeningOcclusionGuard(
+          categoricalBlock,
+          specialistIssueSignals,
+          specialistAdvisorySignals
+        );
+
+        if (openingOcclusionGuard.apply) {
+          const originalIssueType = categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
+          categoricalBlock.issueType = ISSUE_TYPES.OPENING_OCCLUSION;
+          specialistAdvisorySignals.push("openings:opening_occlusion_guard_applied");
+
+          nLog("[OPENING_OCCLUSION_GUARD_APPLIED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: categoricalBlock.validator,
+            originalIssueType,
+            downgradedIssueType: ISSUE_TYPES.OPENING_OCCLUSION,
+            reason: categoricalBlock.reason,
+            confidence: categoricalBlock.confidence,
+            occlusionHints: openingOcclusionGuard.occlusionHints,
+            action: "downgrade_to_advisory_continue_unified",
+          });
+        }
+      }
+
+      if (categoricalBlock) {
         const blockedIssueType = (categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE) as ValidationIssueType;
-        const blockedReason = normalizeValidatorReason(categoricalBlock.reason || "issue_type_gate_block");
-        const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
+        if (blockedIssueType === ISSUE_TYPES.OPENING_OCCLUSION) {
+          nLog("[STAGE2_ISSUETYPE_HARDFAIL_SKIPPED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "opening_occlusion_guard",
+            reason: categoricalBlock.reason,
+            confidence: categoricalBlock.confidence,
+            advisorySignals: specialistAdvisorySignals,
+          });
+        } else {
+          const blockedReason = normalizeValidatorReason(categoricalBlock.reason || "issue_type_gate_block");
+          const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
 
-        nLog("[STAGE2_ISSUETYPE_HARDFAIL]", {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          issueType: blockedIssueType,
-          reason: categoricalBlock.reason,
-          confidence: categoricalBlock.confidence,
-          source: "critical_issues_gate",
-          action: "blocked_pre_unified",
-        });
+          nLog("[STAGE2_ISSUETYPE_HARDFAIL]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType: blockedIssueType,
+            reason: categoricalBlock.reason,
+            confidence: categoricalBlock.confidence,
+            source: "critical_issues_gate",
+            action: "blocked_pre_unified",
+          });
 
-        // Explicitly mark this attempt as failed by pre-unified issueType gate.
-        unifiedValidation = {
-          passed: false,
-          hardFail: true,
-          blockSource: "critical_issues_gate" as any,
-          reasons: [decisionReason],
-          warnings: [decisionReason],
-          issueType: blockedIssueType,
-          issueTier: classifyIssueTier(blockedIssueType),
-          score: 0,
-        } as any;
+          // Explicitly mark this attempt as failed by pre-unified issueType gate.
+          unifiedValidation = {
+            passed: false,
+            hardFail: true,
+            blockSource: "critical_issues_gate" as any,
+            reasons: [decisionReason],
+            warnings: [decisionReason],
+            issueType: blockedIssueType,
+            issueTier: classifyIssueTier(blockedIssueType),
+            score: 0,
+          } as any;
 
-        setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+          setStage2AttemptValidation(path2, "gemini", [decisionReason]);
 
-        if (attempt < MAX_STAGE2_RETRIES) {
+          if (attempt < MAX_STAGE2_RETRIES) {
+            logRefreshValidationTrace({
+              specialistHardFail: true,
+              geminiDecision: "FAIL",
+              finalDecision: "RETRY",
+              reason: decisionReason,
+            });
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: normalizeValidatorReason(decisionReason),
+            });
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `critical_issues_gate_exhausted:${normalizeValidatorReason(decisionReason)}`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
           logRefreshValidationTrace({
             specialistHardFail: true,
             geminiDecision: "FAIL",
             finalDecision: "RETRY",
             reason: decisionReason,
           });
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: normalizeValidatorReason(decisionReason),
-          });
-          continue;
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
         }
-
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = `critical_issues_gate_exhausted:${normalizeValidatorReason(decisionReason)}`;
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        logRefreshValidationTrace({
-          specialistHardFail: true,
-          geminiDecision: "FAIL",
-          finalDecision: "RETRY",
-          reason: decisionReason,
-        });
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
       }
 
       unifiedValidation = await runUnifiedValidation({
