@@ -3580,7 +3580,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let preflightCancelSource: "job_record" | "redis" | "job_record+redis" | null = null;
 
   type RoutingSnapshot = {
-    authority: "localEmptyBypass" | "gemini";
+    authority: "localEmptyBypass" | "gemini" | "exteriorClutter";
     localEmpty: boolean;
     geminiHasFurniture: boolean | null;
     geminiConfidence: number | null;
@@ -6340,9 +6340,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Order: local empty prefilter -> (if not empty) Gemini furnished confirmation.
   const hasVirtualStage = payload.options.virtualStage;
   const isInteriorScene = sceneLabel === "interior";
+  const isExteriorScene = sceneLabel === "exterior";
   const isStage2Only = hasVirtualStage && (payload.options as any).stage2Only === true;
   const shouldResolveFurnishedGate = hasVirtualStage && isInteriorScene;
-  if (shouldResolveFurnishedGate) {
+  const shouldResolveExteriorDeclutter = isExteriorScene;
+  if (shouldResolveFurnishedGate || shouldResolveExteriorDeclutter) {
     let routingSnapshot = frozenRoutingSnapshot;
 
     if (routingSnapshot) {
@@ -6367,7 +6369,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const stage1ABuffer = await fs.promises.readFile(path1A);
         const localEmpty = await isRoomEmpty(stage1ABuffer);
 
-        if (localEmpty) {
+        if (shouldResolveExteriorDeclutter) {
+          const ai = getGeminiClient();
+          const geminiAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
+          const hasSurfaceClutter = geminiAnalysis?.hasSurfaceClutter === true;
+          const hasLoosePortableItems = geminiAnalysis?.hasLoosePortableItems === true;
+          const hasCounterClutter = geminiAnalysis?.hasCounterClutter === true;
+          const hasClutter = hasSurfaceClutter || hasLoosePortableItems || hasCounterClutter;
+
+          routingSnapshot = {
+            authority: "exteriorClutter",
+            localEmpty: false,
+            geminiHasFurniture: null,
+            geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
+            hasClutter,
+            skipStage1B: false,
+            declutterMode: hasClutter ? "light" : null,
+            stage1BRequired: hasClutter,
+          };
+
+          nLog("[EXTERIOR_ROUTING]", {
+            jobId: payload.jobId,
+            clutterDetected: hasClutter,
+            stage1B: routingSnapshot.stage1BRequired,
+            stage2: false,
+          });
+          nLog(
+            `[ROUTING] authority=exteriorClutter | hasSurfaceClutter=${hasSurfaceClutter} | hasLoosePortableItems=${hasLoosePortableItems} | hasCounterClutter=${hasCounterClutter} | hasClutter=${routingSnapshot.hasClutter === true} | stage1BRequired=${routingSnapshot.stage1BRequired}`
+          );
+        } else if (localEmpty) {
           routingSnapshot = {
             authority: "localEmptyBypass",
             localEmpty: true,
@@ -6456,7 +6486,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       frozenRoutingSnapshot = routingSnapshot;
     }
 
-    if (routingSnapshot.declutterMode === "stage-ready") {
+    if (isExteriorScene) {
+      const hasClutter = routingSnapshot.hasClutter === true;
+
+      payload.options.declutter = hasClutter;
+      (payload.options as any).declutterMode = hasClutter ? "light" : null;
+      declutterMode = hasClutter ? "light" : null;
+      payload.options.virtualStage = false;
+      (payload.options as any).stage2Mode = null;
+      (payload.options as any).stage2Variant = null;
+      (payload.options as any).stagingPreference = null;
+
+      nLog("[EXTERIOR_ROUTING]", {
+        jobId: payload.jobId,
+        clutterDetected: hasClutter,
+        stage1B: hasClutter,
+        stage2: false,
+      });
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: hasClutter ? "1A->1B(exterior_declutter)" : "1A",
+        reason: `${routingSnapshot.authority}+exterior_clutter_only`,
+      });
+    } else if (routingSnapshot.declutterMode === "stage-ready") {
       const anchorDetected = routingSnapshot.geminiHasFurniture === true;
       const hasClutter = routingSnapshot.hasClutter === true;
 
