@@ -59,7 +59,12 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   ];
 
   // Use the same fallback helper as 1A/1B
-  const { resp } = await runWithImageModelFallback(getGeminiClient(), { contents }, "[gemini.regionEdit]");
+  const { resp } = await runWithImageModelFallback(
+    getGeminiClient(),
+    { contents },
+    "[gemini.regionEdit]",
+    { stage: "region-edit", reason: "region-edit" }
+  );
 
   const candidates = resp.candidates ?? [];
   const usable =

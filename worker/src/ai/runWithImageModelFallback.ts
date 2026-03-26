@@ -167,7 +167,8 @@ export async function runWithImageModelFallback(
   // Stage 1A always uses Gemini 2.5 (primary model only, no fallback)
   const model = MODEL_CONFIG.stage1A.primary;
 
-  logIfNotFocusMode(`[stage1A] Model: ${model}`);
+  const modelStageLabel = String(meta?.stage || "1A");
+  logIfNotFocusMode(`[${modelStageLabel}] Model: ${model}`);
   logModelResolution({
     stage: meta?.stage || "1A",
     jobId: meta?.jobId,

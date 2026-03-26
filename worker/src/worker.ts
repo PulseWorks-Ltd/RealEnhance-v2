@@ -11646,49 +11646,9 @@ const worker = new Worker(
 
           let stage1AReferencePath: string | undefined;
           if (regionAny.stage1AReferenceUrl) {
-            try {
-              const sourceJobId = String(regionAny.sourceJobId || "").trim();
-              const requestedRef = normalizeWorkerUrl(String(regionAny.stage1AReferenceUrl || ""));
-              let lineageVerified = false;
-
-              if (sourceJobId) {
-                const sourceJob = await getJob(sourceJobId);
-                const sourceImageId = String((sourceJob as any)?.imageId || "").trim();
-                const currentImageId = String(regionPayload.imageId || "").trim();
-                const resolvedStage1A = normalizeWorkerUrl(resolveStage1AFromWorkerJob(sourceJob as any) || "");
-
-                lineageVerified =
-                  !!sourceJob &&
-                  !!sourceImageId &&
-                  !!currentImageId &&
-                  sourceImageId === currentImageId &&
-                  !!resolvedStage1A &&
-                  resolvedStage1A === requestedRef;
-
-                if (!lineageVerified) {
-                  nLog("[worker-region-edit] Stage-1A lineage verification failed; ignoring reference", {
-                    jobId: regionPayload.jobId,
-                    sourceJobId,
-                    sourceImageId,
-                    currentImageId,
-                    requestedRef,
-                    resolvedStage1A,
-                  });
-                }
-              } else {
-                nLog("[worker-region-edit] Missing sourceJobId; ignoring Stage-1A reference for lineage safety", {
-                  jobId: regionPayload.jobId,
-                });
-              }
-
-              if (lineageVerified) {
-                nLog("[worker-region-edit] Downloading Stage-1A reference from:", regionAny.stage1AReferenceUrl);
-                stage1AReferencePath = await downloadToTemp(regionAny.stage1AReferenceUrl, regionPayload.jobId + "-stage1a-ref");
-                nLog("[worker-region-edit] Stage-1A reference downloaded to:", stage1AReferencePath);
-              }
-            } catch (stage1AErr) {
-              nLog("[worker-region-edit] Failed to download Stage-1A reference (non-blocking):", (stage1AErr as any)?.message || stage1AErr);
-            }
+            nLog("[worker-region-edit] stage1AReferenceUrl provided but ignored for region-edit independence", {
+              jobId: regionPayload.jobId,
+            });
           }
 
           let outPath: string;
@@ -11758,14 +11718,8 @@ const worker = new Worker(
 
               let openingFail = false;
               if (runEditOpeningsValidation) {
-                const comparedAgainst = isRemoveMode ? "stage1a" : "edit_input";
-                const validationBaselinePath = isRemoveMode ? stage1AReferencePath : basePath;
-
-                if (!validationBaselinePath) {
-                  logJobErrorAndThrow(regionPayload, "region_edit_openings_validation_failed: stage1a_reference_missing_for_remove_mode", {
-                    stage: "region-edit",
-                  });
-                }
+                const comparedAgainst = "edit_input";
+                const validationBaselinePath = basePath;
 
                 const openingsValidation = await runEditOpeningsValidator(
                   validationBaselinePath,
@@ -11785,7 +11739,7 @@ const worker = new Worker(
                 openingsValidationSummary = {
                   validator: "edit_openings",
                   passed: true,
-                  comparedAgainst: "stage1a",
+                  comparedAgainst: "edit_input",
                   reason: isStrictEditMode ? "strict_edit_mode_validators_skipped" : "validator_not_required_for_mode",
                   mode,
                 };
@@ -11980,14 +11934,36 @@ const worker = new Worker(
             return;
           }
 
+          const existingStageUrls = (((reJob as any)?.stageUrls || {}) as Record<string, string | null | undefined>);
+          let resolvedStage: "2" | "1A" | "1B" | "edit" = "2";
+          if (regionPayload.type === "region-edit") {
+            resolvedStage = "2";
+          }
+
+          console.log("STAGE WRITE CHECK", {
+            before: existingStageUrls,
+            after: {
+              ...(existingStageUrls || {}),
+              "2": pub.url,
+            },
+          });
+
           await safeWriteJobStatus(
             regionPayload.jobId,
             {
               status: "complete",
               success: true,
+              stage: resolvedStage,
+              currentStage: resolvedStage,
+              finalStage: resolvedStage,
+              resultStage: resolvedStage,
               finalOutputUrl: pub.url,
               resultUrl: pub.url, // Primary result URL (checked by status endpoint)
               imageUrl: pub.url, // Fallback field
+              stageUrls: {
+                ...existingStageUrls,
+                "2": pub.url,
+              },
               originalUrl: baseImageUrl, // Return the original input URL
               maskUrl: pubMask.url, // Return the published mask URL
               imageId: regionPayload.imageId, // Include imageId for tracking
