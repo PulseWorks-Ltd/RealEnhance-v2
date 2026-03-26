@@ -4912,6 +4912,118 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       ? (retryStagesToRun.length === 1 && retryStagesToRun[0] === "2")
       : true);
 
+  if (isManualRetry && retryPlanIsStage2Only && stage2Requested) {
+    const retryParentImageId = String((payload as any).retryParentImageId || "").trim();
+    const retryParentJobId = String((payload as any).retryParentJobId || "").trim();
+
+    nLog("RETRY_BASELINE_INPUT", {
+      jobId: payload.jobId,
+      jobImageId: payload.imageId,
+      parentImageId: retryParentImageId || null,
+      parentJobId: retryParentJobId || null,
+    });
+
+    if (!retryParentImageId || !retryParentJobId) {
+      nLog("RETRY_BASELINE_PARENT_STATE", {
+        jobId: payload.jobId,
+        parentJobFound: false,
+        reason: "missing_retry_parent_identity",
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "stage2_retry_failed: missing_retry_parent_identity" },
+        "stage2_retry_failed_missing_retry_parent_identity"
+      );
+      return;
+    }
+
+    const [retryParentJob, retryParentMeta] = await Promise.all([
+      getJob(retryParentJobId),
+      getJobMetadata(retryParentJobId).catch(() => null as any),
+    ]);
+
+    const retryParentJobImageId = String((retryParentJob as any)?.imageId || "").trim();
+    if (!retryParentJob || (retryParentJobImageId && retryParentJobImageId !== retryParentImageId)) {
+      nLog("RETRY_BASELINE_PARENT_STATE", {
+        jobId: payload.jobId,
+        parentJobFound: !!retryParentJob,
+        parentJobId: retryParentJobId,
+        parentImageId: retryParentImageId,
+        parentJobImageId: retryParentJobImageId || null,
+        reason: !retryParentJob ? "parent_job_not_found" : "parent_identity_mismatch",
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "stage2_retry_failed: invalid_retry_parent_identity" },
+        "stage2_retry_failed_invalid_retry_parent_identity"
+      );
+      return;
+    }
+
+    const mergedParentStageUrls = mergeStageUrls(
+      ((retryParentMeta as any)?.stageUrls || {}) as Record<string, string | null | undefined>,
+      ((retryParentJob as any)?.stageUrls || (retryParentJob as any)?.stageOutputs || {}) as Record<string, string | null | undefined>
+    );
+    const parentStage1AUrl = resolveStageUrl(mergedParentStageUrls, "1A");
+    const parentStage1BUrl = resolveStageUrl(mergedParentStageUrls, "1B");
+
+    nLog("RETRY_BASELINE_PARENT_STATE", {
+      jobId: payload.jobId,
+      parentJobId: retryParentJobId,
+      parentImageId: retryParentImageId,
+      hasStage1A: !!parentStage1AUrl,
+      hasStage1B: !!parentStage1BUrl,
+    });
+
+    const resolvedBaselineStage: "1A" | "1B" | null = parentStage1BUrl ? "1B" : (parentStage1AUrl ? "1A" : null);
+    const resolvedBaselineUrl = resolvedBaselineStage === "1B" ? parentStage1BUrl : parentStage1AUrl;
+
+    if (!resolvedBaselineStage || !resolvedBaselineUrl) {
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "stage2_retry_failed: parent_stage_baseline_missing" },
+        "stage2_retry_failed_parent_stage_baseline_missing"
+      );
+      return;
+    }
+
+    nLog("RETRY_BASELINE_FINAL", {
+      jobId: payload.jobId,
+      parentJobId: retryParentJobId,
+      parentImageId: retryParentImageId,
+      baselineUrl: resolvedBaselineUrl,
+      resolvedFrom: resolvedBaselineStage,
+    });
+
+    if (retryExecutionPlan) {
+      retryExecutionPlan.stage2Baseline = resolvedBaselineStage;
+      retryExecutionPlan.baselineUrl = resolvedBaselineUrl;
+      retryExecutionPlan.sourceStage = resolvedBaselineStage;
+    } else {
+      (payload as any).executionPlan = {
+        runStage1A: false,
+        runStage1B: false,
+        runStage2: true,
+        stage2Baseline: resolvedBaselineStage,
+        baselineUrl: resolvedBaselineUrl,
+        sourceStage: resolvedBaselineStage,
+      };
+    }
+
+    (payload as any).retryBaselineStage = resolvedBaselineStage;
+    (payload as any).retryBaselineUrl = resolvedBaselineUrl;
+    (payload as any).stage2OnlyMode = {
+      enabled: true,
+      baseStage: resolvedBaselineStage,
+      base1AUrl: parentStage1AUrl || undefined,
+      base1BUrl: resolvedBaselineStage === "1B" ? resolvedBaselineUrl : undefined,
+      sourceStage: resolvedBaselineStage === "1B"
+        ? (payload.options?.declutterMode === "light" ? "1B-light" : "1B-stage-ready")
+        : "1A",
+      stage1BMode: payload.options?.declutterMode === "light" ? "light" : "stage-ready",
+    };
+  }
+
   if (isManualRetry && retryExecutionPlan?.runStage2) {
     const hasBaselineUrl = !!retryExecutionPlan.baselineUrl;
     const hasBaselineStage =

@@ -319,8 +319,11 @@ export function retrySingleRouter() {
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
       const sourceStageRaw = String(body.sourceStage || "").toLowerCase();
       const sourceUrlRaw = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
-      const parentImageId = body.imageId || body.retryParentImageId || null;
-      const parentJobId = body.parentJobId || body.retryParentJobId || null;
+      const incomingImageId = String(body.imageId || "").trim() || null;
+      const incomingRetryParentImageId = String(body.retryParentImageId || "").trim() || null;
+      const incomingRetryParentJobId = String(body.retryParentJobId || "").trim() || null;
+      let parentJobId = String(body.parentJobId || body.retryParentJobId || "").trim() || null;
+      let parentImageId = String(body.retryParentImageId || body.imageId || "").trim() || null;
       const clientBatchId = body.clientBatchId || body.batchId || null;
       const stagesToRun = parseStageList(body.stagesToRun);
       const requestedStagesList = parseStageList(body.requestedStages);
@@ -344,6 +347,12 @@ export function retrySingleRouter() {
           message: "Manual retry requires a parent job to resolve canonical stage baseline",
         });
       }
+
+      console.log("RETRY_REQUEST_INPUT", {
+        incomingImageId,
+        retryParentImageId: incomingRetryParentImageId,
+        retryParentJobId: incomingRetryParentJobId,
+      });
 
       // Optional tuning
       const temperature = parseNumber(body.temperature);
@@ -440,6 +449,63 @@ export function retrySingleRouter() {
           if (owningUser && owningUser !== sessUser.id) {
             return res.status(403).json({ success: false, error: "forbidden_source", message: "Source job does not belong to this user" });
           }
+
+          // Canonical retry lineage: parent identity must remain anchored to the original pipeline parent.
+          let canonicalParentJobId = String(parentJobId || "");
+          let canonicalParentImageId = String((parentJob as any)?.imageId || parentImageId || "");
+          const visitedParentJobs = new Set<string>();
+          while (canonicalParentJobId && !visitedParentJobs.has(canonicalParentJobId)) {
+            visitedParentJobs.add(canonicalParentJobId);
+            const currentParentJob = canonicalParentJobId === parentJobId
+              ? parentJob
+              : await getJob(canonicalParentJobId);
+            if (!currentParentJob) break;
+
+            const currentPayload = ((currentParentJob as any)?.payload || {}) as any;
+            const nextParentJobId = String(currentPayload.retryParentJobId || "").trim();
+            const nextParentImageId = String(currentPayload.retryParentImageId || "").trim();
+
+            if (nextParentImageId) {
+              canonicalParentImageId = nextParentImageId;
+            } else if (String((currentParentJob as any)?.imageId || "").trim()) {
+              canonicalParentImageId = String((currentParentJob as any).imageId).trim();
+            }
+
+            if (!nextParentJobId || nextParentJobId === canonicalParentJobId) {
+              break;
+            }
+            canonicalParentJobId = nextParentJobId;
+          }
+
+          const requestedParentJobId = parentJobId;
+          const requestedParentImageId = parentImageId;
+          if (canonicalParentJobId !== parentJobId || canonicalParentImageId !== parentImageId) {
+            console.log("RETRY_PARENT_CANONICALIZED", {
+              requestedParentJobId,
+              requestedParentImageId,
+              canonicalParentJobId,
+              canonicalParentImageId,
+            });
+          }
+
+          if (canonicalParentJobId && canonicalParentJobId !== parentJobId) {
+            parentJobId = canonicalParentJobId;
+            const [canonicalParentJob, canonicalParentMeta] = await Promise.all([
+              getJob(parentJobId),
+              getJobMetadata(parentJobId),
+            ]);
+            if (!canonicalParentJob) {
+              return res.status(409).json({
+                success: false,
+                error: "retry_baseline_not_found",
+                message: "Unable to resolve canonical parent job for retry",
+              });
+            }
+            parentJob = canonicalParentJob;
+            parentMeta = canonicalParentMeta;
+          }
+
+          parentImageId = canonicalParentImageId || parentImageId;
 
           const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
           const metaStageUrls = parentMeta?.stageUrls;

@@ -5159,11 +5159,6 @@ export default function BatchProcessor({
       } as const;
     }
 
-    // Edit baseline must match the exact artifact currently rendered in UI.
-    const displayed = buildPreviewImage(imageIndex);
-    const displayedUrl = toDisplayUrl(displayed?.url);
-    const displayedStage = resolveDisplayedStageForEdit(imageIndex);
-
     const selectedStage = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
     const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
     const stage2Url =
@@ -5205,8 +5200,29 @@ export default function BatchProcessor({
       toDisplayUrl(item?.result?.originalUrl) ||
       null;
 
+    // Edit baseline must match the selected output tab exactly when one is chosen.
+    const selectedTabUrl = selectedStage === "retried"
+      ? retryLatestUrl
+      : selectedStage === "edited"
+        ? editLatestUrl
+        : selectedStage === "2"
+          ? stage2Url
+          : selectedStage === "1B"
+            ? stage1BUrl
+            : selectedStage === "1A"
+              ? stage1AUrl
+              : null;
+
+    const displayed = buildPreviewImage(imageIndex);
+    const displayedUrl = toDisplayUrl(selectedStage ? selectedTabUrl : displayed?.url);
+    const displayedStage = selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A"
+      ? selectedStage
+      : resolveDisplayedStageForEdit(imageIndex);
+
     let artifactKey: EditArtifactKey = null;
-    if (displayedUrl) {
+    if (selectedStage) {
+      artifactKey = selectedStage;
+    } else if (displayedUrl) {
       if (retryLatestUrl && displayedUrl === retryLatestUrl) artifactKey = "retried";
       else if (editLatestUrl && displayedUrl === editLatestUrl) artifactKey = "edited";
       else if (stage2Url && displayedUrl === stage2Url) artifactKey = "2";
@@ -5214,11 +5230,6 @@ export default function BatchProcessor({
       else if (stage1AUrl && displayedUrl === stage1AUrl) artifactKey = "1A";
       else if (finalResultUrl && displayedUrl === finalResultUrl) artifactKey = "final";
       else if (originalUrl && displayedUrl === originalUrl) artifactKey = "original";
-    }
-
-    // If URL matching is ambiguous, preserve explicit user selection only.
-    if (!artifactKey && selectedStage) {
-      artifactKey = selectedStage;
     }
 
     // Phase 1 consistency rule:
@@ -5437,9 +5448,30 @@ export default function BatchProcessor({
     }
     
     try {
+      // Determine canonical retry parent identity from persisted server lineage.
+      const currentItem: any = results[imageIndex] || {};
+      const currentRetryInfo: any =
+        currentItem?.retryInfo ||
+        currentItem?.result?.retryInfo ||
+        currentItem?.meta?.retryInfo ||
+        currentItem?.result?.meta?.retryInfo ||
+        null;
+      const parentImageIdForRetry: string | null =
+        currentRetryInfo?.parentImageId ||
+        currentRetryInfo?.imageId ||
+        currentItem?.imageId ||
+        currentItem?.result?.imageId ||
+        null;
+      const parentJobIdForRetry: string | null =
+        currentRetryInfo?.parentJobId ||
+        currentItem?.parentJobId ||
+        currentItem?.result?.parentJobId ||
+        currentItem?.jobId ||
+        jobIds[imageIndex] ||
+        null;
+
       // Determine explicit scene type - prefer provided, then metadata, then auto
-      const imageIdForRetry = getImageIdForIndex(imageIndex);
-      const storedScene = imageIdForRetry ? imageSceneTypesById[imageIdForRetry] : null;
+      const storedScene = parentImageIdForRetry ? imageSceneTypesById[parentImageIdForRetry] : null;
       const explicitScene = sceneType || storedScene || "auto";
 
       // Use the baseline URL provided by computeRetryBaseline (context-aware)
@@ -5448,7 +5480,6 @@ export default function BatchProcessor({
         stage: sourceStageLabel || "original_upload",
         url: baselineUrl || originalFromStoreUrl || null,
       };
-      const parentJobId = results[imageIndex]?.jobId || jobIds[imageIndex] || null;
       const clientBatchIdToSend = clientBatchIdRef.current || clientBatchId || null;
       
       // Build retry-focused goal based on scene
@@ -5475,8 +5506,14 @@ export default function BatchProcessor({
       if (roomType) fd.append("roomType", roomType);
       if (windowCount !== undefined) fd.append("windowCount", String(windowCount));
       if (referenceImage) fd.append("referenceImage", referenceImage);
-      if (imageIdForRetry) fd.append("imageId", imageIdForRetry);
-      if (parentJobId) fd.append("parentJobId", parentJobId);
+      if (parentImageIdForRetry) {
+        fd.append("imageId", parentImageIdForRetry);
+        fd.append("retryParentImageId", parentImageIdForRetry);
+      }
+      if (parentJobIdForRetry) {
+        fd.append("parentJobId", parentJobIdForRetry);
+        fd.append("retryParentJobId", parentJobIdForRetry);
+      }
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
       if (retrySource.url) fd.append("sourceUrl", retrySource.url);
@@ -5514,7 +5551,7 @@ export default function BatchProcessor({
               description: "The source image is no longer available to retry. Please re-upload and try again.",
               variant: "destructive"
             });
-            console.warn("[retry-single] image_not_found", { imageIndex, imageId: imageIdForRetry, err });
+            console.warn("[retry-single] image_not_found", { imageIndex, imageId: parentImageIdForRetry, err });
             return;
           }
           if (err?.error === "forbidden_source") {
@@ -5562,7 +5599,12 @@ export default function BatchProcessor({
         if (!jobId) {
           throw new Error("Retry submitted but no jobId returned. Please try again.");
         }
-        console.log("[retry-single] submitted", { imageIndex, jobId, imageId: imageIdForRetry });
+        console.log("[retry-single] submitted", {
+          imageIndex,
+          jobId,
+          parentImageId: parentImageIdForRetry,
+          parentJobId: parentJobIdForRetry,
+        });
 
         // ✅ IMMEDIATELY update batch item state to reflect retry processing
         setResults(prev => prev.map((r, i) => {
@@ -5584,9 +5626,9 @@ export default function BatchProcessor({
 
         // ✅ Register retry job with polling infrastructure
         jobIdToIndexRef.current[jobId] = imageIndex;
-        if (imageIdForRetry) {
-          imageIdToIndexRef.current[imageIdForRetry] = imageIndex;
-          jobIdToImageIdRef.current[jobId] = imageIdForRetry;
+        if (parentImageIdForRetry) {
+          imageIdToIndexRef.current[parentImageIdForRetry] = imageIndex;
+          jobIdToImageIdRef.current[jobId] = parentImageIdForRetry;
         }
 
         // ✅ Add retry jobId to jobIds array for main poller
@@ -5846,7 +5888,7 @@ export default function BatchProcessor({
                     description: "The source image is no longer available to retry. Please re-upload and try again.",
                     variant: "destructive"
                   });
-                  console.warn("[retry-poll] image_not_found", { imageIndex, imageId: imageIdForRetry, jobId, job });
+                  console.warn("[retry-poll] image_not_found", { imageIndex, imageId: parentImageIdForRetry, jobId, job });
                 } else {
                   toast({
                     title: "Retry failed",
