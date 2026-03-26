@@ -295,7 +295,9 @@ export interface JobRecord {
   result?: ImageJobResult;
   error?: string;
   latestEditUrl?: string | null;
+  editLatestUrl?: string | null;
   latestRetryUrl?: string | null;
+  retryLatestUrl?: string | null;
   editOutputs?: string[];
   retryOutputs?: string[];
   meta?: {

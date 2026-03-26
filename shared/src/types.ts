@@ -230,7 +230,9 @@ export interface JobRecord {
   originalUrl?: string | null;    // published original URL for before/after
   stageUrls?: Record<string, string | null>; // per-stage URLs surfaced mid-pipeline
   latestEditUrl?: string | null;
+  editLatestUrl?: string | null;
   latestRetryUrl?: string | null;
+  retryLatestUrl?: string | null;
   editOutputs?: string[];
   retryOutputs?: string[];
   attempts?: { current?: number; max?: number };

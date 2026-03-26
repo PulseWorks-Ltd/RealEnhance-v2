@@ -54,6 +54,10 @@ type StatusItem = {
   resultUrl?: string | null;
   fallbackUsed?: string | null;
   retryReason?: string | null;
+  latestEditUrl?: string | null;
+  editLatestUrl?: string | null;
+  latestRetryUrl?: string | null;
+  retryLatestUrl?: string | null;
   blockedStage?: string | null;
   fallbackStage?: string | null;
   validationNote?: string | null;
@@ -483,6 +487,18 @@ export function statusRouter() {
         const attempts = local.attempts || (rv && rv.attempts) || null;
         const fallbackUsed = local.fallbackUsed || (rv && rv.fallbackUsed) || null;
         const retryReason = local.retryReason || (rv && rv.retryReason) || null;
+        const latestEditUrl =
+          local.latestEditUrl ||
+          local.editLatestUrl ||
+          local?.meta?.latestEditUrl ||
+          local?.meta?.editLatestUrl ||
+          null;
+        const latestRetryUrl =
+          local.latestRetryUrl ||
+          local.retryLatestUrl ||
+          local?.meta?.latestRetryUrl ||
+          local?.meta?.retryLatestUrl ||
+          null;
         const payloadRetryInfo = (() => {
           const p: any = payload || {};
           const retryType = p.retryType;
@@ -540,6 +556,10 @@ export function statusRouter() {
           resultUrl: resolvedResultUrl ?? null,
           fallbackUsed: fallbackUsed || null,
           retryReason: retryReason || null,
+          latestEditUrl,
+          editLatestUrl: latestEditUrl,
+          latestRetryUrl,
+          retryLatestUrl: latestRetryUrl,
           blockedStage: blockedStage || null,
           fallbackStage: fallbackStageMeta || null,
           validationNote: validationNote || null,
@@ -612,6 +632,10 @@ export function statusRouter() {
         base.imageUrl = j.imageUrl;
         base.originalUrl = j.originalUrl;
         base.stageUrls = j.stageUrls;
+        base.latestEditUrl = j.latestEditUrl ?? null;
+        base.editLatestUrl = j.editLatestUrl ?? null;
+        base.latestRetryUrl = j.latestRetryUrl ?? null;
+        base.retryLatestUrl = j.retryLatestUrl ?? null;
         base.state = j.state;
         base.status = j.status;
         base.job = j;
