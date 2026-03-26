@@ -7471,7 +7471,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Stage 2 input selection:
   // - Interior: use Stage 1B (decluttered) if declutter enabled; else Stage 1A
   // - Exterior: always use Stage 1A
-  const isExteriorScene = sceneLabel === "exterior";
   const retrySourceStageRaw = String((payload as any).retrySourceStage || "").toLowerCase();
   const retryStage1BWasRequested = Boolean((payload as any).retryStage1BWasRequested);
   const isStage2Retry = (payload as any).retryType === "manual_retry"
