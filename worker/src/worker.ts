@@ -3585,6 +3585,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     geminiHasFurniture: boolean | null;
     geminiConfidence: number | null;
     hasClutter: boolean | null;
+    skipStage1B: boolean;
     declutterMode: "light" | "stage-ready" | null;
     stage1BRequired: boolean;
   };
@@ -6253,31 +6254,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // STAGE 1B (optional declutter)
   if (await stopIfCancelled("pre_stage1b")) return;
-  const t1B = Date.now();
-  logger.info("STAGE_ENTER", jobLogContext(payload, {
-    event: "STAGE_ENTER",
-    stage: "Stage1B",
-  }));
-  timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
   let path1B: string | undefined = undefined;
   let stage1BValidatedForCommit = false;
   let stage1BStructuralSafe = true;
   let stage1BDeclutterReasons: string[] = [];
   let stage1BDeclutterResult: Stage1BClutterHeuristicResult | undefined;
-
-  // ═══ STAGE 1B INPUT LINEAGE GUARD ═══
-  if (!stageLineage.stage1A.committed) {
-    nLog("[STAGE1B_FAIL_NO_FALLBACK_TO_1A]", {
-      jobId: payload.jobId,
-      reason: "stage1A_not_committed",
-      stage1AOutput: stageLineage.stage1A.output,
-    });
-    logJobErrorAndThrow(payload, "Stage 1A output not committed before Stage 1B start", {
-      stage: "Stage1B",
-    });
-  }
-  stageLineage.stage1B.input = stageLineage.stage1A.output;
-  logStageInput("1B", "1A", stageLineage.stage1A.output!);
   
   // ✅ STRICT PAYLOAD MODE — derive declutterMode if missing but declutter requested (safety net)
   let declutterMode: "light" | "stage-ready" | null = (payload.options as any).declutterMode || null;
@@ -6393,6 +6374,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiHasFurniture: null,
             geminiConfidence: null,
             hasClutter: false,
+            skipStage1B: false,
             declutterMode: null,
             stage1BRequired: false,
           };
@@ -6418,19 +6400,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiAnalysis?.hasLoosePortableItems === true ||
             geminiAnalysis?.hasMovableSeating === true
           );
+          const anchorDetected = geminiAnalysis ? geminiAnalysis.hasFurniture === true : false;
+          const skipStage1B = gateDecision.decision === "furnished_refresh" && anchorDetected && !hasClutter;
 
           routingSnapshot = {
             authority: "gemini",
             localEmpty: false,
-            geminiHasFurniture: geminiAnalysis ? geminiAnalysis.hasFurniture === true : false,
+            geminiHasFurniture: anchorDetected,
             geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
             hasClutter,
+            skipStage1B,
             declutterMode: resolvedDeclutterMode,
-            stage1BRequired: resolvedDeclutterMode !== null,
+            stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
           };
 
           nLog(
-            `[ROUTING] authority=gemini | localEmpty=false | hasFurniture=${routingSnapshot.geminiHasFurniture === true} | confidence=${routingSnapshot.geminiConfidence === null ? "null" : routingSnapshot.geminiConfidence.toFixed(2)} | stage1BRequired=${routingSnapshot.stage1BRequired}`
+            `[ROUTING] authority=gemini | localEmpty=false | hasFurniture=${routingSnapshot.geminiHasFurniture === true} | confidence=${routingSnapshot.geminiConfidence === null ? "null" : routingSnapshot.geminiConfidence.toFixed(2)} | hasClutter=${routingSnapshot.hasClutter === true} | skipStage1B=${routingSnapshot.skipStage1B === true} | stage1BRequired=${routingSnapshot.stage1BRequired}`
           );
         }
 
@@ -6578,6 +6563,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       geminiHasFurniture: null,
       geminiConfidence: null,
       hasClutter: null,
+      skipStage1B: false,
       declutterMode: inferredDeclutterMode,
       stage1BRequired: inferredDeclutterMode !== null,
     };
@@ -6603,14 +6589,45 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   const stage1BRequired = frozenRoutingSnapshot.stage1BRequired === true;
+  const skipStage1B = frozenRoutingSnapshot.skipStage1B === true;
 
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
-  nLog(`[WORKER] Stage 1B declutterMode from payload: ${declutterMode || 'null'}`);
   nLog(`[WORKER] Stage 1B virtualStage: ${payload.options.virtualStage}`);
+  nLog(`[WORKER] Stage 1B skipStage1B=${skipStage1B}`);
 
-  if (!stage1BRequired) {
+  if (skipStage1B) {
+    nLog("[STAGE1B_BYPASSED]", {
+      jobId: payload.jobId,
+      reason: "anchor_detected_no_clutter",
+      stage1BRequired,
+      skipStage1B,
+    });
+  } else if (!stage1BRequired) {
     nLog(`[WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping`);
   } else {
+    nLog(`[WORKER] Stage 1B declutterMode from payload: ${declutterMode || 'null'}`);
+    // Stage 1B hard-entry starts here only when not bypassed.
+    const t1B = Date.now();
+    logger.info("STAGE_ENTER", jobLogContext(payload, {
+      event: "STAGE_ENTER",
+      stage: "Stage1B",
+    }));
+    timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
+
+    // ═══ STAGE 1B INPUT LINEAGE GUARD ═══
+    if (!stageLineage.stage1A.committed) {
+      nLog("[STAGE1B_FAIL_NO_FALLBACK_TO_1A]", {
+        jobId: payload.jobId,
+        reason: "stage1A_not_committed",
+        stage1AOutput: stageLineage.stage1A.output,
+      });
+      logJobErrorAndThrow(payload, "Stage 1A output not committed before Stage 1B start", {
+        stage: "Stage1B",
+      });
+    }
+    stageLineage.stage1B.input = stageLineage.stage1A.output;
+    logStageInput("1B", "1A", stageLineage.stage1A.output!);
+
     // ✅ VALIDATE MODE
     if (declutterMode !== "light" && declutterMode !== "stage-ready") {
       const errMsg = `Invalid declutterMode: "${declutterMode}". Must be "light" or "stage-ready"`;
