@@ -928,6 +928,36 @@ function normalizeCurrentStage(raw: unknown): string {
   return String(raw || "").toLowerCase();
 }
 
+function resolveActiveStageMessage(params: {
+  currentStage: string;
+  stage2Expected: boolean;
+  requestedStage2: boolean;
+  declutterRequested: boolean;
+  furnitureReplacement: boolean;
+}): string {
+  const { currentStage, stage2Expected, requestedStage2, declutterRequested, furnitureReplacement } = params;
+  const stage = normalizeCurrentStage(currentStage);
+
+  if (stage.includes("retry")) return "Retrying enhancement...";
+  if (stage.includes("valid") || stage.includes("review") || stage.includes("compliance")) {
+    return "Checking quality...";
+  }
+  if (stage.includes("stage_2") || stage.includes("stage2") || stage.includes("2") || stage.includes("staging") || stage.includes("design")) {
+    return "Staging room...";
+  }
+  if (stage.includes("stage_1b") || stage.includes("stage1b") || stage.includes("1b") || stage.includes("declutter")) {
+    return "Removing clutter...";
+  }
+  if (stage.includes("stage_1a") || stage.includes("stage1a") || stage.includes("1a") || stage.includes("enhanc") || stage.includes("preprocess")) {
+    return "Enhancing image...";
+  }
+
+  // Graceful fallback when currentStage is missing.
+  if (stage2Expected && requestedStage2) return "Staging room...";
+  if (declutterRequested) return furnitureReplacement ? "Removing furniture..." : "Removing clutter...";
+  return "Enhancing image...";
+}
+
 function resolveDisplayStageKey(params: {
   status: string;
   currentStage: string;
@@ -7604,14 +7634,13 @@ export default function BatchProcessor({
                         const stageTitle = isDone
                           ? STAGE_TITLES.completed
                           : (STAGE_TITLES[resolvedDisplayStageKey] || STAGE_TITLES.stage1a);
-                        const baseProcessingMessage = (() => {
-                          if (currentStage.includes("2")) return "Applying design...";
-                          if (currentStage.includes("1b")) return furnitureReplacement ? "Removing furniture..." : "Simplifying space...";
-                          if (currentStage.includes("1a")) return "Enhancing parameters...";
-                          if (stage2Expected && requestedStage2) return "Applying design...";
-                          if (declutterRequested) return furnitureReplacement ? "Removing furniture..." : "Simplifying space...";
-                          return "Enhancing parameters...";
-                        })();
+                        const baseProcessingMessage = resolveActiveStageMessage({
+                          currentStage,
+                          stage2Expected,
+                          requestedStage2,
+                          declutterRequested,
+                          furnitureReplacement,
+                        });
                         const displayStatus = isError
                           ? "Enhancement Failed"
                           : result?.retryInFlight

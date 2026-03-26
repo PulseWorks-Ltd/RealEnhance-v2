@@ -6124,6 +6124,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const skyModeForStage1A = stage1ASkyModeResult?.mode || "safe";
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
+  await safeWriteJobStatus(
+    payload.jobId,
+    {
+      status: "processing",
+      currentStage: "STAGE_1A",
+      stage: "1A",
+      progress: 30,
+    },
+    "stage1a_start"
+  );
   path1A = await runStage1A(canonicalPath, {
     replaceSky: safeReplaceSky,
     declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
@@ -6665,6 +6675,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage: "Stage1B",
     }));
     timestamps.stage1BStart = t1B; // FIX 6: Track Stage 1B start
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "processing",
+        currentStage: "STAGE_1B",
+        stage: "1B",
+        progress: 50,
+      },
+      "stage1b_start"
+    );
 
     // ═══ STAGE 1B INPUT LINEAGE GUARD ═══
     if (!stageLineage.stage1A.committed) {
@@ -7679,6 +7699,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   try {
     if (payload.options.virtualStage && !stage2Blocked) {
       await ensureStage2AttemptId();
+      await safeWriteJobStatus(
+        payload.jobId,
+        {
+          status: "processing",
+          currentStage: "STAGE_2",
+          stage: "2",
+          progress: 70,
+        },
+        "stage2_start"
+      );
     }
     // Only allow exterior staging if allowStaging is true
     if (sceneLabel === "exterior" && !allowStaging) {
@@ -8158,6 +8188,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
   const MAX_STAGE2_RETRIES = Math.max(1, stage2MaxAttempts || 1);
   const tVal = Date.now();
+  await safeWriteJobStatus(
+    payload.jobId,
+    {
+      status: "processing",
+      currentStage: "VALIDATING",
+      stage: "VALIDATING",
+      progress: 80,
+    },
+    "validation_start"
+  );
 
   const hasStage2GeminiSemanticHardFail = (result?: UnifiedValidationResult): boolean => {
     if (!result || !payload.options.virtualStage) return false;
