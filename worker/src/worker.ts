@@ -49,7 +49,7 @@ import {
 import { setVersionPublicUrl } from "./utils/persist";
 import { recordEnhancedImage } from "../../shared/src/imageHistory";
 import { recordEnhancedImageRedis } from "@realenhance/shared";
-import { resolveStageUrl, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
+import { resolveStageUrl, mergeStageUrls, normalizeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
@@ -4399,7 +4399,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   const payloadSourceStage = normalizePayloadSourceStage((payload as any).sourceStage || (payload as any).retrySourceStage);
-  const payloadStageUrls = (((payload as any).stageUrls || {}) as Record<string, string | null | undefined>);
+  const payloadStageUrls = normalizeStageUrls(
+    (((payload as any).stageUrls || {}) as Record<string, string | null | undefined>)
+  );
   const isDerivedEnhanceJob = (payload as any).retryType === "manual_retry"
     || !!(payload as any).sourceStage
     || !!(payload as any).baselineStage;
@@ -5012,10 +5014,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return;
     }
 
-    const mergedParentStageUrls = mergeStageUrls(
-      ((retryParentMeta as any)?.stageUrls || {}) as Record<string, string | null | undefined>,
-      ((retryParentJob as any)?.stageUrls || (retryParentJob as any)?.stageOutputs || {}) as Record<string, string | null | undefined>
-    );
+    const mergedParentStageUrls = normalizeStageUrls(mergeStageUrls(
+      normalizeStageUrls(((retryParentMeta as any)?.stageUrls || {}) as Record<string, string | null | undefined>),
+      normalizeStageUrls(((retryParentJob as any)?.stageUrls || (retryParentJob as any)?.stageOutputs || {}) as Record<string, string | null | undefined>)
+    ));
     const parentStage1AUrl = resolveStageUrl(mergedParentStageUrls, "1A");
     const parentStage1BUrl = resolveStageUrl(mergedParentStageUrls, "1B");
 
@@ -11095,6 +11097,50 @@ All openings must remain identical in position and size to the original image.`;
   const nextRetryOutputs = isManualRetryCompletion && committedResultUrl
     ? (existingRetryOutputs.includes(committedResultUrl) ? existingRetryOutputs : [...existingRetryOutputs, committedResultUrl])
     : undefined;
+  let finalizedStageUrls = normalizeStageUrls({
+    stage1A: committedStage1AUrl,
+    stage1B: committedStage1BUrl,
+    stage2: committedStage2Url,
+  });
+
+  if (isManualRetryCompletion) {
+    const retryParentJobId = String((payload as any).retryParentJobId || "").trim();
+    const retryParentJob = retryParentJobId ? await getJob(retryParentJobId) : null;
+    const parentStageUrls = normalizeStageUrls(
+      ((retryParentJob as any)?.stageUrls || (retryParentJob as any)?.stageOutputs || null) as Record<string, string | null | undefined>
+    );
+    const generatedOutputUrl = committedResultUrl || pubFinalUrl || null;
+    const retryOutputUrl = committedResultUrl || null;
+
+    if (!retryOutputUrl || retryOutputUrl !== generatedOutputUrl) {
+      throw new Error("Retry stage2 must use generated output");
+    }
+
+    finalizedStageUrls = normalizeStageUrls({
+      ...parentStageUrls,
+      stage2: retryOutputUrl,
+    });
+
+    if (
+      finalizedStageUrls.stage1A &&
+      finalizedStageUrls.stage2 &&
+      finalizedStageUrls.stage1A === finalizedStageUrls.stage2
+    ) {
+      console.error("🚨 INVALID RETRY: stage2 equals stage1A", {
+        stage1A: finalizedStageUrls.stage1A,
+        stage2: finalizedStageUrls.stage2,
+        retryOutputUrl,
+      });
+
+      throw new Error("Retry produced invalid stage mapping (stage collapse)");
+    }
+
+    console.log("[RETRY_STAGE_URLS_FINAL]", {
+      stage1A: finalizedStageUrls.stage1A,
+      stage2: finalizedStageUrls.stage2,
+      same: finalizedStageUrls.stage1A === finalizedStageUrls.stage2,
+    });
+  }
 
   // FIX 1: ATOMIC completion write - all fields in single updateJob call
   // This prevents race conditions where status API sees partial state
@@ -11119,11 +11165,7 @@ All openings must remain identical in position and size to the original image.`;
     latestRetryUrl: isManualRetryCompletion ? committedResultUrl : undefined,
     retryLatestUrl: isManualRetryCompletion ? committedResultUrl : undefined,
     retryOutputs: nextRetryOutputs,
-    stageUrls: {
-      "1A": committedStage1AUrl,
-      "1B": committedStage1BUrl,
-      "2": committedStage2Url
-    },
+    stageUrls: normalizeStageUrls(finalizedStageUrls),
     
     // Stage outputs
     stageOutputs: {
@@ -11314,16 +11356,19 @@ All openings must remain identical in position and size to the original image.`;
   // Persist finalized metadata with longer history TTL
   try {
     const existingMeta = await getJobMetadata(payload.jobId);
-    const existingStageUrls = (existingMeta?.stageUrls || {}) as Record<string, string | null | undefined>;
-    const stageUrlsMeta = mergeStageUrls(existingStageUrls, {
-      "1A": pub1AUrl || null,
-      stage1a: pub1AUrl || null,
-      "1B": pub1BUrl || null,
-      stage1b: pub1BUrl || null,
-      "2": committedStage2Url,
-      stage2: committedStage2Url,
-      publish: committedResultUrl || null,
-    });
+    const existingStageUrls = normalizeStageUrls((existingMeta?.stageUrls || {}) as Record<string, string | null | undefined>);
+    const stageUrlsMeta = isManualRetryCompletion
+      ? normalizeStageUrls(finalizedStageUrls)
+      : normalizeStageUrls(mergeStageUrls(existingStageUrls, {
+          stage1A: pub1AUrl || null,
+          stage1B: pub1BUrl || null,
+          stage2: committedStage2Url,
+        }));
+    const stageUrlsMetadataShape = {
+      ...(stageUrlsMeta.stage1A ? { stage1a: stageUrlsMeta.stage1A } : {}),
+      ...(stageUrlsMeta.stage1B ? { stage1b: stageUrlsMeta.stage1B } : {}),
+      ...(stageUrlsMeta.stage2 ? { stage2: stageUrlsMeta.stage2 } : {}),
+    };
     const resolvedResultFallback =
       resolveStageUrl(stageUrlsMeta, "2")
       || resolveStageUrl(stageUrlsMeta, "1B")
@@ -11354,7 +11399,7 @@ All openings must remain identical in position and size to the original image.`;
       jobId: payload.jobId,
       createdAt: existingMeta?.createdAt || payload.createdAt || new Date().toISOString(),
       requestedStages: existingMeta?.requestedStages || buildRequestedStages(),
-      stageUrls: stageUrlsMeta,
+      stageUrls: stageUrlsMetadataShape,
       resultUrl: pubFinalUrl || existingMeta?.resultUrl || resolvedResultFallback || undefined,
       s3: existingMeta?.s3,
       warnings: existingMeta?.warnings,

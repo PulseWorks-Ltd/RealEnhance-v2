@@ -12,7 +12,7 @@ import { uploadOriginalToS3, extractKeyFromS3Url, copyS3Object } from "../utils/
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore";
 import { findByPublicUrlRedis } from "@realenhance/shared";
-import { resolveStageUrl, normalizeStageLabel, mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
+import { resolveStageUrl, normalizeStageLabel, mergeStageUrls, normalizeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { getFreeRetryCount } from "../services/usageLedger.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
@@ -530,8 +530,10 @@ export function retrySingleRouter() {
 
           parentImageId = canonicalParentImageId || parentImageId;
 
-          const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
-          const metaStageUrls = parentMeta?.stageUrls;
+          const parentStageUrls = normalizeStageUrls(
+            ((parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null) as Record<string, string | null | undefined>
+          );
+          const metaStageUrls = normalizeStageUrls(parentMeta?.stageUrls as Record<string, string | null | undefined>);
           const originalUploadUrl =
             (parentJob as any)?.payload?.remoteOriginalUrl ||
             (parentJob as any)?.remoteOriginalUrl ||
@@ -539,15 +541,9 @@ export function retrySingleRouter() {
             null;
           originalUploadUrlCandidate = originalUploadUrl || undefined;
 
-          const allStageUrls = mergeStageUrls(metaStageUrls as any, parentStageUrls as any);
-          stage1AFromParent =
-            (allStageUrls as any)?.["1A"] ||
-            (allStageUrls as any)?.["1a"] ||
-            stage1AFromParent;
-          stage1BFromParent =
-            (allStageUrls as any)?.["1B"] ||
-            (allStageUrls as any)?.["1b"] ||
-            stage1BFromParent;
+          const allStageUrls = normalizeStageUrls(mergeStageUrls(metaStageUrls as any, parentStageUrls as any));
+          stage1AFromParent = allStageUrls.stage1A || stage1AFromParent;
+          stage1BFromParent = allStageUrls.stage1B || stage1BFromParent;
           stage1BWasRequested = stage1BWasRequested
             || !!parentMeta?.requestedStages?.stage1b
             || !!(parentJob as any)?.metadata?.requestedStages?.stage1b
@@ -559,14 +555,11 @@ export function retrySingleRouter() {
             "2": resolveStageUrl(allStageUrls, "2"),
           };
 
-          inheritedStageUrls = {
+          inheritedStageUrls = normalizeStageUrls({
             stage1A: canonicalStageUrls["1A"],
             stage1B: canonicalStageUrls["1B"],
             stage2: canonicalStageUrls["2"],
-            "1A": canonicalStageUrls["1A"],
-            "1B": canonicalStageUrls["1B"],
-            "2": canonicalStageUrls["2"],
-          };
+          });
 
           const lineageSourceStage: "stage1A" | "stage1B" | "stage2" = canonicalStageUrls["2"]
             ? "stage2"

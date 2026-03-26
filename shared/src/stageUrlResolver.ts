@@ -25,6 +25,12 @@ export type DisplaySelectionUrls = {
   stage1AUrl?: string | null;
 };
 
+export type CanonicalStageUrls = {
+  stage1A: string | null;
+  stage1B: string | null;
+  stage2: string | null;
+};
+
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -47,6 +53,32 @@ export function resolveSelectedDisplayUrl(
   if (selectedStage === "1B") return stage1BUrl || null;
   if (selectedStage === "1A") return stage1AUrl || null;
   return null;
+}
+
+export function normalizeStageUrls(input: StageUrlMap): CanonicalStageUrls {
+  const map = (input || {}) as Record<string, unknown>;
+
+  return {
+    stage1A:
+      asNonEmptyString(map.stage1A)
+      ?? asNonEmptyString(map["1A"])
+      ?? asNonEmptyString(map.stage1a)
+      ?? asNonEmptyString(map.stage_1A)
+      ?? asNonEmptyString(map.stage_1a)
+      ?? null,
+    stage1B:
+      asNonEmptyString(map.stage1B)
+      ?? asNonEmptyString(map["1B"])
+      ?? asNonEmptyString(map.stage1b)
+      ?? asNonEmptyString(map.stage_1B)
+      ?? asNonEmptyString(map.stage_1b)
+      ?? null,
+    stage2:
+      asNonEmptyString(map.stage2)
+      ?? asNonEmptyString(map["2"])
+      ?? asNonEmptyString(map.stage_2)
+      ?? null,
+  };
 }
 
 export function getStageUrlKeys(stage: StageLabel): string[] {
@@ -104,30 +136,12 @@ export function resolveStageUrl(
 }
 
 export function mergeStageUrls(existing: StageUrlMap, patch: StageUrlMap): Record<string, string | null> {
-  const current = { ...((existing || {}) as Record<string, unknown>) };
-  const incoming = (patch || {}) as Record<string, unknown>;
+  const current = normalizeStageUrls(existing);
+  const incoming = normalizeStageUrls(patch);
 
-  const writeValue = (key: string, value: string | null) => {
-    const existingValue = asNonEmptyString(current[key]);
-    if (value === null && existingValue) {
-      return;
-    }
-    current[key] = value;
+  return {
+    stage1A: incoming.stage1A ?? current.stage1A ?? null,
+    stage1B: incoming.stage1B ?? current.stage1B ?? null,
+    stage2: incoming.stage2 ?? current.stage2 ?? null,
   };
-
-  for (const [key, value] of Object.entries(incoming)) {
-    const normalized = asNonEmptyString(value);
-    const val = normalized ?? null;
-    writeValue(key, val);
-
-    const stage = normalizeStageLabel(key);
-    if (!stage) continue;
-
-    const aliases = getStageUrlKeys(stage);
-    for (const alias of aliases) {
-      writeValue(alias, val);
-    }
-  }
-
-  return current as Record<string, string | null>;
 }
