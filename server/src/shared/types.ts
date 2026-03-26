@@ -212,6 +212,9 @@ export interface EnhanceJobPayload {
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };
+  sourceStage?: "stage1A" | "stage1B" | "stage2";
+  baselineStage?: "stage1A" | "stage1B" | "stage2";
+  stageUrls?: Record<string, string | null>;
   executionPlan?: RetryExecutionPlan;
   remoteOriginalUrl?: string;        // S3 URL of original if uploaded
   remoteOriginalKey?: string;        // S3 key of original if uploaded
@@ -240,11 +243,13 @@ export interface RegionEditJobPayload {
   imageId: ImageId;
   sourceJobId?: string;
   parentJobId?: string;
+  sourceStage?: "stage1A" | "stage1B" | "stage2";
   sourceImageId?: ImageId;
   propertyId?: string;
   type: "region-edit";
   baseVersionId: string;
-  baselineStage?: "1A" | "1B" | "2";
+  baselineStage?: "stage1A" | "stage1B" | "stage2";
+  stageUrls?: Record<string, string | null>;
   mode: "Add" | "Remove" | "Replace" | "Restore";
   editIntent?: "add" | "remove" | "replace";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";

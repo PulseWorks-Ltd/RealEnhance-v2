@@ -378,6 +378,7 @@ export function retrySingleRouter() {
       let originalUploadUrlCandidate: string | undefined = undefined;
       let stage1AFromParent: string | undefined = undefined;
       let stage1BFromParent: string | undefined = undefined;
+      let inheritedStageUrls: Record<string, string | null> = {};
       let stage2OnlyDisabled = false;
       let retryFromStage: string | undefined = undefined;
       let retryMode: "stage_resume" | "full_pipeline_restart" = "stage_resume";
@@ -558,6 +559,26 @@ export function retrySingleRouter() {
             "2": resolveStageUrl(allStageUrls, "2"),
           };
 
+          inheritedStageUrls = {
+            stage1A: canonicalStageUrls["1A"],
+            stage1B: canonicalStageUrls["1B"],
+            stage2: canonicalStageUrls["2"],
+            "1A": canonicalStageUrls["1A"],
+            "1B": canonicalStageUrls["1B"],
+            "2": canonicalStageUrls["2"],
+          };
+
+          const lineageSourceStage: "stage1A" | "stage1B" | "stage2" = canonicalStageUrls["2"]
+            ? "stage2"
+            : canonicalStageUrls["1B"]
+              ? "stage1B"
+              : "stage1A";
+          const lineageSourceUrl = lineageSourceStage === "stage2"
+            ? canonicalStageUrls["2"]
+            : lineageSourceStage === "stage1B"
+              ? canonicalStageUrls["1B"]
+              : canonicalStageUrls["1A"];
+
           let baseline: { baselineUrl: string; resolvedStage: "1A" | "1B" };
           try {
             baseline = resolveRetryBaseline(requestedStage, canonicalStageUrls);
@@ -569,6 +590,8 @@ export function retrySingleRouter() {
             });
           }
 
+          retrySourceStage = lineageSourceStage;
+          retrySourceUrl = lineageSourceUrl || undefined;
           selectedSourceStage = baseline.resolvedStage;
           selectedSourceUrl = baseline.baselineUrl;
           retryFromStage = requestedStage === "2" && baseline.resolvedStage === "1A" ? "1B" : undefined;
@@ -849,7 +872,7 @@ export function retrySingleRouter() {
         stage1BWasRequested = true;
       }
 
-      const resolvedBaselineStage: "1A" | "1B" = selectedSourceStage === "1B" ? "1B" : "1A";
+      const resolvedBaselineStage: "1A" | "1B" = stage1BFromParent ? "1B" : "1A";
       const resolvedBaselineUrl =
         resolvedBaselineStage === "1A"
           ? stage1AFromParent
@@ -1088,6 +1111,17 @@ export function retrySingleRouter() {
         userId: sessUser.id,
         imageId: (rec as any).imageId,
         agencyId,
+        sourceStage: (retrySourceStage === "stage2" || retrySourceStage === "2")
+          ? "2"
+          : (retrySourceStage === "stage1B" || retrySourceStage === "1B")
+            ? "1B"
+            : "1A",
+        baselineStage: (retrySourceStage === "stage2" || retrySourceStage === "2")
+          ? "2"
+          : (retrySourceStage === "stage1B" || retrySourceStage === "1B")
+            ? "1B"
+            : "1A",
+        stageUrls: inheritedStageUrls,
         remoteOriginalUrl,
         remoteOriginalKey,
         options,

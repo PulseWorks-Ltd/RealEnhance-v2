@@ -3571,6 +3571,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   // Re-hydrate and repair job metadata contract for ownership validation
+  nLog("[JOB_LINEAGE_START]", {
+    jobId: payload.jobId,
+    sourceStage: (payload as any).sourceStage || null,
+    baselineStage: (payload as any).baselineStage || null,
+    retrySourceStage: (payload as any).retrySourceStage || null,
+    retryBaselineStage: (payload as any).retryBaselineStage || null,
+  });
   const buildRequestedStages = (): any => ({
     stage1a: true,
     stage1b: (payload as any).options?.declutter
@@ -4382,11 +4389,56 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
   }
   
+  const normalizePayloadSourceStage = (value: string | null | undefined): "stage1A" | "stage1B" | "stage2" | null => {
+    const normalized = String(value || "").trim().toLowerCase();
+    if (!normalized) return null;
+    if (normalized === "stage2" || normalized === "2") return "stage2";
+    if (normalized === "stage1b" || normalized === "1b") return "stage1B";
+    if (normalized === "stage1a" || normalized === "1a") return "stage1A";
+    return null;
+  };
+
+  const payloadSourceStage = normalizePayloadSourceStage((payload as any).sourceStage || (payload as any).retrySourceStage);
+  const payloadStageUrls = (((payload as any).stageUrls || {}) as Record<string, string | null | undefined>);
+  const isDerivedEnhanceJob = (payload as any).retryType === "manual_retry"
+    || !!(payload as any).sourceStage
+    || !!(payload as any).baselineStage;
+
   // Check if we have a remote original URL (multi-service deployment)
   const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
   let origPath: string;
-  
-  if (remoteUrl) {
+
+  if (isDerivedEnhanceJob) {
+    if (!payloadSourceStage) {
+      throw new Error("Missing sourceStage for non-initial job");
+    }
+
+    const lineageSourceUrl = payloadSourceStage === "stage2"
+      ? resolveStageUrl(payloadStageUrls as any, "2")
+      : payloadSourceStage === "stage1B"
+        ? resolveStageUrl(payloadStageUrls as any, "1B")
+        : resolveStageUrl(payloadStageUrls as any, "1A");
+
+    if (!lineageSourceUrl) {
+      throw new Error(`Missing ${payloadSourceStage} URL for non-initial job`);
+    }
+
+    nLog("[WORKER_LINEAGE_INPUT]", {
+      jobId: payload.jobId,
+      sourceStage: payloadSourceStage,
+      baselineStage: (payload as any).baselineStage || null,
+      sourceUrl: lineageSourceUrl,
+      stageUrls: payloadStageUrls,
+    });
+
+    origPath = await downloadToTemp(lineageSourceUrl, `${payload.jobId}-${payloadSourceStage}`);
+    nLog("[STAGE_INPUT_SELECTED]", {
+      jobId: payload.jobId,
+      stage: "bootstrap",
+      sourceStage: payloadSourceStage,
+      path: origPath.substring(Math.max(0, origPath.length - 40)),
+    });
+  } else if (remoteUrl) {
     // Multi-service mode: Download original from S3
     try {
       if (!VALIDATION_FOCUS_MODE) {

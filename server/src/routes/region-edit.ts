@@ -529,12 +529,17 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     let stage1AReferenceUrl: string | undefined = undefined;
+    let inheritedStageUrls: Record<string, string | null> | undefined = undefined;
     if (sourceJobId) {
       // Bug B fix: resolve Stage 1A reference for all edit modes (not just Add/Remove).
       // Replace and Restore also need the structural anchor for the worker's validators.
       try {
         const sourceJob = await getJob(sourceJobId);
         stage1AReferenceUrl = resolveStage1AUrlFromJob(sourceJob);
+        const sourceJobStageUrls = (sourceJob as any)?.stageUrls || (sourceJob as any)?.stageOutputs || null;
+        if (sourceJobStageUrls && typeof sourceJobStageUrls === "object") {
+          inheritedStageUrls = { ...(sourceJobStageUrls as Record<string, string | null>) };
+        }
         if (!stage1AReferenceUrl) {
           console.warn("[region-edit] No Stage-1A reference URL resolved from source job", { sourceJobId });
         }
@@ -591,7 +596,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       baseImageUrl,
       mask: maskBase64,
       ...(sourceJobId ? { parentJobId: sourceJobId } : {}),
-      ...(baselineStage ? { baselineStage } : {}),
+      ...(editSourceStage ? { sourceStage: editSourceStage } : { sourceStage: "stage2" as const }),
+      ...(editSourceStage ? { baselineStage: editSourceStage } : { baselineStage: "stage2" as const }),
+      ...(inheritedStageUrls ? { stageUrls: inheritedStageUrls } : {}),
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       // Bug A fix: forward editSourceStage so the worker knows which stage the edit

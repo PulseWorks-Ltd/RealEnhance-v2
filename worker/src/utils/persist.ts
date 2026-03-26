@@ -8,7 +8,16 @@ import {
   ImageId,
   UserId
 } from "@realenhance/shared/types";
-import { mergeStageUrls } from "@realenhance/shared/stageUrlResolver";
+import { mergeStageUrls, resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
+
+function logMergedStageUrls(jobId: JobId, stageUrls: Record<string, string | null | undefined>) {
+  console.log("[STAGE_URLS_WRITE]", { jobId, stageUrls });
+  const stage1AUrl = resolveStageUrl(stageUrls as any, "1A");
+  const stage2Url = resolveStageUrl(stageUrls as any, "2");
+  if (stage1AUrl && stage2Url && stage1AUrl === stage2Url) {
+    console.error("🚨 STAGE COLLAPSE DETECTED", { jobId, stageUrls });
+  }
+}
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const redisClient = createClient({ url: REDIS_URL });
@@ -52,6 +61,7 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
         ...patch,
         stageUrls: mergeStageUrls(existing, patch.stageUrls),
       };
+      logMergedStageUrls(jobId, patch.stageUrls as Record<string, string | null | undefined>);
     } catch (mergeErr) {
       console.error(`[updateJob] Failed to merge stageUrls for job ${jobId}:`, mergeErr);
     }
@@ -121,6 +131,7 @@ export async function updateJobIf(
             ...mergedPatch,
             stageUrls: mergeStageUrls(existing, mergedPatch.stageUrls),
           };
+          logMergedStageUrls(jobId, mergedPatch.stageUrls as Record<string, string | null | undefined>);
         } catch (mergeErr) {
           console.error(`[updateJobIf] Failed to merge stageUrls for job ${jobId}:`, mergeErr);
         }

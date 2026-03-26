@@ -207,6 +207,16 @@ function buildEnhanceArtifacts(params: {
   clientBatchId?: string | null;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
+  sourceStage?: "1A" | "1B" | "2";
+  baselineStage?: "1A" | "1B" | "2";
+  stageUrls?: {
+    stage1AUrl?: string;
+    stage1BUrl?: string;
+    stage2Url?: string;
+    stage1A?: string;
+    stage1B?: string;
+    stage2?: string;
+  };
   retryInfo?: {
     retryType?: "manual_retry";
     sourceStage?: string | null;
@@ -298,6 +308,9 @@ function buildEnhanceArtifacts(params: {
     agencyId: params.agencyId,
     propertyId: params.propertyId,
     clientBatchId: params.clientBatchId || undefined,
+    sourceStage: params.sourceStage,
+    baselineStage: params.baselineStage,
+    stageUrls: params.stageUrls,
     options: params.options,
     createdAt: now,
     remoteOriginalUrl: params.remoteOriginalUrl as any,
@@ -341,6 +354,16 @@ export async function enqueueEnhanceJob(params: {
   agencyId?: string | null;
   propertyId?: string | null;
   clientBatchId?: string | null;
+  sourceStage?: "1A" | "1B" | "2";
+  baselineStage?: "1A" | "1B" | "2";
+  stageUrls?: {
+    stage1AUrl?: string;
+    stage1BUrl?: string;
+    stage2Url?: string;
+    stage1A?: string;
+    stage1B?: string;
+    stage2?: string;
+  };
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {
@@ -415,6 +438,9 @@ export async function enqueueEnhanceJob(params: {
       status: "queued",
       payload,
       clientBatchId: params.clientBatchId || undefined,
+      sourceStage: params.sourceStage,
+      baselineStage: params.baselineStage,
+      stageUrls: params.stageUrls,
       metadata: jobMeta,
       createdAt: payload.createdAt,
     }),
@@ -789,9 +815,11 @@ export async function enqueueRegionEditJob(params: {
   propertyId?: string;
   sourceJobId?: string;
   parentJobId?: string;
+  sourceStage?: "stage1A" | "stage1B" | "stage2";
   sourceImageId?: string;
   imageId?: ImageId;
-  baselineStage?: "1A" | "1B" | "2";
+  baselineStage?: "stage1A" | "stage1B" | "stage2";
+  stageUrls?: Record<string, string | null>;
   mode: "add" | "remove" | "restore" | "replace";
   editIntent?: "add" | "remove" | "replace";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
@@ -816,7 +844,9 @@ export async function enqueueRegionEditJob(params: {
     sourceImageId: params.sourceImageId,
     propertyId: params.propertyId,
     type: "region-edit",
+    sourceStage: params.sourceStage,
     baselineStage: params.baselineStage,
+    stageUrls: params.stageUrls,
     mode: params.mode,
     editIntent: params.editIntent,
     editSourceStage: params.editSourceStage,
