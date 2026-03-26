@@ -4612,12 +4612,45 @@ export default function BatchProcessor({
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
       
-      // Build ZIP from exactly what each card is currently showing in the UI.
+      // Build ZIP from the same output tab state used by each image card.
       const imagesToDownload: { url: string; filename: string }[] = [];
+
+      const getZipDisplayUrl = (image: any, selectedTab: DisplayOutputKey | null | undefined): string | null => {
+        const stageMap = image?.stageUrls || image?.result?.stageUrls || image?.stageOutputs || image?.result?.stageOutputs || {};
+        switch (selectedTab) {
+          case "edited":
+            return (
+              toDisplayUrl(image?.latestEditUrl) ||
+              toDisplayUrl(image?.result?.latestEditUrl) ||
+              toDisplayUrl(image?.editLatestUrl) ||
+              toDisplayUrl(image?.result?.editLatestUrl) ||
+              null
+            );
+          case "retried":
+            return (
+              toDisplayUrl(image?.latestRetryUrl) ||
+              toDisplayUrl(image?.result?.latestRetryUrl) ||
+              toDisplayUrl(image?.retryLatestUrl) ||
+              toDisplayUrl(image?.result?.retryLatestUrl) ||
+              null
+            );
+          case "2":
+            return toDisplayUrl(stageMap?.["2"]) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || null;
+          case "1B":
+            return toDisplayUrl(stageMap?.["1B"]) || toDisplayUrl(stageMap?.["1b"]) || toDisplayUrl(stageMap?.stage1B) || null;
+          case "1A":
+            return toDisplayUrl(stageMap?.["1A"]) || toDisplayUrl(stageMap?.["1a"]) || toDisplayUrl(stageMap?.["1"]) || toDisplayUrl(stageMap?.stage1A) || null;
+          default:
+            return toDisplayUrl(stageMap?.["2"]) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || null;
+        }
+      };
       
       for (let i = 0; i < results.length; i++) {
-        const displayed = buildPreviewImage(i);
-        const imageUrl = toDisplayUrl(displayed?.url);
+        const resultItem = results[i];
+        const selectedTab = (displayStageByIndex[i] as DisplayOutputKey | undefined) || null;
+        const imageUrl =
+          getZipDisplayUrl(resultItem, selectedTab)
+          || getZipDisplayUrl(resultItem, "2");
         
         if (imageUrl) {
           // Generate filename - use original file name if available, otherwise generate one
