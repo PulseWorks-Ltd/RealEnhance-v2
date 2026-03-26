@@ -164,6 +164,10 @@ export interface JobRecord {
     resultUrl?: string | null;
     originalUrl?: string | null;
     stageUrls?: Record<string, string | null>;
+    latestEditUrl?: string | null;
+    latestRetryUrl?: string | null;
+    editOutputs?: string[];
+    retryOutputs?: string[];
     attempts?: {
         current?: number;
         max?: number;

@@ -272,6 +272,7 @@ function resolveRetryBaseline(
 
   for (let i = index - 1; i >= 0; i -= 1) {
     const stage = order[i];
+    if (stage === "2") continue;
     const url = stageUrls[stage];
     if (typeof url === "string" && url.trim().length > 0) {
       return {
@@ -492,7 +493,7 @@ export function retrySingleRouter() {
             baselineUrl: baseline.baselineUrl,
           });
 
-          if (stage2OnlyRequested && retryMode !== "full_pipeline_restart") {
+          if (stage2OnlyRequested) {
             const hasStage1BBaseline =
               !!selectedSourceStage &&
               selectedSourceStage === "1B";
@@ -525,7 +526,7 @@ export function retrySingleRouter() {
           
           const collectedUrls = Object.values(canonicalStageUrls || {}).filter(Boolean) as string[];
 
-          if (retryMode !== "full_pipeline_restart" && collectedUrls.length > 0 && !collectedUrls.includes(selectedSourceUrl)) {
+          if (collectedUrls.length > 0 && !collectedUrls.includes(selectedSourceUrl)) {
             return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Selected source URL does not match recorded job outputs" });
           }
 
@@ -680,7 +681,7 @@ export function retrySingleRouter() {
       }
 
       const effectiveDeclutter = declutter || !!declutterMode;
-      const effectiveDeclutterWithFallback = retryMode === "full_pipeline_restart" ? true : effectiveDeclutter;
+      const effectiveDeclutterWithFallback = effectiveDeclutter;
       if (declutterModeSource !== "none") {
         console.log(`[RETRY_SINGLE] declutterMode resolved: ${declutterMode} (source=${declutterModeSource})`);
       }
@@ -748,7 +749,7 @@ export function retrySingleRouter() {
       const effectiveStagesToRun: Array<"1A" | "1B" | "2"> = stagesToRun.length > 0
         ? stagesToRun
         : (requestedStage === "2"
-            ? ((retryMode === "full_pipeline_restart" || stage2OnlyDisabled)
+          ? ((stage2OnlyDisabled)
                 ? ["1A", "1B", "2"]
                 : ["2"])
             : []);
@@ -843,7 +844,6 @@ export function retrySingleRouter() {
         !resolvedExecutionPlan.runStage1A &&
         !resolvedExecutionPlan.runStage1B &&
         !stage2OnlyDisabled &&
-        retryMode !== "full_pipeline_restart" &&
         (resolvedExecutionPlan.stage2Baseline === "1A" || resolvedExecutionPlan.stage2Baseline === "1B")
           ? {
               enabled: true,
@@ -868,7 +868,7 @@ export function retrySingleRouter() {
         });
       }
 
-      if (stage2OnlyRequested && !stage2OnlyDisabled && retryMode !== "full_pipeline_restart" && !effectiveStage2OnlyMode) {
+      if (stage2OnlyRequested && !stage2OnlyDisabled && !effectiveStage2OnlyMode) {
         return res.status(409).json({
           success: false,
           error: "manual_retry_stage2only_payload_invalid",
