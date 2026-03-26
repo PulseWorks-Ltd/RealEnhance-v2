@@ -5203,20 +5203,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[worker] Downloaded Stage-${stage2OnlyBaseStage} base to: ${basePath}`);
       }
 
-      // Stage 2 validation baseline must match main pipeline behavior: compare against Stage 1A output
-      let stage2OnlyValidationBaseline = basePath;
-      if (stage2OnlyBaseStage === "1B" && (payload.stage2OnlyMode as any)?.base1AUrl) {
-        try {
-          stage2OnlyValidationBaseline = await downloadToTemp((payload.stage2OnlyMode as any).base1AUrl, `${payload.jobId}-stage1A`);
-          if (!VALIDATION_FOCUS_MODE) {
-            nLog(`[worker] Downloaded Stage-1A validation baseline to: ${stage2OnlyValidationBaseline}`);
-          }
-        } catch (baselineErr: any) {
-          nLog(`[worker] Failed to download Stage-1A validation baseline (fallback=Stage-1B): ${baselineErr?.message || baselineErr}`);
-          stage2OnlyValidationBaseline = basePath;
-        }
-      }
-      nLog(`[STAGE2_BASELINE] using=${stage2OnlyValidationBaseline === basePath ? "Stage1B" : "Stage1A"}`);
+      // Validation baseline must always be the exact image fed into Stage 2 generation.
+      const stage2OnlyValidationBaseline = basePath;
+      nLog(`[STAGE2_BASELINE] using=stage2_input`);
       if (await stopIfCancelled("stage2_only_pre_stage2")) return;
 
       // Run Stage-2 only (using 1B as base)
@@ -5430,7 +5419,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               }
             };
 
-            const opRes = await runOpeningValidator(validationBaseline, path2, structuralBaseline || null);
+            const validationStructuralBaseline = await extractStructuralBaseline(validationBaseline);
+            const opRes = await runOpeningValidator(validationBaseline, path2, validationStructuralBaseline);
             const opHardFail = opRes?.hardFail === true;
             specialistResults.openings = opRes;
             if (opHardFail) {
@@ -7774,9 +7764,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   
   const canonicalRoomTypeForStage2 = stage2Routing.canonicalRoomType;
   const forceRefreshPromptMode = stage2Routing.forceRefresh;
-  // ✅ FIX: Stage 2 validation must ALWAYS compare against Stage 1A (professional enhancement baseline)
-  // Stage 2 input may use Stage 1B (decluttered), but validation compares Stage 2 vs Stage 1A
-  const stage2ValidationBaseline = path1A;
+  // Validation baseline must always be the exact image fed into Stage 2 generation.
+  const stage2ValidationBaseline = stage2InputPath;
   const explicitStage2ModeMain = normalizeStage2ModeOverride((payload.options as any)?.stage2Mode);
   const stage2PromptMode = explicitStage2ModeMain
     ? stage2PromptModeFromOverride(explicitStage2ModeMain)
@@ -8183,7 +8172,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog("[STAGE2_BASE_PROOF]", {
         jobId: payload.jobId,
         path: "light_declutter_backstop",
-        stage1APath: path1A,
+        stage1APath: stage2ValidationBaseline,
         stage1BPath: lightPath1B,
         chosenBasePath: stage2InputResolved,
         chosenBaseStage: stage2BaseStage,
@@ -8724,7 +8713,13 @@ All openings must remain identical in position and size to the original image.`;
 
       const validationStartTime = Date.now();
       const validationStage: "1A" | "1B" | "2" = "2";
-      const validationBasePath = stage2ValidationBaseline;
+      const validationBasePathCandidate = stage2ValidationBaseline;
+
+      if (typeof validationBasePathCandidate !== "string" || !validationBasePathCandidate.trim()) {
+        throw new Error("validation_baseline_missing: stage2 input path unavailable");
+      }
+
+      const validationBasePath = validationBasePathCandidate;
 
       nLog(`[STAGE2_VALIDATION_BASELINE]`, {
         jobId: payload.jobId,
@@ -9202,7 +9197,8 @@ All openings must remain identical in position and size to the original image.`;
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
-        const opRes = await runOpeningValidator(validationBasePath, path2, structuralBaseline || null);
+        const validationStructuralBaseline = await extractStructuralBaseline(validationBasePath);
+        const opRes = await runOpeningValidator(validationBasePath, path2, validationStructuralBaseline);
         specialistResults.opening = normalizeSpecialistResult({
           validator: "opening",
           status: opRes.status,
@@ -9916,8 +9912,8 @@ All openings must remain identical in position and size to the original image.`;
         jobId: payload.jobId,
         imageId: payload.imageId,
         stagingStyle: payload.options.stagingStyle,
-        stage1APath: path1A,
-        sourceStage: "1A",
+        stage1APath: validationBasePath,
+        sourceStage: stage2SourceStage,
         validationMode: stage2SelectedValidationMode,
         geminiPolicy: stage2GeminiPolicy,
         specialistAdvisorySignals,

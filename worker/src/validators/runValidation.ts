@@ -314,6 +314,10 @@ export function shouldInjectEvidence(evidence?: ValidationEvidence): boolean {
  * Parameters for unified validation
  */
 export interface UnifiedValidationParams {
+  /**
+   * Authoritative validation baseline path.
+   * This must be the exact input image used to generate `enhancedPath`.
+   */
   originalPath: string;
   enhancedPath: string;
   stage: "1A" | "1B" | "2";
@@ -324,9 +328,7 @@ export interface UnifiedValidationParams {
   imageId?: string;
   stagingStyle?: string;  // Staging style used (for safety coupling)
   /**
-   * Stage1A output path for Stage2 validation baseline.
-   * CRITICAL: Stage2 should validate against Stage1A output, NOT original.
-   * If not provided, falls back to originalPath (legacy behavior).
+   * Legacy audit field only. Validation baseline is always `originalPath`.
    */
   stage1APath?: string;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
@@ -460,6 +462,13 @@ export async function runUnifiedValidation(
     specialistAdvisorySignals,
   } = params;
 
+  if (!String(originalPath || "").trim()) {
+    throw new Error("validation_baseline_missing: originalPath is required");
+  }
+  if (!String(enhancedPath || "").trim()) {
+    throw new Error("validation_candidate_missing: enhancedPath is required");
+  }
+
   const validatorMode = getLocalValidatorMode();
   const stageAwareConfig = loadStageAwareConfig();
   const warnings: string[] = [];
@@ -491,7 +500,7 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] Original: ${originalPath}`);
   nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
   if (stage1APath) {
-    nLog(`[unified-validator] Stage1A Path: ${stage1APath}`);
+    nLog(`[unified-validator] Stage1A Path (audit only): ${stage1APath}`);
   }
 
   // ===== PERCEPTUAL DIFF (SSIM) TELEMETRY — FIRST STEP =====
@@ -575,10 +584,10 @@ export async function runUnifiedValidation(
   if (stageAwareConfig.enabled && stage === "2") {
     nLog(`[unified-validator] Using stage-aware validator for Stage 2`);
 
-    // CRITICAL: Use Stage1A output as baseline for Stage2, NOT original
-    const validationBaseline = stage1APath || originalPath;
-    if (!stage1APath) {
-      nLog(`[unified-validator] ⚠️ No stage1APath provided - using originalPath as baseline (may cause false positives)`);
+    // Validation baseline must always match the exact input image for this candidate.
+    const validationBaseline = originalPath;
+    if (stage1APath && stage1APath !== originalPath) {
+      nLog(`[unified-validator] Ignoring legacy stage1APath for baseline selection; using originalPath instead`);
     }
 
     try {
