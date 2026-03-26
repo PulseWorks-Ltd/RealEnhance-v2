@@ -582,6 +582,21 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       });
     }
 
+    const resolvedSourceStage: "stage1A" | "stage1B" | "stage2" = editSourceStage || "stage2";
+    const effectiveStageUrls: Record<string, string | null> = inheritedStageUrls
+      ? { ...inheritedStageUrls }
+      : {};
+    if (resolvedSourceStage === "stage2") {
+      if (!effectiveStageUrls.stage2) effectiveStageUrls.stage2 = baseImageUrl;
+      if (!effectiveStageUrls["2"]) effectiveStageUrls["2"] = baseImageUrl;
+    } else if (resolvedSourceStage === "stage1B") {
+      if (!effectiveStageUrls.stage1B) effectiveStageUrls.stage1B = baseImageUrl;
+      if (!effectiveStageUrls["1B"]) effectiveStageUrls["1B"] = baseImageUrl;
+    } else {
+      if (!effectiveStageUrls.stage1A) effectiveStageUrls.stage1A = baseImageUrl;
+      if (!effectiveStageUrls["1A"]) effectiveStageUrls["1A"] = baseImageUrl;
+    }
+
     const jobPayload = {
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
@@ -596,9 +611,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       baseImageUrl,
       mask: maskBase64,
       ...(sourceJobId ? { parentJobId: sourceJobId } : {}),
-      ...(editSourceStage ? { sourceStage: editSourceStage } : { sourceStage: "stage2" as const }),
-      ...(editSourceStage ? { baselineStage: editSourceStage } : { baselineStage: "stage2" as const }),
-      ...(inheritedStageUrls ? { stageUrls: inheritedStageUrls } : {}),
+      sourceStage: resolvedSourceStage,
+      baselineStage: resolvedSourceStage,
+      stageUrls: effectiveStageUrls,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       // Bug A fix: forward editSourceStage so the worker knows which stage the edit
@@ -610,6 +625,12 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       jobId,
       imageId: record.imageId || record.id,
       mode: apiMode,
+      sourceStage: resolvedSourceStage,
+      lineageSourceUrl: resolvedSourceStage === "stage2"
+        ? (effectiveStageUrls.stage2 || effectiveStageUrls["2"] || null)
+        : resolvedSourceStage === "stage1B"
+          ? (effectiveStageUrls.stage1B || effectiveStageUrls["1B"] || null)
+          : (effectiveStageUrls.stage1A || effectiveStageUrls["1A"] || null),
       baseImageUrlLength: baseImageUrl.length,
       maskLength: maskBase64.length,
       instructionLength: instruction.length,

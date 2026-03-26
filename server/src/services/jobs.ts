@@ -47,6 +47,39 @@ function buildQueueJobOptions(jobId: string) {
   };
 }
 
+function normalizeDerivedSourceStage(value: string | null | undefined): "1A" | "1B" | "2" | null {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  const direct = normalizeStageLabel(normalized);
+  if (direct) return direct;
+
+  const lowered = normalized.toLowerCase();
+  if (lowered === "stage2") return "2";
+  if (lowered === "stage1b") return "1B";
+  if (lowered === "stage1a") return "1A";
+  return null;
+}
+
+function assertDerivedJobLineage(params: {
+  jobType: "enhance" | "region-edit";
+  sourceStage: string | null | undefined;
+  stageUrls: Record<string, string | null | undefined> | null | undefined;
+}) {
+  const normalizedSourceStage = normalizeDerivedSourceStage(params.sourceStage);
+  if (!normalizedSourceStage) {
+    throw new Error(`[${params.jobType}] missing sourceStage for non-initial job`);
+  }
+
+  const sourceUrl = resolveStageUrl(params.stageUrls as any, normalizedSourceStage);
+  if (!sourceUrl) {
+    throw new Error(
+      `[${params.jobType}] missing stageUrls entry for sourceStage=${normalizedSourceStage}`
+    );
+  }
+
+  return { normalizedSourceStage, sourceUrl };
+}
+
 function awaitingUserKey(userId: string) {
   return `user:${userId}:jobs:awaiting_payment`;
 }
@@ -424,6 +457,17 @@ export async function enqueueEnhanceJob(params: {
     sourceStage?: string;
   };
 }, jobIdOverride?: JobId) {
+  const isDerivedEnhanceJob = params.retryInfo?.retryType === "manual_retry"
+    || !!params.sourceStage
+    || !!params.baselineStage;
+  if (isDerivedEnhanceJob) {
+    assertDerivedJobLineage({
+      jobType: "enhance",
+      sourceStage: params.sourceStage,
+      stageUrls: params.stageUrls,
+    });
+  }
+
   const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
 
   await Promise.all([
@@ -831,6 +875,12 @@ export async function enqueueRegionEditJob(params: {
   restoreFromUrl?: string;
   stage1AReferenceUrl?: string;
 }) {
+  assertDerivedJobLineage({
+    jobType: "region-edit",
+    sourceStage: params.sourceStage,
+    stageUrls: params.stageUrls,
+  });
+
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
 

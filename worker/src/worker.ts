@@ -11778,6 +11778,31 @@ const worker = new Worker(
           const regionAny = regionPayload as any;
           const editParentJobId = regionAny.parentJobId || regionAny.sourceJobId || undefined;
           const baselineStageUsed: string = regionAny.baselineStage || "unknown";
+          const normalizeRegionSourceStage = (value: string | null | undefined): "stage1A" | "stage1B" | "stage2" | null => {
+            const normalized = String(value || "").trim().toLowerCase();
+            if (!normalized) return null;
+            if (normalized === "stage2" || normalized === "2") return "stage2";
+            if (normalized === "stage1b" || normalized === "1b") return "stage1B";
+            if (normalized === "stage1a" || normalized === "1a") return "stage1A";
+            return null;
+          };
+          const regionSourceStage = normalizeRegionSourceStage(regionAny.sourceStage || regionAny.editSourceStage);
+          const regionStageUrls = ((regionAny.stageUrls || {}) as Record<string, string | null | undefined>);
+          if (!regionSourceStage) {
+            logJobErrorAndThrow(regionPayload, "Missing sourceStage for region-edit job", {
+              stage: "region-edit",
+            });
+          }
+          const lineageBaseImageUrl = regionSourceStage === "stage2"
+            ? resolveStageUrl(regionStageUrls as any, "2")
+            : regionSourceStage === "stage1B"
+              ? resolveStageUrl(regionStageUrls as any, "1B")
+              : resolveStageUrl(regionStageUrls as any, "1A");
+          if (!lineageBaseImageUrl) {
+            logJobErrorAndThrow(regionPayload, `Missing ${regionSourceStage} URL for region-edit job`, {
+              stage: "region-edit",
+            });
+          }
           // ✅ ADD DETAILED DEBUG LOGGING
           nLog("[worker-region-edit] Received payload:", JSON.stringify({
             type: regionPayload.type,
@@ -11798,13 +11823,15 @@ const worker = new Worker(
             hasBaseImageUrl: !!regionAny.baseImageUrl,
             hasMask: !!regionAny.mask,
           });
+          nLog("[WORKER_REGION_LINEAGE_INPUT]", {
+            jobId: regionPayload.jobId,
+            sourceStage: regionSourceStage,
+            baselineStage: regionAny.baselineStage || null,
+            sourceUrl: lineageBaseImageUrl,
+            stageUrls: regionStageUrls,
+          });
 
-          // ✅ FIX: Get the correct URL field
-          const baseImageUrl = 
-            regionAny.baseImageUrl || 
-            regionAny.currentImageUrl ||
-            regionAny.imageUrl ||
-            null;
+          const baseImageUrl = lineageBaseImageUrl;
 
           if (!baseImageUrl) {
             nLog("[worker-region-edit] No base image URL found in payload:", {
