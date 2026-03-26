@@ -11527,6 +11527,23 @@ async function handleEditJob(payload: any) {
 
   nLog(`[edit] parentJobId=${editParentJobId ?? "none"} baselineStage=${baselineStageUsed}`);
 
+  // Bug D fix: inherit stageUrls from the source/parent job so that:
+  // 1. Client stage tabs (1A/1B/2) survive page reloads after an edit
+  // 2. Retry-of-edit can resolve a valid baseline without walking further up the chain
+  // We shallow-copy to avoid sharing a reference with the parent record.
+  let inheritedStageUrls: Record<string, string | null> = {};
+  if (editParentJobId) {
+    try {
+      const sourceJob = await getJob(editParentJobId);
+      if (sourceJob?.stageUrls && typeof sourceJob.stageUrls === "object") {
+        inheritedStageUrls = { ...(sourceJob.stageUrls as Record<string, string | null>) };
+        nLog(`[edit] inherited stageUrls from parent ${editParentJobId}: keys=${Object.keys(inheritedStageUrls).join(",")}`);
+      }
+    } catch (err) {
+      nLog(`[edit] failed to inherit stageUrls from parent ${editParentJobId} (non-blocking):`, (err as any)?.message || err);
+    }
+  }
+
   // Guard: if pub.key collides with a parent output key, generate a new one
   // (in practice this never happens because publishImage uses Date.now() keys)
   if (pub.key && editParentJobId) {
@@ -11544,6 +11561,7 @@ async function handleEditJob(payload: any) {
       latestEditUrl: pub.url,
       editLatestUrl: pub.url,
       editOutputs: nextEditOutputs,
+      stageUrls: inheritedStageUrls,
       meta: {
         ...payload,
         parentJobId: editParentJobId,
@@ -11553,6 +11571,21 @@ async function handleEditJob(payload: any) {
     },
     "edit_complete"
   );
+
+  // Bug E fix: stamp the parent job with editLatestUrl so the Edit tab
+  // survives page reloads. This intentionally writes only the edit pointer
+  // and does NOT touch resultUrl, stageUrls, or any other parent output.
+  if (editParentJobId) {
+    try {
+      await updateJob(editParentJobId, {
+        latestEditUrl: pub.url,
+        editLatestUrl: pub.url,
+      });
+      nLog(`[edit] stamped parent ${editParentJobId} with editLatestUrl`);
+    } catch (err) {
+      nLog(`[edit] failed to stamp parent ${editParentJobId} with editLatestUrl (non-blocking):`, (err as any)?.message || err);
+    }
+  }
 }
 
 

@@ -521,7 +521,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     }
 
     let stage1AReferenceUrl: string | undefined = undefined;
-    if ((workerMode === "Add" || workerMode === "Remove") && sourceJobId) {
+    if (sourceJobId) {
+      // Bug B fix: resolve Stage 1A reference for all edit modes (not just Add/Remove).
+      // Replace and Restore also need the structural anchor for the worker's validators.
       try {
         const sourceJob = await getJob(sourceJobId);
         stage1AReferenceUrl = resolveStage1AUrlFromJob(sourceJob);
@@ -582,6 +584,9 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       mask: maskBase64,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
+      // Bug A fix: forward editSourceStage so the worker knows which stage the edit
+      // was sourced from (was parsed and validated above but never included in payload).
+      ...(editSourceStage ? { editSourceStage } : {}),
     };
 
     console.log("[region-edit] Enqueuing job:", {

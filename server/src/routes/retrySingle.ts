@@ -461,8 +461,30 @@ export function retrySingleRouter() {
               : await getJob(canonicalParentJobId);
             if (!currentParentJob) break;
 
+            // Bug C fix: stop walking as soon as the current job carries valid stageUrls.
+            // This prevents skipping over an edit job that already had stageUrls
+            // inherited (Bug D fix), and avoids regressing into stale upstream state
+            // in chains like: enhance → retry → edit → retry.
+            const currentStageUrls = (currentParentJob as any)?.stageUrls;
+            const hasValidStageUrls =
+              currentStageUrls &&
+              typeof currentStageUrls === "object" &&
+              Object.values(currentStageUrls).some((v) => typeof v === "string" && v.trim().length > 0);
+            if (hasValidStageUrls && currentParentJob !== parentJob) {
+              // Use this job as the canonical anchor.
+              canonicalParentJobId = String((currentParentJob as any)?.id || (currentParentJob as any)?.jobId || canonicalParentJobId);
+              break;
+            }
+
             const currentPayload = ((currentParentJob as any)?.payload || {}) as any;
-            const nextParentJobId = String(currentPayload.retryParentJobId || "").trim();
+            // Bug C fix: fall through to parentJobId / sourceJobId for edit job ancestry
+            // (edit jobs use parentJobId, not retryParentJobId).
+            const nextParentJobId = String(
+              currentPayload.retryParentJobId ||
+              currentPayload.parentJobId ||
+              currentPayload.sourceJobId ||
+              ""
+            ).trim();
             const nextParentImageId = String(currentPayload.retryParentImageId || "").trim();
 
             if (nextParentImageId) {

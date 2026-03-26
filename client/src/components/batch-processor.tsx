@@ -5057,7 +5057,11 @@ export default function BatchProcessor({
   const resolveDisplayedStageForEdit = useCallback((imageIndex: number): StageKey | null => {
     const selected = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
     if (selected === "2" || selected === "1B" || selected === "1A") return selected;
-    if (selected === "retried" || selected === "edited") return null;
+    // Bug F fix: retried/edited artifacts are always final-pipeline outputs equivalent
+    // to Stage 2. Return "2" so mapStageToEditSource sends "stage2" to the server
+    // instead of null (which caused editSourceStage: MISSING for every edit on
+    // a retried or edited image).
+    if (selected === "retried" || selected === "edited") return "2";
 
     // Match UI default display stage when user hasn't explicitly selected a tab.
     const item = results[imageIndex];
