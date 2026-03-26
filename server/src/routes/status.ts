@@ -257,8 +257,9 @@ export function statusRouter() {
         const resultUrl: string | null = finalOutputUrl;
 
         const stageUrlsRaw: Record<string, string> | null =
-          ((local.stageUrls || rv?.stageUrls)
+          (((local.stageUrls || local.meta?.stageUrls) || rv?.stageUrls)
             ? {
+                ...((local.meta?.stageUrls || {}) as Record<string, string>),
                 ...((local.stageUrls || {}) as Record<string, string>),
                 ...((rv?.stageUrls || {}) as Record<string, string>),
               }
@@ -504,7 +505,7 @@ export function statusRouter() {
             ...(clientBatchId ? { clientBatchId } : {}),
           };
         })();
-        const parentJobId = local.parentJobId || (rv && rv.parentJobId) || payloadRetryInfo?.parentJobId || null;
+        const parentJobId = local.parentJobId || local.meta?.parentJobId || (rv && rv.parentJobId) || payloadRetryInfo?.parentJobId || null;
         const retryInfo = local.retryInfo || (rv && rv.retryInfo) || payloadRetryInfo || null;
 
         const terminalMeta = resolveTerminalMetadata(local, pipelineStatus, failedReason);
@@ -698,8 +699,9 @@ export function statusRouter() {
       const maskUrl: string | null =
         (rv && rv.maskUrl) || local.maskUrl || null;
       const stageUrlsRaw: Record<string, string> | null =
-        ((local.stageUrls || rv?.stageUrls)
+        (((local.stageUrls || local.meta?.stageUrls) || rv?.stageUrls)
           ? {
+              ...((local.meta?.stageUrls || {}) as Record<string, string>),
               ...((local.stageUrls || {}) as Record<string, string>),
               ...((rv?.stageUrls || {}) as Record<string, string>),
             }
@@ -859,7 +861,7 @@ export function statusRouter() {
         blockedStage: blockedStage || null,
         fallbackStage: fallbackStageMeta || null,
         validationNote: validationNote || null,
-        parentJobId: local.parentJobId || payloadRetryInfo?.parentJobId || null,
+        parentJobId: local.parentJobId || local.meta?.parentJobId || payloadRetryInfo?.parentJobId || null,
         retryInfo: local.retryInfo || payloadRetryInfo || undefined,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},

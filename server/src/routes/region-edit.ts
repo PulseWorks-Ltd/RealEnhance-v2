@@ -168,6 +168,14 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       rawEditSourceStage === "stage2" || rawEditSourceStage === "stage1B" || rawEditSourceStage === "stage1A"
         ? rawEditSourceStage
         : undefined;
+    const baselineStage: "1A" | "1B" | "2" | undefined =
+      editSourceStage === "stage2"
+        ? "2"
+        : editSourceStage === "stage1B"
+          ? "1B"
+          : editSourceStage === "stage1A"
+            ? "1A"
+            : undefined;
     if (sourceLookupUrl) {
       const dedupKey = `region-edit:${sessUser.id}:${sourceLookupUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
       const redis = getRedis();
@@ -582,6 +590,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       currentImageUrl: baseImageUrl,
       baseImageUrl,
       mask: maskBase64,
+      ...(sourceJobId ? { parentJobId: sourceJobId } : {}),
+      ...(baselineStage ? { baselineStage } : {}),
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       // Bug A fix: forward editSourceStage so the worker knows which stage the edit

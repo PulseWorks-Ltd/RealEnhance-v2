@@ -11724,6 +11724,8 @@ const worker = new Worker(
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
+          const editParentJobId = regionAny.parentJobId || regionAny.sourceJobId || undefined;
+          const baselineStageUsed: string = regionAny.baselineStage || "unknown";
           // ✅ ADD DETAILED DEBUG LOGGING
           nLog("[worker-region-edit] Received payload:", JSON.stringify({
             type: regionPayload.type,
@@ -11819,11 +11821,28 @@ const worker = new Worker(
             nLog("[worker-region-edit] Restore source downloaded to:", restoreFromPath);
           }
 
+          let inheritedStageUrls: Record<string, string | null> = {};
+          if (editParentJobId) {
+            try {
+              const parentJob = await getJob(editParentJobId);
+              const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
+              if (parentStageUrls && typeof parentStageUrls === "object") {
+                inheritedStageUrls = { ...(parentStageUrls as Record<string, string | null>) };
+              }
+            } catch (err) {
+              nLog("[worker-region-edit] Failed to load parent job lineage (non-blocking):", (err as any)?.message || err);
+            }
+          }
+
           let stage1AReferencePath: string | undefined;
           if (regionAny.stage1AReferenceUrl) {
-            nLog("[worker-region-edit] stage1AReferenceUrl provided but ignored for region-edit independence", {
-              jobId: regionPayload.jobId,
-            });
+            try {
+              nLog("[worker-region-edit] Downloading Stage-1A reference from:", regionAny.stage1AReferenceUrl);
+              stage1AReferencePath = await downloadToTemp(regionAny.stage1AReferenceUrl, regionPayload.jobId + "-stage1a-reference");
+              nLog("[worker-region-edit] Stage-1A reference downloaded to:", stage1AReferencePath);
+            } catch (err) {
+              nLog("[worker-region-edit] Failed to download Stage-1A reference (non-blocking):", (err as any)?.message || err);
+            }
           }
 
           let outPath: string;
@@ -12134,9 +12153,11 @@ const worker = new Worker(
               latestEditUrl: pub.url,
               editLatestUrl: pub.url,
               editOutputs: nextEditOutputs,
+              stageUrls: inheritedStageUrls,
               originalUrl: baseImageUrl, // Return the original input URL
               maskUrl: pubMask.url, // Return the published mask URL
               imageId: regionPayload.imageId, // Include imageId for tracking
+              parentJobId: editParentJobId,
               mode: regionAny.mode, // Include original mode from payload (add/remove/replace/restore)
               meta: {
                 type: "region-edit",
@@ -12148,13 +12169,24 @@ const worker = new Worker(
                 retryEligible: false, // Edit outputs cannot be retry baselines
                 consumesCredits: false, // Edits are always FREE
                 // Edit fork metadata
-                parentJobId: (regionPayload as any).parentJobId || (regionPayload as any).sourceJobId || undefined,
-                baselineStageUsed: (regionPayload as any).baselineStage || "unknown",
+                parentJobId: editParentJobId,
+                baselineStageUsed,
               },
             },
             "region_edit_complete"
           );
-          nLog(`[edit] parentJobId=${(regionPayload as any).parentJobId ?? "none"} baselineStage=${(regionPayload as any).baselineStage ?? "unknown"}`);
+          if (editParentJobId) {
+            try {
+              await updateJob(editParentJobId, {
+                latestEditUrl: pub.url,
+                editLatestUrl: pub.url,
+              });
+              nLog(`[worker-region-edit] stamped parent ${editParentJobId} with editLatestUrl`);
+            } catch (err) {
+              nLog("[worker-region-edit] Failed to stamp parent with editLatestUrl (non-blocking):", (err as any)?.message || err);
+            }
+          }
+          nLog(`[edit] parentJobId=${editParentJobId ?? "none"} baselineStage=${baselineStageUsed}`);
           nLog('[worker-region-edit] updateJob called', {
             jobId: regionPayload.jobId,
             imageUrl: pub.url,

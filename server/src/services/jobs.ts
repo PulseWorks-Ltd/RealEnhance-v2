@@ -788,10 +788,13 @@ export async function enqueueRegionEditJob(params: {
   agencyId?: string;
   propertyId?: string;
   sourceJobId?: string;
+  parentJobId?: string;
   sourceImageId?: string;
   imageId?: ImageId;
+  baselineStage?: "1A" | "1B" | "2";
   mode: "add" | "remove" | "restore" | "replace";
   editIntent?: "add" | "remove" | "replace";
+  editSourceStage?: "stage1A" | "stage1B" | "stage2";
   prompt?: string;
   currentImageUrl: string;
   baseImageUrl?: string;
@@ -809,11 +812,14 @@ export async function enqueueRegionEditJob(params: {
     agencyId: params.agencyId,
     imageId: params.imageId,
     sourceJobId: params.sourceJobId,
+    parentJobId: params.parentJobId,
     sourceImageId: params.sourceImageId,
     propertyId: params.propertyId,
     type: "region-edit",
+    baselineStage: params.baselineStage,
     mode: params.mode,
     editIntent: params.editIntent,
+    editSourceStage: params.editSourceStage,
     prompt: params.prompt,
     currentImageUrl: params.currentImageUrl,
     baseImageUrl: params.baseImageUrl,

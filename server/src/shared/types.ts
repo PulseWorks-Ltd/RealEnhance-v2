@@ -239,12 +239,15 @@ export interface RegionEditJobPayload {
   userId: UserId;
   imageId: ImageId;
   sourceJobId?: string;
+  parentJobId?: string;
   sourceImageId?: ImageId;
   propertyId?: string;
   type: "region-edit";
   baseVersionId: string;
+  baselineStage?: "1A" | "1B" | "2";
   mode: "Add" | "Remove" | "Replace" | "Restore";
   editIntent?: "add" | "remove" | "replace";
+  editSourceStage?: "stage1A" | "stage1B" | "stage2";
   instruction?: string;
   mask: unknown;
   stage1AReferenceUrl?: string;
