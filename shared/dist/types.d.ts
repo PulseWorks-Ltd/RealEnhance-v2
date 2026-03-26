@@ -4,10 +4,15 @@ export interface RegionEditJobPayload {
     imageId: ImageId;
     type: "region-edit";
     sourceJobId?: string;
+    parentJobId?: string;
     listingId?: string;
     baseVersionId: string;
+    sourceStage?: "stage1A" | "stage1B" | "stage2";
+    baselineStage?: "stage1A" | "stage1B" | "stage2";
+    stageUrls?: Record<string, string | null>;
     mode: "Add" | "Remove" | "Replace" | "Restore";
     editIntent?: "add" | "remove" | "replace";
+    editSourceStage?: "stage1A" | "stage1B" | "stage2";
     instruction?: string;
     mask: unknown;
     stage1AReferenceUrl?: string;
@@ -118,6 +123,9 @@ export interface EnhanceJobPayload {
         sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
         stage1BMode?: "light" | "stage-ready";
     };
+    sourceStage?: "stage1A" | "stage1B" | "stage2";
+    baselineStage?: "stage1A" | "stage1B" | "stage2";
+    stageUrls?: Record<string, string | null>;
     executionPlan?: RetryExecutionPlan;
     remoteOriginalUrl?: string;
     remoteOriginalKey?: string;

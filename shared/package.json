@@ -119,7 +119,7 @@
       }
   },
   "scripts": {
-    "build": "pnpm exec tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json",
     "test": "jest --passWithNoTests"
   },
   "devDependencies": {
