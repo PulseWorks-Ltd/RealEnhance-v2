@@ -11275,8 +11275,15 @@ All openings must remain identical in position and size to the original image.`;
     return;
   }
 
+  // stage2Blocked is already set to true by every hard-fail branch in the validation
+  // loop (critical issues gate, unified critical failure, structural review failure,
+  // composite_validation_exhausted).  A non-critical unified advisory lets the loop
+  // break with "accept" WITHOUT setting stage2Blocked — so the correct test for
+  // "validation accepted this image" is simply !stage2Blocked, not
+  // `unifiedValidation?.passed === true` which would falsely reject advisory cases.
+  // We still fall back when validationRisk was set but no validation ran at all.
   const stage2ValidationPassed = !payload.options.virtualStage
-    || unifiedValidation?.passed === true
+    || !stage2Blocked
     || (!unifiedValidation && !stage2ValidationRisk);
 
   if (hasStage2 && !stage2ValidationPassed) {
