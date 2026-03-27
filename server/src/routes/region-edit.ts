@@ -52,6 +52,18 @@ function normalizeLookupUrl(urlValue?: string): string {
   }
 }
 
+type EditSourceStage = Parameters<typeof enqueueRegionEditJob>[0]["editSourceStage"];
+
+function normalizeEditSourceStage(raw?: string): EditSourceStage {
+  const value = raw?.trim().toLowerCase();
+  if (!value) return undefined;
+
+  if (["stage2", "2", "retry", "edit"].includes(value)) return "stage2";
+  if (["stage1b", "1b"].includes(value)) return "stage1B";
+  if (["stage1a", "1a", "original"].includes(value)) return "stage1A";
+  return undefined;
+}
+
 function resolveStage1AUrlFromJob(jobRecord: any): string | undefined {
   if (!jobRecord || typeof jobRecord !== "object") return undefined;
 
@@ -163,14 +175,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const incomingImageId = String(body.imageId || "").trim() || null;
     const sourceJobId = typeof body.jobId === "string" ? body.jobId : undefined;
     const rawEditSourceStage = typeof body.sourceStage === "string" ? body.sourceStage : undefined;
-    const editSourceStage =
-      rawEditSourceStage === "stage2" || rawEditSourceStage === "2" || rawEditSourceStage === "retry" || rawEditSourceStage === "edit"
-        ? "stage2"
-        : rawEditSourceStage === "stage1B" || rawEditSourceStage === "1B"
-          ? "stage1B"
-          : rawEditSourceStage === "stage1A" || rawEditSourceStage === "1A" || rawEditSourceStage === "original"
-            ? "stage1A"
-        : undefined;
+    const editSourceStage: EditSourceStage = normalizeEditSourceStage(rawEditSourceStage);
     const baselineStage: "1A" | "1B" | "2" | undefined =
       editSourceStage === "stage2"
         ? "2"
@@ -533,7 +538,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       if (!effectiveStageUrls["1A"]) effectiveStageUrls["1A"] = baseImageUrl;
     }
 
-    const jobPayload = {
+    const jobPayload: Parameters<typeof enqueueRegionEditJob>[0] = {
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
       sourceJobId,
@@ -552,8 +557,6 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       stageUrls: effectiveStageUrls,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
-      // Bug A fix: forward editSourceStage so the worker knows which stage the edit
-      // was sourced from (was parsed and validated above but never included in payload).
       ...(editSourceStage ? { editSourceStage } : {}),
     };
 
