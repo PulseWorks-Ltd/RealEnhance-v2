@@ -175,6 +175,7 @@ export interface EnhanceJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "enhance";
+  jobType?: "initial" | "retry" | "edit";
   agencyId?: string | null;          // Usage/billing context
   propertyId?: string | null;
   clientBatchId?: string | null;
@@ -212,7 +213,8 @@ export interface EnhanceJobPayload {
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };
-  sourceStage?: "stage1A" | "stage1B" | "stage2";
+  sourceStage?: "original" | "1A" | "1B" | "2" | "stage1A" | "stage1B" | "stage2";
+  sourceUrl?: string | null;
   baselineStage?: "stage1A" | "stage1B" | "stage2";
   stageUrls?: Record<string, string | null>;
   executionPlan?: RetryExecutionPlan;
@@ -226,6 +228,7 @@ export interface EditJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "edit";
+  jobType?: "edit";
   baseVersionId: string;
   mode: "Add" | "Remove" | "Replace" | "Restore";
   instruction: string;

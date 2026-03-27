@@ -310,6 +310,16 @@ function buildEnhanceArtifacts(params: {
 }, jobIdOverride?: JobId) {
   const jobId: JobId = jobIdOverride ?? ("job_" + crypto.randomUUID());
   const now = new Date().toISOString();
+  const isDerivedEnhanceJob = params.retryInfo?.retryType === "manual_retry"
+    || !!params.sourceStage
+    || !!params.baselineStage;
+  const derivedLineage = isDerivedEnhanceJob
+    ? assertDerivedJobLineage({
+      jobType: "enhance",
+      sourceStage: params.sourceStage,
+      stageUrls: params.stageUrls,
+    })
+    : null;
 
   const requestedStages: RequestedStages = {
     stage1a: true,
@@ -338,10 +348,16 @@ function buildEnhanceArtifacts(params: {
     userId: params.userId,
     imageId: params.imageId,
     type: "enhance",
+    jobType: isDerivedEnhanceJob ? "retry" : "initial",
     agencyId: params.agencyId,
     propertyId: params.propertyId,
     clientBatchId: params.clientBatchId || undefined,
-    sourceStage: params.sourceStage,
+    sourceStage: isDerivedEnhanceJob
+      ? (derivedLineage?.normalizedSourceStage as any)
+      : "original",
+    sourceUrl: isDerivedEnhanceJob
+      ? (derivedLineage?.sourceUrl || null)
+      : (params.remoteOriginalUrl || null),
     baselineStage: params.baselineStage,
     stageUrls: params.stageUrls,
     options: params.options,
@@ -457,17 +473,6 @@ export async function enqueueEnhanceJob(params: {
     sourceStage?: string;
   };
 }, jobIdOverride?: JobId) {
-  const isDerivedEnhanceJob = params.retryInfo?.retryType === "manual_retry"
-    || !!params.sourceStage
-    || !!params.baselineStage;
-  if (isDerivedEnhanceJob) {
-    assertDerivedJobLineage({
-      jobType: "enhance",
-      sourceStage: params.sourceStage,
-      stageUrls: params.stageUrls,
-    });
-  }
-
   const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
 
   await Promise.all([
@@ -835,6 +840,7 @@ export async function enqueueEditJob(params: {
     agencyId: params.agencyId,
     imageId: params.imageId,
     type: "edit",
+    jobType: "edit",
     baseVersionId: params.baseVersionId,
     mode: params.mode,
     instruction: params.instruction,

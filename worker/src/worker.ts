@@ -194,6 +194,7 @@ function shouldLog(eventType?: string): boolean {
     "SYSTEM_START",
     "SYSTEM_ERROR",
     "UNHANDLED_EXCEPTION",
+    "PIPELINE_START",
     "AWS_S3_FAILURE",
     "MODEL_FAILURE",
     "FATAL_RETRY_EXHAUSTION",
@@ -4535,9 +4536,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
   }
   
-  const normalizePayloadSourceStage = (value: string | null | undefined): "stage1A" | "stage1B" | "stage2" | null => {
+  const normalizePayloadSourceStage = (value: string | null | undefined): "original" | "stage1A" | "stage1B" | "stage2" | null => {
     const normalized = String(value || "").trim().toLowerCase();
     if (!normalized) return null;
+    if (normalized === "original" || normalized === "original_upload") return "original";
     if (normalized === "stage2" || normalized === "2") return "stage2";
     if (normalized === "stage1b" || normalized === "1b") return "stage1B";
     if (normalized === "stage1a" || normalized === "1a") return "stage1A";
@@ -4545,31 +4547,39 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   const payloadSourceStage = normalizePayloadSourceStage((payload as any).sourceStage || (payload as any).retrySourceStage);
+  const explicitSourceUrl = String((payload as any).sourceUrl || "").trim() || null;
   const payloadStageUrls = normalizeStageUrls(
     (((payload as any).stageUrls || {}) as Record<string, string | null | undefined>)
   );
   const isDerivedEnhanceJob = (payload as any).retryType === "manual_retry"
     || !!(payload as any).sourceStage
     || !!(payload as any).baselineStage;
+  const normalizedJobType = String((payload as any).jobType || "").trim().toLowerCase();
+  const payloadJobType: "initial" | "retry" | "edit" = normalizedJobType === "retry"
+    ? "retry"
+    : normalizedJobType === "edit"
+      ? "edit"
+      : normalizedJobType === "initial"
+        ? "initial"
+        : (isDerivedEnhanceJob ? "retry" : "initial");
 
   // Check if we have a remote original URL (multi-service deployment)
   const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
   let origPath: string;
 
-  if (isDerivedEnhanceJob) {
-    if (!payloadSourceStage) {
-      throw new Error("Missing sourceStage for non-initial job");
+  if (payloadJobType !== "initial") {
+    if (!payloadSourceStage || payloadSourceStage === "original" || !explicitSourceUrl) {
+      throw new Error("Missing sourceUrl/sourceStage for retry/edit job");
     }
 
-    const lineageSourceUrl = payloadSourceStage === "stage2"
-      ? resolveStageUrl(payloadStageUrls as any, "2")
-      : payloadSourceStage === "stage1B"
-        ? resolveStageUrl(payloadStageUrls as any, "1B")
-        : resolveStageUrl(payloadStageUrls as any, "1A");
+    const lineageSourceUrl = explicitSourceUrl;
 
-    if (!lineageSourceUrl) {
-      throw new Error(`Missing ${payloadSourceStage} URL for non-initial job`);
-    }
+    logEvent("PIPELINE_START", {
+      jobId: payload.jobId,
+      sourceStage: payloadSourceStage,
+      sourceUrl: lineageSourceUrl,
+      jobType: payloadJobType,
+    });
 
     nLog("[WORKER_LINEAGE_INPUT]", {
       jobId: payload.jobId,
@@ -4593,13 +4603,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       sourceStage: payloadSourceStage,
       path: origPath.substring(Math.max(0, origPath.length - 40)),
     });
-  } else if (remoteUrl) {
+  } else if (explicitSourceUrl || remoteUrl || (payload as any).inputUrl) {
+    const initialSourceUrl = explicitSourceUrl || remoteUrl || String((payload as any).inputUrl || "").trim();
+    const initialSourceStage = payloadSourceStage || "original";
+    logEvent("PIPELINE_START", {
+      jobId: payload.jobId,
+      sourceStage: initialSourceStage,
+      sourceUrl: initialSourceUrl,
+      jobType: payloadJobType,
+    });
     // Multi-service mode: Download original from S3
     try {
       if (!VALIDATION_FOCUS_MODE) {
-        nLog(`[WORKER] Remote original detected, downloading: ${remoteUrl}\n`);
+        nLog(`[WORKER] Initial source detected, downloading: ${initialSourceUrl}\n`);
       }
-      origPath = await downloadToTemp(remoteUrl, payload.jobId);
+      origPath = await downloadToTemp(initialSourceUrl, payload.jobId);
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
       }
@@ -4615,6 +4633,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return;
     }
   } else {
+    logEvent("PIPELINE_START", {
+      jobId: payload.jobId,
+      sourceStage: payloadSourceStage || "original",
+      sourceUrl: null,
+      jobType: payloadJobType,
+    });
     // Legacy single-service mode: Read from local filesystem
     if (!VALIDATION_FOCUS_MODE) {
       nLog("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");

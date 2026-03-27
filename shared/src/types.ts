@@ -136,6 +136,7 @@ export interface EnhanceJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "enhance";
+  jobType?: "initial" | "retry" | "edit";
   agencyId?: string | null; // Optional: agency ID for usage billing
   propertyId?: string | null;
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
@@ -175,7 +176,8 @@ export interface EnhanceJobPayload {
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     stage1BMode?: "light" | "stage-ready";
   };
-  sourceStage?: "stage1A" | "stage1B" | "stage2";
+  sourceStage?: "original" | "1A" | "1B" | "2" | "stage1A" | "stage1B" | "stage2";
+  sourceUrl?: string | null;
   baselineStage?: "stage1A" | "stage1B" | "stage2";
   stageUrls?: Record<string, string | null>;
   executionPlan?: RetryExecutionPlan;
@@ -200,6 +202,7 @@ export interface EditJobPayload {
   userId: UserId;
   imageId: ImageId;
   type: "edit";
+  jobType?: "edit";
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   baseVersionId: string;
   mode: "Add" | "Remove" | "Replace" | "Restore";
