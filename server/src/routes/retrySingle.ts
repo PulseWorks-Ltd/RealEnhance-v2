@@ -319,6 +319,7 @@ export function retrySingleRouter() {
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
       const sourceUrlRaw = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
       const sourceStage = normalizeRetrySourceStage(body.sourceStage);
+      const uiSelectedTab = typeof body.uiSelectedTab === "string" ? body.uiSelectedTab.trim() : "";
       const incomingImageId = String(body.imageId || "").trim() || null;
       const incomingRetryParentImageId = String(body.retryParentImageId || "").trim() || null;
       const incomingRetryParentJobId = String(body.retryParentJobId || "").trim() || null;
@@ -378,9 +379,11 @@ export function retrySingleRouter() {
       console.log("[SOURCE_RESOLVED]", {
         sourceUrl: sourceUrlRaw,
         sourceStage,
+        uiSelectedTab: uiSelectedTab || null,
+        imageId: incomingImageId || null,
       });
 
-      let finalPath: string;
+      let finalPath = "";
       let remoteOriginalUrl: string | undefined = undefined;
       let remoteOriginalKey: string | undefined = undefined;
       let retrySourceStage: string | undefined = undefined;
@@ -1020,9 +1023,10 @@ export function retrySingleRouter() {
         console.log(`[retry-single] Lock acquired: ${retryKey}`);
       }
 
+      const retryImageId = String(parentImageId || (rec as any).imageId || "").trim();
       const result = await enqueueEnhanceJob({
         userId: sessUser.id,
-        imageId: (rec as any).imageId,
+        imageId: retryImageId,
         agencyId,
         sourceStage: toEnhanceStage(sourceStage),
         baselineStage: toEnhanceStage(sourceStage),
@@ -1052,7 +1056,7 @@ export function retrySingleRouter() {
       recordUsageEvent({
         userId: sessUser.id,
         jobId,
-        imageId: (rec as any).imageId,
+        imageId: retryImageId,
         stage: "1A",
         imagesProcessed: 1,
       });

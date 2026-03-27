@@ -159,6 +159,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // AUDIT FIX: Idempotency guard — suppress duplicate region-edit within 30s window
     const rawSourceUrl = body.sourceUrl as string | undefined;
     const sourceUrl = normalizeLookupUrl(rawSourceUrl);
+    const uiSelectedTab = typeof body.uiSelectedTab === "string" ? body.uiSelectedTab.trim() : "";
+    const incomingImageId = String(body.imageId || "").trim() || null;
     const sourceJobId = typeof body.jobId === "string" ? body.jobId : undefined;
     const rawEditSourceStage = typeof body.sourceStage === "string" ? body.sourceStage : undefined;
     const editSourceStage =
@@ -249,6 +251,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     console.log("[SOURCE_RESOLVED]", {
       sourceUrl,
       sourceStage: editSourceStage,
+      uiSelectedTab: uiSelectedTab || null,
+      imageId: incomingImageId,
     });
     
     if (!mode) {

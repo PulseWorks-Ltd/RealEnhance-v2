@@ -1247,7 +1247,7 @@ export default function BatchProcessor({
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: SourceStageLabel | null; jobId: string | null } | null>(null);
+  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: SourceStageLabel | null; jobId: string | null; imageId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
@@ -5145,7 +5145,7 @@ export default function BatchProcessor({
     });
 
     // ✅ Store completion source in editor state for reference
-    setActiveEditSource({ url: imageUrl, stage: urlSource || null, jobId: sourceJobId });
+    setActiveEditSource({ url: imageUrl, stage: urlSource || null, jobId: sourceJobId, imageId });
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
   };
@@ -5318,6 +5318,7 @@ export default function BatchProcessor({
       }
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
       fd.append("sourceStage", retrySource.stage);
+      fd.append("uiSelectedTab", retrySource.stage);
       fd.append("sourceUrl", retrySource.url);
       fd.append("stage1BWasRequested", String(Boolean(stage1BWasRequested)));
       if (baselineStage) fd.append("baselineStage", baselineStage);
@@ -8095,6 +8096,7 @@ export default function BatchProcessor({
             editSourceUrl={activeEditSource?.url || undefined}
             editSourceStage={activeEditSource?.stage || undefined}
             sourceJobId={activeEditSource?.jobId || undefined}
+            sourceImageId={activeEditSource?.imageId || undefined}
             // ✅ Restore base: prefer explicit original, then stage1A quality-enhanced baseline
             originalImageUrl={(() => {
               const item = results[editingImageIndex];

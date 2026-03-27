@@ -22,7 +22,7 @@ import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanne
 import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
-import { logGeminiUsage } from "../ai/usageTelemetry";
+import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 
@@ -608,6 +608,40 @@ export async function runStage2GenerationAttempt(
     structuralConstraintBlock?: string;
   }
 ): Promise<string> {
+  const attemptNumber = Math.max(1, opts.attempt ?? 1);
+  const emitStage2AttemptComplete = (success: boolean, error?: string): void => {
+    logPipelineEvent(
+      {
+        jobId: opts.jobId,
+        imageId: opts.imageId,
+        stage: "2",
+        attempt: attemptNumber,
+      },
+      "PIPELINE_STEP",
+      {
+        step: "stage2_attempt_complete",
+        attempt: attemptNumber,
+        success,
+        ...(error ? { error } : {}),
+      },
+    );
+  };
+  logPipelineEvent(
+    {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      stage: "2",
+      attempt: attemptNumber,
+    },
+    "PIPELINE_STEP",
+    {
+      step: "stage2_attempt_start",
+      attempt: attemptNumber,
+      promptMode: opts.promptMode || null,
+      sourceStage: opts.sourceStage || null,
+    },
+  );
+
   const normalizedRoomType = (opts.roomType || "")
     .toLowerCase()
     .replace(/-/g, "_")
@@ -652,7 +686,7 @@ export async function runStage2GenerationAttempt(
           jobId: opts.jobId,
           imageId: opts.imageId,
           stage: "2",
-          attempt: Math.max(1, opts.attempt ?? 1),
+          attempt: attemptNumber,
         },
         localPath: guidedPath,
       });
@@ -671,7 +705,7 @@ export async function runStage2GenerationAttempt(
             jobId: opts.jobId,
             imageId: opts.imageId,
             stage: "2",
-            attempt: Math.max(1, opts.attempt ?? 1),
+            attempt: attemptNumber,
           },
           localPath: maskPath,
         });
@@ -849,7 +883,6 @@ ${formatStage2LayoutPlanForPrompt(opts.layoutPlan)}
 `;
   }
 
-  const attemptNumber = Math.max(1, opts.attempt ?? 1);
   const retryReason: Stage2RetryReason = attemptNumber > 1
     ? (structuralRetryContext
         ? mapStructuralFailureTypeToRetryReason(structuralRetryContext.failureType)
@@ -948,8 +981,10 @@ Do not add blinds, rods, tracks, or new window coverings.
   } catch (error: any) {
     const message = String(error?.message || error || "unknown_error");
     if (/no inline image data|no image data in gemini response/i.test(message)) {
+      emitStage2AttemptComplete(false, message);
       throw new Stage2GenerationNoImageError(message);
     }
+    emitStage2AttemptComplete(false, message);
     throw new Stage2GenerationFailure(`[stage2] generation failed: ${message}`);
   }
 
@@ -962,10 +997,12 @@ Do not add blinds, rods, tracks, or new window coverings.
         responseParts
       )} inlineData_present=${inlineDataPresent}`
     );
+    emitStage2AttemptComplete(false, "no_inline_image_data");
     throw new Stage2GenerationNoImageError();
   }
 
   if (path.resolve(opts.outputPath) === path.resolve(basePath)) {
+    emitStage2AttemptComplete(false, "stage2_candidate_collapse: candidate_path_equals_baseline");
     throw new Stage2GenerationFailure("stage2_candidate_collapse: candidate_path_equals_baseline", "stage2_candidate_collapse");
   }
 
@@ -973,6 +1010,7 @@ Do not add blinds, rods, tracks, or new window coverings.
   try {
     await fs.access(opts.outputPath);
   } catch {
+    emitStage2AttemptComplete(false, "stage2_candidate_collapse: candidate_file_missing");
     throw new Stage2GenerationFailure("stage2_candidate_collapse: candidate_file_missing", "stage2_candidate_collapse");
   }
 
@@ -985,6 +1023,7 @@ Do not add blinds, rods, tracks, or new window coverings.
     },
     localPath: opts.outputPath,
   });
+  emitStage2AttemptComplete(true);
   logger.info(`[STAGE2_OUTPUT_PATH] job_id=${opts.jobId} attempt=${attemptNumber} path=${opts.outputPath}`);
   return opts.outputPath;
 }

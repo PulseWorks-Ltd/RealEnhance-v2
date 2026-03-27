@@ -118,6 +118,7 @@ interface RegionEditorProps {
   editSourceUrl?: string;
   editSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   sourceJobId?: string;
+  sourceImageId?: string;
   initialGoal?: string;
   initialIndustry?: string;
   initialSceneType?: "auto" | "interior" | "exterior";
@@ -135,6 +136,7 @@ export function RegionEditor({
   editSourceUrl,
   editSourceStage,
   sourceJobId,
+  sourceImageId,
   initialGoal,
   initialIndustry,
   initialSceneType,
@@ -1205,10 +1207,14 @@ export function RegionEditor({
       }
       formData.append("sourceUrl", sanitizedEditSourceUrl);
       formData.append("sourceStage", editSourceStage);
+      formData.append("uiSelectedTab", editSourceStage);
       formData.append("editSourceUrl", sanitizedEditSourceUrl);
       formData.append("editSourceStage", editSourceStage);
       if (sourceJobId) {
         formData.append("jobId", sourceJobId);
+      }
+      if (sourceImageId) {
+        formData.append("imageId", sourceImageId);
       }
       formData.append("mode", mode);
       if (mode === "edit") {

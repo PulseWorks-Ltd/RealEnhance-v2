@@ -55,7 +55,7 @@ import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
-import { logGeminiUsage } from "./ai/usageTelemetry";
+import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageTelemetry";
 import { toBase64, siblingOutPath } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
@@ -3623,6 +3623,82 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
+  const isManualRetryPayload = (payload as any).retryType === "manual_retry";
+  if (isManualRetryPayload) {
+    const retryParentJobId = String((payload as any).retryParentJobId || "").trim();
+    const retryParentImageId = String((payload as any).retryParentImageId || "").trim();
+    let parentJobImageId = "";
+
+    if (retryParentJobId) {
+      try {
+        const parentJob = await getJob(retryParentJobId);
+        parentJobImageId = String((parentJob as any)?.imageId || "").trim();
+      } catch (err: any) {
+        nLog("[IMAGE_ID_CHAIN_PARENT_LOOKUP_WARN]", {
+          jobId: payload.jobId,
+          parentJobId: retryParentJobId,
+          error: err?.message || String(err),
+        });
+      }
+    }
+
+    if (retryParentImageId && parentJobImageId && retryParentImageId !== parentJobImageId) {
+      logPipelineContextEvent(
+        {
+          jobId: payload.jobId,
+          imageId: String(payload.imageId || "").trim(),
+          stage: "lineage",
+          attempt: 1,
+        },
+        "IMAGE_ID_CHAIN_MISMATCH",
+        {
+          incomingImageId: String(payload.imageId || "").trim() || null,
+          parentImageId: retryParentImageId || null,
+          sourceImageId: null,
+          jobId: payload.jobId,
+          parentJobId: retryParentJobId || null,
+          parentJobImageId: parentJobImageId || null,
+        },
+      );
+      nLog("[IMAGE_ID_CHAIN_MISMATCH]", {
+        jobId: payload.jobId,
+        parentJobId: retryParentJobId || null,
+        retryParentImageId,
+        parentJobImageId,
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "invalid_manual_retry_payload:image_id_chain_mismatch" },
+        "invalid_manual_retry_payload_image_id_chain_mismatch",
+      );
+      return;
+    }
+
+    const canonicalImageId = parentJobImageId || retryParentImageId || String(payload.imageId || "").trim();
+    if (!canonicalImageId) {
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "invalid_manual_retry_payload:missing_canonical_image_id" },
+        "invalid_manual_retry_payload_missing_canonical_image_id",
+      );
+      return;
+    }
+
+    if (String(payload.imageId || "").trim() !== canonicalImageId) {
+      nLog("[IMAGE_ID_CHAIN_NORMALIZED]", {
+        jobId: payload.jobId,
+        from: payload.imageId || null,
+        to: canonicalImageId,
+        parentJobId: retryParentJobId || null,
+      });
+      (payload as any).imageId = canonicalImageId;
+    }
+
+    if (retryParentJobId && !(payload as any).retryParentImageId) {
+      (payload as any).retryParentImageId = canonicalImageId;
+    }
+  }
+
   const imageLabel = (payload as any).label || (payload as any).originalFilename || payload.imageId || "unknown";
   let stagingStyleNorm: string | undefined =
     typeof (payload as any)?.options?.stagingStyle === "string"
@@ -4504,8 +4580,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     });
     logEvent("SOURCE_RESOLVED", {
       jobId: payload.jobId,
+      imageId: payload.imageId,
       sourceStage: payloadSourceStage,
       sourceUrl: lineageSourceUrl,
+      uiSelectedTab: (payload as any).sourceStage || (payload as any).retrySourceStage || null,
     });
 
     origPath = await downloadToTemp(lineageSourceUrl, `${payload.jobId}-${payloadSourceStage}`);
@@ -11690,6 +11768,7 @@ async function handleEditJob(payload: any) {
   // 3) Call applyEdit – this will talk to Gemini & composite with mask
   const editPath = await applyEdit({
     jobId,
+    imageId,
     baseImagePath: basePath,
     mask,
     mode: "Add", // Default to "Add"; adjust as needed if mode is in payload
@@ -11983,6 +12062,61 @@ const worker = new Worker(
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
           const editParentJobId = regionAny.parentJobId || regionAny.sourceJobId || undefined;
+          const sourceImageId = String(regionAny.sourceImageId || "").trim();
+          let parentImageId = "";
+          if (editParentJobId) {
+            try {
+              const parentJob = await getJob(editParentJobId);
+              parentImageId = String((parentJob as any)?.imageId || "").trim();
+            } catch (err: any) {
+              nLog("[worker-region-edit] parent image lookup failed (non-blocking):", err?.message || String(err));
+            }
+          }
+
+          if (sourceImageId && parentImageId && sourceImageId !== parentImageId) {
+            logPipelineContextEvent(
+              {
+                jobId: regionPayload.jobId,
+                imageId: String(regionPayload.imageId || "").trim(),
+                stage: "lineage",
+                attempt: 1,
+              },
+              "IMAGE_ID_CHAIN_MISMATCH",
+              {
+                incomingImageId: String(regionPayload.imageId || "").trim() || null,
+                parentImageId: parentImageId || null,
+                sourceImageId: sourceImageId || null,
+                jobId: regionPayload.jobId,
+                parentJobId: editParentJobId || null,
+              },
+            );
+            logJobErrorAndThrow(regionPayload, "region_edit_image_id_chain_mismatch", {
+              stage: "region-edit",
+              sourceImageId,
+              parentImageId,
+              parentJobId: editParentJobId || null,
+            });
+          }
+
+          const canonicalRegionImageId = sourceImageId || parentImageId || String(regionPayload.imageId || "").trim();
+          if (!canonicalRegionImageId) {
+            logJobErrorAndThrow(regionPayload, "Missing canonical imageId for region-edit job", {
+              stage: "region-edit",
+            });
+          }
+          if (String(regionPayload.imageId || "").trim() !== canonicalRegionImageId) {
+            nLog("[IMAGE_ID_CHAIN_NORMALIZED]", {
+              jobId: regionPayload.jobId,
+              from: regionPayload.imageId || null,
+              to: canonicalRegionImageId,
+              sourceImageId: sourceImageId || null,
+              parentImageId: parentImageId || null,
+              parentJobId: editParentJobId || null,
+            });
+          }
+          regionPayload.imageId = canonicalRegionImageId;
+          regionAny.imageId = canonicalRegionImageId;
+
           const baselineStageUsed: string = regionAny.baselineStage || "unknown";
           const normalizeRegionSourceStage = (value: string | null | undefined): "stage1A" | "stage1B" | "stage2" | null => {
             const normalized = String(value || "").trim().toLowerCase();
@@ -12038,8 +12172,10 @@ const worker = new Worker(
           });
           logEvent("SOURCE_RESOLVED", {
             jobId: regionPayload.jobId,
+            imageId: regionPayload.imageId,
             sourceStage: regionSourceStage,
             sourceUrl: lineageBaseImageUrl,
+            uiSelectedTab: regionAny.sourceStage || regionAny.editSourceStage || null,
           });
 
           const baseImageUrl = lineageBaseImageUrl;
@@ -12144,6 +12280,7 @@ const worker = new Worker(
             // Restore mode intentionally remains pixel restoration with no model retry loop.
             outPath = await applyEdit({
               jobId: regionPayload.jobId,
+              imageId: regionPayload.imageId,
               baseImagePath: basePath,
               mask: maskBuf,
               mode: mode as any,
@@ -12180,6 +12317,7 @@ const worker = new Worker(
 
               outPath = await applyEdit({
                 jobId: regionPayload.jobId,
+                imageId: regionPayload.imageId,
                 baseImagePath: basePath,
                 mask: maskBuf,
                 mode: mode as any,
