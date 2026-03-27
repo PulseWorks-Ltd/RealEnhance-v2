@@ -8,6 +8,7 @@ import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { validateStage2Refresh } from "./stage2/refresh.validator";
 import { validateStage2Full } from "./stage2/full.validator";
 import { detectWindowsLocal, type BBox } from "./local-windows";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import {
   hasStage1BStructuralSignal,
   isStage1BMinorReconstructionSignal,
@@ -1377,6 +1378,7 @@ export async function validateStage1BStructure(
   }
 
   try {
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
       contents,
@@ -1386,6 +1388,14 @@ export async function validateStage1BStructure(
         maxOutputTokens: 256,
       },
     } as any);
+    logGeminiUsage({
+      jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
+    });
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
@@ -2888,6 +2898,7 @@ export async function runGeminiSemanticValidator(opts: {
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
   const model = opts.modelOverride || getModelForRisk(opts.riskLevel);
+  const jobId = opts.evidence?.jobId;
 
   const contents = [
     {
@@ -2916,6 +2927,14 @@ export async function runGeminiSemanticValidator(opts: {
         responseMimeType: deterministicStructureJson ? "application/json" : undefined,
       },
     } as any);
+    logGeminiUsage({
+      jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - start,
+    });
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();

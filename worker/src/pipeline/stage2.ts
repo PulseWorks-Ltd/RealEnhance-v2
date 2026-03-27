@@ -22,6 +22,7 @@ import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanne
 import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 
@@ -204,12 +205,14 @@ Return JSON only.
 
 export async function runGeminiStructuralReviewPro(
   originalImagePath: string,
-  stagedImagePath: string
+  stagedImagePath: string,
+  options?: { jobId?: string }
 ): Promise<StructuralReviewProResult> {
   const ai = getGeminiClient();
   const original = toBase64(originalImagePath);
   const staged = toBase64(stagedImagePath);
 
+  const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: "gemini-2.5-pro",
     contents: [
@@ -228,6 +231,14 @@ export async function runGeminiStructuralReviewPro(
       temperature: 0,
       responseMimeType: "application/json",
     },
+  });
+  logGeminiUsage({
+    jobId: options?.jobId,
+    stage: "validator",
+    model: "gemini-2.5-pro",
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
   });
 
   const text = String(response?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();

@@ -1,5 +1,6 @@
 import type { GoogleGenAI } from "@google/genai";
 import type { Stage2ValidationMode } from "../validators/stage2ValidationMode";
+import { logGeminiUsage } from "./usageTelemetry";
 
 export type ComplianceVerdict = {
   ok: boolean;
@@ -37,9 +38,11 @@ async function ask(
   originalB64: string,
   editedB64: string,
   prompt: string,
-  modelOverride?: string
+  modelOverride?: string,
+  telemetry?: { jobId?: string }
 ) {
   const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
+  const requestStartedAt = Date.now();
   const resp = await (ai as any).models.generateContent({
     model: complianceModel,
     contents: [{
@@ -52,6 +55,14 @@ async function ask(
         { inlineData: { mimeType: "image/webp", data: editedB64 } },
       ],
     }],
+  });
+  logGeminiUsage({
+    jobId: telemetry?.jobId,
+    stage: "validator",
+    model: complianceModel,
+    callType: "validator",
+    response: resp,
+    latencyMs: Date.now() - requestStartedAt,
   });
   const text = resp.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("\n") || "{}";
   try {
@@ -90,6 +101,7 @@ export async function checkCompliance(
     maskedDriftRegions?: Array<{ bbox: [number, number, number, number]; score: number }>;
     openingRegions?: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }>;
     modelOverride?: string;
+    jobId?: string;
   }
 ): Promise<ComplianceVerdict> {
   const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
@@ -108,7 +120,7 @@ export async function checkCompliance(
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
 
-  const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride);
+  const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride, { jobId: opts?.jobId });
   if (!s) {
     const reasons = ["Compliance parser failed"];
     const confidence = 0.3;
@@ -155,7 +167,7 @@ export async function checkCompliance(
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
 
-  const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride);
+  const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride, { jobId: opts?.jobId });
   if (!p) {
     const reasons = ["Compliance parser failed (placement)"];
     const confidence = 0.3;

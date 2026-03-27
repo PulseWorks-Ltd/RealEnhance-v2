@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { computeMaterialSignal, computeOpeningGeometrySignal } from "./signalMetrics";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
@@ -188,6 +189,7 @@ This is NOT a stylistic check. It is a structural integrity check.`;
     : "gemini-2.5-flash";
 
   try {
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model: selectedModel,
       contents: [
@@ -206,6 +208,14 @@ This is NOT a stylistic check. It is a structural integrity check.`;
         temperature: 0,
         responseMimeType: "application/json",
       },
+    });
+    logGeminiUsage({
+      jobId,
+      stage: "validator",
+      model: selectedModel,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";

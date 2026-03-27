@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
@@ -107,7 +108,8 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
 
 export async function runFloorIntegrityValidator(
   beforeImageUrl: string,
-  afterImageUrl: string
+  afterImageUrl: string,
+  options?: { jobId?: string }
 ): Promise<FloorIntegrityValidatorResult> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
@@ -148,6 +150,7 @@ Return JSON only:
   const model = process.env.FLOOR_VALIDATOR_MODEL || "gemini-2.5-pro";
 
   try {
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
       contents: [
@@ -166,6 +169,14 @@ Return JSON only:
         temperature: 0,
         responseMimeType: "application/json",
       },
+    });
+    logGeminiUsage({
+      jobId: options?.jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";

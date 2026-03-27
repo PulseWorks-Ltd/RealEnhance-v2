@@ -5,6 +5,7 @@ import { validateWallPlanes } from "./wall-plane-validator";
 import { validateWindowPreservation } from "./windowDetector";
 import { validateFurnitureScale } from "./furniture-scale-validator";
 import { validateExteriorEnhancement } from "./exterior-validator";
+import { logGeminiUsage } from "./usageTelemetry";
 import { getAdminConfig } from "../utils/adminConfig";
 import sharp from "sharp";
 import { detectWindowsLocal, iouMasks, centroidFromMask } from "../validators/local-windows";
@@ -243,7 +244,7 @@ export async function validateStage(
   prev: Artifact,
   cand: Artifact,
   ctx: ValidationCtx = {},
-  opts: { skipLocalStructural?: boolean } = {}
+  opts: { skipLocalStructural?: boolean; jobId?: string } = {}
 ): Promise<ValidationVerdict> {
   // If candidate dimensions differ from prev, resize a copy to match prev
   // so that local geometric checks operate on aligned grids. This avoids
@@ -694,7 +695,8 @@ export async function validateAllPreservation(
   ai: GoogleGenAI,
   originalB64: string,
   editedB64: string,
-  userProvidedWindowCount?: number
+  userProvidedWindowCount?: number,
+  telemetry?: { jobId?: string; stage?: StageId | string }
 ): Promise<UnifiedValidationResult> {
   try {
     const windowCountContext = userProvidedWindowCount !== undefined
@@ -793,6 +795,7 @@ CRITICAL VALIDATION RULES:
 
 Return ONLY the JSON, no explanatory text.`;
 
+    const requestStartedAt = Date.now();
     const result = await ai.models.generateContent({
       model: "gemini-2.0-flash",
       contents: [
@@ -800,6 +803,14 @@ Return ONLY the JSON, no explanatory text.`;
         { inlineData: { mimeType: "image/png", data: editedB64 } },
         { text: prompt }
       ]
+    });
+    logGeminiUsage({
+      jobId: telemetry?.jobId,
+      stage: telemetry?.stage || "validator",
+      model: "gemini-2.0-flash",
+      callType: "validator",
+      response: result,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const text = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "";

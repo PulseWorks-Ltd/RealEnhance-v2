@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 
 export type Stage1BDeclutterMetrics = {
@@ -173,8 +174,10 @@ Return strict JSON only (no markdown, no extra text) with this exact schema:
 
 Confidence must be between 0 and 1.`;
 
+    const model = process.env.STAGE1B_DECLUTTER_EFFECTIVENESS_MODEL || "gemini-2.5-flash";
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
-      model: process.env.STAGE1B_DECLUTTER_EFFECTIVENESS_MODEL || "gemini-2.5-flash",
+      model,
       contents: [
         {
           role: "user",
@@ -193,6 +196,14 @@ Confidence must be between 0 and 1.`;
         maxOutputTokens: 320,
       },
     } as any);
+    logGeminiUsage({
+      jobId: opts.jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
+    });
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();

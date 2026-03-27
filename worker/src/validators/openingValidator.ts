@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import {
   detectRelocation,
@@ -287,7 +288,8 @@ function parseOpeningLightAnchorVerdict(rawText: string): OpeningLightAnchorVerd
 
 async function runOpeningLightAnchorMicroCheck(
   beforeImageUrl: string,
-  afterImageUrl: string
+  afterImageUrl: string,
+  jobId?: string
 ): Promise<OpeningLightAnchorVerdict | null> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
@@ -321,6 +323,7 @@ Return JSON only:
   "analysis": "short reason"
 }`;
 
+  const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: OPENING_LIGHT_ANCHOR_MODEL,
     contents: [
@@ -342,6 +345,14 @@ Return JSON only:
       responseMimeType: "application/json",
     },
   });
+  logGeminiUsage({
+    jobId,
+    stage: "validator",
+    model: OPENING_LIGHT_ANCHOR_MODEL,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
 
   const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
   try {
@@ -353,18 +364,19 @@ Return JSON only:
 
 export async function runOpeningValidator(
   beforeImageUrl: string,
-  afterImageUrl: string
+  afterImageUrl: string,
+  options?: { jobId?: string }
 ): Promise<OpeningValidatorResult> {
   if (!String(beforeImageUrl || "").trim() || !String(afterImageUrl || "").trim()) {
     throw new Error("VALIDATION_INPUT_MISSING");
   }
 
-  const baseline = await extractStructuralBaseline(beforeImageUrl);
+  const baseline = await extractStructuralBaseline(beforeImageUrl, { jobId: options?.jobId });
   const baselineOpenings = extractBaselineOpenings(baseline);
   console.log("[OPENINGS_BASELINE]", baselineOpenings);
 
   if (Array.isArray(baseline.openings) && baseline.openings.length > 0) {
-    const deterministic = await validateOpeningPreservation(baseline, afterImageUrl);
+    const deterministic = await validateOpeningPreservation(baseline, afterImageUrl, { jobId: options?.jobId });
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
     const baselineById = new Map((baseline.openings || []).map((opening) => [String(opening.id), opening]));
     const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
@@ -479,7 +491,7 @@ export async function runOpeningValidator(
       );
 
     if (microCheckRisk) {
-      const micro = await runOpeningLightAnchorMicroCheck(beforeImageUrl, afterImageUrl);
+      const micro = await runOpeningLightAnchorMicroCheck(beforeImageUrl, afterImageUrl, options?.jobId);
       if (micro && micro.confidence >= 0.8 && (micro.openingInfilled || micro.openingRemoved || micro.openingRelocated)) {
         if (micro.openingInfilled || micro.openingRemoved) {
           hardFail = true;
@@ -634,6 +646,7 @@ If any opening appears reduced, expanded, or reshaped:
   }
 
   const runWithModel = async (model: string): Promise<OpeningValidatorResult> => {
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
       contents: [
@@ -654,6 +667,14 @@ If any opening appears reduced, expanded, or reshaped:
         maxOutputTokens: 256,
         responseMimeType: "application/json",
       },
+    });
+    logGeminiUsage({
+      jobId: options?.jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";

@@ -1,5 +1,6 @@
 import sharp from "sharp";
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { nLog } from "../logger";
 import {
   extractStructuralBaseline,
@@ -151,6 +152,7 @@ export async function runEditOpeningsValidator(
   editedImagePath: string,
   mask: Buffer,
   comparedAgainst: EditOpeningsComparedAgainst = "stage1a",
+  options?: { jobId?: string },
 ): Promise<EditOpeningsValidationSummary> {
   if (!String(baselineImagePath || "").trim() || !String(editedImagePath || "").trim() || !mask || mask.length === 0) {
     throw new Error("VALIDATION_INPUT_MISSING");
@@ -189,7 +191,7 @@ export async function runEditOpeningsValidator(
   }
 
   const expandedMaskBbox = expand(maskBbox, MASK_MARGIN);
-  const structural = await extractStructuralBaseline(baselineImagePath);
+  const structural = await extractStructuralBaseline(baselineImagePath, { jobId: options?.jobId });
   const relevantOpenings = structural.openings.filter((opening) => {
     const kind = openingKind(opening);
     if (!kind) return false;
@@ -268,6 +270,7 @@ Return strict JSON only:
 BASELINE_OPENINGS_JSON:
 ${openingsJson}`;
 
+  const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: EDIT_OPENINGS_GEMINI_MODEL,
     contents: [
@@ -288,6 +291,14 @@ ${openingsJson}`;
       maxOutputTokens: 200,
       responseMimeType: "application/json",
     },
+  });
+  logGeminiUsage({
+    jobId: options?.jobId,
+    stage: "validator",
+    model: EDIT_OPENINGS_GEMINI_MODEL,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
   });
 
   const rawResponse = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";

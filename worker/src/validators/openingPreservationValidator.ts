@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 
 export type StructuralOpeningType = "window" | "door" | "closet_door" | "walkthrough";
@@ -916,10 +917,11 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   return { results, summary, detectedOpenings: [] };
 }
 
-export async function extractStructuralBaseline(imageUrl: string): Promise<StructuralBaseline> {
+export async function extractStructuralBaseline(imageUrl: string, options?: { jobId?: string }): Promise<StructuralBaseline> {
   const ai = getGeminiClient();
   const image = toBase64(imageUrl);
 
+  const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: OPENING_VALIDATOR_MODEL,
     contents: [
@@ -940,6 +942,14 @@ export async function extractStructuralBaseline(imageUrl: string): Promise<Struc
       responseMimeType: "application/json",
     },
   } as any);
+  logGeminiUsage({
+    jobId: options?.jobId,
+    stage: "validator",
+    model: OPENING_VALIDATOR_MODEL,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
 
   const parsed = parseJsonResponse(response);
   const baseline = validateStructuralBaseline(parsed);
@@ -974,9 +984,10 @@ export async function validateOpeningPreservation(
   newImageUrl: string,
   options?: {
     mode?: "default" | "edit";
+    jobId?: string;
   }
 ): Promise<OpeningValidationResult> {
-  const detected = await extractStructuralBaseline(newImageUrl);
+  const detected = await extractStructuralBaseline(newImageUrl, { jobId: options?.jobId });
   const isEditMode = options?.mode === "edit";
 
   const openingResults: OpeningResult[] = [];

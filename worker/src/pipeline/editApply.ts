@@ -223,6 +223,7 @@ function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "
 export type EditMode = "Add" | "Remove" | "Replace" | "Restore";
 
 export interface ApplyEditArgs {
+  jobId?: string;
   baseImagePath: string;      // path to the enhanced image we’re editing
   mask: Buffer;               // binary mask (white = edit, black = keep)
   mode: EditMode;             // "Add" | "Remove" | "Restore"
@@ -237,6 +238,7 @@ export interface ApplyEditArgs {
  * Returns the path to the edited image on disk.
  */
 export async function applyEdit({
+  jobId,
   baseImagePath,
   mask,
   mode,
@@ -391,6 +393,7 @@ export async function applyEdit({
     // 🚀 Call shared Gemini helper
     const editedBuffer = await regionEditWithGemini({
       prompt: finalPrompt,
+      jobId,
       baseImageBuffer,
       maskPngBuffer,
       // Optionally pass roomType, sceneType, preserveStructure if needed

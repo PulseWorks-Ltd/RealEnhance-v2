@@ -55,6 +55,7 @@ import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
+import { logGeminiUsage } from "./ai/usageTelemetry";
 import { toBase64, siblingOutPath } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
@@ -795,6 +796,7 @@ async function runStructuralTopologyCheck(opts: {
   stage1APath: string;
   stage2Path: string;
   model: string;
+  jobId?: string;
 }): Promise<StructuralTopologyCheckResult> {
   const prompt = `You are performing a structural topology verification.
 
@@ -841,6 +843,7 @@ plus one short explanation sentence.`;
   const before = toBase64(opts.stage1APath).data;
   const after = toBase64(opts.stage2Path).data;
 
+  const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: opts.model,
     contents: [
@@ -861,6 +864,14 @@ plus one short explanation sentence.`;
       maxOutputTokens: 512,
     },
   } as any);
+  logGeminiUsage({
+    jobId: opts.jobId,
+    stage: "validator",
+    model: opts.model,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
 
   const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
   const rawText = textParts.map((p: any) => p?.text || "").join(" ").trim();
@@ -1117,6 +1128,7 @@ Guidance:
 async function runStage1BFullFurnitureGeminiValidation(opts: {
   stage1APath: string;
   stage1BPath: string;
+  jobId?: string;
   promptAppend?: string;
   modelOverride?: string;
 }): Promise<Stage1BFullGeminiValidationResult> {
@@ -1133,6 +1145,7 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
     : STAGE1B_FULL_FURNITURE_VALIDATOR_PROMPT;
 
   try {
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
       contents: [
@@ -1154,6 +1167,14 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
         responseMimeType: "application/json",
       },
     } as any);
+    logGeminiUsage({
+      jobId: opts.jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
+    });
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const rawText = textParts.map((p: any) => p?.text || "").join("\n").trim();
@@ -1341,7 +1362,9 @@ async function evaluateStage1BLightPolicy(input: {
         policyMode: "DECLUTTER",
       });
     } else {
-      const structuralReview = await runGeminiStructuralReviewPro(input.path1A, input.candidate);
+      const structuralReview = await runGeminiStructuralReviewPro(input.path1A, input.candidate, {
+        jobId: input.jobId,
+      });
       if (structuralReview.result === "FAIL") {
         effectiveHardFail = true;
         effectiveViolationType = "final_structural_review";
@@ -1568,6 +1591,7 @@ If layout has changed in any way → hardFail = true`
   const geminiResult = await runStage1BFullFurnitureGeminiValidation({
     stage1APath: input.path1A,
     stage1BPath: input.candidate,
+    jobId: input.jobId,
     promptAppend,
     modelOverride: modelToUse,
   });
@@ -2480,7 +2504,8 @@ Set confidence to a number between 0 and 1.
 async function runStructuralInvariantGeminiCheck(
   beforeImageUrl: string,
   afterImageUrl: string,
-  hintFlags: string[] = []
+  hintFlags: string[] = [],
+  options?: { jobId?: string }
 ): Promise<{
   fail: boolean;
   confidence: number;
@@ -2503,6 +2528,7 @@ async function runStructuralInvariantGeminiCheck(
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
 
+  const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: STRUCTURAL_INVARIANT_MODEL,
     contents: [
@@ -2530,6 +2556,14 @@ async function runStructuralInvariantGeminiCheck(
       responseMimeType: "application/json",
     },
   } as any);
+  logGeminiUsage({
+    jobId: options?.jobId,
+    stage: "validator",
+    model: STRUCTURAL_INVARIANT_MODEL,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
 
   const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
   const rawText = textParts.map((p: any) => p?.text || "").join("\n").trim();
@@ -5423,7 +5457,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               }
             };
 
-            const opRes = await runOpeningValidator(validationBaseline, path2);
+            const opRes = await runOpeningValidator(validationBaseline, path2, { jobId: payload.jobId });
             const opHardFail = opRes?.hardFail === true;
             specialistResults.openings = opRes;
             if (opHardFail) {
@@ -5431,7 +5465,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("openings", opRes?.advisorySignals);
 
-            const fixRes = await runFixtureValidator(validationBaseline, path2);
+            const fixRes = await runFixtureValidator(validationBaseline, path2, { jobId: payload.jobId });
             const fixHardFail = fixRes?.hardFail === true;
             specialistResults.fixtures = fixRes;
             if (fixHardFail) {
@@ -5439,7 +5473,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("fixtures", fixRes?.advisorySignals);
 
-            const floorRes = await runFloorIntegrityValidator(validationBaseline, path2);
+            const floorRes = await runFloorIntegrityValidator(validationBaseline, path2, { jobId: payload.jobId });
             const floorHardFail = floorRes?.hardFail === true;
             specialistResults.floor = floorRes;
             if (floorHardFail) {
@@ -5447,7 +5481,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("floor", floorRes?.advisorySignals);
 
-            const envRes = await runEnvelopeValidator(validationBaseline, path2);
+            const envRes = await runEnvelopeValidator(validationBaseline, path2, { jobId: payload.jobId });
             const envHardFail = envRes?.hardFail === true;
             specialistResults.envelope = envRes;
             if (envHardFail) {
@@ -9211,7 +9245,7 @@ All openings must remain identical in position and size to the original image.`;
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
-        const opRes = await runOpeningValidator(validationBasePath, path2);
+        const opRes = await runOpeningValidator(validationBasePath, path2, { jobId: payload.jobId });
         specialistResults.opening = normalizeSpecialistResult({
           validator: "opening",
           status: opRes.status,
@@ -9377,7 +9411,7 @@ All openings must remain identical in position and size to the original image.`;
               : "none",
         });
 
-        const fixRes = await runFixtureValidator(validationBasePath, path2);
+        const fixRes = await runFixtureValidator(validationBasePath, path2, { jobId: payload.jobId });
         specialistResults.fixture = normalizeSpecialistResult({
           validator: "fixture",
           status: fixRes.status,
@@ -9452,7 +9486,7 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const floorRes = await runFloorIntegrityValidator(validationBasePath, path2);
+        const floorRes = await runFloorIntegrityValidator(validationBasePath, path2, { jobId: payload.jobId });
         specialistResults.floor = normalizeSpecialistResult({
           validator: "floor",
           status: floorRes.status,
@@ -9527,7 +9561,7 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const envRes = await runEnvelopeValidator(validationBasePath, path2);
+        const envRes = await runEnvelopeValidator(validationBasePath, path2, { jobId: payload.jobId });
         specialistResults.envelope = normalizeSpecialistResult({
           validator: "envelope",
           status: envRes.status,
@@ -10058,6 +10092,7 @@ All openings must remain identical in position and size to the original image.`;
                 openingStructuralSignalContext: complianceOpeningSignalContext,
                 maskedDriftRegions: complianceMaskedDriftRegions,
                 openingRegions: complianceOpeningRegions,
+                jobId: payload.jobId,
                 modelOverride: "gemini-2.5-pro",
               });
 
@@ -10242,7 +10277,7 @@ All openings must remain identical in position and size to the original image.`;
 
       try {
         const structuralReview = ENABLE_FINAL_STRUCTURAL_REVIEW
-          ? await runGeminiStructuralReviewPro(validationBasePath, path2)
+          ? await runGeminiStructuralReviewPro(validationBasePath, path2, { jobId: payload.jobId })
           : { result: "PASS" as const, confidence: 100, explanation: "final_structural_review_disabled" };
 
         if (ENABLE_FINAL_STRUCTURAL_REVIEW) {
@@ -11549,6 +11584,7 @@ async function handleEditJob(payload: any) {
 
   // 3) Call applyEdit – this will talk to Gemini & composite with mask
   const editPath = await applyEdit({
+    jobId,
     baseImagePath: basePath,
     mask,
     mode: "Add", // Default to "Add"; adjust as needed if mode is in payload
@@ -11997,6 +12033,7 @@ const worker = new Worker(
           if (mode === "Restore") {
             // Restore mode intentionally remains pixel restoration with no model retry loop.
             outPath = await applyEdit({
+              jobId: regionPayload.jobId,
               baseImagePath: basePath,
               mask: maskBuf,
               mode: mode as any,
@@ -12032,6 +12069,7 @@ const worker = new Worker(
               let anchorOverlapPct: number | undefined;
 
               outPath = await applyEdit({
+                jobId: regionPayload.jobId,
                 baseImagePath: basePath,
                 mask: maskBuf,
                 mode: mode as any,
@@ -12067,6 +12105,7 @@ const worker = new Worker(
                   outPath,
                   maskBuf,
                   comparedAgainst,
+                  { jobId: regionPayload.jobId },
                 );
                 openingsValidationSummary = {
                   ...openingsValidation,

@@ -1,4 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
+import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
@@ -84,7 +85,8 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
 
 export async function runEnvelopeValidator(
   beforeImageUrl: string,
-  afterImageUrl: string
+  afterImageUrl: string,
+  options?: { jobId?: string }
 ): Promise<EnvelopeValidatorResult> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
@@ -192,6 +194,7 @@ Non-fail certainty guard:
 - If geometry is ambiguous, set visualAmbiguity=true and do not claim certainty.`;
 
   const runWithModel = async (model: string): Promise<EnvelopeValidatorResult> => {
+    const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
       contents: [
@@ -212,6 +215,14 @@ Non-fail certainty guard:
         maxOutputTokens: 256,
         responseMimeType: "application/json",
       },
+    });
+    logGeminiUsage({
+      jobId: options?.jobId,
+      stage: "validator",
+      model,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
