@@ -260,10 +260,6 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     toDisplayUrl(data?.result?.result?.imageUrl) ||
     null;
 
-  if (isRegionEdit) {
-    return { url: editLatestUrl || finalOutput || legacyResultAlias || null, stage: null };
-  }
-
   const pickFallback = (): { url: string | null; stage: StageKey | null } => {
     if (fallbackStage === "1B" && stage1B) return { url: stage1B, stage: "1B" };
     if (fallbackStage === "1A" && stage1A) return { url: stage1A, stage: "1A" };
@@ -283,6 +279,16 @@ function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey |
     if (fb.url) return fb;
   }
 
+  if (editLatestUrl) return { url: editLatestUrl, stage: null };
+  if (isRegionEdit) return { url: finalOutput || legacyResultAlias || null, stage: null };
+
+  const retryUrl =
+    toDisplayUrl(data?.retryLatestUrl) ||
+    toDisplayUrl(data?.latestRetryUrl) ||
+    toDisplayUrl(data?.result?.retryLatestUrl) ||
+    toDisplayUrl(data?.result?.latestRetryUrl) || null;
+
+  if (retryUrl) return { url: retryUrl, stage: "2" as StageKey };
   if (finalOutput) return { url: finalOutput, stage: null };
   if (stage2) return { url: stage2, stage: "2" };
   if (stage1B) return { url: stage1B, stage: "1B" };
@@ -348,6 +354,17 @@ function normalizeVersionToTimestamp(value: unknown): number {
     }
   }
   return 0;
+}
+
+function canPromoteChildArtifact(args: {
+  type: "retry" | "edit";
+  parentJobId: string | null | undefined;
+  existingJobId: string | null | undefined;
+  url: string | null;
+  status: string;
+}): boolean {
+  const { parentJobId, existingJobId, url, status } = args;
+  return status === "completed" && !!url && !!parentJobId && !!existingJobId && parentJobId === existingJobId;
 }
 
 function getPerImageDeclutterRequested(item: any): boolean {
@@ -3636,15 +3653,15 @@ export default function BatchProcessor({
                 existingJobId !== polledId &&
                 (isRetryChildJob || mappedViaParent || mappedViaImage)
               ) {
-                // Minimal artifact promotion rule for retry children:
-                // when a retry child completes with a Stage-2 artifact for this parent,
-                // capture retryLatestUrl but keep parent status/stage/job lineage immutable.
                 const canPromoteRetryArtifact =
                   isRetryChildJob &&
-                  incomingNormalizedStatus === "completed" &&
-                  !!stage2Url &&
-                  !!parentJobId &&
-                  parentJobId === existingJobId;
+                  canPromoteChildArtifact({
+                    type: "retry",
+                    parentJobId,
+                    existingJobId,
+                    url: stage2Url,
+                    status: incomingNormalizedStatus,
+                  });
 
                 if (canPromoteRetryArtifact) {
                   const promotedUrl = stage2Url as string;
@@ -3702,6 +3719,87 @@ export default function BatchProcessor({
                       parentJobId: existingJobId,
                       childJobId: polledId,
                       hasStage2: true,
+                    });
+                  }
+                  return copy;
+                }
+
+                const promotableEditUrl =
+                  toDisplayUrl(it?.latestEditUrl) ||
+                  toDisplayUrl(it?.editLatestUrl) ||
+                  toDisplayUrl(extraResult?.latestEditUrl) ||
+                  toDisplayUrl(extraResult?.editLatestUrl) ||
+                  null;
+                const canPromoteEditArtifact =
+                  isRegionEdit &&
+                  canPromoteChildArtifact({
+                    type: "edit",
+                    parentJobId,
+                    existingJobId,
+                    url: promotableEditUrl,
+                    status: incomingNormalizedStatus,
+                  });
+
+                if (canPromoteEditArtifact) {
+                  const promotedVersion = normalizeVersionToTimestamp(
+                    it?.version ?? it?.updatedAt ?? it?.updated_at
+                  );
+                  const existingEditLatestUpdatedAt = normalizeVersionToTimestamp(
+                    existing.latestEditUpdatedAt ??
+                    existing.editLatestUpdatedAt ??
+                    existing.result?.latestEditUpdatedAt ??
+                    existing.result?.editLatestUpdatedAt ??
+                    existing.updatedAt ??
+                    existing.version
+                  );
+                  const hasExistingEditArtifact = !!(
+                    existing.latestEditUrl ||
+                    existing.editLatestUrl ||
+                    existing.result?.latestEditUrl ||
+                    existing.result?.editLatestUrl
+                  );
+                  const shouldPromoteEditArtifact =
+                    !hasExistingEditArtifact ||
+                    promotedVersion >= existingEditLatestUpdatedAt;
+
+                  if (!shouldPromoteEditArtifact) {
+                    if (!retryChildMappingLoggedRef.current.has(`promote-edit-stale:${polledId}:${existingJobId}:${idx}`)) {
+                      retryChildMappingLoggedRef.current.add(`promote-edit-stale:${polledId}:${existingJobId}:${idx}`);
+                      console.log('[BATCH][edit_child_promote_skipped_stale]', {
+                        index: idx,
+                        parentJobId: existingJobId,
+                        childJobId: polledId,
+                        incomingVersion: promotedVersion,
+                        existingEditLatestUpdatedAt,
+                      });
+                    }
+                    return copy;
+                  }
+
+                  copy[idx] = {
+                    ...existing,
+                    latestEditUrl: promotableEditUrl,
+                    editLatestUrl: promotableEditUrl,
+                    latestEditUpdatedAt: promotedVersion || Date.now(),
+                    editLatestUpdatedAt: promotedVersion || Date.now(),
+                    version: Math.max(promotedVersion, normalizeVersionToTimestamp(existing.version ?? existing.updatedAt)),
+                    updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
+                    result: {
+                      ...(existing.result || {}),
+                      latestEditUrl: promotableEditUrl,
+                      editLatestUrl: promotableEditUrl,
+                      latestEditUpdatedAt: promotedVersion || Date.now(),
+                      editLatestUpdatedAt: promotedVersion || Date.now(),
+                    },
+                  };
+                  wasUpdateApplied = true;
+                  currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
+                  if (!retryChildMappingLoggedRef.current.has(`promote-edit:${polledId}:${existingJobId}:${idx}`)) {
+                    retryChildMappingLoggedRef.current.add(`promote-edit:${polledId}:${existingJobId}:${idx}`);
+                    console.log('[BATCH][edit_child_promoted_latest_edit_url]', {
+                      index: idx,
+                      parentJobId: existingJobId,
+                      childJobId: polledId,
                     });
                   }
                   return copy;

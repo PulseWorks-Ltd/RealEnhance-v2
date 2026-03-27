@@ -5745,6 +5745,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         status: "complete",
         finalOutputUrl: pub2Url,
         resultUrl: pub2Url,
+        latestRetryUrl: pub2Url,
+        retryLatestUrl: pub2Url,
         stageUrls: {
           "1A": stage2OnlyBaseStage === "1A" ? ((payload.stage2OnlyMode as any)?.base1AUrl || null) : ((payload.stage2OnlyMode as any)?.base1AUrl || null),
           "1B": stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode.base1BUrl || null) : null,
@@ -5756,6 +5758,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null },
         }
       }, "stage2_only_complete");
+
+      // Stamp parent job with latestRetryUrl so client can display retry output on the original card
+      const stage2OnlyParentJobId = String((payload as any).retryParentJobId || "").trim();
+      if (stage2OnlyParentJobId && pub2Url) {
+        await updateJob(stage2OnlyParentJobId, {
+          latestRetryUrl: pub2Url,
+          retryLatestUrl: pub2Url,
+        }).catch(() => {});
+      }
 
       flushEnhanceForensicSnapshot({
         uploadUrl: (payload as any).remoteOriginalUrl || null,
@@ -11251,6 +11262,17 @@ All openings must remain identical in position and size to the original image.`;
       stage2: timestamps.stage2End && timestamps.stage2Start ? timestamps.stage2End - timestamps.stage2Start : null
     }
   });
+
+  // Stamp parent job with latestRetryUrl so client can display retry output on the original card
+  if (isManualRetryCompletion && committedResultUrl) {
+    const retryParentJobIdForStamp = String((payload as any).retryParentJobId || "").trim();
+    if (retryParentJobIdForStamp) {
+      await updateJob(retryParentJobIdForStamp, {
+        latestRetryUrl: committedResultUrl,
+        retryLatestUrl: committedResultUrl,
+      }).catch(() => {});
+    }
+  }
   if (stage2Skipped) {
     nLog("[PIPELINE] Job completed at Stage-1A", {
       jobId: payload.jobId,
