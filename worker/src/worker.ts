@@ -5351,7 +5351,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Run validators on Stage-2 output
       // Baseline: use Stage 1A when available to match normal pipeline validation behavior
       const sceneLabel = payload.options.sceneType === "exterior" ? "exterior" : "interior";
-      const validationBaseline = stage2OnlyValidationBaseline;
+      const validationBaselineCandidate = stage2OnlyValidationBaseline;
+      if (typeof validationBaselineCandidate !== "string" || !validationBaselineCandidate.trim() || !String(path2 || "").trim()) {
+        throw new Error("VALIDATION_INPUT_MISSING");
+      }
+      const validationBaseline = validationBaselineCandidate;
 
       // ═══ Unified Validation (primary validator) ═══
       let unifiedRetryValidation: UnifiedValidationResult | undefined;
@@ -5419,8 +5423,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               }
             };
 
-            const validationStructuralBaseline = await extractStructuralBaseline(validationBaseline);
-            const opRes = await runOpeningValidator(validationBaseline, path2, validationStructuralBaseline);
+            const opRes = await runOpeningValidator(validationBaseline, path2);
             const opHardFail = opRes?.hardFail === true;
             specialistResults.openings = opRes;
             if (opHardFail) {
@@ -8715,8 +8718,8 @@ All openings must remain identical in position and size to the original image.`;
       const validationStage: "1A" | "1B" | "2" = "2";
       const validationBasePathCandidate = stage2ValidationBaseline;
 
-      if (typeof validationBasePathCandidate !== "string" || !validationBasePathCandidate.trim()) {
-        throw new Error("validation_baseline_missing: stage2 input path unavailable");
+      if (typeof validationBasePathCandidate !== "string" || !validationBasePathCandidate.trim() || !String(path2 || "").trim()) {
+        throw new Error("VALIDATION_INPUT_MISSING");
       }
 
       const validationBasePath = validationBasePathCandidate;
@@ -9197,8 +9200,7 @@ All openings must remain identical in position and size to the original image.`;
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
-        const validationStructuralBaseline = await extractStructuralBaseline(validationBasePath);
-        const opRes = await runOpeningValidator(validationBasePath, path2, validationStructuralBaseline);
+        const opRes = await runOpeningValidator(validationBasePath, path2);
         specialistResults.opening = normalizeSpecialistResult({
           validator: "opening",
           status: opRes.status,
@@ -12034,6 +12036,9 @@ const worker = new Worker(
               if (runEditOpeningsValidation) {
                 const comparedAgainst = "edit_input";
                 const validationBaselinePath = basePath;
+                if (!String(validationBaselinePath || "").trim() || !String(outPath || "").trim()) {
+                  throw new Error("VALIDATION_INPUT_MISSING");
+                }
 
                 const openingsValidation = await runEditOpeningsValidator(
                   validationBaselinePath,

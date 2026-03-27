@@ -2,6 +2,7 @@ import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import {
   detectRelocation,
+  extractStructuralBaseline,
   type StructuralBaseline,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
@@ -352,13 +353,17 @@ Return JSON only:
 
 export async function runOpeningValidator(
   beforeImageUrl: string,
-  afterImageUrl: string,
-  baseline?: StructuralBaseline | null
+  afterImageUrl: string
 ): Promise<OpeningValidatorResult> {
-  const baselineOpenings = extractBaselineOpenings(baseline || null);
+  if (!String(beforeImageUrl || "").trim() || !String(afterImageUrl || "").trim()) {
+    throw new Error("VALIDATION_INPUT_MISSING");
+  }
+
+  const baseline = await extractStructuralBaseline(beforeImageUrl);
+  const baselineOpenings = extractBaselineOpenings(baseline);
   console.log("[OPENINGS_BASELINE]", baselineOpenings);
 
-  if (baseline && Array.isArray(baseline.openings) && baseline.openings.length > 0) {
+  if (Array.isArray(baseline.openings) && baseline.openings.length > 0) {
     const deterministic = await validateOpeningPreservation(baseline, afterImageUrl);
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
     const baselineById = new Map((baseline.openings || []).map((opening) => [String(opening.id), opening]));

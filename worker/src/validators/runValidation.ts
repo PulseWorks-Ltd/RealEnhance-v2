@@ -462,11 +462,8 @@ export async function runUnifiedValidation(
     specialistAdvisorySignals,
   } = params;
 
-  if (!String(originalPath || "").trim()) {
-    throw new Error("validation_baseline_missing: originalPath is required");
-  }
-  if (!String(enhancedPath || "").trim()) {
-    throw new Error("validation_candidate_missing: enhancedPath is required");
+  if (!String(originalPath || "").trim() || !String(enhancedPath || "").trim()) {
+    throw new Error("VALIDATION_INPUT_MISSING");
   }
 
   const validatorMode = getLocalValidatorMode();

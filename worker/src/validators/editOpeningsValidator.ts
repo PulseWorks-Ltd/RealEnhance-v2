@@ -152,6 +152,10 @@ export async function runEditOpeningsValidator(
   mask: Buffer,
   comparedAgainst: EditOpeningsComparedAgainst = "stage1a",
 ): Promise<EditOpeningsValidationSummary> {
+  if (!String(baselineImagePath || "").trim() || !String(editedImagePath || "").trim() || !mask || mask.length === 0) {
+    throw new Error("VALIDATION_INPUT_MISSING");
+  }
+
   const baselineMeta = await sharp(baselineImagePath).metadata();
   const width = baselineMeta.width || 0;
   const height = baselineMeta.height || 0;
