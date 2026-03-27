@@ -1,6 +1,7 @@
 import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 import { logIfNotFocusMode } from "../logger";
+import { logGeminiUsage, type GeminiCallType } from "./usageTelemetry";
 
 function ensureImageCapableModel(model: string | undefined, fallback: string, envName: string): string {
   const candidate = String(model || "").trim();
@@ -77,6 +78,7 @@ type ModelLogMeta = {
   filename?: string;
   roomType?: string;
   stage?: string;
+  callType?: GeminiCallType;
   reason?: string;
   selectedModel?: string;
   fallbackModel?: string | null;
@@ -180,9 +182,18 @@ export async function runWithImageModelFallback(
   });
 
   try {
+    const requestStartedAt = Date.now();
     const resp = await ai.models.generateContent({
       ...baseRequest,
       model,
+    });
+    logGeminiUsage({
+      jobId: meta?.jobId,
+      stage: meta?.stage || modelStageLabel,
+      model,
+      callType: meta?.callType || "image_generation",
+      response: resp,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const validation = isValidImageResponse(resp);
@@ -230,9 +241,18 @@ export async function runWithSelectedImageModel({
   });
 
   try {
+    const requestStartedAt = Date.now();
     const resp = await ai.models.generateContent({
       ...baseRequest,
       model: selectedModel,
+    });
+    logGeminiUsage({
+      jobId: meta?.jobId,
+      stage: meta?.stage || stageLabel,
+      model: selectedModel,
+      callType: meta?.callType || "image_generation",
+      response: resp,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const validation = isValidImageResponse(resp);
@@ -294,9 +314,18 @@ export async function runWithPrimaryThenFallback({
   let primaryMissingImage = false;
   let shouldTryFallback = false;
   try {
+    const requestStartedAt = Date.now();
     const resp = await ai.models.generateContent({
       ...baseRequest,
       model: primaryModel,
+    });
+    logGeminiUsage({
+      jobId: meta?.jobId,
+      stage: meta?.stage || stageLabel,
+      model: primaryModel,
+      callType: meta?.callType || "image_generation",
+      response: resp,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const validation = isValidImageResponse(resp);
@@ -339,9 +368,18 @@ export async function runWithPrimaryThenFallback({
   let fallbackError: any = null;
   try {
     console.log(`[stage${stageLabel}] Attempting fallback model: ${fallbackModel}`);
+    const requestStartedAt = Date.now();
     const resp = await ai.models.generateContent({
       ...baseRequest,
       model: fallbackModel,
+    });
+    logGeminiUsage({
+      jobId: meta?.jobId,
+      stage: meta?.stage || stageLabel,
+      model: fallbackModel,
+      callType: meta?.callType || "image_generation",
+      response: resp,
+      latencyMs: Date.now() - requestStartedAt,
     });
 
     const validation = isValidImageResponse(resp);

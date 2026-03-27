@@ -1,5 +1,6 @@
 export interface RegionEditArgs {
   prompt: string;
+  jobId?: string;
   baseImageBuffer: Buffer;
   referenceImageBuffer?: Buffer;
   maskPngBuffer?: Buffer;
@@ -11,6 +12,7 @@ export interface RegionEditArgs {
 export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer> {
   const {
     prompt,
+    jobId,
     baseImageBuffer,
     referenceImageBuffer,
     maskPngBuffer,
@@ -63,7 +65,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     getGeminiClient(),
     { contents },
     "[gemini.regionEdit]",
-    { stage: "region-edit", reason: "region-edit" }
+    { stage: "edit", jobId, reason: "region-edit", callType: "edit" }
   );
 
   const candidates = resp.candidates ?? [];
@@ -487,6 +489,7 @@ export async function enhanceWithGemini(
         jobId,
         filename,
         roomType,
+        callType: "image_generation",
         reason: modelLogReason,
         selectedModel: MODEL_CONFIG.stage1A.primary,
         fallbackModel: MODEL_CONFIG.stage1A.fallback,
@@ -505,6 +508,7 @@ export async function enhanceWithGemini(
           jobId,
           filename,
           roomType,
+          callType: "image_generation",
           reason: modelLogReason,
           selectedModel: MODEL_CONFIG.stage1B.primary,
           fallbackModel: MODEL_CONFIG.stage1B.fallback,
@@ -525,6 +529,7 @@ export async function enhanceWithGemini(
           jobId,
           filename,
           roomType,
+          callType: "image_generation",
           reason: modelLogReason,
           selectedModel: MODEL_CONFIG.stage2.primary,
           fallbackModel: MODEL_CONFIG.stage2.fallback,
@@ -539,6 +544,7 @@ export async function enhanceWithGemini(
         jobId,
         filename,
         roomType,
+        callType: "image_generation",
         reason: modelLogReason,
         selectedModel: MODEL_CONFIG.stage1A.primary,
         fallbackModel: MODEL_CONFIG.stage1A.fallback,

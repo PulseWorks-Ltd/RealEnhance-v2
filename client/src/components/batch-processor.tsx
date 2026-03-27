@@ -692,43 +692,26 @@ function saveBatchJobState(state: PersistedBatchJob, userId: string | null) {
   try {
     const payload = { ...state, ownerUserId: userId ?? null };
     localStorage.setItem(makeBatchKey(userId), JSON.stringify(payload));
-
-      const latestArtifactView = getCardArtifactView(
-        {
-          stageUrls: stageMap,
-          latestRetryUrl: retryLatestUrl,
-          latestEditUrl: editLatestUrl,
-          originalImageUrl: originalUploadUrl,
-        },
-        {
-          originalFallback: originalUploadUrl,
-          stageFallback: {
-            stage2: stage2Url,
-            stage1B: stage1BUrl,
-            stage1A: stage1AUrl,
-          },
-        }
-      );
   } catch (error) {
-      if (latestArtifactView.active?.key === "edited") {
-        return {
-          baselineStage: "latest",
-          stagesToRun: ["2"],
-          allowStaging: true,
-          sourceUrl: latestArtifactView.active.url,
-          sourceStageLabel: "edit_latest",
-        };
-      }
-
-      if (latestArtifactView.active?.key === "retried") {
+    console.warn("Failed to save batch job state:", error);
+  }
+}
 
 function loadBatchJobState(userId: string | null): PersistedBatchJob | null {
   try {
     migrateLegacyKeysOnce(userId);
-          sourceUrl: latestArtifactView.active.url,
+    const saved = localStorage.getItem(makeBatchKey(userId));
     if (!saved) return null;
-    
+
     const state = JSON.parse(saved) as PersistedBatchJob;
+    const maxAgeMs = JOB_EXPIRY_HOURS * 60 * 60 * 1000;
+    if (!state?.timestamp || Date.now() - state.timestamp > maxAgeMs) {
+      clearBatchJobState(userId);
+      return null;
+    }
+
+    return state;
+  } catch (error) {
     console.warn("Failed to load batch job state:", error);
     clearBatchJobState();
     return null;
