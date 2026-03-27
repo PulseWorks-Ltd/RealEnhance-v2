@@ -99,13 +99,35 @@ function highestStageFrom(stages: Array<"1A" | "1B" | "2">): "1A" | "1B" | "2" |
   return null;
 }
 
-function normalizeBaselineSourceStage(rawStage: string | undefined): "1A" | "1B" | "original_upload" {
-  const s = String(rawStage || "").trim().toLowerCase();
-  if (s.startsWith("1a")) return "1A";
-  if (s === "1b" || s === "1b-light" || s === "1b-stage-ready" || s.startsWith("1b")) {
-    return "1B";
-  }
-  return "original_upload";
+type RetrySourceStage = "original" | "1A" | "1B" | "2" | "retry" | "edit";
+
+function normalizeRetrySourceStage(raw: unknown): RetrySourceStage | null {
+  const v = String(raw || "").trim().toLowerCase();
+  if (!v) return null;
+  if (v === "original" || v === "original_upload") return "original";
+  if (v === "1a" || v === "stage1a") return "1A";
+  if (v === "1b" || v === "stage1b") return "1B";
+  if (v === "2" || v === "stage2") return "2";
+  if (v === "retry" || v === "retry_latest") return "retry";
+  if (v === "edit" || v === "edit_latest") return "edit";
+  return null;
+}
+
+function resolveStage2ModeFromSource(sourceStage: RetrySourceStage): "REFRESH" | "FROM_EMPTY" {
+  if (sourceStage === "1A" || sourceStage === "original") return "FROM_EMPTY";
+  return "REFRESH";
+}
+
+function toEnhanceStage(sourceStage: RetrySourceStage): "1A" | "1B" | "2" {
+  if (sourceStage === "1A" || sourceStage === "original") return "1A";
+  if (sourceStage === "1B") return "1B";
+  return "2";
+}
+
+function toRetryPayloadStage(sourceStage: RetrySourceStage): "stage1A" | "stage1B" | "stage2" {
+  if (sourceStage === "1A" || sourceStage === "original") return "stage1A";
+  if (sourceStage === "1B") return "stage1B";
+  return "stage2";
 }
 
 async function isRetrySourceReachable(url: string): Promise<boolean> {
@@ -263,28 +285,6 @@ function isStage1ATainted(parentJob: any, parentMeta: any): boolean {
   );
 }
 
-function resolveRetryBaseline(
-  requestedStage: "1A" | "1B" | "2",
-  stageUrls: Record<string, string | null>,
-): { baselineUrl: string; resolvedStage: "1A" | "1B" } {
-  const order: Array<"1A" | "1B" | "2"> = ["1A", "1B", "2"];
-  const index = order.indexOf(requestedStage);
-
-  for (let i = index - 1; i >= 0; i -= 1) {
-    const stage = order[i];
-    if (stage === "2") continue;
-    const url = stageUrls[stage];
-    if (typeof url === "string" && url.trim().length > 0) {
-      return {
-        baselineUrl: url,
-        resolvedStage: stage,
-      };
-    }
-  }
-
-  throw new Error("No valid baseline found for retry");
-}
-
 export function retrySingleRouter() {
   const r = Router();
 
@@ -317,8 +317,8 @@ export function retrySingleRouter() {
       }
       const manualSceneOverride = toBool(body.manualSceneOverride, false);
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
-      const sourceStageRaw = String(body.sourceStage || "").toLowerCase();
       const sourceUrlRaw = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
+      const sourceStage = normalizeRetrySourceStage(body.sourceStage);
       const incomingImageId = String(body.imageId || "").trim() || null;
       const incomingRetryParentImageId = String(body.retryParentImageId || "").trim() || null;
       const incomingRetryParentJobId = String(body.retryParentJobId || "").trim() || null;
@@ -327,8 +327,6 @@ export function retrySingleRouter() {
       const clientBatchId = body.clientBatchId || body.batchId || null;
       const stagesToRun = parseStageList(body.stagesToRun);
       const requestedStagesList = parseStageList(body.requestedStages);
-      const payloadBaselineStage = String(body.baselineStage || "").trim().toUpperCase();
-      const payloadBaselineUrl = typeof body.baselineUrl === "string" ? body.baselineUrl.trim() : "";
       const requestedStageFromPayload = String(body.requestedStage || '').trim().toUpperCase();
       const requestedStage = highestStageFrom(stagesToRun) || (requestedStageFromPayload as "1A" | "1B" | "2" | "") || "2";
       const stagePlanIncludes1A = stagesToRun.includes("1A");
@@ -338,7 +336,21 @@ export function retrySingleRouter() {
         ? (stagePlanIncludes2 && !stagePlanIncludes1A && !stagePlanIncludes1B)
         : requestedStage === "2";
       const effectiveAllowStaging = requestedStage === "2" ? true : !!allowStaging;
-      const useStageSource = !!sourceUrlRaw;
+      if (!sourceUrlRaw) {
+        return res.status(400).json({
+          success: false,
+          error: "missing_source_url",
+          message: "Missing sourceUrl - cannot resolve source image",
+        });
+      }
+
+      if (!sourceStage) {
+        return res.status(400).json({
+          success: false,
+          error: "missing_source_stage",
+          message: "Missing sourceStage - cannot resolve source stage",
+        });
+      }
 
       if (!parentJobId) {
         return res.status(409).json({
@@ -363,9 +375,10 @@ export function retrySingleRouter() {
         return res.status(400).json({ success: false, error: "invalid_room_type", message: "Invalid roomType for interior retry" });
       }
 
-      if (!useStageSource && !file) {
-        return res.status(400).json({ success: false, error: "missing_image", message: "No image provided for retry" });
-      }
+      console.log("[SOURCE_RESOLVED]", {
+        sourceUrl: sourceUrlRaw,
+        sourceStage,
+      });
 
       let finalPath: string;
       let remoteOriginalUrl: string | undefined = undefined;
@@ -387,7 +400,7 @@ export function retrySingleRouter() {
       let parentJob: any = undefined;
       let parentMeta: any = undefined;
 
-      if (useStageSource || parentJobId) {
+      if (parentJobId) {
         const bucket = process.env.S3_BUCKET;
         if (!bucket) {
           return res.status(400).json({ success: false, error: "s3_not_configured", message: "S3 bucket is required to retry from a stage output" });
@@ -561,49 +574,17 @@ export function retrySingleRouter() {
             stage2: canonicalStageUrls["2"],
           });
 
-          const lineageSourceStage: "stage1A" | "stage1B" | "stage2" = canonicalStageUrls["2"]
-            ? "stage2"
-            : canonicalStageUrls["1B"]
-              ? "stage1B"
-              : "stage1A";
-          const lineageSourceUrl = lineageSourceStage === "stage2"
-            ? canonicalStageUrls["2"]
-            : lineageSourceStage === "stage1B"
-              ? canonicalStageUrls["1B"]
-              : canonicalStageUrls["1A"];
-
-          let baseline: { baselineUrl: string; resolvedStage: "1A" | "1B" };
-          try {
-            baseline = resolveRetryBaseline(requestedStage, canonicalStageUrls);
-          } catch {
-            return res.status(409).json({
-              success: false,
-              error: "retry_baseline_not_found",
-              message: "No valid baseline found for retry",
-            });
-          }
-
-          retrySourceStage = lineageSourceStage;
-          retrySourceUrl = lineageSourceUrl || undefined;
-          selectedSourceStage = baseline.resolvedStage;
-          selectedSourceUrl = baseline.baselineUrl;
-          retryFromStage = requestedStage === "2" && baseline.resolvedStage === "1A" ? "1B" : undefined;
-          stage2OnlyDisabled = requestedStage === "2" && baseline.resolvedStage === "1A";
+          selectedSourceStage = toEnhanceStage(sourceStage);
+          selectedSourceUrl = sourceUrlRaw;
+          retrySourceStage = toRetryPayloadStage(sourceStage);
+          retrySourceUrl = sourceUrlRaw;
+          retryFromStage = requestedStage === "2" && selectedSourceStage === "1A" ? "1B" : undefined;
+          stage2OnlyDisabled = requestedStage === "2" && selectedSourceStage === "1A";
           retryMode = "stage_resume";
 
-          console.log("RETRY_BASELINE_FINAL", {
-            requestedStage,
-            resolvedStage: baseline.resolvedStage,
-            baselineUrl: baseline.baselineUrl,
-          });
-
           if (stage2OnlyRequested) {
-            const hasStage1BBaseline =
-              !!selectedSourceStage &&
-              selectedSourceStage === "1B";
-            const hasStage1ABaseline =
-              !!selectedSourceStage &&
-              selectedSourceStage === "1A";
+            const hasStage1BBaseline = selectedSourceStage === "1B";
+            const hasStage1ABaseline = selectedSourceStage === "1A";
             const canUseStage1AForStage2 = hasStage1ABaseline && (stage2OnlyDisabled || !stage1BWasRequested);
 
             if (!selectedSourceUrl || (!hasStage1BBaseline && !canUseStage1AForStage2)) {
@@ -617,8 +598,7 @@ export function retrySingleRouter() {
           
           // ✅ FIX: Set stage1BWasRequested=true when resolved baseline is Stage 1B
           // This ensures worker doesn't fall back to 1A when 1B is the intended baseline
-          if (selectedSourceStage &&
-              selectedSourceStage === "1B") {
+          if (selectedSourceStage === "1B") {
             stage1BWasRequested = true;
           }
           
@@ -626,24 +606,7 @@ export function retrySingleRouter() {
             return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline' });
           }
           
-          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} → sourceStage=${selectedSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
-          
-          const collectedUrls = Object.values(canonicalStageUrls || {}).filter(Boolean) as string[];
-
-          if (collectedUrls.length > 0 && !collectedUrls.includes(selectedSourceUrl)) {
-            return res.status(400).json({ success: false, error: "source_url_mismatch", message: "Selected source URL does not match recorded job outputs" });
-          }
-
-          if (collectedUrls.length === 0) {
-            const history = parentMeta?.imageId ? await findByPublicUrlRedis(sessUser.id, selectedSourceUrl).catch(() => null) : null;
-            if (!history) {
-              return res.status(409).json({
-                success: false,
-                error: "retry_baseline_not_found",
-                message: "No canonical stage outputs found for retry baseline",
-              });
-            }
-          }
+          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} sourceStage=${selectedSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
         }
 
         if (!selectedSourceUrl) {
@@ -690,7 +653,7 @@ export function retrySingleRouter() {
             const copy = await copyS3Object(parsedKey, targetKey);
             remoteOriginalUrl = copy.url;
             remoteOriginalKey = copy.key;
-            retrySourceStage = normalizeStageLabel(candidate.stage || sourceStageRaw) || candidate.stage || sourceStageRaw || "stage2";
+            retrySourceStage = toRetryPayloadStage(sourceStage);
             retrySourceUrl = candidate.url;
             retrySourceKey = parsedKey;
             selectedSourceStage = candidate.stage;
@@ -718,51 +681,6 @@ export function retrySingleRouter() {
         }
         const buf = Buffer.from(await resp.arrayBuffer());
         await fs.writeFile(finalPath, buf);
-      } else {
-        if (!file) {
-          return res.status(400).json({ success: false, error: "missing_image", message: "No image provided for retry" });
-        }
-        const tempPath = (file as any).path || path.join((file as any).destination ?? uploadRoot, file.filename);
-        const isImage = await isLikelyImage(tempPath, file.mimetype);
-        if (!isImage) {
-          await fs.unlink(tempPath).catch(() => {});
-          return res.status(400).json({ success: false, error: "invalid_image_format", message: "Invalid image format for retry" });
-        }
-
-        const userDir = path.join(uploadRoot, sessUser.id);
-        await fs.mkdir(userDir, { recursive: true });
-        finalPath = path.join(userDir, file.filename || file.originalname);
-        if ((file as any).path) {
-          const src = path.join((file as any).destination ?? uploadRoot, file.filename);
-          await fs
-            .rename(src, finalPath)
-            .catch(async () => {
-              const buf = await fs.readFile((file as any).path);
-              await fs.writeFile(finalPath, buf);
-              await fs.unlink((file as any).path).catch(() => {});
-            });
-        }
-
-        const requireS3 = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
-        if (requireS3 || process.env.S3_BUCKET) {
-          try {
-            const up = await uploadOriginalToS3(finalPath);
-            remoteOriginalUrl = up.url;
-            remoteOriginalKey = up.key;
-            console.log(`[retrySingle] Original uploaded to S3: ${remoteOriginalUrl}`);
-          } catch (e) {
-            const msg = (e as any)?.message || String(e);
-            console.error('[retrySingle] S3 upload failed:', msg);
-            if (requireS3) {
-              return res.status(503).json({ success: false, error: 's3_upload_failed', message: msg });
-            }
-            console.warn('[retrySingle] Continuing without S3 (dev mode)');
-          }
-        } else {
-          if (!fss.existsSync(finalPath)) {
-            return res.status(404).json({ success: false, error: 'local_file_missing' });
-          }
-        }
       }
 
       // If the client did not supply declutterMode, try to hydrate from the parent job metadata
@@ -800,12 +718,14 @@ export function retrySingleRouter() {
       });
       await addImageToUser(sessUser.id, (rec as any).imageId);
 
-      console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'upload'} sourceUrl=${retrySourceUrl || 'upload'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
+      console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'missing'} sourceUrl=${retrySourceUrl || 'missing'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
 
       const options: any = {
         declutter: effectiveDeclutterWithFallback,
         declutterMode: declutterMode ?? undefined,
         virtualStage: effectiveAllowStaging,
+        sourceStage,
+        stage2Mode: resolveStage2ModeFromSource(sourceStage),
         roomType,
         sceneType,
         replaceSky,
@@ -876,7 +796,7 @@ export function retrySingleRouter() {
         runStage2: effectiveStagesToRun.includes("2"),
         stage2Baseline: resolvedBaselineStage,
         baselineUrl: resolvedBaselineUrl || undefined,
-        sourceStage: selectedSourceStage || undefined,
+        sourceStage: selectedSourceStage,
       } as const;
 
       // Invariant: when Stage 2 is planned, both baselineUrl and stage2Baseline must be present.
@@ -1104,16 +1024,8 @@ export function retrySingleRouter() {
         userId: sessUser.id,
         imageId: (rec as any).imageId,
         agencyId,
-        sourceStage: (retrySourceStage === "stage2" || retrySourceStage === "2")
-          ? "2"
-          : (retrySourceStage === "stage1B" || retrySourceStage === "1B")
-            ? "1B"
-            : "1A",
-        baselineStage: (retrySourceStage === "stage2" || retrySourceStage === "2")
-          ? "2"
-          : (retrySourceStage === "stage1B" || retrySourceStage === "1B")
-            ? "1B"
-            : "1A",
+        sourceStage: toEnhanceStage(sourceStage),
+        baselineStage: toEnhanceStage(sourceStage),
         stageUrls: inheritedStageUrls,
         remoteOriginalUrl,
         remoteOriginalKey,
@@ -1122,12 +1034,12 @@ export function retrySingleRouter() {
         executionPlan: resolvedExecutionPlan,
         retryInfo: {
           retryType: "manual_retry",
-          sourceStage: retrySourceStage,
+          sourceStage: sourceStage,
           sourceUrl: retrySourceUrl,
           sourceKey: retrySourceKey,
           stage1BWasRequested,
-          baselineStage: payloadBaselineStage || selectedSourceStage || null,
-          baselineUrl: payloadBaselineUrl || selectedSourceUrl || null,
+          baselineStage: sourceStage,
+          baselineUrl: sourceUrlRaw,
           requestedStages: effectiveRequestedStages,
           stagesToRun: effectiveStagesToRun,
           parentImageId,

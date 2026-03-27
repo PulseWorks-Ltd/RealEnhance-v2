@@ -48,7 +48,7 @@ type StagingStyle =
   | "country_lifestyle"
   | "lived_in_rental";
 type DisplayOutputKey = StageKey | "retried" | "edited" | "original";
-type EditSourceStage = "stage2" | "stage1B" | "stage1A";
+type SourceStageLabel = "original" | "1A" | "1B" | "2" | "retry" | "edit";
 type PreviewModalImage = {
   url: string;
   filename: string;
@@ -515,148 +515,6 @@ interface PersistedBatchJob {
   fileMetadata: PersistedFileMetadata[];
   jobIdToIndex: Record<string, number>;
   imageIdToIndex?: Record<string, number>;
-}
-
-function computeRetryBaseline(
-  viewingStage: StageKey | null,
-  stageMap: any,
-  latest?: {
-    retryLatestUrl?: string | null;
-    editLatestUrl?: string | null;
-    originalUploadUrl?: string | null;
-  }
-): {
-  baselineStage: "original" | "1A" | "1B" | "latest";
-  stagesToRun: StageKey[];
-  allowStaging: boolean;
-  sourceUrl: string | null;
-  sourceStageLabel: string;
-} {
-  const stage2Url = toDisplayUrl(stageMap?.["2"] || stageMap?.stage2) || null;
-  const stage1BUrl = toDisplayUrl(stageMap?.["1B"] || stageMap?.["1b"] || stageMap?.stage1B) || null;
-  const stage1AUrl = toDisplayUrl(stageMap?.["1A"] || stageMap?.["1a"] || stageMap?.["1"] || stageMap?.stage1A) || null;
-
-  const retryLatestUrl = toDisplayUrl(latest?.retryLatestUrl) || toDisplayUrl((latest as any)?.latestRetryUrl) || null;
-  const editLatestUrl = toDisplayUrl((latest as any)?.latestEditUrl) || toDisplayUrl(latest?.editLatestUrl) || null;
-  const originalUploadUrl = toDisplayUrl(latest?.originalUploadUrl) || null;
-
-  // Latest successful artifact order:
-  // retryLatestUrl -> editLatestUrl -> stage2 -> stage1B -> stage1A -> original_upload
-  if (retryLatestUrl) {
-    return {
-      baselineStage: "latest",
-      stagesToRun: ["2"],
-      allowStaging: true,
-      sourceUrl: retryLatestUrl,
-      sourceStageLabel: "retry_latest",
-    };
-  }
-
-  if (editLatestUrl) {
-    return {
-      baselineStage: "latest",
-      stagesToRun: ["2"],
-      allowStaging: true,
-      sourceUrl: editLatestUrl,
-      sourceStageLabel: "edit_latest",
-    };
-  }
-
-  if (stage2Url) {
-    const sourceUrl = stage1BUrl || stage1AUrl || originalUploadUrl || null;
-    const baselineStage: "original" | "1A" | "1B" = stage1BUrl ? "1B" : stage1AUrl ? "1A" : "original";
-    return {
-      baselineStage,
-      stagesToRun: ["2"],
-      allowStaging: true,
-      sourceUrl,
-      sourceStageLabel: stage1BUrl ? "stage1b" : stage1AUrl ? "stage1a" : "original_upload",
-    };
-  }
-
-  if (stage1BUrl) {
-    return {
-      baselineStage: "1B",
-      stagesToRun: ["2"],
-      allowStaging: true,
-      sourceUrl: stage1BUrl,
-      sourceStageLabel: "stage1b",
-    };
-  }
-
-  if (stage1AUrl) {
-    return {
-      baselineStage: "1A",
-      stagesToRun: ["1B", "2"],
-      allowStaging: true,
-      sourceUrl: stage1AUrl,
-      sourceStageLabel: "stage1a",
-    };
-  }
-
-  if (originalUploadUrl) {
-    return {
-      baselineStage: "original",
-      stagesToRun: ["1A", "1B", "2"],
-      allowStaging: true,
-      sourceUrl: originalUploadUrl,
-      sourceStageLabel: "original_upload",
-    };
-  }
-
-  // Final fallback: full pipeline from original file upload.
-  // Case A: Viewing Stage 2 -> re-stage from Stage 1B
-  if (viewingStage === "2" && stage1BUrl) {
-    return {
-      baselineStage: "1B",
-      stagesToRun: ["2"],
-      allowStaging: true,
-      sourceUrl: stage1BUrl,
-      sourceStageLabel: "stage1b",
-    };
-  }
-
-  // Case A2: Viewing Stage 2 but no Stage 1B available -> re-stage from Stage 1A
-  if (viewingStage === "2" && stage1AUrl) {
-    return {
-      baselineStage: "1A",
-      stagesToRun: ["2"],
-      allowStaging: true,
-      sourceUrl: stage1AUrl,
-      sourceStageLabel: "stage1a",
-    };
-  }
-
-  // Case B: Viewing Stage 1B and Stage 2 exists -> re-declutter from 1A, then re-stage
-  if (viewingStage === "1B" && stage2Url && stage1AUrl) {
-    return {
-      baselineStage: "1A",
-      stagesToRun: ["1B", "2"],
-      allowStaging: true,
-      sourceUrl: stage1AUrl,
-      sourceStageLabel: "stage1a",
-    };
-  }
-
-  // Case C: Viewing Stage 1B, no Stage 2 -> re-declutter from 1A only
-  if (viewingStage === "1B" && stage1AUrl) {
-    return {
-      baselineStage: "1A",
-      stagesToRun: ["1B"],
-      allowStaging: false,
-      sourceUrl: stage1AUrl,
-      sourceStageLabel: "stage1a",
-    };
-  }
-
-  // Fallback: viewing 1A or original -> full pipeline from original file
-  return {
-    baselineStage: "original",
-    stagesToRun: stage1BUrl ? ["1A", "1B"] : ["1A"],
-    allowStaging: false,
-    sourceUrl: null, // will use original file upload
-    sourceStageLabel: "original",
-  };
 }
 
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
@@ -1389,7 +1247,7 @@ export default function BatchProcessor({
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: EditSourceStage | null; jobId: string | null } | null>(null);
+  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: SourceStageLabel | null; jobId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
@@ -4938,78 +4796,23 @@ export default function BatchProcessor({
     handleCloseRetryDialog();
     
     try {
-      // Determine what stage the user is currently viewing
       const res = results[imageIndex];
-      const stageMap = res?.stageUrls || res?.result?.stageUrls || res?.stageOutputs || res?.result?.stageOutputs || {};
       const requestedStages = res?.requestedStages || res?.result?.requestedStages || res?.meta?.requestedStages || null;
-      const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-      const stage1BWasRequested = !!requestedStages?.stage1b
+      const stage1BWasRequestedByPipeline = !!requestedStages?.stage1b
         || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false)
         || !!res?.options?.declutter
         || !!res?.result?.options?.declutter;
-      const blockedStage = (res?.validation as any)?.blockedStage || (res?.result?.validation as any)?.blockedStage || res?.blockedStage || res?.result?.blockedStage || res?.meta?.blockedStage || null;
-      const statusRaw = String(res?.status || res?.result?.status || "").toLowerCase();
-      const selectedOutput = displayStageByIndex[imageIndex];
-      const viewingStage: StageKey | null = (selectedOutput === "1A" || selectedOutput === "1B" || selectedOutput === "2")
-        ? selectedOutput
-        : (() => {
-        const s2 = stageMap?.['2'] || stageMap?.stage2 || null;
-        const s1b = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
-        const s1a = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
-        if (s2) return "2" as StageKey;
-        if (s1b) return "1B" as StageKey;
-        if (s1a) return "1A" as StageKey;
-        return null;
-      })();
+      const sourceUrl = getDisplayedImageUrl(imageIndex);
+      const sourceStage = getDisplayedStage(imageIndex);
 
-      // Preserve Stage 2 retry intent when Stage 2 was requested but no Stage 2 URL exists yet.
-      const forceStage2Retry = requestedStage2 && (blockedStage === "2" || statusRaw === "failed" || viewingStage !== "2");
-      const retryContextStage: StageKey | null = forceStage2Retry ? "2" : viewingStage;
-      const hasStage1BBaseline = !!(stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B);
-      const hasStage1ABaseline = !!(stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A);
-      
-      const retryLatestUrl =
-        toDisplayUrl((res as any)?.latestRetryUrl) ||
-        toDisplayUrl((res as any)?.result?.latestRetryUrl) ||
-        toDisplayUrl(res?.retryLatestUrl) ||
-        toDisplayUrl(res?.result?.retryLatestUrl) ||
-        null;
-      const editLatestUrl =
-        toDisplayUrl((res as any)?.latestEditUrl) ||
-        toDisplayUrl((res as any)?.result?.latestEditUrl) ||
-        toDisplayUrl(res?.editLatestUrl) ||
-        toDisplayUrl(res?.result?.editLatestUrl) ||
-        null;
-      const originalUploadUrl =
-        toDisplayUrl(res?.originalImageUrl) ||
-        toDisplayUrl(res?.result?.originalImageUrl) ||
-        toDisplayUrl(res?.originalUrl) ||
-        toDisplayUrl(res?.result?.originalUrl) ||
-        null;
-
-      // Compute baseline and stages using latest successful artifact order.
-      const baseline = computeRetryBaseline(retryContextStage, stageMap, {
-        retryLatestUrl,
-        editLatestUrl,
-        originalUploadUrl,
-      });
-
-      // Backend contract: if Stage 1B was part of the requested pipeline, Stage 2 retry requires Stage 1B baseline.
-      // When that baseline is missing, request 1B regeneration first (with staging enabled) instead of invalid 2-only retry.
-      const requiresStage1BRebuild = forceStage2Retry && stage1BWasRequested && !hasStage1BBaseline;
-      const canUseStage1AForStage2Retry = forceStage2Retry && hasStage1ABaseline && (!stage1BWasRequested || requiresStage1BRebuild);
-
-      const stage1BBaseline =
-        stageMap?.['1B'] ||
-        stageMap?.['1b'] ||
-        stageMap?.stage1B ||
-        null;
-      const stage1ABaseline =
-        stageMap?.['1A'] ||
-        stageMap?.['1a'] ||
-        stageMap?.['1'] ||
-        stageMap?.stage1A ||
-        null;
+      if (!sourceUrl || !sourceStage) {
+        toast({
+          title: "Retry unavailable",
+          description: "The selected tab does not have a valid source image.",
+          variant: "destructive",
+        });
+        return;
+      }
 
       const requestedStagesList: StageKey[] = (() => {
         const out: StageKey[] = [];
@@ -5019,35 +4822,35 @@ export default function BatchProcessor({
         return out;
       })();
 
-      const hasAnyStageBaseline = !!(stage1BBaseline || stage1ABaseline);
-      const isFullPipelineFallback = !hasAnyStageBaseline;
-
-      // Preserve pipeline intent for retry: compute remaining stages from baseline context.
-      // If Stage 2 was originally requested but no stage baseline exists, restart the full requested pipeline.
-      const effectiveStagesToRun: StageKey[] = forceStage2Retry && !hasAnyStageBaseline
-        ? (requestedStagesList.length ? requestedStagesList : ["1A", "1B", "2"])
-        : baseline.stagesToRun;
-      const effectiveAllowStaging = effectiveStagesToRun.includes("2") || baseline.allowStaging;
-      const effectiveSourceUrl = baseline.sourceUrl;
-      const effectiveSourceStageLabel = baseline.sourceStageLabel;
+      const stagePlanBySource: Record<SourceStageLabel, StageKey[]> = {
+        original: ["1A", "1B", "2"],
+        "1A": ["1B", "2"],
+        "1B": ["2"],
+        "2": ["2"],
+        retry: ["2"],
+        edit: ["2"],
+      };
+      const effectiveStagesToRun = stagePlanBySource[sourceStage];
+      const effectiveAllowStaging = effectiveStagesToRun.includes("2");
+      const baselineStage: "original" | "1A" | "1B" | "latest" =
+        sourceStage === "original"
+          ? "original"
+          : sourceStage === "1A"
+            ? "1A"
+            : sourceStage === "1B"
+              ? "1B"
+              : "latest";
+      const effectiveSourceStageLabel = sourceStage;
+      const effectiveSourceUrl = sourceUrl;
+      const stage1BWasRequested = stage1BWasRequestedByPipeline || sourceStage === "1B";
       
-      console.log("[RETRY] Context-aware retry:", {
+      console.log("[RETRY] Source-locked retry:", {
         imageIndex,
-        viewingStage,
-        retryContextStage,
-        forceStage2Retry,
-        requiresStage1BRebuild,
-        canUseStage1AForStage2Retry,
-        isFullPipelineFallback,
+        sourceStage,
+        sourceUrl: sourceUrl.substring(0, 80),
         stage1BWasRequested,
-        hasStage1BBaseline,
-        hasStage1ABaseline,
-        requestedStage2,
-        blockedStage,
-        baselineStage: baseline.baselineStage,
         stagesToRun: effectiveStagesToRun,
         allowStaging: effectiveAllowStaging,
-        sourceUrl: effectiveSourceUrl?.substring(0, 60),
         sourceStageLabel: effectiveSourceStageLabel,
       });
 
@@ -5087,7 +4890,7 @@ export default function BatchProcessor({
         stage1BWasRequested, // backend needs this to validate stage2-only retry policy
         effectiveStagesToRun,
         requestedStagesList,
-        baseline.baselineStage
+        baselineStage
       );
     } catch (error) {
       // Error is already handled in handleRetryImage
@@ -5109,30 +4912,18 @@ export default function BatchProcessor({
     return { stage: active?.stage || null, url: active?.url || null };
   };
 
-  const mapStageToEditSource = (stage: StageKey | null | undefined): EditSourceStage | null => {
-    if (stage === "2") return "stage2";
-    if (stage === "1B") return "stage1B";
-    if (stage === "1A") return "stage1A";
+  const mapArtifactToSourceStage = (
+    artifactKey: EditArtifactKey,
+    stage: StageKey | null | undefined,
+  ): SourceStageLabel | null => {
+    if (artifactKey === "retried") return "retry";
+    if (artifactKey === "edited") return "edit";
+    if (artifactKey === "original") return "original";
+    if (artifactKey === "2" || artifactKey === "final" || stage === "2") return "2";
+    if (artifactKey === "1B" || stage === "1B") return "1B";
+    if (artifactKey === "1A" || stage === "1A") return "1A";
     return null;
   };
-
-  const resolveDisplayedStageForEdit = useCallback((imageIndex: number): StageKey | null => {
-    const selected = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
-    if (selected === "2" || selected === "1B" || selected === "1A") return selected;
-    if (selected === "original") return null;
-    // Bug F fix: retried/edited artifacts are always final-pipeline outputs equivalent
-    // to Stage 2. Return "2" so mapStageToEditSource sends "stage2" to the server
-    // instead of null (which caused editSourceStage: MISSING for every edit on
-    // a retried or edited image).
-    if (selected === "retried" || selected === "edited") return "2";
-
-    // Match UI default display stage when user hasn't explicitly selected a tab.
-    const item = results[imageIndex];
-    if (!item) return null;
-    const active = getCardArtifactView(item).active;
-    if (active?.key === "retried" || active?.key === "edited") return "2";
-    return active?.stage || null;
-  }, [displayStageByIndex, results]);
 
   const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
     if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
@@ -5216,10 +5007,14 @@ export default function BatchProcessor({
       originalFallback: null,
     });
     const displayedArtifact = artifactView.active;
-    const displayedUrl = displayedArtifact?.url || null;
-    const displayedStage = selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A"
-      ? selectedStage
-      : resolveDisplayedStageForEdit(imageIndex);
+    const persistedOriginalUrl =
+      item?.result?.originalImageUrl ||
+      item?.originalImageUrl ||
+      item?.result?.originalUrl ||
+      item?.originalUrl ||
+      null;
+    const originalFallback = persistedOriginalUrl || previewUrls[imageIndex] || null;
+    const displayedUrl = displayedArtifact?.url || (displayedArtifact?.key === "original" ? originalFallback : null);
     const artifactKey: EditArtifactKey = displayedArtifact?.key || null;
 
     // Phase 1 consistency rule:
@@ -5257,11 +5052,19 @@ export default function BatchProcessor({
 
     return {
       url: displayedUrl || null,
-      stage: mapStageToEditSource(displayedStage),
+      stage: mapArtifactToSourceStage(artifactKey, displayedArtifact?.stage || null),
       artifactKey,
       sourceJobId,
     } as const;
-  }, [buildPreviewImage, displayStageByIndex, resolveDisplayedStageForEdit, results]);
+  }, [displayStageByIndex, previewUrls, results]);
+
+  const getDisplayedImageUrl = useCallback((imageIndex: number): string | null => {
+    return getEditSourceForIndex(imageIndex).url;
+  }, [getEditSourceForIndex]);
+
+  const getDisplayedStage = useCallback((imageIndex: number): SourceStageLabel | null => {
+    return getEditSourceForIndex(imageIndex).stage;
+  }, [getEditSourceForIndex]);
 
   // Handle edit image - resolve URL before opening editor
   const handleEditImage = (imageIndex: number) => {
@@ -5302,8 +5105,8 @@ export default function BatchProcessor({
     };
 
     const resolvedEditSource = getEditSourceForIndex(imageIndex);
-    const imageUrl = resolvedEditSource.url;
-    const urlSource = resolvedEditSource.stage;
+    const imageUrl = getDisplayedImageUrl(imageIndex);
+    const urlSource = getDisplayedStage(imageIndex);
     const artifactKey = resolvedEditSource.artifactKey;
     const imageId = item?.imageId || item?.result?.imageId || null;
     const sourceJobId = resolvedEditSource.sourceJobId;
@@ -5347,7 +5150,7 @@ export default function BatchProcessor({
     setRegionEditorOpen(true);
   };
 
-  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: string, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B" | "latest") => {
+  const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: SourceStageLabel, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B" | "latest") => {
     // ✅ Prevent double retry on same image (sync ref avoids rapid double-click races)
     if (!files || imageIndex >= files.length || retryInFlightRef.current.has(imageIndex) || retryingImages.has(imageIndex)) return;
 
@@ -5465,11 +5268,19 @@ export default function BatchProcessor({
       const storedScene = parentImageIdForRetry ? imageSceneTypesById[parentImageIdForRetry] : null;
       const explicitScene = sceneType || storedScene || "auto";
 
-      // Use the baseline URL provided by computeRetryBaseline (context-aware)
-      // Falls back to original file when baselineUrl is null (full pipeline retry)
+      if (!baselineUrl || !sourceStageLabel) {
+        markRetryFailed(imageIndex, "Missing retry source from selected tab.");
+        toast({
+          title: "Retry unavailable",
+          description: "Missing source image or source stage from the selected tab.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       const retrySource = {
-        stage: sourceStageLabel || "original_upload",
-        url: baselineUrl || originalFromStoreUrl || null,
+        stage: sourceStageLabel,
+        url: baselineUrl,
       };
       const clientBatchIdToSend = clientBatchIdRef.current || clientBatchId || null;
       
@@ -5506,8 +5317,8 @@ export default function BatchProcessor({
         fd.append("retryParentJobId", parentJobIdForRetry);
       }
       if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
-      if (retrySource.stage) fd.append("sourceStage", retrySource.stage);
-      if (retrySource.url) fd.append("sourceUrl", retrySource.url);
+      fd.append("sourceStage", retrySource.stage);
+      fd.append("sourceUrl", retrySource.url);
       fd.append("stage1BWasRequested", String(Boolean(stage1BWasRequested)));
       if (baselineStage) fd.append("baselineStage", baselineStage);
       if (baselineUrl) fd.append("baselineUrl", baselineUrl);

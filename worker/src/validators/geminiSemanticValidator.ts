@@ -1294,7 +1294,8 @@ function extractOpeningCountsFromStage1BText(text: string): { beforeOpeningCount
 export async function validateStage1BStructure(
   beforeImage: string,
   afterImage: string,
-  evidence?: ValidationEvidence
+  evidence?: ValidationEvidence,
+  options?: { imageId?: string; attempt?: number }
 ): Promise<GeminiSemanticVerdict> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImage).data;
@@ -1389,8 +1390,12 @@ export async function validateStage1BStructure(
       },
     } as any);
     logGeminiUsage({
-      jobId,
-      stage: "validator",
+      ctx: {
+        jobId: jobId || "",
+        imageId: options?.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+      },
       model,
       callType: "validator",
       response,
@@ -2824,6 +2829,9 @@ export async function runGeminiSemanticValidator(opts: {
   basePath: string;
   candidatePath: string;
   stage: "1A" | "1B" | "2";
+  jobId?: string;
+  imageId?: string;
+  attempt?: number;
   sceneType?: string;
   sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
   validationMode?: Stage2ValidationMode;
@@ -2898,7 +2906,7 @@ export async function runGeminiSemanticValidator(opts: {
 
   // Model routing: LOW risk → fast, MEDIUM/HIGH → strong
   const model = opts.modelOverride || getModelForRisk(opts.riskLevel);
-  const jobId = opts.evidence?.jobId;
+  const jobId = opts.jobId || opts.evidence?.jobId;
 
   const contents = [
     {
@@ -2928,8 +2936,12 @@ export async function runGeminiSemanticValidator(opts: {
       },
     } as any);
     logGeminiUsage({
-      jobId,
-      stage: "validator",
+      ctx: {
+        jobId: jobId || "",
+        imageId: opts.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
+      },
       model,
       callType: "validator",
       response,

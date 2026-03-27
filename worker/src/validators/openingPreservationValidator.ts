@@ -917,7 +917,10 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   return { results, summary, detectedOpenings: [] };
 }
 
-export async function extractStructuralBaseline(imageUrl: string, options?: { jobId?: string }): Promise<StructuralBaseline> {
+export async function extractStructuralBaseline(
+  imageUrl: string,
+  options?: { jobId?: string; imageId?: string; attempt?: number }
+): Promise<StructuralBaseline> {
   const ai = getGeminiClient();
   const image = toBase64(imageUrl);
 
@@ -943,8 +946,12 @@ export async function extractStructuralBaseline(imageUrl: string, options?: { jo
     },
   } as any);
   logGeminiUsage({
-    jobId: options?.jobId,
-    stage: "validator",
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
     model: OPENING_VALIDATOR_MODEL,
     callType: "validator",
     response,
@@ -985,9 +992,15 @@ export async function validateOpeningPreservation(
   options?: {
     mode?: "default" | "edit";
     jobId?: string;
+    imageId?: string;
+    attempt?: number;
   }
 ): Promise<OpeningValidationResult> {
-  const detected = await extractStructuralBaseline(newImageUrl, { jobId: options?.jobId });
+  const detected = await extractStructuralBaseline(newImageUrl, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: options?.attempt,
+  });
   const isEditMode = options?.mode === "edit";
 
   const openingResults: OpeningResult[] = [];

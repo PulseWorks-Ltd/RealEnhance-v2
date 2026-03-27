@@ -8,6 +8,7 @@ import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { logIfNotFocusMode } from "../logger";
 import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
+import type { PipelineContext } from "../types/pipelineContext";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -28,6 +29,7 @@ export async function runStage1B(
     roomType?: string;
     declutterMode?: "light" | "stage-ready";
     jobId: string;
+    imageId: string;
     canonicalPath?: string | null;
     baseArtifacts?: BaseArtifacts;
     curtainRailLikely?: boolean | "unknown";
@@ -36,11 +38,17 @@ export async function runStage1B(
     attempt?: number;
   }
 ): Promise<string> {
-  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, attempt = 0 } = options;
+  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, imageId, attempt = 0 } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
   const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
   const attemptForLogs = attemptIndex + 1;
+  const stage1BCtx: PipelineContext = {
+    jobId,
+    imageId,
+    stage: "1B",
+    attempt: attemptForLogs,
+  };
   let resolvedAttemptIndex = attemptIndex;
   let suffix = resolvedAttemptIndex > 0 ? `-1B-retry${resolvedAttemptIndex}` : "-1B";
   let outputPath = siblingOutPath(stage1APath, suffix, ".webp");
@@ -201,6 +209,7 @@ If there is any ambiguity, leave the area unchanged.
       sceneType,
       stage: "1B",
       jobId,
+      imageId,
       roomType,
       modelReason: declutterMode ? `declutter:${declutterMode}` : "declutter",
       outputPath,
@@ -223,9 +232,7 @@ If there is any ambiguity, leave the area unchanged.
     // If Gemini succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
       await logImageAttemptUrl({
-        stage: "1B",
-        attempt: attemptForLogs,
-        jobId,
+        ctx: stage1BCtx,
         localPath: outputPath,
       });
       const { validateStageOutput } = await import("../validators/index.js");
@@ -264,9 +271,7 @@ If there is any ambiguity, leave the area unchanged.
     // AUDIT FIX: routed through applyTransformation for safe cleanup
     await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
     await logImageAttemptUrl({
-      stage: "1B",
-      attempt: attemptForLogs,
-      jobId,
+      ctx: stage1BCtx,
       localPath: out,
     });
     logIfNotFocusMode(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
@@ -279,9 +284,7 @@ If there is any ambiguity, leave the area unchanged.
     // AUDIT FIX: routed through applyTransformation for safe cleanup
     await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
     await logImageAttemptUrl({
-      stage: "1B",
-      attempt: attemptForLogs,
-      jobId,
+      ctx: stage1BCtx,
       localPath: out,
     });
     return out;

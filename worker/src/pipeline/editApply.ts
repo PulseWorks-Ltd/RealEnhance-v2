@@ -224,6 +224,7 @@ export type EditMode = "Add" | "Remove" | "Replace" | "Restore";
 
 export interface ApplyEditArgs {
   jobId?: string;
+  imageId?: string;
   baseImagePath: string;      // path to the enhanced image we’re editing
   mask: Buffer;               // binary mask (white = edit, black = keep)
   mode: EditMode;             // "Add" | "Remove" | "Restore"
@@ -239,6 +240,7 @@ export interface ApplyEditArgs {
  */
 export async function applyEdit({
   jobId,
+  imageId,
   baseImagePath,
   mask,
   mode,
@@ -394,6 +396,7 @@ export async function applyEdit({
     const editedBuffer = await regionEditWithGemini({
       prompt: finalPrompt,
       jobId,
+      imageId,
       baseImageBuffer,
       maskPngBuffer,
       // Optionally pass roomType, sceneType, preserveStructure if needed

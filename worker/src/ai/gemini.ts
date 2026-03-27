@@ -1,6 +1,7 @@
 export interface RegionEditArgs {
   prompt: string;
   jobId?: string;
+  imageId?: string;
   baseImageBuffer: Buffer;
   referenceImageBuffer?: Buffer;
   maskPngBuffer?: Buffer;
@@ -13,6 +14,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   const {
     prompt,
     jobId,
+    imageId,
     baseImageBuffer,
     referenceImageBuffer,
     maskPngBuffer,
@@ -65,7 +67,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     getGeminiClient(),
     { contents },
     "[gemini.regionEdit]",
-    { stage: "edit", jobId, reason: "region-edit", callType: "edit" }
+    { stage: "edit", jobId, imageId, reason: "region-edit", callType: "edit" }
   );
 
   const candidates = resp.candidates ?? [];
@@ -244,6 +246,7 @@ export async function enhanceWithGemini(
     stage?: "1A" | "1B" | "2";  // Added to determine model selection
     strictMode?: boolean;          // Stricter constraints
     jobId: string;                 // For logging which job triggered the call
+    imageId: string;
     roomType?: string;             // For logging + prompt context
     modelReason?: string;          // Human-readable reason for model choice
     // Sampling controls (optional overrides)
@@ -259,7 +262,7 @@ export async function enhanceWithGemini(
     outputPath?: string;
   }
 ): Promise<string> {
-  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, roomType: roomTypeOpt, modelReason, outputPath } = options;
+  const { skipIfNoApiKey = true, replaceSky = false, declutter = false, sceneType, stage, strictMode = false, temperature, topP, topK, promptOverride, floorClean = false, hardscapeClean = false, declutterIntensity, jobId: jobIdOpt, imageId, roomType: roomTypeOpt, modelReason, outputPath } = options;
   focusLog("GEMINI_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
   focusLog("GEMINI_GLOBAL_READ", "GLOBAL_READ_REMOVED", { file: "ai/gemini.ts", variable: "__jobRoomType" });
@@ -487,6 +490,7 @@ export async function enhanceWithGemini(
       const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A", {
         stage: "1A",
         jobId,
+        imageId,
         filename,
         roomType,
         callType: "image_generation",
@@ -506,6 +510,7 @@ export async function enhanceWithGemini(
         meta: {
           stage: "1B",
           jobId,
+          imageId,
           filename,
           roomType,
           callType: "image_generation",
@@ -527,6 +532,7 @@ export async function enhanceWithGemini(
         meta: {
           stage: "2",
           jobId,
+          imageId,
           filename,
           roomType,
           callType: "image_generation",
@@ -542,6 +548,7 @@ export async function enhanceWithGemini(
       const result = await runWithImageModelFallback(client as any, baseRequest, declutter ? "enhance+declutter" : "enhance", {
         stage: stage || (declutter ? "1B" : "1A"),
         jobId,
+        imageId,
         filename,
         roomType,
         callType: "image_generation",

@@ -16,6 +16,7 @@ import { runLowQualityDetector } from "../ai/qualityDetector";
 import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 import { logIfNotFocusMode } from "../logger";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
+import type { PipelineContext } from "../types/pipelineContext";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -105,6 +106,7 @@ async function enhanceWithGeminiStage1A(
   interiorProfileKey: EnhancementProfile,
   skyMode: "safe" | "strong" = "safe",
   jobId: string,
+  imageId: string,
   roomType?: string,
   jobSampling?: { temperature?: number; topP?: number; topK?: number }
 ): Promise<string> {
@@ -144,6 +146,7 @@ async function enhanceWithGeminiStage1A(
     sceneType: sceneType,
     stage: "1A",
     jobId,
+    imageId,
     roomType,
     modelReason: sceneType ? `${sceneType} enhance` : "enhance",
     promptOverride: enhancementPrompt,
@@ -155,9 +158,12 @@ async function enhanceWithGeminiStage1A(
   });
 
   await logImageAttemptUrl({
-    stage: "1A",
-    attempt: 1,
-    jobId,
+    ctx: {
+      jobId,
+      imageId,
+      stage: "1A",
+      attempt: 1,
+    },
     localPath: geminiPath,
   });
 
@@ -201,19 +207,26 @@ export async function runStage1A(
     interiorProfile?: EnhancementProfile;
     skyMode?: "safe" | "strong";
     jobId: string;
+    imageId: string;
     roomType?: string;
     baseArtifacts?: BaseArtifacts;
     baseArtifactsCache?: Map<string, BaseArtifacts>;
     jobSampling?: { temperature?: number; topP?: number; topK?: number };
   }
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, roomType } = options;
+  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
   const baseArtifacts = options.baseArtifacts ?? undefined;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
   const jobIdResolved = jobId;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobRoomType" });
   const roomTypeResolved = roomType;
+  const stage1ACtx: PipelineContext = {
+    jobId,
+    imageId,
+    stage: "1A",
+    attempt: 1,
+  };
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const isInterior = sceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
@@ -346,9 +359,7 @@ export async function runStage1A(
     .toFile(sharpOutputPath);
 
   await logImageAttemptUrl({
-    stage: "1A",
-    attempt: 1,
-    jobId: jobIdResolved,
+    ctx: stage1ACtx,
     localPath: sharpOutputPath,
   });
 
@@ -400,7 +411,7 @@ export async function runStage1A(
 
       if (forceGemini) {
         logIfNotFocusMode("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
-        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
+        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
         return geminiOutputPath;
       }
     } else {
@@ -416,9 +427,7 @@ export async function runStage1A(
       // AUDIT FIX: routed through applyTransformation for safe cleanup
       await applyTransformation(stabilityJpeg, stabilityWebp, s => s.webp({ quality: 95 }), jobIdResolved);
       await logImageAttemptUrl({
-        stage: "1A",
-        attempt: 1,
-        jobId: jobIdResolved,
+        ctx: stage1ACtx,
         localPath: stabilityWebp,
       });
       primary1AImage = stabilityWebp;
@@ -428,7 +437,7 @@ export async function runStage1A(
         lockStabilityPrimary("Stability credits exhausted (payment_required)");
       }
       logIfNotFocusMode("[stage1A] 🔁 Falling back to Gemini...");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
     }
 
     // ✅ AUTHORITATIVE CONTENT VALIDATION
@@ -442,16 +451,14 @@ export async function runStage1A(
       logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
+        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
 
         await runStage1AStructuralValidationSafely(sharpOutputPath, geminiImage, "gemini output");
 
         const fs = await import("fs/promises");
         await fs.rename(geminiImage, finalOutputPath);
         await logImageAttemptUrl({
-          stage: "1A",
-          attempt: 1,
-          jobId: jobIdResolved,
+          ctx: stage1ACtx,
           localPath: finalOutputPath,
         });
         logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
@@ -462,9 +469,7 @@ export async function runStage1A(
         const fs = await import("fs/promises");
         await fs.rename(sharpOutputPath, finalOutputPath);
         await logImageAttemptUrl({
-          stage: "1A",
-          attempt: 1,
-          jobId: jobIdResolved,
+          ctx: stage1ACtx,
           localPath: finalOutputPath,
         });
         logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
@@ -481,9 +486,7 @@ export async function runStage1A(
     const fs = await import("fs/promises");
     await fs.rename(primary1AImage, finalOutputPath);
     await logImageAttemptUrl({
-      stage: "1A",
-      attempt: 1,
-      jobId: jobIdResolved,
+      ctx: stage1ACtx,
       localPath: finalOutputPath,
     });
     logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
@@ -499,7 +502,7 @@ export async function runStage1A(
         : "feature flag off";
     logIfNotFocusMode(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, roomTypeResolved, options.jobSampling);
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
 
     logIfNotFocusMode("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
@@ -509,9 +512,7 @@ export async function runStage1A(
       const fs = await import("fs/promises");
       await fs.rename(geminiOutputPath, finalOutputPath);
       await logImageAttemptUrl({
-        stage: "1A",
-        attempt: 1,
-        jobId: jobIdResolved,
+        ctx: stage1ACtx,
         localPath: finalOutputPath,
       });
       logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
@@ -527,9 +528,7 @@ export async function runStage1A(
   const fs = await import("fs/promises");
   await fs.rename(sharpOutputPath, finalOutputPath);
   await logImageAttemptUrl({
-    stage: "1A",
-    attempt: 1,
-    jobId: jobIdResolved,
+    ctx: stage1ACtx,
     localPath: finalOutputPath,
   });
   logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);

@@ -152,7 +152,7 @@ export async function runEditOpeningsValidator(
   editedImagePath: string,
   mask: Buffer,
   comparedAgainst: EditOpeningsComparedAgainst = "stage1a",
-  options?: { jobId?: string },
+  options?: { jobId?: string; imageId?: string; attempt?: number },
 ): Promise<EditOpeningsValidationSummary> {
   if (!String(baselineImagePath || "").trim() || !String(editedImagePath || "").trim() || !mask || mask.length === 0) {
     throw new Error("VALIDATION_INPUT_MISSING");
@@ -191,7 +191,11 @@ export async function runEditOpeningsValidator(
   }
 
   const expandedMaskBbox = expand(maskBbox, MASK_MARGIN);
-  const structural = await extractStructuralBaseline(baselineImagePath, { jobId: options?.jobId });
+  const structural = await extractStructuralBaseline(baselineImagePath, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: options?.attempt,
+  });
   const relevantOpenings = structural.openings.filter((opening) => {
     const kind = openingKind(opening);
     if (!kind) return false;
@@ -293,8 +297,12 @@ ${openingsJson}`;
     },
   });
   logGeminiUsage({
-    jobId: options?.jobId,
-    stage: "validator",
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
     model: EDIT_OPENINGS_GEMINI_MODEL,
     callType: "validator",
     response,

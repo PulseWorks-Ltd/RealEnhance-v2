@@ -157,16 +157,17 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     };
     
     // AUDIT FIX: Idempotency guard — suppress duplicate region-edit within 30s window
-    const rawImageUrl = body.imageUrl as string | undefined;
-    const imageUrl = normalizeLookupUrl(rawImageUrl);
-    const rawEditSourceUrl = body.editSourceUrl as string | undefined;
-    const editSourceUrl = normalizeLookupUrl(rawEditSourceUrl);
-    const sourceLookupUrl = editSourceUrl || imageUrl;
+    const rawSourceUrl = body.sourceUrl as string | undefined;
+    const sourceUrl = normalizeLookupUrl(rawSourceUrl);
     const sourceJobId = typeof body.jobId === "string" ? body.jobId : undefined;
-    const rawEditSourceStage = typeof body.editSourceStage === "string" ? body.editSourceStage : undefined;
+    const rawEditSourceStage = typeof body.sourceStage === "string" ? body.sourceStage : undefined;
     const editSourceStage =
-      rawEditSourceStage === "stage2" || rawEditSourceStage === "stage1B" || rawEditSourceStage === "stage1A"
-        ? rawEditSourceStage
+      rawEditSourceStage === "stage2" || rawEditSourceStage === "2" || rawEditSourceStage === "retry" || rawEditSourceStage === "edit"
+        ? "stage2"
+        : rawEditSourceStage === "stage1B" || rawEditSourceStage === "1B"
+          ? "stage1B"
+          : rawEditSourceStage === "stage1A" || rawEditSourceStage === "1A" || rawEditSourceStage === "original"
+            ? "stage1A"
         : undefined;
     const baselineStage: "1A" | "1B" | "2" | undefined =
       editSourceStage === "stage2"
@@ -176,8 +177,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
           : editSourceStage === "stage1A"
             ? "1A"
             : undefined;
-    if (sourceLookupUrl) {
-      const dedupKey = `region-edit:${sessUser.id}:${sourceLookupUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
+    if (sourceUrl) {
+      const dedupKey = `region-edit:${sessUser.id}:${sourceUrl.slice(-40)}:${Math.floor(Date.now() / 30000)}`;
       const redis = getRedis();
       const exists = await redis.get(dedupKey);
       if (exists) {
@@ -220,10 +221,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // Enhanced logging
     console.log("[region-edit] Request details:", {
-      imageUrl: imageUrl ? imageUrl.substring(0, 80) + "..." : "MISSING",
-      rawImageUrl: rawImageUrl ? rawImageUrl.substring(0, 80) + "..." : "MISSING",
-      editSourceUrl: editSourceUrl ? editSourceUrl.substring(0, 80) + "..." : "MISSING",
-      rawEditSourceUrl: rawEditSourceUrl ? rawEditSourceUrl.substring(0, 80) + "..." : "MISSING",
+      sourceUrl: sourceUrl ? sourceUrl.substring(0, 80) + "..." : "MISSING",
+      rawSourceUrl: rawSourceUrl ? rawSourceUrl.substring(0, 80) + "..." : "MISSING",
       editSourceStage: editSourceStage || "MISSING",
       sourceJobId: sourceJobId || "MISSING",
       clientBaseImageUrl: clientBaseImageUrl ? clientBaseImageUrl.substring(0, 80) + "..." : "MISSING",
@@ -237,10 +236,20 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     });
 
     // ===== VALIDATION =====
-    if (!sourceLookupUrl) {
-      console.error("[region-edit] Missing imageUrl");
-      return res.status(400).json({ success: false, error: "missing_imageUrl" });
+    if (!sourceUrl) {
+      console.error("[region-edit] Missing sourceUrl");
+      return res.status(400).json({ success: false, error: "missing_sourceUrl" });
     }
+
+    if (!editSourceStage) {
+      console.error("[region-edit] Missing sourceStage");
+      return res.status(400).json({ success: false, error: "missing_sourceStage" });
+    }
+
+    console.log("[SOURCE_RESOLVED]", {
+      sourceUrl,
+      sourceStage: editSourceStage,
+    });
     
     if (!mode) {
       console.error("[region-edit] Missing mode");
@@ -266,13 +275,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     // URL is authoritative for edit source resolution. Job context is fallback metadata only.
     console.log("[region-edit] Looking up image for user:", sessUser.id);
     console.debug("[edit-source-resolution]", {
-      sourceUrl: sourceLookupUrl || null,
+      sourceUrl: sourceUrl || null,
       sourceJobId: sourceJobId || null,
       resolution: "url-first",
     });
     let sourceEnhancedFromLookup: { id: string; propertyId: string | null; userId: string; agencyId: string } | null = null;
     let foundViaDbFallback = false;
-    let resolvedLookupUrl = sourceLookupUrl;
+    const resolvedLookupUrl = sourceUrl;
     let resolvedBy: "url_index" | "source_job_context" | "url_derived_identity" = "url_index";
 
     const findByDb = async (url: string) => {
@@ -296,36 +305,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     };
 
     let found: { record: { imageId: string; ownerUserId: string }; versionId: string } | null = null;
-    if (isHttpUrl(sourceLookupUrl)) {
-      found = await findByPublicUrl(sessUser.id, sourceLookupUrl);
+    if (isHttpUrl(sourceUrl)) {
+      found = await findByPublicUrl(sessUser.id, sourceUrl);
       if (!found) {
-        const dbFallback = await findByDb(sourceLookupUrl);
-        if (dbFallback) {
-          found = dbRecordToFound(dbFallback);
-          sourceEnhancedFromLookup = dbFallback;
-          foundViaDbFallback = true;
-          resolvedLookupUrl = sourceLookupUrl;
-          console.log("[region-edit] Redis miss + DB fallback success", {
-            redisMiss: true,
-            dbFallbackSuccess: true,
-            lookupUrl: sourceLookupUrl,
-          });
-          await tryRehydrateRedisFromDb(dbFallback, sourceLookupUrl);
-        }
-      }
-    }
-
-    // Fix A: If primary URL not found, try baseImageUrl (client sends both)
-    // This handles the case where stageUrls["2"] differs from resultUrl
-    // (double S3 upload gives different keys) or Redis data loss
-    if (!found && clientBaseImageUrl && clientBaseImageUrl !== sourceLookupUrl) {
-      console.warn("[region-edit] Primary URL not found, trying baseImageUrl fallback:", clientBaseImageUrl.substring(0, 80) + "...");
-      resolvedLookupUrl = clientBaseImageUrl;
-      found = await findByPublicUrl(sessUser.id, clientBaseImageUrl);
-      if (found) {
-        console.log("[region-edit] Found image via baseImageUrl fallback");
-      } else {
-        const dbFallback = await findByDb(clientBaseImageUrl);
+        const dbFallback = await findByDb(sourceUrl);
         if (dbFallback) {
           found = dbRecordToFound(dbFallback);
           sourceEnhancedFromLookup = dbFallback;
@@ -333,74 +316,23 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
           console.log("[region-edit] Redis miss + DB fallback success", {
             redisMiss: true,
             dbFallbackSuccess: true,
-            lookupUrl: clientBaseImageUrl,
-            usedBaseImageUrlFallback: true,
+            lookupUrl: sourceUrl,
           });
-          await tryRehydrateRedisFromDb(dbFallback, clientBaseImageUrl);
+          await tryRehydrateRedisFromDb(dbFallback, sourceUrl);
         }
       }
     }
 
     if (!found) {
-      console.error("[region-edit] Image not found for URL:", sourceLookupUrl);
-      console.error("[region-edit] Also tried baseImageUrl:", clientBaseImageUrl || "N/A");
-
-      // Fallback 1: use source job only for lineage/context (no requirement that URL is present in job outputs).
-      if (sourceJobId) {
-        try {
-          const sourceJob = await getJob(sourceJobId);
-          const sourceJobImageId = String((sourceJob as any)?.imageId || "").trim();
-          const sourceJobUserId = String((sourceJob as any)?.userId || "").trim();
-          if (sourceJobImageId && sourceJobUserId && sourceJobUserId === sessUser.id) {
-            found = {
-              record: {
-                imageId: sourceJobImageId,
-                ownerUserId: sourceJobUserId,
-              },
-              versionId: "",
-            };
-            resolvedBy = "source_job_context";
-            console.log("[region-edit] Resolved source via sourceJobId context", {
-              sourceJobId,
-              imageId: sourceJobImageId,
-            });
-          }
-        } catch (sourceJobErr) {
-          console.warn("[region-edit] sourceJobId context lookup failed (non-blocking)", {
-            sourceJobId,
-            error: (sourceJobErr as any)?.message || sourceJobErr,
-          });
-        }
-      }
-
-      // Fallback 2: URL-derived identity to keep URL-authoritative edit flow working
-      // even when image index data is missing for retry/edited artifacts.
-      if (!found && isHttpUrl(sourceLookupUrl)) {
-        const derivedImageId = deriveImageIdFromUrl(sourceLookupUrl);
-        found = {
-          record: {
-            imageId: derivedImageId,
-            ownerUserId: sessUser.id,
-          },
-          versionId: "",
-        };
-        resolvedBy = "url_derived_identity";
-        console.warn("[region-edit] Using URL-derived source identity", {
-          sourceLookupUrl: sourceLookupUrl.substring(0, 120),
-          derivedImageId,
-        });
-      }
-
-      if (!found) {
-        return res.status(404).json({ success: false, error: "image_not_found" });
-      }
+      console.error("[region-edit] Image not found for URL:", sourceUrl);
+      return res.status(404).json({ success: false, error: "image_not_found" });
     }
 
     const record = found.record as any;
     const baseVersionId = found.versionId;
 
     console.debug("[edit-source-resolution]", {
-      sourceUrl: sourceLookupUrl || null,
+      sourceUrl: sourceUrl || null,
       sourceJobId: sourceJobId || null,
       resolution: "url-first",
       resolvedBy,
@@ -453,10 +385,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     let baseImageUrl: string;
 
     if (mode === "restore_original") {
-      baseImageUrl = clientBaseImageUrl || sourceLookupUrl;
+      baseImageUrl = clientBaseImageUrl || sourceUrl;
       console.log("[region-edit] restore_original baseImageUrl:", baseImageUrl ? baseImageUrl.substring(0, 80) + "..." : "MISSING");
     } else {
-      baseImageUrl = sourceLookupUrl;
+      baseImageUrl = sourceUrl;
       console.log("[region-edit] Using provided edit source URL (edit mode):", baseImageUrl.substring(0, 80) + "...");
     }
 
@@ -582,7 +514,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       });
     }
 
-    const resolvedSourceStage: "stage1A" | "stage1B" | "stage2" = editSourceStage || "stage2";
+    const resolvedSourceStage: "stage1A" | "stage1B" | "stage2" = editSourceStage;
     const effectiveStageUrls: Record<string, string | null> = inheritedStageUrls
       ? { ...inheritedStageUrls }
       : {};
@@ -660,7 +592,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
         restoreFromUrl,
         stage1AReferenceUrl,
         sourceJobId,
-        editSourceUrl: editSourceUrl || sourceLookupUrl,
+        editSourceUrl: sourceUrl,
         editSourceStage,
         sceneType,
         roomType,

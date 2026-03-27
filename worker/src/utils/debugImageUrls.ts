@@ -1,5 +1,7 @@
 import fs from "fs/promises";
 import path from "path";
+import type { PipelineContext } from "../types/pipelineContext";
+import { logEvent } from "../ai/usageTelemetry";
 
 type StageLabel = "1A" | "1B" | "2";
 
@@ -82,9 +84,7 @@ export async function createDebugSignedUrl(localPath: string, jobId: string): Pr
 }
 
 export async function logImageAttemptUrl(params: {
-  stage: StageLabel;
-  attempt: number;
-  jobId: string;
+  ctx: PipelineContext;
   localPath: string;
 }): Promise<DebugSignedUrlResult> {
   if (!isDebugImageUrlLoggingEnabled()) {
@@ -93,23 +93,25 @@ export async function logImageAttemptUrl(params: {
 
   const fileName = path.basename(params.localPath);
   try {
-    const signed = await createDebugSignedUrl(params.localPath, params.jobId);
-    console.log(
-      `[IMAGE_ATTEMPT_URL] stage=${params.stage} attempt=${params.attempt} job_id=${params.jobId} file=${fileName} signed_url=${signed.signedUrl || ""}`
-    );
+    const signed = await createDebugSignedUrl(params.localPath, params.ctx.jobId);
+    logEvent(params.ctx, "IMAGE_OUTPUT", {
+      signedUrl: signed.signedUrl || null,
+      fileName,
+    });
     return signed;
   } catch (error: any) {
     const reason = error?.message || String(error);
-    console.warn(
-      `[IMAGE_ATTEMPT_URL] stage=${params.stage} attempt=${params.attempt} job_id=${params.jobId} file=${fileName} signed_url=ERROR:${reason}`
-    );
+    logEvent(params.ctx, "IMAGE_OUTPUT", {
+      signedUrl: null,
+      fileName,
+      reason: `ERROR:${reason}`,
+    });
     return { signedUrl: null, key: null };
   }
 }
 
 export async function logBaselineImageUrl(params: {
-  stage: "2";
-  jobId: string;
+  ctx: PipelineContext;
   localPath: string;
 }): Promise<DebugSignedUrlResult> {
   if (!isDebugImageUrlLoggingEnabled()) {
@@ -118,16 +120,21 @@ export async function logBaselineImageUrl(params: {
 
   const fileName = path.basename(params.localPath);
   try {
-    const signed = await createDebugSignedUrl(params.localPath, params.jobId);
-    console.log(
-      `[BASELINE_IMAGE_URL] stage=${params.stage} job_id=${params.jobId} file=${fileName} signed_url=${signed.signedUrl || ""}`
-    );
+    const signed = await createDebugSignedUrl(params.localPath, params.ctx.jobId);
+    logEvent(params.ctx, "IMAGE_OUTPUT", {
+      signedUrl: signed.signedUrl || null,
+      fileName,
+      baseline: true,
+    });
     return signed;
   } catch (error: any) {
     const reason = error?.message || String(error);
-    console.warn(
-      `[BASELINE_IMAGE_URL] stage=${params.stage} job_id=${params.jobId} file=${fileName} signed_url=ERROR:${reason}`
-    );
+    logEvent(params.ctx, "IMAGE_OUTPUT", {
+      signedUrl: null,
+      fileName,
+      baseline: true,
+      reason: `ERROR:${reason}`,
+    });
     return { signedUrl: null, key: null };
   }
 }

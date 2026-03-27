@@ -39,7 +39,7 @@ async function ask(
   editedB64: string,
   prompt: string,
   modelOverride?: string,
-  telemetry?: { jobId?: string }
+  telemetry?: { jobId?: string; imageId?: string; attempt?: number }
 ) {
   const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
   const requestStartedAt = Date.now();
@@ -57,8 +57,12 @@ async function ask(
     }],
   });
   logGeminiUsage({
-    jobId: telemetry?.jobId,
-    stage: "validator",
+    ctx: {
+      jobId: telemetry?.jobId || "",
+      imageId: telemetry?.imageId || "",
+      stage: "compliance",
+      attempt: Number.isFinite(telemetry?.attempt) ? Number(telemetry?.attempt) : 1,
+    },
     model: complianceModel,
     callType: "validator",
     response: resp,
@@ -102,6 +106,8 @@ export async function checkCompliance(
     openingRegions?: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }>;
     modelOverride?: string;
     jobId?: string;
+    imageId?: string;
+    attempt?: number;
   }
 ): Promise<ComplianceVerdict> {
   const stage2Context = buildStage2ComplianceContext(opts?.validationMode);
@@ -120,7 +126,11 @@ export async function checkCompliance(
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
 
-  const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride, { jobId: opts?.jobId });
+  const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride, {
+    jobId: opts?.jobId,
+    imageId: opts?.imageId,
+    attempt: opts?.attempt,
+  });
   if (!s) {
     const reasons = ["Compliance parser failed"];
     const confidence = 0.3;
@@ -167,7 +177,11 @@ export async function checkCompliance(
     "Confidence scale: 0.9-1.0 = very certain violation, 0.7-0.9 = likely violation, 0.4-0.7 = uncertain, <0.4 = weak signal",
   ].join("\n");
 
-  const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride, { jobId: opts?.jobId });
+  const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride, {
+    jobId: opts?.jobId,
+    imageId: opts?.imageId,
+    attempt: opts?.attempt,
+  });
   if (!p) {
     const reasons = ["Compliance parser failed (placement)"];
     const confidence = 0.3;

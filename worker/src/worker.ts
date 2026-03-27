@@ -797,6 +797,8 @@ async function runStructuralTopologyCheck(opts: {
   stage2Path: string;
   model: string;
   jobId?: string;
+  imageId?: string;
+  attempt?: number;
 }): Promise<StructuralTopologyCheckResult> {
   const prompt = `You are performing a structural topology verification.
 
@@ -865,8 +867,12 @@ plus one short explanation sentence.`;
     },
   } as any);
   logGeminiUsage({
-    jobId: opts.jobId,
-    stage: "validator",
+    ctx: {
+      jobId: opts.jobId || "",
+      imageId: opts.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
+    },
     model: opts.model,
     callType: "validator",
     response,
@@ -1129,6 +1135,8 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
   stage1APath: string;
   stage1BPath: string;
   jobId?: string;
+  imageId?: string;
+  attempt?: number;
   promptAppend?: string;
   modelOverride?: string;
 }): Promise<Stage1BFullGeminiValidationResult> {
@@ -1168,8 +1176,12 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
       },
     } as any);
     logGeminiUsage({
-      jobId: opts.jobId,
-      stage: "validator",
+      ctx: {
+        jobId: opts.jobId || "",
+        imageId: opts.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
+      },
       model,
       callType: "validator",
       response,
@@ -1210,6 +1222,7 @@ async function runStage1BFullFurnitureGeminiValidation(opts: {
 
 async function evaluateStage1BLightPolicy(input: {
   jobId: string;
+  imageId: string;
   attemptNo: number;
   path1A: string;
   candidate: string;
@@ -1364,6 +1377,8 @@ async function evaluateStage1BLightPolicy(input: {
     } else {
       const structuralReview = await runGeminiStructuralReviewPro(input.path1A, input.candidate, {
         jobId: input.jobId,
+        imageId: input.imageId,
+        attempt: input.attemptNo,
       });
       if (structuralReview.result === "FAIL") {
         effectiveHardFail = true;
@@ -1389,6 +1404,7 @@ async function evaluateStage1BLightPolicy(input: {
 
 async function evaluateStage1BFullPolicy(input: {
   jobId: string;
+  imageId: string;
   attemptNo: number;
   path1A: string;
   candidate: string;
@@ -1471,6 +1487,9 @@ async function evaluateStage1BFullPolicy(input: {
     try {
       const openingValidation = await validateOpeningPreservation(input.structuralBaseline, input.candidate, {
         mode: "default",
+        jobId: input.jobId,
+        imageId: input.imageId,
+        attempt: input.attemptNo,
       });
 
       openingStateChanged = openingValidation.summary.openingStateChanged === true;
@@ -1592,6 +1611,8 @@ If layout has changed in any way → hardFail = true`
     stage1APath: input.path1A,
     stage1BPath: input.candidate,
     jobId: input.jobId,
+    imageId: input.imageId,
+    attempt: input.attemptNo,
     promptAppend,
     modelOverride: modelToUse,
   });
@@ -1661,6 +1682,8 @@ async function runStage1BGeminiConsensus(params: {
   afterImage: string;
   evidence: ValidationEvidence;
   derivedWarnings: number;
+  imageId: string;
+  attempt: number;
 }): Promise<{
   result: Stage1BGeminiResult;
   validatorResults: { v1: GeminiVoteDecision; v2?: GeminiVoteDecision; v3?: GeminiVoteDecision };
@@ -1668,7 +1691,10 @@ async function runStage1BGeminiConsensus(params: {
   validatorConfidence: number;
   derivedWarnings: number;
 }> {
-  const resultA = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence);
+  const resultA = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence, {
+    imageId: params.imageId,
+    attempt: params.attempt,
+  });
   const validatorResults: { v1: GeminiVoteDecision; v2?: GeminiVoteDecision; v3?: GeminiVoteDecision } = {
     v1: toGeminiVoteDecision(resultA),
   };
@@ -1687,7 +1713,10 @@ async function runStage1BGeminiConsensus(params: {
 
   let resultB: Stage1BGeminiResult;
   try {
-    resultB = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence);
+    resultB = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence, {
+      imageId: params.imageId,
+      attempt: params.attempt,
+    });
   } catch (err) {
     console.warn("[worker] Stage1B Gemini consensus second call failed; falling back to first call", err);
     return {
@@ -1712,7 +1741,10 @@ async function runStage1BGeminiConsensus(params: {
 
   let resultC: Stage1BGeminiResult;
   try {
-    resultC = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence);
+    resultC = await validateStage1BStructure(params.beforeImage, params.afterImage, params.evidence, {
+      imageId: params.imageId,
+      attempt: params.attempt,
+    });
   } catch (err) {
     console.warn("[worker] Stage1B Gemini consensus tie-breaker failed; falling back to first call", err);
     return {
@@ -2505,7 +2537,7 @@ async function runStructuralInvariantGeminiCheck(
   beforeImageUrl: string,
   afterImageUrl: string,
   hintFlags: string[] = [],
-  options?: { jobId?: string }
+  options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<{
   fail: boolean;
   confidence: number;
@@ -2557,8 +2589,12 @@ async function runStructuralInvariantGeminiCheck(
     },
   } as any);
   logGeminiUsage({
-    jobId: options?.jobId,
-    stage: "validator",
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
     model: STRUCTURAL_INVARIANT_MODEL,
     callType: "validator",
     response,
@@ -4466,6 +4502,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       sourceUrl: lineageSourceUrl,
       stageUrls: payloadStageUrls,
     });
+    logEvent("SOURCE_RESOLVED", {
+      jobId: payload.jobId,
+      sourceStage: payloadSourceStage,
+      sourceUrl: lineageSourceUrl,
+    });
 
     origPath = await downloadToTemp(lineageSourceUrl, `${payload.jobId}-${payloadSourceStage}`);
     nLog("[STAGE_INPUT_SELECTED]", {
@@ -5347,6 +5388,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         promptMode: stage2OnlyPromptMode,
         stage2Mode: explicitStage2ModeStage2Only,
         jobId: payload.jobId,
+        imageId: payload.imageId,
         layoutPlan: stage2OnlyLayoutPlan,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
@@ -5457,7 +5499,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               }
             };
 
-            const opRes = await runOpeningValidator(validationBaseline, path2, { jobId: payload.jobId });
+            const opRes = await runOpeningValidator(validationBaseline, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+            });
             const opHardFail = opRes?.hardFail === true;
             specialistResults.openings = opRes;
             if (opHardFail) {
@@ -5465,7 +5511,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("openings", opRes?.advisorySignals);
 
-            const fixRes = await runFixtureValidator(validationBaseline, path2, { jobId: payload.jobId });
+            const fixRes = await runFixtureValidator(validationBaseline, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+            });
             const fixHardFail = fixRes?.hardFail === true;
             specialistResults.fixtures = fixRes;
             if (fixHardFail) {
@@ -5473,7 +5523,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("fixtures", fixRes?.advisorySignals);
 
-            const floorRes = await runFloorIntegrityValidator(validationBaseline, path2, { jobId: payload.jobId });
+            const floorRes = await runFloorIntegrityValidator(validationBaseline, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+            });
             const floorHardFail = floorRes?.hardFail === true;
             specialistResults.floor = floorRes;
             if (floorHardFail) {
@@ -5481,7 +5535,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("floor", floorRes?.advisorySignals);
 
-            const envRes = await runEnvelopeValidator(validationBaseline, path2, { jobId: payload.jobId });
+            const envRes = await runEnvelopeValidator(validationBaseline, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+            });
             const envHardFail = envRes?.hardFail === true;
             specialistResults.envelope = envRes;
             if (envHardFail) {
@@ -5595,6 +5653,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               const enhanced = toBase64(path2);
               const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
                 validationMode: stage2OnlySelectedValidationMode,
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
               });
               if (s2oCompliance && s2oCompliance.ok === false) {
                 const confidence = s2oCompliance.confidence ?? 0.6;
@@ -6360,6 +6421,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     })(),
     skyMode: skyModeForStage1A,
     jobId: payload.jobId,
+    imageId: payload.imageId,
     roomType: payload.options.roomType,
     baseArtifacts: jobContext.baseArtifacts,
     baseArtifactsCache: jobContext.baseArtifactsCache,
@@ -6371,7 +6433,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } else if (process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY) {
     structuralBaselinePromise = (async () => {
       try {
-        const extractedBaseline = await extractStructuralBaseline(path1A);
+        const extractedBaseline = await extractStructuralBaseline(path1A, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt: 1,
+        });
         structuralBaseline = extractedBaseline;
         jobContext.structuralBaseline = extractedBaseline;
         await updateJob(payload.jobId, {
@@ -7001,6 +7067,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         roomType: payload.options.roomType,
         declutterMode,
         jobId: payload.jobId,
+        imageId: payload.imageId,
         attempt,
         canonicalPath: jobContext.canonicalPath,
         baseArtifacts: jobContext.baseArtifacts,
@@ -7235,6 +7302,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           afterImage: candidate,
           evidence: stage1BStructuralEvidence,
           derivedWarnings: stage1BConsensusClassification.derivedWarnings,
+          imageId: payload.imageId,
+          attempt: stage1BAttemptNo,
         });
         structureResult = stage1BGeminiConsensus.result;
         nLog("[STAGE1B_GEMINI_VALIDATOR_RESULTS]", {
@@ -7261,6 +7330,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (stage1BPolicyMode === "DECLUTTER") {
         const lightPolicyDecision = await evaluateStage1BLightPolicy({
           jobId: payload.jobId,
+          imageId: payload.imageId,
           attemptNo: stage1BAttemptNo,
           path1A,
           candidate,
@@ -7280,6 +7350,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } else {
         const fullPolicyDecision = await evaluateStage1BFullPolicy({
           jobId: payload.jobId,
+          imageId: payload.imageId,
           attemptNo: stage1BAttemptNo,
           path1A,
           candidate,
@@ -7993,6 +8064,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             promptMode: stage2PromptMode,
             stage2Mode: explicitStage2ModeMain,
             jobId: payload.jobId,
+            imageId: payload.imageId,
             layoutPlan: stage2LayoutPlan,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
@@ -8175,6 +8247,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         roomType: payload.options.roomType,
         declutterMode: "light",
         jobId: payload.jobId,
+        imageId: payload.imageId,
         attempt: 0,
         canonicalPath: jobContext.canonicalPath,
         baseArtifacts: jobContext.baseArtifacts,
@@ -8271,6 +8344,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           promptMode: fallbackPromptMode,
           stage2Mode: explicitStage2ModeFallback,
           jobId: payload.jobId,
+          imageId: payload.imageId,
           layoutPlan: stage2LayoutPlan,
           validationConfig: { localMode: localValidatorMode },
           stage1APath: stage2ValidationBaseline,
@@ -8698,6 +8772,7 @@ All openings must remain identical in position and size to the original image.`;
             promptMode: stage2PromptMode,
             curtainRailLikely: jobContext.curtainRailLikely,
             jobId: payload.jobId,
+            imageId: payload.imageId,
             outputPath: retryOutputPath,
             attempt,
             structuralRetryContext: {
@@ -8782,8 +8857,12 @@ All openings must remain identical in position and size to the original image.`;
 
       try {
         await logBaselineImageUrl({
-          stage: "2",
-          jobId: payload.jobId,
+          ctx: {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            stage: "2",
+            attempt,
+          },
           localPath: validationBasePath,
         });
       } catch (baselineSignErr: any) {
@@ -9245,7 +9324,11 @@ All openings must remain identical in position and size to the original image.`;
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
-        const opRes = await runOpeningValidator(validationBasePath, path2, { jobId: payload.jobId });
+        const opRes = await runOpeningValidator(validationBasePath, path2, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+        });
         specialistResults.opening = normalizeSpecialistResult({
           validator: "opening",
           status: opRes.status,
@@ -9411,7 +9494,11 @@ All openings must remain identical in position and size to the original image.`;
               : "none",
         });
 
-        const fixRes = await runFixtureValidator(validationBasePath, path2, { jobId: payload.jobId });
+        const fixRes = await runFixtureValidator(validationBasePath, path2, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+        });
         specialistResults.fixture = normalizeSpecialistResult({
           validator: "fixture",
           status: fixRes.status,
@@ -9486,7 +9573,11 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const floorRes = await runFloorIntegrityValidator(validationBasePath, path2, { jobId: payload.jobId });
+        const floorRes = await runFloorIntegrityValidator(validationBasePath, path2, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+        });
         specialistResults.floor = normalizeSpecialistResult({
           validator: "floor",
           status: floorRes.status,
@@ -9561,7 +9652,11 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const envRes = await runEnvelopeValidator(validationBasePath, path2, { jobId: payload.jobId });
+        const envRes = await runEnvelopeValidator(validationBasePath, path2, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+        });
         specialistResults.envelope = normalizeSpecialistResult({
           validator: "envelope",
           status: envRes.status,
@@ -10093,6 +10188,8 @@ All openings must remain identical in position and size to the original image.`;
                 maskedDriftRegions: complianceMaskedDriftRegions,
                 openingRegions: complianceOpeningRegions,
                 jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
                 modelOverride: "gemini-2.5-pro",
               });
 
@@ -10200,7 +10297,11 @@ All openings must remain identical in position and size to the original image.`;
              passBaselineBase64 = `data:image/jpeg;base64,${(await fs.promises.readFile(path1A)).toString("base64")}`;
           } catch (err) {}
           if (passCandidateBase64 && passBaselineBase64) {
-             const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64);
+             const fixtureResult = await runFixtureValidator(passBaselineBase64, passCandidateBase64, {
+               jobId: payload.jobId,
+               imageId: payload.imageId,
+               attempt,
+             });
              if (fixtureResult.status === "fail") {
                nLog(`[FIXTURE_VALIDATOR_RESULT] ok=false detected_changes=${JSON.stringify(fixtureResult.reason)}`);
                
@@ -10277,7 +10378,11 @@ All openings must remain identical in position and size to the original image.`;
 
       try {
         const structuralReview = ENABLE_FINAL_STRUCTURAL_REVIEW
-          ? await runGeminiStructuralReviewPro(validationBasePath, path2, { jobId: payload.jobId })
+          ? await runGeminiStructuralReviewPro(validationBasePath, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+            })
           : { result: "PASS" as const, confidence: 100, explanation: "final_structural_review_disabled" };
 
         if (ENABLE_FINAL_STRUCTURAL_REVIEW) {
@@ -11931,6 +12036,11 @@ const worker = new Worker(
             sourceUrl: lineageBaseImageUrl,
             stageUrls: regionStageUrls,
           });
+          logEvent("SOURCE_RESOLVED", {
+            jobId: regionPayload.jobId,
+            sourceStage: regionSourceStage,
+            sourceUrl: lineageBaseImageUrl,
+          });
 
           const baseImageUrl = lineageBaseImageUrl;
 
@@ -12105,7 +12215,11 @@ const worker = new Worker(
                   outPath,
                   maskBuf,
                   comparedAgainst,
-                  { jobId: regionPayload.jobId },
+                  {
+                    jobId: regionPayload.jobId,
+                    imageId: regionPayload.imageId,
+                    attempt,
+                  },
                 );
                 openingsValidationSummary = {
                   ...openingsValidation,

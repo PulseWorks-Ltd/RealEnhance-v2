@@ -206,7 +206,7 @@ Return JSON only.
 export async function runGeminiStructuralReviewPro(
   originalImagePath: string,
   stagedImagePath: string,
-  options?: { jobId?: string }
+  options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<StructuralReviewProResult> {
   const ai = getGeminiClient();
   const original = toBase64(originalImagePath);
@@ -233,8 +233,12 @@ export async function runGeminiStructuralReviewPro(
     },
   });
   logGeminiUsage({
-    jobId: options?.jobId,
-    stage: "validator",
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
     model: "gemini-2.5-pro",
     callType: "validator",
     response,
@@ -587,6 +591,7 @@ export async function runStage2GenerationAttempt(
     stage2Mode?: Stage2ModeOverride;
     curtainRailLikely?: boolean | "unknown";
     jobId: string;
+    imageId: string;
     outputPath: string;
     attempt?: number;
     maxOutputTokens?: number;
@@ -643,9 +648,12 @@ export async function runStage2GenerationAttempt(
       const guidedPath = siblingOutPath(basePath, "-staging-guide", ".png");
       await sharp(guided).toFile(guidedPath);
       await logImageAttemptUrl({
-        stage: "2",
-        attempt: Math.max(1, opts.attempt ?? 1),
-        jobId: opts.jobId,
+        ctx: {
+          jobId: opts.jobId,
+          imageId: opts.imageId,
+          stage: "2",
+          attempt: Math.max(1, opts.attempt ?? 1),
+        },
         localPath: guidedPath,
       });
       // Build a strict binary mask (white inside region, transparent outside)
@@ -658,7 +666,15 @@ export async function runStage2GenerationAttempt(
         stagingMaskBuffer = maskBuf;
         const maskPath = siblingOutPath(basePath, "-staging-mask", ".png");
         await sharp(maskBuf).toFile(maskPath);
-        await logImageAttemptUrl({ stage: "2", attempt: Math.max(1, opts.attempt ?? 1), jobId: opts.jobId, localPath: maskPath });
+        await logImageAttemptUrl({
+          ctx: {
+            jobId: opts.jobId,
+            imageId: opts.imageId,
+            stage: "2",
+            attempt: Math.max(1, opts.attempt ?? 1),
+          },
+          localPath: maskPath,
+        });
         focusLog("STAGE2_MASK", "[stage2] Built explicit staging mask", { jobId: opts.jobId, width: W, height: H, x, y, w, h });
       } catch (e) {
         focusLog("STAGE2_MASK", "[stage2] Failed to build explicit staging mask; continuing without it", { error: String(e), jobId: opts.jobId });
@@ -961,9 +977,12 @@ Do not add blinds, rods, tracks, or new window coverings.
   }
 
   await logImageAttemptUrl({
-    stage: "2",
-    attempt: attemptNumber,
-    jobId: opts.jobId,
+    ctx: {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      stage: "2",
+      attempt: attemptNumber,
+    },
     localPath: opts.outputPath,
   });
   logger.info(`[STAGE2_OUTPUT_PATH] job_id=${opts.jobId} attempt=${attemptNumber} path=${opts.outputPath}`);
@@ -993,6 +1012,7 @@ export async function runStage2(
     stage1APath?: string;
     /** Job ID for validation tracking */
     jobId: string;
+    imageId: string;
     /** Validation configuration (local-mode driven) */
     validationConfig?: { localMode?: Mode };
     layoutPlan?: Stage2LayoutPlan | null;
@@ -1058,6 +1078,7 @@ export async function runStage2(
       stage2Mode: opts.stage2Mode,
       curtainRailLikely: opts.curtainRailLikely,
       jobId: opts.jobId,
+      imageId: opts.imageId,
       outputPath,
       attempt,
       layoutContext,

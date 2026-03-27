@@ -1,16 +1,40 @@
+import type { PipelineContext } from "../types/pipelineContext";
+
 export type GeminiCallType = "image_generation" | "text_generation" | "validator" | "repair" | "edit";
 
-type GeminiUsageLogger = Pick<Console, "info" | "warn">;
-
 type GeminiUsageLogArgs = {
-  jobId?: string | null;
-  stage: string;
+  ctx: PipelineContext;
   model: string;
   callType: GeminiCallType;
   response: any;
   latencyMs?: number;
-  logger?: GeminiUsageLogger;
 };
+
+export function assertContext(ctx: PipelineContext): void {
+  if (!ctx || !ctx.jobId || !ctx.imageId) {
+    throw new Error("Missing jobId or imageId in logging context");
+  }
+  if (!ctx.stage || !Number.isFinite(ctx.attempt)) {
+    throw new Error("Missing stage or attempt in logging context");
+  }
+}
+
+export function logEvent(
+  ctx: PipelineContext,
+  event: string,
+  data: Record<string, any> = {}
+): void {
+  assertContext(ctx);
+  console.log(JSON.stringify({
+    jobId: ctx.jobId,
+    imageId: ctx.imageId,
+    stage: ctx.stage,
+    attempt: ctx.attempt,
+    event,
+    ...data,
+    ts: new Date().toISOString(),
+  }));
+}
 
 function toTokenCount(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -86,19 +110,16 @@ function estimateGeminiCostUsd(model: string, inputTokens: number | null, output
 }
 
 export function logGeminiUsage(args: GeminiUsageLogArgs): void {
-  const logger = args.logger || console;
+  assertContext(args.ctx);
   const usageMetadata = args.response?.usageMetadata;
   const inputTokens = toTokenCount(usageMetadata?.promptTokenCount);
   const outputTokens = toTokenCount(usageMetadata?.candidatesTokenCount);
   const totalTokens = toTokenCount(usageMetadata?.totalTokenCount);
   const imageCount = countGeneratedImages(args.response);
-  const jobId = args.jobId || "unknown";
   const costEstimateUsd = estimateGeminiCostUsd(args.model, inputTokens, outputTokens);
 
   if (inputTokens === null || outputTokens === null || totalTokens === null) {
     const warnPayload: Record<string, unknown> = {
-      jobId,
-      stage: args.stage,
       model: args.model,
       callType: args.callType,
       costEstimateUsd,
@@ -112,13 +133,11 @@ export function logGeminiUsage(args: GeminiUsageLogArgs): void {
       warnPayload.imageCount = imageCount;
     }
 
-    logger.warn("[USAGE_MISSING]", warnPayload);
+    logEvent(args.ctx, "USAGE_MISSING", warnPayload as Record<string, any>);
     return;
   }
 
   const infoPayload: Record<string, unknown> = {
-    jobId,
-    stage: args.stage,
     model: args.model,
     callType: args.callType,
     inputTokens,
@@ -134,5 +153,5 @@ export function logGeminiUsage(args: GeminiUsageLogArgs): void {
     infoPayload.imageCount = imageCount;
   }
 
-  logger.info("[USAGE]", infoPayload);
+  logEvent(args.ctx, "USAGE", infoPayload as Record<string, any>);
 }

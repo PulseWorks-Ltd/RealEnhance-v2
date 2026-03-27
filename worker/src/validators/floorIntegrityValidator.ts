@@ -109,7 +109,7 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
 export async function runFloorIntegrityValidator(
   beforeImageUrl: string,
   afterImageUrl: string,
-  options?: { jobId?: string }
+  options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<FloorIntegrityValidatorResult> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
@@ -171,8 +171,12 @@ Return JSON only:
       },
     });
     logGeminiUsage({
-      jobId: options?.jobId,
-      stage: "validator",
+      ctx: {
+        jobId: options?.jobId || "",
+        imageId: options?.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+      },
       model,
       callType: "validator",
       response,

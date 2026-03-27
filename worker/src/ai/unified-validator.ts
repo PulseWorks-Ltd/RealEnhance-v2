@@ -696,7 +696,7 @@ export async function validateAllPreservation(
   originalB64: string,
   editedB64: string,
   userProvidedWindowCount?: number,
-  telemetry?: { jobId?: string; stage?: StageId | string }
+  telemetry?: { jobId?: string; imageId?: string; attempt?: number; stage?: StageId | string }
 ): Promise<UnifiedValidationResult> {
   try {
     const windowCountContext = userProvidedWindowCount !== undefined
@@ -805,8 +805,12 @@ Return ONLY the JSON, no explanatory text.`;
       ]
     });
     logGeminiUsage({
-      jobId: telemetry?.jobId,
-      stage: telemetry?.stage || "validator",
+      ctx: {
+        jobId: telemetry?.jobId || "",
+        imageId: telemetry?.imageId || "",
+        stage: telemetry?.stage || "validator",
+        attempt: Number.isFinite(telemetry?.attempt) ? Number(telemetry?.attempt) : 1,
+      },
       model: "gemini-2.0-flash",
       callType: "validator",
       response: result,

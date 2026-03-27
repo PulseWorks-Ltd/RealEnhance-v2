@@ -289,7 +289,9 @@ function parseOpeningLightAnchorVerdict(rawText: string): OpeningLightAnchorVerd
 async function runOpeningLightAnchorMicroCheck(
   beforeImageUrl: string,
   afterImageUrl: string,
-  jobId?: string
+  jobId?: string,
+  imageId?: string,
+  attempt?: number,
 ): Promise<OpeningLightAnchorVerdict | null> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
@@ -346,8 +348,12 @@ Return JSON only:
     },
   });
   logGeminiUsage({
-    jobId,
-    stage: "validator",
+    ctx: {
+      jobId: jobId || "",
+      imageId: imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(attempt) ? Number(attempt) : 1,
+    },
     model: OPENING_LIGHT_ANCHOR_MODEL,
     callType: "validator",
     response,
@@ -365,18 +371,26 @@ Return JSON only:
 export async function runOpeningValidator(
   beforeImageUrl: string,
   afterImageUrl: string,
-  options?: { jobId?: string }
+  options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<OpeningValidatorResult> {
   if (!String(beforeImageUrl || "").trim() || !String(afterImageUrl || "").trim()) {
     throw new Error("VALIDATION_INPUT_MISSING");
   }
 
-  const baseline = await extractStructuralBaseline(beforeImageUrl, { jobId: options?.jobId });
+  const baseline = await extractStructuralBaseline(beforeImageUrl, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: options?.attempt,
+  });
   const baselineOpenings = extractBaselineOpenings(baseline);
   console.log("[OPENINGS_BASELINE]", baselineOpenings);
 
   if (Array.isArray(baseline.openings) && baseline.openings.length > 0) {
-    const deterministic = await validateOpeningPreservation(baseline, afterImageUrl, { jobId: options?.jobId });
+    const deterministic = await validateOpeningPreservation(baseline, afterImageUrl, {
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      attempt: options?.attempt,
+    });
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
     const baselineById = new Map((baseline.openings || []).map((opening) => [String(opening.id), opening]));
     const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
@@ -491,7 +505,13 @@ export async function runOpeningValidator(
       );
 
     if (microCheckRisk) {
-      const micro = await runOpeningLightAnchorMicroCheck(beforeImageUrl, afterImageUrl, options?.jobId);
+      const micro = await runOpeningLightAnchorMicroCheck(
+        beforeImageUrl,
+        afterImageUrl,
+        options?.jobId,
+        options?.imageId,
+        options?.attempt,
+      );
       if (micro && micro.confidence >= 0.8 && (micro.openingInfilled || micro.openingRemoved || micro.openingRelocated)) {
         if (micro.openingInfilled || micro.openingRemoved) {
           hardFail = true;
@@ -669,8 +689,12 @@ If any opening appears reduced, expanded, or reshaped:
       },
     });
     logGeminiUsage({
-      jobId: options?.jobId,
-      stage: "validator",
+      ctx: {
+        jobId: options?.jobId || "",
+        imageId: options?.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+      },
       model,
       callType: "validator",
       response,

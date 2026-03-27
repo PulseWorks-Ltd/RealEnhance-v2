@@ -75,6 +75,7 @@ function isValidImageResponse(resp: any): { valid: boolean; reason?: string } {
 
 type ModelLogMeta = {
   jobId?: string;
+  imageId?: string;
   filename?: string;
   roomType?: string;
   stage?: string;
@@ -188,8 +189,12 @@ export async function runWithImageModelFallback(
       model,
     });
     logGeminiUsage({
-      jobId: meta?.jobId,
-      stage: meta?.stage || modelStageLabel,
+      ctx: {
+        jobId: meta?.jobId || "",
+        imageId: meta?.imageId || "",
+        stage: meta?.stage || modelStageLabel,
+        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+      },
       model,
       callType: meta?.callType || "image_generation",
       response: resp,
@@ -247,8 +252,12 @@ export async function runWithSelectedImageModel({
       model: selectedModel,
     });
     logGeminiUsage({
-      jobId: meta?.jobId,
-      stage: meta?.stage || stageLabel,
+      ctx: {
+        jobId: meta?.jobId || "",
+        imageId: meta?.imageId || "",
+        stage: meta?.stage || stageLabel,
+        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+      },
       model: selectedModel,
       callType: meta?.callType || "image_generation",
       response: resp,
@@ -320,8 +329,12 @@ export async function runWithPrimaryThenFallback({
       model: primaryModel,
     });
     logGeminiUsage({
-      jobId: meta?.jobId,
-      stage: meta?.stage || stageLabel,
+      ctx: {
+        jobId: meta?.jobId || "",
+        imageId: meta?.imageId || "",
+        stage: meta?.stage || stageLabel,
+        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+      },
       model: primaryModel,
       callType: meta?.callType || "image_generation",
       response: resp,
@@ -374,8 +387,12 @@ export async function runWithPrimaryThenFallback({
       model: fallbackModel,
     });
     logGeminiUsage({
-      jobId: meta?.jobId,
-      stage: meta?.stage || stageLabel,
+      ctx: {
+        jobId: meta?.jobId || "",
+        imageId: meta?.imageId || "",
+        stage: meta?.stage || stageLabel,
+        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+      },
       model: fallbackModel,
       callType: meta?.callType || "image_generation",
       response: resp,

@@ -134,6 +134,8 @@ export async function runStage1BDeclutterEffectivenessValidator(opts: {
   roomType?: string;
   sceneType?: string;
   jobId?: string;
+  imageId?: string;
+  attempt?: number;
 }): Promise<Stage1BDeclutterEffectivenessResult> {
   const fallbackMetrics: Stage1BDeclutterMetrics = {
     beforeClutterItems: 0,
@@ -197,8 +199,12 @@ Confidence must be between 0 and 1.`;
       },
     } as any);
     logGeminiUsage({
-      jobId: opts.jobId,
-      stage: "validator",
+      ctx: {
+        jobId: opts.jobId || "",
+        imageId: opts.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
+      },
       model,
       callType: "validator",
       response,

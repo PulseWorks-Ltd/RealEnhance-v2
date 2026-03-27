@@ -116,7 +116,7 @@ interface RegionEditorProps {
   initialImageUrl?: string;
   originalImageUrl?: string; // URL to original image for pixel-level restoration
   editSourceUrl?: string;
-  editSourceStage?: "stage2" | "stage1B" | "stage1A";
+  editSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   sourceJobId?: string;
   initialGoal?: string;
   initialIndustry?: string;
@@ -1120,6 +1120,24 @@ export function RegionEditor({
         return;
       }
 
+      if (!sanitizedEditSourceUrl) {
+        toast({
+          title: "Missing source image",
+          description: "The selected tab does not have a valid source URL.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!editSourceStage) {
+        toast({
+          title: "Missing source stage",
+          description: "The selected tab does not have a valid source stage.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (mode === "edit" && !instructions.trim()) {
         toast({
           title: "Instructions required",
@@ -1185,12 +1203,10 @@ export function RegionEditor({
       if (baseImageUrl) {
         formData.append("baseImageUrl", baseImageUrl);
       }
-      if (sanitizedEditSourceUrl) {
-        formData.append("editSourceUrl", sanitizedEditSourceUrl);
-      }
-      if (editSourceStage) {
-        formData.append("editSourceStage", editSourceStage);
-      }
+      formData.append("sourceUrl", sanitizedEditSourceUrl);
+      formData.append("sourceStage", editSourceStage);
+      formData.append("editSourceUrl", sanitizedEditSourceUrl);
+      formData.append("editSourceStage", editSourceStage);
       if (sourceJobId) {
         formData.append("jobId", sourceJobId);
       }

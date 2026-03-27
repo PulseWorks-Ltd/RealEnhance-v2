@@ -52,6 +52,8 @@ export async function runFixtureValidator(
   afterImageUrl: string,
   options?: {
     jobId?: string;
+    imageId?: string;
+    attempt?: number;
     localSignals?: {
       maskedEdgeDrift?: number;
       edgeOpeningRisk?: number;
@@ -210,8 +212,12 @@ This is NOT a stylistic check. It is a structural integrity check.`;
       },
     });
     logGeminiUsage({
-      jobId,
-      stage: "validator",
+      ctx: {
+        jobId: jobId || "",
+        imageId: options?.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+      },
       model: selectedModel,
       callType: "validator",
       response,
