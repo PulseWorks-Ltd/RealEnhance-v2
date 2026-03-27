@@ -1,0 +1,1725 @@
+{
+  "generatedAt": "2026-03-27T01:17:39.885873Z",
+  "summary": {
+    "sampleWindowLogs": [
+      "logs.1774007640474.log",
+      "logs.1774087485754.log",
+      "logs.1774126834785.log",
+      "logs.1774232618776.log",
+      "logs.1774350748550.log",
+      "logs.1774415998089.log",
+      "logs.1774528848370.log"
+    ],
+    "sampleImageWorkflowCount": 32,
+    "supplementalRegionEditWorkflowCount": 5,
+    "avgInputTokensPerImage": null,
+    "avgOutputTokensPerImage": null,
+    "avgCallsPerStage": {
+      "1A": 0.875,
+      "1B": 0.1875,
+      "2": 1.6875
+    },
+    "avgRetriesPerImage": 0.7188,
+    "avgValidatorEscalationsPerImage": 0.0,
+    "distribution": {
+      "pctImagesUsingStage1B": 15.62,
+      "pctImagesTriggeringRetry": 34.38,
+      "pctImagesTriggeringGeminiValidator": 0.0,
+      "pctImagesTriggeringRepairLayer": 0.0
+    },
+    "pipelinePathCounts": {
+      "1A -> 2": 23,
+      "1A -> 1B -> 2": 5,
+      "2": 4
+    },
+    "telemetryGaps": [
+      "No per-call Gemini token usage metadata found in sampled production logs for image-generation stages 1A, 1B, or 2.",
+      "Gemini validator calls are observable, but the exact validator model used per call is not emitted in sampled logs.",
+      "No dedicated repair-layer call marker was found in the sampled logs; repair-layer cost is therefore observed as zero/unlogged, not proven absent in the system.",
+      "Official Gemini pricing page was fetched successfully but not parseable into model-level constants from static HTML in this environment."
+    ],
+    "costAnalysis": {
+      "status": "blocked_by_missing_telemetry",
+      "averageCostPerImage": null,
+      "worstCaseCostObserved": null,
+      "costBreakdownByStagePct": null,
+      "p50CostPerImage": null,
+      "p75CostPerImage": null,
+      "p90CostPerImage": null
+    },
+    "topObservedCallDrivers": [
+      [
+        "Stage 2 retries",
+        22
+      ],
+      [
+        "Stage 1B base usage",
+        4
+      ],
+      [
+        "Stage 1B retries",
+        1
+      ]
+    ]
+  },
+  "sampleImageWorkflows": [
+    {
+      "jobId": "job_77b0d1f4-8bfd-4e85-bd3c-94477eeb0395",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-20T11:40:15.590180675Z",
+      "lastTs": "2026-03-20T11:42:07.803930769Z",
+      "logFiles": [
+        "logs.1774007640474.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_360ebdbb-3fd6-4b10-b816-aa75a302f039",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-20T11:40:15.811839871Z",
+      "lastTs": "2026-03-20T11:42:45.973134367Z",
+      "logFiles": [
+        "logs.1774007640474.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_1536da48-6910-4d7b-a8f7-95820bcdba70",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-20T11:40:17.164484299Z",
+      "lastTs": "2026-03-20T11:41:54.543030635Z",
+      "logFiles": [
+        "logs.1774007640474.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_ac23c10b-7e44-4e88-8ef8-5c52b37566b9",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-20T11:40:17.165969550Z",
+      "lastTs": "2026-03-20T11:41:56.671624365Z",
+      "logFiles": [
+        "logs.1774007640474.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_613ac594-4dea-443b-af97-671286e4f653",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-20T11:40:18.576392343Z",
+      "lastTs": "2026-03-20T11:41:52.095222754Z",
+      "logFiles": [
+        "logs.1774007640474.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_01fcefb2-645d-4474-9891-5945e9b10288",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T07:40:03.606731581Z",
+      "lastTs": "2026-03-21T07:42:04.265057788Z",
+      "logFiles": [
+        "logs.1774087485754.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "kitchen_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_dc2707fe-d1f7-4a8c-b0d1-700a2ee1ae1a",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T07:40:03.760743616Z",
+      "lastTs": "2026-03-21T07:42:16.711043175Z",
+      "logFiles": [
+        "logs.1774087485754.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_room"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_d089b32d-f4bd-400a-aab0-8541f1ddf3ed",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T07:40:05.529039014Z",
+      "lastTs": "2026-03-21T07:41:56.546352381Z",
+      "logFiles": [
+        "logs.1774087485754.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_room"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_96008855-75be-4f63-8a59-1c62ce3d2936",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T07:40:07.109066400Z",
+      "lastTs": "2026-03-21T07:42:02.648970492Z",
+      "logFiles": [
+        "logs.1774087485754.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_8569ed7c-7ee8-43c1-a075-87c17d7f6e15",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T20:54:24.863074915Z",
+      "lastTs": "2026-03-21T20:57:26.000977427Z",
+      "logFiles": [
+        "logs.1774126834785.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_db6213f8-9dc7-4de9-bbf3-9069efcb2c93",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T20:54:26.997377364Z",
+      "lastTs": "2026-03-21T20:57:33.537535562Z",
+      "logFiles": [
+        "logs.1774126834785.log"
+      ],
+      "pipelinePath": "1A -> 1B -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_room"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "1B",
+          "model": "gemini-3-pro-image-preview (fallback=gemini-2.5-flash-image)",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 5,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_5682e7a1-2646-4fc0-8af8-666d07cb9d7f",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T20:54:27.434309478Z",
+      "lastTs": "2026-03-21T20:57:02.117531220Z",
+      "logFiles": [
+        "logs.1774126834785.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_room"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_57708e20-b3ad-462b-aa75-0117c1f02ebb",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-21T20:54:29.356127150Z",
+      "lastTs": "2026-03-21T20:57:45.895462348Z",
+      "logFiles": [
+        "logs.1774126834785.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_773861a6-9b57-4b82-b91d-7dc59ec4534e",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-23T01:37:40.124740338Z",
+      "lastTs": "2026-03-23T01:39:34.764864733Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_ab2e2e3d-a38f-4176-a952-342311caf891",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-23T01:37:41.543557520Z",
+      "lastTs": "2026-03-23T01:42:28.644856924Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 4,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_ace2372f-e748-43a9-9a80-bc39b4bf78c5",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-23T01:37:41.724409741Z",
+      "lastTs": "2026-03-23T01:39:57.518913707Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_fa773f8a-2799-43e6-b478-57d8842743d0",
+      "imageId": null,
+      "firstTs": "2026-03-23T01:45:28.232672694Z",
+      "lastTs": "2026-03-23T01:45:28.232672694Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_7fc0f10f-c1c7-46c1-bfcc-b58a1a4b695a",
+      "imageId": null,
+      "firstTs": "2026-03-23T01:46:01.866375070Z",
+      "lastTs": "2026-03-23T01:46:01.866375070Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_dbafb53a-97d7-482c-8429-42ffdc0b06b2",
+      "imageId": null,
+      "firstTs": "2026-03-23T01:55:00.243877939Z",
+      "lastTs": "2026-03-23T01:58:56.564120651Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "1A -> 1B -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_room"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "1B",
+          "model": "gemini-3-pro-image-preview (fallback=gemini-2.5-flash-image)",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            16114
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 5,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_8d6c3390-a992-4bf2-b938-6971549186c6",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-23T01:55:02.071719010Z",
+      "lastTs": "2026-03-23T02:00:19.875229112Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "1A -> 1B -> 2",
+      "retryOccurred": true,
+      "retryCount": 2,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "kitchen_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "1B",
+          "model": "gemini-3-pro-image-preview (fallback=gemini-2.5-flash-image)",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            16117
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 5,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_8161dbe8-db8f-42fd-b225-394974f64c49",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-23T01:55:02.798830126Z",
+      "lastTs": "2026-03-23T01:58:41.441819932Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "1A -> 1B -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "1B",
+          "model": "gemini-3-pro-image-preview (fallback=gemini-2.5-flash-image)",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            16110
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 3,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_bd90c850-bbc6-4a41-b255-3a0be11681eb",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-24T10:57:56.539708348Z",
+      "lastTs": "2026-03-24T11:00:40.926908069Z",
+      "logFiles": [
+        "logs.1774350748550.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_ac21360a-6b00-464e-aa12-6b9306ce0e3c",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-24T10:57:59.616213075Z",
+      "lastTs": "2026-03-24T11:00:14.836632708Z",
+      "logFiles": [
+        "logs.1774350748550.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_1d9b0847-a1b8-4062-908d-68bbc843503b",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-24T10:58:00.859161511Z",
+      "lastTs": "2026-03-24T11:00:18.388632493Z",
+      "logFiles": [
+        "logs.1774350748550.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "living_room"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_83010f96-3653-4ead-bd29-ef3adf602718",
+      "imageId": null,
+      "firstTs": "2026-03-24T11:01:16.610999398Z",
+      "lastTs": "2026-03-24T11:01:16.610999398Z",
+      "logFiles": [
+        "logs.1774350748550.log"
+      ],
+      "pipelinePath": "2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_1b4f4ca8-b08d-4dbc-905a-0cd390cd0fbe",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-25T05:05:13.774927474Z",
+      "lastTs": "2026-03-25T05:07:44.147905182Z",
+      "logFiles": [
+        "logs.1774415998089.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "kitchen_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_60eede48-cf59-4c87-aa75-88f32501006a",
+      "imageId": null,
+      "firstTs": "2026-03-25T05:05:16.072311511Z",
+      "lastTs": "2026-03-25T05:10:31.399756362Z",
+      "logFiles": [
+        "logs.1774415998089.log"
+      ],
+      "pipelinePath": "1A -> 1B -> 2",
+      "retryOccurred": true,
+      "retryCount": 3,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "kitchen_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "1B",
+          "model": "gemini-3-pro-image-preview (fallback=gemini-2.5-flash-image)",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 2,
+          "promptCharsObserved": [
+            16117,
+            16117
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 3,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 6,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_75a5972c-6919-42e0-84ca-54b499f0b2d3",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-25T05:05:17.144542423Z",
+      "lastTs": "2026-03-25T05:07:15.671383385Z",
+      "logFiles": [
+        "logs.1774415998089.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "kitchen_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_955cf179-98a1-4f14-a33d-cfbb9a1dc89e",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-25T05:05:19.336690690Z",
+      "lastTs": "2026-03-25T05:07:18.068780680Z",
+      "logFiles": [
+        "logs.1774415998089.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "kitchen_dining"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_9df8ddb1-2487-40bd-b20a-7121721aa3aa",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-26T12:34:28.349261105Z",
+      "lastTs": "2026-03-26T12:36:54.176714262Z",
+      "logFiles": [
+        "logs.1774528848370.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_f800045b-c2fe-41a4-b8b6-291ad0c5a927",
+      "imageId": "agency_1cfc4fc9-7f23-4ed7-aea5-f2fb95f5546e",
+      "firstTs": "2026-03-26T12:34:34.692164445Z",
+      "lastTs": "2026-03-26T12:36:53.729969546Z",
+      "logFiles": [
+        "logs.1774528848370.log"
+      ],
+      "pipelinePath": "1A -> 2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [
+        "bedroom"
+      ],
+      "stages": [
+        {
+          "stage": "1A",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": [
+            3637
+          ]
+        },
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 2,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs"
+      ],
+      "imageWorkflow": true
+    },
+    {
+      "jobId": "job_1cc2ca01-bf69-405b-afea-f83bc278ba35",
+      "imageId": null,
+      "firstTs": "2026-03-26T12:37:25.714592278Z",
+      "lastTs": "2026-03-26T12:37:25.714592278Z",
+      "logFiles": [
+        "logs.1774528848370.log"
+      ],
+      "pipelinePath": "2",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": false,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "2",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": true
+    }
+  ],
+  "supplementalRegionEditWorkflows": [
+    {
+      "jobId": "job_0655ebf9-321d-45bc-b5f0-a65d3ef84098",
+      "imageId": null,
+      "firstTs": "2026-03-23T01:43:27.075612141Z",
+      "lastTs": "2026-03-23T01:43:27.075612141Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "region-edit",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": true,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "region-edit",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": false
+    },
+    {
+      "jobId": "job_8b9123ae-aa87-40ba-bb4f-3284056384f5",
+      "imageId": null,
+      "firstTs": "2026-03-23T01:44:25.346762555Z",
+      "lastTs": "2026-03-23T01:44:25.346762555Z",
+      "logFiles": [
+        "logs.1774232618776.log"
+      ],
+      "pipelinePath": "region-edit",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": true,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "region-edit",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": false
+    },
+    {
+      "jobId": "job_1d447d63-44ac-40e1-881c-e240c68885d4",
+      "imageId": null,
+      "firstTs": "2026-03-24T11:02:00.703396884Z",
+      "lastTs": "2026-03-24T11:02:00.703396884Z",
+      "logFiles": [
+        "logs.1774350748550.log"
+      ],
+      "pipelinePath": "region-edit",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": true,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "region-edit",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": false
+    },
+    {
+      "jobId": "job_3e37fea0-c886-46e8-b3f3-1496f17b60d9",
+      "imageId": null,
+      "firstTs": "2026-03-26T12:37:30.640227786Z",
+      "lastTs": "2026-03-26T12:37:30.640227786Z",
+      "logFiles": [
+        "logs.1774528848370.log"
+      ],
+      "pipelinePath": "region-edit",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": true,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "region-edit",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": false
+    },
+    {
+      "jobId": "job_1197c581-4e49-49c2-bf6a-55c8a83069a4",
+      "imageId": null,
+      "firstTs": "2026-03-26T12:40:31.494874545Z",
+      "lastTs": "2026-03-26T12:40:31.494874545Z",
+      "logFiles": [
+        "logs.1774528848370.log"
+      ],
+      "pipelinePath": "region-edit",
+      "retryOccurred": false,
+      "retryCount": 0,
+      "editOccurredObserved": true,
+      "roomTypes": [],
+      "stages": [
+        {
+          "stage": "region-edit",
+          "model": "gemini-2.5-flash-image",
+          "inputTokens": null,
+          "outputTokens": null,
+          "callCount": 1,
+          "promptCharsObserved": []
+        }
+      ],
+      "totals": {
+        "totalInputTokens": null,
+        "totalOutputTokens": null,
+        "totalModelCalls": 1,
+        "totalValidatorCalls": 0
+      },
+      "telemetryGaps": [
+        "Gemini image-generation token counts not present in production logs",
+        "imageId missing from sampled logs for this job"
+      ],
+      "imageWorkflow": false
+    }
+  ]
+}

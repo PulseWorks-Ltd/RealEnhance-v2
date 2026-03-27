@@ -36,6 +36,7 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
+import { getCardArtifactView, resolveSafeStageUrl } from "@/lib/card-artifacts";
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
@@ -46,7 +47,7 @@ type StagingStyle =
   | "high_end_luxury"
   | "country_lifestyle"
   | "lived_in_rental";
-type DisplayOutputKey = StageKey | "retried" | "edited";
+type DisplayOutputKey = StageKey | "retried" | "edited" | "original";
 type EditSourceStage = "stage2" | "stage1B" | "stage1A";
 type PreviewModalImage = {
   url: string;
@@ -175,9 +176,7 @@ function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; erro
 }
 
 function getDisplayUrl(data: any): string | null {
-  // Delegate to canonical resolver for all URL resolution
-  const resolved = resolveSafeStageUrl(data);
-  return resolved.url;
+  return getCardArtifactView(data).active?.url || null;
 }
 
 function resolveSelectedDisplayUrlLocal(
@@ -188,112 +187,16 @@ function resolveSelectedDisplayUrlLocal(
     stage2Url?: string | null;
     stage1BUrl?: string | null;
     stage1AUrl?: string | null;
+    originalUrl?: string | null;
   }
 ): string | null {
+  if (selectedStage === "original") return urls.originalUrl || null;
   if (selectedStage === "retried") return urls.retryLatestUrl || null;
   if (selectedStage === "edited") return urls.editLatestUrl || null;
   if (selectedStage === "2") return urls.stage2Url || null;
   if (selectedStage === "1B") return urls.stage1BUrl || null;
   if (selectedStage === "1A") return urls.stage1AUrl || null;
   return null;
-}
-
-function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
-  if (!data) return { url: null, stage: null };
-
-  const toDisplayUrl = (value: unknown): string | null => {
-    if (typeof value !== "string") return null;
-    const normalized = value.trim();
-    if (!normalized) return null;
-    if (
-      normalized.startsWith("http://") ||
-      normalized.startsWith("https://") ||
-      normalized.startsWith("blob:") ||
-      normalized.startsWith("data:image/") ||
-      normalized.startsWith("/")
-    ) {
-      return normalized;
-    }
-    return null;
-  };
-
-  const isRegionEdit =
-    data?.completionSource === "region-edit" ||
-    data?.result?.completionSource === "region-edit" ||
-    String(data?.meta?.type || "").toLowerCase() === "region-edit" ||
-    String(data?.meta?.jobType || "").toLowerCase() === "region_edit";
-  const editLatestUrl =
-    toDisplayUrl(data?.latestEditUrl) ||
-    toDisplayUrl(data?.result?.latestEditUrl) ||
-    toDisplayUrl(data?.editLatestUrl) ||
-    toDisplayUrl(data?.result?.editLatestUrl) ||
-    null;
-
-  const status = String(data?.status || data?.result?.status || "").toLowerCase();
-  const validation = data?.validation || data?.result?.validation || data?.meta?.unifiedValidation || {};
-  const blockedStage = (validation as any)?.blockedStage || data?.blockedStage || data?.result?.blockedStage || data?.meta?.blockedStage || null;
-  const fallbackStage = (validation as any)?.fallbackStage ?? data?.fallbackStage ?? data?.result?.fallbackStage ?? data?.meta?.fallbackStage ?? null;
-
-  const stageMap =
-    data?.stageUrls ||
-    data?.result?.stageUrls ||
-    data?.stageOutputs ||
-    data?.result?.stageOutputs ||
-    null;
-
-  const stage2 = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(data?.stage2Url) || toDisplayUrl(data?.result?.stage2Url) || null;
-  const stage1B = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || toDisplayUrl(stageMap?.[1]) || null;
-  const stage1A = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || null;
-
-  const finalOutput =
-    toDisplayUrl(data?.finalOutputUrl) ||
-    toDisplayUrl(data?.result?.finalOutputUrl) ||
-    null;
-
-  const legacyResultAlias =
-    toDisplayUrl(data?.resultUrl) ||
-    toDisplayUrl(data?.image) ||
-    toDisplayUrl(data?.imageUrl) ||
-    toDisplayUrl(data?.result?.resultUrl) ||
-    toDisplayUrl(data?.result?.image) ||
-    toDisplayUrl(data?.result?.imageUrl) ||
-    toDisplayUrl(data?.result?.result?.imageUrl) ||
-    null;
-
-  const pickFallback = (): { url: string | null; stage: StageKey | null } => {
-    if (fallbackStage === "1B" && stage1B) return { url: stage1B, stage: "1B" };
-    if (fallbackStage === "1A" && stage1A) return { url: stage1A, stage: "1A" };
-    if (stage1B) return { url: stage1B, stage: "1B" };
-    if (stage1A) return { url: stage1A, stage: "1A" };
-    return { url: null, stage: null };
-  };
-
-  const isFailed = status === "failed";
-  if (isFailed) {
-    // Failed retries are non-destructive: keep an existing Stage-2 artifact visible.
-    if (stage2) return { url: stage2, stage: "2" };
-    return pickFallback();
-  }
-  if (blockedStage) {
-    const fb = pickFallback();
-    if (fb.url) return fb;
-  }
-
-  if (editLatestUrl) return { url: editLatestUrl, stage: null };
-  if (isRegionEdit) return { url: finalOutput || legacyResultAlias || null, stage: null };
-
-  const retryUrl =
-    toDisplayUrl(data?.retryLatestUrl) ||
-    toDisplayUrl(data?.latestRetryUrl) ||
-    toDisplayUrl(data?.result?.retryLatestUrl) ||
-    toDisplayUrl(data?.result?.latestRetryUrl) || null;
-
-  if (retryUrl) return { url: retryUrl, stage: "2" as StageKey };
-  if (finalOutput) return { url: finalOutput, stage: null };
-  if (stage2) return { url: stage2, stage: "2" };
-  if (stage1B) return { url: stage1B, stage: "1B" };
-  if (stage1A) return { url: stage1A, stage: "1A" };
-  return { url: legacyResultAlias, stage: legacyResultAlias ? ("2" as StageKey) : null };
 }
 
 // Add cache-busting version to force browser reload (only when version exists)
@@ -789,28 +692,43 @@ function saveBatchJobState(state: PersistedBatchJob, userId: string | null) {
   try {
     const payload = { ...state, ownerUserId: userId ?? null };
     localStorage.setItem(makeBatchKey(userId), JSON.stringify(payload));
+
+      const latestArtifactView = getCardArtifactView(
+        {
+          stageUrls: stageMap,
+          latestRetryUrl: retryLatestUrl,
+          latestEditUrl: editLatestUrl,
+          originalImageUrl: originalUploadUrl,
+        },
+        {
+          originalFallback: originalUploadUrl,
+          stageFallback: {
+            stage2: stage2Url,
+            stage1B: stage1BUrl,
+            stage1A: stage1AUrl,
+          },
+        }
+      );
   } catch (error) {
-    console.warn("Failed to save batch job state:", error);
-  }
-}
+      if (latestArtifactView.active?.key === "edited") {
+        return {
+          baselineStage: "latest",
+          stagesToRun: ["2"],
+          allowStaging: true,
+          sourceUrl: latestArtifactView.active.url,
+          sourceStageLabel: "edit_latest",
+        };
+      }
+
+      if (latestArtifactView.active?.key === "retried") {
 
 function loadBatchJobState(userId: string | null): PersistedBatchJob | null {
   try {
     migrateLegacyKeysOnce(userId);
-    const saved = localStorage.getItem(makeBatchKey(userId));
+          sourceUrl: latestArtifactView.active.url,
     if (!saved) return null;
     
     const state = JSON.parse(saved) as PersistedBatchJob;
-    
-    // Check if job has expired
-    const hoursAgo = (Date.now() - state.timestamp) / (1000 * 60 * 60);
-    if (hoursAgo > JOB_EXPIRY_HOURS) {
-      clearBatchJobState();
-      return null;
-    }
-    
-    return state;
-  } catch (error) {
     console.warn("Failed to load batch job state:", error);
     clearBatchJobState();
     return null;
@@ -4826,42 +4744,23 @@ export default function BatchProcessor({
       // Build ZIP from the same output tab state used by each image card.
       const imagesToDownload: { url: string; filename: string }[] = [];
 
-      const getZipDisplayUrl = (image: any, selectedTab: DisplayOutputKey | null | undefined): string | null => {
-        const stageMap = image?.stageUrls || image?.result?.stageUrls || image?.stageOutputs || image?.result?.stageOutputs || {};
-        switch (selectedTab) {
-          case "edited":
-            return (
-              toDisplayUrl(image?.latestEditUrl) ||
-              toDisplayUrl(image?.result?.latestEditUrl) ||
-              toDisplayUrl(image?.editLatestUrl) ||
-              toDisplayUrl(image?.result?.editLatestUrl) ||
-              null
-            );
-          case "retried":
-            return (
-              toDisplayUrl(image?.latestRetryUrl) ||
-              toDisplayUrl(image?.result?.latestRetryUrl) ||
-              toDisplayUrl(image?.retryLatestUrl) ||
-              toDisplayUrl(image?.result?.retryLatestUrl) ||
-              null
-            );
-          case "2":
-            return toDisplayUrl(stageMap?.["2"]) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || null;
-          case "1B":
-            return toDisplayUrl(stageMap?.["1B"]) || toDisplayUrl(stageMap?.["1b"]) || toDisplayUrl(stageMap?.stage1B) || null;
-          case "1A":
-            return toDisplayUrl(stageMap?.["1A"]) || toDisplayUrl(stageMap?.["1a"]) || toDisplayUrl(stageMap?.["1"]) || toDisplayUrl(stageMap?.stage1A) || null;
-          default:
-            return toDisplayUrl(stageMap?.["2"]) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || null;
-        }
+      const getZipDisplayUrl = (
+        image: any,
+        selectedTab: DisplayOutputKey | null | undefined,
+        originalFallback?: string | null
+      ): string | null => {
+        return getCardArtifactView(image, {
+          selectedKey: selectedTab || null,
+          originalFallback: originalFallback || null,
+        }).active?.url || null;
       };
       
       for (let i = 0; i < results.length; i++) {
         const resultItem = results[i];
         const selectedTab = (displayStageByIndex[i] as DisplayOutputKey | undefined) || null;
         const imageUrl =
-          getZipDisplayUrl(resultItem, selectedTab)
-          || getZipDisplayUrl(resultItem, "2");
+          getZipDisplayUrl(resultItem, selectedTab, previewUrls[i] || null)
+          || getZipDisplayUrl(resultItem, "2", previewUrls[i] || null);
         
         if (imageUrl) {
           // Generate filename - use original file name if available, otherwise generate one
@@ -5219,47 +5118,12 @@ export default function BatchProcessor({
     originalFallback?: string | null,
     stageFallback?: { stage2?: string | null; stage1B?: string | null; stage1A?: string | null }
   ): { stage: StageKey | null; url: string | null } => {
-    const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-    const finalResultUrl =
-      toDisplayUrl(result?.finalOutputUrl) ||
-      toDisplayUrl(result?.result?.finalOutputUrl) ||
-      toDisplayUrl(result?.resultUrl) ||
-      toDisplayUrl(result?.result?.resultUrl) ||
-      null;
-    const retryLatestUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
-    const editLatestUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
-    const isRegionEdit =
-      result?.completionSource === "region-edit" ||
-      result?.result?.completionSource === "region-edit" ||
-      String(result?.meta?.type || "").toLowerCase() === "region-edit" ||
-      String(result?.meta?.jobType || "").toLowerCase() === "region_edit";
-    const resolvedEditUrl = editLatestUrl || (isRegionEdit ? finalResultUrl : null);
-    const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || toDisplayUrl(stageFallback?.stage2) || null;
-    const stage1BUrl = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || toDisplayUrl(stageFallback?.stage1B) || null;
-    const stage1AUrl = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || toDisplayUrl(stageFallback?.stage1A) || null;
-    const originalUrl = toDisplayUrl(result?.originalImageUrl) || toDisplayUrl(result?.result?.originalImageUrl) || toDisplayUrl(result?.originalUrl) || toDisplayUrl(result?.result?.originalUrl) || toDisplayUrl(originalFallback) || null;
-
-    if (isRegionEdit && !selectedStage) {
-      if (resolvedEditUrl) return { stage: null, url: resolvedEditUrl };
-      if (finalResultUrl) return { stage: null, url: finalResultUrl };
-    }
-
-    if (selectedStage === "retried") return { stage: null, url: retryLatestUrl || null };
-    if (selectedStage === "edited") return { stage: null, url: resolvedEditUrl || null };
-
-    // Explicit stage selection should never silently downgrade to a different output.
-    if (selectedStage === "2") return { stage: "2", url: stage2Url || null };
-    if (selectedStage === "1B") return { stage: "1B", url: stage1BUrl || null };
-    if (selectedStage === "1A") return { stage: "1A", url: stage1AUrl || null };
-
-    if (retryLatestUrl) return { stage: null, url: retryLatestUrl };
-    if (finalResultUrl) return { stage: null, url: finalResultUrl };
-    if (stage2Url) return { stage: "2", url: stage2Url };
-    if (stage1BUrl) return { stage: "1B", url: stage1BUrl };
-    if (stage1AUrl) return { stage: "1A", url: stage1AUrl };
-    if (originalUrl) return { stage: null, url: originalUrl };
-
-    return { stage: null, url: null };
+    const active = getCardArtifactView(result, {
+      selectedKey: selectedStage || null,
+      originalFallback: originalFallback || null,
+      stageFallback,
+    }).active;
+    return { stage: active?.stage || null, url: active?.url || null };
   };
 
   const mapStageToEditSource = (stage: StageKey | null | undefined): EditSourceStage | null => {
@@ -5272,6 +5136,7 @@ export default function BatchProcessor({
   const resolveDisplayedStageForEdit = useCallback((imageIndex: number): StageKey | null => {
     const selected = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
     if (selected === "2" || selected === "1B" || selected === "1A") return selected;
+    if (selected === "original") return null;
     // Bug F fix: retried/edited artifacts are always final-pipeline outputs equivalent
     // to Stage 2. Return "2" so mapStageToEditSource sends "stage2" to the server
     // instead of null (which caused editSourceStage: MISSING for every edit on
@@ -5281,29 +5146,9 @@ export default function BatchProcessor({
     // Match UI default display stage when user hasn't explicitly selected a tab.
     const item = results[imageIndex];
     if (!item) return null;
-    const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
-    const stage2Url =
-      toDisplayUrl(stageMap?.["2"]) ||
-      toDisplayUrl(stageMap?.[2]) ||
-      toDisplayUrl(stageMap?.stage2) ||
-      toDisplayUrl(item?.stage2Url) ||
-      toDisplayUrl(item?.result?.stage2Url) ||
-      null;
-    const stage1BUrl =
-      toDisplayUrl(stageMap?.["1B"]) ||
-      toDisplayUrl(stageMap?.["1b"]) ||
-      toDisplayUrl(stageMap?.stage1B) ||
-      null;
-    const stage1AUrl =
-      toDisplayUrl(stageMap?.["1A"]) ||
-      toDisplayUrl(stageMap?.["1a"]) ||
-      toDisplayUrl(stageMap?.["1"]) ||
-      toDisplayUrl(stageMap?.stage1A) ||
-      null;
-    if (stage2Url) return "2";
-    if (stage1BUrl) return "1B";
-    if (stage1AUrl) return "1A";
-    return null;
+    const active = getCardArtifactView(item).active;
+    if (active?.key === "retried" || active?.key === "edited") return "2";
+    return active?.stage || null;
   }, [displayStageByIndex, results]);
 
   const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
@@ -5315,12 +5160,16 @@ export default function BatchProcessor({
     const result = results[index];
     const selectedStage = displayStageByIndex[index] as DisplayOutputKey | undefined;
     const preEditSnapshot = preEditStageUrlsRef.current[index] || { stage2: null, stage1B: null, stage1A: null };
-    const resolved = resolveBestStageOutput(result, selectedStage, previewUrls[index] || null, {
-      stage2: preEditSnapshot.stage2,
-      stage1B: preEditSnapshot.stage1B,
-      stage1A: preEditSnapshot.stage1A,
+    const artifactView = getCardArtifactView(result, {
+      selectedKey: selectedStage || null,
+      originalFallback: previewUrls[index] || null,
+      stageFallback: {
+        stage2: preEditSnapshot.stage2,
+        stage1B: preEditSnapshot.stage1B,
+        stage1A: preEditSnapshot.stage1A,
+      },
     });
-    const bestDisplayUrl = resolved.url || previewUrls[index] || null;
+    const bestDisplayUrl = artifactView.active?.url || previewUrls[index] || null;
     const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
 
     const persistedOriginalUrl =
@@ -5340,7 +5189,7 @@ export default function BatchProcessor({
     if (!finalUrl) return null;
 
     const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-    const selectedOutputStage = (displayStageByIndex[index] as DisplayOutputKey | undefined) || null;
+    const selectedOutputStage = artifactView.selectedKey;
     const retryLatestUrl = toDisplayUrl(result?.retryLatestUrl) || toDisplayUrl(result?.result?.retryLatestUrl) || null;
     const editLatestUrl = toDisplayUrl(result?.editLatestUrl) || toDisplayUrl(result?.result?.editLatestUrl) || null;
     const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(result?.stage2Url) || toDisplayUrl(result?.result?.stage2Url) || null;
@@ -5379,77 +5228,16 @@ export default function BatchProcessor({
     }
 
     const selectedStage = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
-    const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
-    const stage2Url =
-      toDisplayUrl(stageMap?.['2']) ||
-      toDisplayUrl(stageMap?.[2]) ||
-      toDisplayUrl(stageMap?.stage2) ||
-      toDisplayUrl(item?.stage2Url) ||
-      toDisplayUrl(item?.result?.stage2Url) ||
-      null;
-    const stage1BUrl =
-      toDisplayUrl(stageMap?.['1B']) ||
-      toDisplayUrl(stageMap?.['1b']) ||
-      toDisplayUrl(stageMap?.stage1B) ||
-      null;
-    const stage1AUrl =
-      toDisplayUrl(stageMap?.['1A']) ||
-      toDisplayUrl(stageMap?.['1a']) ||
-      toDisplayUrl(stageMap?.['1']) ||
-      toDisplayUrl(stageMap?.stage1A) ||
-      null;
-    const retryLatestUrl =
-      toDisplayUrl(item?.retryLatestUrl) ||
-      toDisplayUrl(item?.result?.retryLatestUrl) ||
-      null;
-    const editLatestUrl =
-      toDisplayUrl(item?.editLatestUrl) ||
-      toDisplayUrl(item?.result?.editLatestUrl) ||
-      null;
-    const finalResultUrl =
-      toDisplayUrl(item?.finalOutputUrl) ||
-      toDisplayUrl(item?.result?.finalOutputUrl) ||
-      toDisplayUrl(item?.resultUrl) ||
-      toDisplayUrl(item?.result?.resultUrl) ||
-      null;
-    const originalUrl =
-      toDisplayUrl(item?.originalImageUrl) ||
-      toDisplayUrl(item?.result?.originalImageUrl) ||
-      toDisplayUrl(item?.originalUrl) ||
-      toDisplayUrl(item?.result?.originalUrl) ||
-      null;
-
-    // Edit baseline must match the selected output tab exactly when one is chosen.
-    const selectedTabUrl = selectedStage === "retried"
-      ? retryLatestUrl
-      : selectedStage === "edited"
-        ? editLatestUrl
-        : selectedStage === "2"
-          ? stage2Url
-          : selectedStage === "1B"
-            ? stage1BUrl
-            : selectedStage === "1A"
-              ? stage1AUrl
-              : null;
-
-    const displayed = buildPreviewImage(imageIndex);
-    const displayedUrl = toDisplayUrl(selectedStage ? selectedTabUrl : displayed?.url);
+    const artifactView = getCardArtifactView(item, {
+      selectedKey: selectedStage || null,
+      originalFallback: null,
+    });
+    const displayedArtifact = artifactView.active;
+    const displayedUrl = displayedArtifact?.url || null;
     const displayedStage = selectedStage === "2" || selectedStage === "1B" || selectedStage === "1A"
       ? selectedStage
       : resolveDisplayedStageForEdit(imageIndex);
-
-    let artifactKey: EditArtifactKey = null;
-    if (selectedStage) {
-      artifactKey = selectedStage;
-    } else if (displayedUrl) {
-      if (retryLatestUrl && displayedUrl === retryLatestUrl) artifactKey = "retried";
-      else if (editLatestUrl && displayedUrl === editLatestUrl) artifactKey = "edited";
-      else if (stage2Url && displayedUrl === stage2Url) artifactKey = "2";
-      else if (stage1BUrl && displayedUrl === stage1BUrl) artifactKey = "1B";
-      else if (stage1AUrl && displayedUrl === stage1AUrl) artifactKey = "1A";
-      else if (finalResultUrl && displayedUrl === finalResultUrl) artifactKey = "final";
-      else if (originalUrl && displayedUrl === originalUrl) artifactKey = "original";
-    }
+    const artifactKey: EditArtifactKey = displayedArtifact?.key || null;
 
     // Phase 1 consistency rule:
     // only pass sourceJobId when it belongs to the same selected artifact lineage.
@@ -7990,11 +7778,21 @@ export default function BatchProcessor({
                           ? (result?.fallbackMessage || result?.result?.fallbackMessage || unifiedCompletion.fallbackMessage)
                           : null;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
-                        const safeStage = resolveSafeStageUrl(result);
-                        
-                        // Image Preview Logic with stage preference (avoid failed/blocked outputs)
+                        const requestedStage = (displayStageByIndex[i] as DisplayOutputKey | undefined) || null;
+                        const artifactView = getCardArtifactView(result, {
+                          selectedKey: requestedStage,
+                          originalFallback: previewUrls[i] || null,
+                          stageFallback: {
+                            stage2: preEditSnapshot?.stage2 || null,
+                            stage1B: preEditSnapshot?.stage1B || null,
+                            stage1A: preEditSnapshot?.stage1A || null,
+                          },
+                        });
+                        const activeArtifact = artifactView.active;
+
+                        // Image Preview Logic with artifact preference (avoid failed/blocked outputs)
                         const disallowStage2 = !!blockedStage && !stage2Url;
-                        const stagePreviewUrl = safeStage.url || stage2Url || stage1BUrl || stage1AUrl || null;
+                        const stagePreviewUrl = activeArtifact?.url || stage2Url || stage1BUrl || stage1AUrl || null;
                         const editedUrl =
                           toDisplayUrl(result?.latestEditUrl) ||
                           toDisplayUrl(result?.result?.latestEditUrl) ||
@@ -8007,45 +7805,17 @@ export default function BatchProcessor({
                           toDisplayUrl(result?.retryLatestUrl) ||
                           toDisplayUrl(result?.result?.retryLatestUrl) ||
                           null;
-                        const defaultStage: DisplayOutputKey | undefined = retriedUrl
-                          ? "retried"
-                          : editedUrl
-                            ? "edited"
-                            : (safeStage.stage || (disallowStage2 ? (stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined) : (stage2Url ? "2" : stage1BUrl ? "1B" : stage1AUrl ? "1A" : undefined)));
-                        const selectedStage = (() => {
-                          const requested = displayStageByIndex[i] as DisplayOutputKey | undefined;
-                          if (disallowStage2 && requested === "2") return defaultStage;
-                          if (requested === "2" || requested === "1B" || requested === "1A" || requested === "retried" || requested === "edited") {
-                            return requested;
-                          }
-                          return requested || defaultStage;
-                        })();
+                        const selectedStage = artifactView.selectedKey;
                         const stage1BLabel = "Decluttered";
-                        const availableOutputs: { key: DisplayOutputKey; label: string; url: string | null }[] = (
-                          [
-                            stage2Url ? { key: "2" as DisplayOutputKey, label: "Staged", url: stage2Url } : null,
-                            stage1BUrl ? { key: "1B" as DisplayOutputKey, label: stage1BLabel, url: stage1BUrl } : null,
-                            stage1AUrl ? { key: "1A" as DisplayOutputKey, label: "Enhanced", url: stage1AUrl } : null,
-                            editedUrl ? { key: "edited" as DisplayOutputKey, label: "Edited", url: editedUrl } : null,
-                            retriedUrl ? { key: "retried" as DisplayOutputKey, label: "Retried", url: retriedUrl } : null,
-                          ].filter(Boolean) as { key: DisplayOutputKey; label: string; url: string | null }[]
-                        );
-                        const displayedUrl = (() => {
-                          if (!selectedStage) return null;
-                          return resolveSelectedDisplayUrlLocal(selectedStage, {
-                            retryLatestUrl: retriedUrl,
-                            editLatestUrl: editedUrl,
-                            stage2Url,
-                            stage1BUrl,
-                            stage1AUrl,
-                          });
-                        })();
-                        const bestAvailable = resolveBestStageOutput(result, selectedStage, previewUrls[i] || null, {
-                          stage2: preEditSnapshot?.stage2 || null,
-                          stage1B: preEditSnapshot?.stage1B || null,
-                          stage1A: preEditSnapshot?.stage1A || null,
-                        });
-                        const bestDisplayUrl = selectedStage ? (displayedUrl || null) : (bestAvailable.url || null);
+                        const availableOutputs: { key: DisplayOutputKey; label: string; url: string | null }[] = artifactView.available
+                          .filter((artifact) => artifact.selectable)
+                          .map((artifact) => ({
+                            key: artifact.key as DisplayOutputKey,
+                            label: artifact.label,
+                            url: artifact.url,
+                          }));
+                        const displayedUrl = activeArtifact?.url || null;
+                        const bestDisplayUrl = activeArtifact?.url || null;
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const persistedOriginalUrl =
                           result?.result?.originalImageUrl ||
@@ -8057,7 +7827,7 @@ export default function BatchProcessor({
                         const isNonTerminalProcessingStatus = ["queued", "uploading", "processing", "validating", "staging", "active", "waiting"].includes(status);
                         const shouldPreferPreservedStage2 = !!stage2Url && (
                           selectedStage === "2" ||
-                          (!selectedStage && defaultStage === "2")
+                          (!requestedStage && activeArtifact?.key === "2")
                         );
                         const canUseRemotePreview =
                           status === "completed" ||
@@ -8095,23 +7865,11 @@ export default function BatchProcessor({
                         );
 
                         const stageBadgeLabel = (() => {
-                          const artifactFinalLabel = stage2Url
-                            ? "Staged"
-                            : stage1BUrl
-                              ? stage1BLabel
-                              : "Enhanced";
-                          
-                          const stageLabel = selectedStage === "retried"
-                            ? "Retried"
-                            : selectedStage === "edited"
-                              ? "Edited"
-                              : selectedStage === "2" && stage2Url
-                                ? "Staged"
-                                : selectedStage === "1B"
-                                  ? stage1BLabel
-                                  : "Enhanced";
-                          const finalStageLabel = artifactFinalLabel || stageLabel;
-                          return isUiComplete ? `${finalStageLabel} (Final)` : `Preview • ${stageLabel}`;
+                          const activeLabel = activeArtifact?.label || "Preview";
+                          if (isUiComplete) {
+                            return activeArtifact?.key === "original" ? activeLabel : `${activeLabel} (Final)`;
+                          }
+                          return `Preview • ${activeLabel}`;
                         })();
 
                         console.log('[ProcessingBatch] stage selection', {
@@ -8120,13 +7878,15 @@ export default function BatchProcessor({
                           isDone,
                           selectedStage: selectedStage || null,
                           displayedUrl: displayedUrl || null,
+                          activeArtifactKey: activeArtifact?.key || null,
+                          activeArtifactType: activeArtifact?.artifactType || null,
                           stage2Url: stage2Url || null,
                           stage1BUrl: stage1BUrl || null,
                           stage1AUrl: stage1AUrl || null,
                           finalResultUrl: finalResultUrl || null,
                           availableOutputs: availableOutputs.map(s => s.key),
                         });
-                        if (stage2Url && !displayStageByIndex[i] && !isDone) {
+                        if (stage2Url && !displayStageByIndex[i] && !isDone && activeArtifact?.key === "2") {
                           console.assert(displayedUrl === stage2Url, "[DEV_ASSERT] Stage 2 should be the default when available", { index: i, displayedUrl, stage2Url });
                         }
                         

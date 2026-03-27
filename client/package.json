@@ -7,7 +7,8 @@
     "dev": "vite --strictPort --host 0.0.0.0 --port 5173",
     "build": "vite build",
     "preview": "vite preview --strictPort --host 0.0.0.0",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --import tsx --test src/**/*.test.ts"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.15",
