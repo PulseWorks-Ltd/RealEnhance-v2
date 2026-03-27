@@ -4603,8 +4603,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       sourceStage: payloadSourceStage,
       path: origPath.substring(Math.max(0, origPath.length - 40)),
     });
-  } else if (explicitSourceUrl || remoteUrl || (payload as any).inputUrl) {
-    const initialSourceUrl = explicitSourceUrl || remoteUrl || String((payload as any).inputUrl || "").trim();
+  } else {
+    let initialSourceUrl = explicitSourceUrl;
+    if (!initialSourceUrl && remoteUrl) {
+      initialSourceUrl = remoteUrl;
+    }
+    if (!initialSourceUrl) {
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: "Initial job missing sourceUrl" },
+        "initial_source_missing"
+      );
+      throw new Error("Initial job missing sourceUrl");
+    }
+
     const initialSourceStage = payloadSourceStage || "original";
     logEvent("PIPELINE_START", {
       jobId: payload.jobId,
@@ -4612,7 +4624,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       sourceUrl: initialSourceUrl,
       jobType: payloadJobType,
     });
-    // Multi-service mode: Download original from S3
+    // Initial flow uses an explicit source URL; no chained source fallbacks.
     try {
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[WORKER] Initial source detected, downloading: ${initialSourceUrl}\n`);
@@ -4629,39 +4641,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         payload.jobId,
         { status: "failed", errorMessage: `Failed to download original: ${(e as any)?.message || 'unknown error'}` },
         "download_original_failed"
-      );
-      return;
-    }
-  } else {
-    logEvent("PIPELINE_START", {
-      jobId: payload.jobId,
-      sourceStage: payloadSourceStage || "original",
-      sourceUrl: null,
-      jobType: payloadJobType,
-    });
-    // Legacy single-service mode: Read from local filesystem
-    if (!VALIDATION_FOCUS_MODE) {
-      nLog("[WORKER] WARN: Job lacks remoteOriginalUrl. Attempting to read from local filesystem.\n");
-      nLog("[WORKER] In production multi-service deployment, server should upload originals to S3 and provide remoteOriginalUrl.\n");
-    }
-    
-    const rec = readImageRecord(payload.imageId);
-    if (!rec) {
-      nLog(`[WORKER] ERROR: Image record not found for ${payload.imageId} and no remoteOriginalUrl provided.\n`);
-      await safeWriteJobStatus(
-        payload.jobId,
-        { status: "failed", errorMessage: "image not found - no remote URL and local record missing" },
-        "image_record_missing"
-      );
-      return;
-    }
-    origPath = getOriginalPath(rec);
-    if (!fs.existsSync(origPath)) {
-      nLog(`[WORKER] ERROR: Local original file not found at ${origPath}\n`);
-      await safeWriteJobStatus(
-        payload.jobId,
-        { status: "failed", errorMessage: "original file not accessible in this container" },
-        "original_file_missing"
       );
       return;
     }
