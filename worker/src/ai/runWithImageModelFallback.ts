@@ -178,6 +178,7 @@ export async function runWithImageModelFallback(
   logModelResolution({
     stage: meta.stage,
     jobId: meta.jobId,
+    imageId: meta.imageId,
     filename: meta.filename,
     roomType: meta.roomType,
     reason: meta.reason || context,
@@ -241,6 +242,7 @@ export async function runWithSelectedImageModel({
   logModelResolution({
     stage: meta.stage,
     jobId: meta.jobId,
+    imageId: meta.imageId,
     filename: meta.filename,
     roomType: meta.roomType,
     reason: meta.reason || context,
@@ -313,6 +315,7 @@ export async function runWithPrimaryThenFallback({
   logModelResolution({
     stage: meta.stage,
     jobId: meta.jobId,
+    imageId: meta.imageId,
     filename: meta.filename,
     roomType: meta.roomType,
     reason: meta.reason || context,

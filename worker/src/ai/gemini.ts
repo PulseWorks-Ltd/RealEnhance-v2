@@ -67,7 +67,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     getGeminiClient(),
     { contents },
     "[gemini.regionEdit]",
-    { stage: "edit", jobId, imageId, reason: "region-edit", callType: "edit" }
+    { stage: "edit", jobId: jobId || "", imageId: imageId || "", reason: "region-edit", callType: "edit" }
   );
 
   const candidates = resp.candidates ?? [];
