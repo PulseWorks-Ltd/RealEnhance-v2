@@ -389,7 +389,9 @@ export function retrySingleRouter() {
       let retrySourceStage: string | undefined = undefined;
       let retrySourceUrl: string | undefined = undefined;
       let retrySourceKey: string | undefined = undefined;
-      let selectedSourceStage: string | undefined = undefined;
+      let selectedSourceStage: "1A" | "1B" | "2" | undefined = undefined;
+      let executionSourceStage: "1A" | "1B" | "2" | undefined = undefined;
+      let uiSourceStage: "1A" | "1B" | "2" | undefined = undefined;
       let selectedSourceUrl: string | undefined = undefined;
       let originalUploadUrlCandidate: string | undefined = undefined;
       let stage1AFromParent: string | undefined = undefined;
@@ -578,16 +580,55 @@ export function retrySingleRouter() {
           });
 
           selectedSourceStage = toEnhanceStage(sourceStage);
+          executionSourceStage = selectedSourceStage;
+          uiSourceStage = selectedSourceStage;
           selectedSourceUrl = sourceUrlRaw;
           retrySourceStage = toRetryPayloadStage(sourceStage);
           retrySourceUrl = sourceUrlRaw;
-          retryFromStage = requestedStage === "2" && selectedSourceStage === "1A" ? "1B" : undefined;
-          stage2OnlyDisabled = requestedStage === "2" && selectedSourceStage === "1A";
+          retryFromStage = requestedStage === "2" && executionSourceStage === "1A" ? "1B" : undefined;
+          stage2OnlyDisabled = requestedStage === "2" && executionSourceStage === "1A";
           retryMode = "stage_resume";
 
+          // Keep UI intent as Stage 2, but resolve execution from a valid baseline.
+          if (requestedStage === "2" && selectedSourceStage === "2") {
+            const fallback1B = stage1BFromParent || resolveStageUrl(inheritedStageUrls as any, "1B");
+            const fallback1A = stage1AFromParent || resolveStageUrl(inheritedStageUrls as any, "1A");
+
+            if (fallback1B) {
+              executionSourceStage = "1B";
+              selectedSourceUrl = fallback1B;
+              retrySourceStage = "stage1B";
+              retrySourceUrl = fallback1B;
+              stage1BWasRequested = true;
+              stage2OnlyDisabled = false;
+              retryFromStage = undefined;
+            } else if (fallback1A) {
+              executionSourceStage = "1A";
+              selectedSourceUrl = fallback1A;
+              retrySourceStage = "stage1A";
+              retrySourceUrl = fallback1A;
+              // If policy expects 1B, worker must rebuild 1B before Stage 2.
+              retryFromStage = "1B";
+              stage2OnlyDisabled = true;
+            } else {
+              return res.status(409).json({
+                success: false,
+                error: "manual_retry_stage2only_required",
+                message: "Manual retry requires a valid Stage 1B baseline, or Stage 1A baseline when Stage 1B must be rebuilt",
+              });
+            }
+
+            console.log("[RETRY_RESOLUTION]", {
+              uiSourceStage: uiSourceStage || null,
+              executionSourceStage: executionSourceStage || null,
+              stage1BWasRequested,
+              retryFromStage: retryFromStage || null,
+            });
+          }
+
           if (stage2OnlyRequested) {
-            const hasStage1BBaseline = selectedSourceStage === "1B";
-            const hasStage1ABaseline = selectedSourceStage === "1A";
+            const hasStage1BBaseline = executionSourceStage === "1B";
+            const hasStage1ABaseline = executionSourceStage === "1A";
             const canUseStage1AForStage2 = hasStage1ABaseline && (stage2OnlyDisabled || !stage1BWasRequested);
 
             if (!selectedSourceUrl || (!hasStage1BBaseline && !canUseStage1AForStage2)) {
@@ -601,15 +642,15 @@ export function retrySingleRouter() {
           
           // ✅ FIX: Set stage1BWasRequested=true when resolved baseline is Stage 1B
           // This ensures worker doesn't fall back to 1A when 1B is the intended baseline
-          if (selectedSourceStage === "1B") {
+          if (executionSourceStage === "1B") {
             stage1BWasRequested = true;
           }
           
-          if (!selectedSourceUrl || !selectedSourceStage) {
+          if (!selectedSourceUrl || !executionSourceStage) {
             return res.status(400).json({ success: false, error: 'invalid_retry_baseline', message: 'Invalid retry baseline' });
           }
           
-          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} sourceStage=${selectedSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
+          console.log(`[RETRY_BASELINE] requestedStage=${requestedStage} uiSourceStage=${uiSourceStage} executionSourceStage=${executionSourceStage} stage1BWasRequested=${stage1BWasRequested} url=${selectedSourceUrl?.substring(0, 80)}`);
         }
 
         if (!selectedSourceUrl) {
@@ -620,10 +661,7 @@ export function retrySingleRouter() {
           });
         }
 
-        if (
-          selectedSourceStage &&
-          selectedSourceUrl
-        ) {
+        if (executionSourceStage && selectedSourceUrl) {
           const baselineReachable = await isRetrySourceReachable(selectedSourceUrl);
           if (!baselineReachable) {
             return res.status(409).json({
@@ -635,8 +673,8 @@ export function retrySingleRouter() {
         }
 
         const copyCandidates: Array<{ stage: string; url: string }> = [];
-        if (selectedSourceStage && selectedSourceUrl) {
-          copyCandidates.push({ stage: selectedSourceStage, url: selectedSourceUrl });
+        if (executionSourceStage && selectedSourceUrl) {
+          copyCandidates.push({ stage: executionSourceStage, url: selectedSourceUrl });
         }
 
         let copied = false;
@@ -656,10 +694,10 @@ export function retrySingleRouter() {
             const copy = await copyS3Object(parsedKey, targetKey);
             remoteOriginalUrl = copy.url;
             remoteOriginalKey = copy.key;
-            retrySourceStage = toRetryPayloadStage(sourceStage);
+            retrySourceStage = toRetryPayloadStage(candidate.stage as RetrySourceStage);
             retrySourceUrl = candidate.url;
             retrySourceKey = parsedKey;
-            selectedSourceStage = candidate.stage;
+            executionSourceStage = candidate.stage;
             selectedSourceUrl = candidate.url;
             copied = true;
           } catch (err: any) {
@@ -727,8 +765,8 @@ export function retrySingleRouter() {
         declutter: effectiveDeclutterWithFallback,
         declutterMode: declutterMode ?? undefined,
         virtualStage: effectiveAllowStaging,
-        sourceStage,
-        stage2Mode: resolveStage2ModeFromSource(sourceStage),
+        sourceStage: executionSourceStage,
+        stage2Mode: resolveStage2ModeFromSource(executionSourceStage as RetrySourceStage),
         roomType,
         sceneType,
         replaceSky,
@@ -799,7 +837,7 @@ export function retrySingleRouter() {
         runStage2: effectiveStagesToRun.includes("2"),
         stage2Baseline: resolvedBaselineStage,
         baselineUrl: resolvedBaselineUrl || undefined,
-        sourceStage: selectedSourceStage,
+        sourceStage: executionSourceStage,
       } as const;
 
       // Invariant: when Stage 2 is planned, both baselineUrl and stage2Baseline must be present.
@@ -913,7 +951,8 @@ export function retrySingleRouter() {
           requestedStage,
           stagesToRun: effectiveStagesToRun,
           requestedStages: effectiveRequestedStages,
-          selectedSourceStage,
+          uiSourceStage,
+          executionSourceStage,
           selectedSourceUrl: selectedSourceUrl?.substring(0, 120),
           stage2OnlyDisabled,
           retryMode,
@@ -1028,8 +1067,8 @@ export function retrySingleRouter() {
         userId: sessUser.id,
         imageId: retryImageId,
         agencyId,
-        sourceStage: toEnhanceStage(sourceStage),
-        baselineStage: toEnhanceStage(sourceStage),
+        sourceStage: executionSourceStage,
+        baselineStage: executionSourceStage,
         stageUrls: inheritedStageUrls,
         remoteOriginalUrl,
         remoteOriginalKey,
@@ -1039,11 +1078,12 @@ export function retrySingleRouter() {
         retryInfo: {
           retryType: "manual_retry",
           sourceStage: sourceStage,
+          executionSourceStage,
           sourceUrl: retrySourceUrl,
           sourceKey: retrySourceKey,
           stage1BWasRequested,
-          baselineStage: sourceStage,
-          baselineUrl: sourceUrlRaw,
+          baselineStage: executionSourceStage,
+          baselineUrl: selectedSourceUrl,
           requestedStages: effectiveRequestedStages,
           stagesToRun: effectiveStagesToRun,
           parentImageId,

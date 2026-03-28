@@ -5367,10 +5367,10 @@ export default function BatchProcessor({
             return;
           }
           if (err?.error === "manual_retry_requires_stage2" || err?.error === "manual_retry_stage2only_required" || err?.error === "manual_retry_stage2only_payload_invalid") {
-            markRetryFailed(imageIndex, err?.message || "Retry requires Stage 2 with a valid baseline policy.");
+            markRetryFailed(imageIndex, "Retry failed. Unable to source uploaded image.");
             toast({
-              title: "Retry requires staging baseline",
-              description: err?.message || "Retry requires an earlier processing stage to be available as a baseline.",
+              title: "Retry Failed",
+              description: "Unable to source uploaded image.",
               variant: "destructive"
             });
             return;

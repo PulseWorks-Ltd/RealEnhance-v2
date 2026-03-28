@@ -53,7 +53,7 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
         params.jobId,
         params.stagesCompleted,
         params.propertyId || null,
-        params.parentImageId || null,
+        params.parentImageId ? params.parentImageId.replace(/^img_/, '') : null,
         params.source || 'stage2',
         storageKey,
         params.publicUrl,
