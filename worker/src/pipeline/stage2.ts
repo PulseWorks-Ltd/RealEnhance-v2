@@ -955,6 +955,18 @@ Do not add blinds, rods, tracks, or new window coverings.
     ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
   };
 
+  // Fail early — before spending any API budget — if logging context is incomplete.
+  // Without both jobId and imageId, assertContext() in usageTelemetry throws AFTER the
+  // model returns a valid image, causing the image to be silently discarded.
+  if (!opts.jobId || !opts.imageId) {
+    emitStage2AttemptComplete(false, "missing_context");
+    throw new Stage2GenerationFailure(
+      `Missing jobId or imageId before Stage 2 generation: jobId=${opts.jobId || "missing"} imageId=${opts.imageId || "missing"}`,
+      "missing_context",
+      false // not retryable — caller must supply context
+    );
+  }
+
   const ai = getGeminiClient();
   let resp: any;
   let modelUsed = generationPlan.model;
@@ -971,6 +983,7 @@ Do not add blinds, rods, tracks, or new window coverings.
       meta: {
         stage: "2",
         jobId: opts.jobId,
+        imageId: opts.imageId,
         roomType: opts.roomType,
         reason: opts.modelReason || `stage2_attempt_${attemptNumber}_${retryReason}`,
         attempt: attemptNumber,
@@ -1000,6 +1013,15 @@ Do not add blinds, rods, tracks, or new window coverings.
     emitStage2AttemptComplete(false, "no_inline_image_data");
     throw new Stage2GenerationNoImageError();
   }
+
+  console.log("[STAGE2_OUTPUT]", {
+    jobId: opts.jobId,
+    imageId: opts.imageId,
+    attempt: attemptNumber,
+    model: modelUsed,
+    hasImage: true,
+    imageSize: img.inlineData.data.length,
+  });
 
   if (path.resolve(opts.outputPath) === path.resolve(basePath)) {
     emitStage2AttemptComplete(false, "stage2_candidate_collapse: candidate_path_equals_baseline");

@@ -73,12 +73,15 @@ function isValidImageResponse(resp: any): { valid: boolean; reason?: string } {
   return { valid: true };
 }
 
+// jobId, imageId, and stage are required when meta is provided.
+// All model execution callers must supply these three fields so that
+// assertContext() in usageTelemetry does not throw after generation.
 type ModelLogMeta = {
-  jobId?: string;
-  imageId?: string;
+  jobId: string;
+  imageId: string;
+  stage: string;
   filename?: string;
   roomType?: string;
-  stage?: string;
   callType?: GeminiCallType;
   reason?: string;
   selectedModel?: string;
@@ -164,20 +167,20 @@ export async function runWithImageModelFallback(
   ai: GoogleGenAI,
   baseRequest: Omit<GenerateContentParams, "model">,
   context: string,
-  meta?: ModelLogMeta
+  meta: ModelLogMeta
 ): Promise<{ resp: any; modelUsed: string }> {
   // This function is kept for backward compatibility with Stage 1A
   // Stage 1A always uses Gemini 2.5 (primary model only, no fallback)
   const model = MODEL_CONFIG.stage1A.primary;
 
-  const modelStageLabel = String(meta?.stage || "1A");
+  const modelStageLabel = meta.stage;
   logIfNotFocusMode(`[${modelStageLabel}] Model: ${model}`);
   logModelResolution({
-    stage: meta?.stage || "1A",
-    jobId: meta?.jobId,
-    filename: meta?.filename,
-    roomType: meta?.roomType,
-    reason: meta?.reason || context,
+    stage: meta.stage,
+    jobId: meta.jobId,
+    filename: meta.filename,
+    roomType: meta.roomType,
+    reason: meta.reason || context,
     selectedModel: model,
     fallbackModel: MODEL_CONFIG.stage1A.fallback,
   });
@@ -190,13 +193,13 @@ export async function runWithImageModelFallback(
     });
     logGeminiUsage({
       ctx: {
-        jobId: meta?.jobId || "",
-        imageId: meta?.imageId || "",
-        stage: meta?.stage || modelStageLabel,
-        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+        jobId: meta.jobId,
+        imageId: meta.imageId,
+        stage: meta.stage,
+        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
       },
       model,
-      callType: meta?.callType || "image_generation",
+      callType: meta.callType || "image_generation",
       response: resp,
       latencyMs: Date.now() - requestStartedAt,
     });
@@ -232,15 +235,15 @@ export async function runWithSelectedImageModel({
   baseRequest: Omit<GenerateContentParams, "model">;
   context: string;
   model: string;
-  meta?: ModelLogMeta;
+  meta: ModelLogMeta;
 }): Promise<{ resp: any; modelUsed: string }> {
   const selectedModel = ensureImageCapableModel(model, model, `stage${stageLabel}_selected_model`);
   logModelResolution({
-    stage: meta?.stage || stageLabel,
-    jobId: meta?.jobId,
-    filename: meta?.filename,
-    roomType: meta?.roomType,
-    reason: meta?.reason || context,
+    stage: meta.stage,
+    jobId: meta.jobId,
+    filename: meta.filename,
+    roomType: meta.roomType,
+    reason: meta.reason || context,
     selectedModel,
     fallbackModel: null,
   });
@@ -253,13 +256,13 @@ export async function runWithSelectedImageModel({
     });
     logGeminiUsage({
       ctx: {
-        jobId: meta?.jobId || "",
-        imageId: meta?.imageId || "",
-        stage: meta?.stage || stageLabel,
-        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+        jobId: meta.jobId,
+        imageId: meta.imageId,
+        stage: meta.stage,
+        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
       },
       model: selectedModel,
-      callType: meta?.callType || "image_generation",
+      callType: meta.callType || "image_generation",
       response: resp,
       latencyMs: Date.now() - requestStartedAt,
     });
@@ -300,7 +303,7 @@ export async function runWithPrimaryThenFallback({
   ai: GoogleGenAI;
   baseRequest: Omit<GenerateContentParams, "model">;
   context: string;
-  meta?: ModelLogMeta;
+  meta: ModelLogMeta;
 }): Promise<{ resp: any; modelUsed: string }> {
   const config = stageLabel === "1B" ? MODEL_CONFIG.stage1B : MODEL_CONFIG.stage2;
   const primaryModel = config.primary;
@@ -308,11 +311,11 @@ export async function runWithPrimaryThenFallback({
 
   logIfNotFocusMode(`[stage${stageLabel}] Primary model: ${primaryModel}, fallback: ${fallbackModel}`);
   logModelResolution({
-    stage: meta?.stage || stageLabel,
-    jobId: meta?.jobId,
-    filename: meta?.filename,
-    roomType: meta?.roomType,
-    reason: meta?.reason || context,
+    stage: meta.stage,
+    jobId: meta.jobId,
+    filename: meta.filename,
+    roomType: meta.roomType,
+    reason: meta.reason || context,
     selectedModel: primaryModel,
     fallbackModel,
   });
@@ -330,13 +333,13 @@ export async function runWithPrimaryThenFallback({
     });
     logGeminiUsage({
       ctx: {
-        jobId: meta?.jobId || "",
-        imageId: meta?.imageId || "",
-        stage: meta?.stage || stageLabel,
-        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+        jobId: meta.jobId,
+        imageId: meta.imageId,
+        stage: meta.stage,
+        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
       },
       model: primaryModel,
-      callType: meta?.callType || "image_generation",
+      callType: meta.callType || "image_generation",
       response: resp,
       latencyMs: Date.now() - requestStartedAt,
     });
@@ -388,13 +391,13 @@ export async function runWithPrimaryThenFallback({
     });
     logGeminiUsage({
       ctx: {
-        jobId: meta?.jobId || "",
-        imageId: meta?.imageId || "",
-        stage: meta?.stage || stageLabel,
-        attempt: Number.isFinite(meta?.attempt) ? Number(meta?.attempt) : 1,
+        jobId: meta.jobId,
+        imageId: meta.imageId,
+        stage: meta.stage,
+        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
       },
       model: fallbackModel,
-      callType: meta?.callType || "image_generation",
+      callType: meta.callType || "image_generation",
       response: resp,
       latencyMs: Date.now() - requestStartedAt,
     });
