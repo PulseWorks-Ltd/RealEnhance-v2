@@ -247,6 +247,7 @@ export interface RegionEditJobPayload {
   sourceJobId?: string;
   parentJobId?: string;
   sourceStage?: "stage1A" | "stage1B" | "stage2";
+  executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   sourceImageId?: ImageId;
   propertyId?: string;
   type: "region-edit";
@@ -257,6 +258,9 @@ export interface RegionEditJobPayload {
   editIntent?: "add" | "remove" | "replace";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
   instruction?: string;
+  currentImageUrl?: string;
+  baseImageUrl?: string;
+  restoreFromUrl?: string;
   mask: unknown;
   stage1AReferenceUrl?: string;
   createdAt: string; // ISO

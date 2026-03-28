@@ -12071,7 +12071,18 @@ const worker = new Worker(
         } else if (payload.type === "region-edit") {
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
-          const editParentJobId = regionAny.parentJobId || regionAny.sourceJobId || undefined;
+          const editParentJobId = String(regionAny.parentJobId || "").trim() || undefined;
+          const sourceJobId = String(regionAny.sourceJobId || "").trim() || null;
+          nLog("EDIT_LINEAGE", {
+            parentJobId: editParentJobId || null,
+            sourceJobId,
+          });
+          if (!editParentJobId) {
+            logJobErrorAndThrow(regionPayload, "Missing parentJobId for region-edit lineage", {
+              stage: "region-edit",
+              sourceJobId,
+            });
+          }
           const sourceImageId = String(regionAny.sourceImageId || "").trim();
           let parentImageId = "";
           if (editParentJobId) {
@@ -12143,6 +12154,7 @@ const worker = new Worker(
             if (normalized === "stage1a" || normalized === "1a") return "stage1A";
             return null;
           };
+          const executionSourceStage = String(regionAny.executionSourceStage || "").trim() || null;
           const regionSourceStage = normalizeRegionSourceStage(regionAny.sourceStage || regionAny.editSourceStage);
           const regionStageUrls = ((regionAny.stageUrls || {}) as Record<string, string | null | undefined>);
           if (!regionSourceStage) {
@@ -12150,14 +12162,11 @@ const worker = new Worker(
               stage: "region-edit",
             });
           }
-          const lineageBaseImageUrl = regionSourceStage === "stage2"
-            ? resolveStageUrl(regionStageUrls as any, "2")
-            : regionSourceStage === "stage1B"
-              ? resolveStageUrl(regionStageUrls as any, "1B")
-              : resolveStageUrl(regionStageUrls as any, "1A");
-          if (!lineageBaseImageUrl) {
-            logJobErrorAndThrow(regionPayload, `Missing ${regionSourceStage} URL for region-edit job`, {
+          const selectedOutputUrl = String(regionAny.currentImageUrl || "").trim();
+          if (!selectedOutputUrl) {
+            logJobErrorAndThrow(regionPayload, "No valid source for edit — cannot resolve stage", {
               stage: "region-edit",
+              executionSourceStage,
             });
           }
           // ✅ ADD DETAILED DEBUG LOGGING
@@ -12183,19 +12192,20 @@ const worker = new Worker(
           nLog("[WORKER_REGION_LINEAGE_INPUT]", {
             jobId: regionPayload.jobId,
             sourceStage: regionSourceStage,
+            executionSourceStage,
             baselineStage: regionAny.baselineStage || null,
-            sourceUrl: lineageBaseImageUrl,
+            sourceUrl: selectedOutputUrl,
             stageUrls: regionStageUrls,
           });
           logEvent("SOURCE_RESOLVED", {
             jobId: regionPayload.jobId,
             imageId: regionPayload.imageId,
             sourceStage: regionSourceStage,
-            sourceUrl: lineageBaseImageUrl,
-            uiSelectedTab: regionAny.sourceStage || regionAny.editSourceStage || null,
+            sourceUrl: selectedOutputUrl,
+            uiSelectedTab: executionSourceStage || regionAny.sourceStage || regionAny.editSourceStage || null,
           });
 
-          const baseImageUrl = lineageBaseImageUrl;
+          const baseImageUrl = selectedOutputUrl;
 
           if (!baseImageUrl) {
             nLog("[worker-region-edit] No base image URL found in payload:", {

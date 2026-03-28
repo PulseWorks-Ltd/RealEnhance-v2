@@ -9,11 +9,15 @@ export interface RegionEditJobPayload {
     baseVersionId: string;
     sourceStage?: "stage1A" | "stage1B" | "stage2";
     baselineStage?: "stage1A" | "stage1B" | "stage2";
+    executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
     stageUrls?: Record<string, string | null>;
     mode: "Add" | "Remove" | "Replace" | "Restore";
     editIntent?: "add" | "remove" | "replace";
     editSourceStage?: "stage1A" | "stage1B" | "stage2";
     instruction?: string;
+    currentImageUrl?: string;
+    baseImageUrl?: string;
+    restoreFromUrl?: string;
     mask: unknown;
     stage1AReferenceUrl?: string;
     createdAt: string;
@@ -86,6 +90,7 @@ export interface EnhanceJobPayload {
     userId: UserId;
     imageId: ImageId;
     type: "enhance";
+    jobType?: "initial" | "retry" | "edit";
     agencyId?: string | null;
     propertyId?: string | null;
     listingId?: string;
@@ -123,7 +128,8 @@ export interface EnhanceJobPayload {
         sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
         stage1BMode?: "light" | "stage-ready";
     };
-    sourceStage?: "stage1A" | "stage1B" | "stage2";
+    sourceStage?: "original" | "1A" | "1B" | "2" | "stage1A" | "stage1B" | "stage2";
+    sourceUrl?: string | null;
     baselineStage?: "stage1A" | "stage1B" | "stage2";
     stageUrls?: Record<string, string | null>;
     executionPlan?: RetryExecutionPlan;
@@ -147,6 +153,7 @@ export interface EditJobPayload {
     userId: UserId;
     imageId: ImageId;
     type: "edit";
+    jobType?: "edit";
     listingId?: string;
     baseVersionId: string;
     mode: "Add" | "Remove" | "Replace" | "Restore";

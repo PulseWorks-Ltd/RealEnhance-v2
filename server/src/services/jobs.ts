@@ -253,6 +253,7 @@ function buildEnhanceArtifacts(params: {
   retryInfo?: {
     retryType?: "manual_retry";
     sourceStage?: string | null;
+    executionSourceStage?: "1A" | "1B" | "2" | null;
     sourceUrl?: string | null;
     sourceKey?: string | null;
     stage1BWasRequested?: boolean;
@@ -418,6 +419,7 @@ export async function enqueueEnhanceJob(params: {
   retryInfo?: {
     retryType?: "manual_retry";
     sourceStage?: string | null;
+    executionSourceStage?: "1A" | "1B" | "2" | null;
     sourceUrl?: string | null;
     sourceKey?: string | null;
     stage1BWasRequested?: boolean;
@@ -511,6 +513,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   retryInfo?: {
     retryType?: "manual_retry";
     sourceStage?: string | null;
+    executionSourceStage?: "1A" | "1B" | "2" | null;
     sourceUrl?: string | null;
     sourceKey?: string | null;
     stage1BWasRequested?: boolean;
@@ -873,6 +876,7 @@ export async function enqueueRegionEditJob(params: {
   mode: "add" | "remove" | "restore" | "replace";
   editIntent?: "add" | "remove" | "replace";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
+  executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   prompt?: string;
   currentImageUrl: string;
   baseImageUrl?: string;
@@ -896,6 +900,11 @@ export async function enqueueRegionEditJob(params: {
     );
   }
 
+  const parentJobId = String(params.parentJobId || "").trim();
+  if (!parentJobId) {
+    throw new Error("Invariant violation: parentJobId is required for region-edit lineage");
+  }
+
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
 
@@ -905,7 +914,7 @@ export async function enqueueRegionEditJob(params: {
     agencyId: params.agencyId,
     imageId: params.imageId,
     sourceJobId: params.sourceJobId,
-    parentJobId: params.parentJobId,
+    parentJobId,
     sourceImageId: params.sourceImageId,
     propertyId: params.propertyId,
     type: "region-edit",
@@ -915,6 +924,7 @@ export async function enqueueRegionEditJob(params: {
     mode: params.mode,
     editIntent: params.editIntent,
     editSourceStage: params.editSourceStage,
+    executionSourceStage: params.executionSourceStage,
     prompt: params.prompt,
     currentImageUrl: params.currentImageUrl,
     baseImageUrl: params.baseImageUrl,

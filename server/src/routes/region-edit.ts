@@ -53,6 +53,7 @@ function normalizeLookupUrl(urlValue?: string): string {
 }
 
 type EditSourceStage = Parameters<typeof enqueueRegionEditJob>[0]["editSourceStage"];
+type ExecutionSourceStage = Parameters<typeof enqueueRegionEditJob>[0]["executionSourceStage"];
 
 function normalizeEditSourceStage(raw?: string): EditSourceStage {
   const value = raw?.trim().toLowerCase();
@@ -61,6 +62,18 @@ function normalizeEditSourceStage(raw?: string): EditSourceStage {
   if (["stage2", "2", "retry", "edit"].includes(value)) return "stage2";
   if (["stage1b", "1b"].includes(value)) return "stage1B";
   if (["stage1a", "1a", "original"].includes(value)) return "stage1A";
+  return undefined;
+}
+
+function normalizeExecutionSourceStage(raw?: string): ExecutionSourceStage {
+  const value = raw?.trim().toLowerCase();
+  if (!value) return undefined;
+  if (value === "original" || value === "original_upload") return "original";
+  if (value === "1a" || value === "stage1a") return "1A";
+  if (value === "1b" || value === "stage1b") return "1B";
+  if (value === "2" || value === "stage2") return "2";
+  if (value === "retry" || value === "retried" || value === "retry_latest") return "retry";
+  if (value === "edit" || value === "edited" || value === "edit_latest") return "edit";
   return undefined;
 }
 
@@ -173,9 +186,12 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const sourceUrl = normalizeLookupUrl(rawSourceUrl);
     const uiSelectedTab = typeof body.uiSelectedTab === "string" ? body.uiSelectedTab.trim() : "";
     const incomingImageId = String(body.imageId || "").trim() || null;
-    const sourceJobId = typeof body.jobId === "string" ? body.jobId : undefined;
+    const sourceJobId = typeof body.jobId === "string" ? body.jobId.trim() : undefined;
     const rawEditSourceStage = typeof body.sourceStage === "string" ? body.sourceStage : undefined;
     const editSourceStage: EditSourceStage = normalizeEditSourceStage(rawEditSourceStage);
+    const executionSourceStage: ExecutionSourceStage = normalizeExecutionSourceStage(
+      typeof body.uiSelectedTab === "string" ? body.uiSelectedTab : rawEditSourceStage,
+    );
     const baselineStage: "1A" | "1B" | "2" | undefined =
       editSourceStage === "stage2"
         ? "2"
@@ -248,13 +264,29 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(400).json({ success: false, error: "missing_sourceUrl" });
     }
 
+    const selectedOutputUrl = sourceUrl;
+
     if (!editSourceStage) {
       console.error("[region-edit] Missing sourceStage");
       return res.status(400).json({ success: false, error: "missing_sourceStage" });
     }
 
+    if (!executionSourceStage) {
+      console.error("[region-edit] Missing executionSourceStage");
+      return res.status(400).json({ success: false, error: "missing_execution_source_stage" });
+    }
+
+    if (!sourceJobId) {
+      console.error("[region-edit] Missing source job lineage");
+      return res.status(400).json({ success: false, error: "missing_source_job_id" });
+    }
+
+    // Lineage invariant: for edit-of-edit and edit-after-retry flows, parentJobId must be the source job.
+    const parentJobId = sourceJobId;
+    console.log("EDIT_LINEAGE", { parentJobId, sourceJobId });
+
     console.log("[SOURCE_RESOLVED]", {
-      sourceUrl,
+      sourceUrl: selectedOutputUrl,
       sourceStage: editSourceStage,
       uiSelectedTab: uiSelectedTab || null,
       imageId: incomingImageId,
@@ -290,7 +322,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     });
     let sourceEnhancedFromLookup: { id: string; propertyId: string | null; userId: string; agencyId: string } | null = null;
     let foundViaDbFallback = false;
-    const resolvedLookupUrl = sourceUrl;
+    const resolvedLookupUrl = selectedOutputUrl;
     let resolvedBy: "url_index" | "source_job_context" | "url_derived_identity" = "url_index";
 
     const findByDb = async (url: string) => {
@@ -314,10 +346,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     };
 
     let found: { record: { imageId: string; ownerUserId: string }; versionId: string } | null = null;
-    if (isHttpUrl(sourceUrl)) {
-      found = await findByPublicUrl(sessUser.id, sourceUrl);
+    if (isHttpUrl(selectedOutputUrl)) {
+      found = await findByPublicUrl(sessUser.id, selectedOutputUrl);
       if (!found) {
-        const dbFallback = await findByDb(sourceUrl);
+        const dbFallback = await findByDb(selectedOutputUrl);
         if (dbFallback) {
           found = dbRecordToFound(dbFallback);
           sourceEnhancedFromLookup = dbFallback;
@@ -325,15 +357,15 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
           console.log("[region-edit] Redis miss + DB fallback success", {
             redisMiss: true,
             dbFallbackSuccess: true,
-            lookupUrl: sourceUrl,
+            lookupUrl: selectedOutputUrl,
           });
-          await tryRehydrateRedisFromDb(dbFallback, sourceUrl);
+          await tryRehydrateRedisFromDb(dbFallback, selectedOutputUrl);
         }
       }
     }
 
     if (!found) {
-      console.error("[region-edit] Image not found for URL:", sourceUrl);
+      console.error("[region-edit] Image not found for URL:", selectedOutputUrl);
       return res.status(404).json({ success: false, error: "image_not_found" });
     }
 
@@ -341,7 +373,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const baseVersionId = found.versionId;
 
     console.debug("[edit-source-resolution]", {
-      sourceUrl: sourceUrl || null,
+      sourceUrl: selectedOutputUrl || null,
       sourceJobId: sourceJobId || null,
       resolution: "url-first",
       resolvedBy,
@@ -394,11 +426,15 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     let baseImageUrl: string;
 
     if (mode === "restore_original") {
-      baseImageUrl = clientBaseImageUrl || sourceUrl;
+      baseImageUrl = clientBaseImageUrl || selectedOutputUrl;
       console.log("[region-edit] restore_original baseImageUrl:", baseImageUrl ? baseImageUrl.substring(0, 80) + "..." : "MISSING");
     } else {
-      baseImageUrl = sourceUrl;
+      baseImageUrl = selectedOutputUrl;
       console.log("[region-edit] Using provided edit source URL (edit mode):", baseImageUrl.substring(0, 80) + "...");
+    }
+
+    if (!selectedOutputUrl) {
+      throw new Error("No valid source for edit — cannot resolve stage");
     }
 
     // ===== PROCESS MASK =====
@@ -542,6 +578,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
       sourceJobId,
+      parentJobId,
       sourceImageId: record.imageId || record.id,
       propertyId: sourceEnhanced?.propertyId || undefined,
       imageId: record.imageId || record.id,
@@ -551,10 +588,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       currentImageUrl: baseImageUrl,
       baseImageUrl,
       mask: maskBase64,
-      ...(sourceJobId ? { parentJobId: sourceJobId } : {}),
       sourceStage: resolvedSourceStage,
       baselineStage: resolvedSourceStage,
       stageUrls: effectiveStageUrls,
+      executionSourceStage,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       ...(editSourceStage ? { editSourceStage } : {}),
@@ -565,6 +602,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       imageId: record.imageId || record.id,
       mode: apiMode,
       sourceStage: resolvedSourceStage,
+      executionSourceStage,
       lineageSourceUrl: resolvedSourceStage === "stage2"
         ? (effectiveStageUrls.stage2 || effectiveStageUrls["2"] || null)
         : resolvedSourceStage === "stage1B"
@@ -604,8 +642,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
         restoreFromUrl,
         stage1AReferenceUrl,
         sourceJobId,
+        parentJobId,
         editSourceUrl: sourceUrl,
         editSourceStage,
+        executionSourceStage,
         sceneType,
         roomType,
         allowStaging,

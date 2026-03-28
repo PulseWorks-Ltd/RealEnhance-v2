@@ -36,7 +36,7 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
-import { getCardArtifactView, resolveSafeStageUrl } from "@/lib/card-artifacts";
+import { getCardArtifactView } from "@/lib/card-artifacts";
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
@@ -67,8 +67,6 @@ type PreviewModalImage = {
     item: any;
   };
 };
-type EditArtifactKey = DisplayOutputKey | "final" | "original" | null;
-
 type SceneType = "interior" | "exterior";
 type SceneLabel = SceneType;
 
@@ -1247,7 +1245,7 @@ export default function BatchProcessor({
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  const [activeEditSource, setActiveEditSource] = useState<{ url: string; stage: SourceStageLabel | null; jobId: string | null; imageId: string | null } | null>(null);
+  const [activeEditSource, setActiveEditSource] = useState<{ sourceUrl: string; sourceStage: SourceStageLabel; sourceJobId: string; imageId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
@@ -3539,6 +3537,7 @@ export default function BatchProcessor({
                     ...existing,
                     latestEditUrl: promotableEditUrl,
                     editLatestUrl: promotableEditUrl,
+                    editLatestJobId: polledId,
                     latestEditUpdatedAt: promotedVersion || Date.now(),
                     editLatestUpdatedAt: promotedVersion || Date.now(),
                     version: Math.max(promotedVersion, normalizeVersionToTimestamp(existing.version ?? existing.updatedAt)),
@@ -3547,6 +3546,7 @@ export default function BatchProcessor({
                       ...(existing.result || {}),
                       latestEditUrl: promotableEditUrl,
                       editLatestUrl: promotableEditUrl,
+                      editLatestJobId: polledId,
                       latestEditUpdatedAt: promotedVersion || Date.now(),
                       editLatestUpdatedAt: promotedVersion || Date.now(),
                     },
@@ -4912,19 +4912,6 @@ export default function BatchProcessor({
     return { stage: active?.stage || null, url: active?.url || null };
   };
 
-  const mapArtifactToSourceStage = (
-    artifactKey: EditArtifactKey,
-    stage: StageKey | null | undefined,
-  ): SourceStageLabel | null => {
-    if (artifactKey === "retried") return "retry";
-    if (artifactKey === "edited") return "edit";
-    if (artifactKey === "original") return "original";
-    if (artifactKey === "2" || artifactKey === "final" || stage === "2") return "2";
-    if (artifactKey === "1B" || stage === "1B") return "1B";
-    if (artifactKey === "1A" || stage === "1A") return "1A";
-    return null;
-  };
-
   const buildPreviewImage = useCallback((index: number): PreviewModalImage | null => {
     if (!Number.isInteger(index) || index < 0 || index >= files.length) return null;
 
@@ -4994,31 +4981,38 @@ export default function BatchProcessor({
     const item = results[imageIndex];
     if (!item) {
       return {
-        url: null,
-        stage: null,
-        artifactKey: null,
+        sourceUrl: null,
+        sourceStage: null,
+        selectedTab: null,
         sourceJobId: null,
       } as const;
     }
 
-    const selectedStage = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
-    const artifactView = getCardArtifactView(item, {
-      selectedKey: selectedStage || null,
-      originalFallback: null,
-    });
-    const displayedArtifact = artifactView.active;
-    const persistedOriginalUrl =
-      item?.result?.originalImageUrl ||
-      item?.originalImageUrl ||
-      item?.result?.originalUrl ||
-      item?.originalUrl ||
+    const selectedTab = displayStageByIndex[imageIndex] as DisplayOutputKey | undefined;
+    const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
+    const stage2Url = toDisplayUrl(stageMap?.['2']) || toDisplayUrl(stageMap?.[2]) || toDisplayUrl(stageMap?.stage2) || toDisplayUrl(item?.stage2Url) || toDisplayUrl(item?.result?.stage2Url) || null;
+    const stage1BUrl = toDisplayUrl(stageMap?.['1B']) || toDisplayUrl(stageMap?.['1b']) || toDisplayUrl(stageMap?.stage1B) || null;
+    const stage1AUrl = toDisplayUrl(stageMap?.['1A']) || toDisplayUrl(stageMap?.['1a']) || toDisplayUrl(stageMap?.['1']) || toDisplayUrl(stageMap?.stage1A) || null;
+    const retryLatestUrl =
+      toDisplayUrl(item?.retryLatestUrl) ||
+      toDisplayUrl(item?.result?.retryLatestUrl) ||
+      toDisplayUrl(item?.latestRetryUrl) ||
+      toDisplayUrl(item?.result?.latestRetryUrl) ||
       null;
-    const originalFallback = persistedOriginalUrl || previewUrls[imageIndex] || null;
-    const displayedUrl = displayedArtifact?.url || (displayedArtifact?.key === "original" ? originalFallback : null);
-    const artifactKey: EditArtifactKey = displayedArtifact?.key || null;
+    const editLatestUrl =
+      toDisplayUrl(item?.editLatestUrl) ||
+      toDisplayUrl(item?.result?.editLatestUrl) ||
+      toDisplayUrl(item?.latestEditUrl) ||
+      toDisplayUrl(item?.result?.latestEditUrl) ||
+      null;
+    const originalUrl =
+      toDisplayUrl(item?.result?.originalImageUrl) ||
+      toDisplayUrl(item?.originalImageUrl) ||
+      toDisplayUrl(item?.result?.originalUrl) ||
+      toDisplayUrl(item?.originalUrl) ||
+      toDisplayUrl(previewUrls[imageIndex]) ||
+      null;
 
-    // Phase 1 consistency rule:
-    // only pass sourceJobId when it belongs to the same selected artifact lineage.
     const defaultJobId = item?.jobId || item?.result?.jobId || null;
     const retryArtifactJobId =
       item?.retryLatestJobId ||
@@ -5028,42 +5022,79 @@ export default function BatchProcessor({
       item?.retryInfo?.jobId ||
       item?.result?.retryInfo?.jobId ||
       null;
-    const retryParentJobId =
-      item?.retrySourceJobId ||
-      item?.result?.retrySourceJobId ||
-      item?.parentJobId ||
-      item?.result?.parentJobId ||
-      item?.meta?.parentJobId ||
-      item?.result?.meta?.parentJobId ||
-      null;
     const editedArtifactJobId =
       item?.editLatestJobId ||
       item?.result?.editLatestJobId ||
       null;
 
-    let sourceJobId: string | null = null;
-    if (artifactKey === "1A" || artifactKey === "1B" || artifactKey === "2" || artifactKey === "final") {
-      sourceJobId = defaultJobId;
-    } else if (artifactKey === "retried") {
-      sourceJobId = retryArtifactJobId || retryParentJobId || defaultJobId;
-    } else if (artifactKey === "edited") {
-      sourceJobId = editedArtifactJobId;
+    if (selectedTab === "2") {
+      return {
+        sourceUrl: stage2Url,
+        sourceStage: "2" as SourceStageLabel,
+        selectedTab,
+        sourceJobId: defaultJobId,
+      } as const;
+    }
+
+    if (selectedTab === "1B") {
+      return {
+        sourceUrl: stage1BUrl,
+        sourceStage: "1B" as SourceStageLabel,
+        selectedTab,
+        sourceJobId: defaultJobId,
+      } as const;
+    }
+
+    if (selectedTab === "1A") {
+      return {
+        sourceUrl: stage1AUrl,
+        sourceStage: "1A" as SourceStageLabel,
+        selectedTab,
+        sourceJobId: defaultJobId,
+      } as const;
+    }
+
+    if (selectedTab === "retried") {
+      return {
+        sourceUrl: retryLatestUrl,
+        sourceStage: "retry" as SourceStageLabel,
+        selectedTab,
+        sourceJobId: retryArtifactJobId,
+      } as const;
+    }
+
+    if (selectedTab === "edited") {
+      return {
+        sourceUrl: editLatestUrl,
+        sourceStage: "edit" as SourceStageLabel,
+        selectedTab,
+        sourceJobId: editedArtifactJobId || defaultJobId,
+      } as const;
+    }
+
+    if (selectedTab === "original") {
+      return {
+        sourceUrl: originalUrl,
+        sourceStage: "original" as SourceStageLabel,
+        selectedTab,
+        sourceJobId: defaultJobId,
+      } as const;
     }
 
     return {
-      url: displayedUrl || null,
-      stage: mapArtifactToSourceStage(artifactKey, displayedArtifact?.stage || null),
-      artifactKey,
-      sourceJobId,
+      sourceUrl: null,
+      sourceStage: null,
+      selectedTab: selectedTab || null,
+      sourceJobId: null,
     } as const;
   }, [displayStageByIndex, previewUrls, results]);
 
   const getDisplayedImageUrl = useCallback((imageIndex: number): string | null => {
-    return getEditSourceForIndex(imageIndex).url;
+    return getEditSourceForIndex(imageIndex).sourceUrl;
   }, [getEditSourceForIndex]);
 
   const getDisplayedStage = useCallback((imageIndex: number): SourceStageLabel | null => {
-    return getEditSourceForIndex(imageIndex).stage;
+    return getEditSourceForIndex(imageIndex).sourceStage;
   }, [getEditSourceForIndex]);
 
   // Handle edit image - resolve URL before opening editor
@@ -5104,12 +5135,40 @@ export default function BatchProcessor({
       stage1A: preservedStage1A,
     };
 
+    const selectedTab = (displayStageByIndex[imageIndex] as DisplayOutputKey | undefined) || null;
     const resolvedEditSource = getEditSourceForIndex(imageIndex);
-    const imageUrl = getDisplayedImageUrl(imageIndex);
-    const urlSource = getDisplayedStage(imageIndex);
-    const artifactKey = resolvedEditSource.artifactKey;
+    const imageUrl = resolvedEditSource.sourceUrl;
+    const urlSource = resolvedEditSource.sourceStage;
     const imageId = item?.imageId || item?.result?.imageId || null;
     const sourceJobId = resolvedEditSource.sourceJobId;
+
+    const displayedImageUrl = getCardArtifactView(item, {
+      selectedKey: selectedTab,
+      originalFallback: previewUrls[imageIndex] || null,
+    }).active?.url || null;
+
+    console.log("EDIT_SOURCE_DEBUG", {
+      selectedTab,
+      displayedImageUrl,
+      resolvedSourceUrl: imageUrl,
+      sourceJobId,
+    });
+
+    if (displayedImageUrl !== imageUrl) {
+      console.error('[EDIT][source_mismatch] Selected tab display does not match resolved source', {
+        imageIndex,
+        selectedTab,
+        displayedImageUrl,
+        resolvedSourceUrl: imageUrl,
+        sourceJobId,
+      });
+      toast({
+        title: "Cannot open editor",
+        description: "Source mismatch detected for selected tab. Please reselect the tab and try again.",
+        variant: "destructive"
+      });
+      return;
+    }
 
     // ✅ Verify URL is non-null before opening editor
     if (!imageUrl) {
@@ -5131,12 +5190,30 @@ export default function BatchProcessor({
       return;
     }
 
+    // Enforce lineage integrity: edited/retried sources must resolve a source job.
+    const requiresLineage = selectedTab === "edited" || selectedTab === "retried";
+    if (requiresLineage && !sourceJobId) {
+      console.error('[EDIT][lineage] Missing sourceJobId for selected artifact', {
+        imageId,
+        imageIndex,
+        selectedTab,
+        stage: urlSource,
+        selectedUrl: imageUrl,
+      });
+      toast({
+        title: "Cannot open editor",
+        description: "Missing edit lineage for selected output. Please refresh and retry.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     // ✅ Log selected URL source for debugging edit flow
     console.log('[edit] resolved image URL', {
       imageId,
       imageIndex,
       stage: urlSource || 'displayed',
-      artifactKey,
+      selectedTab,
       url: imageUrl,
       sourceJobId: sourceJobId || null,
       completionSource: item?.completionSource || null,
@@ -5145,7 +5222,16 @@ export default function BatchProcessor({
     });
 
     // ✅ Store completion source in editor state for reference
-    setActiveEditSource({ url: imageUrl, stage: urlSource || null, jobId: sourceJobId, imageId });
+    if (!urlSource || !sourceJobId) {
+      toast({
+        title: "Cannot open editor",
+        description: "Missing source stage or source lineage for selected tab.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setActiveEditSource({ sourceUrl: imageUrl, sourceStage: urlSource, sourceJobId: sourceJobId, imageId });
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
   };
@@ -8062,65 +8148,15 @@ export default function BatchProcessor({
       )}
 
       {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
-      {regionEditorOpen && editingImageIndex !== null && (
+      {regionEditorOpen && editingImageIndex !== null && activeEditSource && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); setActiveEditSource(null); }} maxWidth="full" contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden" className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent">
           <RegionEditor
-            initialImageUrl={(() => {
-              if (activeEditSource?.url) return activeEditSource.url;
-              const item = results[editingImageIndex];
-              if (!item) return undefined;
-              
-              // ✅ Use resolveSafeStageUrl for consistent stage-aware URL resolution
-              // Priority: stage2 → stage1B → stage1A → publishedUrl → imageUrl
-              const resolved = resolveSafeStageUrl(item);
-              let imageUrl = resolved.url;
-              
-              // ✅ Apply version cache-busting if available
-              if (imageUrl) {
-                imageUrl = withVersion(imageUrl, item?.version || item?.updatedAt) || imageUrl;
-              }
-              
-              // ✅ Fallback to preview URL if stage resolution failed
-              const fallback = previewUrls[editingImageIndex] || undefined;
-              const finalUrl = imageUrl || fallback;
-              
-              console.log('[EDIT][RegionEditor] Resolved initialImageUrl:', {
-                resolvedStage: resolved.stage,
-                hasUrl: !!imageUrl,
-                hasFallback: !!fallback,
-                finalUrlPreview: finalUrl ? finalUrl.substring(0, 100) : 'none'
-              });
-              
-              return finalUrl;
-            })()}
-            editSourceUrl={activeEditSource?.url || undefined}
-            editSourceStage={activeEditSource?.stage || undefined}
-            sourceJobId={activeEditSource?.jobId || undefined}
-            sourceImageId={activeEditSource?.imageId || undefined}
-            // ✅ Restore base: prefer explicit original, then stage1A quality-enhanced baseline
-            originalImageUrl={(() => {
-              const item = results[editingImageIndex];
-              if (!item) return undefined;
-              
-              // Priority for restore base: explicitOriginal → stage1A → stage1B → preview
-              const explicitOriginal = item?.result?.originalImageUrl || item?.originalImageUrl || item?.result?.originalUrl || item?.originalUrl;
-              const stageUrls = item?.stageUrls || item?.result?.stageUrls || {};
-              const stage1A = stageUrls?.['1A'] || stageUrls?.['1a'] || stageUrls?.['1'] || undefined;
-              const stage1B = stageUrls?.['1B'] || stageUrls?.['1b'] || undefined;
-              const previewFallback = previewUrls[editingImageIndex] || undefined;
-              
-              const resolved = explicitOriginal || stage1A || stage1B || previewFallback;
-              
-              console.log('[EDIT][RegionEditor] Resolved originalImageUrl:', {
-                hasExplicitOriginal: !!explicitOriginal,
-                hasStage1A: !!stage1A,
-                hasStage1B: !!stage1B,
-                hasPreview: !!previewFallback,
-                resolvedPreview: resolved ? resolved.substring(0, 100) : 'none'
-              });
-              
-              return resolved;
-            })()}
+            initialImageUrl={activeEditSource.sourceUrl}
+            editSourceUrl={activeEditSource.sourceUrl}
+            editSourceStage={activeEditSource.sourceStage}
+            sourceJobId={activeEditSource.sourceJobId}
+            sourceImageId={activeEditSource.imageId || undefined}
+            originalImageUrl={undefined}
             initialGoal={globalGoal}
             initialIndustry={industryMap[presetKey] || "Real Estate"}
             initialSceneType={(() => {

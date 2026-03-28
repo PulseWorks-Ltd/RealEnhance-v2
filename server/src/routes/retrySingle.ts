@@ -672,7 +672,7 @@ export function retrySingleRouter() {
           }
         }
 
-        const copyCandidates: Array<{ stage: string; url: string }> = [];
+        const copyCandidates: Array<{ stage: "1A" | "1B" | "2"; url: string }> = [];
         if (executionSourceStage && selectedSourceUrl) {
           copyCandidates.push({ stage: executionSourceStage, url: selectedSourceUrl });
         }

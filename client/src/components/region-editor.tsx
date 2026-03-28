@@ -17,70 +17,6 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles, Loader2 } from "lucide-react";
 
-/**
- * Derive the Stage 1 base image URL from a Stage 2 filename.
- *
- * Examples:
- *   ...1764...-canonical-1A-1B-2-retry1.webp → ...1764...-canonical-1A-1B.webp
- *   ...1764...-canonical-1A-2.webp → ...1764...-canonical-1A.webp
- *
- * Returns null if the URL doesn't match the expected Stage 2 pattern.
- */
-function deriveBaseFromInitial(initialUrl?: string | null): string | null {
-  if (!initialUrl) return null;
-
-  try {
-    const url = new URL(initialUrl);
-    const pathParts = url.pathname.split("/");
-    const filename = pathParts.pop();
-    if (!filename) return null;
-
-    // Split name and extension (e.g., "1764...-canonical-1A-1B-2-retry1.webp")
-    const match = filename.match(/^(.+)\.([^.]+)$/);
-    if (!match) return null;
-    const [, stem, ext] = match; // stem: "1764...-canonical-1A-1B-2-retry1"
-    const tokens = stem.split("-");
-
-    // Find the '2' token (indicates Stage 2) if present
-    const idx2 = tokens.lastIndexOf("2");
-    if (idx2 === -1) {
-      // Not a Stage 2 filename → nothing to derive
-      return null;
-    }
-
-    // Look for 1B or 1A before the '2'
-    const idx1B = tokens.lastIndexOf("1B", idx2);
-    const idx1A = tokens.lastIndexOf("1A", idx2);
-
-    let baseTokens: string[] | null = null;
-
-    if (idx1B !== -1) {
-      // Pattern: ...-1A-1B-2[-retryX] → keep up to 1B
-      baseTokens = tokens.slice(0, idx1B + 1);
-    } else if (idx1A !== -1) {
-      // Pattern: ...-1A-2[-retryX] → keep up to 1A
-      baseTokens = tokens.slice(0, idx1A + 1);
-    } else {
-      // No 1A/1B markers → can't infer Stage 1
-      return null;
-    }
-
-    const baseFilename = `${baseTokens.join("-")}.${ext}`;
-    pathParts.push(baseFilename);
-    url.pathname = pathParts.join("/");
-
-    console.log("[deriveBaseFromInitial] Derived base URL:", {
-      original: initialUrl,
-      derived: url.toString(),
-    });
-
-    return url.toString();
-  } catch (err) {
-    console.warn("[deriveBaseFromInitial] Failed to parse URL:", err);
-    return null;
-  }
-}
-
 function stripTransientQueryParams(urlValue?: string | null): string {
   if (!urlValue) return "";
   try {
@@ -162,12 +98,8 @@ export function RegionEditor({
   }, [initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId]);
   // Quick high-level prop + derived base log for easier debugging of restore flow
   useEffect(() => {
-    const derivedFromInitial = !originalImageUrl ? deriveBaseFromInitial(initialImageUrl) : null;
-    const derivedBase =
-      mode === "restore_original"
-        ? (originalImageUrl || derivedFromInitial || "")
-        : (editSourceUrl || initialImageUrl || "");
-    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, derivedFromInitial, derivedBase });
+    const strictSource = editSourceUrl || "";
+    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, strictSource });
   }, [mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId]);
 
   // Reset state when a new image/meta is provided (opening editor for another item)
@@ -1086,19 +1018,12 @@ export function RegionEditor({
       return;
     }
 
-    // Derive Stage 1 base URL from Stage 2 filename if originalImageUrl not provided
-    const derivedBaseFromInitial = !originalImageUrl
-      ? deriveBaseFromInitial(initialImageUrl)
-      : null;
-
-    // Compute source and base URLs:
-    // - Edit mode: always use currently displayed source image
-    // - Restore mode: use original stage-1 baseline
-    const rawEditSourceUrl = editSourceUrl || initialImageUrl || "";
+    // Source is locked at click-time by parent UI and must be trusted as-is.
+    const rawEditSourceUrl = editSourceUrl || "";
     const sanitizedEditSourceUrl = stripTransientQueryParams(rawEditSourceUrl);
     const baseImageUrlRaw =
       (mode as string) === "restore_original"
-        ? (originalImageUrl || derivedBaseFromInitial || "")
+        ? (originalImageUrl || "")
         : rawEditSourceUrl;
     const baseImageUrl = stripTransientQueryParams(baseImageUrlRaw);
 
@@ -1109,7 +1034,6 @@ export function RegionEditor({
     console.log("[region-editor] sourceJobId:", sourceJobId);
     console.log("[region-editor] initialImageUrl:", initialImageUrl);
     console.log("[region-editor] sanitizedEditSourceUrl:", sanitizedEditSourceUrl);
-    console.log("[region-editor] derivedBaseFromInitial:", derivedBaseFromInitial);
     console.log("[region-editor] Final baseImageUrl:", baseImageUrl);
 
     try {
@@ -1135,6 +1059,15 @@ export function RegionEditor({
         toast({
           title: "Missing source stage",
           description: "The selected tab does not have a valid source stage.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (!sourceJobId) {
+        toast({
+          title: "Missing source lineage",
+          description: "This edit source is missing a parent job reference. Please refresh and try again.",
           variant: "destructive",
         });
         return;

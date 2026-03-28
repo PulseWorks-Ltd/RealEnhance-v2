@@ -9,11 +9,15 @@ export interface RegionEditJobPayload {
   baseVersionId: string;
   sourceStage?: "stage1A" | "stage1B" | "stage2";
   baselineStage?: "stage1A" | "stage1B" | "stage2";
+  executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   stageUrls?: Record<string, string | null>;
   mode: "Add" | "Remove" | "Replace" | "Restore";
   editIntent?: "add" | "remove" | "replace";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
   instruction?: string;
+  currentImageUrl?: string;
+  baseImageUrl?: string;
+  restoreFromUrl?: string;
   mask: unknown;
   stage1AReferenceUrl?: string;
   createdAt: string;
