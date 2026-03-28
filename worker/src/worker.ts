@@ -12083,6 +12083,13 @@ const worker = new Worker(
             }
           }
 
+          nLog("[IMAGE_ID_CHAIN]", {
+            imageId: String(regionPayload.imageId || "").trim() || null,
+            sourceImageId: sourceImageId || null,
+            parentImageId: parentImageId || null,
+            parentJobId: editParentJobId || null,
+          });
+
           if (sourceImageId && parentImageId && sourceImageId !== parentImageId) {
             logPipelineContextEvent(
               {

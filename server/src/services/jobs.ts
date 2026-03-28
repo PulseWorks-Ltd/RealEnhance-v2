@@ -887,6 +887,15 @@ export async function enqueueRegionEditJob(params: {
     stageUrls: params.stageUrls,
   });
 
+  // Invariant: sourceImageId must equal imageId — they identify the same record.
+  // Divergence causes region_edit_image_id_chain_mismatch in the worker.
+  if (params.imageId && params.sourceImageId && params.sourceImageId !== params.imageId) {
+    throw new Error(
+      `Invariant violation: sourceImageId must equal imageId in region-edit jobs ` +
+      `(sourceImageId=${params.sourceImageId}, imageId=${params.imageId})`
+    );
+  }
+
   const jobId: JobId = "job_" + crypto.randomUUID();
   const now = new Date().toISOString();
 

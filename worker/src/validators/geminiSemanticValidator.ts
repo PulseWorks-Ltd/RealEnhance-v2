@@ -1389,18 +1389,21 @@ export async function validateStage1BStructure(
         maxOutputTokens: 256,
       },
     } as any);
-    logGeminiUsage({
-      ctx: {
-        jobId: jobId || "",
-        imageId: options?.imageId || "",
-        stage: "validator",
-        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
-      },
-      model,
-      callType: "validator",
-      response,
-      latencyMs: Date.now() - requestStartedAt,
-    });
+    // Only log usage when both identifiers are present — assertContext throws on empty strings.
+    if (jobId && options?.imageId) {
+      logGeminiUsage({
+        ctx: {
+          jobId,
+          imageId: options.imageId,
+          stage: "validator",
+          attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+        },
+        model,
+        callType: "validator",
+        response,
+        latencyMs: Date.now() - requestStartedAt,
+      });
+    }
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
@@ -2935,18 +2938,21 @@ export async function runGeminiSemanticValidator(opts: {
         responseMimeType: deterministicStructureJson ? "application/json" : undefined,
       },
     } as any);
-    logGeminiUsage({
-      ctx: {
-        jobId: jobId || "",
-        imageId: opts.imageId || "",
-        stage: "validator",
-        attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
-      },
-      model,
-      callType: "validator",
-      response,
-      latencyMs: Date.now() - start,
-    });
+    // Only log usage when both identifiers are present — assertContext throws on empty strings.
+    if (jobId && opts.imageId) {
+      logGeminiUsage({
+        ctx: {
+          jobId,
+          imageId: opts.imageId,
+          stage: "validator",
+          attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
+        },
+        model,
+        callType: "validator",
+        response,
+        latencyMs: Date.now() - start,
+      });
+    }
 
     const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
     const text = textParts.map((p: any) => p?.text || "").join(" ").trim();

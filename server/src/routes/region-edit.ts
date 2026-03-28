@@ -542,7 +542,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
       sourceJobId,
-      sourceImageId: sourceEnhanced?.id,
+      sourceImageId: record.imageId || record.id,
       propertyId: sourceEnhanced?.propertyId || undefined,
       imageId: record.imageId || record.id,
       mode: apiMode,
@@ -581,6 +581,11 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     console.log("[region-edit] Has 'mask' field:", 'mask' in jobPayload);
     console.log("[region-edit] Mask field value type:", typeof jobPayload.mask);
     console.log("[region-edit] Mask field value length:", jobPayload.mask?.length || 0);
+    console.log("[IMAGE_ID_CHAIN]", {
+      imageId: record.imageId || record.id,
+      sourceImageId: record.imageId || record.id,
+      sourceJobId: sourceJobId || null,
+    });
 
     const result = await enqueueRegionEditJob(jobPayload);
 
