@@ -402,7 +402,6 @@ export async function runOpeningValidator(
     let maxSizeReductionDelta = 0;
     const openingSizeReductionAdvisoryThreshold = Math.max(0.1, OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD * 0.5);
     let openingSizeReductionDetected = false;
-    let openingSizeReductionDetected = false;
 
     // Partial occlusion from staging (furniture, decor, camera angle)
     // is allowed. Only fail when the opening is functionally or
