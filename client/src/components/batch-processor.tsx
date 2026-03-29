@@ -3410,18 +3410,20 @@ export default function BatchProcessor({
                 existingJobId !== polledId &&
                 (isRetryChildJob || mappedViaParent || mappedViaImage)
               ) {
+                // Use best available stage URL for promotion (not stage2 only)
+                const retryPromotableUrl = stage2Url || stage1bUrl || stage1aUrl || null;
                 const canPromoteRetryArtifact =
                   isRetryChildJob &&
                   canPromoteChildArtifact({
                     type: "retry",
                     parentJobId,
                     existingJobId,
-                    url: stage2Url,
+                    url: retryPromotableUrl,
                     status: incomingNormalizedStatus,
                   });
 
                 if (canPromoteRetryArtifact) {
-                  const promotedUrl = stage2Url as string;
+                  const promotedUrl = retryPromotableUrl as string;
                   const promotedVersion = normalizeVersionToTimestamp(
                     it?.version ?? it?.updatedAt ?? it?.updated_at
                   );
@@ -4832,7 +4834,7 @@ export default function BatchProcessor({
 
       const stagePlanBySource: Record<SourceStageLabel, StageKey[]> = {
         original: ["1A", "1B", "2"],
-        "1A": ["1B", "2"],
+        "1A": ["1A"],
         "1B": ["2"],
         "2": ["2"],
         retry: ["2"],
