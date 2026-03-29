@@ -109,24 +109,23 @@ export function CompareSlider({
 
   return (
     <div className={className} style={containerStyle} data-testid={testId}>
-      {/* Labels above the image */}
-      {showLabels && (
-        <div className="flex justify-between items-center mb-3 px-4">
-          <div className="bg-muted text-foreground px-4 py-2 rounded-full text-sm font-semibold shadow-card">
-            {originalLabel}
-          </div>
-          <div className="bg-action-600 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-card">
-            {enhancedLabel}
-          </div>
-        </div>
-      )}
-      
       {/* Image comparison slider */}
       <Card
         className="overflow-hidden relative bg-slate-100 h-full"
         style={{ height: '100%' }}
       >
-        <div ref={containerRef} className="relative w-full h-full">
+        {showLabels && (
+          <div className="absolute top-2 left-0 right-0 z-20 flex justify-between px-4 pointer-events-none">
+            <div className="bg-muted text-foreground px-4 py-2 rounded-full text-sm font-semibold shadow-card">
+              {originalLabel}
+            </div>
+            <div className="bg-action-600 text-white px-4 py-2 rounded-full text-sm font-semibold shadow-card">
+              {enhancedLabel}
+            </div>
+          </div>
+        )}
+
+        <div ref={containerRef} className="relative w-full h-full pt-8">
           {/* Original Image */}
           <img 
             src={originalImage}

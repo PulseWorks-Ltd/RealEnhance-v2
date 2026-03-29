@@ -3455,6 +3455,7 @@ export default function BatchProcessor({
 
                   copy[idx] = {
                     ...existing,
+                    retryLatestJobId: polledId,
                     latestRetryUrl: promotedUrl,
                     retryLatestUrl: promotedUrl,
                     retryLatestUpdatedAt: promotedVersion || Date.now(),
@@ -3462,6 +3463,7 @@ export default function BatchProcessor({
                     updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                     result: {
                       ...(existing.result || {}),
+                      retryLatestJobId: polledId,
                       latestRetryUrl: promotedUrl,
                       retryLatestUrl: promotedUrl,
                       retryLatestUpdatedAt: promotedVersion || Date.now(),
@@ -5687,6 +5689,7 @@ export default function BatchProcessor({
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
                     stageUrls: r?.stageUrls || stageUrls || null,
                     imageId: imageIdFromJob || r?.imageId,
+                    retryLatestJobId: jobId,
                     latestRetryUrl: completedStage2OutputUrl,
                     retryLatestUrl: completedStage2OutputUrl,
                     retryHistory: [
@@ -5714,6 +5717,7 @@ export default function BatchProcessor({
                       stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
+                      retryLatestJobId: jobId,
                       latestRetryUrl: completedStage2OutputUrl,
                       retryLatestUrl: completedStage2OutputUrl,
                     },
@@ -5771,6 +5775,7 @@ export default function BatchProcessor({
                     error: preservedStage2 ? null : r?.error,
                     resultUrl: fallbackCompletedOutputUrl,
                     imageUrl: fallbackCompletedOutputUrl,
+                    retryLatestJobId: jobId,
                     latestRetryUrl: fallbackCompletedOutputUrl || r?.latestRetryUrl || r?.retryLatestUrl || null,
                     retryLatestUrl: fallbackCompletedOutputUrl || r?.retryLatestUrl || null,
                     warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.warnings || []),
