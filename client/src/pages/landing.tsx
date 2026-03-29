@@ -5,20 +5,20 @@ import { Button } from "@/components/ui/button";
 export default function Landing() {
   const sampleImages = [
     {
-      type: 'bedroom',
-      label: 'Stage Empty Rooms',
-      gradient: 'from-blue-500 to-violet-600',
-      description: 'From empty room to inviting, buyer-ready space. We add realistic furnishings and styling while preserving the room’s true layout and proportions.',
-      beforeSrc: '/landing-samples/bedroom-example-baseline.png',
-      afterSrc: '/landing-samples/bedroom-example-enhanced.png',
-    },
-    {
       type: 'lounge',
       label: 'Lighting & Mood Enhancement',
       gradient: 'from-emerald-500 to-teal-600',
       description: 'See how an empty space becomes a warm, livable living area. Furniture, layout, and styling are added naturally—without altering the structure of the room.',
       beforeSrc: '/landing-samples/lounge-example-baseline.png',
       afterSrc: '/landing-samples/lounge-example-enhanced.jpg',
+    },   
+    {
+      type: 'bedroom',
+      label: 'Stage Empty Rooms',
+      gradient: 'from-blue-500 to-violet-600',
+      description: 'From empty room to inviting, buyer-ready space. We add realistic furnishings and styling while preserving the room’s true layout and proportions.',
+      beforeSrc: '/landing-samples/bedroom-example-baseline.png',
+      afterSrc: '/landing-samples/bedroom-example-enhanced.png',
     },
     {
       type: 'messy-living-room',
@@ -32,26 +32,26 @@ export default function Landing() {
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-600">
-      
+
       {/* 1. HERO SECTION */}
       <section className="bg-white min-h-[70vh] flex items-center py-12 lg:py-16">
-        <div className="max-w-7xl mx-auto w-full px-6 grid md:grid-cols-2 gap-10 lg:gap-12 items-center">
-          
+        <div className="max-w-[1400px] mx-auto grid grid-cols-1 lg:grid-cols-5 gap-10 items-center w-full px-6">
+
           {/* Left Col (Copy) */}
-          <div className="max-w-xl space-y-5">
-            <h1 className="text-4xl md:text-5xl font-semibold text-slate-900 leading-tight">
+          <div className="lg:col-span-2 max-w-2xl space-y-8">
+            <h1 className="text-5xl md:text-6xl font-semibold text-slate-900 leading-tight">
               Professional real estate photos — without risking misrepresentation.
             </h1>
-            <p className="text-lg lg:text-xl text-slate-600 leading-relaxed max-w-lg">
+            <p className="text-lg lg:text-xl text-slate-600 leading-relaxed max-w-2xl">
               Enhance lighting, clarity, and presentation—while preserving walls, windows, and true room structure.
             </p>
-            
+
             <div className="flex flex-col sm:flex-row gap-4">
-               <a href="/login">
+              <a href="/login">
                 <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base shadow-lg transition-all rounded-md">
                   Enhance Your Listing Photos — Free
                 </Button>
-               </a>
+              </a>
             </div>
             <p className="text-xs text-slate-500 mt-3">
               No credit card required • Originals always preserved
@@ -72,12 +72,15 @@ export default function Landing() {
           </div>
 
           {/* Right Col (Visual) */}
-          <div className="relative flex items-center justify-center">
-            <div className="relative w-full h-[420px] md:h-[500px] shadow-lg rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-               <ReactCompareSlider
-                itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" className="object-cover object-[center_55%]" />}
-                itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" className="object-cover object-[center_55%]" />}
-              />
+          <div className="lg:col-span-3 relative flex items-center justify-center">
+            <div className="relative w-full rounded-2xl shadow-xl overflow-hidden border border-slate-200 bg-slate-100">
+              <div className="h-[420px] lg:h-[520px] xl:h-[600px]">
+                <ReactCompareSlider
+                  className="h-full w-full"
+                  itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" className="h-full w-full object-cover object-[center_55%]" />}
+                  itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" className="h-full w-full object-cover object-[center_55%]" />}
+                />
+              </div>
               <div className="absolute top-3 left-3 bg-white/80 backdrop-blur px-3 py-1 text-xs font-medium rounded-full shadow-sm pointer-events-none z-10">
                 Original
               </div>
@@ -91,7 +94,6 @@ export default function Landing() {
                 Live Before & After Demo
               </div>
             </div>
-            {/* Decorative element */}
             <div className="absolute -z-10 -bottom-10 -right-10 w-64 h-64 bg-slate-50 rounded-full blur-3xl opacity-60"></div>
           </div>
         </div>
