@@ -32,7 +32,13 @@ import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
-import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE, STAGE2_ENABLE_SPECIALIST_ADVISORY } from "../config";
+import {
+  LOCAL_VALIDATOR_TIER,
+  LocalValidatorTier,
+  STRUCTURAL_SIGNALS_ACTIVE,
+  STRUCTURAL_SIGNALS_MODE,
+  STAGE2_ENABLE_SPECIALIST_ADVISORY,
+} from "../config";
 
 // Re-export the normalized adapter for downstream consumers
 export { normalizeValidatorResult, type NormalizedValidatorResult, type NormalizedCheck } from "./normalizedResult";
@@ -467,6 +473,7 @@ export async function runUnifiedValidation(
   }
 
   const validatorMode = getLocalValidatorMode();
+  const localValidatorsFull = LOCAL_VALIDATOR_TIER === LocalValidatorTier.FULL;
   const stageAwareConfig = loadStageAwareConfig();
   const warnings: string[] = [];
   const geminiMode = getGeminiValidatorMode();
@@ -493,6 +500,7 @@ export async function runUnifiedValidation(
   nLog(`[unified-validator] Scene: ${sceneType}`);
   nLog(`[unified-validator] Staging Style: ${normalizedStagingStyle || 'nz_standard (default)'}`);
   nLog(`[unified-validator] Modes: local=${validatorMode} gemini=${geminiMode}`);
+  nLog(`[unified-validator] Local validator tier: ${LOCAL_VALIDATOR_TIER}`);
   nLog(`[unified-validator] Stage-Aware: ${stageAwareConfig.enabled ? 'ENABLED' : 'DISABLED'}`);
   nLog(`[unified-validator] Original: ${originalPath}`);
   nLog(`[unified-validator] Enhanced: ${enhancedPath}`);
@@ -516,6 +524,24 @@ export async function runUnifiedValidation(
   }
 
   if (stage === "1B" || stage === "2") {
+    if (!localValidatorsFull) {
+      results.perceptualDiff = {
+        name: "perceptualDiff",
+        passed: true,
+        score: 1,
+        message: `Perceptual diff skipped (tier=${LOCAL_VALIDATOR_TIER})`,
+        details: {
+          skipped: true,
+          tier: LOCAL_VALIDATOR_TIER,
+          score: 1,
+          threshold: 0,
+        },
+      };
+      evidence.ssim = 1;
+      evidence.ssimThreshold = 0;
+      evidence.ssimPassed = true;
+      nLog(`[perceptual-diff] skipped (tier=${LOCAL_VALIDATOR_TIER})`);
+    } else {
     try {
       const perceptual = await runPerceptualDiff({
         originalPath,
@@ -564,6 +590,7 @@ export async function runUnifiedValidation(
         message: "Perceptual diff validator error",
         details: { error: String(err) },
       };
+    }
     }
   }
 
@@ -713,44 +740,56 @@ export async function runUnifiedValidation(
 
     // ===== 2. WALL VALIDATION =====
     // Validates wall structure and openings
-    try {
-      const wallResult = await validateWallStructure(originalPath, enhancedPath);
-      const passed = wallResult.ok;
-      results.walls = {
-        name: "walls",
-        passed,
-        score: passed ? 1.0 : 0.0,
-        message: wallResult.reason || (passed ? "Wall structure preserved" : "Wall structure issues"),
-        details: wallResult,
-      };
-      if (!passed) {
-        reasons.push(`Wall validation failed: ${wallResult.reason}`);
+    if (localValidatorsFull) {
+      try {
+        const wallResult = await validateWallStructure(originalPath, enhancedPath);
+        const passed = wallResult.ok;
+        results.walls = {
+          name: "walls",
+          passed,
+          score: passed ? 1.0 : 0.0,
+          message: wallResult.reason || (passed ? "Wall structure preserved" : "Wall structure issues"),
+          details: wallResult,
+        };
+        if (!passed) {
+          reasons.push(`Wall validation failed: ${wallResult.reason}`);
+        }
+      } catch (err) {
+        console.warn("[unified-validator] Wall validation error (fail-closed):", err);
+        results.walls = {
+          name: "walls",
+          passed: false,
+          score: 0,
+          message: "Wall validator error",
+          details: { error: String(err) },
+        };
+        reasons.push("Wall validation error");
       }
-    } catch (err) {
-      console.warn("[unified-validator] Wall validation error (fail-closed):", err);
+    } else {
       results.walls = {
         name: "walls",
-        passed: false,
-        score: 0,
-        message: "Wall validator error",
-        details: { error: String(err) },
+        passed: true,
+        score: 1,
+        message: `Wall validation skipped (tier=${LOCAL_VALIDATOR_TIER})`,
+        details: { skipped: true, tier: LOCAL_VALIDATOR_TIER },
       };
-      reasons.push("Wall validation error");
+      nLog(`[unified-validator] Wall validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
     }
 
     // ===== 3. GLOBAL EDGE IoU =====
     // Overall geometry consistency check
     try {
-      const edgeResult = buffers
-        ? runGlobalEdgeMetricsFromBuffers(
-            buffers.baseBlur,
-            buffers.candBlur,
-            buffers.width,
-            buffers.height,
-            Number(process.env.LOCAL_EDGE_MAG_THRESHOLD || 35)
-          )
-        : await runGlobalEdgeMetrics(originalPath, enhancedPath);
-      const edgeIoU = edgeResult.edgeIoU;
+      const edgeIoU = localValidatorsFull
+        ? (buffers
+            ? runGlobalEdgeMetricsFromBuffers(
+                buffers.baseBlur,
+                buffers.candBlur,
+                buffers.width,
+                buffers.height,
+                Number(process.env.LOCAL_EDGE_MAG_THRESHOLD || 35)
+              ).edgeIoU
+            : (await runGlobalEdgeMetrics(originalPath, enhancedPath)).edgeIoU)
+        : 1;
 
       // Thresholds by stage
       const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
@@ -765,7 +804,7 @@ export async function runUnifiedValidation(
         passed,
         score,
         message,
-        details: { edgeIoU, minEdgeIoU },
+        details: { edgeIoU, minEdgeIoU, skipped: !localValidatorsFull, tier: LOCAL_VALIDATOR_TIER },
       };
       nLog("[IOU_TELEMETRY]", {
         stage,
@@ -776,6 +815,9 @@ export async function runUnifiedValidation(
       });
       if (!passed && !disableIouDecisionSignals) {
         reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
+      }
+      if (!localValidatorsFull) {
+        nLog(`[unified-validator] Global edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
       }
     } catch (err) {
       if (disableIouDecisionSignals) {
@@ -806,14 +848,24 @@ export async function runUnifiedValidation(
       try {
         const baseDimTolerance = 8;
         const dimThreshold = Math.round(baseDimTolerance * 1.2);
-        const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath, baseArtifacts);
-        const structResult = await validateStage2Structural(
-          originalPath,
-          enhancedPath,
-          { structuralMask: mask },
-          buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined,
-          { dimensionTolerance: dimThreshold }
-        );
+        const structResult = localValidatorsFull
+          ? await (async () => {
+              const mask = await loadOrComputeStructuralMask(jobId || "default", originalPath, baseArtifacts);
+              return validateStage2Structural(
+                originalPath,
+                enhancedPath,
+                { structuralMask: mask },
+                buffers ? { baseGray: buffers.baseGray, candGray: buffers.candGray, width: buffers.width, height: buffers.height } : undefined,
+                { dimensionTolerance: dimThreshold }
+              );
+            })()
+          : {
+              ok: true,
+              structuralIoU: 1,
+              structuralIoUSkipReason: `tier_${LOCAL_VALIDATOR_TIER}`,
+              reason: `tier_${LOCAL_VALIDATOR_TIER}_skip`,
+              debug: undefined,
+            } as any;
 
         const baseStructIoU = 0.30; // Relaxed for staging (allows furniture addition)
         const minStructIoU = baseStructIoU - 0.05;
@@ -894,8 +946,14 @@ export async function runUnifiedValidation(
             minStructIoU,
             reason: structResult.reason,
             debug: structResult.debug,
+            skipped: !localValidatorsFull,
+            tier: LOCAL_VALIDATOR_TIER,
           },
         };
+
+        if (!localValidatorsFull) {
+          nLog(`[unified-validator] Structural IoU validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
+        }
 
         if (structResult.debug?.dimensionNormalized) {
           warnings.push("dimension_normalized");
@@ -931,26 +989,47 @@ export async function runUnifiedValidation(
       const lineDriftThreshold = stage === "2"
         ? baseLineSensitivity * 0.75
         : baseLineSensitivity;
-      const lineResult = await validateLineStructure({
-        originalPath,
-        enhancedPath,
-        sensitivity: lineDriftThreshold, // 70% baseline, looser for Stage 2
-        buffers: buffers
-          ? {
-              baseSmall: buffers.baseSmall,
-              candSmall: buffers.candSmall,
-              width: buffers.smallWidth,
-              height: buffers.smallHeight,
-            }
-          : undefined,
-      });
+      const lineResult = localValidatorsFull
+        ? await validateLineStructure({
+            originalPath,
+            enhancedPath,
+            sensitivity: lineDriftThreshold, // 70% baseline, looser for Stage 2
+            buffers: buffers
+              ? {
+                  baseSmall: buffers.baseSmall,
+                  candSmall: buffers.candSmall,
+                  width: buffers.smallWidth,
+                  height: buffers.smallHeight,
+                }
+              : undefined,
+          })
+        : {
+            passed: true,
+            score: 1,
+            message: `Line/edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`,
+            edgeLoss: 0,
+            edgeShift: 0,
+            verticalDeviation: 0,
+            horizontalDeviation: 0,
+            details: { skipped: true, tier: LOCAL_VALIDATOR_TIER },
+          };
 
       // Capture line counts for soft geometry detection
-      if (lineResult.details?.originalEdgeCount) {
-        originalLineCount = lineResult.details.originalEdgeCount;
+      if (
+        lineResult.details &&
+        typeof lineResult.details === "object" &&
+        "originalEdgeCount" in lineResult.details &&
+        typeof (lineResult.details as any).originalEdgeCount === "number"
+      ) {
+        originalLineCount = (lineResult.details as any).originalEdgeCount;
       }
-      if (lineResult.details?.enhancedEdgeCount) {
-        enhancedLineCount = lineResult.details.enhancedEdgeCount;
+      if (
+        lineResult.details &&
+        typeof lineResult.details === "object" &&
+        "enhancedEdgeCount" in lineResult.details &&
+        typeof (lineResult.details as any).enhancedEdgeCount === "number"
+      ) {
+        enhancedLineCount = (lineResult.details as any).enhancedEdgeCount;
       }
 
       results.lineEdge = {
@@ -968,6 +1047,9 @@ export async function runUnifiedValidation(
       };
       if (!lineResult.passed) {
         reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
+      }
+      if (!localValidatorsFull) {
+        nLog(`[unified-validator] Line/edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
       }
     } catch (err) {
       console.warn("[unified-validator] Line/edge validation error (fail-closed):", err);

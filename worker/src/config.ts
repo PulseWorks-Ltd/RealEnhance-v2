@@ -19,6 +19,23 @@
 export const VALIDATOR_FOCUS =
   process.env.VALIDATOR_FOCUS === "1" || process.env.VALIDATOR_FOCUS === "true";
 
+export enum LocalValidatorTier {
+  NONE = "none",
+  CORE = "core",
+  FULL = "full",
+}
+
+const LOCAL_VALIDATOR_TIER_RAW = String(process.env.LOCAL_VALIDATOR_TIER || LocalValidatorTier.CORE)
+  .trim()
+  .toLowerCase();
+
+export const LOCAL_VALIDATOR_TIER: LocalValidatorTier =
+  LOCAL_VALIDATOR_TIER_RAW === LocalValidatorTier.NONE
+    ? LocalValidatorTier.NONE
+    : LOCAL_VALIDATOR_TIER_RAW === LocalValidatorTier.FULL
+      ? LocalValidatorTier.FULL
+      : LocalValidatorTier.CORE;
+
 export type StructuralSignalsMode = "log_only" | "active";
 
 const STRUCTURAL_SIGNALS_MODE_RAW = String(process.env.STRUCTURAL_SIGNALS_MODE || "log_only")

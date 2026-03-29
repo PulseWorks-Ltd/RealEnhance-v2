@@ -137,6 +137,8 @@ import {
   STRUCTURAL_SIGNALS_MODE,
   STRUCTURAL_SIGNALS_ACTIVE,
   STAGE2_ENABLE_ISSUETYPE_HARDFAIL,
+  LOCAL_VALIDATOR_TIER,
+  LocalValidatorTier,
 } from "./config";
 import { createTempTracker, type TempTracker } from "./utils/tempTracker";
 import { cleanupTempFiles } from "./utils/sharp-utils";
@@ -156,6 +158,7 @@ const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
 const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 2));
 const FREE_COUNTER_TTL_SECONDS = Math.max(24 * 60 * 60, Number(process.env.FREE_COUNTER_TTL_SECONDS || 180 * 24 * 60 * 60));
+const LOCAL_VALIDATORS_FULL = LOCAL_VALIDATOR_TIER === LocalValidatorTier.FULL;
 // Temporary hard-disable until fairness flow is redesigned for BullMQ active-claim semantics.
 const FAIR_SCHEDULER_ENABLED = false;
 const logger = console;
@@ -1297,7 +1300,14 @@ async function evaluateStage1BLightPolicy(input: {
     islandDetectionDrift: 0,
   };
 
-  const stage1BHeuristicPrecheckResult = runUnifiedValidator(stage1BHeuristicSignals);
+  const stage1BHeuristicPrecheckResult = LOCAL_VALIDATORS_FULL
+    ? runUnifiedValidator(stage1BHeuristicSignals)
+    : {
+        decision: "PROCEED_TO_GEMINI" as const,
+        severity: "LOW" as const,
+        score: 0,
+        warnings: [],
+      };
   const stage1BIsCatastrophicHeuristicFail = stage1BHeuristicPrecheckResult.severity === "CATASTROPHIC";
 
   const stage1BExtremeHardFail =
@@ -5781,20 +5791,29 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       // ═══ Semantic + Masked Edge Validators (secondary) ═══
-      await runSemanticStructureValidator({
-        originalImagePath: validationBaseline,
-        enhancedImagePath: path2,
-        scene: sceneLabel as any,
-        mode: "log",
-      });
+      if (LOCAL_VALIDATORS_FULL) {
+        await runSemanticStructureValidator({
+          originalImagePath: validationBaseline,
+          enhancedImagePath: path2,
+          scene: sceneLabel as any,
+          mode: "log",
+        });
 
-      await runMaskedEdgeValidator({
-        originalImagePath: validationBaseline,
-        enhancedImagePath: path2,
-        scene: sceneLabel as any,
-        mode: "log",
-        jobId: payload.jobId,
-      });
+        await runMaskedEdgeValidator({
+          originalImagePath: validationBaseline,
+          enhancedImagePath: path2,
+          scene: sceneLabel as any,
+          mode: "log",
+          jobId: payload.jobId,
+        });
+      } else {
+        nLog("[LOCAL_VALIDATOR_TIER] FULL-only secondary semantic/masked validators skipped", {
+          jobId: payload.jobId,
+          tier: LOCAL_VALIDATOR_TIER,
+          stage: "2",
+          path: "stage2_only",
+        });
+      }
 
       // ═══ Structural Geometry Check — only if published URLs exist ═══
       // (Don't introduce new publish steps; use URLs available post-publish below)
@@ -6068,6 +6087,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
   nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}, sharpSemantic=${sharpFinalValidatorMode || "disabled"}, geminiSemantic=${geminiSemanticValidatorMode || "disabled"}`);
+  console.log("LOCAL_VALIDATOR_TIER:", LOCAL_VALIDATOR_TIER);
+  nLog(`[worker] Local validator tier: ${LOCAL_VALIDATOR_TIER}`);
 
   // VALIDATOR FOCUS MODE: Print session header
   if (VALIDATOR_FOCUS) {
@@ -7228,25 +7249,46 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         blankRangeMax: STAGE1B_BLANK_RANGE_MAX,
       });
 
-      const wallDelta = await detectWallPlaneExpansion(path1A, candidate);
+      const wallDelta = LOCAL_VALIDATORS_FULL
+        ? await detectWallPlaneExpansion(path1A, candidate)
+        : {
+            baselineArea: 0,
+            candidateArea: 0,
+            deltaRatio: 0,
+            newWallRatio: 0,
+            planeExpansionRatio: 0,
+            hardFail: false,
+          };
       nLog(
         `[STAGE1B_WALL_DELTA] baselineArea=${wallDelta.baselineArea} candidateArea=${wallDelta.candidateArea} deltaRatio=${wallDelta.deltaRatio.toFixed(4)} newWallRatio=${wallDelta.newWallRatio.toFixed(4)}`
       );
 
-      const stage1BSemanticSignals = await runSemanticStructureValidator({
-        originalImagePath: path1A,
-        enhancedImagePath: candidate,
-        scene: sceneLabel === "exterior" ? "exterior" : "interior",
-        mode: "log",
-      });
+      const stage1BSemanticSignals = LOCAL_VALIDATORS_FULL
+        ? await runSemanticStructureValidator({
+            originalImagePath: path1A,
+            enhancedImagePath: candidate,
+            scene: sceneLabel === "exterior" ? "exterior" : "interior",
+            mode: "log",
+          })
+        : null;
 
-      const stage1BMaskedEdgeResult = await runMaskedEdgeValidator({
-        originalImagePath: path1A,
-        enhancedImagePath: candidate,
-        scene: sceneLabel === "exterior" ? "exterior" : "interior",
-        mode: "log",
-        jobId: payload.jobId,
-      });
+      const stage1BMaskedEdgeResult = LOCAL_VALIDATORS_FULL
+        ? await runMaskedEdgeValidator({
+            originalImagePath: path1A,
+            enhancedImagePath: candidate,
+            scene: sceneLabel === "exterior" ? "exterior" : "interior",
+            mode: "log",
+            jobId: payload.jobId,
+          })
+        : null;
+      if (!LOCAL_VALIDATORS_FULL) {
+        nLog("[LOCAL_VALIDATOR_TIER] FULL-only Stage1B wall/semantic/masked validators skipped", {
+          jobId: payload.jobId,
+          tier: LOCAL_VALIDATOR_TIER,
+          stage: "1B",
+          attempt: stage1BAttemptNo,
+        });
+      }
       const stage1BMaskedDriftPct = Number(((stage1BMaskedEdgeResult?.maskedEdgeDrift ?? 0) * 100).toFixed(2));
       const stage1BMaskedOpeningsDeltaTotal =
         (stage1BMaskedEdgeResult?.createdOpenings ?? 0) +
@@ -9254,53 +9296,62 @@ All openings must remain identical in position and size to the original image.`;
       let openingRegions: Array<{ bbox: [number, number, number, number]; type: "window" | "door" }> = [];
 
       try {
-        const [semanticSignals, maskedSignals] = await Promise.all([
-          runSemanticStructureValidator({
-            originalImagePath: validationBasePath,
-            enhancedImagePath: path2,
-            scene: sceneLabel as any,
-            mode: "log",
-          }),
-          runMaskedEdgeValidator({
-            originalImagePath: validationBasePath,
-            enhancedImagePath: path2,
-            scene: sceneLabel as any,
-            mode: "log",
-            jobId: payload.jobId,
-          }),
-        ]);
+        if (LOCAL_VALIDATORS_FULL) {
+          const [semanticSignals, maskedSignals] = await Promise.all([
+            runSemanticStructureValidator({
+              originalImagePath: validationBasePath,
+              enhancedImagePath: path2,
+              scene: sceneLabel as any,
+              mode: "log",
+            }),
+            runMaskedEdgeValidator({
+              originalImagePath: validationBasePath,
+              enhancedImagePath: path2,
+              scene: sceneLabel as any,
+              mode: "log",
+              jobId: payload.jobId,
+            }),
+          ]);
 
-        semanticWallDriftNorm = clamp01(Number(semanticSignals?.walls?.driftRatio ?? 0));
-        semanticOpeningsDeltaNorm = clamp01(
-          Math.abs(semanticSignals?.windows?.change ?? 0) +
-          Math.abs(semanticSignals?.doors?.change ?? 0) +
-          Math.abs(semanticSignals?.openings?.created ?? 0) +
-          Math.abs(semanticSignals?.openings?.closed ?? 0)
-        );
-        maskedEdgeDriftNorm = clamp01(Number(maskedSignals?.maskedEdgeDrift ?? 0));
-        edgeOpeningRiskNorm = clamp01(Number(maskedSignals?.edgeOpeningRisk ?? 0));
-        maskedDriftRegions = Array.isArray(maskedSignals?.maskedDriftRegions)
-          ? maskedSignals.maskedDriftRegions
-          : [];
+          semanticWallDriftNorm = clamp01(Number(semanticSignals?.walls?.driftRatio ?? 0));
+          semanticOpeningsDeltaNorm = clamp01(
+            Math.abs(semanticSignals?.windows?.change ?? 0) +
+            Math.abs(semanticSignals?.doors?.change ?? 0) +
+            Math.abs(semanticSignals?.openings?.created ?? 0) +
+            Math.abs(semanticSignals?.openings?.closed ?? 0)
+          );
+          maskedEdgeDriftNorm = clamp01(Number(maskedSignals?.maskedEdgeDrift ?? 0));
+          edgeOpeningRiskNorm = clamp01(Number(maskedSignals?.edgeOpeningRisk ?? 0));
+          maskedDriftRegions = Array.isArray(maskedSignals?.maskedDriftRegions)
+            ? maskedSignals.maskedDriftRegions
+            : [];
 
-        nLog("[STAGE2_HEURISTIC_SIGNALS]", {
-          jobId: payload.jobId,
-          attempt,
-          semanticWallDrift: semanticWallDriftNorm,
-          semanticOpeningsDelta: semanticOpeningsDeltaNorm,
-          maskedEdgeDrift: maskedEdgeDriftNorm,
-          edgeOpeningRisk: edgeOpeningRiskNorm,
-          maskedDriftRegions,
-        });
-
-        if (!STRUCTURAL_SIGNALS_ACTIVE) {
-          nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
-            mode: STRUCTURAL_SIGNALS_MODE,
+          nLog("[STAGE2_HEURISTIC_SIGNALS]", {
             jobId: payload.jobId,
             attempt,
+            semanticWallDrift: semanticWallDriftNorm,
             semanticOpeningsDelta: semanticOpeningsDeltaNorm,
             maskedEdgeDrift: maskedEdgeDriftNorm,
-            wallDrift: semanticWallDriftNorm,
+            edgeOpeningRisk: edgeOpeningRiskNorm,
+            maskedDriftRegions,
+          });
+
+          if (!STRUCTURAL_SIGNALS_ACTIVE) {
+            nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
+              mode: STRUCTURAL_SIGNALS_MODE,
+              jobId: payload.jobId,
+              attempt,
+              semanticOpeningsDelta: semanticOpeningsDeltaNorm,
+              maskedEdgeDrift: maskedEdgeDriftNorm,
+              wallDrift: semanticWallDriftNorm,
+            });
+          }
+        } else {
+          nLog("[LOCAL_VALIDATOR_TIER] FULL-only Stage2 semantic/masked validators skipped", {
+            jobId: payload.jobId,
+            tier: LOCAL_VALIDATOR_TIER,
+            stage: "2",
+            attempt,
           });
         }
       } catch (localGateErr: any) {
@@ -9322,7 +9373,14 @@ All openings must remain identical in position and size to the original image.`;
         islandDetectionDrift: 0,
       };
 
-      const heuristicPrecheckResult = runUnifiedValidator(heuristicPrecheckSignals);
+      const heuristicPrecheckResult = LOCAL_VALIDATORS_FULL
+        ? runUnifiedValidator(heuristicPrecheckSignals)
+        : {
+            decision: "PROCEED_TO_GEMINI" as const,
+            severity: "LOW" as const,
+            score: 0,
+            warnings: [],
+          };
       nLog("[STAGE2_VALIDATION_ADVISORY] heuristic_precheck log-only", {
         jobId: payload.jobId,
         imageId: payload.imageId,
@@ -9856,7 +9914,14 @@ All openings must remain identical in position and size to the original image.`;
           islandDetectionDrift: 0,
         };
 
-        const unifiedLocalResult = runUnifiedValidator(heuristicSignalsInput);
+        const unifiedLocalResult = LOCAL_VALIDATORS_FULL
+          ? runUnifiedValidator(heuristicSignalsInput)
+          : {
+              decision: "PROCEED_TO_GEMINI" as const,
+              severity: "LOW" as const,
+              score: 0,
+              warnings: [],
+            };
         const formattedSignals = `structuralDegreeChange:${heuristicSignalsInput.structuralDegreeChange.toFixed(4)},wallDrift:${heuristicSignalsInput.wallDrift.toFixed(4)},maskedEdgeDrift:${heuristicSignalsInput.maskedEdgeDrift.toFixed(4)},edgeOpeningRisk:${heuristicSignalsInput.edgeOpeningRisk.toFixed(4)},openingCountMismatch:${heuristicSignalsInput.openingCountMismatch.toFixed(4)},floorPlaneShift:${heuristicSignalsInput.floorPlaneShift.toFixed(4)},fixtureMismatch:${heuristicSignalsInput.fixtureMismatch.toFixed(4)},islandDetectionDrift:${heuristicSignalsInput.islandDetectionDrift.toFixed(4)}`;
 
         if (unifiedLocalResult.severity === "CATASTROPHIC") {
