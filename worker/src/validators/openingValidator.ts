@@ -16,6 +16,7 @@ export type OpeningValidatorResult = ValidatorOutcome;
 const OPENING_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
 const OPENING_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
+const HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
 const OPENING_LIGHT_ANCHOR_MODEL = process.env.GEMINI_OPENING_LIGHT_ANCHOR_MODEL || OPENING_MODEL_PRIMARY;
 const OPENING_WINDOW_MIN_RETENTION = Number(process.env.OPENING_WINDOW_MIN_RETENTION || 0.8);
 const OPENING_WINDOW_EXTREME_OCCLUSION_RETENTION = Number(process.env.OPENING_WINDOW_EXTREME_OCCLUSION_RETENTION || 0.45);
@@ -237,7 +238,7 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
       : []
     : [reason];
 
-  const hardFail = !pass && (anyRemoved || anyAlteredMajor);
+  const hardFail = !pass && anyRemoved && confidence >= HARD_FAIL_CONFIDENCE_THRESHOLD;
   const comparisonResult = {
     pass,
     issueType,
@@ -401,7 +402,7 @@ export async function runOpeningValidator(
     let maxSizeReductionDelta = 0;
     const openingSizeReductionAdvisoryThreshold = Math.max(0.1, OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD * 0.5);
     let openingSizeReductionDetected = false;
-    let openingSizeReductionHardFail = false;
+    let openingSizeReductionDetected = false;
 
     // Partial occlusion from staging (furniture, decor, camera angle)
     // is allowed. Only fail when the opening is functionally or
@@ -437,10 +438,6 @@ export async function runOpeningValidator(
       if (sizeReduction >= openingSizeReductionAdvisoryThreshold) {
         openingSizeReductionDetected = true;
       }
-      if (sizeReduction >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
-        openingSizeReductionHardFail = true;
-      }
-
       // Non-window openings (doors/closets/walkthroughs) must remain functionally usable.
       // Minor perspective overlap can be tolerated when usability is preserved.
       if (baseOpening.type !== "window") {
@@ -465,13 +462,12 @@ export async function runOpeningValidator(
     }
 
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
-    let hardFail =
+    const deterministicHardFailIssue =
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
       deterministic.summary.openingClassMismatch ||
-      deterministic.summary.openingBandMismatch ||
-      openingSizeReductionHardFail;
+      deterministic.summary.openingBandMismatch;
 
     const reasonParts: string[] = [];
     const advisorySignals: string[] = [];
@@ -482,10 +478,10 @@ export async function runOpeningValidator(
     }
     if (openingSizeReductionDetected || deterministic.summary.openingResized) {
       reasonParts.push("opening_resized");
-      if (openingSizeReductionDetected && !openingSizeReductionHardFail && maxSizeReductionDelta > 0) {
+      if (openingSizeReductionDetected && maxSizeReductionDelta > 0) {
         advisorySignals.push(`opening_resized_minor:${maxSizeReductionDelta.toFixed(3)}`);
       }
-      if (openingSizeReductionHardFail) {
+      if (maxSizeReductionDelta >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
         reasonParts.push(`opening_size_reduction_ge_${OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD.toFixed(2)}:${maxSizeReductionDelta.toFixed(3)}`);
       }
     }
@@ -498,11 +494,14 @@ export async function runOpeningValidator(
     if (strictWindowOcclusionFail) advisorySignals.push("window_occlusion_review");
 
     const microCheckRisk =
-      !hardFail && (
-        openingSizeReductionHardFail ||
+      !deterministicHardFailIssue && (
         deterministic.summary.openingResized ||
         areaDelta >= 0.25
       );
+
+    const baseConfidence = Number(deterministic.summary.confidence || 0);
+    let hardFailConfidence = baseConfidence;
+    let hardFail = deterministicHardFailIssue && hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD;
 
     if (microCheckRisk) {
       const micro = await runOpeningLightAnchorMicroCheck(
@@ -512,9 +511,11 @@ export async function runOpeningValidator(
         options?.imageId,
         options?.attempt,
       );
+      if (micro && Number.isFinite(micro.confidence)) {
+        hardFailConfidence = Math.max(hardFailConfidence, Number(micro.confidence));
+      }
       if (micro && micro.confidence >= 0.8 && (micro.openingInfilled || micro.openingRemoved || micro.openingRelocated)) {
         if (micro.openingInfilled || micro.openingRemoved) {
-          hardFail = true;
           reasonParts.push(
             micro.openingInfilled
               ? "light_anchor_opening_infilled"
@@ -531,10 +532,17 @@ export async function runOpeningValidator(
       }
     }
 
+    const hasHighConfidenceMicroHardFailSignal = reasonParts.some((part) =>
+      part === "light_anchor_opening_infilled" || part === "light_anchor_opening_removed"
+    );
+    hardFail = (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal) &&
+      hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD;
+
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
     const reason = reasonParts.join("|");
     const relocationOnly = !hardFail && (deterministic.summary.openingRelocated || relocationDetected);
-    const issueType = hardFail
+    const hasAdvisoryIssue = reason !== "openings_preserved" || advisorySignals.length > 0;
+    const issueType = hasAdvisoryIssue
       ? inferOpeningIssueType({
           pass: false,
           hardFail,
@@ -546,8 +554,8 @@ export async function runOpeningValidator(
       pass: !hardFail,
       issueType,
       confidence: relocationOnly
-        ? Math.min(Number(deterministic.summary.confidence || 0), 0.6)
-        : Number(deterministic.summary.confidence || 0),
+        ? Math.min(baseConfidence, 0.6)
+        : hardFailConfidence,
       reason,
       details: baselineOpenings.openings.map((opening) => ({
         id: opening.id,

@@ -3702,8 +3702,19 @@ export default function BatchProcessor({
                 toDisplayUrl(existing?.stage2Url) ||
                 toDisplayUrl(existing?.result?.stage2Url) ||
                 null;
-              const hasIncomingStage2 = !!stage2Url;
-              const isRetryStage2Success = isRetryChildJob && status === "completed" && hasIncomingStage2;
+              const preservedParentStage2Url = existingStage2Url || null;
+              const incomingStage2Url = stage2Url;
+              const hasIncomingStage2 = !!incomingStage2Url;
+              const authoritativeRetryArtifactUrl =
+                incomingRetryLatestUrl ||
+                incomingStage2Url ||
+                displayUrl ||
+                null;
+              const isRetryStage2Success =
+                isRetryChildJob &&
+                status === "completed" &&
+                hasIncomingStage2 &&
+                (!incomingRetryLatestUrl || incomingRetryLatestUrl === incomingStage2Url);
               const preserveExistingStage2Artifacts = !!existingStage2Url && (
                 status === "failed" ||
                 (isRetryChildJob && !hasIncomingStage2)
@@ -3711,18 +3722,16 @@ export default function BatchProcessor({
               const mergedStageUrls = isRegionEdit
                 ? (existingStageMapObj || stageUrlsMap || null)
                 : isRetryChildJob
-                  ? (isRetryStage2Success
-                      ? {
-                          ...(existingStageMapObj || {}),
-                          ...(stageUrlsMap || {}),
-                          '2': stage2Url,
-                          stage2: stage2Url,
-                          '1B': stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || stageUrlsMap?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
-                          '1A': stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || stageUrlsMap?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
-                          stage1B: stageUrlsMap?.stage1B || stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
-                          stage1A: stageUrlsMap?.stage1A || stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
-                        }
-                      : (existingStageMapObj || stageUrlsMap || null))
+                  ? {
+                      ...(existingStageMapObj || {}),
+                      ...(stageUrlsMap || {}),
+                      '2': preservedParentStage2Url,
+                      stage2: preservedParentStage2Url,
+                      '1B': stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || stageUrlsMap?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
+                      '1A': stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || stageUrlsMap?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
+                      stage1B: stageUrlsMap?.stage1B || stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
+                      stage1A: stageUrlsMap?.stage1A || stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
+                    }
                   : stageUrlsMap
                     ? {
                         ...(existingStageMapObj || {}),
@@ -3801,10 +3810,10 @@ export default function BatchProcessor({
                 stageUrls: mergedStageUrls,
                 completionSource: preserveExistingStage2Artifacts ? (existing.completionSource || completionSourceResolved) : completionSourceResolved,
                 latestRetryUrl: isRetryStage2Success
-                  ? (stage2Url || displayUrl || incomingRetryLatestUrl || existing.latestRetryUrl || existing.retryLatestUrl || null)
+                  ? (authoritativeRetryArtifactUrl || existing.latestRetryUrl || existing.retryLatestUrl || null)
                   : (incomingRetryLatestUrl ?? existing.latestRetryUrl ?? existing.retryLatestUrl ?? null),
                 retryLatestUrl: isRetryStage2Success
-                  ? (stage2Url || displayUrl || incomingRetryLatestUrl || existing.retryLatestUrl || existing.latestRetryUrl || null)
+                  ? (authoritativeRetryArtifactUrl || existing.retryLatestUrl || existing.latestRetryUrl || null)
                   : (incomingRetryLatestUrl ?? existing.retryLatestUrl ?? existing.latestRetryUrl ?? null),
                 latestEditUrl: isRegionEdit && completedFinal
                   ? (displayUrl ?? incomingEditLatestUrl ?? existing.latestEditUrl ?? existing.editLatestUrl ?? null)
@@ -3849,10 +3858,10 @@ export default function BatchProcessor({
                   requestedFinalStage,
                   completionSource: preserveExistingStage2Artifacts ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved) : completionSourceResolved,
                   latestRetryUrl: isRetryStage2Success
-                    ? (stage2Url || displayUrl || incomingRetryLatestUrl || existing.result?.latestRetryUrl || existing.result?.retryLatestUrl || null)
+                    ? (authoritativeRetryArtifactUrl || existing.result?.latestRetryUrl || existing.result?.retryLatestUrl || null)
                     : (incomingRetryLatestUrl ?? existing.result?.latestRetryUrl ?? existing.result?.retryLatestUrl ?? null),
                   retryLatestUrl: isRetryStage2Success
-                    ? (stage2Url || displayUrl || incomingRetryLatestUrl || existing.result?.retryLatestUrl || existing.result?.latestRetryUrl || null)
+                    ? (authoritativeRetryArtifactUrl || existing.result?.retryLatestUrl || existing.result?.latestRetryUrl || null)
                     : (incomingRetryLatestUrl ?? existing.result?.retryLatestUrl ?? existing.result?.latestRetryUrl ?? null),
                   latestEditUrl: isRegionEdit && completedFinal
                     ? (displayUrl ?? incomingEditLatestUrl ?? existing.result?.latestEditUrl ?? existing.result?.editLatestUrl ?? null)
@@ -3911,7 +3920,17 @@ export default function BatchProcessor({
 
             // Ensure the card immediately flips to the latest retry artifact once retry completes,
             // rather than waiting for another render/poll cycle to infer it.
-            if (isRetryChildJob && status === "completed" && !!stage2Url) {
+            if (
+              isRetryChildJob &&
+              status === "completed" &&
+              !!(
+                toDisplayUrl(it?.latestRetryUrl) ||
+                toDisplayUrl(it?.retryLatestUrl) ||
+                resultUrlSafe ||
+                stage2Url ||
+                null
+              )
+            ) {
               setDisplayStageByIndex((prev) => {
                 // Only default on first selection; do not override user-selected tabs on later refreshes.
                 if (prev[idx]) return prev;

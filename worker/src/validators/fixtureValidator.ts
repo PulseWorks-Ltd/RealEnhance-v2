@@ -6,8 +6,24 @@ import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 const logger = console;
+const FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
 
 export type FixtureValidatorResult = ValidatorOutcome;
+
+function isPendantOrChandelierAdditionRemoval(reason: string, advisorySignals: string[]): boolean {
+  const signals = [reason, ...advisorySignals]
+    .map((value) => String(value || "").toLowerCase())
+    .filter(Boolean);
+
+  const mentionsTargetFixture = signals.some((value) =>
+    /pendant|chandelier/.test(value)
+  );
+  if (!mentionsTargetFixture) return false;
+
+  return signals.some((value) =>
+    /\b(add|added|addition|inserted|introduced|remove|removed|removal|missing)\b/.test(value)
+  );
+}
 
 function parseFixtureResult(rawText: string): FixtureValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
@@ -30,6 +46,9 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
   const advisorySignals = parsed.ok ? [] : [reason];
   const tokens = splitIssueTokens(reason, advisorySignals);
   const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+  const hardFail = !parsed.ok &&
+    confidence >= FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD &&
+    isPendantOrChandelierAdditionRemoval(reason, advisorySignals);
   const issueType = parsed.ok
     ? ISSUE_TYPES.NONE
     : has("fixture_changed") || has("ceiling") || has("light") || has("downlight")
@@ -40,7 +59,7 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
-    hardFail: false,
+    hardFail,
     issueType,
     issueTier: classifyIssueTier(issueType),
     advisorySignals,
@@ -143,6 +162,13 @@ Examples that should NOT fail when architecture/fixtures are otherwise preserved
 
 Return JSON only:
 {"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
+
+  prompt += `
+
+HARD-FAIL ELIGIBILITY RULE:
+- Only chandelier or pendant light addition/removal can independently hard-fail.
+- If you detect that case, state it explicitly in reason using wording like "pendant_light_added", "pendant_light_removed", "chandelier_added", or "chandelier_removed".
+- Other fixed fixture changes should still return ok=false when appropriate, but remain advisory/non-blocking upstream.`;
 
   if (materialSignal.suspiciousMaterialChange) {
     prompt += `
