@@ -5081,10 +5081,35 @@ export default function BatchProcessor({
       } as const;
     }
 
+    // No tab explicitly selected — auto-resolve using the same priority as the display card.
+    const autoView = getCardArtifactView(item, {
+      selectedKey: null,
+      originalFallback: previewUrls[imageIndex] || null,
+    });
+    const autoActive = autoView.active;
+    if (autoActive?.url) {
+      const KEY_TO_SOURCE_STAGE: Partial<Record<string, SourceStageLabel>> = {
+        "2": "2", "1B": "1B", "1A": "1A",
+        "retried": "retry", "edited": "edit", "original": "original",
+      };
+      const resolvedSourceStage = KEY_TO_SOURCE_STAGE[autoActive.key as string] ?? null;
+      if (resolvedSourceStage) {
+        const resolvedJobId =
+          autoActive.key === "retried" ? retryArtifactJobId :
+          autoActive.key === "edited" ? (editedArtifactJobId || defaultJobId) :
+          defaultJobId;
+        return {
+          sourceUrl: autoActive.url,
+          sourceStage: resolvedSourceStage as SourceStageLabel,
+          selectedTab: autoActive.key as DisplayOutputKey,
+          sourceJobId: resolvedJobId,
+        } as const;
+      }
+    }
     return {
       sourceUrl: null,
       sourceStage: null,
-      selectedTab: selectedTab || null,
+      selectedTab: null,
       sourceJobId: null,
     } as const;
   }, [displayStageByIndex, previewUrls, results]);
@@ -5143,7 +5168,7 @@ export default function BatchProcessor({
     const sourceJobId = resolvedEditSource.sourceJobId;
 
     const displayedImageUrl = getCardArtifactView(item, {
-      selectedKey: selectedTab,
+      selectedKey: resolvedEditSource.selectedTab as DisplayOutputKey | null,
       originalFallback: previewUrls[imageIndex] || null,
     }).active?.url || null;
 
@@ -5191,7 +5216,7 @@ export default function BatchProcessor({
     }
 
     // Enforce lineage integrity: edited/retried sources must resolve a source job.
-    const requiresLineage = selectedTab === "edited" || selectedTab === "retried";
+    const requiresLineage = resolvedEditSource.selectedTab === "edited" || resolvedEditSource.selectedTab === "retried";
     if (requiresLineage && !sourceJobId) {
       console.error('[EDIT][lineage] Missing sourceJobId for selected artifact', {
         imageId,
