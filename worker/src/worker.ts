@@ -5059,6 +5059,44 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     await updateJob(payload.jobId, { retryPendingStage2: false });
     return true;
   };
+  const failManualStage2Retry = async (failureReason: string, errorMessage?: string) => {
+    await clearStage2RetryPending(`manual_retry_failed_${failureReason}`);
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "failed",
+        success: false,
+        completed: false,
+        currentStage: "failed",
+        finalStage: "failed",
+        resultStage: "failed",
+        finalOutputUrl: null,
+        resultUrl: null,
+        imageUrl: null,
+        latestRetryUrl: null,
+        retryLatestUrl: null,
+        validationNote: failureReason,
+        errorMessage: errorMessage || `stage2_retry_failed: ${failureReason}`,
+        meta: {
+          timings,
+          retryFailed: true,
+          failureReason,
+          stage2OnlyRetry: true,
+        },
+      },
+      `stage2_retry_failed:${failureReason}`
+    );
+    flushEnhanceForensicSnapshot({
+      uploadUrl: (payload as any).remoteOriginalUrl || null,
+      stage1AUrl: ((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null,
+      finalStatus: "failed",
+      warningsCount: 1,
+      hardFail: true,
+      completionGuard: failureReason,
+      finalOutputUrl: null,
+    });
+    emitJobAttemptSummary("EXHAUSTED");
+  };
   const isManualRetry = (payload as any).retryType === "manual_retry";
   let manualRetryAttemptConsumed = false;
   const consumeManualRetryAttemptIfNeeded = async (stage: string, geminiProducedOutput: boolean) => {
@@ -5547,6 +5585,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           path: path2,
           fallbackStage: stage2OnlyBaseStage,
         });
+        if (isManualRetry) {
+          await failManualStage2Retry(
+            "stage2_output_unavailable",
+            "stage2_retry_failed: stage2_output_unavailable"
+          );
+          return;
+        }
         await completePartialJobWithSummary({
           jobId: payload.jobId,
           triggerStage: "2",
@@ -5850,6 +5895,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       if (stage2OnlyBlockedReason) {
         const fallbackPath = basePath;
+        if (isManualRetry) {
+          await failManualStage2Retry(
+            "stage2_validation_failed",
+            `stage2_retry_failed: ${stage2OnlyBlockedReason}`
+          );
+          return;
+        }
         await clearStage2RetryPending("stage2_only_fallback_clear_pending");
         await completePartialJobWithSummary({
           jobId: payload.jobId,

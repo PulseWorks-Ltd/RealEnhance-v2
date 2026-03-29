@@ -161,6 +161,7 @@ function inferOpeningIssueType(params: {
   if (has("opening_removed") || has("light_anchor_opening_removed")) return ISSUE_TYPES.OPENING_REMOVED;
   if (has("opening_infilled") || has("light_anchor_opening_infilled")) return ISSUE_TYPES.OPENING_INFILLED;
   if (has("opening_sealed")) return ISSUE_TYPES.OPENING_SEALED;
+  if (has("opening_type_changed") || has("opening_class_mismatch") || has("opening_added")) return ISSUE_TYPES.OPENING_ANOMALY;
   if (has("opening_relocated") || has("light_anchor_opening_relocated")) return ISSUE_TYPES.OPENING_RELOCATED;
   if (has("opening_size_reduction_ge") || has("opening_resize_ge_0_30")) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
   if (has("opening_resized")) return ISSUE_TYPES.OPENING_RESIZED_MINOR;
@@ -393,7 +394,6 @@ export async function runOpeningValidator(
       attempt: options?.attempt,
     });
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
-    const baselineById = new Map((baseline.openings || []).map((opening) => [String(opening.id), opening]));
     const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
 
     const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
@@ -403,16 +403,19 @@ export async function runOpeningValidator(
     const openingSizeReductionAdvisoryThreshold = Math.max(0.1, OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD * 0.5);
     let openingSizeReductionDetected = false;
 
+    const hasAddedOpenings =
+      Number(deterministic.summary.openingCount?.after || 0) >
+      Number(deterministic.summary.openingCount?.before || 0);
+
     // Partial occlusion from staging (furniture, decor, camera angle)
     // is allowed. Only fail when the opening is functionally or
-    // structurally lost (sealed, removed, or no longer readable as an opening).
+    // structurally lost, changed into another opening type, or newly added.
     const hasStrongStructuralOpeningEvidence =
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
-      deterministic.summary.openingRelocated ||
       deterministic.summary.openingClassMismatch ||
-      deterministic.summary.openingBandMismatch;
+      hasAddedOpenings;
 
     let strictDoorOcclusionFail = false;
     let strictWindowOcclusionFail = false;
@@ -466,11 +469,18 @@ export async function runOpeningValidator(
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
       deterministic.summary.openingClassMismatch ||
-      deterministic.summary.openingBandMismatch;
+      hasAddedOpenings;
 
     const reasonParts: string[] = [];
     const advisorySignals: string[] = [];
     if (deterministic.summary.openingRemoved) reasonParts.push("opening_removed");
+    if (deterministic.summary.openingInfilled) reasonParts.push("opening_infilled");
+    if (deterministic.summary.openingSealed) reasonParts.push("opening_sealed");
+    if (deterministic.summary.openingClassMismatch) {
+      reasonParts.push("opening_type_changed");
+      reasonParts.push("opening_class_mismatch");
+    }
+    if (hasAddedOpenings) reasonParts.push("opening_added");
     if (deterministic.summary.openingRelocated || relocationDetected) {
       advisorySignals.push("opening_relocated_review");
       reasonParts.push("opening_relocated_review");
@@ -484,7 +494,6 @@ export async function runOpeningValidator(
         reasonParts.push(`opening_size_reduction_ge_${OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD.toFixed(2)}:${maxSizeReductionDelta.toFixed(3)}`);
       }
     }
-    if (deterministic.summary.openingClassMismatch) reasonParts.push("opening_class_mismatch");
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
     if ((deterministic.summary as any).openingSignatureMismatch === true) {
       advisorySignals.push("opening_signature_mismatch");
@@ -561,7 +570,11 @@ export async function runOpeningValidator(
         classification: hardFail
           ? reason.includes("opening_removed") || reason.includes("opening_infilled") || reason.includes("opening_sealed")
             ? "removed"
-            : reason.includes("opening_size_reduction") || reason.includes("opening_resized")
+            : reason.includes("opening_type_changed") ||
+              reason.includes("opening_class_mismatch") ||
+              reason.includes("opening_added") ||
+              reason.includes("opening_size_reduction") ||
+              reason.includes("opening_resized")
               ? "altered"
               : "present"
           : reason.includes("occlusion")

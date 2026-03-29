@@ -879,9 +879,12 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   }
 
   const summary = {
-    openingRemoved: input.summary.openingRemoved === true || results.some((item) => item.sealed === true && item.outOfFrame === false),
+    openingRemoved: input.summary.openingRemoved === true,
     openingInfilled: input.summary.openingInfilled === true,
-    openingSealed: results.some((item) => item.sealed === true),
+    openingSealed:
+      input.summary.openingSealed === true ||
+      input.summary.openingRemoved === true ||
+      input.summary.openingInfilled === true,
     openingRelocated: input.summary.openingRelocated === true || results.some((item) => item.relocated === true),
     openingResized: input.summary.openingResized === true,
     openingClassMismatch: input.summary?.openingClassMismatch === true,
@@ -1097,12 +1100,19 @@ export async function validateOpeningPreservation(
       invariantReasons.push("wall_coverage_band_changed_gt_one");
     }
 
+    if (match.type !== baseOpening.type) {
+      openingClassMismatch = true;
+      invariantReasons.push("opening_type_changed");
+      analysisNotes.push(
+        `Opening ${baseOpening.id} changed type (before=${baseOpening.type}, after=${match.type}).`
+      );
+    }
+
     if (
       baseOpening.paneStructure !== "unknown" &&
       match.paneStructure !== "unknown" &&
       baseOpening.paneStructure !== match.paneStructure
     ) {
-      openingClassMismatch = true;
       openingResized = true;
       invariantReasons.push("pane_structure_changed");
     }
@@ -1225,7 +1235,7 @@ export async function validateOpeningPreservation(
     }
 
     // Region-edit mode is more tolerant to sequence-order noise when no stable anchor exists.
-    // Only promote to hard structural removal when opening count dropped or anchor-referenced mismatch exists.
+    // Sequence-order drift remains advisory unless the opening is independently detected as removed/infilled.
     if (isEditMode && !anchorReferenced && !openingCountDropped) {
       analysisNotes.push(
         `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=absent.`
@@ -1236,32 +1246,26 @@ export async function validateOpeningPreservation(
       continue;
     }
 
-    openingRemoved = true;
-    openingBandMismatch = true;
-    if (anchorReferenced) {
-      openingInfilled = true;
-    }
-
     analysisNotes.push(
-      `Wall ${wallIndex} opening signature mismatch (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=${anchorReferenced ? "present" : "absent"}.`
+      `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=${anchorReferenced ? "present" : "absent"}.`
     );
 
     console.log(
-      `[OPENING_SIGNATURE_MISMATCH] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=${anchorReferenced}`
+      `[OPENING_SIGNATURE_ADVISORY] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=${anchorReferenced}`
     );
   }
 
   const summary = {
     openingRemoved,
     openingInfilled,
-    openingSealed: openingRemoved || openingResized || openingBandMismatch || openingClassMismatch,
+    openingSealed: openingRemoved || openingInfilled,
     openingRelocated,
     openingResized,
     openingClassMismatch,
     openingBandMismatch,
     openingStateChanged,
     openingApertureExpanded,
-    openingSignatureMismatch: analysisNotes.some((note) => note.includes("opening signature mismatch (L->R)")),
+    openingSignatureMismatch: analysisNotes.some((note) => note.includes("opening signature advisory (L->R)")),
     outOfFrameOpenings,
     openingCount: {
       before: baseline.openings.length,
@@ -1293,23 +1297,7 @@ export function shouldHardFailOpening(
   if (summary.openingRemoved) return true;
   if (summary.openingInfilled) return true;
   if (summary.openingSealed) return true;
-  if (summary.openingRelocated) return true;
   if (summary.openingClassMismatch) return true;
-  if (summary.openingStateChanged) return true;
-  if (summary.openingApertureExpanded) return true;
-  if (opts?.relocationDetected === true) return true;
-
-  const highConfidence = summary.confidence >= 0.9;
-  if (!highConfidence) return false;
-
-  const spatialSignals = [
-    summary.openingBandMismatch,
-    summary.openingResized,
-  ].filter(Boolean).length;
-
-  if (spatialSignals >= 2) return true;
-  if ((opts?.invariantStructuralDriftDetected === true) && spatialSignals >= 1) return true;
-
   return false;
 }
 
