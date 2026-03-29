@@ -3489,13 +3489,19 @@ export default function BatchProcessor({
                   null;
                 const canPromoteEditArtifact =
                   isRegionEdit &&
-                  canPromoteChildArtifact({
+                  (canPromoteChildArtifact({
                     type: "edit",
                     parentJobId,
                     existingJobId,
                     url: promotableEditUrl,
                     status: incomingNormalizedStatus,
-                  });
+                  }) || canPromoteChildArtifact({
+                    type: "edit",
+                    parentJobId,
+                    existingJobId: (existing.editLatestJobId || existing.result?.editLatestJobId || null) as string | null,
+                    url: promotableEditUrl,
+                    status: incomingNormalizedStatus,
+                  }));
 
                 if (canPromoteEditArtifact) {
                   const promotedVersion = normalizeVersionToTimestamp(

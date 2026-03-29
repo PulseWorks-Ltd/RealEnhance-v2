@@ -3380,6 +3380,17 @@ async function completePartialJob(params: {
 
   nLog(`[PARTIAL_COMPLETE] finalStage=${finalStage} resultUrl=${resultUrl}`);
 
+  // Stamp parent job with latestRetryUrl so client can display retry output on the original card
+  if (isManualRetry && resultUrl) {
+    const retryParentJobIdForStamp = String((billingContext?.payload as any)?.retryParentJobId || "").trim();
+    if (retryParentJobIdForStamp) {
+      await updateJob(retryParentJobIdForStamp, {
+        latestRetryUrl: resultUrl,
+        retryLatestUrl: resultUrl,
+      }).catch(() => {});
+    }
+  }
+
   const finalizedJob = await getJob(jobId);
   const finalizedStatus = String((finalizedJob as any)?.status || "").toLowerCase();
   const isTerminalComplete = finalizedStatus === "complete" || finalizedStatus === "completed";
