@@ -51,6 +51,28 @@ function run() {
   });
   assert.equal(anchoredFurnished.decision, "furnished_refresh", "Anchor furniture must route to refresh");
 
+  const livingRoomTvOnly = resolveFurnishedGateDecision({
+    analysis: baseAnalysis({
+      hasFurniture: true,
+      detectedAnchors: ["tv"],
+      isStageReady: false,
+    }),
+    localEmpty: false,
+    roomType: "living_room",
+  });
+  assert.equal(livingRoomTvOnly.decision, "furnished_refresh", "Living room TV-only anchor must route to refresh");
+
+  const bedroomTvOnly = resolveFurnishedGateDecision({
+    analysis: baseAnalysis({
+      hasFurniture: true,
+      detectedAnchors: ["tv"],
+      isStageReady: false,
+    }),
+    localEmpty: false,
+    roomType: "bedroom",
+  });
+  assert.notEqual(bedroomTvOnly.decision, "furnished_refresh", "Non-living TV-only anchor must not route to refresh");
+
   const detectorNull = resolveFurnishedGateDecision({
     analysis: null,
     localEmpty: false,

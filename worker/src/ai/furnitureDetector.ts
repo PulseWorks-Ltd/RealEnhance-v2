@@ -45,6 +45,7 @@ export const CORE_ANCHOR_CLASSES = [
   "dining_table",
   "desk",
   "coffee_table",
+  "tv",
   "freestanding_wardrobe",
   "large_freestanding_cabinet",
 ] as const;
@@ -62,6 +63,10 @@ function toRoomType(rawRoomType: unknown): string {
     .trim();
 }
 
+function isLivingRoomType(normalizedRoomType: string): boolean {
+  return normalizedRoomType === "living_room" || normalizedRoomType === "living" || normalizedRoomType === "lounge";
+}
+
 export function resolveFurnishedGateDecision(params: {
   analysis: FurnitureAnalysis | null;
   localEmpty: boolean;
@@ -75,6 +80,7 @@ export function resolveFurnishedGateDecision(params: {
 }): FurnishedGateDecision {
   const minConfidence = typeof params.minConfidence === "number" ? params.minConfidence : 0.65;
   const normalizedRoomType = toRoomType(params.roomType);
+  const livingRoomLike = isLivingRoomType(normalizedRoomType);
   const isKitchenLike = normalizedRoomType === "kitchen" || normalizedRoomType.startsWith("kitchen_");
 
   if (params.localEmpty) {
@@ -101,6 +107,13 @@ export function resolveFurnishedGateDecision(params: {
       .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
     : [];
 
+  const hasTvAnchor = anchors.includes("tv");
+  const hasNonTvAnchor = anchors.some((anchor) => anchor !== "tv");
+  const hasEligibleAnchor = hasNonTvAnchor || (livingRoomLike && hasTvAnchor);
+  const tvOnlyAnchor = hasTvAnchor && !hasNonTvAnchor;
+  const hasEligibleFurnitureSignal =
+    params.analysis.hasFurniture === true && (!tvOnlyAnchor || livingRoomLike);
+
   const confidence = typeof params.analysis.confidence === "number"
     ? Math.max(0, Math.min(1, params.analysis.confidence))
     : 0;
@@ -121,7 +134,7 @@ export function resolveFurnishedGateDecision(params: {
     };
   }
 
-  if (anchors.length > 0 || params.analysis.hasFurniture) {
+  if (hasEligibleAnchor || hasEligibleFurnitureSignal) {
     return {
       decision: "furnished_refresh",
       reason: "anchor_or_furniture_detected",
@@ -183,6 +196,7 @@ A room is considered FURNISHED only if at least one clearly visible anchor exist
 - dining_table
 - coffee_table
 - desk
+- tv (living rooms only)
 - freestanding_wardrobe
 - large_freestanding_cabinet
 

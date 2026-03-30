@@ -5059,7 +5059,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     await updateJob(payload.jobId, { retryPendingStage2: false });
     return true;
   };
-  const failManualStage2Retry = async (failureReason: string, errorMessage?: string) => {
+  const failManualStage2Retry = async (
+    failureReason: string,
+    errorMessage?: string,
+    timingSnapshot: Record<string, number> = {}
+  ) => {
     await clearStage2RetryPending(`manual_retry_failed_${failureReason}`);
     await safeWriteJobStatus(
       payload.jobId,
@@ -5078,7 +5082,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         validationNote: failureReason,
         errorMessage: errorMessage || `stage2_retry_failed: ${failureReason}`,
         meta: {
-          timings,
+          timings: timingSnapshot,
           retryFailed: true,
           failureReason,
           stage2OnlyRetry: true,
@@ -5588,7 +5592,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (isManualRetry) {
           await failManualStage2Retry(
             "stage2_output_unavailable",
-            "stage2_retry_failed: stage2_output_unavailable"
+            "stage2_retry_failed: stage2_output_unavailable",
+            timings
           );
           return;
         }
@@ -5706,13 +5711,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
 
             if (specialistHardFailReasons.length > 0) {
-              stage2ValidationPassed = false;
-              stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${specialistHardFailReasons.join("|")}`;
-              nLog("[STAGE2_ONLY_SPECIALIST_BLOCK]", {
+              nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt: stage2OnlyAttemptNo,
                 reasons: specialistHardFailReasons,
+                action: "advisory_only",
               });
             }
           } catch (specialistErr: any) {
@@ -5898,7 +5902,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (isManualRetry) {
           await failManualStage2Retry(
             "stage2_validation_failed",
-            `stage2_retry_failed: ${stage2OnlyBlockedReason}`
+            `stage2_retry_failed: ${stage2OnlyBlockedReason}`,
+            timings
           );
           return;
         }
