@@ -54,6 +54,7 @@ interface RegionEditorProps {
   editSourceUrl?: string;
   editSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   sourceJobId?: string;
+  currentCardJobId?: string;
   sourceImageId?: string;
   initialGoal?: string;
   initialIndustry?: string;
@@ -72,6 +73,7 @@ export function RegionEditor({
   editSourceUrl,
   editSourceStage,
   sourceJobId,
+  currentCardJobId,
   sourceImageId,
   initialGoal,
   initialIndustry,
@@ -95,12 +97,13 @@ export function RegionEditor({
     console.log('[RegionEditor] editSourceUrl:', editSourceUrl);
     console.log('[RegionEditor] editSourceStage:', editSourceStage);
     console.log('[RegionEditor] sourceJobId:', sourceJobId);
-  }, [initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId]);
+    console.log('[RegionEditor] currentCardJobId:', currentCardJobId);
+  }, [initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, currentCardJobId]);
   // Quick high-level prop + derived base log for easier debugging of restore flow
   useEffect(() => {
     const strictSource = editSourceUrl || "";
-    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, strictSource });
-  }, [mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId]);
+    console.log('[RegionEditor] props summary:', { mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, currentCardJobId, strictSource });
+  }, [mode, initialImageUrl, originalImageUrl, editSourceUrl, editSourceStage, sourceJobId, currentCardJobId]);
 
   // Reset state when a new image/meta is provided (opening editor for another item)
   useEffect(() => {
@@ -1145,6 +1148,9 @@ export function RegionEditor({
       formData.append("editSourceStage", editSourceStage);
       if (sourceJobId) {
         formData.append("jobId", sourceJobId);
+      }
+      if (currentCardJobId) {
+        formData.append("currentCardJobId", currentCardJobId);
       }
       if (sourceImageId) {
         formData.append("imageId", sourceImageId);

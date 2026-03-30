@@ -12284,10 +12284,22 @@ const worker = new Worker(
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
           const editParentJobId = String(regionAny.parentJobId || "").trim() || undefined;
+          const editSourceJobId = String(regionAny.sourceJobId || "").trim() || undefined;
+          const editVisibleCardJobId = String(regionAny.currentCardJobId || "").trim() || undefined;
+          const editPromotionTargetJobIds = Array.from(
+            new Set(
+              [editParentJobId, editSourceJobId, editVisibleCardJobId].filter(
+                (value): value is string => !!value,
+              ),
+            ),
+          );
+          const editPromotionPrimaryJobId = editPromotionTargetJobIds[0];
           const sourceJobId = String(regionAny.sourceJobId || "").trim() || null;
           nLog("EDIT_LINEAGE", {
             parentJobId: editParentJobId || null,
             sourceJobId,
+            currentCardJobId: editVisibleCardJobId || null,
+            promotionTargets: editPromotionTargetJobIds,
           });
           if (!editParentJobId) {
             logJobErrorAndThrow(regionPayload, "Missing parentJobId for region-edit lineage", {
@@ -12835,7 +12847,7 @@ const worker = new Worker(
               originalUrl: baseImageUrl, // Return the original input URL
               maskUrl: pubMask.url, // Return the published mask URL
               imageId: regionPayload.imageId, // Include imageId for tracking
-              parentJobId: editParentJobId,
+              parentJobId: editPromotionPrimaryJobId,
               mode: regionAny.mode, // Include original mode from payload (add/remove/replace/restore)
               meta: {
                 type: "region-edit",
@@ -12847,25 +12859,36 @@ const worker = new Worker(
                 retryEligible: false, // Edit outputs cannot be retry baselines
                 consumesCredits: false, // Edits are always FREE
                 // Edit fork metadata
-                parentJobId: editParentJobId,
+                parentJobId: editPromotionPrimaryJobId,
                 baselineStageUsed,
               },
             },
             "region_edit_complete"
           );
-          if (editParentJobId) {
+          let promotionAttached = false;
+          let lastPromotionError: unknown = null;
+          for (const targetJobId of editPromotionTargetJobIds) {
             try {
-              await updateJob(editParentJobId, {
+              await updateJob(targetJobId, {
                 latestEditUrl: pub.url,
                 editLatestUrl: pub.url,
                 editLatestJobId: regionPayload.jobId,
               });
-              nLog(`[worker-region-edit] stamped parent ${editParentJobId} with editLatestUrl`);
+              promotionAttached = true;
+              nLog(`[worker-region-edit] stamped parent ${targetJobId} with editLatestUrl`);
+              break;
             } catch (err) {
-              nLog("[worker-region-edit] Failed to stamp parent with editLatestUrl (non-blocking):", (err as any)?.message || err);
+              lastPromotionError = err;
+              nLog(`[worker-region-edit] Failed to stamp promotion target ${targetJobId}:`, (err as any)?.message || err);
             }
           }
-          nLog(`[edit] parentJobId=${editParentJobId ?? "none"} baselineStage=${baselineStageUsed}`);
+          if (!promotionAttached) {
+            throw new Error(
+              `region_edit_promotion_failed: no writable promotion target (${editPromotionTargetJobIds.join(",") || "none"})` +
+              `${lastPromotionError ? `: ${(lastPromotionError as any)?.message || lastPromotionError}` : ""}`
+            );
+          }
+          nLog(`[edit] parentJobId=${editPromotionPrimaryJobId ?? "none"} baselineStage=${baselineStageUsed}`);
           nLog('[worker-region-edit] updateJob called', {
             jobId: regionPayload.jobId,
             imageUrl: pub.url,

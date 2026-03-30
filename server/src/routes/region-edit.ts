@@ -228,11 +228,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const uiSelectedTab = typeof body.uiSelectedTab === "string" ? body.uiSelectedTab.trim() : "";
     const incomingImageId = String(body.imageId || "").trim() || null;
     const sourceJobId = typeof body.jobId === "string" ? body.jobId.trim() : undefined;
+    const currentCardJobId = typeof body.currentCardJobId === "string" ? body.currentCardJobId.trim() : undefined;
     const rawEditSourceStage = typeof body.sourceStage === "string" ? body.sourceStage : undefined;
     const editSourceStage: EditSourceStage = normalizeEditSourceStage(rawEditSourceStage);
     const executionSourceStage: ExecutionSourceStage = normalizeExecutionSourceStage(
       typeof body.uiSelectedTab === "string" ? body.uiSelectedTab : rawEditSourceStage,
     );
+    let effectiveExecutionSourceStage: ExecutionSourceStage = executionSourceStage;
     const baselineStage: "1A" | "1B" | "2" | undefined =
       editSourceStage === "stage2"
         ? "2"
@@ -646,6 +648,27 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       // Replace and Restore also need the structural anchor for the worker's validators.
       try {
         const sourceJob = await getJob(sourceJobId);
+        const sourceJobRetryUrl =
+          normalizeLookupUrl(
+            (sourceJob as any)?.latestRetryUrl ||
+            (sourceJob as any)?.retryLatestUrl ||
+            (sourceJob as any)?.result?.latestRetryUrl ||
+            (sourceJob as any)?.result?.retryLatestUrl ||
+            undefined,
+          );
+        const sourceJobEditUrl =
+          normalizeLookupUrl(
+            (sourceJob as any)?.latestEditUrl ||
+            (sourceJob as any)?.editLatestUrl ||
+            (sourceJob as any)?.result?.latestEditUrl ||
+            (sourceJob as any)?.result?.editLatestUrl ||
+            undefined,
+          );
+        if (sourceUrl && sourceJobRetryUrl && normalizeLookupUrl(sourceUrl) === sourceJobRetryUrl) {
+          effectiveExecutionSourceStage = "retry";
+        } else if (sourceUrl && sourceJobEditUrl && normalizeLookupUrl(sourceUrl) === sourceJobEditUrl) {
+          effectiveExecutionSourceStage = "edit";
+        }
         stage1AReferenceUrl = resolveStage1AUrlFromJob(sourceJob);
         const sourceJobStageUrls = (sourceJob as any)?.stageUrls || (sourceJob as any)?.stageOutputs || null;
         if (sourceJobStageUrls && typeof sourceJobStageUrls === "object") {
@@ -717,6 +740,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       propertyId: sourceEnhanced?.propertyId || undefined,
       galleryParentImageId: sourceEnhanced?.id || null,
       imageId: record.imageId || record.id,
+      currentCardJobId,
       mode: apiMode,
       editIntent,
       prompt: instruction,
@@ -726,7 +750,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       sourceStage: resolvedSourceStage,
       baselineStage: resolvedSourceStage,
       stageUrls: effectiveStageUrls,
-      executionSourceStage,
+      executionSourceStage: effectiveExecutionSourceStage,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       ...(editSourceStage ? { editSourceStage } : {}),
@@ -737,7 +761,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       imageId: record.imageId || record.id,
       mode: apiMode,
       sourceStage: resolvedSourceStage,
-      executionSourceStage,
+      executionSourceStage: effectiveExecutionSourceStage,
       lineageSourceUrl: resolvedSourceStage === "stage2"
         ? (effectiveStageUrls.stage2 || effectiveStageUrls["2"] || null)
         : resolvedSourceStage === "stage1B"
@@ -777,11 +801,12 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
         restoreFromUrl,
         stage1AReferenceUrl,
         sourceJobId,
+        currentCardJobId,
         parentJobId,
         canonicalParentImageId: canonicalLineage.parentImageId,
         editSourceUrl: sourceUrl,
         editSourceStage,
-        executionSourceStage,
+        executionSourceStage: effectiveExecutionSourceStage,
         sceneType,
         roomType,
         allowStaging,

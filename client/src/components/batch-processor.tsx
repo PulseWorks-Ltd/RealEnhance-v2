@@ -36,7 +36,8 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
-import { getCardArtifactView } from "@/lib/card-artifacts";
+import { getCardArtifactView, type DisplayOutputKey } from "@/lib/card-artifacts";
+import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
 
 type RunState = "idle" | "running" | "done";
@@ -48,8 +49,6 @@ type StagingStyle =
   | "high_end_luxury"
   | "country_lifestyle"
   | "lived_in_rental";
-type DisplayOutputKey = StageKey | "retried" | "edited" | "original";
-type SourceStageLabel = "original" | "1A" | "1B" | "2" | "retry" | "edit";
 type PreviewModalImage = {
   url: string;
   filename: string;
@@ -1247,7 +1246,7 @@ export default function BatchProcessor({
   // Preview/edit modal state
   const [previewImage, setPreviewImage] = useState<PreviewModalImage | null>(null);
   const [editingImageIndex, setEditingImageIndex] = useState<number | null>(null);
-  const [activeEditSource, setActiveEditSource] = useState<{ sourceUrl: string; sourceStage: SourceStageLabel; sourceJobId: string; imageId: string | null } | null>(null);
+  const [activeEditSource, setActiveEditSource] = useState<{ sourceUrl: string; sourceStage: SourceStageLabel; sourceJobId: string; currentCardJobId: string | null; imageId: string | null } | null>(null);
   const [regionEditorOpen, setRegionEditorOpen] = useState(false);
   const [retryingImages, setRetryingImages] = useState<Set<number>>(new Set());
   const [retryLoadingImages, setRetryLoadingImages] = useState<Set<number>>(new Set());
@@ -3725,17 +3724,30 @@ export default function BatchProcessor({
               const authoritativeRetryArtifactUrl =
                 incomingRetryLatestUrl ||
                 incomingStage2Url ||
-                displayUrl ||
                 null;
               const isRetryStage2Success =
                 isRetryChildJob &&
                 status === "completed" &&
                 hasIncomingStage2 &&
                 (!incomingRetryLatestUrl || incomingRetryLatestUrl === incomingStage2Url);
+              const retryCompletedWithoutStage2 =
+                isRetryChildJob &&
+                status === "completed" &&
+                !hasIncomingStage2;
               const preserveExistingStage2Artifacts = !!existingStage2Url && (
                 status === "failed" ||
-                (isRetryChildJob && !hasIncomingStage2)
+                retryCompletedWithoutStage2
               );
+              const preserveExistingEditArtifact = !!existingEditLatestUrl && !incomingEditLatestUrl;
+              const mergedLatestEditUrl = isRegionEdit && completedFinal
+                ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
+                : preserveExistingEditArtifact
+                  ? existingEditLatestUrl
+                  : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null);
+              const mergedEditLatestJobId = preserveExistingEditArtifact
+                ? (existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null)
+                : ((isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null);
+              const effectiveIncomingStatus = retryCompletedWithoutStage2 ? "failed" : status;
               const mergedStageUrls = isRegionEdit
                 ? (existingStageMapObj || stageUrlsMap || null)
                 : isRetryChildJob
@@ -3782,7 +3794,7 @@ export default function BatchProcessor({
                 null;
               const resolvedStatus = resolveNonRegressiveStatus(
                 existing.status || existing.result?.status,
-                status
+                effectiveIncomingStatus
               );
               const resolvedIsTerminal =
                 resolvedStatus === "completed" ||
@@ -3825,7 +3837,9 @@ export default function BatchProcessor({
                 finalOutputUrl: mergedResultUrl,
                 imageUrl: mergedImageUrl,
                 stageUrls: mergedStageUrls,
-                completionSource: preserveExistingStage2Artifacts ? (existing.completionSource || completionSourceResolved) : completionSourceResolved,
+                completionSource: (preserveExistingStage2Artifacts || preserveExistingEditArtifact)
+                  ? (existing.completionSource || completionSourceResolved)
+                  : completionSourceResolved,
                 latestRetryUrl: isRetryStage2Success
                   ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
                   : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
@@ -3833,13 +3847,9 @@ export default function BatchProcessor({
                   ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
                   : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
                 retryLatestJobId: incomingRetryLatestJobId ?? existing.retryLatestJobId ?? existing.result?.retryLatestJobId ?? null,
-                latestEditUrl: isRegionEdit && completedFinal
-                  ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
-                  : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
-                editLatestUrl: isRegionEdit && completedFinal
-                  ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
-                  : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
-                editLatestJobId: (isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null,
+                latestEditUrl: mergedLatestEditUrl,
+                editLatestUrl: mergedLatestEditUrl,
+                editLatestJobId: mergedEditLatestJobId,
                 version: Math.max(incomingVersion, existingVersion), // ✅ Store normalized numeric timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: imageId || existing.imageId,
@@ -3875,7 +3885,9 @@ export default function BatchProcessor({
                   hardFail,
                   fallbackMessage: unifiedCompletion.fallbackMessage,
                   requestedFinalStage,
-                  completionSource: preserveExistingStage2Artifacts ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved) : completionSourceResolved,
+                  completionSource: (preserveExistingStage2Artifacts || preserveExistingEditArtifact)
+                    ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved)
+                    : completionSourceResolved,
                   latestRetryUrl: isRetryStage2Success
                     ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
                     : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
@@ -3883,13 +3895,9 @@ export default function BatchProcessor({
                     ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
                     : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
                   retryLatestJobId: incomingRetryLatestJobId ?? existing.result?.retryLatestJobId ?? existing.retryLatestJobId ?? null,
-                  latestEditUrl: isRegionEdit && completedFinal
-                    ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
-                    : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
-                  editLatestUrl: isRegionEdit && completedFinal
-                    ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
-                    : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
-                  editLatestJobId: (isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.result?.editLatestJobId ?? existing.editLatestJobId ?? null,
+                  latestEditUrl: mergedLatestEditUrl,
+                  editLatestUrl: mergedLatestEditUrl,
+                  editLatestJobId: mergedEditLatestJobId,
                   previewUrl: preserveExistingStage2Artifacts
                     ? (existing.result?.previewUrl || existing.previewUrl || chosenPreview || null)
                     : (chosenPreview || existing.result?.previewUrl || existing.previewUrl || null),
@@ -3898,7 +3906,7 @@ export default function BatchProcessor({
                 previewUrl: preserveExistingStage2Artifacts ? (existing.previewUrl || chosenPreview || null) : (chosenPreview || existing.previewUrl || null),
                 // FIX 3: Only show errors for terminal failure states
                 error: (resolvedStatus === "failed")
-                  ? getDisplayError({ status: resolvedStatus, error: it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
+                  ? getDisplayError({ status: resolvedStatus, error: (retryCompletedWithoutStage2 ? ((Array.isArray(it?.warnings) && it.warnings[0]) || "Retry completed without a staged result.") : null) || it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
                   : existing.error,
                 errorCode: (resolvedStatus === "failed") ? (it.errorCode || it.error_code || it.meta?.errorCode || existing.errorCode) : undefined,
                 blockedStage: blockedStage || existing.blockedStage,
@@ -3947,7 +3955,6 @@ export default function BatchProcessor({
               !!(
                 toDisplayUrl(it?.latestRetryUrl) ||
                 toDisplayUrl(it?.retryLatestUrl) ||
-                resultUrlSafe ||
                 stage2Url ||
                 null
               )
@@ -5096,58 +5103,20 @@ export default function BatchProcessor({
       item?.result?.editLatestJobId ||
       null;
 
-    if (selectedTab === "2") {
-      return {
-        sourceUrl: stage2Url,
-        sourceStage: "2" as SourceStageLabel,
-        selectedTab,
-        sourceJobId: defaultJobId,
-      } as const;
-    }
-
-    if (selectedTab === "1B") {
-      return {
-        sourceUrl: stage1BUrl,
-        sourceStage: "1B" as SourceStageLabel,
-        selectedTab,
-        sourceJobId: defaultJobId,
-      } as const;
-    }
-
-    if (selectedTab === "1A") {
-      return {
-        sourceUrl: stage1AUrl,
-        sourceStage: "1A" as SourceStageLabel,
-        selectedTab,
-        sourceJobId: defaultJobId,
-      } as const;
-    }
-
-    if (selectedTab === "retried") {
-      return {
-        sourceUrl: retryLatestUrl,
-        sourceStage: "retry" as SourceStageLabel,
-        selectedTab,
-        sourceJobId: retryArtifactJobId,
-      } as const;
-    }
-
-    if (selectedTab === "edited") {
-      return {
-        sourceUrl: editLatestUrl,
-        sourceStage: "edit" as SourceStageLabel,
-        selectedTab,
-        sourceJobId: editedArtifactJobId || defaultJobId,
-      } as const;
-    }
-
-    if (selectedTab === "original") {
-      return {
-        sourceUrl: originalUrl,
-        sourceStage: "original" as SourceStageLabel,
-        selectedTab,
-        sourceJobId: defaultJobId,
-      } as const;
+    const explicitSelection = resolveSelectedEditSource({
+      selectedTab,
+      stage2Url,
+      stage1BUrl,
+      stage1AUrl,
+      retryLatestUrl,
+      editLatestUrl,
+      originalUrl,
+      defaultJobId,
+      retryArtifactJobId,
+      editedArtifactJobId,
+    });
+    if (explicitSelection.sourceStage) {
+      return explicitSelection;
     }
 
     // No tab explicitly selected — auto-resolve using the same priority as the display card.
@@ -5235,6 +5204,7 @@ export default function BatchProcessor({
     const urlSource = resolvedEditSource.sourceStage;
     const imageId = item?.imageId || item?.result?.imageId || null;
     const sourceJobId = resolvedEditSource.sourceJobId;
+    const currentCardJobId = item?.jobId || item?.result?.jobId || null;
 
     const displayedImageUrl = getCardArtifactView(item, {
       selectedKey: resolvedEditSource.selectedTab as DisplayOutputKey | null,
@@ -5310,6 +5280,7 @@ export default function BatchProcessor({
       selectedTab,
       url: imageUrl,
       sourceJobId: sourceJobId || null,
+      currentCardJobId,
       completionSource: item?.completionSource || null,
       stageUrls: item?.stageUrls || item?.result?.stageUrls || null,
       resultUrl: item?.resultUrl || null,
@@ -5325,7 +5296,7 @@ export default function BatchProcessor({
       return;
     }
 
-    setActiveEditSource({ sourceUrl: imageUrl, sourceStage: urlSource, sourceJobId: sourceJobId, imageId });
+    setActiveEditSource({ sourceUrl: imageUrl, sourceStage: urlSource, sourceJobId: sourceJobId, currentCardJobId, imageId });
     setEditingImageIndex(imageIndex);
     setRegionEditorOpen(true);
   };
@@ -5832,46 +5803,17 @@ export default function BatchProcessor({
                   retryTimeoutRef.current = null;
                 }
 
-                setResults(prev => prev.map((r, i) => {
-                  if (i !== imageIndex) return r;
-                  const preservedStageMap = r?.stageUrls || r?.result?.stageUrls || null;
-                  const preservedStage2 =
-                    toDisplayUrl(preservedStageMap?.['2']) ||
-                    toDisplayUrl(preservedStageMap?.[2]) ||
-                    toDisplayUrl(preservedStageMap?.stage2) ||
-                    toDisplayUrl(r?.stage2Url) ||
-                    toDisplayUrl(r?.result?.stage2Url) ||
-                    null;
-                  const fallbackCompletedOutputUrl = completedOutputUrl || r?.resultUrl || r?.result?.resultUrl || r?.imageUrl || r?.result?.imageUrl || null;
-                  return {
-                    ...r,
-                    // Always move to a terminal state when backend reports completion.
-                    status: "completed",
-                    uiStatus: preservedStage2 ? "ok" : (r?.uiStatus || "warning"),
-                    retryInFlight: undefined,
-                    retryStage: undefined,
-                    currentStage: null,
-                    error: preservedStage2 ? null : r?.error,
-                    resultUrl: fallbackCompletedOutputUrl,
-                    imageUrl: fallbackCompletedOutputUrl,
-                    retryLatestJobId: jobId,
-                    latestRetryUrl: fallbackCompletedOutputUrl || r?.latestRetryUrl || r?.retryLatestUrl || null,
-                    retryLatestUrl: fallbackCompletedOutputUrl || r?.retryLatestUrl || null,
-                    warnings: Array.isArray(job?.warnings) ? job.warnings : (r?.warnings || []),
-                  };
-                }));
-
-                // If Stage 2 is not available, display best available completed output.
-                if (completedOutputUrl) {
-                  setDisplayStageByIndex(prev => ({ ...prev, [imageIndex]: "retried" }));
-                }
-
-                clearRetryFlags(imageIndex);
+                markRetryFailed(
+                  imageIndex,
+                  (Array.isArray(job?.warnings) && job.warnings[0]) ||
+                    job?.error ||
+                    "Retry completed without a staged result."
+                );
 
                 toast({
-                  title: "Retry completed without staged output",
+                  title: "Retry failed",
                   description: (Array.isArray(job?.warnings) && job.warnings[0]) || "Keeping the previously successful output.",
-                  variant: "default"
+                  variant: "destructive"
                 });
                 return;
               } else if (job && isJobFailed) {
@@ -8271,6 +8213,7 @@ export default function BatchProcessor({
             editSourceUrl={activeEditSource.sourceUrl}
             editSourceStage={activeEditSource.sourceStage}
             sourceJobId={activeEditSource.sourceJobId}
+            currentCardJobId={activeEditSource.currentCardJobId || undefined}
             sourceImageId={activeEditSource.imageId || undefined}
             originalImageUrl={undefined}
             initialGoal={globalGoal}

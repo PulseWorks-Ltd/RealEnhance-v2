@@ -873,6 +873,7 @@ export async function enqueueRegionEditJob(params: {
   galleryParentImageId?: string | null;
   sourceJobId?: string;
   parentJobId?: string;
+  currentCardJobId?: string;
   sourceStage?: "stage1A" | "stage1B" | "stage2";
   sourceImageId?: string;
   imageId?: ImageId;
@@ -920,6 +921,7 @@ export async function enqueueRegionEditJob(params: {
     imageId: params.imageId,
     sourceJobId: params.sourceJobId,
     parentJobId,
+    currentCardJobId: params.currentCardJobId,
     sourceImageId: params.sourceImageId,
     propertyId: params.propertyId,
     galleryParentImageId: params.galleryParentImageId,

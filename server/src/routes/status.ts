@@ -185,6 +185,42 @@ function hasStage2ExhaustedSignal(parts: Array<string | null | undefined>): bool
   );
 }
 
+function extractPayloadRetryInfo(payload: any) {
+  const p: any = payload || {};
+  const retryType = p.retryType;
+  const sourceStage = p.retrySourceStage;
+  const sourceUrl = p.retrySourceUrl;
+  const sourceKey = p.retrySourceKey;
+  const parentImageId = p.retryParentImageId;
+  const parentJobId = p.retryParentJobId;
+  const clientBatchId = p.retryClientBatchId;
+  if (!retryType && !sourceStage && !sourceUrl && !sourceKey && !parentImageId && !parentJobId && !clientBatchId) {
+    return null;
+  }
+  return {
+    ...(retryType ? { retryType } : {}),
+    ...(sourceStage ? { sourceStage } : {}),
+    ...(sourceUrl ? { sourceUrl } : {}),
+    ...(sourceKey ? { sourceKey } : {}),
+    ...(parentImageId ? { parentImageId } : {}),
+    ...(parentJobId ? { parentJobId } : {}),
+    ...(clientBatchId ? { clientBatchId } : {}),
+  };
+}
+
+function extractPayloadParentJobId(payload: any): string | null {
+  const candidate =
+    payload?.parentJobId ||
+    payload?.retryParentJobId ||
+    payload?.currentCardJobId ||
+    payload?.metadata?.parentJobId ||
+    payload?.options?.parentJobId ||
+    payload?.sourceJobId ||
+    null;
+  const trimmed = typeof candidate === "string" ? candidate.trim() : String(candidate || "").trim();
+  return trimmed || null;
+}
+
 export function statusRouter() {
   const r = Router();
 
@@ -509,29 +545,9 @@ export function statusRouter() {
           local.retryLatestJobId ||
           local?.meta?.retryLatestJobId ||
           null;
-        const payloadRetryInfo = (() => {
-          const p: any = payload || {};
-          const retryType = p.retryType;
-          const sourceStage = p.retrySourceStage;
-          const sourceUrl = p.retrySourceUrl;
-          const sourceKey = p.retrySourceKey;
-          const parentImageId = p.retryParentImageId;
-          const parentJobId = p.retryParentJobId;
-          const clientBatchId = p.retryClientBatchId;
-          if (!retryType && !sourceStage && !sourceUrl && !sourceKey && !parentImageId && !parentJobId && !clientBatchId) {
-            return null;
-          }
-          return {
-            ...(retryType ? { retryType } : {}),
-            ...(sourceStage ? { sourceStage } : {}),
-            ...(sourceUrl ? { sourceUrl } : {}),
-            ...(sourceKey ? { sourceKey } : {}),
-            ...(parentImageId ? { parentImageId } : {}),
-            ...(parentJobId ? { parentJobId } : {}),
-            ...(clientBatchId ? { clientBatchId } : {}),
-          };
-        })();
-        const parentJobId = local.parentJobId || local.meta?.parentJobId || (rv && rv.parentJobId) || payloadRetryInfo?.parentJobId || null;
+        const payloadRetryInfo = extractPayloadRetryInfo(payload);
+        const payloadParentJobId = extractPayloadParentJobId(payload);
+        const parentJobId = local.parentJobId || local.meta?.parentJobId || (rv && rv.parentJobId) || payloadParentJobId || payloadRetryInfo?.parentJobId || null;
         const retryInfo = local.retryInfo || (rv && rv.retryInfo) || payloadRetryInfo || null;
 
         const terminalMeta = resolveTerminalMetadata(local, pipelineStatus, failedReason);
@@ -700,28 +716,8 @@ export function statusRouter() {
       const queueStatus = normalizeStateToQueueStatus(state);
       const stateNormalized = normalizeQueueState(state);
       const local = await getJob(jobId) || ({} as any);
-      const payloadRetryInfo = (() => {
-        const p: any = payload || {};
-        const retryType = p.retryType;
-        const sourceStage = p.retrySourceStage;
-        const sourceUrl = p.retrySourceUrl;
-        const sourceKey = p.retrySourceKey;
-        const parentImageId = p.retryParentImageId;
-        const parentJobId = p.retryParentJobId;
-        const clientBatchId = p.retryClientBatchId;
-        if (!retryType && !sourceStage && !sourceUrl && !sourceKey && !parentImageId && !parentJobId && !clientBatchId) {
-          return null;
-        }
-        return {
-          ...(retryType ? { retryType } : {}),
-          ...(sourceStage ? { sourceStage } : {}),
-          ...(sourceUrl ? { sourceUrl } : {}),
-          ...(sourceKey ? { sourceKey } : {}),
-          ...(parentImageId ? { parentImageId } : {}),
-          ...(parentJobId ? { parentJobId } : {}),
-          ...(clientBatchId ? { clientBatchId } : {}),
-        };
-      })();
+      const payloadRetryInfo = extractPayloadRetryInfo(payload);
+      const payloadParentJobId = extractPayloadParentJobId(payload);
       const localCompleted = local.completed === true || local.success === true || !!local.finalStage;
       const allowLocalImageUrl = localCompleted || stateNormalized === "completed" || stateNormalized === "failed";
       const finalOutputUrl: string | null =
@@ -899,7 +895,7 @@ export function statusRouter() {
         blockedStage: blockedStage || null,
         fallbackStage: fallbackStageMeta || null,
         validationNote: validationNote || null,
-        parentJobId: local.parentJobId || local.meta?.parentJobId || payloadRetryInfo?.parentJobId || null,
+        parentJobId: local.parentJobId || local.meta?.parentJobId || payloadParentJobId || payloadRetryInfo?.parentJobId || null,
         retryInfo: local.retryInfo || payloadRetryInfo || undefined,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
