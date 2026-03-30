@@ -155,13 +155,25 @@ export function getCardArtifactView(
     if (fallbackStage === "1A") return byKey("1A");
     return byKey("1B") || byKey("1A") || null;
   };
+  const pickNonDestructiveDefault = (): CardArtifactViewItem | null => {
+    return (
+      byKey("edited") ||
+      byKey("retried") ||
+      pickFallback() ||
+      byKey("2") ||
+      byKey("1B") ||
+      byKey("1A") ||
+      byKey("original") ||
+      byKey("final")
+    );
+  };
 
   let active = byKey(selectedKey);
   if (!active) {
     if (status === "failed") {
-      active = byKey("2") || pickFallback() || byKey("edited") || byKey("retried") || byKey("original") || byKey("final");
+      active = pickNonDestructiveDefault();
     } else if (blockedStage) {
-      active = pickFallback();
+      active = pickNonDestructiveDefault();
     }
   }
   if (!active) {

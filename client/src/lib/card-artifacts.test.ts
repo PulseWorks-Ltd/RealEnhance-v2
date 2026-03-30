@@ -176,3 +176,40 @@ test("getCardArtifactView preserves nested retry and edit artifacts when top-lev
   assert.equal(selectedRetryView.active?.key, "retried");
   assert.equal(selectedRetryView.active?.url, "https://cdn.example.com/stage2-retry.jpg");
 });
+
+test("getCardArtifactView does not fall back to stage output when failed card has edited artifact", () => {
+  const failedEditedCard = {
+    status: "failed",
+    stageUrls: {
+      "1A": "https://cdn.example.com/stage1a.jpg",
+      "1B": "https://cdn.example.com/stage1b.jpg",
+      "2": "https://cdn.example.com/stage2.jpg",
+    },
+    latestRetryUrl: "https://cdn.example.com/retry.jpg",
+    latestEditUrl: "https://cdn.example.com/edit.jpg",
+  };
+
+  const view = getCardArtifactView(failedEditedCard);
+  assert.equal(view.active?.key, "edited");
+  assert.equal(view.active?.url, "https://cdn.example.com/edit.jpg");
+});
+
+test("getCardArtifactView does not fall back to stage output when blocked card has retry artifact", () => {
+  const blockedRetriedCard = {
+    status: "completed",
+    validation: {
+      blockedStage: "2",
+      fallbackStage: "1B",
+    },
+    stageUrls: {
+      "1A": "https://cdn.example.com/stage1a.jpg",
+      "1B": "https://cdn.example.com/stage1b.jpg",
+      "2": "https://cdn.example.com/stage2.jpg",
+    },
+    latestRetryUrl: "https://cdn.example.com/retry.jpg",
+  };
+
+  const view = getCardArtifactView(blockedRetriedCard);
+  assert.equal(view.active?.key, "retried");
+  assert.equal(view.active?.url, "https://cdn.example.com/retry.jpg");
+});
