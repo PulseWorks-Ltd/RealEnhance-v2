@@ -198,6 +198,16 @@ function resolveSelectedDisplayUrlLocal(
   return null;
 }
 
+function getResolvedEditArtifactUrl(data: any): string | null {
+  return (
+    toDisplayUrl(data?.latestEditUrl) ||
+    toDisplayUrl(data?.editLatestUrl) ||
+    toDisplayUrl(data?.result?.latestEditUrl) ||
+    toDisplayUrl(data?.result?.editLatestUrl) ||
+    null
+  );
+}
+
 // Add cache-busting version to force browser reload (only when version exists)
 // NEVER modify signed URLs (AWS, GCS) — appending params breaks the signature
 function withVersion(url?: string | null, version?: string | number): string | null {
@@ -4688,7 +4698,7 @@ export default function BatchProcessor({
         const selectedTab = (displayStageByIndex[i] as DisplayOutputKey | undefined) || null;
         const imageUrl =
           getZipDisplayUrl(resultItem, selectedTab, previewUrls[i] || null)
-          || getZipDisplayUrl(resultItem, "2", previewUrls[i] || null);
+          || (selectedTab === "edited" ? null : getZipDisplayUrl(resultItem, "2", previewUrls[i] || null));
         
         if (imageUrl) {
           // Generate filename - use original file name if available, otherwise generate one
@@ -5026,17 +5036,15 @@ export default function BatchProcessor({
 
     const result = results[index];
     const selectedStage = displayStageByIndex[index] as DisplayOutputKey | undefined;
-    const preEditSnapshot = preEditStageUrlsRef.current[index] || { stage2: null, stage1B: null, stage1A: null };
+    const editArtifactUrl = getResolvedEditArtifactUrl(result);
+    const isEditedArtifactMissing = selectedStage === "edited" && !editArtifactUrl;
     const artifactView = getCardArtifactView(result, {
       selectedKey: selectedStage || null,
       originalFallback: previewUrls[index] || null,
-      stageFallback: {
-        stage2: preEditSnapshot.stage2,
-        stage1B: preEditSnapshot.stage1B,
-        stage1A: preEditSnapshot.stage1A,
-      },
     });
-    const bestDisplayUrl = artifactView.active?.url || previewUrls[index] || null;
+    const bestDisplayUrl = isEditedArtifactMissing
+      ? null
+      : (artifactView.active?.url || previewUrls[index] || null);
     const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
 
     const persistedOriginalUrl =
@@ -5052,7 +5060,7 @@ export default function BatchProcessor({
         ? previewUrls[index]
         : undefined;
     const originalUrl = persistedOriginalUrl || localOriginal;
-    const finalUrl = enhancedUrl || previewUrls[index];
+    const finalUrl = enhancedUrl || (isEditedArtifactMissing ? null : previewUrls[index]);
     if (!finalUrl) return null;
 
     const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
@@ -7758,29 +7766,26 @@ export default function BatchProcessor({
                         const artifactView = getCardArtifactView(result, {
                           selectedKey: requestedStage,
                           originalFallback: previewUrls[i] || null,
-                          stageFallback: {
-                            stage2: preEditSnapshot?.stage2 || null,
-                            stage1B: preEditSnapshot?.stage1B || null,
-                            stage1A: preEditSnapshot?.stage1A || null,
-                          },
                         });
                         const activeArtifact = artifactView.active;
 
                         // Image Preview Logic with artifact preference (avoid failed/blocked outputs)
                         const disallowStage2 = !!blockedStage && !stage2Url;
-                        const stagePreviewUrl = activeArtifact?.url || stage2Url || stage1BUrl || stage1AUrl || null;
-                        const editedUrl =
-                          toDisplayUrl(result?.latestEditUrl) ||
-                          toDisplayUrl(result?.result?.latestEditUrl) ||
-                          toDisplayUrl(result?.editLatestUrl) ||
-                          toDisplayUrl(result?.result?.editLatestUrl) ||
-                          null;
+                        const editedUrl = getResolvedEditArtifactUrl(result);
                         const retriedUrl =
                           toDisplayUrl(result?.latestRetryUrl) ||
                           toDisplayUrl(result?.result?.latestRetryUrl) ||
                           toDisplayUrl(result?.retryLatestUrl) ||
                           toDisplayUrl(result?.result?.retryLatestUrl) ||
                           null;
+                        const missingEditedArtifact =
+                          requestedStage === "edited" &&
+                          !hasActiveEdit &&
+                          !isProcessing &&
+                          !editedUrl;
+                        const stagePreviewUrl = missingEditedArtifact
+                          ? null
+                          : (activeArtifact?.url || stage2Url || stage1BUrl || stage1AUrl || null);
                         const selectedStage = artifactView.selectedKey;
                         const stage1BLabel = "Decluttered";
                         const availableOutputs: { key: DisplayOutputKey; label: string; url: string | null }[] = artifactView.available
@@ -7790,8 +7795,8 @@ export default function BatchProcessor({
                             label: artifact.label,
                             url: artifact.url,
                           }));
-                        const displayedUrl = activeArtifact?.url || null;
-                        const bestDisplayUrl = activeArtifact?.url || null;
+                        const displayedUrl = missingEditedArtifact ? null : (activeArtifact?.url || null);
+                        const bestDisplayUrl = missingEditedArtifact ? null : (activeArtifact?.url || null);
                         const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
                         const persistedOriginalUrl =
                           result?.result?.originalImageUrl ||
@@ -7821,6 +7826,9 @@ export default function BatchProcessor({
                             ) || canonicalPreviewBase)
                           : null;
                         const previewUrl = (() => {
+                          if (missingEditedArtifact) {
+                            return null;
+                          }
                           if (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2) {
                             return nonTerminalPreviewUrl || progressivePreviewUrl;
                           }
@@ -7839,8 +7847,14 @@ export default function BatchProcessor({
                           editedUrl ||
                           resolvedFinalUrl
                         );
+                        const missingEditedArtifactMessage = missingEditedArtifact
+                          ? "Edited result is unavailable. Previous outputs remain available on the other tabs."
+                          : null;
 
                         const stageBadgeLabel = (() => {
+                          if (missingEditedArtifact) {
+                            return "Edited output unavailable";
+                          }
                           const activeLabel = activeArtifact?.label || "Preview";
                           if (isUiComplete) {
                             return activeArtifact?.key === "original" ? activeLabel : `${activeLabel} (Final)`;
@@ -7925,6 +7939,11 @@ export default function BatchProcessor({
                                   <p className="text-sm font-semibold text-white">Retry result unavailable</p>
                                 </div>
                               )}
+                              {missingEditedArtifact && !isProcessing && (
+                                <div className="absolute inset-0 z-10 flex items-center justify-center bg-rose-900/65 px-4 text-center">
+                                  <p className="text-sm font-semibold text-white">Edited result unavailable</p>
+                                </div>
+                              )}
                               {!isProcessing && isUiComplete && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/10 transition-opacity duration-500 animate-in fade-in zoom-in duration-300">
                                   <CheckCircle className="text-white w-6 h-6 shadow-sm drop-shadow-md" />
@@ -7983,6 +8002,11 @@ export default function BatchProcessor({
                                   {fallbackMessage && (
                                     <p className="mt-1 text-xs text-amber-700">
                                       {fallbackMessage}
+                                    </p>
+                                  )}
+                                  {missingEditedArtifactMessage && (
+                                    <p className="mt-1 text-xs text-rose-600">
+                                      {missingEditedArtifactMessage}
                                     </p>
                                   )}
                                   {autoInsertedStage1B && (
@@ -8458,6 +8482,7 @@ export default function BatchProcessor({
                   title: 'Region edit complete',
                   description: `Image ${activeEditIndex + 1} edited successfully. You can do more edits or close the modal.`,
                 });
+                delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
                 delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
               }
@@ -8489,6 +8514,9 @@ export default function BatchProcessor({
                   next.delete(activeEditIndex);
                   return next;
                 });
+                delete preEditStageUrlsRef.current[activeEditIndex];
+                delete preEditResultSnapshotRef.current[activeEditIndex];
+                delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
               }
               setRegionEditorOpen(false);
               setEditingImageIndex(null);
@@ -8510,6 +8538,7 @@ export default function BatchProcessor({
                   }
                 }
 
+                delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
                 delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
                 setEditingImages(prev => {

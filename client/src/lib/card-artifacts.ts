@@ -169,14 +169,15 @@ export function getCardArtifactView(
   };
 
   let active = byKey(selectedKey);
-  if (!active) {
+  const isStrictEditedSelection = selectedKey === "edited";
+  if (!active && !isStrictEditedSelection) {
     if (status === "failed") {
       active = pickNonDestructiveDefault();
     } else if (blockedStage) {
       active = pickNonDestructiveDefault();
     }
   }
-  if (!active) {
+  if (!active && !isStrictEditedSelection) {
     active =
       byKey("edited") ||
       byKey("retried") ||
@@ -191,7 +192,11 @@ export function getCardArtifactView(
     active,
     available,
     currentArtifact: active?.artifactType || null,
-    selectedKey: active?.selectable ? (active.key as DisplayOutputKey) : null,
+    selectedKey: isStrictEditedSelection && !active
+      ? "edited"
+      : active?.selectable
+        ? (active.key as DisplayOutputKey)
+        : null,
   };
 }
 
