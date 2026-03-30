@@ -3385,6 +3385,7 @@ export default function BatchProcessor({
             const isQueued = pipelineStatusRaw === "queued" || pipelineStatusRaw === "waiting";
             const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
             // Keep uiOverrideFailed as an internal UI fallback signal; do not inject user-facing warning copy here.
+            let forceEditedDisplay = false;
               const isTerminalNormalized = status === "failed" || completedFinal;
             if (!isTerminalNormalized) {
               nonTerminalIndices.push(idx);
@@ -3562,6 +3563,7 @@ export default function BatchProcessor({
                     },
                   };
                   wasUpdateApplied = true;
+                  forceEditedDisplay = true;
                   currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
                   if (!retryChildMappingLoggedRef.current.has(`promote-edit:${polledId}:${existingJobId}:${idx}`)) {
                     retryChildMappingLoggedRef.current.add(`promote-edit:${polledId}:${existingJobId}:${idx}`);
@@ -3964,6 +3966,10 @@ export default function BatchProcessor({
                 if (prev[idx]) return prev;
                 return { ...prev, [idx]: "retried" };
               });
+            }
+
+            if (forceEditedDisplay) {
+              setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
             }
 
             if (isRegionEdit && completedFinal) {
