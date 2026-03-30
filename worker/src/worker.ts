@@ -6006,6 +6006,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return;
       }
 
+      const stage2OnlyBase1AUrl = ((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null;
+      const stage2OnlyBase1BUrl = (payload.stage2OnlyMode?.base1BUrl as string | undefined) || null;
+
       await safeWriteJobStatus(payload.jobId, {
         status: "complete",
         finalOutputUrl: pub2Url,
@@ -6014,9 +6017,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         retryLatestUrl: pub2Url,
         retryLatestJobId: payload.jobId,
         stageUrls: {
-          "1A": stage2OnlyBaseStage === "1A" ? ((payload.stage2OnlyMode as any)?.base1AUrl || null) : ((payload.stage2OnlyMode as any)?.base1AUrl || null),
-          "1B": stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode.base1BUrl || null) : null,
-          "2": pub2Url
+          "1A": stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
+          "1B": stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
+          "2": pub2Url,
         },
         meta: {
           stage2OnlyRetry: true,
@@ -6032,6 +6035,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           latestRetryUrl: pub2Url,
           retryLatestUrl: pub2Url,
           retryLatestJobId: payload.jobId,
+          stageUrls: {
+            "1A": stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
+            "1B": stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
+            "2": pub2Url,
+            stage1A: stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
+            stage1B: stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
+            stage2: pub2Url,
+          },
         }).catch(() => {});
       }
 

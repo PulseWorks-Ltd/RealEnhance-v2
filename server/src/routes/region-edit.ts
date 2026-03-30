@@ -119,6 +119,47 @@ function deriveImageIdFromUrl(urlValue: string): string {
   return `url_${digest}`;
 }
 
+async function resolveCanonicalRegionEditParent(sourceJobId: string): Promise<{
+  parentJobId: string;
+  parentImageId: string | null;
+}> {
+  let canonicalParentJobId = String(sourceJobId || "").trim();
+  let canonicalParentImageId: string | null = null;
+  const visitedJobIds = new Set<string>();
+
+  while (canonicalParentJobId && !visitedJobIds.has(canonicalParentJobId)) {
+    visitedJobIds.add(canonicalParentJobId);
+    const currentJob = await getJob(canonicalParentJobId);
+    if (!currentJob) break;
+
+    const currentPayload = (((currentJob as any)?.payload || {}) as Record<string, unknown>);
+    const currentImageId = String(
+      currentPayload.retryParentImageId ||
+      currentPayload.sourceImageId ||
+      (currentJob as any)?.imageId ||
+      ""
+    ).trim();
+    if (currentImageId) canonicalParentImageId = currentImageId;
+
+    const nextParentJobId = String(
+      currentPayload.retryParentJobId ||
+      currentPayload.parentJobId ||
+      currentPayload.sourceJobId ||
+      ""
+    ).trim();
+
+    if (!nextParentJobId || nextParentJobId === canonicalParentJobId) {
+      break;
+    }
+    canonicalParentJobId = nextParentJobId;
+  }
+
+  return {
+    parentJobId: canonicalParentJobId || String(sourceJobId || "").trim(),
+    parentImageId: canonicalParentImageId,
+  };
+}
+
 export const regionEditRouter = Router();
 
 // Accept ANY file fields (no more "Unexpected field")
@@ -281,9 +322,15 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       return res.status(400).json({ success: false, error: "missing_source_job_id" });
     }
 
-    // Lineage invariant: for edit-of-edit and edit-after-retry flows, parentJobId must be the source job.
-    const parentJobId = sourceJobId;
-    console.log("EDIT_LINEAGE", { parentJobId, sourceJobId });
+    const requestedSourceJobId = sourceJobId;
+    const canonicalLineage = await resolveCanonicalRegionEditParent(requestedSourceJobId);
+    const parentJobId = canonicalLineage.parentJobId;
+    console.log("EDIT_LINEAGE", {
+      requestedSourceJobId,
+      sourceJobId,
+      parentJobId,
+      canonicalParentImageId: canonicalLineage.parentImageId,
+    });
 
     console.log("[SOURCE_RESOLVED]", {
       sourceUrl: selectedOutputUrl,
@@ -731,6 +778,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
         stage1AReferenceUrl,
         sourceJobId,
         parentJobId,
+        canonicalParentImageId: canonicalLineage.parentImageId,
         editSourceUrl: sourceUrl,
         editSourceStage,
         executionSourceStage,

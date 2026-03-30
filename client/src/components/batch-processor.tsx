@@ -37,6 +37,7 @@ import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
 import { getCardArtifactView } from "@/lib/card-artifacts";
+import { hasEditedArtifact } from "@/lib/retry-policy";
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
@@ -163,6 +164,7 @@ const SCENE_CONF_SCALE = (() => {
 })();
 
 const IS_DEV = !!(import.meta as any).env?.DEV;
+const RETRY_AFTER_EDIT_MESSAGE = "Retry is unavailable after an edit. Continue editing this version or start a new enhancement.";
 
 // Normalizer functions to handle shape mismatch between backend and frontend
 function normalizeBatchItem(it: any): { ok: boolean; image?: string | null; error?: string } | null {
@@ -3610,6 +3612,12 @@ export default function BatchProcessor({
               const existingStatusNorm = normalizeJobStatus(String(existing.status || existing.result?.status || ""));
               const existingIsTerminal = existingStatusNorm === "completed" || existingStatusNorm === "failed" || existingStatusNorm === "cancelled";
               const incomingStatusNorm = status;
+              const existingRetryLatestUrl =
+                toDisplayUrl(existing.latestRetryUrl) ||
+                toDisplayUrl(existing.result?.latestRetryUrl) ||
+                toDisplayUrl(existing.retryLatestUrl) ||
+                toDisplayUrl(existing.result?.retryLatestUrl) ||
+                null;
               const existingEditLatestUrl =
                 toDisplayUrl(existing.latestEditUrl) ||
                 toDisplayUrl(existing.result?.latestEditUrl) ||
@@ -3819,18 +3827,18 @@ export default function BatchProcessor({
                 stageUrls: mergedStageUrls,
                 completionSource: preserveExistingStage2Artifacts ? (existing.completionSource || completionSourceResolved) : completionSourceResolved,
                 latestRetryUrl: isRetryStage2Success
-                  ? (authoritativeRetryArtifactUrl || existing.latestRetryUrl || existing.retryLatestUrl || null)
-                  : (incomingRetryLatestUrl ?? existing.latestRetryUrl ?? existing.retryLatestUrl ?? null),
+                  ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
+                  : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
                 retryLatestUrl: isRetryStage2Success
-                  ? (authoritativeRetryArtifactUrl || existing.retryLatestUrl || existing.latestRetryUrl || null)
-                  : (incomingRetryLatestUrl ?? existing.retryLatestUrl ?? existing.latestRetryUrl ?? null),
+                  ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
+                  : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
                 retryLatestJobId: incomingRetryLatestJobId ?? existing.retryLatestJobId ?? existing.result?.retryLatestJobId ?? null,
                 latestEditUrl: isRegionEdit && completedFinal
-                  ? (displayUrl ?? incomingEditLatestUrl ?? existing.latestEditUrl ?? existing.editLatestUrl ?? null)
-                  : (incomingEditLatestUrl ?? existing.latestEditUrl ?? existing.editLatestUrl ?? null),
+                  ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
+                  : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
                 editLatestUrl: isRegionEdit && completedFinal
-                  ? (displayUrl ?? incomingEditLatestUrl ?? existing.editLatestUrl ?? existing.latestEditUrl ?? null)
-                  : (incomingEditLatestUrl ?? existing.editLatestUrl ?? existing.latestEditUrl ?? null),
+                  ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
+                  : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
                 editLatestJobId: (isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null,
                 version: Math.max(incomingVersion, existingVersion), // ✅ Store normalized numeric timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
@@ -3869,18 +3877,18 @@ export default function BatchProcessor({
                   requestedFinalStage,
                   completionSource: preserveExistingStage2Artifacts ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved) : completionSourceResolved,
                   latestRetryUrl: isRetryStage2Success
-                    ? (authoritativeRetryArtifactUrl || existing.result?.latestRetryUrl || existing.result?.retryLatestUrl || null)
-                    : (incomingRetryLatestUrl ?? existing.result?.latestRetryUrl ?? existing.result?.retryLatestUrl ?? null),
+                    ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
+                    : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
                   retryLatestUrl: isRetryStage2Success
-                    ? (authoritativeRetryArtifactUrl || existing.result?.retryLatestUrl || existing.result?.latestRetryUrl || null)
-                    : (incomingRetryLatestUrl ?? existing.result?.retryLatestUrl ?? existing.result?.latestRetryUrl ?? null),
+                    ? (authoritativeRetryArtifactUrl || existingRetryLatestUrl || null)
+                    : (incomingRetryLatestUrl ?? existingRetryLatestUrl ?? null),
                   retryLatestJobId: incomingRetryLatestJobId ?? existing.result?.retryLatestJobId ?? existing.retryLatestJobId ?? null,
                   latestEditUrl: isRegionEdit && completedFinal
-                    ? (displayUrl ?? incomingEditLatestUrl ?? existing.result?.latestEditUrl ?? existing.result?.editLatestUrl ?? null)
-                    : (incomingEditLatestUrl ?? existing.result?.latestEditUrl ?? existing.result?.editLatestUrl ?? null),
+                    ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
+                    : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
                   editLatestUrl: isRegionEdit && completedFinal
-                    ? (displayUrl ?? incomingEditLatestUrl ?? existing.result?.editLatestUrl ?? existing.result?.latestEditUrl ?? null)
-                    : (incomingEditLatestUrl ?? existing.result?.editLatestUrl ?? existing.result?.latestEditUrl ?? null),
+                    ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
+                    : (incomingEditLatestUrl ?? existingEditLatestUrl ?? null),
                   editLatestJobId: (isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.result?.editLatestJobId ?? existing.editLatestJobId ?? null,
                   previewUrl: preserveExistingStage2Artifacts
                     ? (existing.result?.previewUrl || existing.previewUrl || chosenPreview || null)
@@ -4803,6 +4811,16 @@ export default function BatchProcessor({
 
   // Retry dialog handlers
   const handleOpenRetryDialog = (imageIndex: number) => {
+    const item = results[imageIndex];
+    if (hasEditedArtifact(item)) {
+      toast({
+        title: "Retry unavailable",
+        description: RETRY_AFTER_EDIT_MESSAGE,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const status = String(results[imageIndex]?.status || results[imageIndex]?.result?.status || "").toLowerCase();
     const isTerminal =
       results[imageIndex]?.isTerminal === true ||
@@ -4839,6 +4857,15 @@ export default function BatchProcessor({
     
     try {
       const res = results[imageIndex];
+      if (hasEditedArtifact(res)) {
+        toast({
+          title: "Retry unavailable",
+          description: RETRY_AFTER_EDIT_MESSAGE,
+          variant: "destructive",
+        });
+        return;
+      }
+
       const requestedStages = res?.requestedStages || res?.result?.requestedStages || res?.meta?.requestedStages || null;
       const stage1BWasRequestedByPipeline = !!requestedStages?.stage1b
         || (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false)
@@ -5307,6 +5334,16 @@ export default function BatchProcessor({
     // ✅ Prevent double retry on same image (sync ref avoids rapid double-click races)
     if (!files || imageIndex >= files.length || retryInFlightRef.current.has(imageIndex) || retryingImages.has(imageIndex)) return;
 
+    const currentResult = results[imageIndex];
+    if (hasEditedArtifact(currentResult)) {
+      toast({
+        title: "Retry unavailable",
+        description: RETRY_AFTER_EDIT_MESSAGE,
+        variant: "destructive",
+      });
+      return;
+    }
+
     const fileToRetry = files[imageIndex];
     if (!fileToRetry) return;
 
@@ -5515,6 +5552,14 @@ export default function BatchProcessor({
             toast({
               title: "Pick a current output",
               description: "Please refresh the page and choose a current output before retrying.",
+              variant: "destructive"
+            });
+            return;
+          }
+          if (err?.error === "retry_not_allowed_after_edit") {
+            toast({
+              title: "Retry unavailable",
+              description: RETRY_AFTER_EDIT_MESSAGE,
               variant: "destructive"
             });
             return;
@@ -7616,7 +7661,8 @@ export default function BatchProcessor({
                             resolved: isRetryStatusTerminal,
                           });
                         }
-                        const canRetryThisImage = !isRetryStatusActive;
+                        const hasEditedOutput = hasEditedArtifact(result);
+                        const canRetryThisImage = !isRetryStatusActive && !hasEditedOutput;
                         const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
@@ -8107,7 +8153,7 @@ export default function BatchProcessor({
               status === "completed" ||
               status === "complete" ||
               status === "failed";
-            const canRetryFromPreview = !isRetryStatusActive;
+            const canRetryFromPreview = !isRetryStatusActive && !hasEditedArtifact(previewResult);
             const previewEditSource = getEditSourceForIndex(previewImage.index);
             const canEditThisPreviewImage = !isRetryStatusActive;
             return (
@@ -8312,7 +8358,7 @@ export default function BatchProcessor({
               setIsEditingInProgress(false);
               startRegionEditPolling(jobId, activeEditIndex);
             }}
-            onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; mode?: string; shouldAutoClose?: boolean }) => {
+            onComplete={(result: { imageUrl: string; originalUrl: string; maskUrl: string; jobId?: string | null; mode?: string; shouldAutoClose?: boolean }) => {
               setIsEditingInProgress(false);
               const activeEditIndex = activeRegionEditIndexRef.current ?? editingImageIndex;
               if (typeof activeEditIndex === 'number' && Number.isInteger(activeEditIndex) && activeEditIndex >= 0) {

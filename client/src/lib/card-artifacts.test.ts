@@ -148,3 +148,31 @@ test("resolveSafeStageUrl follows canonical artifact view", () => {
     stage: null,
   });
 });
+
+test("getCardArtifactView preserves nested retry and edit artifacts when top-level fields are absent", () => {
+  const parentCardWithNestedArtifacts = {
+    status: "completed",
+    jobId: "job-parent",
+    imageId: "img-parent",
+    originalImageUrl: "https://cdn.example.com/original.jpg",
+    stageUrls: {
+      "1A": "https://cdn.example.com/stage1a.jpg",
+      "1B": "https://cdn.example.com/stage1b.jpg",
+      "2": "https://cdn.example.com/stage2-original.jpg",
+    },
+    result: {
+      latestRetryUrl: "https://cdn.example.com/stage2-retry.jpg",
+      retryLatestUrl: "https://cdn.example.com/stage2-retry.jpg",
+      latestEditUrl: "https://cdn.example.com/stage2-edit.jpg",
+      editLatestUrl: "https://cdn.example.com/stage2-edit.jpg",
+    },
+  };
+
+  const selectedEditedView = getCardArtifactView(parentCardWithNestedArtifacts, { selectedKey: "edited" });
+  assert.equal(selectedEditedView.active?.key, "edited");
+  assert.equal(selectedEditedView.active?.url, "https://cdn.example.com/stage2-edit.jpg");
+
+  const selectedRetryView = getCardArtifactView(parentCardWithNestedArtifacts, { selectedKey: "retried" });
+  assert.equal(selectedRetryView.active?.key, "retried");
+  assert.equal(selectedRetryView.active?.url, "https://cdn.example.com/stage2-retry.jpg");
+});

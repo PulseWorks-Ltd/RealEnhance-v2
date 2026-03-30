@@ -18,6 +18,7 @@ import { getFreeRetryCount } from "../services/usageLedger.js";
 import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
+import { jobHasEditedArtifact } from "./retry-policy.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -545,6 +546,15 @@ export function retrySingleRouter() {
             }
             parentJob = canonicalParentJob;
             parentMeta = canonicalParentMeta;
+          }
+
+          const requestedEditedSource = sourceStage === "edit" || uiSelectedTab.toLowerCase() === "edit" || uiSelectedTab.toLowerCase() === "edited";
+          if (requestedEditedSource || jobHasEditedArtifact(parentJob)) {
+            return res.status(409).json({
+              success: false,
+              error: "retry_not_allowed_after_edit",
+              message: "Retry is unavailable after an edit. Continue editing this version or start a new enhancement.",
+            });
           }
 
           parentImageId = canonicalParentImageId || parentImageId;
