@@ -3501,7 +3501,16 @@ export default function BatchProcessor({
                   toDisplayUrl(it?.editLatestUrl) ||
                   toDisplayUrl(extraResult?.latestEditUrl) ||
                   toDisplayUrl(extraResult?.editLatestUrl) ||
-                  null;
+                  // Defense-in-depth: for region-edit children the result URL IS the edit output
+                  (isRegionEdit
+                    ? (toDisplayUrl(it?.finalOutputUrl) ||
+                       toDisplayUrl(it?.resultUrl) ||
+                       toDisplayUrl(it?.imageUrl) ||
+                       toDisplayUrl(extraResult?.finalOutputUrl) ||
+                       toDisplayUrl(extraResult?.resultUrl) ||
+                       toDisplayUrl(extraResult?.imageUrl) ||
+                       null)
+                    : null);
                 const editPromotionTargetJobIds = collectLineageJobIds(
                   existingJobId,
                   (existing.parentJobId || existing.result?.parentJobId || null) as string | null,
@@ -5611,6 +5620,7 @@ export default function BatchProcessor({
             stageUrls: r?.stageUrls || r?.result?.stageUrls || null,
             completionSource: null,
             jobId: jobId, // Store the new retry jobId
+            parentJobId: parentJobIdForRetry || r?.parentJobId || r?.result?.parentJobId || null,
             statusLastModified: Date.now(),
             retryInFlight: true, // UI-only flag for immediate badge update
             retryStage: retryStage || null, // Store requested retry stage for status text
@@ -5748,6 +5758,8 @@ export default function BatchProcessor({
                 const existingRetryHistory = Array.isArray(results[imageIndex]?.retryHistory)
                   ? results[imageIndex].retryHistory
                   : [];
+                const retryParentJobId = job.parentJobId || job.retryInfo?.parentJobId || r?.parentJobId || r?.result?.parentJobId || null;
+                const retryRetryInfo = job.retryInfo || r?.retryInfo || r?.result?.retryInfo || undefined;
                 setResults(prev => prev.map((r, i) =>
                   i === imageIndex ? {
                     ...r,
@@ -5763,6 +5775,8 @@ export default function BatchProcessor({
                     retryLatestJobId: jobId,
                     latestRetryUrl: completedStage2OutputUrl,
                     retryLatestUrl: completedStage2OutputUrl,
+                    parentJobId: retryParentJobId,
+                    retryInfo: retryRetryInfo,
                     retryHistory: [
                       ...existingRetryHistory,
                       {
@@ -5791,6 +5805,8 @@ export default function BatchProcessor({
                       retryLatestJobId: jobId,
                       latestRetryUrl: completedStage2OutputUrl,
                       retryLatestUrl: completedStage2OutputUrl,
+                      parentJobId: retryParentJobId,
+                      retryInfo: retryRetryInfo,
                     },
                     error: null,
                     filename: r?.filename
