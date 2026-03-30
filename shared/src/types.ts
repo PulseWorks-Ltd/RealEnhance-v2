@@ -240,8 +240,10 @@ export interface JobRecord {
   stageUrls?: Record<string, string | null>; // per-stage URLs surfaced mid-pipeline
   latestEditUrl?: string | null;
   editLatestUrl?: string | null;
+  editLatestJobId?: string | null;
   latestRetryUrl?: string | null;
   retryLatestUrl?: string | null;
+  retryLatestJobId?: string | null;
   editOutputs?: string[];
   retryOutputs?: string[];
   attempts?: { current?: number; max?: number };

@@ -305,8 +305,10 @@ export interface JobRecord {
   error?: string;
   latestEditUrl?: string | null;
   editLatestUrl?: string | null;
+  editLatestJobId?: string | null;
   latestRetryUrl?: string | null;
   retryLatestUrl?: string | null;
+  retryLatestJobId?: string | null;
   editOutputs?: string[];
   retryOutputs?: string[];
   meta?: {

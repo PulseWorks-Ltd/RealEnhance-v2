@@ -3369,6 +3369,7 @@ async function completePartialJob(params: {
     message: userMessage,
     latestRetryUrl: isManualRetry ? resultUrl : undefined,
     retryLatestUrl: isManualRetry ? resultUrl : undefined,
+    retryLatestJobId: isManualRetry ? jobId : undefined,
     retryOutputs: nextRetryOutputs,
     stageUrls: {
       "1A": pub1AUrl ?? null,
@@ -3397,6 +3398,7 @@ async function completePartialJob(params: {
       await updateJob(retryParentJobIdForStamp, {
         latestRetryUrl: resultUrl,
         retryLatestUrl: resultUrl,
+        retryLatestJobId: jobId,
       }).catch(() => {});
     }
   }
@@ -6010,6 +6012,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         resultUrl: pub2Url,
         latestRetryUrl: pub2Url,
         retryLatestUrl: pub2Url,
+        retryLatestJobId: payload.jobId,
         stageUrls: {
           "1A": stage2OnlyBaseStage === "1A" ? ((payload.stage2OnlyMode as any)?.base1AUrl || null) : ((payload.stage2OnlyMode as any)?.base1AUrl || null),
           "1B": stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode.base1BUrl || null) : null,
@@ -6028,6 +6031,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         await updateJob(stage2OnlyParentJobId, {
           latestRetryUrl: pub2Url,
           retryLatestUrl: pub2Url,
+          retryLatestJobId: payload.jobId,
         }).catch(() => {});
       }
 
@@ -11594,6 +11598,7 @@ All openings must remain identical in position and size to the original image.`;
     imageUrl: committedResultUrl,
     latestRetryUrl: isManualRetryCompletion ? committedResultUrl : undefined,
     retryLatestUrl: isManualRetryCompletion ? committedResultUrl : undefined,
+    retryLatestJobId: isManualRetryCompletion ? payload.jobId : undefined,
     retryOutputs: nextRetryOutputs,
     stageUrls: normalizeStageUrls(finalizedStageUrls),
     
@@ -11691,6 +11696,7 @@ All openings must remain identical in position and size to the original image.`;
       await updateJob(retryParentJobIdForStamp, {
         latestRetryUrl: committedResultUrl,
         retryLatestUrl: committedResultUrl,
+        retryLatestJobId: payload.jobId,
       }).catch(() => {});
     }
   }
@@ -12100,6 +12106,7 @@ async function handleEditJob(payload: any) {
       imageUrl: pub.url,
       latestEditUrl: pub.url,
       editLatestUrl: pub.url,
+      editLatestJobId: jobId,
       editOutputs: nextEditOutputs,
       stageUrls: inheritedStageUrls,
       meta: {
@@ -12120,6 +12127,7 @@ async function handleEditJob(payload: any) {
       await updateJob(editParentJobId, {
         latestEditUrl: pub.url,
         editLatestUrl: pub.url,
+        editLatestJobId: jobId,
       });
       nLog(`[edit] stamped parent ${editParentJobId} with editLatestUrl`);
     } catch (err) {
@@ -12810,6 +12818,7 @@ const worker = new Worker(
               imageUrl: pub.url, // Fallback field
               latestEditUrl: pub.url,
               editLatestUrl: pub.url,
+              editLatestJobId: regionPayload.jobId,
               editOutputs: nextEditOutputs,
               stageUrls: inheritedStageUrls,
               originalUrl: baseImageUrl, // Return the original input URL
@@ -12838,6 +12847,7 @@ const worker = new Worker(
               await updateJob(editParentJobId, {
                 latestEditUrl: pub.url,
                 editLatestUrl: pub.url,
+                editLatestJobId: regionPayload.jobId,
               });
               nLog(`[worker-region-edit] stamped parent ${editParentJobId} with editLatestUrl`);
             } catch (err) {

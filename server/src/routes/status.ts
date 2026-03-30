@@ -56,8 +56,10 @@ type StatusItem = {
   retryReason?: string | null;
   latestEditUrl?: string | null;
   editLatestUrl?: string | null;
+  editLatestJobId?: string | null;
   latestRetryUrl?: string | null;
   retryLatestUrl?: string | null;
+  retryLatestJobId?: string | null;
   blockedStage?: string | null;
   fallbackStage?: string | null;
   validationNote?: string | null;
@@ -499,6 +501,14 @@ export function statusRouter() {
           local?.meta?.latestRetryUrl ||
           local?.meta?.retryLatestUrl ||
           null;
+        const editLatestJobId =
+          local.editLatestJobId ||
+          local?.meta?.editLatestJobId ||
+          null;
+        const retryLatestJobId =
+          local.retryLatestJobId ||
+          local?.meta?.retryLatestJobId ||
+          null;
         const payloadRetryInfo = (() => {
           const p: any = payload || {};
           const retryType = p.retryType;
@@ -558,8 +568,10 @@ export function statusRouter() {
           retryReason: retryReason || null,
           latestEditUrl,
           editLatestUrl: latestEditUrl,
+          editLatestJobId,
           latestRetryUrl,
           retryLatestUrl: latestRetryUrl,
+          retryLatestJobId,
           blockedStage: blockedStage || null,
           fallbackStage: fallbackStageMeta || null,
           validationNote: validationNote || null,
@@ -634,8 +646,10 @@ export function statusRouter() {
         base.stageUrls = j.stageUrls;
         base.latestEditUrl = j.latestEditUrl ?? null;
         base.editLatestUrl = j.editLatestUrl ?? null;
+        base.editLatestJobId = j.editLatestJobId ?? null;
         base.latestRetryUrl = j.latestRetryUrl ?? null;
         base.retryLatestUrl = j.retryLatestUrl ?? null;
+        base.retryLatestJobId = j.retryLatestJobId ?? null;
         base.state = j.state;
         base.status = j.status;
         base.job = j;
