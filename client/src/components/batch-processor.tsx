@@ -269,6 +269,15 @@ function canPromoteChildArtifact(args: {
   return status === "completed" && !!url && !!parentJobId && !!existingJobId && parentJobId === existingJobId;
 }
 
+function collectLineageJobIds(...values: Array<string | null | undefined>): string[] {
+  const unique = new Set<string>();
+  for (const value of values) {
+    const normalized = String(value || "").trim();
+    if (normalized) unique.add(normalized);
+  }
+  return Array.from(unique);
+}
+
 function getPerImageDeclutterRequested(item: any): boolean {
   const requestedStages = item?.requestedStages || item?.result?.requestedStages || item?.meta?.requestedStages || null;
   return !!requestedStages?.stage1b ||
@@ -3493,11 +3502,13 @@ export default function BatchProcessor({
                   toDisplayUrl(extraResult?.latestEditUrl) ||
                   toDisplayUrl(extraResult?.editLatestUrl) ||
                   null;
-                  const editPromotionTargetJobIds = [
-                    existingJobId,
-                    (existing.retryLatestJobId || existing.result?.retryLatestJobId || null) as string | null,
-                    (existing.editLatestJobId || existing.result?.editLatestJobId || null) as string | null,
-                  ];
+                const editPromotionTargetJobIds = collectLineageJobIds(
+                  existingJobId,
+                  (existing.parentJobId || existing.result?.parentJobId || null) as string | null,
+                  (existing.retryInfo?.parentJobId || existing.result?.retryInfo?.parentJobId || null) as string | null,
+                  (existing.retryLatestJobId || existing.result?.retryLatestJobId || null) as string | null,
+                  (existing.editLatestJobId || existing.result?.editLatestJobId || null) as string | null,
+                );
                 const canPromoteEditArtifact =
                   isRegionEdit &&
                     editPromotionTargetJobIds.some((targetJobId) => canPromoteChildArtifact({
@@ -3856,6 +3867,7 @@ export default function BatchProcessor({
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: imageId || existing.imageId,
                 jobId: polledId || parentJobId || existing.jobId,
+                parentJobId: parentJobId || existing.parentJobId || existing.result?.parentJobId || null,
                 originalUrl: originalUrl || existing.originalUrl,
                 originalImageUrl: originalUrl || existing.originalImageUrl || existing.originalUrl,
                 filename,
@@ -3866,6 +3878,7 @@ export default function BatchProcessor({
                 fallbackMessage: unifiedCompletion.fallbackMessage,
                 requestedFinalStage,
                 requestedStages: mergedRequestedStages,
+                retryInfo: retryInfo || existing.retryInfo || existing.result?.retryInfo || undefined,
                 meta: mergedMeta,
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
@@ -3900,6 +3913,8 @@ export default function BatchProcessor({
                   latestEditUrl: mergedLatestEditUrl,
                   editLatestUrl: mergedLatestEditUrl,
                   editLatestJobId: mergedEditLatestJobId,
+                  parentJobId: parentJobId || existing.result?.parentJobId || existing.parentJobId || null,
+                  retryInfo: retryInfo || existing.result?.retryInfo || existing.retryInfo || undefined,
                   previewUrl: preserveExistingStage2Artifacts
                     ? (existing.result?.previewUrl || existing.previewUrl || chosenPreview || null)
                     : (chosenPreview || existing.result?.previewUrl || existing.previewUrl || null),
