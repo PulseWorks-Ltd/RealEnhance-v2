@@ -3628,6 +3628,16 @@ export default function BatchProcessor({
                 toDisplayUrl(extraResult?.latestEditUrl) ||
                 toDisplayUrl(extraResult?.editLatestUrl) ||
                 null;
+              const incomingRetryLatestJobId =
+                (it?.retryLatestJobId ||
+                  it?.retryJobId ||
+                  extraResult?.retryLatestJobId ||
+                  extraResult?.retryJobId ||
+                  null) as string | null;
+              const incomingEditLatestJobId =
+                (it?.editLatestJobId ||
+                  extraResult?.editLatestJobId ||
+                  null) as string | null;
 
               // If a card is already pinned to an edited output, ignore stale non-edit polling updates.
               if (
@@ -3814,12 +3824,14 @@ export default function BatchProcessor({
                 retryLatestUrl: isRetryStage2Success
                   ? (authoritativeRetryArtifactUrl || existing.retryLatestUrl || existing.latestRetryUrl || null)
                   : (incomingRetryLatestUrl ?? existing.retryLatestUrl ?? existing.latestRetryUrl ?? null),
+                retryLatestJobId: incomingRetryLatestJobId ?? existing.retryLatestJobId ?? existing.result?.retryLatestJobId ?? null,
                 latestEditUrl: isRegionEdit && completedFinal
                   ? (displayUrl ?? incomingEditLatestUrl ?? existing.latestEditUrl ?? existing.editLatestUrl ?? null)
                   : (incomingEditLatestUrl ?? existing.latestEditUrl ?? existing.editLatestUrl ?? null),
                 editLatestUrl: isRegionEdit && completedFinal
                   ? (displayUrl ?? incomingEditLatestUrl ?? existing.editLatestUrl ?? existing.latestEditUrl ?? null)
                   : (incomingEditLatestUrl ?? existing.editLatestUrl ?? existing.latestEditUrl ?? null),
+                editLatestJobId: (isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null,
                 version: Math.max(incomingVersion, existingVersion), // ✅ Store normalized numeric timestamp
                 updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
                 imageId: imageId || existing.imageId,
@@ -3862,12 +3874,14 @@ export default function BatchProcessor({
                   retryLatestUrl: isRetryStage2Success
                     ? (authoritativeRetryArtifactUrl || existing.result?.retryLatestUrl || existing.result?.latestRetryUrl || null)
                     : (incomingRetryLatestUrl ?? existing.result?.retryLatestUrl ?? existing.result?.latestRetryUrl ?? null),
+                  retryLatestJobId: incomingRetryLatestJobId ?? existing.result?.retryLatestJobId ?? existing.retryLatestJobId ?? null,
                   latestEditUrl: isRegionEdit && completedFinal
                     ? (displayUrl ?? incomingEditLatestUrl ?? existing.result?.latestEditUrl ?? existing.result?.editLatestUrl ?? null)
                     : (incomingEditLatestUrl ?? existing.result?.latestEditUrl ?? existing.result?.editLatestUrl ?? null),
                   editLatestUrl: isRegionEdit && completedFinal
                     ? (displayUrl ?? incomingEditLatestUrl ?? existing.result?.editLatestUrl ?? existing.result?.latestEditUrl ?? null)
                     : (incomingEditLatestUrl ?? existing.result?.editLatestUrl ?? existing.result?.latestEditUrl ?? null),
+                  editLatestJobId: (isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.result?.editLatestJobId ?? existing.editLatestJobId ?? null,
                   previewUrl: preserveExistingStage2Artifacts
                     ? (existing.result?.previewUrl || existing.previewUrl || chosenPreview || null)
                     : (chosenPreview || existing.result?.previewUrl || existing.previewUrl || null),
@@ -8377,6 +8391,7 @@ export default function BatchProcessor({
                     editHistory: updatedEditHistory,
                     latestEditUrl: result.imageUrl,
                     editLatestUrl: result.imageUrl,
+                    editLatestJobId: result.jobId || r?.editLatestJobId || r?.result?.editLatestJobId || null,
                     
                     status: "completed",
                     uiStatus: "ok",
@@ -8397,6 +8412,7 @@ export default function BatchProcessor({
                       stageUrls: preservedStageUrls, // ✅ Preserve original stage URLs
                       latestEditUrl: result.imageUrl,
                       editLatestUrl: result.imageUrl,
+                      editLatestJobId: result.jobId || r?.result?.editLatestJobId || r?.editLatestJobId || null,
                       status: "completed",
                       resultStage: null,
                       finalStage: null,
