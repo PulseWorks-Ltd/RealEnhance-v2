@@ -178,6 +178,7 @@ export interface EnhanceJobPayload {
   jobType?: "initial" | "retry" | "edit";
   agencyId?: string | null;          // Usage/billing context
   propertyId?: string | null;
+  galleryParentImageId?: string | null;
   clientBatchId?: string | null;
   listingId?: string;                // Optional grouping across listings
   manualSceneOverride?: boolean;     // Top-level override flag (legacy support)
@@ -250,6 +251,7 @@ export interface RegionEditJobPayload {
   executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   sourceImageId?: ImageId;
   propertyId?: string;
+  galleryParentImageId?: string | null;
   type: "region-edit";
   baseVersionId: string;
   baselineStage?: "stage1A" | "stage1B" | "stage2";

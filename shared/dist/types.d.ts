@@ -11,6 +11,7 @@ export interface RegionEditJobPayload {
     baselineStage?: "stage1A" | "stage1B" | "stage2";
     executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
     stageUrls?: Record<string, string | null>;
+    galleryParentImageId?: string | null;
     mode: "Add" | "Remove" | "Replace" | "Restore";
     editIntent?: "add" | "remove" | "replace";
     editSourceStage?: "stage1A" | "stage1B" | "stage2";
@@ -144,6 +145,7 @@ export interface EnhanceJobPayload {
     retryRequestedStages?: Array<"1A" | "1B" | "2">;
     retryStagesToRun?: Array<"1A" | "1B" | "2">;
     retryParentImageId?: string | null;
+    galleryParentImageId?: string | null;
     retryParentJobId?: string | null;
     retryClientBatchId?: string | null;
     createdAt: string;

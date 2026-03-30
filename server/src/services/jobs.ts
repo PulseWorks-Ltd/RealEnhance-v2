@@ -262,6 +262,7 @@ function buildEnhanceArtifacts(params: {
     requestedStages?: Array<"1A" | "1B" | "2">;
     stagesToRun?: Array<"1A" | "1B" | "2">;
     parentImageId?: string | null;
+    galleryParentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
   };
@@ -388,6 +389,7 @@ function buildEnhanceArtifacts(params: {
     retryRequestedStages: params.retryInfo?.requestedStages,
     retryStagesToRun: params.retryInfo?.stagesToRun,
     retryParentImageId: params.retryInfo?.parentImageId,
+    galleryParentImageId: params.retryInfo?.galleryParentImageId,
     retryParentJobId: params.retryInfo?.parentJobId,
     retryClientBatchId: params.retryInfo?.clientBatchId,
     stage2OnlyMode: params.stage2OnlyMode as any,
@@ -428,6 +430,7 @@ export async function enqueueEnhanceJob(params: {
     requestedStages?: Array<"1A" | "1B" | "2">;
     stagesToRun?: Array<"1A" | "1B" | "2">;
     parentImageId?: string | null;
+    galleryParentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
   };
@@ -522,6 +525,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
     requestedStages?: Array<"1A" | "1B" | "2">;
     stagesToRun?: Array<"1A" | "1B" | "2">;
     parentImageId?: string | null;
+    galleryParentImageId?: string | null;
     parentJobId?: string | null;
     clientBatchId?: string | null;
   };
@@ -866,6 +870,7 @@ export async function enqueueRegionEditJob(params: {
   userId: UserId;
   agencyId?: string;
   propertyId?: string;
+  galleryParentImageId?: string | null;
   sourceJobId?: string;
   parentJobId?: string;
   sourceStage?: "stage1A" | "stage1B" | "stage2";
@@ -917,6 +922,7 @@ export async function enqueueRegionEditJob(params: {
     parentJobId,
     sourceImageId: params.sourceImageId,
     propertyId: params.propertyId,
+    galleryParentImageId: params.galleryParentImageId,
     type: "region-edit",
     sourceStage: params.sourceStage,
     baselineStage: params.baselineStage,

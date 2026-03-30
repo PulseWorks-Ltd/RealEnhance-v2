@@ -15,6 +15,7 @@ import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls, normalizeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { getFreeRetryCount } from "../services/usageLedger.js";
+import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
 
@@ -1063,6 +1064,14 @@ export function retrySingleRouter() {
       }
 
       const retryImageId = String(parentImageId || (rec as any).imageId || "").trim();
+      const retrySourceEnhanced =
+        agencyId && selectedSourceUrl
+          ? await findScopedEnhancedImageByUrl({
+              agencyId,
+              userId: sessUser.id,
+              publicUrl: selectedSourceUrl,
+            })
+          : null;
       const result = await enqueueEnhanceJob({
         userId: sessUser.id,
         imageId: retryImageId,
@@ -1087,6 +1096,7 @@ export function retrySingleRouter() {
           requestedStages: effectiveRequestedStages,
           stagesToRun: effectiveStagesToRun,
           parentImageId,
+          galleryParentImageId: retrySourceEnhanced?.id || null,
           parentJobId,
           clientBatchId,
         }

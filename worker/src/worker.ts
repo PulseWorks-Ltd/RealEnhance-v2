@@ -156,7 +156,7 @@ import { normalizeMaskBase64, normalizeMaskBufferToPng } from "./utils/mask";
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
-const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 2));
+const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 1));
 const FREE_COUNTER_TTL_SECONDS = Math.max(24 * 60 * 60, Number(process.env.FREE_COUNTER_TTL_SECONDS || 180 * 24 * 60 * 60));
 const LOCAL_VALIDATORS_FULL = LOCAL_VALIDATOR_TIER === LocalValidatorTier.FULL;
 // Temporary hard-disable until fairness flow is redesigned for BullMQ active-claim semantics.
@@ -6112,6 +6112,66 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[BILLING] Skipping charge finalization for non-billable job type or free manual retry: ${payload.jobId}`);
       }
 
+      // Keep stage2-only retry outputs discoverable by region-edit URL lookup.
+      try {
+        if (pub2Url) {
+          const extractKey = (url?: string | null) => {
+            if (!url) return null;
+            try {
+              const u = new URL(url);
+              return u.pathname.startsWith("/") ? u.pathname.slice(1) : u.pathname;
+            } catch {
+              return null;
+            }
+          };
+
+          const baseKey = pub2Url.split("?")[0].split("/").pop() || "";
+          const finalPathKey = extractKey(pub2Url) || baseKey;
+          const fallbackVersionKey = finalPathKey ? computeFallbackVersionKey(finalPathKey) : undefined;
+
+          await recordEnhancedImageRedis({
+            userId: payload.userId,
+            imageId: payload.imageId,
+            publicUrl: pub2Url,
+            baseKey,
+            versionId: fallbackVersionKey || "",
+            fallbackVersionKey,
+            stage: "2",
+          });
+
+          if (payload.agencyId) {
+            const stage1AUrl = ((payload.stage2OnlyMode as any)?.base1AUrl as string | undefined) || null;
+            const stage1BUrl = stage2OnlyBaseStage === "1B"
+              ? (payload.stage2OnlyMode?.base1BUrl || null)
+              : null;
+            const auditRef = generateAuditRef();
+            const traceId = generateTraceId(payload.jobId);
+
+            recordEnhancedImageHistory({
+              agencyId: payload.agencyId,
+              userId: payload.userId,
+              jobId: payload.jobId,
+              propertyId: (payload as any).propertyId || null,
+              parentImageId: (payload as any).galleryParentImageId || null,
+              source: "stage2",
+              stagesCompleted: stage1BUrl ? ["1A", "1B", "2"] : ["1A", "2"],
+              publicUrl: pub2Url,
+              thumbnailUrl: pub2Url,
+              originalUrl: stage1AUrl,
+              originalS3Key: extractKey(stage1AUrl),
+              enhancedS3Key: extractKey(pub2Url),
+              thumbS3Key: extractKey(pub2Url),
+              auditRef,
+              traceId,
+            }).catch((err) => {
+              nLog(`[enhanced-images] Failed to record stage2-only retry image: ${err}`);
+            });
+          }
+        }
+      } catch (historyErr: any) {
+        nLog("[worker] Stage-2-only retry history indexing failed (non-critical):", historyErr?.message || historyErr);
+      }
+
       nLog(`[worker] ✅ Stage-2-only retry complete: ${pub2Url}`);
       logStage2RetrySummary(path2);
       return; // ✅ Exit early - full pipeline not needed
@@ -11832,7 +11892,7 @@ All openings must remain identical in position and size to the original image.`;
       userId: payload.userId,
       jobId: payload.jobId,
       propertyId: (payload as any).propertyId || null,
-      parentImageId: (payload as any).retryParentImageId || null,
+      parentImageId: (payload as any).galleryParentImageId || null,
       source: 'stage2',
       stagesCompleted,
       publicUrl: pubFinalUrl,
@@ -12686,7 +12746,7 @@ const worker = new Worker(
               userId: regionPayload.userId,
               jobId: regionPayload.jobId,
               propertyId: (regionPayload as any).propertyId || null,
-              parentImageId: (regionPayload as any).sourceImageId || null,
+              parentImageId: (regionPayload as any).galleryParentImageId || null,
               source: 'region-edit',
               stagesCompleted: ["edit"],
               publicUrl: pub.url,

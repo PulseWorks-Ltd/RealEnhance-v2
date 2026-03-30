@@ -26,7 +26,7 @@ export interface ReservationResult extends UsageSnapshot {
   reservedImages: number;
 }
 
-const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 2));
+const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 1));
 const FREE_EDIT_LIMIT = Math.max(0, Number(process.env.FREE_EDIT_LIMIT || 3));
 const FREE_COUNTER_TTL_SECONDS = Math.max(24 * 60 * 60, Number(process.env.FREE_COUNTER_TTL_SECONDS || 180 * 24 * 60 * 60));
 

@@ -364,6 +364,93 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       }
     }
 
+    if (!found && sourceJobId) {
+      try {
+        const sourceJob = await getJob(sourceJobId);
+        const sourceJobUserId = String((sourceJob as any)?.userId || "").trim();
+        const sourceJobImageId = String((sourceJob as any)?.imageId || "").trim();
+        const isPrivilegedUser = sessUser.role === "admin" || sessUser.role === "owner";
+        const canUseSourceJobContext = !!sourceJob && (isPrivilegedUser || sourceJobUserId === sessUser.id);
+
+        if (canUseSourceJobContext) {
+          const sourceStageUrls = ((sourceJob as any)?.stageUrls || (sourceJob as any)?.stageOutputs || {}) as Record<string, string | null | undefined>;
+          const sourceStage1AUrl = resolveStage1AUrlFromJob(sourceJob as any);
+          const sourceStage2Url = sourceStageUrls.stage2 || sourceStageUrls["2"] || (sourceJob as any)?.retryLatestUrl || (sourceJob as any)?.latestRetryUrl || (sourceJob as any)?.resultUrl || (sourceJob as any)?.finalOutputUrl;
+          const sourceStage1BUrl = sourceStageUrls.stage1B || sourceStageUrls["1B"];
+
+          const candidateUrls = [
+            selectedOutputUrl,
+            sourceStage2Url,
+            sourceStage1BUrl,
+            sourceStage1AUrl,
+          ]
+            .filter((value): value is string => isHttpUrl(value))
+            .filter((value, index, arr) => arr.indexOf(value) === index);
+
+          for (const candidateUrl of candidateUrls) {
+            found = await findByPublicUrl(sessUser.id, candidateUrl);
+            if (!found) {
+              const dbFallback = await findByDb(candidateUrl);
+              if (dbFallback) {
+                found = dbRecordToFound(dbFallback);
+                sourceEnhancedFromLookup = dbFallback;
+                foundViaDbFallback = true;
+                await tryRehydrateRedisFromDb(dbFallback, selectedOutputUrl);
+              }
+            }
+            if (found) {
+              resolvedBy = "source_job_context";
+              break;
+            }
+          }
+
+          if (!found && sourceJobImageId) {
+            const noQuery = selectedOutputUrl.split("?")[0];
+            const baseKey = noQuery.split("/").pop() || "";
+            const pathKey = (() => {
+              try {
+                const u = new URL(selectedOutputUrl);
+                return u.pathname.replace(/^\/+/, "");
+              } catch {
+                return baseKey;
+              }
+            })();
+            const fallbackVersionKey = pathKey ? computeFallbackVersionKey(pathKey) : "";
+
+            await recordEnhancedImageRedis({
+              userId: sourceJobUserId || sessUser.id,
+              imageId: sourceJobImageId,
+              publicUrl: selectedOutputUrl,
+              baseKey,
+              versionId: fallbackVersionKey,
+              fallbackVersionKey,
+              stage: baselineStage || "2",
+            });
+
+            found = {
+              record: {
+                imageId: sourceJobImageId,
+                ownerUserId: sourceJobUserId || sessUser.id,
+              },
+              versionId: fallbackVersionKey,
+            };
+            resolvedBy = "source_job_context";
+            console.warn("[region-edit] URL history miss recovered via source job context", {
+              sourceJobId,
+              selectedOutputUrl,
+              sourceJobImageId,
+            });
+          }
+        }
+      } catch (sourceFallbackErr: any) {
+        console.warn("[region-edit] Source-job fallback lookup failed (non-blocking)", {
+          sourceJobId,
+          selectedOutputUrl,
+          error: sourceFallbackErr?.message || sourceFallbackErr,
+        });
+      }
+    }
+
     if (!found) {
       console.error("[region-edit] Image not found for URL:", selectedOutputUrl);
       return res.status(404).json({ success: false, error: "image_not_found" });
@@ -581,6 +668,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       parentJobId,
       sourceImageId: record.imageId || record.id,
       propertyId: sourceEnhanced?.propertyId || undefined,
+      galleryParentImageId: sourceEnhanced?.id || null,
       imageId: record.imageId || record.id,
       mode: apiMode,
       editIntent,
