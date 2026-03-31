@@ -5197,6 +5197,37 @@ export default function BatchProcessor({
     return getEditSourceForIndex(imageIndex).sourceStage;
   }, [getEditSourceForIndex]);
 
+  const canEditArtifactAtIndex = useCallback((imageIndex: number): boolean => {
+    const item = results[imageIndex];
+    if (!item) return false;
+
+    const status = String(item?.status || item?.result?.status || "").toLowerCase();
+    const isRetryActive =
+      retryingImages.has(imageIndex) ||
+      retryLoadingImages.has(imageIndex) ||
+      !!item?.retryInFlight ||
+      status === "queued" ||
+      status === "processing" ||
+      status === "active";
+    if (isRetryActive || editingImages.has(imageIndex)) {
+      return false;
+    }
+
+    const resolvedEditSource = getEditSourceForIndex(imageIndex);
+    if (!resolvedEditSource.sourceUrl || !resolvedEditSource.sourceStage) {
+      return false;
+    }
+
+    const requiresLineage =
+      resolvedEditSource.selectedTab === "edited" ||
+      resolvedEditSource.selectedTab === "retried";
+    if (requiresLineage && !resolvedEditSource.sourceJobId) {
+      return false;
+    }
+
+    return true;
+  }, [editingImages, getEditSourceForIndex, results, retryLoadingImages, retryingImages]);
+
   // Handle edit image - resolve URL before opening editor
   const handleEditImage = (imageIndex: number) => {
     const item = results[imageIndex];
@@ -5211,15 +5242,17 @@ export default function BatchProcessor({
     }
 
     const status = String(item?.status || item?.result?.status || "").toLowerCase();
-    const isTerminal =
-      item?.isTerminal === true ||
-      status === "completed" ||
-      status === "complete" ||
-      status === "failed";
-    if (!isTerminal) {
+    const isRetryActive =
+      retryingImages.has(imageIndex) ||
+      retryLoadingImages.has(imageIndex) ||
+      !!item?.retryInFlight ||
+      status === "queued" ||
+      status === "processing" ||
+      status === "active";
+    if (isRetryActive || editingImages.has(imageIndex)) {
       toast({
         title: "Edit unavailable",
-        description: "Edit is only allowed for completed or failed jobs.",
+        description: "Wait for the current processing to finish before editing this image.",
         variant: "destructive",
       });
       return;
@@ -7846,7 +7879,7 @@ export default function BatchProcessor({
                             : (progressivePreviewUrl || canonicalPreviewBase);
                         })();
                         const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
-                        const canEditThisImage = !isRetryStatusActive;
+                        const canEditThisImage = canEditArtifactAtIndex(i);
                         const hasFinalArtifactUrl = !!(
                           finalResultUrl ||
                           stage2Url ||
@@ -8073,7 +8106,7 @@ export default function BatchProcessor({
                                   </button>
                                   <button 
                                     onClick={() => handleEditImage(i)}
-                                    disabled={!canEditThisImage || isRetryStatusActive || editingImages.has(i)}
+                                    disabled={!canEditThisImage}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
                                   >
                                     Edit
@@ -8167,7 +8200,7 @@ export default function BatchProcessor({
               status === "failed";
             const canRetryFromPreview = !isRetryStatusActive && !hasEditedArtifact(previewResult);
             const previewEditSource = getEditSourceForIndex(previewImage.index);
-            const canEditThisPreviewImage = !isRetryStatusActive;
+            const canEditThisPreviewImage = canEditArtifactAtIndex(previewImage.index);
             return (
           <div className="space-y-4">
             <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
@@ -8183,7 +8216,7 @@ export default function BatchProcessor({
                     setPreviewImage(null);
                     handleEditImage(index);
                   }}
-                  disabled={!canEditThisPreviewImage || isRetryStatusActive || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  disabled={!canEditThisPreviewImage}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-edit-from-preview"
                 >
