@@ -3543,23 +3543,36 @@ export default function BatchProcessor({
                   const promotedVersion = normalizeVersionToTimestamp(
                     it?.version ?? it?.updatedAt ?? it?.updated_at
                   );
-                  const existingEditLatestUpdatedAt = normalizeVersionToTimestamp(
+                  const existingEditLatestUpdatedAtRaw =
                     existing.latestEditUpdatedAt ??
                     existing.editLatestUpdatedAt ??
                     existing.result?.latestEditUpdatedAt ??
                     existing.result?.editLatestUpdatedAt ??
-                    existing.updatedAt ??
-                    existing.version
+                    null;
+                  const existingEditLatestUpdatedAt = normalizeVersionToTimestamp(
+                    existingEditLatestUpdatedAtRaw
                   );
+                  const existingPromotedEditUrl =
+                    toDisplayUrl(existing.latestEditUrl) ||
+                    toDisplayUrl(existing.editLatestUrl) ||
+                    toDisplayUrl(existing.result?.latestEditUrl) ||
+                    toDisplayUrl(existing.result?.editLatestUrl) ||
+                    null;
+                  const existingPromotedEditJobId =
+                    (existing.editLatestJobId || existing.result?.editLatestJobId || null) as string | null;
                   const hasExistingEditArtifact = !!(
                     existing.latestEditUrl ||
                     existing.editLatestUrl ||
                     existing.result?.latestEditUrl ||
                     existing.result?.editLatestUrl
                   );
+                  const hasExplicitExistingEditTimestamp = existingEditLatestUpdatedAt > 0;
                   const shouldPromoteEditArtifact =
                     !hasExistingEditArtifact ||
-                    promotedVersion >= existingEditLatestUpdatedAt;
+                    (hasExplicitExistingEditTimestamp
+                      ? promotedVersion >= existingEditLatestUpdatedAt
+                      : (!!polledId && polledId !== existingPromotedEditJobId) ||
+                        (!!promotableEditUrl && promotableEditUrl !== existingPromotedEditUrl));
 
                   if (!shouldPromoteEditArtifact) {
                     if (!retryChildMappingLoggedRef.current.has(`promote-edit-stale:${polledId}:${existingJobId}:${idx}`)) {
@@ -3570,6 +3583,11 @@ export default function BatchProcessor({
                         childJobId: polledId,
                         incomingVersion: promotedVersion,
                         existingEditLatestUpdatedAt,
+                        existingPromotedEditJobId,
+                        existingPromotedEditUrl,
+                        incomingPromotableEditUrl: promotableEditUrl,
+                        hasExplicitExistingEditTimestamp,
+                        skipReason: hasExplicitExistingEditTimestamp ? 'older_than_existing_edit_timestamp' : 'existing_edit_artifact_already_matches',
                       });
                     }
                     return copy;
