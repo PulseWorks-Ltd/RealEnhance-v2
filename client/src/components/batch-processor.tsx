@@ -1278,6 +1278,7 @@ export default function BatchProcessor({
   const preEditResultSnapshotRef = useRef<Record<number, any>>({});
   const preEditDisplayStageSnapshotRef = useRef<Record<number, DisplayOutputKey | undefined>>({});
   const preEditStageUrlsRef = useRef<Record<number, { stage2: string | null; stage1B: string | null; stage1A: string | null }>>({});
+  const editInFlightSourceUrlRef = useRef<Record<number, string>>({});
   const editFallbackTimersRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const clearEditFallbackTimer = useCallback((index: number) => {
     const t = editFallbackTimersRef.current[index];
@@ -3934,12 +3935,10 @@ export default function BatchProcessor({
                   editLatestJobId: mergedEditLatestJobId,
                   parentJobId: parentJobId || existing.result?.parentJobId || existing.parentJobId || null,
                   retryInfo: retryInfo || existing.result?.retryInfo || existing.retryInfo || undefined,
-                  previewUrl: preserveExistingStage2Artifacts
-                    ? (existing.result?.previewUrl || existing.previewUrl || chosenPreview || null)
-                    : (chosenPreview || existing.result?.previewUrl || existing.previewUrl || null),
+                  previewUrl: chosenPreview || existing.result?.previewUrl || existing.previewUrl || null,
                 },
                 // Preview URL used while processing
-                previewUrl: preserveExistingStage2Artifacts ? (existing.previewUrl || chosenPreview || null) : (chosenPreview || existing.previewUrl || null),
+                previewUrl: chosenPreview || existing.previewUrl || null,
                 // FIX 3: Only show errors for terminal failure states
                 error: (resolvedStatus === "failed")
                   ? getDisplayError({ status: resolvedStatus, error: (retryCompletedWithoutStage2 ? ((Array.isArray(it?.warnings) && it.warnings[0]) || "Retry completed without a staged result.") : null) || it.error || it.message || it.errorMessage || existing.error || "Processing failed", progress: it.progress })
@@ -5774,6 +5773,7 @@ export default function BatchProcessor({
                     image: completedStage2OutputUrl,
                     imageUrl: completedStage2OutputUrl,
                     resultUrl: completedStage2OutputUrl,
+                    previewUrl: completedStage2OutputUrl,
                     version: stamp,
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
@@ -5806,6 +5806,7 @@ export default function BatchProcessor({
                       image: completedStage2OutputUrl,
                       imageUrl: completedStage2OutputUrl,
                       resultUrl: completedStage2OutputUrl,
+                      previewUrl: completedStage2OutputUrl,
                       originalImageUrl: preservedOriginalUrl,
                       stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
@@ -7582,27 +7583,23 @@ export default function BatchProcessor({
 
                         // Stage URL resolution (supports new stage1A/1B keys)
                         const stageMap = result?.stageUrls || result?.result?.stageUrls || result?.stageOutputs || result?.result?.stageOutputs || {};
-                        const preEditSnapshot = preEditStageUrlsRef.current[i] || null;
                         const stage2Url =
                           toDisplayUrl(stageMap?.['2']) ||
                           toDisplayUrl(stageMap?.[2]) ||
                           toDisplayUrl(stageMap?.stage2) ||
                           toDisplayUrl(result?.stage2Url) ||
                           toDisplayUrl(result?.result?.stage2Url) ||
-                          toDisplayUrl(preEditSnapshot?.stage2) ||
                           null;
                         const stage1BUrl =
                           toDisplayUrl(stageMap?.['1B']) ||
                           toDisplayUrl(stageMap?.['1b']) ||
                           toDisplayUrl(stageMap?.stage1B) ||
-                          toDisplayUrl(preEditSnapshot?.stage1B) ||
                           null;
                         const stage1AUrl =
                           toDisplayUrl(stageMap?.['1A']) ||
                           toDisplayUrl(stageMap?.['1a']) ||
                           toDisplayUrl(stageMap?.['1']) ||
                           toDisplayUrl(stageMap?.stage1A) ||
-                          toDisplayUrl(preEditSnapshot?.stage1A) ||
                           null;
 
                         const finalResultUrl =
@@ -7805,7 +7802,7 @@ export default function BatchProcessor({
                           result?.originalUrl ||
                           null;
                         const compareOriginalUrl = persistedOriginalUrl || (((file as any)?.__restored !== true && previewUrls[i] && previewUrls[i] !== RESTORED_PLACEHOLDER) ? previewUrls[i] : undefined);
-                        const isNonTerminalProcessingStatus = ["queued", "uploading", "processing", "validating", "staging", "active", "waiting"].includes(status);
+                        const isNonTerminalProcessingStatus = ["queued", "uploading", "processing", "validating", "staging", "active", "waiting", "editing"].includes(status);
                         const shouldPreferPreservedStage2 = !!stage2Url && (
                           selectedStage === "2" ||
                           (!requestedStage && activeArtifact?.key === "2")
@@ -7815,6 +7812,8 @@ export default function BatchProcessor({
                           shouldPreferPreservedStage2 ||
                           (status === "failed" && !!(resolvedFinalUrl || stagePreviewUrl || bestDisplayUrl));
                         const progressivePreviewUrl = stagePreviewUrl || previewUrls[i] || null;
+                        const pinnedEditSourceUrl = editInFlightSourceUrlRef.current[i] || null;
+                        const sourceSelectedStage = preEditDisplayStageSnapshotRef.current[i] || null;
                         const canonicalPreviewBase =
                           toDisplayUrl(result?.previewUrl) ||
                           toDisplayUrl(result?.result?.previewUrl) ||
@@ -7829,12 +7828,22 @@ export default function BatchProcessor({
                           if (missingEditedArtifact) {
                             return null;
                           }
+                          if (isEditing) {
+                            const editingPreviewBase =
+                              requestedStage && sourceSelectedStage && requestedStage !== sourceSelectedStage
+                                ? (stagePreviewUrl || null)
+                                : (pinnedEditSourceUrl || stagePreviewUrl || null);
+                            return withVersion(
+                              editingPreviewBase,
+                              result?.version || result?.updatedAt || result?.statusLastModified
+                            ) || editingPreviewBase;
+                          }
                           if (isNonTerminalProcessingStatus && !shouldPreferPreservedStage2) {
-                            return nonTerminalPreviewUrl || progressivePreviewUrl;
+                            return progressivePreviewUrl || nonTerminalPreviewUrl;
                           }
                           return canUseRemotePreview
-                            ? (enhancedUrl || canonicalPreviewBase || progressivePreviewUrl)
-                            : (canonicalPreviewBase || progressivePreviewUrl);
+                            ? (enhancedUrl || progressivePreviewUrl || canonicalPreviewBase)
+                            : (progressivePreviewUrl || canonicalPreviewBase);
                         })();
                         const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
                         const canEditThisImage = !isRetryStatusActive;
@@ -8297,6 +8306,13 @@ export default function BatchProcessor({
                 preEditResultSnapshotRef.current[activeEditIndex] = results[activeEditIndex];
                 preEditDisplayStageSnapshotRef.current[activeEditIndex] =
                   displayStageByIndex[activeEditIndex] as DisplayOutputKey | undefined;
+                const pinnedEditSourceUrl =
+                  activeEditSource?.sourceUrl ||
+                  getDisplayedImageUrl(activeEditIndex) ||
+                  null;
+                if (pinnedEditSourceUrl) {
+                  editInFlightSourceUrlRef.current[activeEditIndex] = pinnedEditSourceUrl;
+                }
                 setEditingImages(prev => new Set(prev).add(activeEditIndex));
                 setEditCompletedImages(prev => {
                   const next = new Set(prev);
@@ -8329,6 +8345,13 @@ export default function BatchProcessor({
               }
               activeRegionEditIndexRef.current = activeEditIndex;
               console.log('[BatchProcessor] RegionEditor.onJobStarted', { jobId, editingImageIndex: activeEditIndex });
+              const pinnedEditSourceUrl =
+                activeEditSource?.sourceUrl ||
+                getDisplayedImageUrl(activeEditIndex) ||
+                null;
+              if (pinnedEditSourceUrl) {
+                editInFlightSourceUrlRef.current[activeEditIndex] = pinnedEditSourceUrl;
+              }
 
               // Close modal immediately after Enhance submits successfully
               setRegionEditorOpen(false);
@@ -8429,6 +8452,7 @@ export default function BatchProcessor({
                     image: result.imageUrl,
                     imageUrl: result.imageUrl,
                     resultUrl: result.imageUrl,
+                    previewUrl: result.imageUrl,
                     version: Date.now(),
                     mode: result.mode,
                     originalImageUrl: preservedOriginalUrl,
@@ -8457,6 +8481,7 @@ export default function BatchProcessor({
                       image: result.imageUrl,
                       imageUrl: result.imageUrl,
                       resultUrl: result.imageUrl,
+                      previewUrl: result.imageUrl,
                       originalImageUrl: preservedOriginalUrl,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
                       stageUrls: preservedStageUrls, // ✅ Preserve original stage URLs
@@ -8482,6 +8507,7 @@ export default function BatchProcessor({
                   title: 'Region edit complete',
                   description: `Image ${activeEditIndex + 1} edited successfully. You can do more edits or close the modal.`,
                 });
+                delete editInFlightSourceUrlRef.current[activeEditIndex];
                 delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
                 delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
@@ -8514,6 +8540,7 @@ export default function BatchProcessor({
                   next.delete(activeEditIndex);
                   return next;
                 });
+                delete editInFlightSourceUrlRef.current[activeEditIndex];
                 delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
                 delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
@@ -8538,6 +8565,7 @@ export default function BatchProcessor({
                   }
                 }
 
+                delete editInFlightSourceUrlRef.current[activeEditIndex];
                 delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
                 delete preEditDisplayStageSnapshotRef.current[activeEditIndex];
