@@ -3510,9 +3510,26 @@ export default function BatchProcessor({
                 (isRetryChildJob || mappedViaParent || mappedViaImage)
               ) {
                 // Use best available stage URL for promotion (not stage2 only)
+                // Region-edit children must NOT be promoted as retry artifacts.
+                // Edit jobs always have parentJobId = canonical root (via resolveCanonicalRegionEditParent),
+                // and they inherit stageUrls from the parent (Bug D fix), so canPromoteRetryArtifact
+                // would incorrectly match. They must fall through to the edit promotion path below.
+                if (isRegionEdit && isRetryChildJob) {
+                  if (!retryChildMappingLoggedRef.current.has(`edit-child-cross-job:${polledId}:${existingJobId}:${idx}`)) {
+                    retryChildMappingLoggedRef.current.add(`edit-child-cross-job:${polledId}:${existingJobId}:${idx}`);
+                    console.log('[BATCH][edit_child_skipped_retry_promotion]', {
+                      index: idx,
+                      existingJobId,
+                      childJobId: polledId,
+                      parentJobId,
+                      reason: 'region_edit_child_must_use_edit_promotion_path',
+                    });
+                  }
+                }
                 const retryPromotableUrl = stage2Url || stage1bUrl || stage1aUrl || null;
                 const canPromoteRetryArtifact =
                   isRetryChildJob &&
+                  !isRegionEdit &&
                   canPromoteChildArtifact({
                     type: "retry",
                     parentJobId,
@@ -3683,6 +3700,12 @@ export default function BatchProcessor({
                     return copy;
                   }
 
+                  // Clean up stale retry artifact if a prior mispromotion stored the edit job ID
+                  // as retryLatestJobId (before the !isRegionEdit guard was added).
+                  const staleRetryFromEditMispromotion =
+                    existing.retryLatestJobId === polledId ||
+                    existing.result?.retryLatestJobId === polledId;
+
                   copy[idx] = {
                     ...existing,
                     latestEditUrl: promotableEditUrl,
@@ -3692,6 +3715,12 @@ export default function BatchProcessor({
                     editLatestUpdatedAt: promotedVersion || Date.now(),
                     version: Math.max(promotedVersion, normalizeVersionToTimestamp(existing.version ?? existing.updatedAt)),
                     updatedAt: it?.updatedAt || it?.updated_at || existing.updatedAt,
+                    // If the edit was previously mispromoted as a retry artifact, remove the stale retry pointer
+                    ...(staleRetryFromEditMispromotion ? {
+                      retryLatestJobId: null,
+                      latestRetryUrl: null,
+                      retryLatestUrl: null,
+                    } : {}),
                     result: {
                       ...(existing.result || {}),
                       latestEditUrl: promotableEditUrl,
@@ -3699,6 +3728,11 @@ export default function BatchProcessor({
                       editLatestJobId: polledId,
                       latestEditUpdatedAt: promotedVersion || Date.now(),
                       editLatestUpdatedAt: promotedVersion || Date.now(),
+                      ...(staleRetryFromEditMispromotion ? {
+                        retryLatestJobId: null,
+                        latestRetryUrl: null,
+                        retryLatestUrl: null,
+                      } : {}),
                     },
                   };
                   wasUpdateApplied = true;
@@ -3710,6 +3744,7 @@ export default function BatchProcessor({
                       index: idx,
                       parentJobId: existingJobId,
                       childJobId: polledId,
+                      cleanedStaleRetryMispromotion: staleRetryFromEditMispromotion,
                     });
                   }
                   return copy;
