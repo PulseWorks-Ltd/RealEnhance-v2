@@ -42,6 +42,7 @@ interface RegionEditorProps {
     imageUrl: string;
     originalUrl: string;
     maskUrl: string;
+    jobId?: string | null;
     mode?: string;
     shouldAutoClose?: boolean;
   }) => void;
@@ -933,6 +934,7 @@ export function RegionEditor({
                 imageUrl: item.imageUrl,
                 originalUrl: item.originalUrl || "",
                 maskUrl: item.maskUrl || "",
+                jobId: result.jobId || item.id || null,
                 mode: item.mode || "",
                 shouldAutoClose: true, // 🔒 Tell parent to close modal automatically
               });

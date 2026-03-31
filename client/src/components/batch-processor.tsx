@@ -3798,6 +3798,7 @@ export default function BatchProcessor({
               const mergedEditLatestJobId = preserveExistingEditArtifact
                 ? (existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null)
                 : ((isRegionEdit ? (incomingEditLatestJobId ?? polledId) : incomingEditLatestJobId) ?? existing.editLatestJobId ?? existing.result?.editLatestJobId ?? null);
+              const resolvedEditedArtifactPresent = !!mergedLatestEditUrl;
               const effectiveIncomingStatus = retryCompletedWithoutStage2 ? "failed" : status;
               const mergedStageUrls = isRegionEdit
                 ? (existingStageMapObj || stageUrlsMap || null)
@@ -4019,7 +4020,7 @@ export default function BatchProcessor({
               });
             }
 
-            if (forceEditedDisplay) {
+            if (forceEditedDisplay && resolvedEditedArtifactPresent) {
               setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
             }
 
@@ -4031,7 +4032,9 @@ export default function BatchProcessor({
                 return next;
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
-              setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
+              if (resolvedEditedArtifactPresent) {
+                setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
+              }
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
             }
 
