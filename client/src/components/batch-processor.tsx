@@ -69,6 +69,11 @@ type PreviewModalImage = {
 };
 type SceneType = "interior" | "exterior";
 type SceneLabel = SceneType;
+type PendingEditJobState = {
+  jobId: string;
+  previousLatestEditUrl: string | null;
+  autoSwitchToEdited: boolean;
+};
 
 type SceneDetectResult = {
   scene: SceneType | null;
@@ -206,6 +211,26 @@ function getResolvedEditArtifactUrl(data: any): string | null {
     toDisplayUrl(data?.result?.editLatestUrl) ||
     null
   );
+}
+
+function normalizeArtifactIdentityUrl(value?: string | null): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    parsed.search = "";
+    parsed.hash = "";
+    return `${parsed.protocol}//${parsed.host}${parsed.pathname}`;
+  } catch {
+    return trimmed.split("?")[0]?.split("#")[0] || null;
+  }
+}
+
+function hasFreshArtifactUrl(nextUrl?: string | null, previousUrl?: string | null): boolean {
+  const normalizedNext = normalizeArtifactIdentityUrl(nextUrl);
+  const normalizedPrevious = normalizeArtifactIdentityUrl(previousUrl);
+  return !!normalizedNext && normalizedNext !== normalizedPrevious;
 }
 
 // Add cache-busting version to force browser reload (only when version exists)
@@ -1275,6 +1300,7 @@ export default function BatchProcessor({
   const regionEditJobIdsRef = useRef<Set<string>>(new Set());
   const activeRegionEditIndexRef = useRef<number | null>(null);
   const editingImagesRef = useRef<Set<number>>(new Set());
+  const pendingEditJobByIndexRef = useRef<Record<number, PendingEditJobState>>({});
   const preEditResultSnapshotRef = useRef<Record<number, any>>({});
   const preEditDisplayStageSnapshotRef = useRef<Record<number, DisplayOutputKey | undefined>>({});
   const preEditStageUrlsRef = useRef<Record<number, { stage2: string | null; stage1B: string | null; stage1A: string | null }>>({});
@@ -2801,29 +2827,44 @@ export default function BatchProcessor({
           // Process any new completed items
           for (let i = 0; i < data.items.length; i++) {
             const item = data.items[i];
+            const queueJobId = item?.id || item?.jobId || item?.job_id || currentJobId;
+            const queueMappedIndex = typeof queueJobId === 'string' ? jobIdToIndexRef.current[queueJobId] : undefined;
+            const queueIndex = typeof queueMappedIndex === 'number' ? queueMappedIndex : i;
             const url = item?.imageUrl || item?.resultUrl || item?.image || null;
             const originalUrl = item?.originalImageUrl || item?.originalUrl || item?.original || null;
             const itemRequestedStages = item?.requestedStages || item?.meta?.requestedStages || null;
-            if (item && item.status === 'completed' && !processedSetRef.current.has(i)) {
-              processedSetRef.current.add(i);
+            const queuePendingEditState = pendingEditJobByIndexRef.current[queueIndex] || null;
+            const queueEditArtifactUrl =
+              toDisplayUrl(item?.latestEditUrl) ||
+              toDisplayUrl(item?.editLatestUrl) ||
+              toDisplayUrl(item?.result?.latestEditUrl) ||
+              toDisplayUrl(item?.result?.editLatestUrl) ||
+              toDisplayUrl(url) ||
+              null;
+            const queuePendingEditStillWaiting =
+              !!queuePendingEditState &&
+              queuePendingEditState.jobId === queueJobId &&
+              !hasFreshArtifactUrl(queueEditArtifactUrl, queuePendingEditState.previousLatestEditUrl);
+            if (item && item.status === 'completed' && !processedSetRef.current.has(queueIndex) && !queuePendingEditStillWaiting) {
+              processedSetRef.current.add(queueIndex);
               queueRef.current.push({
-                index: i,
+                index: queueIndex,
                 result: { imageUrl: url, originalImageUrl: originalUrl, qualityEnhancedUrl: item.qualityEnhancedUrl, mode: item.mode, note: item.note, meta: item.meta, requestedStages: itemRequestedStages },
-                jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
+                jobId: queueJobId,
                 imageId: item?.imageId,
                 stageUrls: item?.stageUrls || null,
                 requestedStages: itemRequestedStages,
-                filename: item.filename || `image-${i + 1}`
+                filename: item.filename || `image-${queueIndex + 1}`
               });
-            } else if (item && item.status === 'failed' && !processedSetRef.current.has(i)) {
-              processedSetRef.current.add(i);
+            } else if (item && item.status === 'failed' && !processedSetRef.current.has(queueIndex)) {
+              processedSetRef.current.add(queueIndex);
               queueRef.current.push({
-                index: i,
+                index: queueIndex,
                 error: item.error || "Processing failed",
-                jobId: item?.id || item?.jobId || item?.job_id || currentJobId,
+                jobId: queueJobId,
                 imageId: item?.imageId,
                 requestedStages: itemRequestedStages,
-                filename: item.filename || `image-${i + 1}`
+                filename: item.filename || `image-${queueIndex + 1}`
               });
             }
             if (item?.meta?.scene) {
@@ -2906,6 +2947,24 @@ export default function BatchProcessor({
           const allTargetsReached = doneItems.length > 0 && doneItems.every((di: any) => {
             const diStatus = String(di?.status || di?.state || "").toLowerCase();
             if (diStatus === 'failed') return true; // Failed is terminal
+            const diJobId = di?.id || di?.jobId || di?.job_id || null;
+            const diIndex = typeof diJobId === 'string' ? jobIdToIndexRef.current[diJobId] : undefined;
+            const diPendingEditState = typeof diIndex === 'number'
+              ? (pendingEditJobByIndexRef.current[diIndex] || null)
+              : null;
+            if (diPendingEditState && diPendingEditState.jobId === diJobId) {
+              const diEditArtifactUrl =
+                toDisplayUrl(di?.latestEditUrl) ||
+                toDisplayUrl(di?.editLatestUrl) ||
+                toDisplayUrl(di?.result?.latestEditUrl) ||
+                toDisplayUrl(di?.result?.editLatestUrl) ||
+                toDisplayUrl(di?.finalOutputUrl) ||
+                toDisplayUrl(di?.resultUrl) ||
+                toDisplayUrl(di?.imageUrl) ||
+                toDisplayUrl(di?.result?.imageUrl) ||
+                null;
+              return hasFreshArtifactUrl(diEditArtifactUrl, diPendingEditState.previousLatestEditUrl);
+            }
             const diStageMap = di?.stageUrls || di?.stage_urls || {};
             const diReqStages = di?.requestedStages || di?.meta?.requestedStages || {};
             const diScene = String(di?.meta?.scene?.label || "").toLowerCase();
@@ -3264,6 +3323,17 @@ export default function BatchProcessor({
             toDisplayUrl(extraResult?.imageUrl) ||
             toDisplayUrl(extraResult?.url) ||
             null;
+          const regionEditArtifactUrl =
+            toDisplayUrl(it?.latestEditUrl) ||
+            toDisplayUrl(it?.editLatestUrl) ||
+            toDisplayUrl(extraResult?.latestEditUrl) ||
+            toDisplayUrl(extraResult?.editLatestUrl) ||
+            finalOutputUrl ||
+            toDisplayUrl(it?.imageUrl) ||
+            toDisplayUrl(it?.image) ||
+            toDisplayUrl(extraResult?.imageUrl) ||
+            toDisplayUrl(extraResult?.url) ||
+            null;
           const originalUrl = toDisplayUrl(it?.originalImageUrl) || toDisplayUrl(it?.originalUrl) || toDisplayUrl(it?.original) || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
@@ -3288,6 +3358,14 @@ export default function BatchProcessor({
             toDisplayUrl(extraResult?.imageUrl) ||
             toDisplayUrl(extraResult?.url) ||
             null;
+          const pendingEditStateForIndex = typeof idx === "number"
+            ? (pendingEditJobByIndexRef.current[idx] || null)
+            : null;
+          const isPendingEditJob = !!pendingEditStateForIndex && !!polledId && pendingEditStateForIndex.jobId === polledId;
+          const hasFreshPendingEditArtifact = isPendingEditJob && hasFreshArtifactUrl(
+            regionEditArtifactUrl,
+            pendingEditStateForIndex?.previousLatestEditUrl || null,
+          );
           const hasOutputs = !!(stagePreview || resultUrlSafe || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
           // Target stage and completion interpretation are derived only from requested pipeline + available outputs.
@@ -3313,12 +3391,10 @@ export default function BatchProcessor({
           let completionSource: string = "none";
           let displayUrl: string | null = resultUrlSafe || null;
           if (isRegionEdit) {
-            displayUrl =
-              toDisplayUrl(it?.imageUrl) ||
-              toDisplayUrl(it?.image) ||
-              toDisplayUrl(extraResult?.imageUrl) ||
-              toDisplayUrl(extraResult?.url) ||
-              displayUrl;
+            const regionEditDisplayUrl = isPendingEditJob
+              ? (hasFreshPendingEditArtifact ? regionEditArtifactUrl : null)
+              : regionEditArtifactUrl;
+            displayUrl = regionEditDisplayUrl || displayUrl;
             if (displayUrl) completionSource = "region-edit";
           }
           if (!displayUrl && !isRegionEdit) {
@@ -3346,7 +3422,8 @@ export default function BatchProcessor({
             !!displayUrl &&
             unifiedCompletion.isFallback;
 
-          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || isRegionEdit || unifiedCompletion.isFallback);
+          const regionEditCompletionReady = !isRegionEdit || !isPendingEditJob || hasFreshPendingEditArtifact;
+          const completedFinal = status === "completed" && !!displayUrl && (targetUrlPresent || (isRegionEdit && regionEditCompletionReady) || unifiedCompletion.isFallback);
           const completionSourceResolved = isRegionEdit && completedFinal ? "region-edit" : completionSource;
           
           // Log when backend says completed but target not reached (still processing)
@@ -3567,14 +3644,23 @@ export default function BatchProcessor({
                     existing.result?.editLatestUrl
                   );
                   const hasExplicitExistingEditTimestamp = existingEditLatestUpdatedAt > 0;
+                  const hasFreshPromotableEditArtifact = hasFreshArtifactUrl(
+                    promotableEditUrl,
+                    existingPromotedEditUrl,
+                  );
                   const shouldPromoteEditArtifact =
                     !hasExistingEditArtifact ||
                     (hasExplicitExistingEditTimestamp
                       ? promotedVersion >= existingEditLatestUpdatedAt
-                      : (!!polledId && polledId !== existingPromotedEditJobId) ||
-                        (!!promotableEditUrl && promotableEditUrl !== existingPromotedEditUrl));
+                      : hasFreshPromotableEditArtifact);
+                  const pendingEditArtifactSatisfied =
+                    !isPendingEditJob ||
+                    hasFreshArtifactUrl(
+                      promotableEditUrl,
+                      pendingEditStateForIndex?.previousLatestEditUrl || null,
+                    );
 
-                  if (!shouldPromoteEditArtifact) {
+                  if (!shouldPromoteEditArtifact || !pendingEditArtifactSatisfied) {
                     if (!retryChildMappingLoggedRef.current.has(`promote-edit-stale:${polledId}:${existingJobId}:${idx}`)) {
                       retryChildMappingLoggedRef.current.add(`promote-edit-stale:${polledId}:${existingJobId}:${idx}`);
                       console.log('[BATCH][edit_child_promote_skipped_stale]', {
@@ -3587,7 +3673,11 @@ export default function BatchProcessor({
                         existingPromotedEditUrl,
                         incomingPromotableEditUrl: promotableEditUrl,
                         hasExplicitExistingEditTimestamp,
-                        skipReason: hasExplicitExistingEditTimestamp ? 'older_than_existing_edit_timestamp' : 'existing_edit_artifact_already_matches',
+                        skipReason: !pendingEditArtifactSatisfied
+                          ? 'pending_edit_has_no_fresh_artifact'
+                          : hasExplicitExistingEditTimestamp
+                            ? 'older_than_existing_edit_timestamp'
+                            : 'existing_edit_artifact_already_matches',
                       });
                     }
                     return copy;
@@ -4033,7 +4123,12 @@ export default function BatchProcessor({
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
               if (resolvedEditedArtifactPresent) {
-                setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
+                if (pendingEditStateForIndex?.autoSwitchToEdited !== false) {
+                  setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
+                }
+              }
+              if (pendingEditStateForIndex?.jobId === polledId) {
+                delete pendingEditJobByIndexRef.current[idx];
               }
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
             }
@@ -4045,6 +4140,9 @@ export default function BatchProcessor({
                 next.delete(idx);
                 return next;
               });
+              if (pendingEditStateForIndex?.jobId === polledId) {
+                delete pendingEditJobByIndexRef.current[idx];
+              }
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
             }
 
@@ -7617,12 +7715,11 @@ export default function BatchProcessor({
                         const stage2Expected = requestedStage2 && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
-                        const hasActiveEdit = editingImages.has(i);
+                        const pendingEditJob = pendingEditJobByIndexRef.current[i] || null;
+                        const hasActiveEdit = editingImages.has(i) || !!pendingEditJob;
+                        const resolvedEditedArtifactUrl = getResolvedEditArtifactUrl(result);
                         const isEditComplete = !hasActiveEdit && (editCompletedImages.has(i)
-                          || !!result?.editLatestUrl
-                          || !!result?.result?.editLatestUrl
-                          || result?.completionSource === "region-edit"
-                          || result?.result?.completionSource === "region-edit");
+                          || !!resolvedEditedArtifactUrl);
                         const isEditing = hasActiveEdit;
                         const uiOverrideFailed = !!result?.uiOverrideFailed;
                         const autoInsertedStage1B = result?.meta?.autoInsertedStage1B === true
@@ -7822,7 +7919,7 @@ export default function BatchProcessor({
 
                         // Image Preview Logic with artifact preference (avoid failed/blocked outputs)
                         const disallowStage2 = !!blockedStage && !stage2Url;
-                        const editedUrl = getResolvedEditArtifactUrl(result);
+                        const editedUrl = resolvedEditedArtifactUrl;
                         const retriedUrl =
                           toDisplayUrl(result?.latestRetryUrl) ||
                           toDisplayUrl(result?.result?.latestRetryUrl) ||
@@ -8406,6 +8503,11 @@ export default function BatchProcessor({
               if (pinnedEditSourceUrl) {
                 editInFlightSourceUrlRef.current[activeEditIndex] = pinnedEditSourceUrl;
               }
+              pendingEditJobByIndexRef.current[activeEditIndex] = {
+                jobId,
+                previousLatestEditUrl: getResolvedEditArtifactUrl(results[activeEditIndex]) || null,
+                autoSwitchToEdited: true,
+              };
 
               // Close modal immediately after Enhance submits successfully
               setRegionEditorOpen(false);
@@ -8561,6 +8663,7 @@ export default function BatchProcessor({
                   title: 'Region edit complete',
                   description: `Image ${activeEditIndex + 1} edited successfully. You can do more edits or close the modal.`,
                 });
+                delete pendingEditJobByIndexRef.current[activeEditIndex];
                 delete editInFlightSourceUrlRef.current[activeEditIndex];
                 delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
@@ -8580,6 +8683,8 @@ export default function BatchProcessor({
                   if (idx !== null) next.delete(idx);
                   return next;
                 });
+                const idx = activeRegionEditIndexRef.current;
+                if (idx !== null) delete pendingEditJobByIndexRef.current[idx];
                 activeRegionEditIndexRef.current = null;
               }
               // Otherwise keep modal open so user can do more edits
@@ -8594,6 +8699,7 @@ export default function BatchProcessor({
                   next.delete(activeEditIndex);
                   return next;
                 });
+                delete pendingEditJobByIndexRef.current[activeEditIndex];
                 delete editInFlightSourceUrlRef.current[activeEditIndex];
                 delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
@@ -8619,6 +8725,7 @@ export default function BatchProcessor({
                   }
                 }
 
+                delete pendingEditJobByIndexRef.current[activeEditIndex];
                 delete editInFlightSourceUrlRef.current[activeEditIndex];
                 delete preEditStageUrlsRef.current[activeEditIndex];
                 delete preEditResultSnapshotRef.current[activeEditIndex];
