@@ -3665,9 +3665,12 @@ export default function BatchProcessor({
                     promotableEditUrl,
                     existingPromotedEditUrl,
                   );
+                  // When the status endpoint doesn't return version/updatedAt (promotedVersion=0),
+                  // fall back to URL freshness comparison instead of a broken 0 >= timestamp check
+                  // that would incorrectly reject every subsequent edit as "stale".
                   const shouldPromoteEditArtifact =
                     !hasExistingEditArtifact ||
-                    (hasExplicitExistingEditTimestamp
+                    (hasExplicitExistingEditTimestamp && promotedVersion > 0
                       ? promotedVersion >= existingEditLatestUpdatedAt
                       : hasFreshPromotableEditArtifact);
                   const pendingEditArtifactSatisfied =
