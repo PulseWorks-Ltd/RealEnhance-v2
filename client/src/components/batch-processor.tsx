@@ -3483,7 +3483,9 @@ export default function BatchProcessor({
             const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
             // Keep uiOverrideFailed as an internal UI fallback signal; do not inject user-facing warning copy here.
             let forceEditedDisplay = false;
-              const isTerminalNormalized = status === "failed" || completedFinal;
+            let completedViaPromotedEditArtifact = false;
+            let promotedEditedArtifactUrl: string | null = null;
+            const isTerminalNormalized = status === "failed" || completedFinal;
             if (!isTerminalNormalized) {
               nonTerminalIndices.push(idx);
             }
@@ -3703,6 +3705,8 @@ export default function BatchProcessor({
                   };
                   wasUpdateApplied = true;
                   forceEditedDisplay = true;
+                  promotedEditedArtifactUrl = promotableEditUrl;
+                  completedViaPromotedEditArtifact = !!pendingEditStateForIndex && pendingEditStateForIndex.jobId === polledId;
                   currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
                   if (!retryChildMappingLoggedRef.current.has(`promote-edit:${polledId}:${existingJobId}:${idx}`)) {
                     retryChildMappingLoggedRef.current.add(`promote-edit:${polledId}:${existingJobId}:${idx}`);
@@ -4065,6 +4069,28 @@ export default function BatchProcessor({
               return copy;
             }, "poll-merge");
 
+            const hasResolvedEditedArtifact = resolvedEditedArtifactPresent || !!promotedEditedArtifactUrl;
+
+            if (completedViaPromotedEditArtifact) {
+              clearEditFallbackTimer(idx);
+              setEditingImages(prev => {
+                const next = new Set(prev);
+                next.delete(idx);
+                return next;
+              });
+              setEditCompletedImages(prev => new Set(prev).add(idx));
+              if (pendingEditStateForIndex?.autoSwitchToEdited !== false && hasResolvedEditedArtifact) {
+                setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
+              }
+              if (pendingEditStateForIndex?.jobId === polledId) {
+                delete pendingEditJobByIndexRef.current[idx];
+              }
+              if (polledId) regionEditJobIdsRef.current.delete(polledId);
+              const nonTerminalIdx = nonTerminalIndices.indexOf(idx);
+              if (nonTerminalIdx !== -1) nonTerminalIndices.splice(nonTerminalIdx, 1);
+              reachedTargetOrFailedIndices.add(idx);
+            }
+
             const isAuthoritativeUpdate = !!(
               (polledId && currentCardJobIdForRetryClear && polledId === currentCardJobIdForRetryClear) ||
               isRetryChildJob
@@ -4110,7 +4136,7 @@ export default function BatchProcessor({
               });
             }
 
-            if (forceEditedDisplay && resolvedEditedArtifactPresent) {
+            if (forceEditedDisplay && hasResolvedEditedArtifact) {
               setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
             }
 
