@@ -3483,8 +3483,6 @@ export default function BatchProcessor({
             const uiOverrideFailed = (status === "processing" || isQueued) && hasOnlyStage1A && ageMs >= STUCK_UI_MS;
             // Keep uiOverrideFailed as an internal UI fallback signal; do not inject user-facing warning copy here.
             let forceEditedDisplay = false;
-            let completedViaPromotedEditArtifact = false;
-            let promotedEditedArtifactUrl: string | null = null;
             const isTerminalNormalized = status === "failed" || completedFinal;
             if (!isTerminalNormalized) {
               nonTerminalIndices.push(idx);
@@ -3705,8 +3703,6 @@ export default function BatchProcessor({
                   };
                   wasUpdateApplied = true;
                   forceEditedDisplay = true;
-                  promotedEditedArtifactUrl = promotableEditUrl;
-                  completedViaPromotedEditArtifact = !!pendingEditStateForIndex && pendingEditStateForIndex.jobId === polledId;
                   currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
                   if (!retryChildMappingLoggedRef.current.has(`promote-edit:${polledId}:${existingJobId}:${idx}`)) {
                     retryChildMappingLoggedRef.current.add(`promote-edit:${polledId}:${existingJobId}:${idx}`);
@@ -4068,10 +4064,13 @@ export default function BatchProcessor({
               currentCardJobIdForRetryClear = (copy[idx].jobId || existingJobId || null) as string | null;
               return copy;
             }, "poll-merge");
+            const resolvedPendingEditAfterMerge =
+              !!pendingEditStateForIndex &&
+              pendingEditStateForIndex.jobId === polledId &&
+              wasUpdateApplied &&
+              hasFreshPendingEditArtifact;
 
-            const hasResolvedEditedArtifact = resolvedEditedArtifactPresent || !!promotedEditedArtifactUrl;
-
-            if (completedViaPromotedEditArtifact) {
+            if (resolvedPendingEditAfterMerge) {
               clearEditFallbackTimer(idx);
               setEditingImages(prev => {
                 const next = new Set(prev);
@@ -4079,12 +4078,10 @@ export default function BatchProcessor({
                 return next;
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
-              if (pendingEditStateForIndex?.autoSwitchToEdited !== false && hasResolvedEditedArtifact) {
+              if (pendingEditStateForIndex.autoSwitchToEdited !== false) {
                 setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
               }
-              if (pendingEditStateForIndex?.jobId === polledId) {
-                delete pendingEditJobByIndexRef.current[idx];
-              }
+              delete pendingEditJobByIndexRef.current[idx];
               if (polledId) regionEditJobIdsRef.current.delete(polledId);
               const nonTerminalIdx = nonTerminalIndices.indexOf(idx);
               if (nonTerminalIdx !== -1) nonTerminalIndices.splice(nonTerminalIdx, 1);
@@ -4136,10 +4133,6 @@ export default function BatchProcessor({
               });
             }
 
-            if (forceEditedDisplay && hasResolvedEditedArtifact) {
-              setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
-            }
-
             if (isRegionEdit && completedFinal) {
               clearEditFallbackTimer(idx);
               setEditingImages(prev => {
@@ -4148,7 +4141,7 @@ export default function BatchProcessor({
                 return next;
               });
               setEditCompletedImages(prev => new Set(prev).add(idx));
-              if (resolvedEditedArtifactPresent) {
+              if (hasFreshPendingEditArtifact || !!regionEditArtifactUrl) {
                 if (pendingEditStateForIndex?.autoSwitchToEdited !== false) {
                   setDisplayStageByIndex((prev) => ({ ...prev, [idx]: "edited" }));
                 }
@@ -5943,8 +5936,17 @@ export default function BatchProcessor({
                 const existingRetryHistory = Array.isArray(results[imageIndex]?.retryHistory)
                   ? results[imageIndex].retryHistory
                   : [];
-                const retryParentJobId = job.parentJobId || job.retryInfo?.parentJobId || r?.parentJobId || r?.result?.parentJobId || null;
-                const retryRetryInfo = job.retryInfo || r?.retryInfo || r?.result?.retryInfo || undefined;
+                const retryParentJobId =
+                  job.parentJobId ||
+                  job.retryInfo?.parentJobId ||
+                  results[imageIndex]?.parentJobId ||
+                  results[imageIndex]?.result?.parentJobId ||
+                  null;
+                const retryRetryInfo =
+                  job.retryInfo ||
+                  results[imageIndex]?.retryInfo ||
+                  results[imageIndex]?.result?.retryInfo ||
+                  undefined;
                 setResults(prev => prev.map((r, i) =>
                   i === imageIndex ? {
                     ...r,
