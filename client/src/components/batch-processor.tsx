@@ -4850,12 +4850,39 @@ export default function BatchProcessor({
     setIsDownloadingZip(true);
     
     try {
-      // Import JSZip dynamically for client-side ZIP creation
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
-      
       // Build ZIP from the same output tab state used by each image card.
-      const imagesToDownload: { url: string; filename: string }[] = [];
+      const imagesToDownload: Array<{ url?: string; dataUrl?: string; filename: string }> = [];
+
+      const toZipDownloadSource = async (url: string): Promise<{ url?: string; dataUrl?: string } | null> => {
+        if (url.startsWith('data:image/')) {
+          return { dataUrl: url };
+        }
+
+        if (url.startsWith('blob:')) {
+          const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+          if (!response.ok) {
+            throw new Error(`Failed to read local image for ZIP download: ${response.status}`);
+          }
+          const blob = await response.blob();
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(reader.error || new Error('Failed to convert image to data URL'));
+            reader.onloadend = () => resolve(String(reader.result || ''));
+            reader.readAsDataURL(blob);
+          });
+          return dataUrl ? { dataUrl } : null;
+        }
+
+        if (url.startsWith('/')) {
+          return { url: new URL(url, window.location.origin).toString() };
+        }
+
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          return { url };
+        }
+
+        return null;
+      };
 
       const getZipDisplayUrl = (
         image: any,
@@ -4888,9 +4915,19 @@ export default function BatchProcessor({
             const extension = imageUrl.includes('.png') ? 'png' : 'jpg';
             filename = `enhanced_image_${i + 1}.${extension}`;
           }
+
+          let downloadSource: { url?: string; dataUrl?: string } | null = null;
+          try {
+            downloadSource = await toZipDownloadSource(imageUrl);
+          } catch (error) {
+            console.warn(`Failed to prepare image ${filename} for ZIP download:`, error);
+          }
+          if (!downloadSource) {
+            continue;
+          }
           
           imagesToDownload.push({
-            url: imageUrl,
+            ...downloadSource,
             filename: filename
           });
         }
@@ -4904,50 +4941,13 @@ export default function BatchProcessor({
         });
         return;
       }
-      
-      // Download each image and add to ZIP
-      let addedCount = 0;
-      let failedCount = 0;
-      for (const item of imagesToDownload) {
-        try {
-          let imageBuffer: ArrayBuffer;
-          
-          if (item.url.startsWith('data:')) {
-            // Handle data URLs (base64 encoded images)
-            const base64Data = item.url.split(',')[1];
-            imageBuffer = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0)).buffer;
-          } else {
-            // Handle regular URLs
-            // AUDIT FIX: added timeout to prevent hung blob downloads
-            const response = await fetch(item.url, { signal: AbortSignal.timeout(30_000) });
-            if (!response.ok) {
-              console.warn(`Failed to fetch image: ${item.url}`, response.status);
-              failedCount += 1;
-              continue;
-            }
-            imageBuffer = await response.arrayBuffer();
-          }
-          
-          zip.file(item.filename, imageBuffer);
-          addedCount += 1;
-        } catch (error) {
-          console.warn(`Failed to process image ${item.filename}:`, error);
-          failedCount += 1;
-          // Continue with other images even if one fails
-        }
-      }
-
-      if (addedCount === 0) {
-        toast({
-          title: "Download Failed",
-          description: "No images could be downloaded. Please refresh and try again.",
-          variant: "destructive"
-        });
-        return;
-      }
-      
-      // Generate ZIP file
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const response = await apiFetch('/api/enhanced-images/download-zip', {
+        method: 'POST',
+        body: JSON.stringify({ files: imagesToDownload }),
+      }, 120_000);
+      const zipBlob = await response.blob();
+      const addedCount = Number(response.headers.get('X-Zip-Added-Count') || imagesToDownload.length || 0);
+      const failedCount = Number(response.headers.get('X-Zip-Failed-Count') || 0);
       
       // Download the ZIP
       const url = URL.createObjectURL(zipBlob);
@@ -7938,6 +7938,7 @@ export default function BatchProcessor({
                         const stageProgressValue = isDone
                           ? 100
                           : Math.max(previousProgressValue ?? 0, resolvedProgressValue);
+                        const finalizedProgressValue = isEditComplete ? 100 : stageProgressValue;
                         lastDisplayedProgressByImageRef.current[i] = stageProgressValue;
                         const stageTitle = isDone
                           ? STAGE_TITLES.completed
@@ -8191,7 +8192,7 @@ export default function BatchProcessor({
                                   <div className="flex justify-between items-center gap-3">
                                     <h3 className="font-semibold text-sm text-slate-900 truncate">{file.name}</h3>
                                     <span className="text-xs font-mono text-slate-500">
-                                      {`${stageProgressValue}%`}
+                                      {`${finalizedProgressValue}%`}
                                     </span>
                                   </div>
                                   {!isProcessing && stageTitle !== "Enhancement Complete" && !isUiComplete && (
@@ -8272,7 +8273,7 @@ export default function BatchProcessor({
                                 <div className="mt-3 h-2 w-full rounded-full bg-slate-200 overflow-hidden">
                                   <div 
                                     className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all duration-500" 
-                                    style={{ width: `${Math.max(0, Math.min(100, stageProgressValue))}%` }} 
+                                    style={{ width: `${Math.max(0, Math.min(100, finalizedProgressValue))}%` }} 
                                   />
                                 </div>
                               )}

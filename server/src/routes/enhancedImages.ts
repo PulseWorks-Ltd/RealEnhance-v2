@@ -7,9 +7,57 @@
 
 import { Router, type Request, type Response } from 'express';
 import { listEnhancedImages, getEnhancedImage } from '../services/enhancedImages.js';
+import { makeZip } from '../services/zipper.js';
 
 const ENHANCED_IMAGES_DEFAULT_LIMIT = Math.max(1, Number(process.env.ENHANCED_IMAGES_DEFAULT_LIMIT || 200));
 const ENHANCED_IMAGES_MAX_LIMIT = Math.max(ENHANCED_IMAGES_DEFAULT_LIMIT, Number(process.env.ENHANCED_IMAGES_MAX_LIMIT || 5000));
+const ENHANCED_IMAGES_ZIP_MAX_FILES = Math.max(1, Number(process.env.ENHANCED_IMAGES_ZIP_MAX_FILES || 250));
+
+type DownloadZipManifestItem = {
+  filename?: unknown;
+  url?: unknown;
+  dataUrl?: unknown;
+};
+
+function getRequestOrigin(req: Request): string {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0]?.trim();
+  const protocol = forwardedProto || req.protocol || 'https';
+  const host = req.get('host') || 'localhost';
+  return `${protocol}://${host}`;
+}
+
+function normalizeManifestItems(req: Request, input: unknown): Array<{ filename: string; url?: string; dataUrl?: string }> {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .map((raw): { filename: string; url?: string; dataUrl?: string } | null => {
+      const item = (raw || {}) as DownloadZipManifestItem;
+      const filename = String(item.filename || '').trim();
+      const rawUrl = typeof item.url === 'string' ? item.url.trim() : '';
+      const dataUrl = typeof item.dataUrl === 'string' ? item.dataUrl.trim() : '';
+
+      if (!filename) return null;
+      if (!rawUrl && !dataUrl) return null;
+
+      if (dataUrl.startsWith('data:image/')) {
+        return { filename, dataUrl };
+      }
+
+      if (!rawUrl) return null;
+
+      try {
+        const resolvedUrl = new URL(rawUrl, getRequestOrigin(req));
+        if (!['http:', 'https:'].includes(resolvedUrl.protocol)) {
+          return null;
+        }
+        return { filename, url: resolvedUrl.toString() };
+      } catch {
+        return null;
+      }
+    })
+    .filter((item): item is { filename: string; url?: string; dataUrl?: string } => !!item)
+    .slice(0, ENHANCED_IMAGES_ZIP_MAX_FILES);
+}
 
 export function enhancedImagesRouter() {
   const router = Router();
@@ -105,6 +153,87 @@ export function enhancedImagesRouter() {
     } catch (error) {
       console.error('[enhanced-images] Download gate error:', error);
       return res.status(500).json({ error: 'Failed to prepare download' });
+    }
+  });
+
+  router.post('/download-zip', async (req: Request, res: Response) => {
+    try {
+      const user = (req.session as any)?.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      if (user.emailVerified !== true) {
+        return res.status(403).json({
+          error: 'EMAIL_NOT_VERIFIED',
+          message: 'Please confirm your email address to download the images.',
+        });
+      }
+
+      const manifest = normalizeManifestItems(req, (req.body as any)?.files);
+      if (!manifest.length) {
+        return res.status(400).json({ error: 'No images provided for ZIP download' });
+      }
+
+      const zipInputs: Array<{ filename: string; dataUrl?: string; buffer?: Buffer; contentType?: string | null }> = [];
+      let failedCount = 0;
+
+      for (const item of manifest) {
+        if (item.dataUrl) {
+          zipInputs.push({ filename: item.filename, dataUrl: item.dataUrl });
+          continue;
+        }
+
+        if (!item.url) {
+          failedCount += 1;
+          continue;
+        }
+
+        try {
+          const response = await fetch(item.url, {
+            redirect: 'follow',
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!response.ok) {
+            failedCount += 1;
+            continue;
+          }
+
+          const arrayBuffer = await response.arrayBuffer();
+          if (!arrayBuffer.byteLength) {
+            failedCount += 1;
+            continue;
+          }
+
+          zipInputs.push({
+            filename: item.filename,
+            buffer: Buffer.from(arrayBuffer),
+            contentType: response.headers.get('content-type'),
+          });
+        } catch (error) {
+          console.warn('[enhanced-images] ZIP fetch failed', { url: item.url, error });
+          failedCount += 1;
+        }
+      }
+
+      const zipResult = await makeZip({
+        userId: String(user.id || 'anonymous'),
+        files: zipInputs,
+      });
+
+      const totalFailed = failedCount + zipResult.skippedCount;
+      if (zipResult.addedCount === 0) {
+        return res.status(502).json({ error: 'No images could be downloaded' });
+      }
+
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="enhanced-images-${Date.now()}.zip"`);
+      res.setHeader('X-Zip-Added-Count', String(zipResult.addedCount));
+      res.setHeader('X-Zip-Failed-Count', String(totalFailed));
+      return res.send(zipResult.buffer);
+    } catch (error) {
+      console.error('[enhanced-images] ZIP download error:', error);
+      return res.status(500).json({ error: 'Failed to create ZIP file' });
     }
   });
 
