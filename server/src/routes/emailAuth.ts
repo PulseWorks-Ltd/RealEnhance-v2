@@ -7,7 +7,6 @@ import { getDisplayName } from "@realenhance/shared/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { createAgency } from "@realenhance/shared/agencies.js";
 import { createEmailVerificationToken, consumeEmailVerificationToken } from "../services/emailVerificationTokens.js";
-import { grantLaunchTrialIfEligible } from "../services/trials.js";
 // Seat limits removed - unlimited users per agency
 
 export function emailAuthRouter() {
@@ -126,12 +125,7 @@ export function emailAuthRouter() {
         hasSeenWelcome: false,
       });
 
-      const launchTrial = await grantLaunchTrialIfEligible(agency.agencyId);
-      if (launchTrial.granted) {
-        console.log(`[TRIAL] Launch trial granted to agency ${agency.agencyId} (${launchTrial.allocated}/${launchTrial.max})`);
-      } else {
-        console.log(`[TRIAL] Launch trial skipped for agency ${agency.agencyId} (allocated=${launchTrial.allocated}, max=${launchTrial.max})`);
-      }
+      // Launch trial removed from auto-signup; users must enter a promo code via /trial/start
 
       // Create verification token + send email
       const tokenRecord = await createEmailVerificationToken(ownerUser.id);

@@ -4,7 +4,6 @@ import { Strategy as GoogleStrategy, type StrategyOptions } from "passport-googl
 import { upsertUserFromGoogle, getUserByEmail, updateUser } from "../services/users.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { createAgency } from "@realenhance/shared/agencies.js";
-import { grantLaunchTrialIfEligible } from "../services/trials.js";
 // Seat limits removed - unlimited users per agency
 
 /** Resolve public base URL safely (prod vs local) */
@@ -115,16 +114,7 @@ function initPassport() {
               hasSeenWelcome: false,
             });
 
-            const launchTrial = await grantLaunchTrialIfEligible(agency.agencyId);
-            if (launchTrial.granted) {
-              console.log(
-                `[TRIAL] Launch trial granted to Google signup agency ${agency.agencyId} (${launchTrial.allocated}/${launchTrial.max})`
-              );
-            } else {
-              console.log(
-                `[TRIAL] Launch trial skipped for Google signup agency ${agency.agencyId} (allocated=${launchTrial.allocated}, max=${launchTrial.max})`
-              );
-            }
+            // Launch trial removed from auto-signup; users must enter a promo code via /trial/start
           }
 
           const displayName = getDisplayName(user);
