@@ -24,3 +24,9 @@ worker/test-data/Rental 03.jpg
 /SPRINT_*_SUMMARY*.md
 /VALIDATOR*_SUMMARY*.md
 /Validator Logs - *.txt
+
+# Audit/debug data files (may contain pre-signed URLs with AWS credentials)
+audit_*
+signed_review_urls*
+stage2_signed_report*
+routing_overrides_*
