@@ -18,6 +18,7 @@ type AuthUser = {
   agencyId?: string | null;
   role?: "owner" | "admin" | "member";
   authProvider?: "email" | "google" | "both";
+  isSiteAdmin?: boolean;
 };
 
 type AuthState = {

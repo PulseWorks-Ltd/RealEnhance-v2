@@ -51,6 +51,7 @@ const SecuritySettings = lazyWithRetry(() => import("@/pages/settings/security")
 const BillingSettings = lazyWithRetry(() => import("@/pages/agency"));
 const NotFound       = lazyWithRetry(() => import("@/pages/not-found"));
 const StartTrial     = lazyWithRetry(() => import("@/pages/start-trial"));
+const AdminDashboard = lazyWithRetry(() => import("@/pages/admin"));
 const TermsPage      = lazyWithRetry(() => import("@/pages/terms"));
 const PrivacyPage    = lazyWithRetry(() => import("@/pages/privacy"));
 
@@ -112,6 +113,8 @@ export default function App() {
             <Route path="/agency" element={<AppShell><Agency /></AppShell>} />
             <Route path="/settings/billing" element={<AppShell><BillingSettings /></AppShell>} />
             <Route path="/billing" element={<Navigate to="/agency" replace />} />
+            {/* Admin dashboard: RequireAuth only, page handles its own admin guard */}
+            <Route path="/admin" element={<AppShell><AdminDashboard /></AppShell>} />
             
             {/* Protected routes: RequireAuth + RequireAgency */}
             <Route element={<RequireAgency><Outlet /></RequireAgency>}>

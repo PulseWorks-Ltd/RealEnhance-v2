@@ -40,6 +40,7 @@ import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import { imageVersionsRouter } from "./routes/imageVersions.js";
 import adminResetRouter from "./routes/adminReset.js";
+import adminDashboardRouter from "./routes/admin.js";
 import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
 import { enhanceRouter } from "./routes/enhance.js";
@@ -357,6 +358,8 @@ async function main() {
   app.use("/api", visionRoomTypeRouter);
   // Admin usage tracking endpoints
   app.use("/api/admin/usage", adminUsageRouter);
+  // Admin dashboard (agencies, usage, billing overview)
+  app.use("/api/admin/dashboard", adminDashboardRouter);
   // Admin subscription management (protected by API key)
   app.use("/internal/admin", adminSubscriptionRouter);
   // Agency management endpoints

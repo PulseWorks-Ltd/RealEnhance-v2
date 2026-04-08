@@ -32,6 +32,14 @@ export function authUserRouter() {
     };
 
     const includeImages = String((req.query as any)?.includeImages || "0") === "1";
+
+    // Compute site-admin flag from env allowlist (not stored on user record)
+    const adminEmails = (process.env.REALENHANCE_ADMIN_EMAILS || "")
+      .split(",")
+      .map((e) => e.trim().toLowerCase())
+      .filter(Boolean);
+    const isSiteAdmin = full.email ? adminEmails.includes(full.email.toLowerCase()) : false;
+
     const payload: any = {
       id: full.id,
       name: full.name,
@@ -44,6 +52,7 @@ export function authUserRouter() {
       agencyId: full.agencyId,
       role: full.role,
       hasSeenWelcome: full.hasSeenWelcome === false ? false : true,
+      isSiteAdmin,
     };
 
     if (includeImages) {
