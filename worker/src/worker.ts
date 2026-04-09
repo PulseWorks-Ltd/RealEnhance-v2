@@ -10036,8 +10036,11 @@ All openings must remain identical in position and size to the original image.`;
             return "Verify window/door frame edges match baseline. If wall area expanded into the opening void, fail Tier 1.";
           if (it.includes("opening_relocated"))
             return "Verify the opening exists at its original location. If it has moved, fail Tier 1.";
-          if (it.includes("envelope") || it.includes("wall_changed") || it.includes("wall_plane"))
+          if (it.includes("envelope") || it.includes("wall_changed") || it.includes("wall_plane")) {
+            if (it.includes("confirmed") || it.includes("continuoussurface") || it.includes("boundary"))
+              return "Possible Depth Loss—verify if a doorway or walk-through was flattened into an art wall. If a 3D recess became a 2D plane, fail Tier 1.";
             return "Verify wall continuity. If a recess was flattened or a new flat surface replaced a previous indentation, fail Tier 1.";
+          }
           if (it.includes("fixture") || it.includes("ceiling") || it.includes("pendant") || it.includes("plumbing"))
             return "Verify that the fixed feature is unchanged in type, position, and count.";
           if (it.includes("floor"))

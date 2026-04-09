@@ -475,6 +475,8 @@ Furniture must adapt to the room; the room must never adapt to furniture.
 Do not extend wall planes, flatten recesses, or shift openings to create placement surface.
 Do not alter window-to-wall ratio, door-to-wall ratio, sill height, or wall returns.
 If an item does not fit on existing wall area, omit the item.
+Internal doorways, walk-throughs, and alcoves are structural voids—not blank canvases.
+If a wall-mounted item (art, mirror, TV) overlaps any part of a doorway void, omit the item.
 
 CRITICAL PRIORITY 2: PRIMARY ANCHOR
 Selected room type: ${room || "unknown"}

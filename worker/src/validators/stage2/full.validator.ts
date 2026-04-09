@@ -97,6 +97,12 @@ and the region shows a wall-mounted item (TV, art, mirror, shelf, console)
 on a continuous wall surface, classify as REMOVED — not occluded.
 A wall-mounted item is evidence of void infill, not evidence of occlusion.
 This rule overrides the plausible-occlusion presumption for that region.
+
+INTERNAL TRANSITION RULE (DOORWAY INFILL)
+If a doorway, walk-through, or internal opening in BEFORE is replaced by a flat
+wall surface in AFTER—even if that surface is decorated with high-quality art,
+mirrors, or decor—classify as Tier 1 REMOVED. Decorating a former void is a
+common AI generation error. Do not accept it as renovation, styling, or occlusion.
 ${fromEmptyFrameContinuityRule}
 
 OPENING OCCLUSION VS GEOMETRY RULE (MANDATORY)
