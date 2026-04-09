@@ -296,8 +296,16 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 - Ignore color variation.
 - Only evaluate permanent architectural structure.`;
 
+  const hasInvestigationTasks = Array.isArray(specialistAdvisoryObservations)
+    && specialistAdvisoryObservations.length > 0
+    && specialistAdvisoryObservations.some((item) => String(item || "").startsWith("["));
   const advisoryObservationBlock = Array.isArray(specialistAdvisoryObservations) && specialistAdvisoryObservations.length > 0
-    ? `
+    ? hasInvestigationTasks
+      ? `
+
+INVESTIGATION TASKS (non-binding — verify visually before any classification):
+${specialistAdvisoryObservations.map((item, i) => `${i + 1}. ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
+      : `
 
 Additional Observations (non-binding, for awareness only):
 ${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
@@ -2303,7 +2311,7 @@ function buildPrompt(
       validationMode ?? (sourceStage === "1A" ? "FULL_STAGE_ONLY" : "REFRESH_OR_DIRECT");
     const contextHeader = buildStage2ContextHeader(resolvedValidationMode);
     const validatorPrompt = resolvedValidationMode === "FULL_STAGE_ONLY"
-      ? validateStage2Full()
+      ? validateStage2Full(resolvedValidationMode)
       : validateStage2Refresh();
 
     return `${contextHeader}\n\n${validatorPrompt}`;

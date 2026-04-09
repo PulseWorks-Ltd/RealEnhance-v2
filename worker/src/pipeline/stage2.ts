@@ -470,6 +470,12 @@ All openings must remain fully functional and unobstructed in realistic use.
 Style must be achieved through freestanding furniture and movable decor only.
 Do not add architectural features to achieve style, including coffered ceilings, wall moldings, built-in LED strips, recessed-lighting additions, wall panels, or integrated cabinetry.
 
+RESOURCE CONSTRAINT (ZERO TOLERANCE)
+Furniture must adapt to the room; the room must never adapt to furniture.
+Do not extend wall planes, flatten recesses, or shift openings to create placement surface.
+Do not alter window-to-wall ratio, door-to-wall ratio, sill height, or wall returns.
+If an item does not fit on existing wall area, omit the item.
+
 CRITICAL PRIORITY 2: PRIMARY ANCHOR
 Selected room type: ${room || "unknown"}
 ${anchorGuidance}
@@ -506,6 +512,7 @@ OPENING SAFETY (MANDATORY)
 - Only place wall art on uninterrupted wall segments with no opening behind or directly adjacent.
 - If wall availability is uncertain, omit wall art entirely.
 - If a bed or headboard must be placed in front of a window due to room size, keep the full window frame, sill height, and visible glass unchanged behind and around the furniture. Never raise the sill or shorten the window to fit furniture.
+- If a TV, artwork, console, or shelf requires more continuous wall than exists between openings, you MUST omit that item. Do not create new mountable wall area by shrinking, shifting, or removing any opening.
 
 NEGATIVE CONSTRAINTS
 - Apply all strict prohibitions in this prompt exactly.

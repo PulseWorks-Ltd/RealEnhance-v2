@@ -351,6 +351,37 @@ export interface UnifiedValidationParams {
   geminiPolicy?: "always" | "on_local_fail" | "never";
   /** Stage2 specialist (Gemini-based) advisory signals for non-binding prompt awareness */
   specialistAdvisorySignals?: string[];
+  /** Structured spatial observations from specialists for Investigation Task prompting */
+  specialistAdvisoryObservations?: AdvisoryObservation[];
+}
+
+/**
+ * Structured advisory observation from a specialist validator.
+ * Carries spatial context (bbox, location) and a targeted investigation task
+ * for the Unified Validator to verify visually.
+ */
+export type AdvisoryObservation = {
+  validator: "openings" | "fixtures" | "floor" | "envelope";
+  issueType: string;
+  approximateLocation?: "left" | "center-left" | "center" | "center-right" | "right" | "rear";
+  bbox?: [number, number, number, number];
+  confidence: number;
+  investigationTask: string;
+};
+
+function buildSpatialInvestigationBlock(observations: AdvisoryObservation[]): string[] {
+  if (!Array.isArray(observations) || observations.length === 0) return [];
+
+  return observations
+    .filter((obs) => obs && obs.investigationTask)
+    .slice(0, 6)
+    .map((obs) => {
+      const loc = obs.approximateLocation
+        ? `[${obs.approximateLocation.toUpperCase()}]`
+        : "[UNKNOWN]";
+      const conf = Number.isFinite(obs.confidence) ? obs.confidence.toFixed(2) : "n/a";
+      return `${loc} ${obs.validator} specialist detected ${obs.issueType} (conf=${conf}). Task: ${obs.investigationTask}`;
+    });
 }
 
 function buildSpecialistObservationHints(signals?: string[]): string[] {
@@ -466,6 +497,7 @@ export async function runUnifiedValidation(
     baseArtifacts,
     geminiPolicy = "always",
     specialistAdvisorySignals,
+    specialistAdvisoryObservations,
   } = params;
 
   if (!String(originalPath || "").trim() || !String(enhancedPath || "").trim()) {
@@ -1427,9 +1459,14 @@ export async function runUnifiedValidation(
       const geminiRiskLevel = STRUCTURAL_SIGNALS_ACTIVE ? riskLevel : undefined;
       const stage2SpecialistAdvisoriesEnabled =
         STAGE2_ENABLE_SPECIALIST_ADVISORY && stage === "2";
-      const specialistObservationHints = stage2SpecialistAdvisoriesEnabled
-        ? buildSpecialistObservationHints(specialistAdvisorySignals)
-        : [];
+      const hasStructuredObservations = stage2SpecialistAdvisoriesEnabled
+        && Array.isArray(specialistAdvisoryObservations)
+        && specialistAdvisoryObservations.length > 0;
+      const specialistObservationHints = hasStructuredObservations
+        ? buildSpatialInvestigationBlock(specialistAdvisoryObservations!)
+        : stage2SpecialistAdvisoriesEnabled
+          ? buildSpecialistObservationHints(specialistAdvisorySignals)
+          : [];
       const consensusDerivedWarnings = specialistObservationHints.length;
       if (!STRUCTURAL_SIGNALS_ACTIVE) {
         nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {

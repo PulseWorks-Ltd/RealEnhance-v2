@@ -1,4 +1,17 @@
-export function validateStage2Full(): string {
+import type { Stage2ValidationMode } from "../stage2ValidationMode";
+
+export function validateStage2Full(validationMode?: Stage2ValidationMode): string {
+  const isFromEmpty = validationMode === "FULL_STAGE_ONLY";
+
+  const fromEmptyFrameContinuityRule = isFromEmpty
+    ? `
+
+FROM-EMPTY FRAME CONTINUITY RULE (ACTIVE — BASELINE IS AN EMPTY ROOM)
+In this mode, the BEFORE image has no furniture. Therefore:
+- Furniture occlusion of an opening is valid ONLY if the opening's frame, sill, header, or edge remains partially visible around the furniture.
+- If the entire opening boundary is invisible and replaced by continuous wall surface, classify as REMOVED even if furniture is present in the region.`
+    : "";
+
   return `ROLE
 You are the Stage 2 Final Authority Validator.
 
@@ -20,6 +33,12 @@ Tier 1 — STRUCTURAL (hard fail if changed)
 - window openings (not coverings)
 - room envelope
 - camera viewpoint
+
+PERSPECTIVE TOLERANCE (MANDATORY)
+Minor geometric drift (up to ~20% of an opening's visible area) is allowed
+when caused by lens distortion, crop shift, or perspective normalization.
+Beyond 20%, or if an opening's identity changes (type, count, or existence),
+classify as Tier 1 structural violation regardless of magnitude.
 
 Tier 2 — FIXED FEATURES (hard fail if changed or replaced)
 - pendant lights
@@ -71,6 +90,14 @@ REGION VISIBILITY DEFINITION (MANDATORY)
 Treat as REMOVED only when:
 - replacement surface is clearly visible (for example clear wall infill), AND
 - no plausible occlusion explanation exists.
+
+VOID PRESERVATION EXCEPTION (OVERRIDES OCCLUSION BIAS)
+If an opening (window, door, doorway) boundary is entirely absent in AFTER
+and the region shows a wall-mounted item (TV, art, mirror, shelf, console)
+on a continuous wall surface, classify as REMOVED — not occluded.
+A wall-mounted item is evidence of void infill, not evidence of occlusion.
+This rule overrides the plausible-occlusion presumption for that region.
+${fromEmptyFrameContinuityRule}
 
 OPENING OCCLUSION VS GEOMETRY RULE (MANDATORY)
 - If a window appears smaller due to curtains, blinds, or soft furnishings covering part of it,

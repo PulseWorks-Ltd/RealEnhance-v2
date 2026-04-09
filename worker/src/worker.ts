@@ -72,7 +72,8 @@ import {
   runUnifiedValidation,
   logUnifiedValidationCompact,
   shouldInjectEvidence,
-  type UnifiedValidationResult
+  type UnifiedValidationResult,
+  type AdvisoryObservation,
 } from "./validators/runValidation";
 import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
 import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
@@ -9532,6 +9533,7 @@ All openings must remain identical in position and size to the original image.`;
       // Specialist validators (Gemini-based) must NOT be treated as local.
       // Do not include specialist signals in heuristic filtering or stripping logic.
       const specialistAdvisorySignals: string[] = [];
+      const specialistAdvisoryObservations: AdvisoryObservation[] = [];
       let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
       let openingStructuralSignalDetected = false;
@@ -10021,6 +10023,81 @@ All openings must remain identical in position and size to the original image.`;
           advisorySignals: specialistAdvisorySignals,
           nonBlocking: true,
         });
+
+        // --- Build structured AdvisoryObservation[] from specialist results ---
+        const buildInvestigationTask = (
+          issueType: string,
+          validator: string
+        ): string => {
+          const it = String(issueType || "").toLowerCase();
+          if (it.includes("opening_removed") || it.includes("opening_infilled") || it.includes("opening_sealed"))
+            return "Verify if the opening is still a penetrative void or if it has been replaced by wall surface.";
+          if (it.includes("opening_resized") || it.includes("opening_size_reduction"))
+            return "Verify window/door frame edges match baseline. If wall area expanded into the opening void, fail Tier 1.";
+          if (it.includes("opening_relocated"))
+            return "Verify the opening exists at its original location. If it has moved, fail Tier 1.";
+          if (it.includes("envelope") || it.includes("wall_changed") || it.includes("wall_plane"))
+            return "Verify wall continuity. If a recess was flattened or a new flat surface replaced a previous indentation, fail Tier 1.";
+          if (it.includes("fixture") || it.includes("ceiling") || it.includes("pendant") || it.includes("plumbing"))
+            return "Verify that the fixed feature is unchanged in type, position, and count.";
+          if (it.includes("floor"))
+            return "Verify the floor material class is unchanged.";
+          return `Verify structural consistency for ${validator} observation.`;
+        };
+
+        const bboxToLocation = (bbox: [number, number, number, number]): AdvisoryObservation["approximateLocation"] => {
+          const cx = (bbox[0] + bbox[2]) / 2;
+          if (cx < 0.2) return "left";
+          if (cx < 0.4) return "center-left";
+          if (cx < 0.6) return "center";
+          if (cx < 0.8) return "center-right";
+          return "right";
+        };
+
+        const specialistAdvisoryObservationsBatch: AdvisoryObservation[] = [];
+
+        for (const sig of specialistIssueSignals) {
+          if (!sig.issueType || sig.issueType === "none") continue;
+          const validatorDomain = (sig.validator === "openings" ? "openings" : sig.validator === "fixtures" ? "fixtures" : sig.validator) as AdvisoryObservation["validator"];
+
+          // Try to find a matching bbox from openingRegions for opening signals
+          let bbox: [number, number, number, number] | undefined;
+          let approxLocation: AdvisoryObservation["approximateLocation"];
+          if (sig.validator === "openings" && openingRegions.length > 0) {
+            // Use the first non-passing opening region as best match
+            const region = openingRegions[0];
+            if (region) {
+              bbox = region.bbox;
+              approxLocation = bboxToLocation(region.bbox);
+            }
+          }
+
+          specialistAdvisoryObservationsBatch.push({
+            validator: validatorDomain,
+            issueType: sig.issueType,
+            approximateLocation: approxLocation,
+            bbox,
+            confidence: sig.confidence ?? 0,
+            investigationTask: buildInvestigationTask(sig.issueType, sig.validator),
+          });
+        }
+
+        specialistAdvisoryObservations.push(...specialistAdvisoryObservationsBatch);
+
+        if (specialistAdvisoryObservations.length > 0) {
+          nLog("[STAGE2_SPATIAL_OBSERVATIONS]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            count: specialistAdvisoryObservations.length,
+            observations: specialistAdvisoryObservations.map((o) => ({
+              validator: o.validator,
+              issueType: o.issueType,
+              location: o.approximateLocation,
+              confidence: o.confidence,
+            })),
+          });
+        }
       } catch (err: any) {
         const gateErrorMessage = err?.message || String(err);
         nLog("[STAGE2_VALIDATION_SIGNAL_ERROR] domain validators unavailable (non-blocking)", {
@@ -10348,6 +10425,7 @@ All openings must remain identical in position and size to the original image.`;
         validationMode: stage2SelectedValidationMode,
         geminiPolicy: stage2GeminiPolicy,
         specialistAdvisorySignals,
+        specialistAdvisoryObservations,
       });
 
       const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;
