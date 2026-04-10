@@ -111,7 +111,7 @@ function toLabel(value: string | null | undefined, fallback: string): string {
 export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
-  const { usage } = useUsage();
+  const { usage, refetch: refetchUsage } = useUsage();
   const { syncing: postCheckoutSyncing } = usePostCheckoutSync();
   const navigate = useNavigate();
   const [agencyInfo, setAgencyInfo] = useState<AgencyInfo | null>(null);
@@ -707,6 +707,9 @@ export default function AgencyPage() {
                   billingCountry: agencyInfo.billingCountry,
                   billingCurrency: agencyInfo.billingCurrency,
                   currentPeriodEnd: agencyInfo.currentPeriodEnd,
+                }}
+                onUpgradeComplete={async () => {
+                  await Promise.all([loadAgencyData(), refetchUsage()]);
                 }}
               />
             ) : (

@@ -93,6 +93,10 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
 ];
 
 function formatPlanDisplayName(planTier: "starter" | "pro" | "agency" | null, planDisplayName?: string | null): string {
+  if (planDisplayName) {
+    if (planDisplayName === "Studio" || planDisplayName === "Agency Plus") return PLAN_NAMES.agency;
+    return planDisplayName;
+  }
   if (!planTier) return "Trial / No Plan";
   if (planDisplayName === "Studio" || planDisplayName === "Agency Plus") return PLAN_NAMES.agency;
   return planDisplayName || PLAN_NAMES[planTier];

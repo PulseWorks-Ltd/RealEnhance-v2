@@ -5013,18 +5013,6 @@ export default function BatchProcessor({
     }
   };
 
-  const handleStartEnhance = () => {
-    const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
-    console.info("[ENHANCE_CLICK] start", {
-      count: files.length,
-      allowStaging,
-      declutter,
-      declutterMode,
-      clientBatchId,
-    });
-
-    if (!files.length) {
-
   const downloadDisplayedArtifact = useCallback(async (imageUrl: string, imageIndex: number) => {
     const originalName = files[imageIndex]?.name || `image_${imageIndex + 1}`;
     const baseName = originalName.replace(/\.[^/.]+$/, "");
@@ -5097,6 +5085,18 @@ export default function BatchProcessor({
       });
     }
   }, [files, toast]);
+
+  const handleStartEnhance = () => {
+    const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
+    console.info("[ENHANCE_CLICK] start", {
+      count: files.length,
+      allowStaging,
+      declutter,
+      declutterMode,
+      clientBatchId,
+    });
+
+    if (!files.length) {
       toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
       return;
     }
@@ -8388,12 +8388,14 @@ export default function BatchProcessor({
                               {bestDisplayUrl && (hasFinalArtifactUrl || isUiComplete || isError || isEditComplete) && (
                                 <>
                                   <button 
+                                    type="button"
                                     onClick={() => openPreviewImage(i)}
                                     className="rounded-full px-4 py-2 text-xs font-semibold bg-gradient-to-r from-indigo-500 to-purple-500 text-white hover:opacity-90 transition"
                                   >
                                     Preview
                                   </button>
                                   <button 
+                                    type="button"
                                     onClick={() => handleEditImage(i)}
                                     disabled={!canEditThisImage}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
@@ -8402,6 +8404,7 @@ export default function BatchProcessor({
                                   </button>
                                   {(isUiComplete || isEditComplete) && (
                                     <button
+                                      type="button"
                                       onClick={() => {
                                         if (!requireVerifiedEmail("download")) return;
                                         const url = enhancedUrl || previewUrl;
@@ -8415,6 +8418,7 @@ export default function BatchProcessor({
                                     </button>
                                   )}
                                   <button
+                                    type="button"
                                     onClick={() => handleOpenRetryDialog(i)}
                                     disabled={!canRetryThisImage || isRetryStatusActive || retryingImages.has(i) || editingImages.has(i)}
                                     className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
