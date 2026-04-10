@@ -81,6 +81,8 @@ export type UnifiedValidationResult = {
   issueType?: ValidationIssueType;
   /** Canonical issue tier for the aggregate unified decision */
   issueTier?: ValidationIssueTier;
+  /** Per-claim adjudication results from structural signal investigation (Step 2). */
+  adjudicatedClaims?: import("./structuralSignal").AdjudicatedClaim[];
 };
 
 export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
@@ -353,6 +355,8 @@ export interface UnifiedValidationParams {
   specialistAdvisorySignals?: string[];
   /** Structured spatial observations from specialists for Investigation Task prompting */
   specialistAdvisoryObservations?: AdvisoryObservation[];
+  /** Deduplicated structural signals for per-claim Gemini adjudication (Step 2). */
+  structuralSignals?: import("./structuralSignal").StructuralSignal[];
 }
 
 /**
@@ -498,6 +502,7 @@ export async function runUnifiedValidation(
     geminiPolicy = "always",
     specialistAdvisorySignals,
     specialistAdvisoryObservations,
+    structuralSignals,
   } = params;
 
   if (!String(originalPath || "").trim() || !String(enhancedPath || "").trim()) {
@@ -1505,6 +1510,7 @@ export async function runUnifiedValidation(
         validationMode,
         stage1BValidationMode,
         specialistAdvisoryObservations: specialistObservationHints,
+        structuralSignals: structuralSignals as import("./structuralSignal").StructuralSignal[] | undefined,
       }, consensusDerivedWarnings);
       const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;
@@ -1769,7 +1775,29 @@ export async function runUnifiedValidation(
     validatorPath,
     issueType,
     issueTier: classifyIssueTier(issueType),
+    adjudicatedClaims: geminiVerdict?.adjudicatedClaims,
   };
+
+  // ── Structural claim adjudication logging (Step 2) ──
+  if (Array.isArray(geminiVerdict?.adjudicatedClaims) && geminiVerdict!.adjudicatedClaims!.length > 0) {
+    nLog("[STRUCTURAL_CLAIMS_ADJUDICATED]", {
+      jobId: jobId || "unknown",
+      stage,
+      claimCount: geminiVerdict!.adjudicatedClaims!.length,
+      claims: geminiVerdict!.adjudicatedClaims!.map((c) => ({
+        claim: c.claim,
+        result: c.result,
+        detail: c.detail,
+        region: c.region,
+      })),
+      confirmedClaims: geminiVerdict!.adjudicatedClaims!
+        .filter((c) => c.result === "CONFIRMED")
+        .map((c) => c.claim),
+      uncertainClaims: geminiVerdict!.adjudicatedClaims!
+        .filter((c) => c.result === "UNCERTAIN")
+        .map((c) => c.claim),
+    });
+  }
 
   // ===== STRUCTURED PER-CHECK + VERDICT LOGS =====
   for (const [, result] of Object.entries(results)) {

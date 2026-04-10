@@ -14,6 +14,8 @@ import {
   isStage1BMinorReconstructionSignal,
 } from "./stageAwareConfig";
 import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
+import { buildStructuralClaimBlock, parseStructuralClaims } from "./structuralSignal";
+import type { StructuralSignal } from "./structuralSignal";
 
 const logger = console;
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
@@ -219,7 +221,8 @@ function buildAdjudicatorPrompt(
   stage: "1A" | "1B" | "2",
   evidence?: ValidationEvidence,
   riskLevel?: RiskLevel,
-  specialistAdvisoryObservations?: string[]
+  specialistAdvisoryObservations?: string[],
+  structuralClaimBlock?: string,
 ): string {
   const buildNeutralEvidenceBlock = (input?: ValidationEvidence): string => {
     if (!input) return "";
@@ -311,8 +314,10 @@ Additional Observations (non-binding, for awareness only):
 ${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
     : "";
 
+  const claimBlock = structuralClaimBlock || "";
+
   if (!STRUCTURAL_SIGNALS_ACTIVE) {
-    return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}`;
+    return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${claimBlock}`;
   }
 
   const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
@@ -322,7 +327,7 @@ ${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`)
       : "";
   const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} (advisory only; not proof of failure).` : "";
 
-  return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
+  return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${claimBlock}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
 }
 
 export type GeminiSemanticVerdict = {
@@ -348,6 +353,8 @@ export type GeminiSemanticVerdict = {
     stateChanged: boolean;
   };
   rawText?: string;
+  /** Per-claim adjudication results from structural signal investigation (Step 2). */
+  adjudicatedClaims?: import("./structuralSignal").AdjudicatedClaim[];
 };
 
 export type Stage1BValidationMode =
@@ -2852,6 +2859,7 @@ export async function runGeminiSemanticValidator(opts: {
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
   specialistAdvisoryObservations?: string[];
+  structuralSignals?: import("./structuralSignal").StructuralSignal[];
   deterministicStructureJson?: boolean;
 }): Promise<GeminiSemanticVerdict> {
   const sanitizePromptForIouLeak = (input: string): string => {
@@ -2890,12 +2898,27 @@ export async function runGeminiSemanticValidator(opts: {
       hadRisk: !!opts.riskLevel,
     });
   }
+  // Build structural claim block when signals are present and flag is active
+  const structuralClaimBlockText = STRUCTURAL_SIGNALS_ACTIVE
+    && opts.stage === "2"
+    && Array.isArray(opts.structuralSignals)
+    && opts.structuralSignals.length > 0
+    ? buildStructuralClaimBlock(opts.structuralSignals)
+    : "";
+  if (structuralClaimBlockText) {
+    debugInfo("[STRUCTURAL_CLAIM_BLOCK_INJECTED]", {
+      stage: opts.stage,
+      claimCount: opts.structuralSignals!.length,
+      claims: opts.structuralSignals!.map((s) => s.claim),
+    });
+  }
   const rawPrompt = buildAdjudicatorPrompt(
     basePrompt,
     opts.stage,
     evidenceForGemini,
     riskForGemini,
-    specialistAdvisoryObservations
+    specialistAdvisoryObservations,
+    structuralClaimBlockText || undefined,
   );
   if (opts.stage === "2") {
     const promptAdvisorySection = specialistAdvisoryObservations.length > 0
@@ -2967,6 +2990,29 @@ export async function runGeminiSemanticValidator(opts: {
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
 
+    // ── Structural claim adjudication parsing (Step 2) ──
+    if (
+      STRUCTURAL_SIGNALS_ACTIVE &&
+      opts.stage === "2" &&
+      Array.isArray(opts.structuralSignals) &&
+      opts.structuralSignals.length > 0
+    ) {
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        const rawJson = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+        parsed.adjudicatedClaims = parseStructuralClaims(
+          rawJson?.structuralClaims,
+          opts.structuralSignals,
+        );
+      } catch {
+        // Parse failure → all claims become UNCERTAIN (amendment 2)
+        parsed.adjudicatedClaims = parseStructuralClaims(
+          undefined,
+          opts.structuralSignals,
+        );
+      }
+    }
+
     if (opts.stage === "2") {
       const category: GeminiSemanticVerdict["category"] =
         parsed.category === "structure" ||
@@ -2988,6 +3034,7 @@ export async function runGeminiSemanticValidator(opts: {
         builtInDetected: parsed.builtInDetected,
         structuralAnchorCount: parsed.structuralAnchorCount,
         rawText: text,
+        adjudicatedClaims: parsed.adjudicatedClaims,
       };
 
       const ms = Date.now() - start;

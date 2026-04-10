@@ -10491,6 +10491,7 @@ All openings must remain identical in position and size to the original image.`;
         geminiPolicy: stage2GeminiPolicy,
         specialistAdvisorySignals,
         specialistAdvisoryObservations,
+        structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
       });
 
       const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;

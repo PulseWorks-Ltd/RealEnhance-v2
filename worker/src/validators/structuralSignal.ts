@@ -116,3 +116,128 @@ export function deduplicateSignals(
 
   return keep;
 }
+
+// ── Signal → targeted question conversion ─────────────────────────────
+
+/** Human-readable region description for Gemini prompt context. */
+function describeRegion(r: SignalRegion): string {
+  const cx = (r.x1 + r.x2) / 2;
+  const cy = (r.y1 + r.y2) / 2;
+  const horizontal =
+    cx < 0.25 ? "far left" :
+    cx < 0.45 ? "left of center" :
+    cx < 0.55 ? "center" :
+    cx < 0.75 ? "right of center" :
+    "far right";
+  const vertical =
+    cy < 0.35 ? "upper" :
+    cy < 0.65 ? "mid-height" :
+    "lower";
+  const pct = (v: number) => Math.round(v * 100);
+  return `${vertical} ${horizontal} region (approx ${pct(r.x1)}%-${pct(r.x2)}% horizontal, ${pct(r.y1)}%-${pct(r.y2)}% vertical)`;
+}
+
+/**
+ * Neutral, non-leading question for each structural claim type.
+ *
+ * From the plan's amendment 1: questions must use neutral tone.
+ * Never say "was removed" — always "is X still present?"
+ */
+const CLAIM_QUESTION_MAP: Record<StructuralClaim, string> = {
+  opening_removed:
+    "In the AFTER image, is there still a penetrative opening (window, door, or walk-through) at the indicated region, or has the opening been replaced by a continuous wall surface?",
+  opening_added:
+    "Comparing BEFORE and AFTER at the indicated region: does a new architectural opening (window, door, walk-through) appear in AFTER that was not present in BEFORE?",
+  opening_resized_major:
+    "At the indicated region, compare the opening's frame edges in BEFORE vs AFTER. Has the opening's visible area reduced significantly (≥25%), with wall surface expanding into what was previously void?",
+  wall_plane_modified:
+    "At the indicated region, do the same number of distinct wall planes exist in AFTER as in BEFORE? Look specifically for a vertical boundary line between two wall surfaces: is it still present, or have the planes merged into one continuous surface?",
+  corner_flattened:
+    "At the indicated region in BEFORE, two wall planes meet at a vertical corner. In AFTER, is that vertical corner still present, or have the two planes merged into a single flat surface?",
+  recess_removed:
+    "At the indicated region in BEFORE, there is a recessed area or alcove. In AFTER, is the recess still present with visible depth, or has it been filled to create a flat wall surface?",
+};
+
+/**
+ * Build the structural claim investigation block for injection into the
+ * Gemini prompt.  Each signal becomes a numbered question pinpointed to
+ * a specific image region.
+ *
+ * Returns empty string when there are no signals (no prompt modification).
+ */
+export function buildStructuralClaimBlock(signals: StructuralSignal[]): string {
+  if (!signals || signals.length === 0) return "";
+
+  const questions = signals.map((sig, i) => {
+    const regionDesc = describeRegion(sig.region);
+    const question = CLAIM_QUESTION_MAP[sig.claim] || `Verify structural consistency at the indicated region.`;
+    const openingCtx = sig.openingId ? ` (baseline opening ${sig.openingId}, type: ${sig.openingType || "unknown"})` : "";
+    return `${i + 1}. CLAIM: ${sig.claim}${openingCtx}\n   REGION: ${regionDesc}\n   QUESTION: ${question}`;
+  });
+
+  return `
+
+STRUCTURAL CLAIM INVESTIGATION (respond per-claim in structuralClaims array):
+For each claim below, visually examine the specified region in BEFORE and AFTER images.
+Respond with EXACTLY one of: "CONFIRMED", "NOT_PRESENT", or "UNCERTAIN".
+- CONFIRMED: the structural change described IS visible in the images.
+- NOT_PRESENT: the structural change described is NOT visible — the structure appears unchanged.
+- UNCERTAIN: the region is unclear, occluded, or ambiguous — cannot determine.
+
+${questions.join("\n\n")}
+
+Include a "structuralClaims" array in your JSON response with one entry per claim:
+[{ "claim": "<claim_type>", "result": "CONFIRMED"|"NOT_PRESENT"|"UNCERTAIN", "detail": "<brief visual reasoning>" }]`;
+}
+
+/**
+ * Parse Gemini's structuralClaims response array into typed AdjudicatedClaim[].
+ *
+ * From the plan's amendment 2: parse failure → UNCERTAIN, not fallback pass.
+ */
+export function parseStructuralClaims(
+  raw: unknown,
+  expectedSignals: StructuralSignal[],
+): AdjudicatedClaim[] {
+  if (!Array.isArray(raw)) {
+    // Parse failure → every claim becomes UNCERTAIN
+    return expectedSignals.map((sig) => ({
+      claim: sig.claim,
+      region: sig.region,
+      result: "UNCERTAIN" as ClaimResult,
+      detail: "parse_failure: structuralClaims not present or not an array",
+    }));
+  }
+
+  const resultMap = new Map<string, { result: ClaimResult; detail?: string }>();
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const claim = String(item.claim || "").toLowerCase().trim();
+    const resultStr = String(item.result || "").toUpperCase().trim();
+    const result: ClaimResult =
+      resultStr === "CONFIRMED" ? "CONFIRMED" :
+      resultStr === "NOT_PRESENT" ? "NOT_PRESENT" :
+      "UNCERTAIN";
+    const detail = typeof item.detail === "string" ? item.detail : undefined;
+    resultMap.set(claim, { result, detail });
+  }
+
+  return expectedSignals.map((sig) => {
+    const match = resultMap.get(sig.claim);
+    if (match) {
+      return {
+        claim: sig.claim,
+        region: sig.region,
+        result: match.result,
+        detail: match.detail,
+      };
+    }
+    // Claim not in response → UNCERTAIN (amendment 2)
+    return {
+      claim: sig.claim,
+      region: sig.region,
+      result: "UNCERTAIN" as ClaimResult,
+      detail: "claim_not_in_response",
+    };
+  });
+}
