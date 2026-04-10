@@ -72,7 +72,8 @@ Return strict JSON with this shape:
 
 Rules:
 - For bedroom use bed anchor.
-- For living room use tv_unit anchor.
+- For living room prefer sofa_group anchor.
+- Add a tv_unit anchor only when a clearly suitable uninterrupted wall area exists with no conflicting openings.
 - For dining room use dining_table anchor.
 - AnchorRegion values must be normalized 0..1.
 - If uncertain, still return layout with conservative anchorConfidence.`;
@@ -141,7 +142,7 @@ function normalizeAnchorConstraints(value: any): AnchorConstraints | undefined {
 function inferAnchorItemFromRoomType(roomType: string): AnchorItem | undefined {
   const normalized = roomType.toLowerCase();
   if (normalized.includes("bed")) return "bed";
-  if (normalized.includes("living")) return "tv_unit";
+  if (normalized.includes("living")) return "sofa_group";
   if (normalized.includes("dining")) return "dining_table";
   return undefined;
 }
@@ -199,7 +200,7 @@ function normalizeRoomTypeKey(roomType: string): string {
 function resolveAnchorItemForRoom(roomType: string): AnchorItem {
   const normalized = normalizeRoomTypeKey(roomType);
   if (normalized.includes("bed")) return "bed";
-  if (normalized.includes("living")) return "tv_unit";
+  if (normalized.includes("living")) return "sofa_group";
   if (normalized.includes("dining")) return "dining_table";
   return "sofa_group";
 }

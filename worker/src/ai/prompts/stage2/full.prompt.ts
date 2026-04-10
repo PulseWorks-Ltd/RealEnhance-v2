@@ -86,6 +86,18 @@ const STAGE2_FULL_ARCHITECTURAL_IMMUTABILITY_BLOCK =
 
 export function buildStage2FullPromptNZ(roomType: string, layoutContextBlock = ""): string {
   const room = roomType || "room";
+  const normalizedRoom = room.toLowerCase();
+  const livingRoomFocalPointBlock =
+    normalizedRoom.includes("living") || normalizedRoom.includes("lounge")
+      ? `
+LIVING ROOM FOCAL POINT RULE (APPLIES WHEN ROOM TYPE INCLUDES LIVING)
+- The primary living-room anchor must be sofa or sectional seating.
+- A TV or media console is OPTIONAL only when there is a clearly suitable uninterrupted wall area.
+- Suitable TV area means a continuous wall segment that does not conflict with windows, doors, closet openings, walk-through openings, or circulation.
+- If no suitable TV area exists, use conversation grouping, fireplace, or view as the living-room focal point instead.
+- Do NOT force a TV/media unit into the layout.
+`.trim()
+      : "";
 
   return `ROLE: Interior Virtual Staging Specialist — NZ Real Estate
 
@@ -111,6 +123,8 @@ FULL-SYNTHESIS LOGIC — MANDATORY
 ROOM-TYPE TARGET
 Stage as: ${room}
 Selected room type is authoritative for furniture program.
+
+${livingRoomFocalPointBlock}
 
 ${layoutContextBlock}
 

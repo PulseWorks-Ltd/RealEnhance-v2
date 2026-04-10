@@ -374,10 +374,12 @@ function buildNanoRoomProgramGuidance(opts: {
     case "living_room":
     case "living":
       anchorGuidance =
-        "Primary anchor (MANDATORY): a freestanding, non-permanent media console/TV unit on the TV wall. It must sit in front of the wall and must not be integrated into the wall or built-in cabinetry. Build all living seating and secondary furniture around this TV/media anchor.";
+        "Primary anchor (MANDATORY): the main sofa or sectional seating group. Build the living-room layout around this seating anchor. A freestanding, non-permanent TV/media console is OPTIONAL only when there is a clearly suitable uninterrupted wall area that does not conflict with windows, doors, openings, or circulation. Do not force a TV/media unit into the layout when no such area exists.";
       roomRules = [
-        "Include a realistic freestanding TV unit/media console as the focal anchor.",
-        "Arrange sofa/chairs to support TV viewing and natural circulation.",
+        "Include a realistic sofa or sectional as the primary living-room anchor.",
+        "If a suitable uninterrupted wall area exists, you may add a freestanding TV unit/media console as a secondary focal element.",
+        "If no suitable TV wall exists, use conversation grouping, fireplace, or view as the focal point instead.",
+        "Arrange seating for natural circulation and a believable living-room focal point.",
         "Do not stage this as a dining room or bedroom.",
       ];
       itemBudget = "Furniture budget: max 4 major furniture pieces. Decor budget: max 3 small decor accents total.";
