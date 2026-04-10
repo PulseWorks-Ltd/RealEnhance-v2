@@ -118,6 +118,37 @@ const INTERIOR_ROOM_TYPES: Array<{ value: string; label: string }> = [
   { value: "sunroom", label: "Sunroom" },
 ];
 
+const DOWNLOAD_MIME_EXTENSION_MAP: Record<string, string> = {
+  "image/jpeg": ".jpg",
+  "image/jpg": ".jpg",
+  "image/png": ".png",
+  "image/webp": ".webp",
+  "image/gif": ".gif",
+  "image/avif": ".avif",
+};
+
+function inferImageExtensionFromMime(mime?: string | null): string | null {
+  const normalized = String(mime || "").split(";")[0].trim().toLowerCase();
+  return DOWNLOAD_MIME_EXTENSION_MAP[normalized] || null;
+}
+
+function inferImageExtensionFromDataUrl(url?: string | null): string | null {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,/i.exec(String(url || ""));
+  return match ? inferImageExtensionFromMime(match[1]) : null;
+}
+
+function ensureDownloadFilename(filenameBase: string, mime?: string | null, dataUrl?: string | null): string {
+  const inferredExtension = inferImageExtensionFromMime(mime) || inferImageExtensionFromDataUrl(dataUrl);
+  const normalizedBase = filenameBase.trim() || "enhanced_image";
+
+  if (/\.[a-z0-9]+$/i.test(normalizedBase)) {
+    if (!inferredExtension) return normalizedBase;
+    return normalizedBase.replace(/\.[a-z0-9]+$/i, inferredExtension);
+  }
+
+  return `${normalizedBase}${inferredExtension || ".png"}`;
+}
+
 function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
   return images.length;
 }
@@ -4993,6 +5024,78 @@ export default function BatchProcessor({
     });
 
     if (!files.length) {
+
+  const downloadDisplayedArtifact = useCallback(async (imageUrl: string, imageIndex: number) => {
+    const originalName = files[imageIndex]?.name || `image_${imageIndex + 1}`;
+    const baseName = originalName.replace(/\.[^/.]+$/, "");
+    const fallbackFilename = `enhanced_${baseName}`;
+
+    const triggerDownload = (href: string, filename: string, targetBlank = false) => {
+      const link = document.createElement("a");
+      link.href = href;
+      link.download = filename;
+      if (targetBlank) {
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+      }
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+
+    try {
+      if (imageUrl.startsWith("data:image/")) {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to prepare image download: ${response.status}`);
+        }
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const filename = ensureDownloadFilename(fallbackFilename, blob.type, imageUrl);
+        triggerDownload(downloadUrl, filename);
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+        return;
+      }
+
+      if (imageUrl.startsWith("blob:") || imageUrl.startsWith("/")) {
+        const resolvedUrl = imageUrl.startsWith("/")
+          ? new URL(imageUrl, window.location.origin).toString()
+          : imageUrl;
+        const response = await fetch(resolvedUrl, {
+          credentials: imageUrl.startsWith("/") ? "include" : "same-origin",
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to prepare image download: ${response.status}`);
+        }
+        const blob = await response.blob();
+        const downloadUrl = URL.createObjectURL(blob);
+        const filename = ensureDownloadFilename(
+          fallbackFilename,
+          blob.type || response.headers.get("content-type"),
+          null
+        );
+        triggerDownload(downloadUrl, filename);
+        setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+        return;
+      }
+
+      if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+        const filename = ensureDownloadFilename(fallbackFilename, null, null);
+        triggerDownload(imageUrl, filename, true);
+        return;
+      }
+
+      throw new Error("Unsupported image URL");
+    } catch (error) {
+      console.error("Single image download failed:", error);
+      toast({
+        title: "Download Failed",
+        description: "Unable to download the selected image. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }, [files, toast]);
       toast({ title: "No images selected", description: "Add images before starting enhancement.", variant: "destructive" });
       return;
     }
@@ -8301,7 +8404,9 @@ export default function BatchProcessor({
                                       onClick={() => {
                                         if (!requireVerifiedEmail("download")) return;
                                         const url = enhancedUrl || previewUrl;
-                                        if (url) window.open(url, "_blank", "noopener,noreferrer");
+                                        if (url) {
+                                          void downloadDisplayedArtifact(url, i);
+                                        }
                                       }}
                                       className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition"
                                     >
@@ -8423,7 +8528,7 @@ export default function BatchProcessor({
                   type="button"
                   onClick={() => {
                     if (!requireVerifiedEmail("download")) return;
-                    window.open(previewImage.url, "_blank", "noopener,noreferrer");
+                    void downloadDisplayedArtifact(previewImage.url, previewImage.index);
                   }}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                   data-testid="link-download-preview"

@@ -304,7 +304,7 @@ export async function publishImage(filePath: string): Promise<PublishResult> {
 async function buildDataUrl(filePath: string, sourceBuffer?: Buffer): Promise<PublishResult> {
   logIfNotFocusMode('[PUBLISH] Generating data URL fallback...\n');
   const buf = sourceBuffer || fs.readFileSync(filePath);
-  const mime = mimeFromExt(filePath);
+  let mime = mimeFromExt(filePath);
   logIfNotFocusMode(`[PUBLISH] Original size: ${buf.length} bytes\n`);
   
   // Only resize if file is large to avoid overhead on small files
@@ -318,6 +318,7 @@ async function buildDataUrl(filePath: string, sourceBuffer?: Buffer): Promise<Pu
         .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
         .webp({ quality: 85 })
         .toBuffer();
+      mime = 'image/webp';
       logIfNotFocusMode(`[PUBLISH] Resized: ${buf.length} -> ${finalBuf.length} bytes (${Math.round(finalBuf.length/1024)}KB)\n`);
     } catch (e) {
       logIfNotFocusMode(`[PUBLISH] Resize failed: ${e}\n`);

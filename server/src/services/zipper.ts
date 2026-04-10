@@ -35,12 +35,19 @@ function inferExtension(contentType?: string | null, dataUrl?: string | null): s
     return MIME_EXTENSION_MAP[match[1].toLowerCase()];
   }
 
-  return ".png";
+  return "";
 }
 
 function ensureFilenameExtension(filename: string, contentType?: string | null, dataUrl?: string | null): string {
-  if (/\.[a-z0-9]+$/i.test(filename)) return filename;
-  return `${filename}${inferExtension(contentType, dataUrl)}`;
+  const inferredExtension = inferExtension(contentType, dataUrl);
+  const existingExtensionMatch = filename.match(/(\.[a-z0-9]+)$/i);
+
+  if (existingExtensionMatch) {
+    if (!inferredExtension) return filename;
+    return filename.replace(/(\.[a-z0-9]+)$/i, inferredExtension);
+  }
+
+  return `${filename}${inferredExtension || ".png"}`;
 }
 
 function toBuffer(value: Buffer | Uint8Array | ArrayBuffer): Buffer {

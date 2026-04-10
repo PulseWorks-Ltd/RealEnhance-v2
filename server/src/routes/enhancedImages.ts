@@ -205,10 +205,16 @@ export function enhancedImagesRouter() {
             continue;
           }
 
+          const contentType = response.headers.get('content-type');
+          if (contentType && !contentType.toLowerCase().startsWith('image/')) {
+            failedCount += 1;
+            continue;
+          }
+
           zipInputs.push({
             filename: item.filename,
             buffer: Buffer.from(arrayBuffer),
-            contentType: response.headers.get('content-type'),
+            contentType,
           });
         } catch (error) {
           console.warn('[enhanced-images] ZIP fetch failed', { url: item.url, error });
