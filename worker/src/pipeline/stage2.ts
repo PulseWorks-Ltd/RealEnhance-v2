@@ -473,10 +473,12 @@ Do not add architectural features to achieve style, including coffered ceilings,
 RESOURCE CONSTRAINT (ZERO TOLERANCE)
 Furniture must adapt to the room; the room must never adapt to furniture.
 Do not extend wall planes, flatten recesses, or shift openings to create placement surface.
+Internal doorways, walk-throughs, and alcoves are structural voids—not blank canvases.
+EGRESS & CLEARANCE: Maintain a minimum 80cm clear path for all doors and walk-throughs.
+Priority Hierarchy: Doorway access and floor-plan flow always outrank furniture density.
+If an item blocks an opening's path or overlaps a door swing zone, you MUST omit that item.
 Do not alter window-to-wall ratio, door-to-wall ratio, sill height, or wall returns.
 If an item does not fit on existing wall area, omit the item.
-Internal doorways, walk-throughs, and alcoves are structural voids—not blank canvases.
-If a wall-mounted item (art, mirror, TV) overlaps any part of a doorway void, omit the item.
 
 CRITICAL PRIORITY 2: PRIMARY ANCHOR
 Selected room type: ${room || "unknown"}
@@ -782,7 +784,7 @@ You are explicitly and completely prohibited from making ANY changes, of any kin
 
 Walls: No changes to their location, dimension, surface texture, or existing finish. (Do not repaint or apply wallpaper, as that is not virtual staging). No adding or removing walls.
 
-Openings: Do not alter the existence, size, or shape of any windows, doors, doorways, archways, or skylights. Do not paint or change frames, glass, or hardware. Do not cover them.
+Openings: Do not alter the existence, size, or shape of any windows, doors, doorways, archways, or skylights. Do not paint or change frames, glass, or hardware. Do not cover them. This includes keeping the floor area immediately in front of and within the swing-path of any door entirely clear of furniture, rugs, or decor.
 
 Floors & Ceilings: Do not alter the floor material (e.g., hardwood, carpet, tile) or the ceiling (e.g., paint, texture, tray ceilings). Only place rugs and furniture on top of the existing floor.
 
