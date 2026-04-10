@@ -4,6 +4,7 @@ import { toBase64 } from "../utils/images";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import { computeVerticalEdgeDelta, type VerticalEdgeDeltaResult } from "./verticalEdgeDelta";
+import type { StructuralSignal } from "./structuralSignal";
 
 export type EnvelopeValidatorResult = ValidatorOutcome & {
   verticalEdgeDelta?: VerticalEdgeDeltaResult;
@@ -300,6 +301,62 @@ Non-fail certainty guard:
           geminiResult.reason = `envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. ${geminiResult.reason}`;
         }
       }
+
+      // ── Emit structural signals from junction analysis ────────────
+      const envelopeStructuralSignals: StructuralSignal[] = [];
+      const lostJunctions = vedResult.junctions.filter((j) => j.lost);
+      if (lostJunctions.length > 0) {
+        // Cluster nearby lost junctions so distant ones become separate signals.
+        // Two junctions merge into one cluster if they are within GAP_THRESHOLD
+        // analysis-space columns of each other.
+        const ANALYSIS_WIDTH = 512;
+        const JUNCTION_PADDING = 0.03;
+        const GAP_THRESHOLD = 30; // cols — ~6% of image width
+        const MAX_REGION_WIDTH = 0.25; // tighter than before (was 0.40)
+
+        const sorted = [...lostJunctions].sort((a, b) => a.column - b.column);
+        const clusters: Array<{ cols: number[] }> = [];
+        let current: number[] = [sorted[0].column];
+        for (let i = 1; i < sorted.length; i++) {
+          if (sorted[i].column - sorted[i - 1].column <= GAP_THRESHOLD) {
+            current.push(sorted[i].column);
+          } else {
+            clusters.push({ cols: current });
+            current = [sorted[i].column];
+          }
+        }
+        clusters.push({ cols: current });
+
+        const claim: StructuralSignal["claim"] = vedResult.cornerPersistenceFailure
+          ? "corner_flattened"
+          : vedResult.verticalEdgeLossDetected
+            ? "wall_plane_modified"
+            : null as any;
+
+        if (claim) {
+          for (const cluster of clusters) {
+            const colMin = Math.min(...cluster.cols);
+            const colMax = Math.max(...cluster.cols);
+            const x1 = Math.max(0, (colMin / ANALYSIS_WIDTH) - JUNCTION_PADDING);
+            const x2 = Math.min(1, ((colMax + 1) / ANALYSIS_WIDTH) + JUNCTION_PADDING);
+            const width = x2 - x1;
+            // Reject regions that are still too wide after clustering
+            if (width > MAX_REGION_WIDTH) continue;
+            // Reject vanishingly narrow regions (noise)
+            if (width < 0.02) continue;
+            const conf = claim === "corner_flattened"
+              ? Math.max(0.85, geminiResult.confidence)
+              : geminiResult.confidence;
+            envelopeStructuralSignals.push({
+              claim,
+              region: { x1, y1: 0.05, x2, y2: 0.95 },
+              confidence: conf,
+              source: "envelope",
+            });
+          }
+        }
+      }
+      geminiResult.structuralSignals = envelopeStructuralSignals;
     }
 
     return geminiResult;

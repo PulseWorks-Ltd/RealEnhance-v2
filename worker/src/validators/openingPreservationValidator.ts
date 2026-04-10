@@ -1,6 +1,7 @@
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
+import type { StructuralSignal, SignalRegion } from "./structuralSignal";
 
 export type StructuralOpeningType = "window" | "door" | "closet_door" | "walkthrough";
 export type StructuralClass = "circulation" | "storage" | "exterior" | "unknown";
@@ -70,6 +71,7 @@ export type StructuralBaseline = {
 
 export type OpeningValidationResult = {
   results: OpeningResult[];
+  structuralSignals: StructuralSignal[];
   summary: {
     openingRemoved: boolean;
     openingInfilled: boolean;
@@ -917,7 +919,7 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     confidence: Math.max(0, Math.min(1, input.summary.confidence)),
   };
 
-  return { results, summary, detectedOpenings: [] };
+  return { results, summary, detectedOpenings: [], structuralSignals: [] };
 }
 
 export async function extractStructuralBaseline(
@@ -1007,6 +1009,7 @@ export async function validateOpeningPreservation(
   const isEditMode = options?.mode === "edit";
 
   const openingResults: OpeningResult[] = [];
+  const structuralSignals: StructuralSignal[] = [];
   const outOfFrameOpenings: string[] = [];
   let openingRemoved = false;
   let openingInfilled = false;
@@ -1056,6 +1059,18 @@ export async function validateOpeningPreservation(
 
       const status = likelyInfilled ? "INFILLED" : "MISSING";
       const reason = likelyInfilled ? "opening_replaced_by_wall_continuity" : "missing_opening";
+
+      // Emit per-opening structural signal with baseline bbox
+      const [bx1, by1, bx2, by2] = baseOpening.bbox || [0, 0, 0, 0];
+      structuralSignals.push({
+        claim: "opening_removed",
+        region: { x1: bx1, y1: by1, x2: bx2, y2: by2 },
+        confidence: 0.99,
+        source: "openingPreservation",
+        openingId: baseOpening.id,
+        openingType: baseOpening.type,
+        wallIndex: baseOpening.wallIndex,
+      });
 
       console.log(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
       analysisNotes.push(
@@ -1185,6 +1200,27 @@ export async function validateOpeningPreservation(
       );
     }
 
+    // Emit opening_resized_major: only when delta ≥ 25%, opening still visible
+    // (matched, not occluded), and both confidences > 0.90.
+    const sizeReductionRatio = (baseArea - detectedArea) / baseArea;
+    if (
+      sizeReductionRatio >= 0.25 &&
+      match &&
+      baseOpening.confidence > 0.9 &&
+      match.confidence > 0.9
+    ) {
+      const [rx1, ry1, rx2, ry2] = baseOpening.bbox || [0, 0, 0, 0];
+      structuralSignals.push({
+        claim: "opening_resized_major",
+        region: { x1: rx1, y1: ry1, x2: rx2, y2: ry2 },
+        confidence: Math.min(baseOpening.confidence, match.confidence),
+        source: "openingPreservation",
+        openingId: baseOpening.id,
+        openingType: baseOpening.type,
+        wallIndex: baseOpening.wallIndex,
+      });
+    }
+
     const baseAspect = Math.max(0.01, Number(baseOpening.aspect_ratio || baseOpening.approxAspectRatio || 0));
     const detectedAspect = Math.max(0.01, Number(match.aspect_ratio || match.approxAspectRatio || 0));
     const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
@@ -1204,6 +1240,44 @@ export async function validateOpeningPreservation(
       relocated: match.wallIndex !== baseOpening.wallIndex,
       outOfFrame: false,
       confidence: Math.min(baseOpening.confidence, match.confidence),
+    });
+  }
+
+  // Emit opening_added signals for detected openings that have no baseline match.
+  const baselineIds = new Set(baseline.openings.map((o) => o.id));
+  const matchedDetectedIds = new Set(
+    baseline.openings
+      .map((base) => {
+        const direct = detected.openings.find((c) => c.id === base.id);
+        const fallback = detected.openings.find(
+          (c) => c.type === base.type && c.wallIndex === base.wallIndex && c.horizontalBand === base.horizontalBand,
+        );
+        return (direct || fallback)?.id;
+      })
+      .filter(Boolean) as string[],
+  );
+  for (const det of detected.openings) {
+    if (matchedDetectedIds.has(det.id)) continue;
+    // Gate 1: high confidence required
+    if (det.confidence <= 0.9) continue;
+    // Gate 2: not at frame edge (partial visibility)
+    if (isEdgeOfFrameOpening(det)) continue;
+    // Gate 3: minimum area — reject tiny artefacts (mirrors, shadow lines, furniture edges)
+    const [ax1, ay1, ax2, ay2] = det.bbox || [0, 0, 0, 0];
+    const detArea = (ax2 - ax1) * (ay2 - ay1);
+    if (detArea < 0.005) continue; // < 0.5% of image is too small to be a real opening
+    // Gate 4: maximum area — reject full-wall phantom detections
+    if (detArea > 0.50) continue;  // > 50% of image is implausible as a new opening
+    // Gate 5: must be a structurally meaningful type
+    if (det.type !== "window" && det.type !== "door" && det.type !== "walkthrough" && det.type !== "closet_door") continue;
+    structuralSignals.push({
+      claim: "opening_added",
+      region: { x1: ax1, y1: ay1, x2: ax2, y2: ay2 },
+      confidence: det.confidence,
+      source: "openingPreservation",
+      openingId: det.id,
+      openingType: det.type,
+      wallIndex: det.wallIndex,
     });
   }
 
@@ -1282,6 +1356,7 @@ export async function validateOpeningPreservation(
 
   return {
     results: openingResults,
+    structuralSignals,
     summary,
     detectedOpenings: detected.openings,
   };

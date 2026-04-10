@@ -130,6 +130,8 @@ import {
   type ValidationIssueTier,
   type ValidationIssueType,
 } from "./validators/issueTypes";
+import type { StructuralSignal } from "./validators/structuralSignal";
+import { deduplicateSignals } from "./validators/structuralSignal";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
 import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
@@ -9533,6 +9535,7 @@ All openings must remain identical in position and size to the original image.`;
       // Specialist validators (Gemini-based) must NOT be treated as local.
       // Do not include specialist signals in heuristic filtering or stripping logic.
       const specialistAdvisorySignals: string[] = [];
+      const collectedStructuralSignals: StructuralSignal[] = [];
       const specialistAdvisoryObservations: AdvisoryObservation[] = [];
       let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
@@ -9612,7 +9615,11 @@ All openings must remain identical in position and size to the original image.`;
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
+          baseline: structuralBaseline || undefined,
         });
+        if (Array.isArray(opRes.structuralSignals)) {
+          collectedStructuralSignals.push(...opRes.structuralSignals);
+        }
         specialistResults.opening = normalizeSpecialistResult({
           validator: "opening",
           status: opRes.status,
@@ -9941,6 +9948,9 @@ All openings must remain identical in position and size to the original image.`;
           imageId: payload.imageId,
           attempt,
         });
+        if (Array.isArray(envRes.structuralSignals)) {
+          collectedStructuralSignals.push(...envRes.structuralSignals);
+        }
         specialistResults.envelope = normalizeSpecialistResult({
           validator: "envelope",
           status: envRes.status,
@@ -10067,15 +10077,25 @@ All openings must remain identical in position and size to the original image.`;
           if (!sig.issueType || sig.issueType === "none") continue;
           const validatorDomain = (sig.validator === "openings" ? "openings" : sig.validator === "fixtures" ? "fixtures" : sig.validator) as AdvisoryObservation["validator"];
 
-          // Try to find a matching bbox from openingRegions for opening signals
+          // Try to find a matching bbox — prefer structural signal region, fall back to openingRegions
           let bbox: [number, number, number, number] | undefined;
           let approxLocation: AdvisoryObservation["approximateLocation"];
-          if (sig.validator === "openings" && openingRegions.length > 0) {
-            // Use the first non-passing opening region as best match
-            const region = openingRegions[0];
-            if (region) {
-              bbox = region.bbox;
-              approxLocation = bboxToLocation(region.bbox);
+          if (sig.validator === "openings") {
+            // First, try to find a structural signal that matches this issue type
+            const matchingSignal = collectedStructuralSignals.find(
+              (s) => s.source === "openingPreservation" && s.openingId
+            );
+            if (matchingSignal) {
+              const r = matchingSignal.region;
+              bbox = [r.x1, r.y1, r.x2, r.y2];
+              approxLocation = bboxToLocation(bbox);
+            } else if (openingRegions.length > 0) {
+              // Fallback to openingRegions (any available region)
+              const region = openingRegions[0];
+              if (region) {
+                bbox = region.bbox;
+                approxLocation = bboxToLocation(region.bbox);
+              }
             }
           }
 
@@ -10102,6 +10122,44 @@ All openings must remain identical in position and size to the original image.`;
               issueType: o.issueType,
               location: o.approximateLocation,
               confidence: o.confidence,
+            })),
+          });
+        }
+
+        // ── Structural signal dedup + debug logging (Step 1 — observe only) ──
+        const rawSignalCount = collectedStructuralSignals.length;
+        const dedupedSignals = deduplicateSignals(collectedStructuralSignals);
+        // Replace the mutable array contents with deduped set
+        collectedStructuralSignals.length = 0;
+        collectedStructuralSignals.push(...dedupedSignals);
+
+        if (collectedStructuralSignals.length > 0) {
+          // Per-claim frequency and confidence distribution
+          const claimStats: Record<string, { count: number; minConf: number; maxConf: number }> = {};
+          for (const s of collectedStructuralSignals) {
+            const entry = claimStats[s.claim] ?? { count: 0, minConf: 1, maxConf: 0 };
+            entry.count++;
+            entry.minConf = Math.min(entry.minConf, s.confidence);
+            entry.maxConf = Math.max(entry.maxConf, s.confidence);
+            claimStats[s.claim] = entry;
+          }
+
+          nLog("[STRUCTURAL_SIGNALS_COLLECTED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            rawCount: rawSignalCount,
+            dedupedCount: collectedStructuralSignals.length,
+            droppedDuplicates: rawSignalCount - collectedStructuralSignals.length,
+            claimFrequency: claimStats,
+            signals: collectedStructuralSignals.map((s) => ({
+              claim: s.claim,
+              region: s.region,
+              confidence: s.confidence,
+              source: s.source,
+              openingId: s.openingId,
+              openingType: s.openingType,
+              wallIndex: s.wallIndex,
             })),
           });
         }

@@ -373,13 +373,19 @@ Return JSON only:
 export async function runOpeningValidator(
   beforeImageUrl: string,
   afterImageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: {
+    jobId?: string;
+    imageId?: string;
+    attempt?: number;
+    /** Pre-extracted structural baseline. When provided, skips re-extraction (saves a Gemini call). */
+    baseline?: StructuralBaseline;
+  }
 ): Promise<OpeningValidatorResult> {
   if (!String(beforeImageUrl || "").trim() || !String(afterImageUrl || "").trim()) {
     throw new Error("VALIDATION_INPUT_MISSING");
   }
 
-  const baseline = await extractStructuralBaseline(beforeImageUrl, {
+  const baseline = options?.baseline ?? await extractStructuralBaseline(beforeImageUrl, {
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
@@ -594,6 +600,7 @@ export async function runOpeningValidator(
       issueType,
       issueTier: classifyIssueTier(issueType),
       advisorySignals,
+      structuralSignals: deterministic.structuralSignals,
       openingRegions,
     };
   }
