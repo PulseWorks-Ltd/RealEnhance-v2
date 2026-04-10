@@ -98,6 +98,9 @@ const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
+const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCALE_ENABLED ?? "true").toLowerCase() !== "false";
+const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
+const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(100, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
@@ -3210,8 +3213,56 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
     }
   }
 
+  const deliveryPath = await prepareDeliveryExport(localPath, stageLabel);
+
   // Removed assertNoDarkBorder as per user request
-  return publishImage(localPath);
+  return publishImage(deliveryPath);
+}
+
+async function prepareDeliveryExport(localPath: string, stageLabel: string): Promise<string> {
+  if (!DELIVERY_EXPORT_UPSCALE_ENABLED) {
+    return localPath;
+  }
+
+  const normalizedStageLabel = String(stageLabel || "").toLowerCase();
+  if (normalizedStageLabel.includes("mask") || normalizedStageLabel.includes("failed") || normalizedStageLabel === "original") {
+    return localPath;
+  }
+
+  const metadata = await sharp(localPath).metadata();
+  const width = metadata.width || 0;
+  const height = metadata.height || 0;
+  if (!width || !height) {
+    return localPath;
+  }
+
+  const currentLongSide = Math.max(width, height);
+  if (currentLongSide >= DELIVERY_EXPORT_MIN_LONG_SIDE) {
+    return localPath;
+  }
+
+  const upscaleRatio = DELIVERY_EXPORT_MIN_LONG_SIDE / currentLongSide;
+  const targetWidth = Math.max(1, Math.round(width * upscaleRatio));
+  const targetHeight = Math.max(1, Math.round(height * upscaleRatio));
+  const safeSuffix = normalizedStageLabel.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "delivery";
+  const exportPath = siblingOutPath(localPath, `-${safeSuffix}-delivery`, ".jpg");
+
+  await sharp(localPath)
+    .resize(targetWidth, targetHeight, {
+      fit: "fill",
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: false,
+    })
+    .sharpen({ sigma: 0.35, m1: 0.6, m2: 1.2 })
+    .jpeg({
+      quality: DELIVERY_EXPORT_JPEG_QUALITY,
+      mozjpeg: true,
+      chromaSubsampling: "4:4:4",
+    })
+    .toFile(exportPath);
+
+  nLog(`[DELIVERY_EXPORT] stage=${stageLabel} source=${width}x${height} target=${targetWidth}x${targetHeight} path=${exportPath}`);
+  return exportPath;
 }
 
 async function detectStage1ABorderOrCornerArtifact(imagePath: string): Promise<boolean> {
@@ -12141,7 +12192,8 @@ async function handleEditJob(payload: any) {
   });
 
   // 4) Publish edited image
-  const pub = await publishImage(editPath);
+  const deliveryEditPath = await prepareDeliveryExport(editPath, "edit");
+  const pub = await publishImage(deliveryEditPath);
   nLog("[worker-edit] Published edit URL:", pub.url);
 
   // 5) Record history in Redis
