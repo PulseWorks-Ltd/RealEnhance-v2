@@ -829,6 +829,10 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
 
   let textPrompt = stage2Prompt;
 
+  if (resolvedPromptMode === "full") {
+    textPrompt += "\n\nDOOR STATE LOCK: Any door that is closed in the input image must remain closed in the staged output.";
+  }
+
   // If we have a staging region, strongly insist edits are limited to the provided mask.
   if (opts.stagingRegion) {
     textPrompt = `ONLY EDIT INSIDE MASK: An explicit mask image is supplied as a separate part. You MUST only modify pixels inside the mask region. Do NOT alter any pixels, architecture, openings, windows, doors, floors, or lighting outside the provided mask. If the mask is empty, return the input image unchanged.` + "\n\n" + textPrompt;

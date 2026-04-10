@@ -3,14 +3,17 @@
 
 import { getRedis } from "../redisClient.js";
 import { getCurrentMonthKey } from "./monthlyUsage.js";
-import type { BundleCode } from "../bundles.js";
+
+export type AgencyImageBundleType = "promo" | "paid" | "admin";
+
+export const ADMIN_GRANT_BUNDLE_CODE = "ADMIN_GRANT";
 
 export interface AgencyImageBundle {
   id: string;
   agencyId: string;
   monthKey: string; // YYYY-MM when purchased
-  bundleType: "promo" | "paid";
-  bundleCode: BundleCode;
+  bundleType: AgencyImageBundleType;
+  bundleCode: string;
   imagesPurchased: number;
   imagesUsed: number;
   stripePaymentIntentId: string;
@@ -25,12 +28,13 @@ export interface AgencyImageBundle {
  */
 export async function createImageBundle(params: {
   agencyId: string;
-  bundleType?: "promo" | "paid";
-  bundleCode: BundleCode;
+  bundleType?: AgencyImageBundleType;
+  bundleCode: string;
   imagesPurchased: number;
   stripePaymentIntentId: string;
   stripeSessionId?: string;
   monthKey?: string;
+  expiresInDays?: number;
 }): Promise<{ created: boolean; bundle?: AgencyImageBundle; reason?: string }> {
   const redis = getRedis();
   const monthKey = params.monthKey || getCurrentMonthKey();
@@ -49,8 +53,9 @@ export async function createImageBundle(params: {
     }
 
     // Calculate expiry (30 days from purchase)
+    const expiryDays = Math.max(1, Math.min(365, Number(params.expiresInDays || 30)));
     const expiryDate = new Date();
-    expiryDate.setDate(expiryDate.getDate() + 30);
+    expiryDate.setDate(expiryDate.getDate() + expiryDays);
     const expiresAt = expiryDate.toISOString();
 
     const bundle: AgencyImageBundle = {
@@ -120,7 +125,7 @@ export async function getActiveBundles(
       const data = await redis.get(bundleKey);
 
       if (data) {
-        const parsed = JSON.parse(data) as AgencyImageBundle & { bundleType?: "promo" | "paid" };
+        const parsed = JSON.parse(data) as AgencyImageBundle & { bundleType?: AgencyImageBundleType };
         const bundleType = parsed.bundleType || inferLegacyBundleType(parsed);
         const bundle: AgencyImageBundle = { ...parsed, bundleType };
 
@@ -218,7 +223,7 @@ export async function getBundleHistory(agencyId: string): Promise<AgencyImageBun
       const data = await redis.get(bundleKey);
 
       if (data) {
-        const parsed = JSON.parse(data) as AgencyImageBundle & { bundleType?: "promo" | "paid" };
+        const parsed = JSON.parse(data) as AgencyImageBundle & { bundleType?: AgencyImageBundleType };
         const bundleType = parsed.bundleType || inferLegacyBundleType(parsed);
         bundles.push({ ...parsed, bundleType });
       }
@@ -232,10 +237,32 @@ export async function getBundleHistory(agencyId: string): Promise<AgencyImageBun
   }
 }
 
+export async function createAdminImageGrant(params: {
+  agencyId: string;
+  imagesPurchased: number;
+  requestId: string;
+  expiresInDays?: number;
+}): Promise<{ created: boolean; bundle?: AgencyImageBundle; reason?: string }> {
+  const requestId = String(params.requestId || "").trim();
+  if (!requestId) {
+    return { created: false, reason: "missing_request_id" };
+  }
+
+  return createImageBundle({
+    agencyId: params.agencyId,
+    bundleType: "admin",
+    bundleCode: ADMIN_GRANT_BUNDLE_CODE,
+    imagesPurchased: params.imagesPurchased,
+    stripePaymentIntentId: `admin_grant:${params.agencyId}:${requestId}`,
+    stripeSessionId: `admin_grant:${requestId}`,
+    expiresInDays: params.expiresInDays,
+  });
+}
+
 function inferLegacyBundleType(bundle: {
   stripeSessionId?: string;
   stripePaymentIntentId?: string;
-}): "promo" | "paid" {
+}): AgencyImageBundleType {
   const sessionId = String(bundle?.stripeSessionId || "");
   const paymentIntentId = String(bundle?.stripePaymentIntentId || "");
   if (sessionId === "promo_signup" || paymentIntentId.startsWith("promo_signup:")) {
