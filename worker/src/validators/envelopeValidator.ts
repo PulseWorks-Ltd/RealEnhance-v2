@@ -3,8 +3,11 @@ import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
+import { computeVerticalEdgeDelta, type VerticalEdgeDeltaResult } from "./verticalEdgeDelta";
 
-export type EnvelopeValidatorResult = ValidatorOutcome;
+export type EnvelopeValidatorResult = ValidatorOutcome & {
+  verticalEdgeDelta?: VerticalEdgeDeltaResult;
+};
 
 const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
@@ -234,20 +237,72 @@ Non-fail certainty guard:
   };
 
   try {
+    // Run vertical-edge delta detection in parallel with Gemini calls.
+    // It is non-blocking – if it fails we fall through to Gemini-only result.
+    const verticalEdgeDeltaPromise = computeVerticalEdgeDelta(beforeImageUrl, afterImageUrl)
+      .catch((err) => {
+        console.warn("[ENVELOPE_VERTICAL_EDGE_DELTA] local analysis failed (non-blocking):", err?.message || err);
+        return undefined;
+      });
+
+    // Gemini semantic analysis
+    let geminiResult: EnvelopeValidatorResult;
     const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY);
     if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
-      return flashResult;
+      geminiResult = flashResult;
+    } else {
+      try {
+        const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION);
+        geminiResult = (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE)
+          ? proResult
+          : flashResult;
+      } catch {
+        geminiResult = flashResult;
+      }
     }
 
-    try {
-      const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION);
-      if (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
-        return proResult;
+    // Merge vertical edge delta signals into the envelope outcome
+    const vedResult = await verticalEdgeDeltaPromise;
+    if (vedResult) {
+      (geminiResult as EnvelopeValidatorResult).verticalEdgeDelta = vedResult;
+
+      console.log("[ENVELOPE_VERTICAL_EDGE_DELTA]", {
+        verticalEdgeLoss: vedResult.verticalEdgeLossDetected,
+        cornerPersistenceFailure: vedResult.cornerPersistenceFailure,
+        worstRetention: vedResult.worstRetention.toFixed(3),
+        junctionCount: vedResult.junctions.length,
+        beforeEdges: vedResult.beforeVerticalEdgeCount,
+        afterEdges: vedResult.afterVerticalEdgeCount,
+      });
+
+      // ── Feature 1: Vertical Projection Histogram flag ──────────────
+      if (vedResult.verticalEdgeLossDetected) {
+        geminiResult.advisorySignals.push("envelope_vertical_edge_loss");
+        // Upgrade issue type if Gemini didn't already flag a critical envelope issue
+        if (geminiResult.issueType === ISSUE_TYPES.NONE || geminiResult.issueType === ISSUE_TYPES.ENVELOPE_ANOMALY) {
+          geminiResult.issueType = ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS;
+          geminiResult.issueTier = classifyIssueTier(ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS);
+        }
+        if (geminiResult.status === "pass") {
+          geminiResult.status = "fail";
+          geminiResult.reason = `envelope_vertical_edge_loss: ${geminiResult.reason}`;
+        }
       }
-      return flashResult;
-    } catch {
-      return flashResult;
+
+      // ── Feature 2: Corner Persistence → Tier 1 Geometric Fail ──────
+      if (vedResult.cornerPersistenceFailure) {
+        geminiResult.advisorySignals.push("envelope_corner_flattened");
+        geminiResult.issueType = ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
+        geminiResult.issueTier = classifyIssueTier(ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED);
+        geminiResult.status = "fail";
+        geminiResult.hardFail = true;
+        if (!geminiResult.reason.includes("corner")) {
+          geminiResult.reason = `envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. ${geminiResult.reason}`;
+        }
+      }
     }
+
+    return geminiResult;
   } catch (error: any) {
     throw new Error(`validator_error_envelope:${error?.message || String(error)}`);
   }

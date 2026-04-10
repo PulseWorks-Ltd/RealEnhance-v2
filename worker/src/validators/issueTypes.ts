@@ -11,6 +11,8 @@ export const ISSUE_TYPES = {
   ROOM_ENVELOPE_CHANGED: "room_envelope_changed",
   WALL_CHANGED: "wall_changed",
   ENVELOPE_ANOMALY: "envelope_anomaly",
+  ENVELOPE_VERTICAL_EDGE_LOSS: "envelope_vertical_edge_loss",
+  ENVELOPE_CORNER_FLATTENED: "envelope_corner_flattened",
   FIXTURE_CHANGED: "fixture_changed",
   FIXTURE_ANOMALY: "fixture_anomaly",
   HVAC_CHANGED: "hvac_changed",
@@ -38,6 +40,8 @@ export const CRITICAL_ISSUES = new Set<ValidationIssueType>([
   ISSUE_TYPES.FAUCET_CHANGED,
   ISSUE_TYPES.GEMINI_STRUCTURE,
   ISSUE_TYPES.GEMINI_OPENING_BLOCKED,
+  ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS,
+  ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED,
 ]);
 
 export const REVIEW_ISSUES = new Set<ValidationIssueType>([

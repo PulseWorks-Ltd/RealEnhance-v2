@@ -10036,6 +10036,10 @@ All openings must remain identical in position and size to the original image.`;
             return "Verify window/door frame edges match baseline. If wall area expanded into the opening void, fail Tier 1.";
           if (it.includes("opening_relocated"))
             return "Verify the opening exists at its original location. If it has moved, fail Tier 1.";
+          if (it.includes("envelope_vertical_edge_loss"))
+            return "Structural Junction Loss—vertical edge density collapsed at a structural junction. Verify if a doorway, recess, or corner was flattened into a continuous wall. If vertical boundary lines are absent, fail Tier 1.";
+          if (it.includes("envelope_corner_flattened"))
+            return "Structural Junction Loss—two wall planes that met at a vertical corner in BEFORE have merged into a single plane in AFTER. Verify the corner still exists; if collapsed, fail Tier 1.";
           if (it.includes("envelope") || it.includes("wall_changed") || it.includes("wall_plane")) {
             if (it.includes("confirmed") || it.includes("continuoussurface") || it.includes("boundary"))
               return "Possible Depth Loss—verify if a doorway or walk-through was flattened into an art wall. If a 3D recess became a 2D plane, fail Tier 1.";
