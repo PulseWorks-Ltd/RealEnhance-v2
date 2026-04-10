@@ -212,6 +212,122 @@ async function compositeStrictMask(
     .toBuffer();
 }
 
+/**
+ * Blend edge tones: compute mean RGB in a narrow band just outside the mask (original)
+ * and just inside the mask (composite). Apply a per-channel multiplicative correction
+ * to the masked region so the generated content matches surrounding tones seamlessly.
+ * Falls back to the unmodified composite if the correction is negligible or fails.
+ */
+async function blendMaskEdgeTones(
+  compositeBuffer: Buffer,
+  originalImagePath: string,
+  maskPngBuffer: Buffer,
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  try {
+    const BAND_PX = Math.max(2, Math.round(Math.max(width, height) * 0.005));
+
+    // Build inner-edge band (erode mask, XOR with original mask)
+    const binaryMask = await sharp(maskPngBuffer)
+      .removeAlpha().grayscale().threshold(127, { grayscale: true })
+      .raw().toBuffer();
+
+    const erodedMask = await sharp(maskPngBuffer)
+      .removeAlpha().grayscale().threshold(127, { grayscale: true })
+      .erode(BAND_PX).raw().toBuffer();
+
+    const dilatedMask = await sharp(maskPngBuffer)
+      .removeAlpha().grayscale().threshold(127, { grayscale: true })
+      .dilate(BAND_PX).raw().toBuffer();
+
+    const pixels = width * height;
+    // Inner edge: inside mask but outside eroded mask
+    // Outer edge: outside mask but inside dilated mask
+    const innerEdge = Buffer.alloc(pixels);
+    const outerEdge = Buffer.alloc(pixels);
+    for (let i = 0; i < pixels; i++) {
+      const inMask = (binaryMask[i] ?? 0) > 127;
+      const inEroded = (erodedMask[i] ?? 0) > 127;
+      const inDilated = (dilatedMask[i] ?? 0) > 127;
+      innerEdge[i] = inMask && !inEroded ? 1 : 0;
+      outerEdge[i] = !inMask && inDilated ? 1 : 0;
+    }
+
+    // Sample from composite (inner edge) and original (outer edge)
+    const compRaw = await sharp(compositeBuffer).resize(width, height, { fit: "fill" })
+      .removeAlpha().raw().toBuffer();
+    const origRaw = await sharp(originalImagePath).resize(width, height, { fit: "fill" })
+      .removeAlpha().raw().toBuffer();
+
+    let innerR = 0, innerG = 0, innerB = 0, innerCount = 0;
+    let outerR = 0, outerG = 0, outerB = 0, outerCount = 0;
+
+    for (let i = 0; i < pixels; i++) {
+      const idx = i * 3;
+      if (innerEdge[i]) {
+        innerR += compRaw[idx]!;
+        innerG += compRaw[idx + 1]!;
+        innerB += compRaw[idx + 2]!;
+        innerCount++;
+      }
+      if (outerEdge[i]) {
+        outerR += origRaw[idx]!;
+        outerG += origRaw[idx + 1]!;
+        outerB += origRaw[idx + 2]!;
+        outerCount++;
+      }
+    }
+
+    if (innerCount < 10 || outerCount < 10) {
+      console.log("[editApply] blendMaskEdgeTones: insufficient edge pixels, skipping", { innerCount, outerCount });
+      return compositeBuffer;
+    }
+
+    const avgInner = [innerR / innerCount, innerG / innerCount, innerB / innerCount];
+    const avgOuter = [outerR / outerCount, outerG / outerCount, outerB / outerCount];
+
+    // Compute per-channel correction ratios (clamped to prevent extreme shifts)
+    const corrections = avgInner.map((inner, ch) => {
+      if (inner < 1) return 1;
+      const ratio = avgOuter[ch]! / inner;
+      return Math.max(0.85, Math.min(1.15, ratio));
+    });
+
+    const maxShift = Math.max(...corrections.map(c => Math.abs(c - 1)));
+    if (maxShift < 0.01) {
+      console.log("[editApply] blendMaskEdgeTones: negligible correction, skipping", {
+        corrections, avgInner, avgOuter,
+      });
+      return compositeBuffer;
+    }
+
+    console.log("[editApply] blendMaskEdgeTones: applying correction", {
+      corrections: corrections.map(c => c.toFixed(4)),
+      avgInner: avgInner.map(v => v.toFixed(1)),
+      avgOuter: avgOuter.map(v => v.toFixed(1)),
+      bandPx: BAND_PX,
+      innerEdgePx: innerCount,
+      outerEdgePx: outerCount,
+    });
+
+    // Apply correction only to pixels inside the mask
+    const corrected = Buffer.from(compRaw);
+    for (let i = 0; i < pixels; i++) {
+      if ((binaryMask[i] ?? 0) <= 127) continue;
+      const idx = i * 3;
+      corrected[idx] = Math.min(255, Math.max(0, Math.round(compRaw[idx]! * corrections[0]!)));
+      corrected[idx + 1] = Math.min(255, Math.max(0, Math.round(compRaw[idx + 1]! * corrections[1]!)));
+      corrected[idx + 2] = Math.min(255, Math.max(0, Math.round(compRaw[idx + 2]! * corrections[2]!)));
+    }
+
+    return sharp(corrected, { raw: { width, height, channels: 3 } }).webp().toBuffer();
+  } catch (err) {
+    console.warn("[editApply] blendMaskEdgeTones failed (non-blocking):", (err as any)?.message || err);
+    return compositeBuffer;
+  }
+}
+
 function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "real_leak" | "unknown" {
   if (!Number.isFinite(pct as number)) return "unknown";
   const value = Number(pct);
@@ -231,8 +347,8 @@ export interface ApplyEditArgs {
   instruction: string;        // user’s natural-language instruction
   restoreFromPath?: string;   // optional path to original/enhanced image for restore mode
   stage1AReferencePath?: string; // optional Stage-1A enhanced reference image (remove mode)
-  onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;
-}
+  onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;  roomType?: string;
+  sceneType?: "interior" | "exterior";}
 
 /**
  * Run a region edit with Gemini, using a mask and user instruction.
@@ -248,6 +364,8 @@ export async function applyEdit({
   restoreFromPath,
   stage1AReferencePath,
   onAnchorValidation,
+  roomType,
+  sceneType,
 }: ApplyEditArgs): Promise<string> {
     console.log("[editApply] Starting edit", {
       baseImagePath,
@@ -387,7 +505,9 @@ export async function applyEdit({
 
     const prompt = buildRegionEditPrompt({
       userInstruction: instruction,
-      // Optionally pass roomType, sceneType, preserveStructure if needed
+      roomType,
+      sceneType: sceneType || "interior",
+      preserveStructure: true,
     });
     const finalPrompt = prompt;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);
@@ -399,7 +519,9 @@ export async function applyEdit({
       imageId,
       baseImageBuffer,
       maskPngBuffer,
-      // Optionally pass roomType, sceneType, preserveStructure if needed
+      roomType,
+      sceneType: sceneType || "interior",
+      editMode: mode,
     });
 
     // Strict edit compositing only: original * (1 - mask) + generated * mask
@@ -418,7 +540,17 @@ export async function applyEdit({
       meta.width,
       meta.height,
     );
-    await sharp(strictComposite).webp().toFile(outPath);
+
+    // Fix 4: Color/tone normalization — match generated region to surrounding original pixels
+    const blendedComposite = await blendMaskEdgeTones(
+      strictComposite,
+      baseImagePath,
+      maskPngBuffer!,
+      meta.width!,
+      meta.height!,
+    );
+
+    await sharp(blendedComposite).webp().toFile(outPath);
 
     const maskStats = await sharp(effectiveAllowedMask).stats();
     console.log("[editApply] Enforced mask zones", {

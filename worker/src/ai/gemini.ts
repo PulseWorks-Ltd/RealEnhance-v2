@@ -6,8 +6,9 @@ export interface RegionEditArgs {
   referenceImageBuffer?: Buffer;
   maskPngBuffer?: Buffer;
   roomType?: string;
-  sceneType?: string;
+  sceneType?: "interior" | "exterior";
   preserveStructure?: boolean;
+  editMode?: "Add" | "Remove" | "Replace" | "Restore";
 }
 
 export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer> {
@@ -21,6 +22,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     roomType,
     sceneType,
     preserveStructure,
+    editMode,
   } = args;
 
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
@@ -62,10 +64,30 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     },
   ];
 
-  // Use the same fallback helper as 1A/1B
+  // Resolve generation config from centralized profiles
+  const resolvedScene = sceneType || "interior";
+  const operationMap: Record<string, import("./generationConfig").OperationType> = {
+    Add: "region-add",
+    Remove: "region-remove",
+    Replace: "region-replace",
+    Restore: "region-restore",
+  };
+  const genOperation = operationMap[editMode || "Replace"] || "region-replace";
+  const genProfile = getGenerationConfig(genOperation, resolvedScene);
+  focusLog("GEMINI_REGION_GEN_CONFIG", "[gemini.regionEdit] generation config", {
+    editMode,
+    operation: genOperation,
+    scene: resolvedScene,
+    profile: genProfile.profile,
+    temperature: genProfile.config.temperature,
+    topP: genProfile.config.topP,
+    topK: genProfile.config.topK,
+    rationale: genProfile.rationale,
+  });
+
   const { resp } = await runWithImageModelFallback(
     getGeminiClient(),
-    { contents },
+    { contents, config: { ...genProfile.config } },
     "[gemini.regionEdit]",
     { stage: "edit", jobId: jobId || "", imageId: imageId || "", reason: "region-edit", callType: "edit" }
   );
@@ -171,6 +193,7 @@ import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
 import { focusLog } from "../utils/logFocus";
+import { getGenerationConfig } from "./generationConfig";
 
 export const STAGE1B_FULL_SAMPLING = Object.freeze({
   temperature: 0.09,

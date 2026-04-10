@@ -12570,6 +12570,12 @@ const worker = new Worker(
 
           nLog("[worker-region-edit] Calling applyEdit with mode:", mode);
 
+          // Extract roomType/sceneType from payload for prompt context
+          const regionRoomType: string | undefined = String(regionAny.roomType || "").trim() || undefined;
+          const regionSceneType: "interior" | "exterior" | undefined =
+            (String(regionAny.sceneType || "").trim().toLowerCase() === "exterior" ? "exterior" : undefined)
+            || (String(regionAny.sceneType || "").trim().toLowerCase() === "interior" ? "interior" : undefined);
+
           const openingProtectedPromptSuffix =
             "Additional constraint:\nDo not modify windows, doors, or architectural openings.";
           const anchorCorrectionPromptSuffix =
@@ -12623,6 +12629,8 @@ const worker = new Worker(
               instruction: prompt,
               restoreFromPath: restoreFromPath || basePath,
               stage1AReferencePath,
+              roomType: regionRoomType,
+              sceneType: regionSceneType,
             });
           } else {
             const lowerMode = String(rawMode || "").toLowerCase();
@@ -12666,6 +12674,8 @@ const worker = new Worker(
                     anchorOverlapPct = result.overlapPct;
                   }
                 },
+                roomType: regionRoomType,
+                sceneType: regionSceneType,
               });
 
               const outsideMaskChangedPct = await computeOutsideMaskChangedPct({

@@ -8,19 +8,24 @@ type RegionEditPromptArgs = {
 };
 
 const STRICT_EDIT_PROMPT = `
-Apply the requested edit ONLY within the white mask.
+IMPORTANT: This image has ALREADY been virtually staged. You are making a TARGETED EDIT to an existing staged image — you are NOT re-staging or re-enhancing the room.
+
+Apply the requested edit ONLY within the white mask region.
 
 Do not modify anything outside the mask.
+Keep the rest of the image pixel-identical.
 
-Keep the rest of the image unchanged.
+COLOR & TONE PRESERVATION:
+- Match the existing lighting, color temperature, white balance, and tonal range of the surrounding image exactly.
+- Do NOT apply any overall image enhancement, brightening, contrast boost, or color grading.
+- Do NOT re-interpret or re-render existing furniture, decor, or surfaces.
+- The edited region must blend seamlessly with the surrounding pixels in tone, saturation, and brightness.
 
-Do not change:
-- walls
-- ceilings
-- floors
-- windows
-- doors
-- camera viewpoint
+STRUCTURAL CONSTRAINTS — Do not change:
+- walls, ceilings, floors
+- windows, doors, architectural openings
+- camera viewpoint, perspective, or depth
+- any existing objects outside the masked region
 
 Follow the user's instruction exactly.
 `;

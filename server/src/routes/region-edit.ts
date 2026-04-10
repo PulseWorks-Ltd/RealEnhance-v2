@@ -754,6 +754,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       ...(editSourceStage ? { editSourceStage } : {}),
+      ...(roomType ? { roomType } : {}),
+      ...(sceneType ? { sceneType } : {}),
     };
 
     console.log("[region-edit] Enqueuing job:", {
