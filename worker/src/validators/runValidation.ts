@@ -39,6 +39,8 @@ import {
   STRUCTURAL_SIGNALS_MODE,
   STAGE2_ENABLE_SPECIALIST_ADVISORY,
 } from "../config";
+import { PROHIBITED_STRUCTURAL_CLAIMS } from "./structuralSignal";
+import type { StructuralClaim, AdjudicatedClaim } from "./structuralSignal";
 
 // Re-export the normalized adapter for downstream consumers
 export { normalizeValidatorResult, type NormalizedValidatorResult, type NormalizedCheck } from "./normalizedResult";
@@ -1731,6 +1733,56 @@ export async function runUnifiedValidation(
 
   let blockSource: "local" | "gemini" | null = geminiHardFail ? "gemini" : null;
 
+  // ── Step 3: Structural claim enforcement ──────────────────────────
+  // If STRUCTURAL_SIGNALS_ACTIVE and Gemini CONFIRMED any prohibited
+  // structural claim → hard fail.  No consensus, no averaging, no override.
+  let claimEnforcedIssueType: ValidationIssueType | undefined;
+  if (
+    STRUCTURAL_SIGNALS_ACTIVE &&
+    stage === "2" &&
+    Array.isArray(geminiVerdict?.adjudicatedClaims)
+  ) {
+    const confirmedProhibited = geminiVerdict!.adjudicatedClaims!.filter(
+      (c) => c.result === "CONFIRMED" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
+    );
+
+    if (confirmedProhibited.length > 0) {
+      blockSource = "gemini";
+
+      // Map the first confirmed claim to a canonical issue type
+      const claimToIssueType = (claim: StructuralClaim): ValidationIssueType => {
+        switch (claim) {
+          case "opening_removed": return ISSUE_TYPES.OPENING_REMOVED;
+          case "opening_added": return ISSUE_TYPES.OPENING_ANOMALY;
+          case "opening_resized_major": return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+          case "wall_plane_modified": return ISSUE_TYPES.WALL_CHANGED;
+          case "corner_flattened": return ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
+          case "recess_removed": return ISSUE_TYPES.WALL_CHANGED;
+          default: return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
+        }
+      };
+
+      // Use the most severe confirmed claim (first in PROHIBITED order)
+      const primaryClaim = confirmedProhibited[0];
+      claimEnforcedIssueType = claimToIssueType(primaryClaim.claim);
+
+      const confirmedClaimNames = confirmedProhibited.map((c) => c.claim).join(", ");
+      reasons.push(`Gemini structural_claim_confirmed: ${confirmedClaimNames}`);
+
+      nLog("[STRUCTURAL_CLAIM_ENFORCEMENT]", {
+        jobId: jobId || "unknown",
+        stage,
+        action: "HARD_FAIL",
+        confirmedClaims: confirmedProhibited.map((c) => ({
+          claim: c.claim,
+          detail: c.detail,
+          region: c.region,
+        })),
+        enforcedIssueType: claimEnforcedIssueType,
+      });
+    }
+  }
+
   // Deterministic mode: no semantic override of local failures.
 
   // Handle blocking logic
@@ -1750,7 +1802,9 @@ export async function runUnifiedValidation(
       )
     : reasons;
   const issueInferenceReasons = stage2ReasonScope.length > 0 ? stage2ReasonScope : reasons;
-  const issueType: ValidationIssueType = inferUnifiedIssueType({
+  // Claim enforcement overrides generic issue inference when a specific
+  // structural claim was CONFIRMED by Gemini.
+  const issueType: ValidationIssueType = claimEnforcedIssueType || inferUnifiedIssueType({
     hardFail,
     geminiVerdict,
     reasons: issueInferenceReasons,

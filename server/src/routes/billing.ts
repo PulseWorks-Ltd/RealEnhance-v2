@@ -20,7 +20,7 @@ import {
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
-import { convertTrialAndDetachUsageIfNeeded, getTrialSummary } from "../services/trials.js";
+import { convertTrialAndDetachUsageIfNeeded, getTrialSummary, redeemPromoForExistingAgency } from "../services/trials.js";
 import { pool } from "../db/index.js";
 
 const router = Router();
@@ -520,6 +520,78 @@ router.post("/portal", requireAuth, async (req: Request, res: Response) => {
       error: "Portal failed",
       message: error.message || "Failed to create portal session",
     });
+  }
+});
+
+/**
+ * POST /api/billing/redeem-promo
+ * Redeem a promo code for a one-time trial on the current agency
+ */
+router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) => {
+  try {
+    const { user, agency } = await loadUserAndAgency(req);
+
+    if (!requireAgencyAdmin(user)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const promoCode = typeof req.body?.promoCode === "string" ? req.body.promoCode.trim() : "";
+    if (!promoCode) {
+      return res.status(400).json({ error: "Promo code is required" });
+    }
+
+    if (!user.email) {
+      return res.status(400).json({ error: "User email is required" });
+    }
+
+    const { trial, promo } = await redeemPromoForExistingAgency({
+      agencyId: agency.agencyId,
+      email: user.email,
+      promoCode,
+    });
+
+    if (agency.subscriptionStatus !== "TRIAL") {
+      agency.subscriptionStatus = "TRIAL";
+      await updateAgency(agency);
+    }
+
+    const usage = await getUsageSnapshot(agency.agencyId);
+
+    return res.json({
+      success: true,
+      code: promo.code,
+      trial: {
+        status: trial.trial_status,
+        expiresAt: trial.trial_expires_at,
+        creditsTotal: trial.trial_credits_total,
+        creditsUsed: trial.trial_credits_used,
+        remaining: Math.max(0, Number(trial.trial_credits_total || 0) - Number(trial.trial_credits_used || 0)),
+      },
+      allowance: {
+        monthlyIncluded: usage.includedLimit,
+        monthlyRemaining: usage.includedRemaining,
+        addonBalance: usage.addonBalance,
+        addonRemaining: usage.addonRemaining,
+        totalRemaining: usage.remaining,
+        monthKey: usage.monthKey,
+      },
+    });
+  } catch (error: any) {
+    const code = error?.code || "PROMO_REDEEM_FAILED";
+    if (
+      code === "INVALID_PROMO" ||
+      code === "PROMO_INACTIVE" ||
+      code === "PROMO_EXPIRED" ||
+      code === "PROMO_MAXED" ||
+      code === "TRIAL_ALREADY_CLAIMED" ||
+      code === "AGENCY_ALREADY_USED_TRIAL" ||
+      code === "AGENCY_PREVIOUSLY_SUBSCRIBED"
+    ) {
+      return res.status(400).json({ error: code });
+    }
+
+    console.error("[BILLING] redeem-promo error", error);
+    return res.status(500).json({ error: "Failed to redeem promo code" });
   }
 });
 

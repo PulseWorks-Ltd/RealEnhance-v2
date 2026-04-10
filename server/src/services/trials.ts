@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { pool, withTransaction } from "../db/index.js";
 import { getUserByEmail } from "./users.js";
 import type { PoolClient } from "pg";
+import { getAgency } from "@realenhance/shared/agencies.js";
 import {
   LAUNCH_TRIAL_CREDITS,
   LAUNCH_TRIAL_DAYS,
@@ -80,6 +81,38 @@ async function ensureTrialRow(client: PoolClient, agencyId: string): Promise<Tri
     [agencyId]
   );
   return existing.rows[0];
+}
+
+async function hasAgencyHadPaidSubscription(client: PoolClient, agencyId: string): Promise<boolean> {
+  const agency = await getAgency(agencyId);
+  if (
+    agency?.stripeSubscriptionId ||
+    agency?.stripePriceId ||
+    agency?.currentPeriodStart ||
+    agency?.currentPeriodEnd ||
+    agency?.subscriptionStatus === "ACTIVE" ||
+    agency?.subscriptionStatus === "PAST_DUE" ||
+    agency?.subscriptionStatus === "CANCELLED"
+  ) {
+    return true;
+  }
+
+  const priorInvoice = await client.query(
+    `SELECT 1 FROM addon_purchases WHERE agency_id = $1 AND source = 'subscription_invoice' LIMIT 1`,
+    [agencyId]
+  );
+
+  return (priorInvoice.rowCount ?? 0) > 0;
+}
+
+function hasAgencyUsedAnyTrial(trial: TrialOrgRow): boolean {
+  return (
+    trial.trial_status !== "none" ||
+    Number(trial.trial_credits_total || 0) > 0 ||
+    Number(trial.trial_credits_used || 0) > 0 ||
+    trial.trial_promo_code_id !== null ||
+    trial.trial_expires_at !== null
+  );
 }
 
 export async function assertEligibleForTrial(email: string): Promise<void> {
@@ -162,6 +195,93 @@ export async function recordTrialStart(params: {
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT (email_hash) DO NOTHING;`,
       [emailHash, promo.id, params.agencyId, params.ipHash || null, params.uaHash || null]
+    );
+
+    await client.query(
+      `UPDATE promo_codes
+          SET redemptions_count = redemptions_count + 1,
+              updated_at = NOW()
+        WHERE id = $1;`,
+      [promo.id]
+    );
+
+    return { trial: trialRes.rows[0], promo };
+  });
+}
+
+export async function redeemPromoForExistingAgency(params: {
+  agencyId: string;
+  email: string;
+  promoCode: string;
+}): Promise<{ trial: TrialOrgRow; promo: PromoCodeRow }> {
+  const emailNormalized = normalizeEmail(params.email);
+  const emailHash = sha256(emailNormalized);
+  const now = new Date();
+
+  return withTransaction(async (client) => {
+    const promo = await fetchPromoByCode(client, params.promoCode);
+    if (!promo) {
+      const err: any = new Error("INVALID_PROMO");
+      err.code = "INVALID_PROMO";
+      throw err;
+    }
+    if (!promo.is_active) {
+      const err: any = new Error("PROMO_INACTIVE");
+      err.code = "PROMO_INACTIVE";
+      throw err;
+    }
+    if (promo.expires_at && new Date(promo.expires_at) < now) {
+      const err: any = new Error("PROMO_EXPIRED");
+      err.code = "PROMO_EXPIRED";
+      throw err;
+    }
+    if (promo.max_redemptions !== null && promo.redemptions_count >= promo.max_redemptions) {
+      const err: any = new Error("PROMO_MAXED");
+      err.code = "PROMO_MAXED";
+      throw err;
+    }
+
+    const existingClaim = await client.query(`SELECT 1 FROM trial_claims WHERE email_hash = $1 FOR UPDATE`, [emailHash]);
+    if (existingClaim.rowCount) {
+      const err: any = new Error("TRIAL_ALREADY_CLAIMED");
+      err.code = "TRIAL_ALREADY_CLAIMED";
+      throw err;
+    }
+
+    const trial = await ensureTrialRow(client, params.agencyId);
+    if (hasAgencyUsedAnyTrial(trial)) {
+      const err: any = new Error("AGENCY_ALREADY_USED_TRIAL");
+      err.code = "AGENCY_ALREADY_USED_TRIAL";
+      throw err;
+    }
+
+    const hadSubscription = await hasAgencyHadPaidSubscription(client, params.agencyId);
+    if (hadSubscription) {
+      const err: any = new Error("AGENCY_PREVIOUSLY_SUBSCRIBED");
+      err.code = "AGENCY_PREVIOUSLY_SUBSCRIBED";
+      throw err;
+    }
+
+    const expiresAt = new Date(now.getTime() + promo.trial_days * 24 * 60 * 60 * 1000);
+
+    const trialRes = await client.query<TrialOrgRow>(
+      `UPDATE organisations
+          SET trial_status = 'active',
+              trial_expires_at = $2,
+              trial_credits_total = $3,
+              trial_credits_used = 0,
+              trial_promo_code_id = $4,
+              updated_at = NOW()
+        WHERE agency_id = $1
+        RETURNING agency_id, trial_status, trial_expires_at, trial_credits_total, trial_credits_used, trial_promo_code_id;`,
+      [params.agencyId, expiresAt.toISOString(), promo.credits_granted, promo.id]
+    );
+
+    await client.query(
+      `INSERT INTO trial_claims (email_hash, promo_code_id, org_id)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (email_hash) DO NOTHING;`,
+      [emailHash, promo.id, params.agencyId]
     );
 
     await client.query(

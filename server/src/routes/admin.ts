@@ -94,6 +94,31 @@ interface RedisUser {
   createdAt: string;
 }
 
+interface PromoCodeAdminRow {
+  id: number;
+  code: string;
+  code_normalized: string;
+  is_active: boolean;
+  expires_at: string | null;
+  max_redemptions: number | null;
+  redemptions_count: number;
+  trial_days: number;
+  credits_granted: number;
+  created_at: string;
+  updated_at: string;
+}
+
+function parseOptionalPositiveInteger(value: unknown): number | null | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function normalizePromoCode(raw: unknown): string {
+  return typeof raw === "string" ? raw.trim() : "";
+}
+
 async function getAllUsersGroupedByAgency(): Promise<Map<string, RedisUser[]>> {
   const client = getRedis();
   const keys = await client.keys("user:*");
@@ -369,6 +394,153 @@ router.get("/agencies/:agencyId", requireAuth, requireSiteAdmin, async (req: Req
   } catch (err) {
     console.error("[ADMIN DASHBOARD] agency detail error:", err);
     res.status(500).json({ error: "Failed to fetch agency details" });
+  }
+});
+
+/* ── GET /promo-codes ─────────────────────────────────── */
+
+router.get("/promo-codes", requireAuth, requireSiteAdmin, async (_req: Request, res: Response) => {
+  try {
+    const result = await pool.query<PromoCodeAdminRow>(
+      `SELECT id, code, code_normalized, is_active, expires_at, max_redemptions, redemptions_count,
+              trial_days, credits_granted, created_at, updated_at
+         FROM promo_codes
+        ORDER BY created_at DESC, id DESC`
+    );
+
+    res.json({
+      promoCodes: result.rows.map((row) => ({
+        id: row.id,
+        code: row.code,
+        normalizedCode: row.code_normalized,
+        isActive: row.is_active,
+        expiresAt: row.expires_at,
+        maxRedemptions: row.max_redemptions,
+        redemptionsCount: row.redemptions_count,
+        trialDays: row.trial_days,
+        creditsGranted: row.credits_granted,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      })),
+    });
+  } catch (err) {
+    console.error("[ADMIN DASHBOARD] promo codes list error:", err);
+    res.status(500).json({ error: "Failed to fetch promo codes" });
+  }
+});
+
+/* ── POST /promo-codes ────────────────────────────────── */
+
+router.post("/promo-codes", requireAuth, requireSiteAdmin, async (req: Request, res: Response) => {
+  try {
+    const code = normalizePromoCode(req.body?.code);
+    const trialDays = parseOptionalPositiveInteger(req.body?.trialDays);
+    const creditsGranted = parseOptionalPositiveInteger(req.body?.creditsGranted);
+    const maxRedemptions = parseOptionalPositiveInteger(req.body?.maxRedemptions);
+    const expiresAtRaw = typeof req.body?.expiresAt === "string" ? req.body.expiresAt.trim() : "";
+    const expiresAt = expiresAtRaw ? new Date(expiresAtRaw) : null;
+
+    if (!code || code.length < 3 || code.length > 64) {
+      return res.status(400).json({ error: "Code must be 3-64 characters" });
+    }
+    if (trialDays === null || creditsGranted === null || maxRedemptions === null) {
+      return res.status(400).json({ error: "trialDays, creditsGranted, and maxRedemptions must be positive integers when provided" });
+    }
+    if (expiresAtRaw && Number.isNaN(expiresAt?.getTime())) {
+      return res.status(400).json({ error: "expiresAt must be a valid ISO date" });
+    }
+
+    const normalizedCode = code.toLowerCase();
+    const result = await pool.query<PromoCodeAdminRow>(
+      `INSERT INTO promo_codes (
+          code, code_normalized, is_active, expires_at, max_redemptions, redemptions_count, trial_days, credits_granted
+        ) VALUES ($1, $2, TRUE, $3, $4, 0, $5, $6)
+        RETURNING id, code, code_normalized, is_active, expires_at, max_redemptions, redemptions_count,
+                  trial_days, credits_granted, created_at, updated_at`,
+      [code, normalizedCode, expiresAt ? expiresAt.toISOString() : null, maxRedemptions ?? null, trialDays ?? 30, creditsGranted ?? 75]
+    );
+
+    const row = result.rows[0];
+    res.status(201).json({
+      promoCode: {
+        id: row.id,
+        code: row.code,
+        normalizedCode: row.code_normalized,
+        isActive: row.is_active,
+        expiresAt: row.expires_at,
+        maxRedemptions: row.max_redemptions,
+        redemptionsCount: row.redemptions_count,
+        trialDays: row.trial_days,
+        creditsGranted: row.credits_granted,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "A promo code with that value already exists" });
+    }
+    console.error("[ADMIN DASHBOARD] promo code create error:", err);
+    res.status(500).json({ error: "Failed to create promo code" });
+  }
+});
+
+/* ── PATCH /promo-codes/:id ───────────────────────────── */
+
+router.patch("/promo-codes/:promoCodeId", requireAuth, requireSiteAdmin, async (req: Request, res: Response) => {
+  try {
+    const promoCodeId = Number(req.params.promoCodeId);
+    if (!Number.isInteger(promoCodeId) || promoCodeId <= 0) {
+      return res.status(400).json({ error: "Invalid promo code id" });
+    }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (typeof req.body?.isActive === "boolean") {
+      params.push(req.body.isActive);
+      updates.push(`is_active = $${params.length}`);
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: "No valid fields to update" });
+    }
+
+    updates.push(`updated_at = NOW()`);
+    params.push(promoCodeId);
+
+    const result = await pool.query<PromoCodeAdminRow>(
+      `UPDATE promo_codes
+          SET ${updates.join(", ")}
+        WHERE id = $${params.length}
+        RETURNING id, code, code_normalized, is_active, expires_at, max_redemptions, redemptions_count,
+                  trial_days, credits_granted, created_at, updated_at`,
+      params
+    );
+
+    if (!result.rowCount) {
+      return res.status(404).json({ error: "Promo code not found" });
+    }
+
+    const row = result.rows[0];
+    res.json({
+      promoCode: {
+        id: row.id,
+        code: row.code,
+        normalizedCode: row.code_normalized,
+        isActive: row.is_active,
+        expiresAt: row.expires_at,
+        maxRedemptions: row.max_redemptions,
+        redemptionsCount: row.redemptions_count,
+        trialDays: row.trial_days,
+        creditsGranted: row.credits_granted,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    });
+  } catch (err) {
+    console.error("[ADMIN DASHBOARD] promo code update error:", err);
+    res.status(500).json({ error: "Failed to update promo code" });
   }
 });
 

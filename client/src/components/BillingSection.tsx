@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -58,6 +59,12 @@ interface SubscriptionInfo {
   canManage: boolean;
 }
 
+interface PromoRedeemSuccess {
+  code: string;
+  expiresAt: string | null;
+  creditsTotal: number;
+}
+
 const PLAN_NAMES: Record<string, string> = {
   starter: "Starter",
   pro: "Pro",
@@ -104,6 +111,9 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const [loadingSubscription, setLoadingSubscription] = useState(false);
   const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier || "starter");
   const [selectedCountry, setSelectedCountry] = useState<string>(agency.billingCountry || "NZ");
+  const [promoCode, setPromoCode] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoRedeemSuccess, setPromoRedeemSuccess] = useState<PromoRedeemSuccess | null>(null);
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
@@ -114,7 +124,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const statusConfig = STATUS_CONFIG[effectiveStatus];
   const hasSubscription = !!(agency.stripeSubscriptionId || subscription?.stripeSubscriptionId);
   const manageDisabled = !canManage || (subscription ? !subscription.canManage : false);
-  const currentPlanName = formatPlanDisplayName(agency.planTier, subscription?.planDisplayName);
+  const currentPlanName = formatPlanDisplayName(subscription?.planTier || agency.planTier, subscription?.planDisplayName);
   const currentPeriodEnd = subscription?.currentPeriodEnd || agency.currentPeriodEnd;
   const currentBillingCountry = subscription?.billingCountry || agency.billingCountry;
   const currentBillingCurrency = subscription?.billingCurrency || agency.billingCurrency;
@@ -205,6 +215,68 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
       });
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRedeemPromo = async () => {
+    if (manageDisabled || promoLoading) return;
+
+    const code = promoCode.trim();
+    if (!code) {
+      toast({
+        title: "Promo code required",
+        description: "Enter a promo code to redeem your free Starter month.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setPromoLoading(true);
+    try {
+      setPromoRedeemSuccess(null);
+      const response = await fetch(api("/api/billing/redeem-promo"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ promoCode: code }),
+      });
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        const errorCode = data?.error || "PROMO_REDEEM_FAILED";
+        const messageMap: Record<string, string> = {
+          INVALID_PROMO: "That promo code is not valid.",
+          PROMO_INACTIVE: "That promo code is not active.",
+          PROMO_EXPIRED: "That promo code has expired.",
+          PROMO_MAXED: "That promo code has reached its redemption limit.",
+          TRIAL_ALREADY_CLAIMED: "This user has already claimed a promo trial.",
+          AGENCY_ALREADY_USED_TRIAL: "This agency has already used a trial before.",
+          AGENCY_PREVIOUSLY_SUBSCRIBED: "This agency has already had a paid subscription and is not eligible.",
+        };
+        throw new Error(messageMap[errorCode] || errorCode);
+      }
+
+      setPromoCode("");
+      setPromoRedeemSuccess({
+        code: data?.code || code,
+        expiresAt: data?.trial?.expiresAt || null,
+        creditsTotal: Number(data?.trial?.creditsTotal || 0),
+      });
+      toast({
+        title: "Promo redeemed",
+        description: "Your free Starter trial has been applied.",
+      });
+
+      await fetchSubscription();
+      onUpgradeComplete?.();
+    } catch (error: any) {
+      toast({
+        title: "Promo redemption failed",
+        description: error.message || "Unable to redeem promo code",
+        variant: "destructive",
+      });
+    } finally {
+      setPromoLoading(false);
     }
   };
 
@@ -347,6 +419,39 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
             </p>
           </div>
         )}
+
+        {promoRedeemSuccess && (
+          <Alert>
+            <AlertDescription>
+              Promo code {promoRedeemSuccess.code} applied. Your Starter trial is active for {promoRedeemSuccess.creditsTotal} images and expires on {promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="rounded-lg border p-4 space-y-3">
+          <div>
+            <p className="text-sm font-medium">Have a promo code?</p>
+            <p className="text-sm text-muted-foreground">
+              Redeem a one-time Starter trial. This is only available if your agency has never used a trial and has never had a paid subscription.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Input
+              value={promoCode}
+              onChange={(e) => setPromoCode(e.target.value)}
+              placeholder="Enter promo code"
+              disabled={manageDisabled || promoLoading}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleRedeemPromo}
+              disabled={manageDisabled || promoLoading}
+            >
+              {promoLoading ? "Redeeming..." : "Redeem Code"}
+            </Button>
+          </div>
+        </div>
 
         {/* Subscribe Section (if no subscription) */}
         {!hasSubscription && (

@@ -2,8 +2,11 @@ import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { apiJson } from "@/lib/api";
+import { useToast } from "@/hooks/use-toast";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import {
   Table,
   TableBody,
@@ -22,6 +25,19 @@ import {
 import { cn } from "@/lib/utils";
 
 /* ── Types ─────────────────────────────────────────────── */
+interface PromoCodeRow {
+  id: number;
+  code: string;
+  normalizedCode: string;
+  isActive: boolean;
+  expiresAt: string | null;
+  maxRedemptions: number | null;
+  redemptionsCount: number;
+  trialDays: number;
+  creditsGranted: number;
+  createdAt: string;
+  updatedAt: string;
+}
 
 interface SummaryData {
   totalAgencies: number;
@@ -127,14 +143,24 @@ function statusColor(status: string): string {
 export default function AdminDashboard() {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   const [summary, setSummary] = useState<SummaryData | null>(null);
   const [agencies, setAgencies] = useState<AgencyRow[]>([]);
+  const [promoCodes, setPromoCodes] = useState<PromoCodeRow[]>([]);
   const [detail, setDetail] = useState<AgencyDetail | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loadingData, setLoadingData] = useState(true);
+  const [promoBusyId, setPromoBusyId] = useState<number | null>(null);
+  const [creatingPromo, setCreatingPromo] = useState(false);
+
+  const [newPromoCode, setNewPromoCode] = useState("");
+  const [newPromoCredits, setNewPromoCredits] = useState("75");
+  const [newPromoDays, setNewPromoDays] = useState("30");
+  const [newPromoMaxRedemptions, setNewPromoMaxRedemptions] = useState("20");
+  const [newPromoExpiresAt, setNewPromoExpiresAt] = useState("");
 
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
@@ -153,13 +179,15 @@ export default function AdminDashboard() {
 
     async function load() {
       try {
-        const [summaryRes, agenciesRes] = await Promise.all([
+        const [summaryRes, agenciesRes, promoCodesRes] = await Promise.all([
           apiJson<SummaryData>("/api/admin/dashboard/summary"),
           apiJson<{ agencies: AgencyRow[] }>("/api/admin/dashboard/agencies"),
+          apiJson<{ promoCodes: PromoCodeRow[] }>("/api/admin/dashboard/promo-codes"),
         ]);
         if (cancelled) return;
         setSummary(summaryRes);
         setAgencies(agenciesRes.agencies);
+        setPromoCodes(promoCodesRes.promoCodes);
       } catch (err: any) {
         if (cancelled) return;
         if (err?.status === 403) {
@@ -176,6 +204,67 @@ export default function AdminDashboard() {
       cancelled = true;
     };
   }, [user, navigate]);
+
+  async function refreshPromoCodes() {
+    const data = await apiJson<{ promoCodes: PromoCodeRow[] }>("/api/admin/dashboard/promo-codes");
+    setPromoCodes(data.promoCodes);
+  }
+
+  async function handleCreatePromoCode(e: React.FormEvent) {
+    e.preventDefault();
+    setCreatingPromo(true);
+    try {
+      await apiJson<{ promoCode: PromoCodeRow }>("/api/admin/dashboard/promo-codes", {
+        method: "POST",
+        body: JSON.stringify({
+          code: newPromoCode.trim(),
+          creditsGranted: Number(newPromoCredits),
+          trialDays: Number(newPromoDays),
+          maxRedemptions: newPromoMaxRedemptions.trim() ? Number(newPromoMaxRedemptions) : undefined,
+          expiresAt: newPromoExpiresAt || undefined,
+        }),
+      });
+
+      setNewPromoCode("");
+      setNewPromoCredits("75");
+      setNewPromoDays("30");
+      setNewPromoMaxRedemptions("20");
+      setNewPromoExpiresAt("");
+      await refreshPromoCodes();
+      toast({ title: "Promo code created", description: "The new promo code is now available." });
+    } catch (err: any) {
+      toast({
+        title: "Create failed",
+        description: err?.message || "Unable to create promo code",
+        variant: "destructive",
+      });
+    } finally {
+      setCreatingPromo(false);
+    }
+  }
+
+  async function handleTogglePromoCode(promoCode: PromoCodeRow) {
+    setPromoBusyId(promoCode.id);
+    try {
+      await apiJson<{ promoCode: PromoCodeRow }>(`/api/admin/dashboard/promo-codes/${promoCode.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isActive: !promoCode.isActive }),
+      });
+      await refreshPromoCodes();
+      toast({
+        title: promoCode.isActive ? "Promo code disabled" : "Promo code enabled",
+        description: `${promoCode.code} has been ${promoCode.isActive ? "disabled" : "enabled"}.`,
+      });
+    } catch (err: any) {
+      toast({
+        title: "Update failed",
+        description: err?.message || "Unable to update promo code",
+        variant: "destructive",
+      });
+    } finally {
+      setPromoBusyId(null);
+    }
+  }
 
   // Sort
   const sorted = useMemo(() => {
@@ -260,6 +349,112 @@ export default function AdminDashboard() {
           <SummaryCard title="Images (30d)" value={summary.imagesLast30Days} />
         </div>
       )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg">Promo Codes</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <form className="grid gap-3 md:grid-cols-5" onSubmit={handleCreatePromoCode}>
+            <Input
+              value={newPromoCode}
+              onChange={(e) => setNewPromoCode(e.target.value)}
+              placeholder="Code"
+              disabled={creatingPromo}
+            />
+            <Input
+              type="number"
+              min="1"
+              value={newPromoCredits}
+              onChange={(e) => setNewPromoCredits(e.target.value)}
+              placeholder="Credits"
+              disabled={creatingPromo}
+            />
+            <Input
+              type="number"
+              min="1"
+              value={newPromoDays}
+              onChange={(e) => setNewPromoDays(e.target.value)}
+              placeholder="Trial days"
+              disabled={creatingPromo}
+            />
+            <Input
+              type="number"
+              min="1"
+              value={newPromoMaxRedemptions}
+              onChange={(e) => setNewPromoMaxRedemptions(e.target.value)}
+              placeholder="Max redemptions"
+              disabled={creatingPromo}
+            />
+            <div className="flex gap-3">
+              <Input
+                type="date"
+                value={newPromoExpiresAt}
+                onChange={(e) => setNewPromoExpiresAt(e.target.value)}
+                disabled={creatingPromo}
+              />
+              <Button type="submit" disabled={creatingPromo}>
+                {creatingPromo ? "Creating..." : "Create"}
+              </Button>
+            </div>
+          </form>
+
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Code</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Credits</TableHead>
+                <TableHead>Days</TableHead>
+                <TableHead>Redemptions</TableHead>
+                <TableHead>Expires</TableHead>
+                <TableHead className="w-[120px]">Action</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {promoCodes.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={7} className="text-center text-muted-foreground py-6">
+                    No promo codes found
+                  </TableCell>
+                </TableRow>
+              )}
+              {promoCodes.map((promoCode) => (
+                <TableRow key={promoCode.id}>
+                  <TableCell className="font-medium">{promoCode.code}</TableCell>
+                  <TableCell>
+                    <Badge variant={promoCode.isActive ? "default" : "outline"}>
+                      {promoCode.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>{promoCode.creditsGranted}</TableCell>
+                  <TableCell>{promoCode.trialDays}</TableCell>
+                  <TableCell>
+                    {promoCode.redemptionsCount}
+                    {promoCode.maxRedemptions ? ` / ${promoCode.maxRedemptions}` : ""}
+                  </TableCell>
+                  <TableCell>{fmtDate(promoCode.expiresAt)}</TableCell>
+                  <TableCell>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={promoBusyId === promoCode.id}
+                      onClick={() => handleTogglePromoCode(promoCode)}
+                    >
+                      {promoBusyId === promoCode.id
+                        ? "Saving..."
+                        : promoCode.isActive
+                        ? "Disable"
+                        : "Enable"}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
 
       {/* Agency Table */}
       <Card>
