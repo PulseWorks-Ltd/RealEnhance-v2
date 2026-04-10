@@ -47,14 +47,20 @@ export const STRUCTURAL_SIGNALS_MODE: StructuralSignalsMode =
 
 export const STRUCTURAL_SIGNALS_ACTIVE = STRUCTURAL_SIGNALS_MODE === "active";
 
+function parseBooleanEnv(value: string | undefined): boolean {
+  const normalized = (value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true";
+}
+
 // Default-off safety switch for Phase 2 specialist advisory visibility.
 // When disabled, Unified->Gemini behavior remains unchanged.
-export const STAGE2_ENABLE_SPECIALIST_ADVISORY =
-  process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY === "1" ||
-  process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY === "true";
+export const STAGE2_ENABLE_SPECIALIST_ADVISORY = parseBooleanEnv(
+  process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY
+);
 
 // Default-off safety switch for Stage 2 categorical issueType enforcement.
-// When disabled, pre-unified issueType gate is bypassed.
-export const STAGE2_ENABLE_ISSUETYPE_HARDFAIL =
-  process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL === "1" ||
-  process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL === "true";
+// When disabled, lower-confidence or fixture-specific signals bypass the pre-unified gate.
+// High-confidence critical structural signals hard-fail unconditionally regardless.
+export const STAGE2_ENABLE_ISSUETYPE_HARDFAIL = parseBooleanEnv(
+  process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL
+);

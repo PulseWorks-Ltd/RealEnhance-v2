@@ -10374,6 +10374,18 @@ All openings must remain identical in position and size to the original image.`;
         return CRITICAL_ISSUES.has(issueType);
       };
 
+      // Unconditional hard-fail for high-confidence structural violations.
+      // Fires regardless of STAGE2_ENABLE_ISSUETYPE_HARDFAIL.
+      // Fixture-class signals are excluded (they require text-match checks).
+      const isCriticalUnconditionalHardFail = (signal: SpecialistIssueSignal): boolean => {
+        const issueType = signal.issueType as ValidationIssueType | undefined;
+        if (!issueType || issueType === ISSUE_TYPES.NONE) return false;
+        if (issueType === ISSUE_TYPES.FIXTURE_CHANGED || issueType === ISSUE_TYPES.HVAC_CHANGED) return false;
+        if (!CRITICAL_ISSUES.has(issueType)) return false;
+        const confidence = Number(signal.confidence);
+        return Number.isFinite(confidence) && confidence >= HIGH_CONFIDENCE_THRESHOLD;
+      };
+
       const OPENING_OCCLUSION_GUARD_KEYWORDS = [
         "curtain",
         "curtains",
@@ -10463,9 +10475,11 @@ All openings must remain identical in position and size to the original image.`;
         };
       };
 
-      const categoricalBlock = STAGE2_ENABLE_ISSUETYPE_HARDFAIL
-        ? specialistIssueSignals.find(shouldHardFailFromIssueType)
-        : undefined;
+      const categoricalBlock =
+        specialistIssueSignals.find(isCriticalUnconditionalHardFail) ??
+        (STAGE2_ENABLE_ISSUETYPE_HARDFAIL
+          ? specialistIssueSignals.find(shouldHardFailFromIssueType)
+          : undefined);
 
       if (categoricalBlock) {
         const openingOcclusionGuard = shouldApplyOpeningOcclusionGuard(
