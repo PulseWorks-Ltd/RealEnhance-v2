@@ -12,6 +12,7 @@ import {
 import { evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
 
 import fs from "fs";
+import path from "path";
 import sharp from "sharp";
 import { randomUUID } from "crypto";
 
@@ -99,8 +100,11 @@ const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
 const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCALE_ENABLED ?? "true").toLowerCase() !== "false";
+const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHANCE_ENABLED ?? "true").toLowerCase() !== "false";
 const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
-const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(100, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
+const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
+const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.08)));
+const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
   String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
@@ -3219,8 +3223,60 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
   return publishImage(deliveryPath);
 }
 
+async function upscaleAndEnhanceForDelivery(
+  inputBuffer: Buffer,
+  targetLongSide = DELIVERY_EXPORT_MIN_LONG_SIDE
+): Promise<Buffer> {
+  const baseImage = sharp(inputBuffer).rotate();
+  const metadata = await baseImage.metadata();
+  const width = metadata.width || 0;
+  const height = metadata.height || 0;
+  if (!width || !height) {
+    throw new Error("Invalid image metadata for delivery export");
+  }
+
+  const currentLongSide = Math.max(width, height);
+  const shouldResize = DELIVERY_EXPORT_UPSCALE_ENABLED && currentLongSide < targetLongSide;
+  const resizeOptions = width >= height
+    ? { width: targetLongSide }
+    : { height: targetLongSide };
+
+  let pipeline = baseImage.clone();
+
+  if (shouldResize) {
+    pipeline = pipeline.resize({
+      ...resizeOptions,
+      fit: "inside",
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: false,
+    });
+  }
+
+  if (DELIVERY_EXPORT_ENHANCE_ENABLED) {
+    pipeline = pipeline
+      .gamma(DELIVERY_EXPORT_GAMMA)
+      .sharpen({
+        sigma: DELIVERY_EXPORT_SHARPEN_STRENGTH,
+        m1: 1.0,
+        m2: 2.0,
+        x1: 2.0,
+        y2: 10.0,
+        y3: 20.0,
+      })
+      .modulate({ saturation: 1.03 });
+  }
+
+  return pipeline
+    .jpeg({
+      quality: DELIVERY_EXPORT_JPEG_QUALITY,
+      chromaSubsampling: "4:4:4",
+      mozjpeg: true,
+    })
+    .toBuffer();
+}
+
 async function prepareDeliveryExport(localPath: string, stageLabel: string): Promise<string> {
-  if (!DELIVERY_EXPORT_UPSCALE_ENABLED) {
+  if (path.basename(localPath).includes("-delivery")) {
     return localPath;
   }
 
@@ -3237,31 +3293,24 @@ async function prepareDeliveryExport(localPath: string, stageLabel: string): Pro
   }
 
   const currentLongSide = Math.max(width, height);
-  if (currentLongSide >= DELIVERY_EXPORT_MIN_LONG_SIDE) {
+  const needsUpscale = DELIVERY_EXPORT_UPSCALE_ENABLED && currentLongSide < DELIVERY_EXPORT_MIN_LONG_SIDE;
+  const needsEnhancement = DELIVERY_EXPORT_ENHANCE_ENABLED;
+  if (!needsUpscale && !needsEnhancement) {
     return localPath;
   }
 
-  const upscaleRatio = DELIVERY_EXPORT_MIN_LONG_SIDE / currentLongSide;
-  const targetWidth = Math.max(1, Math.round(width * upscaleRatio));
-  const targetHeight = Math.max(1, Math.round(height * upscaleRatio));
   const safeSuffix = normalizedStageLabel.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "delivery";
   const exportPath = siblingOutPath(localPath, `-${safeSuffix}-delivery`, ".jpg");
 
-  await sharp(localPath)
-    .resize(targetWidth, targetHeight, {
-      fit: "fill",
-      kernel: sharp.kernel.lanczos3,
-      withoutEnlargement: false,
-    })
-    .sharpen({ sigma: 0.35, m1: 0.6, m2: 1.2 })
-    .jpeg({
-      quality: DELIVERY_EXPORT_JPEG_QUALITY,
-      mozjpeg: true,
-      chromaSubsampling: "4:4:4",
-    })
-    .toFile(exportPath);
+  const inputBuffer = await fs.promises.readFile(localPath);
+  const outputBuffer = await upscaleAndEnhanceForDelivery(inputBuffer, DELIVERY_EXPORT_MIN_LONG_SIDE);
+  const outputMeta = await sharp(outputBuffer).metadata();
 
-  nLog(`[DELIVERY_EXPORT] stage=${stageLabel} source=${width}x${height} target=${targetWidth}x${targetHeight} path=${exportPath}`);
+  await fs.promises.writeFile(exportPath, outputBuffer);
+
+  nLog(
+    `[DELIVERY_EXPORT] stage=${stageLabel} source=${width}x${height} target=${outputMeta.width || width}x${outputMeta.height || height} path=${exportPath}`
+  );
   return exportPath;
 }
 
