@@ -19,6 +19,27 @@ type DownloadZipManifestItem = {
   dataUrl?: unknown;
 };
 
+type NormalizedDownloadItem = {
+  filename: string;
+  url?: string;
+  dataUrl?: string;
+};
+
+type PreparedDownloadFile = {
+  filename: string;
+  buffer: Buffer;
+  contentType: string;
+};
+
+const DOWNLOAD_MIME_EXTENSION_MAP: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/avif': '.avif',
+};
+
 function getRequestOrigin(req: Request): string {
   const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0]?.trim();
   const protocol = forwardedProto || req.protocol || 'https';
@@ -26,11 +47,142 @@ function getRequestOrigin(req: Request): string {
   return `${protocol}://${host}`;
 }
 
-function normalizeManifestItems(req: Request, input: unknown): Array<{ filename: string; url?: string; dataUrl?: string }> {
+function inferExtensionFromContentType(contentType?: string | null): string {
+  const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
+  return DOWNLOAD_MIME_EXTENSION_MAP[normalized] || '';
+}
+
+function inferContentTypeFromUrl(rawUrl?: string | null): string | null {
+  const normalized = String(rawUrl || '').trim();
+  if (!normalized) return null;
+
+  try {
+    const { pathname } = new URL(normalized);
+    const ext = pathname.split('.').pop()?.toLowerCase() || '';
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    if (ext === 'png') return 'image/png';
+    if (ext === 'webp') return 'image/webp';
+    if (ext === 'gif') return 'image/gif';
+    if (ext === 'avif') return 'image/avif';
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function sanitizeAttachmentFilename(input?: string | null): string {
+  const raw = String(input || 'enhanced-image').trim() || 'enhanced-image';
+  return raw.replace(/[^\w.\-]+/g, '_');
+}
+
+function ensureAttachmentFilename(filename: string, contentType?: string | null): string {
+  const safeFilename = sanitizeAttachmentFilename(filename);
+  const inferredExtension = inferExtensionFromContentType(contentType);
+
+  if (!inferredExtension) {
+    return safeFilename;
+  }
+
+  if (/\.[a-z0-9]+$/i.test(safeFilename)) {
+    return safeFilename.replace(/\.[a-z0-9]+$/i, inferredExtension);
+  }
+
+  return `${safeFilename}${inferredExtension}`;
+}
+
+function parseImageDataUrl(dataUrl?: string | null): { buffer: Buffer; contentType: string } | null {
+  const match = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(String(dataUrl || '').trim());
+  if (!match) return null;
+
+  try {
+    return {
+      contentType: match[1].toLowerCase(),
+      buffer: Buffer.from(match[2], 'base64'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function maybeConvertForDownload(buffer: Buffer, contentType?: string | null): Promise<{ buffer: Buffer; contentType: string }> {
+  const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
+  if (normalized !== 'image/webp' && normalized !== 'image/avif') {
+    return { buffer, contentType: normalized || 'application/octet-stream' };
+  }
+
+  try {
+    const importer: any = new Function('p', 'return import(p)');
+    const sharpMod: any = await importer('sharp');
+    const sharp = sharpMod?.default ?? sharpMod;
+    const converted = await sharp(buffer)
+      .jpeg({ quality: 95, mozjpeg: true, chromaSubsampling: '4:4:4' })
+      .toBuffer();
+    return { buffer: converted, contentType: 'image/jpeg' };
+  } catch (error) {
+    console.warn('[enhanced-images] Failed to convert image for download, falling back to source format', error);
+    return { buffer, contentType: normalized || 'application/octet-stream' };
+  }
+}
+
+async function prepareDownloadFile(req: Request, item: NormalizedDownloadItem): Promise<PreparedDownloadFile | null> {
+  const directDataUrl = item.dataUrl || (String(item.url || '').startsWith('data:image/') ? String(item.url) : '');
+
+  if (directDataUrl) {
+    const parsed = parseImageDataUrl(directDataUrl);
+    if (!parsed?.buffer.length) {
+      return null;
+    }
+
+    const converted = await maybeConvertForDownload(parsed.buffer, parsed.contentType);
+    return {
+      filename: ensureAttachmentFilename(item.filename, converted.contentType),
+      buffer: converted.buffer,
+      contentType: converted.contentType,
+    };
+  }
+
+  if (!item.url) {
+    return null;
+  }
+
+  try {
+    const resolvedUrl = new URL(item.url, getRequestOrigin(req)).toString();
+    const response = await fetch(resolvedUrl, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!response.ok) {
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    if (!arrayBuffer.byteLength) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || inferContentTypeFromUrl(resolvedUrl) || 'application/octet-stream';
+    if (!contentType.toLowerCase().startsWith('image/')) {
+      return null;
+    }
+
+    const converted = await maybeConvertForDownload(Buffer.from(arrayBuffer), contentType);
+    return {
+      filename: ensureAttachmentFilename(item.filename, converted.contentType),
+      buffer: converted.buffer,
+      contentType: converted.contentType,
+    };
+  } catch (error) {
+    console.warn('[enhanced-images] Failed to prepare download file', { url: item.url, error });
+    return null;
+  }
+}
+
+function normalizeManifestItems(req: Request, input: unknown): NormalizedDownloadItem[] {
   if (!Array.isArray(input)) return [];
 
   return input
-    .map((raw): { filename: string; url?: string; dataUrl?: string } | null => {
+    .map((raw): NormalizedDownloadItem | null => {
       const item = (raw || {}) as DownloadZipManifestItem;
       const filename = String(item.filename || '').trim();
       const rawUrl = typeof item.url === 'string' ? item.url.trim() : '';
@@ -55,7 +207,7 @@ function normalizeManifestItems(req: Request, input: unknown): Array<{ filename:
         return null;
       }
     })
-    .filter((item): item is { filename: string; url?: string; dataUrl?: string } => !!item)
+    .filter((item): item is NormalizedDownloadItem => !!item)
     .slice(0, ENHANCED_IMAGES_ZIP_MAX_FILES);
 }
 
@@ -149,10 +301,54 @@ export function enhancedImagesRouter() {
         return res.status(404).json({ error: 'Image not found' });
       }
 
-      return res.redirect(302, image.publicUrl);
+      const prepared = await prepareDownloadFile(req, {
+        filename: `enhanced-${image.auditRef || image.id}.jpg`,
+        url: image.publicUrl,
+      });
+
+      if (!prepared) {
+        return res.status(502).json({ error: 'Failed to download image' });
+      }
+
+      res.setHeader('Content-Type', prepared.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${prepared.filename}"`);
+      return res.send(prepared.buffer);
     } catch (error) {
       console.error('[enhanced-images] Download gate error:', error);
       return res.status(500).json({ error: 'Failed to prepare download' });
+    }
+  });
+
+  router.post('/download-file', async (req: Request, res: Response) => {
+    try {
+      const user = (req.session as any)?.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      if (user.emailVerified !== true) {
+        return res.status(403).json({
+          error: 'EMAIL_NOT_VERIFIED',
+          message: 'Please confirm your email address to download the images.',
+        });
+      }
+
+      const manifest = normalizeManifestItems(req, [(req.body as any) || {}]);
+      if (!manifest.length) {
+        return res.status(400).json({ error: 'No image provided for download' });
+      }
+
+      const prepared = await prepareDownloadFile(req, manifest[0]);
+      if (!prepared) {
+        return res.status(502).json({ error: 'Failed to prepare image download' });
+      }
+
+      res.setHeader('Content-Type', prepared.contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${prepared.filename}"`);
+      return res.send(prepared.buffer);
+    } catch (error) {
+      console.error('[enhanced-images] Single download error:', error);
+      return res.status(500).json({ error: 'Failed to prepare image download' });
     }
   });
 
@@ -179,47 +375,17 @@ export function enhancedImagesRouter() {
       let failedCount = 0;
 
       for (const item of manifest) {
-        if (item.dataUrl) {
-          zipInputs.push({ filename: item.filename, dataUrl: item.dataUrl });
-          continue;
-        }
-
-        if (!item.url) {
+        const prepared = await prepareDownloadFile(req, item);
+        if (!prepared) {
           failedCount += 1;
           continue;
         }
 
-        try {
-          const response = await fetch(item.url, {
-            redirect: 'follow',
-            signal: AbortSignal.timeout(30_000),
-          });
-          if (!response.ok) {
-            failedCount += 1;
-            continue;
-          }
-
-          const arrayBuffer = await response.arrayBuffer();
-          if (!arrayBuffer.byteLength) {
-            failedCount += 1;
-            continue;
-          }
-
-          const contentType = response.headers.get('content-type');
-          if (contentType && !contentType.toLowerCase().startsWith('image/')) {
-            failedCount += 1;
-            continue;
-          }
-
-          zipInputs.push({
-            filename: item.filename,
-            buffer: Buffer.from(arrayBuffer),
-            contentType,
-          });
-        } catch (error) {
-          console.warn('[enhanced-images] ZIP fetch failed', { url: item.url, error });
-          failedCount += 1;
-        }
+        zipInputs.push({
+          filename: prepared.filename,
+          buffer: prepared.buffer,
+          contentType: prepared.contentType,
+        });
       }
 
       const zipResult = await makeZip({

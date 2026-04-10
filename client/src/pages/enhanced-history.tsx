@@ -92,7 +92,6 @@ export default function EnhancedHistoryPage() {
     const link = document.createElement('a');
     link.href = `/api/enhanced-images/${encodeURIComponent(image.id)}/download`;
     link.download = `enhanced-${image.auditRef}.jpg`;
-    link.target = '_blank';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

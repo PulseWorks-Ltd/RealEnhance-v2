@@ -304,31 +304,12 @@ export async function publishImage(filePath: string): Promise<PublishResult> {
 async function buildDataUrl(filePath: string, sourceBuffer?: Buffer): Promise<PublishResult> {
   logIfNotFocusMode('[PUBLISH] Generating data URL fallback...\n');
   const buf = sourceBuffer || fs.readFileSync(filePath);
-  let mime = mimeFromExt(filePath);
+  const mime = mimeFromExt(filePath);
   logIfNotFocusMode(`[PUBLISH] Original size: ${buf.length} bytes\n`);
-  
-  // Only resize if file is large to avoid overhead on small files
-  let finalBuf = buf;
-  if (buf.length > 100 * 1024) { // > 100KB
-    try {
-      // Avoid TS module resolution by using dynamic import
-      const importer: any = new Function('p', 'return import(p)');
-      const sharp = await importer('sharp');
-      finalBuf = await sharp.default(buf)
-        .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
-        .webp({ quality: 85 })
-        .toBuffer();
-      mime = 'image/webp';
-      logIfNotFocusMode(`[PUBLISH] Resized: ${buf.length} -> ${finalBuf.length} bytes (${Math.round(finalBuf.length/1024)}KB)\n`);
-    } catch (e) {
-      logIfNotFocusMode(`[PUBLISH] Resize failed: ${e}\n`);
-      finalBuf = buf;
-    }
-  } else {
-    logIfNotFocusMode(`[PUBLISH] Small file - no resize needed (${buf.length} bytes)\n`);
-  }
-  
-  const b64 = finalBuf.toString("base64");
+
+  logIfNotFocusMode('[PUBLISH] Preserving original dimensions and encoding for fallback download quality\n');
+
+  const b64 = buf.toString("base64");
   const dataUrl = `data:${mime};base64,${b64}`;
   logIfNotFocusMode(`[PUBLISH] Data URL created: ${Math.round(dataUrl.length/1024)}KB\n`);
   logIfNotFocusMode('========================================\n\n');

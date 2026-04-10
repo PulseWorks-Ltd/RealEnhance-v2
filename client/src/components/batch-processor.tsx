@@ -5030,6 +5030,15 @@ export default function BatchProcessor({
     const baseName = originalName.replace(/\.[^/.]+$/, "");
     const fallbackFilename = `enhanced_${baseName}`;
 
+    const blobToDataUrl = async (blob: Blob): Promise<string> => {
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error("Failed to convert image for download"));
+        reader.onloadend = () => resolve(String(reader.result || ""));
+        reader.readAsDataURL(blob);
+      });
+    };
+
     const triggerDownload = (href: string, filename: string, targetBlank = false) => {
       const link = document.createElement("a");
       link.href = href;
@@ -5044,49 +5053,41 @@ export default function BatchProcessor({
     };
 
     try {
-      if (imageUrl.startsWith("data:image/")) {
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to prepare image download: ${response.status}`);
-        }
-        const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
-        const filename = ensureDownloadFilename(fallbackFilename, blob.type, imageUrl);
-        triggerDownload(downloadUrl, filename);
-        setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
-        return;
-      }
+      const downloadRequest: { filename: string; url?: string; dataUrl?: string } = {
+        filename: fallbackFilename,
+      };
 
-      if (imageUrl.startsWith("blob:") || imageUrl.startsWith("/")) {
-        const resolvedUrl = imageUrl.startsWith("/")
-          ? new URL(imageUrl, window.location.origin).toString()
-          : imageUrl;
-        const response = await fetch(resolvedUrl, {
-          credentials: imageUrl.startsWith("/") ? "include" : "same-origin",
+      if (imageUrl.startsWith("data:image/")) {
+        downloadRequest.dataUrl = imageUrl;
+      } else if (imageUrl.startsWith("blob:")) {
+        const response = await fetch(imageUrl, {
           signal: AbortSignal.timeout(30_000),
         });
         if (!response.ok) {
           throw new Error(`Failed to prepare image download: ${response.status}`);
         }
-        const blob = await response.blob();
-        const downloadUrl = URL.createObjectURL(blob);
-        const filename = ensureDownloadFilename(
-          fallbackFilename,
-          blob.type || response.headers.get("content-type"),
-          null
-        );
-        triggerDownload(downloadUrl, filename);
-        setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
-        return;
+        downloadRequest.dataUrl = await blobToDataUrl(await response.blob());
+      } else if (imageUrl.startsWith("/")) {
+        downloadRequest.url = new URL(imageUrl, window.location.origin).toString();
+      } else if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
+        downloadRequest.url = imageUrl;
+      } else {
+        throw new Error("Unsupported image URL");
       }
 
-      if (imageUrl.startsWith("http://") || imageUrl.startsWith("https://")) {
-        const filename = ensureDownloadFilename(fallbackFilename, null, null);
-        triggerDownload(imageUrl, filename, true);
-        return;
-      }
-
-      throw new Error("Unsupported image URL");
+      const response = await apiFetch('/api/enhanced-images/download-file', {
+        method: 'POST',
+        body: JSON.stringify(downloadRequest),
+      }, 120_000);
+      const blob = await response.blob();
+      const downloadUrl = URL.createObjectURL(blob);
+      const filename = ensureDownloadFilename(
+        fallbackFilename,
+        blob.type || response.headers.get("content-type"),
+        downloadRequest.dataUrl || null
+      );
+      triggerDownload(downloadUrl, filename);
+      setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
     } catch (error) {
       console.error("Single image download failed:", error);
       toast({
