@@ -5853,12 +5853,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               validationMode: stage2OnlySelectedValidationMode,
               specialistAdvisorySignals,
             });
+            nLog("[UNIFIED_RESULT]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              path: "stage2_only",
+              overall: unifiedRetryValidation.passed === true ? "PASSED" : "FAILED",
+              hardFail: unifiedRetryValidation.hardFail === true,
+              action: "pre-decision",
+            });
             nLog(`[worker] Unified validation (stage2-only): ${unifiedRetryValidation.passed ? "PASSED" : "FAILED"} (score: ${unifiedRetryValidation.score})`);
-            if (unifiedRetryValidation.hardFail === true) {
-              const reason = String(unifiedRetryValidation.reasons?.[0] || "unified_hard_fail").trim();
+            if (unifiedRetryValidation.passed !== true || unifiedRetryValidation.hardFail === true) {
+              const reason = String(unifiedRetryValidation.reasons?.[0] || "unified_failure").trim();
               stage2ValidationPassed = false;
               if (!stage2OnlyBlockedReason) {
-                stage2OnlyBlockedReason = `stage2_unified_hard_fail:${reason}`;
+                stage2OnlyBlockedReason = `stage2_unified_failed:${reason}`;
               }
             }
             const stage2OnlyGeminiRaw = (unifiedRetryValidation.raw?.geminiSemantic as any)?.details || {};
@@ -9686,6 +9695,47 @@ All openings must remain identical in position and size to the original image.`;
         advisorySignals?: string[];
       };
 
+      type StructuralClass =
+        | "REMOVAL"
+        | "COLLAPSE"
+        | "OCCLUSION"
+        | "UNKNOWN";
+
+      function classifyStructuralSignal(
+        signal: SpecialistIssueSignal,
+        allSignals: SpecialistIssueSignal[]
+      ): StructuralClass {
+        const issueType = signal.issueType;
+
+        if (
+          issueType === ISSUE_TYPES.OPENING_INFILLED ||
+          issueType === ISSUE_TYPES.OPENING_REMOVED ||
+          issueType === ISSUE_TYPES.OPENING_SEALED
+        ) {
+          return "REMOVAL";
+        }
+
+        if (
+          issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
+          issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
+        ) {
+          if (signal.hardFail === true || Number(signal.confidence) >= HIGH_CONFIDENCE_THRESHOLD) {
+            return "COLLAPSE";
+          }
+          return "UNKNOWN";
+        }
+
+        if (
+          issueType === ISSUE_TYPES.OPENING_RELOCATED ||
+          issueType === ISSUE_TYPES.OPENING_RESIZED_MAJOR ||
+          issueType === ISSUE_TYPES.OPENING_RESIZED_MINOR
+        ) {
+          return "OCCLUSION";
+        }
+
+        return "UNKNOWN";
+      }
+
       const specialistIssueSignals: SpecialistIssueSignal[] = [];
 
       const addSpecialistIssueSignal = (
@@ -10504,20 +10554,48 @@ All openings must remain identical in position and size to the original image.`;
         return true;
       });
 
+      const structuralClasses = filteredSignals.map((signal) =>
+        classifyStructuralSignal(signal, filteredSignals)
+      );
+
+      const hasRemoval = structuralClasses.includes("REMOVAL");
+      const hasCollapse = structuralClasses.includes("COLLAPSE");
+
+      let structuralOverrideBlock: SpecialistIssueSignal | undefined;
+
+      if (hasRemoval) {
+        structuralOverrideBlock = filteredSignals.find(
+          (signal) =>
+            signal.issueType === ISSUE_TYPES.OPENING_INFILLED ||
+            signal.issueType === ISSUE_TYPES.OPENING_REMOVED ||
+            signal.issueType === ISSUE_TYPES.OPENING_SEALED
+        );
+      }
+
+      if (!structuralOverrideBlock && hasCollapse) {
+        structuralOverrideBlock = filteredSignals.find(
+          (signal) =>
+            signal.issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
+            signal.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
+        );
+      }
+
       const categoricalBlock =
+        structuralOverrideBlock ??
         filteredSignals.find(isCriticalUnconditionalHardFail) ??
         (STAGE2_ENABLE_ISSUETYPE_HARDFAIL
           ? filteredSignals.find(shouldHardFailFromIssueType)
           : undefined);
 
       if (categoricalBlock) {
+        const categoricalBlockClass = classifyStructuralSignal(categoricalBlock, filteredSignals);
         const openingOcclusionGuard = shouldApplyOpeningOcclusionGuard(
           categoricalBlock,
           specialistIssueSignals,
           specialistAdvisorySignals
         );
 
-        if (openingOcclusionGuard.apply) {
+        if (categoricalBlockClass === "OCCLUSION" && openingOcclusionGuard.apply) {
           const originalIssueType = categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
           categoricalBlock.issueType = ISSUE_TYPES.OPENING_OCCLUSION;
           specialistAdvisorySignals.push("openings:opening_occlusion_guard_applied");
@@ -10637,6 +10715,16 @@ All openings must remain identical in position and size to the original image.`;
         structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
       });
 
+      nLog("[UNIFIED_RESULT]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        attempt,
+        path: "main_stage2",
+        overall: unifiedValidation.passed === true ? "PASSED" : "FAILED",
+        hardFail: unifiedValidation.hardFail === true,
+        action: "pre-decision",
+      });
+
       const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;
 
       if (!unifiedPass) {
@@ -10655,57 +10743,45 @@ All openings must remain identical in position and size to the original image.`;
           reason: unifiedReason,
         });
 
-        if (unifiedCritical) {
-          const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
-          setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
-          if (attempt < MAX_STAGE2_RETRIES) {
-            logRefreshValidationTrace({
-              specialistHardFail: false,
-              geminiDecision: "FAIL",
-              finalDecision: "RETRY",
-              reason: unifiedDecisionReason,
-            });
-            logValidateFinal(attempt, "retry", attempt);
-            logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
-            logEvent("STAGE_RETRY", {
-              jobId: payload.jobId,
-              stage: "2",
-              retry: attempt + 1,
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-              reason: normalizeValidatorReason(unifiedDecisionReason),
-            });
-            continue;
-          }
-
-          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1A;
-          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
+        const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
+        setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
+        if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
             specialistHardFail: false,
             geminiDecision: "FAIL",
             finalDecision: "RETRY",
             reason: unifiedDecisionReason,
           });
-          logValidateFinal(attempt, "reject", attempt - 1);
-          break;
-        } else {
-          nLog("[UNIFIED_NON_CRITICAL_ADVISORY]", {
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
+          logEvent("STAGE_RETRY", {
             jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            issueType: unifiedIssueType,
-            issueTier: unifiedIssueTier,
-            reason: unifiedReason,
-            action: "continue",
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: normalizeValidatorReason(unifiedDecisionReason),
           });
+          continue;
         }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        logRefreshValidationTrace({
+          specialistHardFail: false,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: unifiedDecisionReason,
+        });
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
       }
 
       let compositeDecision = "pass";
