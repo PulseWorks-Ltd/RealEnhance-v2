@@ -3742,6 +3742,20 @@ export default function BatchProcessor({
 
                   copy[idx] = {
                     ...existing,
+                    status: "completed",
+                    uiStatus: "ok",
+                    uiOverrideFailed: false,
+                    error: null,
+                    errorCode: undefined,
+                    warnings: [],
+                    currentStage: null,
+                    resultStage: null,
+                    finalStage: null,
+                    completionSource: "region-edit",
+                    imageUrl: promotableEditUrl,
+                    resultUrl: promotableEditUrl,
+                    finalOutputUrl: promotableEditUrl,
+                    previewUrl: promotableEditUrl,
                     latestEditUrl: promotableEditUrl,
                     editLatestUrl: promotableEditUrl,
                     editLatestJobId: polledId,
@@ -3757,6 +3771,19 @@ export default function BatchProcessor({
                     } : {}),
                     result: {
                       ...(existing.result || {}),
+                      status: "completed",
+                      uiStatus: "ok",
+                      error: null,
+                      errorCode: undefined,
+                      warnings: [],
+                      currentStage: null,
+                      resultStage: null,
+                      finalStage: null,
+                      completionSource: "region-edit",
+                      imageUrl: promotableEditUrl,
+                      resultUrl: promotableEditUrl,
+                      finalOutputUrl: promotableEditUrl,
+                      previewUrl: promotableEditUrl,
                       latestEditUrl: promotableEditUrl,
                       editLatestUrl: promotableEditUrl,
                       editLatestJobId: polledId,
@@ -7888,6 +7915,11 @@ export default function BatchProcessor({
                         const pendingEditJob = pendingEditJobByIndexRef.current[i] || null;
                         const hasActiveEdit = editingImages.has(i) || !!pendingEditJob;
                         const resolvedEditedArtifactUrl = getResolvedEditArtifactUrl(result);
+                        const hasCompletedEditArtifact = !hasActiveEdit && !!resolvedEditedArtifactUrl && (
+                          editCompletedImages.has(i) ||
+                          result?.completionSource === "region-edit" ||
+                          result?.result?.completionSource === "region-edit"
+                        );
                         const isEditComplete = !hasActiveEdit && (editCompletedImages.has(i)
                           || !!resolvedEditedArtifactUrl);
                         const isEditing = hasActiveEdit;
@@ -7939,14 +7971,14 @@ export default function BatchProcessor({
                           stage2Url,
                         });
                         const isSuccessStatus = ["completed", "complete", "done"].includes(status);
-                        const isError = status === "failed";
+                        const isError = status === "failed" && !hasCompletedEditArtifact;
                         const targetStage: StageKey = requestedFinalStage;
                         const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
                         const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
-                        const isUiComplete = (!isError && targetUrlPresent) || isDone;
+                        const isUiComplete = (!isError && targetUrlPresent) || isDone || hasCompletedEditArtifact;
                         const isIntermediateProcessing = false;
                         const intermediateStageMessage: string | null = null;
                         
