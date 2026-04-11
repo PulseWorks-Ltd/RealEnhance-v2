@@ -9406,6 +9406,7 @@ All openings must remain identical in position and size to the original image.`;
 
       type SpecialistDecisionResult = {
         pass: boolean;
+        hardFail: boolean;
         confidence: number;
         issueType: ValidationIssueType;
         issueTier: ValidationIssueTier;
@@ -9449,6 +9450,7 @@ All openings must remain identical in position and size to the original image.`;
 
         return {
           pass,
+          hardFail: params.hardFail === true,
           confidence,
           issueType,
           issueTier,
@@ -9668,15 +9670,16 @@ All openings must remain identical in position and size to the original image.`;
         envelope: SpecialistDecisionResult;
         floor: SpecialistDecisionResult;
       } = {
-        opening: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
-        fixture: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
-        envelope: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
-        floor: { pass: true, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        opening: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        fixture: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        envelope: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        floor: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
       };
 
       type SpecialistIssueSignal = {
         validator: Stage2SignalValidator;
         issueType?: string;
+        hardFail?: boolean;
         reason?: string;
         confidence?: number;
         subtype?: string;
@@ -9698,6 +9701,7 @@ All openings must remain identical in position and size to the original image.`;
         specialistIssueSignals.push({
           validator,
           issueType: result.issueType,
+          hardFail: result.hardFail,
           reason: raw.reason,
           confidence: Number.isFinite(Number(raw.confidence)) ? Number(raw.confidence) : undefined,
           subtype: raw.subtype,
@@ -10475,10 +10479,35 @@ All openings must remain identical in position and size to the original image.`;
         };
       };
 
+      const isEnvelopeIssue = (issueType?: string): boolean =>
+        issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS ||
+        issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
+
+      const isCorroboratingOpeningIssue = (issueType?: string): boolean =>
+        issueType === ISSUE_TYPES.OPENING_REMOVED ||
+        issueType === ISSUE_TYPES.OPENING_INFILLED ||
+        issueType === ISSUE_TYPES.OPENING_SEALED ||
+        issueType === ISSUE_TYPES.OPENING_RELOCATED ||
+        issueType === ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+
+      const hasOpeningSignal = specialistIssueSignals.some((signal) =>
+        isCorroboratingOpeningIssue(signal.issueType)
+      );
+
+      const filteredSignals = specialistIssueSignals.filter((signal) => {
+        const issueType = signal.issueType;
+
+        if (isEnvelopeIssue(issueType)) {
+          return signal.hardFail === true || hasOpeningSignal;
+        }
+
+        return true;
+      });
+
       const categoricalBlock =
-        specialistIssueSignals.find(isCriticalUnconditionalHardFail) ??
+        filteredSignals.find(isCriticalUnconditionalHardFail) ??
         (STAGE2_ENABLE_ISSUETYPE_HARDFAIL
-          ? specialistIssueSignals.find(shouldHardFailFromIssueType)
+          ? filteredSignals.find(shouldHardFailFromIssueType)
           : undefined);
 
       if (categoricalBlock) {
