@@ -89,7 +89,7 @@ export function getGeminiValidatorMode(): Mode {
 }
 
 export function isGeminiBlockingEnabled(): boolean {
-  return getGeminiValidatorMode() === "block";
+  return true; // SINGLE-AUTHORITY: Gemini blocking is always enabled
 }
 
 export function explainResolvedModes(): Resolution {

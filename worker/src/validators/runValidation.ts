@@ -333,6 +333,7 @@ export interface UnifiedValidationParams {
   stage: "1A" | "1B" | "2";
   sceneType?: "interior" | "exterior";
   roomType?: string;
+  /** @deprecated SINGLE-AUTHORITY: mode is ignored; unified always enforces. Kept for API compat. */
   mode?: "log" | "enforce";
   jobId?: string;
   imageId?: string;
@@ -363,15 +364,31 @@ export interface UnifiedValidationParams {
 
 /**
  * Structured advisory observation from a specialist validator.
- * Carries spatial context (bbox, location) and a targeted investigation task
- * for the Unified Validator to verify visually.
+ * Carries spatial context (bbox, location) and a neutral validation question
+ * for the Unified Validator to investigate visually.
+ *
+ * Specialists must NOT assert structural changes as facts.
+ * Instead they produce neutral, location-aware questions that guide Gemini's
+ * attention without biasing the outcome.
  */
 export type AdvisoryObservation = {
+  /** Specialist category that produced this observation. */
+  category: "openings" | "fixtures" | "floor" | "envelope";
+  /** @deprecated Use `category` instead. Kept for backward compat. */
   validator: "openings" | "fixtures" | "floor" | "envelope";
+  /** Internal issue type token (NOT exposed to Gemini). */
   issueType: string;
+  /** Human-readable location description (e.g. "right wall near window"). */
+  location?: string;
+  /** Coarse spatial bucket for layout. */
   approximateLocation?: "left" | "center-left" | "center" | "center-right" | "right" | "rear";
   bbox?: [number, number, number, number];
   confidence: number;
+  /** Neutral, non-leading validation question for Gemini. */
+  question: string;
+  /** Brief context explaining why this region was flagged (neutral tone). */
+  context: string;
+  /** @deprecated Use `question` instead. Kept for backward compat. */
   investigationTask: string;
 };
 
@@ -379,14 +396,14 @@ function buildSpatialInvestigationBlock(observations: AdvisoryObservation[]): st
   if (!Array.isArray(observations) || observations.length === 0) return [];
 
   return observations
-    .filter((obs) => obs && obs.investigationTask)
+    .filter((obs) => obs && (obs.question || obs.investigationTask))
     .slice(0, 6)
     .map((obs) => {
-      const loc = obs.approximateLocation
-        ? `[${obs.approximateLocation.toUpperCase()}]`
-        : "[UNKNOWN]";
-      const conf = Number.isFinite(obs.confidence) ? obs.confidence.toFixed(2) : "n/a";
-      return `${loc} ${obs.validator} specialist detected ${obs.issueType} (conf=${conf}). Task: ${obs.investigationTask}`;
+      const loc = obs.location
+        || (obs.approximateLocation ? obs.approximateLocation.replace(/-/g, " ") : "unspecified area");
+      const question = obs.question || obs.investigationTask;
+      const ctx = obs.context ? ` Context: ${obs.context}` : "";
+      return `[${obs.category || obs.validator}] Location: ${loc}. Question: ${question}${ctx}`;
     });
 }
 
@@ -408,26 +425,26 @@ function buildSpecialistObservationHints(signals?: string[]): string[] {
       .trim();
 
     if (domain === "fixtures" || /fixture|ceiling|light|pendant|downlight/.test(normalized)) {
-      hints.add("There may be a change in fixed ceiling fixtures worth a closer look.");
+      hints.add("Are there any fixed ceiling fixtures (lights, pendants, HVAC units) in this image that appear different in count, type, or position compared to the original?");
       continue;
     }
 
     if (domain === "openings" || /opening|window|door|aperture/.test(normalized)) {
-      hints.add("There may be a change around architectural openings worth a closer look.");
+      hints.add("Are there any architectural openings (windows, doors) in this image that appear to differ in presence, size, or position compared to the original?");
       continue;
     }
 
     if (domain === "floor" || /floor|surface|plane/.test(normalized)) {
-      hints.add("There may be a subtle change around floor surfaces worth a closer look.");
+      hints.add("Does the flooring material or surface in any area of this image appear to differ from the original?");
       continue;
     }
 
     if (domain === "envelope" || /envelope|wall|boundary|layout/.test(normalized)) {
-      hints.add("There may be a subtle change around room envelope boundaries worth a closer look.");
+      hints.add("Does the wall structure or room geometry in any area appear to differ from the original, such as corners, recesses, or wall planes?");
       continue;
     }
 
-    hints.add("There may be a subtle structural consistency change worth a closer look.");
+    hints.add("Is there any area where the permanent structural elements appear to differ between the original and enhanced images?");
   }
 
   return Array.from(hints).slice(0, 6);
@@ -492,7 +509,7 @@ export async function runUnifiedValidation(
     stage,
     sceneType = "interior",
     roomType,
-    mode = "log",
+    mode = "enforce",  // SINGLE-AUTHORITY: Unified always enforces
     jobId,
     imageId,
     stagingStyle,
@@ -658,7 +675,7 @@ export async function runUnifiedValidation(
         stage: "stage2",
         baselinePath: validationBaseline,
         candidatePath: enhancedPath,
-        mode: mode === "enforce" ? "block" : "log",
+        mode: "block",  // SINGLE-AUTHORITY: always block mode
         jobId,
         sceneType,
         roomType,
@@ -676,7 +693,7 @@ export async function runUnifiedValidation(
 
       results.stageAware = {
         name: "stageAware",
-        // In log mode we still surface risk as a failure (non-blocking) so Gemini-on-local-fail can trigger
+        // SINGLE-AUTHORITY: risk is always surfaced as a failure so Gemini-on-local-fail can trigger
         passed: !stageAwareResult.risk,
         score: stageAwareResult.score,
         message: stageAwareResult.risk
@@ -701,7 +718,7 @@ export async function runUnifiedValidation(
         });
       }
 
-      const stageAwareHardFail = mode === "enforce" && stageAwareResult.risk;
+      const stageAwareHardFail = stageAwareResult.risk;  // SINGLE-AUTHORITY: always enforce
 
       if (stageAwareResult.risk) {
         stageAwareResult.triggers.forEach(t => warnings.push(`${t.id}: ${t.message}`));
@@ -1734,40 +1751,47 @@ export async function runUnifiedValidation(
   let blockSource: "local" | "gemini" | null = geminiHardFail ? "gemini" : null;
 
   // ── Step 3: Structural claim enforcement ──────────────────────────
-  // If STRUCTURAL_SIGNALS_ACTIVE and Gemini CONFIRMED any prohibited
-  // structural claim → hard fail.  No consensus, no averaging, no override.
+  // SINGLE-AUTHORITY: If Gemini CONFIRMED or was UNCERTAIN about any
+  // prohibited structural claim → hard fail.  Conservative: UNCERTAIN = FAIL.
   let claimEnforcedIssueType: ValidationIssueType | undefined;
   if (
     STRUCTURAL_SIGNALS_ACTIVE &&
     stage === "2" &&
     Array.isArray(geminiVerdict?.adjudicatedClaims)
   ) {
+    // Map claim to a canonical issue type
+    const claimToIssueType = (claim: StructuralClaim): ValidationIssueType => {
+      switch (claim) {
+        case "opening_removed": return ISSUE_TYPES.OPENING_REMOVED;
+        case "opening_added": return ISSUE_TYPES.OPENING_ANOMALY;
+        case "opening_resized_major": return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+        case "wall_plane_modified": return ISSUE_TYPES.WALL_CHANGED;
+        case "corner_flattened": return ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
+        case "recess_removed": return ISSUE_TYPES.WALL_CHANGED;
+        default: return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
+      }
+    };
+
     const confirmedProhibited = geminiVerdict!.adjudicatedClaims!.filter(
       (c) => c.result === "CONFIRMED" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
     );
 
-    if (confirmedProhibited.length > 0) {
+    // SINGLE-AUTHORITY: UNCERTAIN claims on prohibited structures are treated as failures (conservative)
+    const uncertainProhibited = geminiVerdict!.adjudicatedClaims!.filter(
+      (c) => c.result === "UNCERTAIN" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
+    );
+
+    const actionableClaims = [...confirmedProhibited, ...uncertainProhibited];
+
+    if (actionableClaims.length > 0) {
       blockSource = "gemini";
 
-      // Map the first confirmed claim to a canonical issue type
-      const claimToIssueType = (claim: StructuralClaim): ValidationIssueType => {
-        switch (claim) {
-          case "opening_removed": return ISSUE_TYPES.OPENING_REMOVED;
-          case "opening_added": return ISSUE_TYPES.OPENING_ANOMALY;
-          case "opening_resized_major": return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
-          case "wall_plane_modified": return ISSUE_TYPES.WALL_CHANGED;
-          case "corner_flattened": return ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
-          case "recess_removed": return ISSUE_TYPES.WALL_CHANGED;
-          default: return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
-        }
-      };
-
-      // Use the most severe confirmed claim (first in PROHIBITED order)
-      const primaryClaim = confirmedProhibited[0];
+      // Use the most severe claim (CONFIRMED first, then UNCERTAIN)
+      const primaryClaim = confirmedProhibited.length > 0 ? confirmedProhibited[0] : uncertainProhibited[0];
       claimEnforcedIssueType = claimToIssueType(primaryClaim.claim);
 
-      const confirmedClaimNames = confirmedProhibited.map((c) => c.claim).join(", ");
-      reasons.push(`Gemini structural_claim_confirmed: ${confirmedClaimNames}`);
+      const confirmedClaimNames = actionableClaims.map((c) => `${c.claim}(${c.result})`).join(", ");
+      reasons.push(`Gemini structural_claim_enforcement: ${confirmedClaimNames}`);
 
       nLog("[STRUCTURAL_CLAIM_ENFORCEMENT]", {
         jobId: jobId || "unknown",
@@ -1775,6 +1799,13 @@ export async function runUnifiedValidation(
         action: "HARD_FAIL",
         confirmedClaims: confirmedProhibited.map((c) => ({
           claim: c.claim,
+          result: c.result,
+          detail: c.detail,
+          region: c.region,
+        })),
+        uncertainClaims: uncertainProhibited.map((c) => ({
+          claim: c.claim,
+          result: c.result,
           detail: c.detail,
           region: c.region,
         })),
@@ -1783,18 +1814,32 @@ export async function runUnifiedValidation(
     }
   }
 
-  // Deterministic mode: no semantic override of local failures.
+  // SINGLE-AUTHORITY: If any local validator failed and Gemini did not run or did not
+  // set blockSource, local failures still block. No log-only escape hatch.
+  if (!blockSource && !allPassed) {
+    blockSource = "local";
+    if (reasons.length === 0) {
+      const failedNames = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff").map(r => r.name);
+      reasons.push(`local_validators_failed: ${failedNames.join(", ")}`);
+    }
+  }
 
-  // Handle blocking logic
+  // SINGLE-AUTHORITY enforcement — always block on failure
+  const hardFail = blockSource !== null;
+
+  console.log("[UNIFIED_ENFORCEMENT]", {
+    jobId: jobId || "unknown",
+    passed: !hardFail,
+    hardFail,
+    blockSource,
+    action: hardFail ? "BLOCK" : "ALLOW",
+  });
+
   if (blockSource) {
-    console.error(`[unified-validator] ❌ WOULD BLOCK IMAGE (source=${blockSource})`);
-  } else if (!allPassed) {
-    nLog(`[unified-validator] ⚠️ Validation failed but not blocking (mode=log)`);
+    console.error(`[unified-validator] ❌ BLOCKING IMAGE (source=${blockSource})`);
   }
 
   nLog(`[unified-validator] ===============================`);
-
-  const hardFail = blockSource !== null;
   const uniqueWarnings = Array.from(new Set(warnings));
   const stage2ReasonScope = stage === "2"
     ? reasons.filter((reason) =>

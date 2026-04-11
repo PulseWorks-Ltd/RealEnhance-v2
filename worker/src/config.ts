@@ -52,11 +52,8 @@ function parseBooleanEnv(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true";
 }
 
-// Default-off safety switch for Phase 2 specialist advisory visibility.
-// When disabled, Unified->Gemini behavior remains unchanged.
-export const STAGE2_ENABLE_SPECIALIST_ADVISORY = parseBooleanEnv(
-  process.env.STAGE2_ENABLE_SPECIALIST_ADVISORY
-);
+// SINGLE-AUTHORITY: Specialist advisory signals always reach Unified for adjudication.
+export const STAGE2_ENABLE_SPECIALIST_ADVISORY = true;
 
 // Default-off safety switch for Stage 2 categorical issueType enforcement.
 // When disabled, lower-confidence or fixture-specific signals bypass the pre-unified gate.

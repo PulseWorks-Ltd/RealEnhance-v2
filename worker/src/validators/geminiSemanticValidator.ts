@@ -300,51 +300,106 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 - Ignore color variation.
 - Only evaluate permanent architectural structure.`;
 
-  const hasInvestigationTasks = Array.isArray(specialistAdvisoryObservations)
-    && specialistAdvisoryObservations.length > 0
-    && specialistAdvisoryObservations.some((item) => String(item || "").startsWith("["));
-  const advisoryObservationBlock = Array.isArray(specialistAdvisoryObservations) && specialistAdvisoryObservations.length > 0
-    ? hasInvestigationTasks
-      ? `
+  // ── Determine if question-driven adjudication applies ──
+  const hasAdvisoryQuestions = Array.isArray(specialistAdvisoryObservations) && specialistAdvisoryObservations.length > 0;
+  const hasClaimBlock = !!structuralClaimBlock;
+  const hasAnyQuestions = hasAdvisoryQuestions || hasClaimBlock;
 
-MANDATORY STRUCTURAL VERIFICATION TASKS:
-You MUST evaluate each item below before returning your decision.
-For EACH detected structural concern:
-- Determine whether the issue is REAL or NOT PRESENT.
-- You MUST explicitly address each item.
-- If you disagree with a finding, you MUST explain why with specific visual reasoning.
-- Failure to address these items is not acceptable.
-
-${specialistAdvisoryObservations.map((item, i) => `${i + 1}. ${String(item || "").trim()}`).filter(Boolean).join("\n")}
-
-IMPORTANT — OCCLUSION RULE WHEN STRUCTURAL CLAIMS EXIST:
-If a structural claim is present (e.g. opening removal, wall flattening, corner loss):
-- DO NOT assume occlusion unless clear visual evidence exists that the structure is still present.
-- If the opening frame, recess, or boundary is not visible, you must treat this as a potential violation.
-- "Plausible occlusion" is NOT sufficient when specialist analysis has flagged a specific region.`
-      : `
-
-MANDATORY STRUCTURAL OBSERVATIONS:
-You MUST evaluate each observation below before returning your decision.
-If you disagree with any observation, you MUST provide specific visual reasoning.
-
-${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
-    : "";
-
-  const claimBlock = structuralClaimBlock || "";
-
-  if (!STRUCTURAL_SIGNALS_ACTIVE) {
-    return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${claimBlock}`;
-  }
-
-  const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
-  const stage1AOpeningIntegrityBlock =
-    stage === "1A" && hasStage1AOpeningSuspicion(evidence)
+  // ── No questions: original flow (base prompt + focus rules + evidence) ──
+  if (!hasAnyQuestions) {
+    if (!STRUCTURAL_SIGNALS_ACTIVE) {
+      return `${basePrompt}${structuralFocusRules}`;
+    }
+    const neutralEvidenceBlock = buildNeutralEvidenceBlock(evidence);
+    const stage1ABlock = stage === "1A" && hasStage1AOpeningSuspicion(evidence)
       ? `\n\n${STAGE1A_OPENING_EXISTENCE_INTEGRITY_CHECK.trim()}`
       : "";
-  const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} — structural analysis has flagged potential issues. Investigate carefully before passing.` : "";
+    const riskContext = riskLevel
+      ? `\n\nRISK CONTEXT: ${riskLevel} — structural analysis has flagged potential issues.`
+      : "";
+    return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${stage1ABlock}${riskContext}`;
+  }
 
-  return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${claimBlock}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
+  // ── Strict adjudicator protocol (question-driven) ──
+
+  // Number advisory observations as addressable questions
+  const advisoryQuestionLines: string[] = [];
+  let qNum = 1;
+  if (hasAdvisoryQuestions) {
+    for (const obs of specialistAdvisoryObservations!) {
+      const trimmed = String(obs || "").trim();
+      if (trimmed) {
+        advisoryQuestionLines.push(`  Q${qNum}. ${trimmed}`);
+        qNum++;
+      }
+    }
+  }
+
+  const advisorySection = advisoryQuestionLines.length > 0
+    ? `\n\nAdvisory observation questions:\n${advisoryQuestionLines.join("\n")}\n\nFor each advisory question, include an entry in the "results" array:\n[{ "question": <number>, "answer": "CONFIRMED"|"NOT_PRESENT"|"UNCERTAIN", "reasoning": "<brief>" }]`
+    : "";
+
+  const claimSection = structuralClaimBlock ? `\n${structuralClaimBlock}` : "";
+
+  const neutralEvidenceBlock = STRUCTURAL_SIGNALS_ACTIVE ? buildNeutralEvidenceBlock(evidence) : "";
+
+  const stage1ABlock = stage === "1A" && hasStage1AOpeningSuspicion(evidence)
+    ? `\n\n${STAGE1A_OPENING_EXISTENCE_INTEGRITY_CHECK.trim()}`
+    : "";
+
+  const riskContext = riskLevel
+    ? `\nRISK CONTEXT: ${riskLevel} — structural analysis has flagged potential issues.`
+    : "";
+
+  return `${basePrompt}${structuralFocusRules}
+
+══════════════════════════════════════════
+STRICT ADJUDICATION PROTOCOL
+══════════════════════════════════════════
+
+STEP 1 — IMAGE REVIEW
+Examine both BEFORE and AFTER images.
+Focus only on permanent architectural structure: walls, openings, room envelope, fixed features.
+Disregard furniture, decor, lighting, shadows, and color changes.${neutralEvidenceBlock}${stage1ABlock}${riskContext}
+
+STEP 2 — ANSWER EACH VALIDATION QUESTION
+Pre-processing has identified specific structural concerns.
+For EACH question below, examine the referenced region in both images.
+Answer with exactly one of:
+- CONFIRMED: The structural change described IS visible.
+- NOT_PRESENT: The structural change is NOT visible — structure appears intact.
+- UNCERTAIN: Cannot determine — region is unclear, occluded, or ambiguous.
+
+Do NOT assume a change exists — verify independently.
+If a structural element is not clearly visible and intact, do NOT answer NOT_PRESENT.
+If a region is partially hidden, only conclude occlusion if you can see clear visual evidence
+the structure is still present behind the obstruction. "Plausible occlusion" without visible
+evidence is not sufficient to dismiss a concern.${advisorySection}${claimSection}
+
+STEP 3 — DECISION RULES
+Apply strictly:
+- ANY answer is CONFIRMED → finalDecision = "FAIL"
+- ANY answer is UNCERTAIN (none CONFIRMED) → finalDecision = "FAIL"
+- ALL answers are NOT_PRESENT → finalDecision = "PASS"
+- If you independently detect a Tier 1/2 violation not covered by the questions → finalDecision = "FAIL"
+hardFail must equal (finalDecision === "FAIL").
+
+STEP 4 — RESPONSE FORMAT (overrides any earlier output instruction)
+Return JSON only. No text outside JSON.
+{
+  "finalDecision": "PASS" | "FAIL",
+  "hardFail": boolean,
+  "category": "structure" | "opening_blocked" | "furniture_change" | "style_only" | "unknown",
+  "results": [{ "question": <number>, "answer": "CONFIRMED"|"NOT_PRESENT"|"UNCERTAIN", "reasoning": "<brief>" }],
+  "structuralClaims": [{ "claim": "<type>", "result": "CONFIRMED"|"NOT_PRESENT"|"UNCERTAIN", "detail": "<brief>" }],
+  "reasons": [string],
+  "confidence": number,
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"fixture_change"|"ceiling_fixture_change"|"plumbing_change"|"faucet_change"|"layout_only"|"other",
+  "builtInDetected": boolean,
+  "structuralAnchorCount": number
+}
+Omit "results" if no advisory questions were provided.
+Omit "structuralClaims" if no structural claims were provided.`;
 }
 
 export type GeminiSemanticVerdict = {
@@ -2843,9 +2898,13 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
       : openingAliasViolationType
         ? "opening_change"
         : "other";
+    // When finalDecision is present (strict adjudicator protocol), it is authoritative.
+    const hardFailValue = typeof parsed.finalDecision === "string"
+      ? parsed.finalDecision.toUpperCase().trim() === "FAIL"
+      : Boolean(parsed.hardFail);
     return {
-      hardFail: Boolean(parsed.hardFail),
-      category: parsed.category || "unknown",
+      hardFail: hardFailValue,
+      category: parsed.category || (hardFailValue ? "structure" : "unknown"),
       reasons: Array.isArray(parsed.reasons) ? parsed.reasons.map(String) : [],
       confidence: typeof parsed.confidence === "number" ? Math.max(0, Math.min(1, parsed.confidence)) : 0,
       violationType: normalizedViolationType,
@@ -2945,7 +3004,7 @@ export async function runGeminiSemanticValidator(opts: {
   );
   if (opts.stage === "2") {
     const promptAdvisorySection = specialistAdvisoryObservations.length > 0
-      ? `Mandatory Structural Observations:\n${specialistAdvisoryObservations
+      ? `Structural Verification Questions:\n${specialistAdvisoryObservations
         .map((item) => `- ${item}`)
         .join("\n")}`
       : "";
@@ -2988,7 +3047,7 @@ export async function runGeminiSemanticValidator(opts: {
       generationConfig: {
         temperature: 0,
         topP: 0,
-        maxOutputTokens: 256,
+        maxOutputTokens: 512,
         responseMimeType: deterministicStructureJson ? "application/json" : undefined,
       },
     } as any);
@@ -3013,27 +3072,41 @@ export async function runGeminiSemanticValidator(opts: {
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
 
-    // ── Structural claim adjudication parsing (Step 2) ──
+    // ── Parse raw JSON for adjudication results ──
+    let rawJson: any = {};
+    try {
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      rawJson = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    } catch { /* rawJson stays {} */ }
+
+    // ── Structural claim adjudication parsing ──
     if (
       STRUCTURAL_SIGNALS_ACTIVE &&
       opts.stage === "2" &&
       Array.isArray(opts.structuralSignals) &&
       opts.structuralSignals.length > 0
     ) {
-      try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        const rawJson = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-        parsed.adjudicatedClaims = parseStructuralClaims(
-          rawJson?.structuralClaims,
-          opts.structuralSignals,
-        );
-      } catch {
-        // Parse failure → all claims become UNCERTAIN (amendment 2)
-        parsed.adjudicatedClaims = parseStructuralClaims(
-          undefined,
-          opts.structuralSignals,
-        );
-      }
+      parsed.adjudicatedClaims = parseStructuralClaims(
+        rawJson?.structuralClaims,
+        opts.structuralSignals,
+      );
+    }
+
+    // ── Adjudication logging ──
+    const adjResults = Array.isArray(rawJson.results) ? rawJson.results : [];
+    if (adjResults.length > 0 || rawJson.finalDecision || parsed.adjudicatedClaims?.length) {
+      console.log("[UNIFIED_ADJUDICATION]", {
+        stage: opts.stage,
+        jobId: opts.jobId,
+        imageId: opts.imageId,
+        finalDecision: rawJson.finalDecision || (parsed.hardFail ? "FAIL" : "PASS"),
+        hardFail: parsed.hardFail,
+        confidence: parsed.confidence,
+        category: parsed.category,
+        questionResults: adjResults,
+        claimResults: parsed.adjudicatedClaims || [],
+        model,
+      });
     }
 
     if (opts.stage === "2") {

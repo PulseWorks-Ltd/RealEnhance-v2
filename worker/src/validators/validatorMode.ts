@@ -64,9 +64,9 @@ export function getValidatorMode(kind: ValidatorKind = "global"): ValidatorMode 
   return "off";
 }
 
-/** Read global blocking feature flag (env VALIDATION_BLOCKING_ENABLED) */
+/** Read global blocking feature flag — SINGLE-AUTHORITY: always returns true */
 export function getValidatorBlockingEnabled(): boolean {
-  return asBool(process.env.VALIDATION_BLOCKING_ENABLED);
+  return true; // SINGLE-AUTHORITY: blocking is always enabled
 }
 
 /**
@@ -79,14 +79,8 @@ export function getEffectiveValidationMode(opts: {
   attempt: number; // zero-based
   maxAttempts: number; // total attempts planned (>=1)
 }): EffectiveValidationMode {
-  const { configuredMode, blockingEnabled, attempt, maxAttempts } = opts;
-  const isFinalAttempt = attempt >= Math.max(0, maxAttempts - 1);
-
-  if (!blockingEnabled) return "log";
-  if (configuredMode === "off") return "log";
-  if (configuredMode === "log") return "log";
-
-  return isFinalAttempt ? "enforce" : "log";
+  // SINGLE-AUTHORITY: always enforce regardless of config
+  return "enforce";
 }
 
 /**
@@ -129,8 +123,8 @@ export function shouldValidatorRetry(kind: ValidatorKind = "global"): boolean {
  * @returns true if the validator should only log results
  */
 export function isLogOnlyMode(kind: ValidatorKind = "global"): boolean {
-  const mode = getValidatorMode(kind);
-  return mode === "log";
+  // SINGLE-AUTHORITY: never log-only
+  return false;
 }
 
 /**

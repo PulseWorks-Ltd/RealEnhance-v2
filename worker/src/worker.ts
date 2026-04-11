@@ -106,10 +106,8 @@ const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.en
 const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.08)));
 const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
-const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" =
-  String(process.env.COMPOSITE_LOCAL_VALIDATOR_FAIL || "log").toLowerCase() === "block"
-    ? "block"
-    : "log";
+// SINGLE-AUTHORITY: composite local validator always blocks
+const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
 const STAGE1B_BLANK_STDDEV_MAX = Math.max(
   0.01,
@@ -4045,15 +4043,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const localValidatorMode = getLocalValidatorMode();
   const geminiValidatorMode = getGeminiValidatorMode();
   const geminiBlockingEnabled = isGeminiBlockingEnabled();
-  // Local validators run in their configured mode (log/block)
-  // Gemini confirmation is triggered only when local mode is log
-  const VALIDATION_BLOCKING_ENABLED = localValidatorMode === "block";
-  const GEMINI_CONFIRMATION_ENABLED = localValidatorMode === "log";
+  // SINGLE-AUTHORITY: Blocking is always enabled. No log-only escape hatch.
+  const VALIDATION_BLOCKING_ENABLED = true;
+  const GEMINI_CONFIRMATION_ENABLED = true;
   const structureValidatorMode = localValidatorMode;
   
-  // Unified flag: true when ANY validator can block images
-  // Used for retry gating, fallback gating, and validation behavior
-  const VALIDATORS_ARE_BLOCKING = VALIDATION_BLOCKING_ENABLED || geminiBlockingEnabled;
+  // SINGLE-AUTHORITY: Validators always block
+  const VALIDATORS_ARE_BLOCKING = true;
   const COMPLIANCE_BLOCK_THRESHOLD = Number(process.env.COMPLIANCE_BLOCK_THRESHOLD ?? 0.85);
   
   // Sharp-based semantic structure validator control
@@ -5835,16 +5831,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         },
         runUnified: async ({ specialistAdvisorySignals }) => {
           try {
-            const effectiveMode = VALIDATION_BLOCKING_ENABLED ? "enforce" : "log";
-            nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=${effectiveMode} ═══════════`);
+            // SINGLE-AUTHORITY: always enforce, always run Gemini
+            nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════`);
             unifiedRetryValidation = await runUnifiedValidation({
               originalPath: validationBaseline,
               enhancedPath: path2,
               stage: "2",
               sceneType: sceneLabel as any,
               roomType: payload.options.roomType,
-              mode: effectiveMode,
-              geminiPolicy: VALIDATION_BLOCKING_ENABLED ? "never" : "on_local_fail",
+              mode: "enforce",
+              geminiPolicy: "always",
               jobId: payload.jobId,
               imageId: payload.imageId,
               stagingStyle: payload.options.stagingStyle || "standard_listing",
@@ -10204,31 +10200,86 @@ All openings must remain identical in position and size to the original image.`;
         });
 
         // --- Build structured AdvisoryObservation[] from specialist results ---
-        const buildInvestigationTask = (
+        // SPECIALIST QUESTION FORMAT: Neutral, non-leading questions that guide
+        // Unified Validator's attention without asserting that a change occurred.
+        const buildValidationQuestion = (
           issueType: string,
-          validator: string
-        ): string => {
+          category: string
+        ): { question: string; context: string } => {
           const it = String(issueType || "").toLowerCase();
+
+          // ── Openings ──
           if (it.includes("opening_removed") || it.includes("opening_infilled") || it.includes("opening_sealed"))
-            return "Verify if the opening is still a penetrative void or if it has been replaced by wall surface.";
+            return {
+              question: "Is there an opening (door or window) in this area that appears to have been removed, filled in, or significantly altered compared to the original image?",
+              context: "Automated analysis flagged a potential difference in opening presence at this location.",
+            };
           if (it.includes("opening_resized") || it.includes("opening_size_reduction"))
-            return "Verify window/door frame edges match baseline. If wall area expanded into the opening void, fail Tier 1.";
+            return {
+              question: "Does the size of the opening (window or door) in this area appear to differ between the original and enhanced images?",
+              context: "Automated analysis flagged a potential dimensional change in an opening at this location.",
+            };
           if (it.includes("opening_relocated"))
-            return "Verify the opening exists at its original location. If it has moved, fail Tier 1.";
+            return {
+              question: "Does the position of any opening (window or door) in this area appear to differ between the original and enhanced images?",
+              context: "Automated analysis flagged a potential positional shift of an opening.",
+            };
+
+          // ── Envelope ──
           if (it.includes("envelope_vertical_edge_loss"))
-            return "Structural Junction Loss—vertical edge density collapsed at a structural junction. Verify if a doorway, recess, or corner was flattened into a continuous wall. If vertical boundary lines are absent, fail Tier 1.";
+            return {
+              question: "Does the wall structure at this junction appear to have changed? Specifically, are vertical boundary lines at a structural junction (such as a doorway, recess, or corner) present in both images?",
+              context: "Automated analysis flagged a potential change in vertical edge density at a structural junction.",
+            };
           if (it.includes("envelope_corner_flattened"))
-            return "Structural Junction Loss—two wall planes that met at a vertical corner in BEFORE have merged into a single plane in AFTER. Verify the corner still exists; if collapsed, fail Tier 1.";
+            return {
+              question: "Does the wall structure or room geometry in this corner area appear to have changed, such as two wall planes that met at a vertical corner now appearing as a single continuous surface?",
+              context: "Automated analysis flagged a potential change at a wall corner junction.",
+            };
           if (it.includes("envelope") || it.includes("wall_changed") || it.includes("wall_plane")) {
             if (it.includes("confirmed") || it.includes("continuoussurface") || it.includes("boundary"))
-              return "Possible Depth Loss—verify if a doorway or walk-through was flattened into an art wall. If a 3D recess became a 2D plane, fail Tier 1.";
-            return "Verify wall continuity. If a recess was flattened or a new flat surface replaced a previous indentation, fail Tier 1.";
+              return {
+                question: "Does the wall or room geometry at this location appear to differ between the images? For example, does a previously recessed or indented area now appear as a flat continuous surface?",
+                context: "Automated analysis flagged a potential change in wall depth or surface continuity.",
+              };
+            return {
+              question: "Does the wall structure or room geometry in this area appear to have changed, such as a corner, recess, or wall plane being different between the images?",
+              context: "Automated analysis flagged a potential wall or envelope difference at this location.",
+            };
           }
+
+          // ── Fixtures ──
           if (it.includes("fixture") || it.includes("ceiling") || it.includes("pendant") || it.includes("plumbing"))
-            return "Verify that the fixed feature is unchanged in type, position, and count.";
+            return {
+              question: "Are there any fixtures in this area (e.g. lights, HVAC units, sinks, pendants) that differ in count, type, or position compared to the original image?",
+              context: "Automated analysis flagged a potential difference in fixed features at this location.",
+            };
+
+          // ── Floor ──
           if (it.includes("floor"))
-            return "Verify the floor material class is unchanged.";
-          return `Verify structural consistency for ${validator} observation.`;
+            return {
+              question: "Does the flooring material or surface in this area appear to differ from the original image?",
+              context: "Automated analysis flagged a potential change in floor surface at this location.",
+            };
+
+          return {
+            question: `Does the structural consistency of the ${category} area appear to differ between the original and enhanced images?`,
+            context: `Automated analysis flagged a potential structural difference for ${category}.`,
+          };
+        };
+
+        /** Generate a human-readable location description from bbox + approximate bucket */
+        const describeLocation = (
+          approxLoc: AdvisoryObservation["approximateLocation"] | undefined,
+          category: string,
+          bbox?: [number, number, number, number]
+        ): string => {
+          const base = approxLoc ? approxLoc.replace(/-/g, " ") : "unspecified area";
+          if (category === "openings") return `${base} wall — near opening`;
+          if (category === "envelope") return `${base} wall area`;
+          if (category === "floor") return `${base} floor area`;
+          if (category === "fixtures") return `${base} — near fixture`;
+          return `${base}`;
         };
 
         const bboxToLocation = (bbox: [number, number, number, number]): AdvisoryObservation["approximateLocation"] => {
@@ -10268,13 +10319,29 @@ All openings must remain identical in position and size to the original image.`;
             }
           }
 
-          specialistAdvisoryObservationsBatch.push({
+          const { question, context } = buildValidationQuestion(sig.issueType, validatorDomain);
+          const location = describeLocation(approxLocation, validatorDomain, bbox);
+
+          const observation: AdvisoryObservation = {
+            category: validatorDomain,
             validator: validatorDomain,
             issueType: sig.issueType,
+            location,
             approximateLocation: approxLocation,
             bbox,
             confidence: sig.confidence ?? 0,
-            investigationTask: buildInvestigationTask(sig.issueType, sig.validator),
+            question,
+            context,
+            investigationTask: question, // backward compat
+          };
+
+          specialistAdvisoryObservationsBatch.push(observation);
+
+          console.log("[SPECIALIST_SIGNAL]", {
+            category: validatorDomain,
+            location,
+            question,
+            confidence: sig.confidence ?? 0,
           });
         }
 
@@ -10287,9 +10354,9 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             count: specialistAdvisoryObservations.length,
             observations: specialistAdvisoryObservations.map((o) => ({
-              validator: o.validator,
-              issueType: o.issueType,
-              location: o.approximateLocation,
+              category: o.category,
+              location: o.location || o.approximateLocation,
+              question: o.question,
               confidence: o.confidence,
             })),
           });
@@ -10424,15 +10491,32 @@ All openings must remain identical in position and size to the original image.`;
         return hasTargetFixture && hasMutationSignal;
       };
 
+      // ── SINGLE-AUTHORITY: Strict whitelist of issues allowed to hard-fail pre-Unified ──
+      // Only visually undeniable structural changes may bypass Unified.
+      // All other specialist outputs become advisory claims for Unified adjudication.
+      const ALLOWED_HARDFAIL_ISSUES = new Set<ValidationIssueType>([
+        ISSUE_TYPES.OPENING_REMOVED,
+        ISSUE_TYPES.OPENING_INFILLED,
+        ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED,
+        ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS,
+        ISSUE_TYPES.FIXTURE_CHANGED,
+        ISSUE_TYPES.FLOOR_CHANGED,
+      ]);
+
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
         const issueType = signal.issueType as ValidationIssueType | undefined;
         if (!issueType || issueType === ISSUE_TYPES.NONE) {
           return false;
         }
 
+        // SINGLE-AUTHORITY: Only whitelist issues may hard-fail
+        if (!ALLOWED_HARDFAIL_ISSUES.has(issueType)) {
+          return false;
+        }
+
         const confidence = Number(signal.confidence);
-        const confidenceEligible = !Number.isFinite(confidence) || confidence >= 0.85;
-        if (!confidenceEligible) {
+        // Require high confidence for pre-unified hard-fail
+        if (!Number.isFinite(confidence) || confidence < HIGH_CONFIDENCE_THRESHOLD) {
           return false;
         }
 
@@ -10440,17 +10524,16 @@ All openings must remain identical in position and size to the original image.`;
           return isTargetCriticalFixtureChange(signal);
         }
 
-        return CRITICAL_ISSUES.has(issueType);
+        return true;
       };
 
-      // Unconditional hard-fail for high-confidence structural violations.
-      // Fires regardless of STAGE2_ENABLE_ISSUETYPE_HARDFAIL.
-      // Fixture-class signals are excluded (they require text-match checks).
+      // SINGLE-AUTHORITY: Unconditional hard-fail restricted to whitelist only.
+      // Requires high confidence AND whitelist membership.
       const isCriticalUnconditionalHardFail = (signal: SpecialistIssueSignal): boolean => {
         const issueType = signal.issueType as ValidationIssueType | undefined;
         if (!issueType || issueType === ISSUE_TYPES.NONE) return false;
+        if (!ALLOWED_HARDFAIL_ISSUES.has(issueType)) return false;
         if (issueType === ISSUE_TYPES.FIXTURE_CHANGED || issueType === ISSUE_TYPES.HVAC_CHANGED) return false;
-        if (!CRITICAL_ISSUES.has(issueType)) return false;
         const confidence = Number(signal.confidence);
         return Number.isFinite(confidence) && confidence >= HIGH_CONFIDENCE_THRESHOLD;
       };
@@ -10595,12 +10678,12 @@ All openings must remain identical in position and size to the original image.`;
         );
       }
 
+      // SINGLE-AUTHORITY: categoricalBlock uses the strict whitelist gate.
+      // shouldHardFailFromIssueType already enforces ALLOWED_HARDFAIL_ISSUES + HIGH_CONFIDENCE.
       const categoricalBlock =
         structuralOverrideBlock ??
         filteredSignals.find(isCriticalUnconditionalHardFail) ??
-        (STAGE2_ENABLE_ISSUETYPE_HARDFAIL
-          ? filteredSignals.find(shouldHardFailFromIssueType)
-          : undefined);
+        filteredSignals.find(shouldHardFailFromIssueType);
 
       if (categoricalBlock) {
         const categoricalBlockClass = classifyStructuralSignal(categoricalBlock, filteredSignals);
@@ -10610,7 +10693,8 @@ All openings must remain identical in position and size to the original image.`;
           specialistAdvisorySignals
         );
 
-        if (categoricalBlockClass === "OCCLUSION" && openingOcclusionGuard.apply) {
+        // SINGLE-AUTHORITY: Only downgrade if explicit occlusion evidence is STRONG (multiple hints)
+        if (categoricalBlockClass === "OCCLUSION" && openingOcclusionGuard.apply && openingOcclusionGuard.occlusionHints.length >= 2) {
           const originalIssueType = categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
           categoricalBlock.issueType = ISSUE_TYPES.OPENING_OCCLUSION;
           specialistAdvisorySignals.push("openings:opening_occlusion_guard_applied");

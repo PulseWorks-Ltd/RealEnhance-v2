@@ -170,7 +170,7 @@ function buildFailedSummary(stage: StageId, reason: string, mode: "log" | "block
   return {
     stage,
     mode,
-    passed: mode === "log", // In log mode, always pass
+    passed: false, // SINGLE-AUTHORITY: always fail on risk, no log-mode pass-through
     risk: true,
     score: 0,
     triggers: [{ id: reason, message: reason, value: 0, threshold: 0, stage }],
@@ -491,7 +491,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
   // ===== 7. MULTI-SIGNAL GATING (with fatal bypass) =====
   const hasFatalTrigger = triggers.some(t => t.fatal === true);
   const risk = hasFatalTrigger || triggers.length >= config.gateMinSignals;
-  const passed = !risk || mode === "log";
+  const passed = !risk;  // SINGLE-AUTHORITY: always enforce, no log-mode escape
 
   focusLog("STAGEAWARE_VERBOSE", `[stageAware] Triggers: ${triggers.length} (gate: ${config.gateMinSignals}, hasFatal: ${hasFatalTrigger})`);
   triggers.forEach((t, i) => focusLog("STAGEAWARE_VERBOSE", `[stageAware]   ${i + 1}. ${t.id}${t.fatal ? " [FATAL]" : ""}: ${t.message}`));
