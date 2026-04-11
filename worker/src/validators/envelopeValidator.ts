@@ -290,16 +290,23 @@ Non-fail certainty guard:
         }
       }
 
-      // ── Feature 2: Corner Persistence → Tier 1 Geometric Fail ──────
+      // ── Feature 2: Corner Persistence → Structural Signal for Gemini ──
       if (vedResult.cornerPersistenceFailure) {
         geminiResult.advisorySignals.push("envelope_corner_flattened");
         geminiResult.issueType = ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
         geminiResult.issueTier = classifyIssueTier(ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED);
         geminiResult.status = "fail";
-        geminiResult.hardFail = true;
+        // Do NOT hard-fail autonomously — emit structural signal and let Gemini adjudicate via mandatory verification.
+        // Hard-fail will come from Gemini confirming the structural claim in runValidation.
         if (!geminiResult.reason.includes("corner")) {
           geminiResult.reason = `envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. ${geminiResult.reason}`;
         }
+        console.log("[SPECIALIST_REVIEW][ENVELOPE]", {
+          event: "corner_persistence_failure",
+          worstRetention: vedResult.worstRetention.toFixed(3),
+          junctionCount: vedResult.junctions.length,
+          action: "advisory_signal_emitted_for_gemini_adjudication",
+        });
       }
 
       // ── Emit structural signals from junction analysis ────────────

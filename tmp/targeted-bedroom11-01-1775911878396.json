@@ -1,0 +1,91 @@
+{
+  "pairId": "bedroom11-01",
+  "baseline": "Bedroom 11.jpg",
+  "enhanced": "enhanced_Bedroom 11-01.jpg",
+  "specialists": {
+    "openings": {
+      "status": "error",
+      "reason": "Missing jobId or imageId in logging context",
+      "confidence": 0,
+      "hardFail": true,
+      "issueType": "unified_failure"
+    },
+    "fixtures": {
+      "status": "pass",
+      "reason": "The room architecture and all visible fixed fixtures, such as the two recessed ceiling lights and the window blinds, are identical in both images. The changes are limited to the addition of furniture and decor, which is permissible.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "floor": {
+      "status": "pass",
+      "reason": "The structural floor is carpet in both images. The rug added in the staged image is a non-structural, movable item and does not constitute a change to the underlying floor.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "envelope": {
+      "status": "fail",
+      "reason": "envelope_confirmed_structural_change: The distinct architectural recess or offset on the right wall, visible in the baseline image to the right of the smaller window, has been filled in. In the staged image, this area presents as a continuous flat wall surface, indicating an alteration to the room's architectural envelope.",
+      "confidence": 1,
+      "hardFail": true,
+      "issueType": "envelope_anomaly",
+      "issueTier": "review",
+      "advisorySignals": [
+        "envelope_confirmed_structural_change: The distinct architectural recess or offset on the right wall, visible in the baseline image to the right of the smaller window, has been filled in. In the staged image, this area presents as a continuous flat wall surface, indicating an alteration to the room's architectural envelope.",
+        "envelope_confirmed_structural_change"
+      ]
+    }
+  },
+  "specialistResults": {
+    "openings": {
+      "pass": false,
+      "confidence": 0,
+      "issueType": "unified_failure"
+    },
+    "fixtures": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "floor": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "envelope": {
+      "pass": false,
+      "confidence": 1,
+      "issueType": "envelope_anomaly"
+    }
+  },
+  "specialistHardFailSignals": [],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "issueType": "none",
+    "blockSource": null,
+    "score": 0.792,
+    "riskLevel": "MEDIUM",
+    "reasons": [],
+    "warnings": [
+      "furniture_change"
+    ],
+    "gemini": {
+      "category": "furniture_change",
+      "violationType": null,
+      "confidence": 1,
+      "hardFail": false,
+      "reasons": []
+    }
+  },
+  "overallDecision": {
+    "finalStatus": "pass",
+    "failedAt": null,
+    "reasons": []
+  }
+}

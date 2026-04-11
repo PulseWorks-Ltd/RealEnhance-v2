@@ -9705,19 +9705,34 @@ All openings must remain identical in position and size to the original image.`;
         signal: SpecialistIssueSignal,
         allSignals: SpecialistIssueSignal[]
       ): StructuralClass {
-        const issueType = signal.issueType;
+        const t = signal.issueType;
 
         if (
-          issueType === ISSUE_TYPES.OPENING_INFILLED ||
-          issueType === ISSUE_TYPES.OPENING_REMOVED ||
-          issueType === ISSUE_TYPES.OPENING_SEALED
+          t === ISSUE_TYPES.OPENING_INFILLED ||
+          t === ISSUE_TYPES.OPENING_REMOVED ||
+          t === ISSUE_TYPES.OPENING_SEALED
         ) {
-          return "REMOVAL";
+          const confidence = Number(signal.confidence);
+          const hasEnvelopeSupport = allSignals.some(
+            (s) =>
+              s.issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
+              s.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
+          );
+
+          if (
+            Number.isFinite(confidence) &&
+            confidence >= HIGH_CONFIDENCE_THRESHOLD &&
+            hasEnvelopeSupport
+          ) {
+            return "REMOVAL";
+          }
+
+          return "UNKNOWN";
         }
 
         if (
-          issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
-          issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
+          t === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
+          t === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
         ) {
           if (signal.hardFail === true || Number(signal.confidence) >= HIGH_CONFIDENCE_THRESHOLD) {
             return "COLLAPSE";
@@ -9726,9 +9741,9 @@ All openings must remain identical in position and size to the original image.`;
         }
 
         if (
-          issueType === ISSUE_TYPES.OPENING_RELOCATED ||
-          issueType === ISSUE_TYPES.OPENING_RESIZED_MAJOR ||
-          issueType === ISSUE_TYPES.OPENING_RESIZED_MINOR
+          t === ISSUE_TYPES.OPENING_RELOCATED ||
+          t === ISSUE_TYPES.OPENING_RESIZED_MAJOR ||
+          t === ISSUE_TYPES.OPENING_RESIZED_MINOR
         ) {
           return "OCCLUSION";
         }

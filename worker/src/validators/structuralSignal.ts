@@ -177,12 +177,16 @@ export function buildStructuralClaimBlock(signals: StructuralSignal[]): string {
 
   return `
 
-STRUCTURAL CLAIM INVESTIGATION (respond per-claim in structuralClaims array):
+MANDATORY STRUCTURAL VERIFICATION (respond per-claim in structuralClaims array):
+Specialist analysis has flagged the following structural claims. You MUST evaluate each one.
 For each claim below, visually examine the specified region in BEFORE and AFTER images.
 Respond with EXACTLY one of: "CONFIRMED", "NOT_PRESENT", or "UNCERTAIN".
-- CONFIRMED: the structural change described IS visible in the images.
+- CONFIRMED: the structural change described IS visible in the images. This is a HARD FAIL.
 - NOT_PRESENT: the structural change described is NOT visible — the structure appears unchanged.
-- UNCERTAIN: the region is unclear, occluded, or ambiguous — cannot determine.
+- UNCERTAIN: the region is unclear, occluded, or ambiguous — cannot determine. Treat as SUSPICIOUS — do NOT auto-pass.
+
+CRITICAL: Do NOT dismiss a claim solely because furniture or staging might occlude the area.
+If the structural element (wall, opening, corner) is not clearly visible and intact, you must NOT rule "NOT_PRESENT".
 
 ${questions.join("\n\n")}
 

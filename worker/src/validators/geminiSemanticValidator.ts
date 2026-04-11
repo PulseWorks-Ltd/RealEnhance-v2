@@ -272,21 +272,22 @@ function buildAdjudicatorPrompt(
 
     return `
 
-AUTOMATED REVIEW CONTEXT (ADVISORY ONLY):
-- The following are tentative cues from heuristic analysis and can include false positives.
-- Treat them as review hints, not confirmed facts.
-- Do not assume structural failure unless visually confirmed in the images.
+AUTOMATED STRUCTURAL REVIEW CONTEXT:
+- The following findings come from specialist structural analysis.
+- Each finding should be visually verified against the BEFORE and AFTER images.
+- Do NOT dismiss findings without specific visual counter-evidence.
 
-Potential cues:
+Structural findings:
 ${hints.map((h) => `- ${h}`).join("\n")}
 
-Perceptual telemetry (numeric only, not a fail criterion):
+Perceptual telemetry:
 ${perceptualTelemetry.join("\n")}
 
 Visual adjudication priority:
 - Approve if the same architectural openings and envelope are still clearly present.
-- Reject only when visual evidence clearly shows opening removal/relocation/material resize,
+- Reject when visual evidence shows opening removal/relocation/material resize,
   wall/envelope change, or fixed built-in removal/relocation.
+- When specialist findings conflict with your initial impression, re-examine the specific region before deciding.
 `;
   };
 
@@ -306,11 +307,27 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
     ? hasInvestigationTasks
       ? `
 
-INVESTIGATION TASKS (non-binding — verify visually before any classification):
-${specialistAdvisoryObservations.map((item, i) => `${i + 1}. ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
+MANDATORY STRUCTURAL VERIFICATION TASKS:
+You MUST evaluate each item below before returning your decision.
+For EACH detected structural concern:
+- Determine whether the issue is REAL or NOT PRESENT.
+- You MUST explicitly address each item.
+- If you disagree with a finding, you MUST explain why with specific visual reasoning.
+- Failure to address these items is not acceptable.
+
+${specialistAdvisoryObservations.map((item, i) => `${i + 1}. ${String(item || "").trim()}`).filter(Boolean).join("\n")}
+
+IMPORTANT — OCCLUSION RULE WHEN STRUCTURAL CLAIMS EXIST:
+If a structural claim is present (e.g. opening removal, wall flattening, corner loss):
+- DO NOT assume occlusion unless clear visual evidence exists that the structure is still present.
+- If the opening frame, recess, or boundary is not visible, you must treat this as a potential violation.
+- "Plausible occlusion" is NOT sufficient when specialist analysis has flagged a specific region.`
       : `
 
-Additional Observations (non-binding, for awareness only):
+MANDATORY STRUCTURAL OBSERVATIONS:
+You MUST evaluate each observation below before returning your decision.
+If you disagree with any observation, you MUST provide specific visual reasoning.
+
 ${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`).filter(Boolean).join("\n")}`
     : "";
 
@@ -325,7 +342,7 @@ ${specialistAdvisoryObservations.map((item) => `- ${String(item || "").trim()}`)
     stage === "1A" && hasStage1AOpeningSuspicion(evidence)
       ? `\n\n${STAGE1A_OPENING_EXISTENCE_INTEGRITY_CHECK.trim()}`
       : "";
-  const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} (advisory only; not proof of failure).` : "";
+  const riskContext = riskLevel ? `\n\nRISK CONTEXT: ${riskLevel} — structural analysis has flagged potential issues. Investigate carefully before passing.` : "";
 
   return `${basePrompt}${structuralFocusRules}${advisoryObservationBlock}${claimBlock}${neutralEvidenceBlock}${stage1AOpeningIntegrityBlock}${riskContext}`;
 }
@@ -2885,8 +2902,8 @@ export async function runGeminiSemanticValidator(opts: {
   // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
   // Specialist validators (Gemini-based) must NOT be treated as local.
   // Do not include specialist signals in heuristic filtering or stripping logic.
-  const evidenceForGemini = STRUCTURAL_SIGNALS_ACTIVE && opts.stage !== "2" ? opts.evidence : undefined;
-  const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE && opts.stage !== "2" ? opts.riskLevel : undefined;
+  const evidenceForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.evidence : undefined;
+  const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.riskLevel : undefined;
   const specialistAdvisoryObservations = Array.isArray(opts.specialistAdvisoryObservations)
     ? opts.specialistAdvisoryObservations.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
@@ -2911,6 +2928,12 @@ export async function runGeminiSemanticValidator(opts: {
       claimCount: opts.structuralSignals!.length,
       claims: opts.structuralSignals!.map((s) => s.claim),
     });
+    console.log("[STRUCTURAL_CLAIMS_SENT]", {
+      stage: opts.stage,
+      claimCount: opts.structuralSignals!.length,
+      claims: opts.structuralSignals!.map((s) => ({ claim: s.claim, region: s.region })),
+      mandatoryVerification: true,
+    });
   }
   const rawPrompt = buildAdjudicatorPrompt(
     basePrompt,
@@ -2922,7 +2945,7 @@ export async function runGeminiSemanticValidator(opts: {
   );
   if (opts.stage === "2") {
     const promptAdvisorySection = specialistAdvisoryObservations.length > 0
-      ? `Additional Observations (non-binding, for awareness only):\n${specialistAdvisoryObservations
+      ? `Mandatory Structural Observations:\n${specialistAdvisoryObservations
         .map((item) => `- ${item}`)
         .join("\n")}`
       : "";

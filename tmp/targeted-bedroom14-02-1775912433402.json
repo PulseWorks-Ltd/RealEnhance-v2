@@ -1,0 +1,133 @@
+{
+  "pairId": "bedroom14-02",
+  "baseline": "Bedroom 14.jpg",
+  "enhanced": "enhanced_Bedroom 14-02.jpg",
+  "specialists": {
+    "openings": {
+      "status": "pass",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.330",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "opening_resized_major",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_resized_minor:0.330"
+      ],
+      "structuralSignals": [
+        {
+          "claim": "opening_resized_major",
+          "region": {
+            "x1": 0.051,
+            "y1": 0.182,
+            "x2": 0.453,
+            "y2": 0.485
+          },
+          "confidence": 0.95,
+          "source": "openingPreservation",
+          "openingId": "W1",
+          "openingType": "window",
+          "wallIndex": 3
+        }
+      ],
+      "openingRegions": [
+        {
+          "bbox": [
+            0.113,
+            0.202,
+            0.424,
+            0.465
+          ],
+          "type": "window"
+        },
+        {
+          "bbox": [
+            0.53,
+            0.239,
+            0.85,
+            0.505
+          ],
+          "type": "window"
+        }
+      ]
+    },
+    "fixtures": {
+      "status": "fail",
+      "reason": "A ceiling vent was added in the staged image that was not present in the baseline image.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "fixture_anomaly",
+      "issueTier": "review",
+      "advisorySignals": [
+        "A ceiling vent was added in the staged image that was not present in the baseline image."
+      ]
+    },
+    "floor": {
+      "status": "pass",
+      "reason": "The structural floor is consistently carpet in both images. The rug added in the staged image is a movable object and not a structural change.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "envelope": {
+      "status": "fail",
+      "reason": "envelope_confirmed_structural_change: A doorway/opening visible on the right wall in the baseline image has been filled in and is now a continuous flat wall surface in the staged image, indicating a structural architectural change.",
+      "confidence": 1,
+      "hardFail": true,
+      "issueType": "envelope_anomaly",
+      "issueTier": "review",
+      "advisorySignals": [
+        "envelope_confirmed_structural_change: A doorway/opening visible on the right wall in the baseline image has been filled in and is now a continuous flat wall surface in the staged image, indicating a structural architectural change.",
+        "envelope_confirmed_structural_change"
+      ]
+    }
+  },
+  "specialistResults": {
+    "openings": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "fixtures": {
+      "pass": false,
+      "confidence": 1,
+      "issueType": "fixture_anomaly"
+    },
+    "floor": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "envelope": {
+      "pass": false,
+      "confidence": 1,
+      "issueType": "envelope_anomaly"
+    }
+  },
+  "specialistHardFailSignals": [],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "issueType": "none",
+    "blockSource": null,
+    "score": 0.792,
+    "riskLevel": "MEDIUM",
+    "reasons": [],
+    "warnings": [
+      "furniture_change"
+    ],
+    "gemini": {
+      "category": "furniture_change",
+      "violationType": null,
+      "confidence": 1,
+      "hardFail": false,
+      "reasons": []
+    }
+  },
+  "overallDecision": {
+    "finalStatus": "pass",
+    "failedAt": null,
+    "reasons": []
+  }
+}

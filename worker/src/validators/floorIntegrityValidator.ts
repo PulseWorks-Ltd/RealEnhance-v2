@@ -95,6 +95,13 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
       ? ISSUE_TYPES.FLOOR_CHANGED
       : ISSUE_TYPES.FLOOR_ANOMALY;
 
+  console.log("[SPECIALIST_REVIEW][FLOOR]", {
+    ok: finalOk,
+    confidence: confidence.toFixed(3),
+    reason,
+    issueType,
+  });
+
   return {
     status: finalOk ? "pass" : "fail",
     reason,

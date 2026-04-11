@@ -1,0 +1,82 @@
+{
+  "pairId": "bedroom11-01",
+  "baseline": "Bedroom 11.jpg",
+  "enhanced": "enhanced_Bedroom 11-01.jpg",
+  "specialists": {
+    "openings": {
+      "status": "error",
+      "reason": "Missing jobId or imageId in logging context",
+      "confidence": 0,
+      "hardFail": true,
+      "issueType": "unified_failure"
+    },
+    "fixtures": {
+      "status": "error",
+      "reason": "validator_error_fixture:Missing jobId or imageId in logging context",
+      "confidence": 0,
+      "hardFail": true,
+      "issueType": "unified_failure"
+    },
+    "floor": {
+      "status": "error",
+      "reason": "validator_error_floor_integrity:Missing jobId or imageId in logging context",
+      "confidence": 0,
+      "hardFail": true,
+      "issueType": "unified_failure"
+    },
+    "envelope": {
+      "status": "error",
+      "reason": "validator_error_envelope:Missing jobId or imageId in logging context",
+      "confidence": 0,
+      "hardFail": true,
+      "issueType": "unified_failure"
+    }
+  },
+  "specialistResults": {
+    "openings": {
+      "pass": false,
+      "confidence": 0,
+      "issueType": "unified_failure"
+    },
+    "fixtures": {
+      "pass": false,
+      "confidence": 0,
+      "issueType": "unified_failure"
+    },
+    "floor": {
+      "pass": false,
+      "confidence": 0,
+      "issueType": "unified_failure"
+    },
+    "envelope": {
+      "pass": false,
+      "confidence": 0,
+      "issueType": "unified_failure"
+    }
+  },
+  "specialistHardFailSignals": [],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "issueType": "none",
+    "blockSource": null,
+    "score": 0.792,
+    "riskLevel": "MEDIUM",
+    "reasons": [],
+    "warnings": [
+      "furniture_change"
+    ],
+    "gemini": {
+      "category": "furniture_change",
+      "violationType": null,
+      "confidence": 1,
+      "hardFail": false,
+      "reasons": []
+    }
+  },
+  "overallDecision": {
+    "finalStatus": "pass",
+    "failedAt": null,
+    "reasons": []
+  }
+}

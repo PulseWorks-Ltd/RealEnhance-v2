@@ -591,6 +591,14 @@ export async function runOpeningValidator(
     };
 
     console.log("[OPENINGS_COMPARISON]", comparisonResult);
+    console.log("[SPECIALIST_REVIEW][OPENING]", {
+      hardFail,
+      deterministicHardFailIssue,
+      hardFailConfidence: hardFailConfidence.toFixed(3),
+      hasHighConfidenceMicroHardFailSignal,
+      reason,
+      structuralSignalCount: deterministic.structuralSignals?.length ?? 0,
+    });
 
     return {
       status: hardFail ? "fail" : "pass",

@@ -55,6 +55,14 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
       ? ISSUE_TYPES.FIXTURE_CHANGED
       : ISSUE_TYPES.FIXTURE_ANOMALY;
 
+  console.log("[SPECIALIST_REVIEW][FIXTURE]", {
+    ok: parsed.ok,
+    hardFail,
+    confidence: confidence.toFixed(3),
+    reason,
+    issueType,
+  });
+
   return {
     status: parsed.ok ? "pass" : "fail",
     reason,

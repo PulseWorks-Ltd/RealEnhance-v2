@@ -1,0 +1,151 @@
+{
+  "pairId": "bedroom11-01",
+  "baseline": "Bedroom 11.jpg",
+  "enhanced": "enhanced_Bedroom 11-01.jpg",
+  "specialists": {
+    "openings": {
+      "status": "fail",
+      "reason": "opening_infilled|opening_sealed|opening_resized|opening_size_reduction_ge_0.25:0.354|opening_band_mismatch",
+      "confidence": 0.92,
+      "hardFail": true,
+      "issueType": "opening_infilled",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_resized_minor:0.354"
+      ],
+      "structuralSignals": [],
+      "openingRegions": [
+        {
+          "bbox": [
+            0,
+            0,
+            0.175,
+            1
+          ],
+          "type": "door"
+        },
+        {
+          "bbox": [
+            0.177,
+            0.274,
+            0.327,
+            0.985
+          ],
+          "type": "door"
+        },
+        {
+          "bbox": [
+            0.284,
+            0.358,
+            0.505,
+            0.74
+          ],
+          "type": "window"
+        },
+        {
+          "bbox": [
+            0.678,
+            0.358,
+            0.862,
+            0.41
+          ],
+          "type": "window"
+        }
+      ]
+    },
+    "fixtures": {
+      "status": "pass",
+      "reason": "The room architecture and fixed fixtures, including recessed lighting and window blinds, are identical in both images. Changes are limited to furniture and decor, which is permissible.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "floor": {
+      "status": "pass",
+      "reason": "The structural floor material is carpet in both images. The staged image adds a rug, which is a movable item and does not constitute a structural change.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "envelope": {
+      "status": "pass",
+      "reason": "The architectural envelope, including all walls, windows, door, and ceiling geometry, remains identical between the baseline and staged images. All structural elements, recesses, and wall planes are preserved. Differences are solely due to furniture, decor, and a minor camera perspective shift.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    }
+  },
+  "specialistResults": {
+    "openings": {
+      "pass": false,
+      "confidence": 0.92,
+      "issueType": "opening_infilled"
+    },
+    "fixtures": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "floor": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "envelope": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    }
+  },
+  "specialistHardFailSignals": [
+    {
+      "validator": "openings",
+      "issueType": "opening_infilled",
+      "confidence": 0.92
+    }
+  ],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "issueType": "none",
+    "blockSource": null,
+    "score": 0.792,
+    "riskLevel": "MEDIUM",
+    "reasons": [],
+    "warnings": [
+      "No structural (Tier 1) or fixed feature (Tier 2) changes were detected.",
+      "The room envelope, walls, door openings, and window openings remain unchanged.",
+      "Built-in wardrobe and ceiling recessed lights are preserved in their original state.",
+      "Window treatment types (blinds) remain consistent.",
+      "Furniture, decor, lamps, and a rug have been introduced, which are classified as flexible (Tier 3) changes.",
+      "The door handle style has changed, which is considered a flexible (Tier 3) modification to an existing fixture, not impacting the structural integrity of the door or opening."
+    ],
+    "gemini": {
+      "category": "furniture_change",
+      "violationType": null,
+      "confidence": 1,
+      "hardFail": false,
+      "reasons": [
+        "No structural (Tier 1) or fixed feature (Tier 2) changes were detected.",
+        "The room envelope, walls, door openings, and window openings remain unchanged.",
+        "Built-in wardrobe and ceiling recessed lights are preserved in their original state.",
+        "Window treatment types (blinds) remain consistent.",
+        "Furniture, decor, lamps, and a rug have been introduced, which are classified as flexible (Tier 3) changes.",
+        "The door handle style has changed, which is considered a flexible (Tier 3) modification to an existing fixture, not impacting the structural integrity of the door or opening."
+      ]
+    }
+  },
+  "overallDecision": {
+    "finalStatus": "fail",
+    "failedAt": "specialist",
+    "reasons": [
+      "openings:opening_infilled:0.92"
+    ]
+  }
+}

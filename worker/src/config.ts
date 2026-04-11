@@ -38,12 +38,12 @@ export const LOCAL_VALIDATOR_TIER: LocalValidatorTier =
 
 export type StructuralSignalsMode = "log_only" | "active";
 
-const STRUCTURAL_SIGNALS_MODE_RAW = String(process.env.STRUCTURAL_SIGNALS_MODE || "log_only")
+const STRUCTURAL_SIGNALS_MODE_RAW = String(process.env.STRUCTURAL_SIGNALS_MODE || "active")
   .trim()
   .toLowerCase();
 
 export const STRUCTURAL_SIGNALS_MODE: StructuralSignalsMode =
-  STRUCTURAL_SIGNALS_MODE_RAW === "active" ? "active" : "log_only";
+  STRUCTURAL_SIGNALS_MODE_RAW === "active" ? "active" : "active"; // force active — structural claim enforcement always on
 
 export const STRUCTURAL_SIGNALS_ACTIVE = STRUCTURAL_SIGNALS_MODE === "active";
 

@@ -1,0 +1,150 @@
+{
+  "pairId": "bedroom14-03",
+  "baseline": "Bedroom 14.jpg",
+  "enhanced": "enhanced_Bedroom 14-03.jpg",
+  "specialists": {
+    "openings": {
+      "status": "pass",
+      "reason": "opening_relocated_review|opening_resized|opening_size_reduction_ge_0.25:0.300",
+      "confidence": 0.6,
+      "hardFail": false,
+      "issueType": "opening_relocated",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_resized_minor:0.300",
+        "opening_signature_mismatch"
+      ],
+      "structuralSignals": [
+        {
+          "claim": "opening_resized_major",
+          "region": {
+            "x1": 0,
+            "y1": 0.169,
+            "x2": 0.456,
+            "y2": 0.548
+          },
+          "confidence": 0.95,
+          "source": "openingPreservation",
+          "openingId": "W1",
+          "openingType": "window",
+          "wallIndex": 3
+        }
+      ],
+      "openingRegions": [
+        {
+          "bbox": [
+            0.087,
+            0.163,
+            0.502,
+            0.455
+          ],
+          "type": "window"
+        },
+        {
+          "bbox": [
+            0.551,
+            0.241,
+            0.817,
+            0.493
+          ],
+          "type": "window"
+        },
+        {
+          "bbox": [
+            0,
+            0.298,
+            0.04,
+            1
+          ],
+          "type": "door"
+        }
+      ]
+    },
+    "fixtures": {
+      "status": "pass",
+      "reason": "The room architecture and fixed fixtures, including the ceiling light and windows, are consistent between the two images. The changes are limited to furniture and decor, which is permissible.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "floor": {
+      "status": "pass",
+      "reason": "The structural floor material is consistently carpet in both images. The staged image has added a rug, which is a non-structural movable item.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": []
+    },
+    "envelope": {
+      "status": "fail",
+      "reason": "envelope_confirmed_structural_change: The right wall in the staged image appears as a continuous flat surface. In contrast, the baseline image clearly shows a distinct vertical indentation or opening/door frame in that exact area, indicating that a structural discontinuity has been removed and the wall has been flattened.",
+      "confidence": 1,
+      "hardFail": true,
+      "issueType": "envelope_anomaly",
+      "issueTier": "review",
+      "advisorySignals": [
+        "envelope_confirmed_structural_change: The right wall in the staged image appears as a continuous flat surface. In contrast, the baseline image clearly shows a distinct vertical indentation or opening/door frame in that exact area, indicating that a structural discontinuity has been removed and the wall has been flattened.",
+        "envelope_confirmed_structural_change"
+      ]
+    }
+  },
+  "specialistResults": {
+    "openings": {
+      "pass": true,
+      "confidence": 0.6,
+      "issueType": "none"
+    },
+    "fixtures": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "floor": {
+      "pass": true,
+      "confidence": 1,
+      "issueType": "none"
+    },
+    "envelope": {
+      "pass": false,
+      "confidence": 1,
+      "issueType": "envelope_anomaly"
+    }
+  },
+  "specialistHardFailSignals": [],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "issueType": "none",
+    "blockSource": null,
+    "score": 0.792,
+    "riskLevel": "MEDIUM",
+    "reasons": [],
+    "warnings": [
+      "All detected changes are additions of flexible furniture, decor, and lamps (Tier 3).",
+      "The window treatment type (blinds + curtains) was preserved; only minor styling of the curtains changed (Tier 3).",
+      "No structural elements (walls, doors, window openings) have been altered.",
+      "No fixed features (main ceiling fixture, window treatment type) have been changed or removed."
+    ],
+    "gemini": {
+      "category": "furniture_change",
+      "violationType": null,
+      "confidence": 1,
+      "hardFail": false,
+      "reasons": [
+        "All detected changes are additions of flexible furniture, decor, and lamps (Tier 3).",
+        "The window treatment type (blinds + curtains) was preserved; only minor styling of the curtains changed (Tier 3).",
+        "No structural elements (walls, doors, window openings) have been altered.",
+        "No fixed features (main ceiling fixture, window treatment type) have been changed or removed."
+      ]
+    }
+  },
+  "overallDecision": {
+    "finalStatus": "pass",
+    "failedAt": null,
+    "reasons": []
+  }
+}
