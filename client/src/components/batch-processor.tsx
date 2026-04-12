@@ -3975,6 +3975,14 @@ export default function BatchProcessor({
                 status === "failed" ||
                 retryCompletedWithoutStage2
               );
+              const shouldAdoptRetryStage2IntoStageUrls =
+                isRetryChildJob &&
+                status === "completed" &&
+                hasIncomingStage2 &&
+                !existingStage2Url;
+              const resolvedStage2UrlForCard = shouldAdoptRetryStage2IntoStageUrls
+                ? incomingStage2Url
+                : preservedParentStage2Url;
               const preserveExistingEditArtifact = !!existingEditLatestUrl && !incomingEditLatestUrl;
               const mergedLatestEditUrl = isRegionEdit && completedFinal
                 ? (displayUrl ?? incomingEditLatestUrl ?? existingEditLatestUrl ?? null)
@@ -3992,8 +4000,8 @@ export default function BatchProcessor({
                   ? {
                       ...(existingStageMapObj || {}),
                       ...(stageUrlsMap || {}),
-                      '2': preservedParentStage2Url,
-                      stage2: preservedParentStage2Url,
+                      '2': resolvedStage2UrlForCard,
+                      stage2: resolvedStage2UrlForCard,
                       '1B': stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || stageUrlsMap?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || existingStageMapObj?.stage1B || null,
                       '1A': stageUrlsMap?.['1A'] || stageUrlsMap?.['1'] || stageUrlsMap?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || existingStageMapObj?.stage1A || null,
                       stage1B: stageUrlsMap?.stage1B || stageUrlsMap?.['1B'] || stageUrlsMap?.['1b'] || existingStageMapObj?.stage1B || existingStageMapObj?.['1B'] || existingStageMapObj?.['1b'] || null,
@@ -4223,8 +4231,19 @@ export default function BatchProcessor({
               )
             ) {
               setDisplayStageByIndex((prev) => {
-                // Only default on first selection; do not override user-selected tabs on later refreshes.
-                if (prev[idx]) return prev;
+                const existingSelectedStage = prev[idx] || null;
+                const shouldFlipFromStaleStage2 =
+                  existingSelectedStage === "2" &&
+                  !(
+                    toDisplayUrl(existing.stageUrls?.['2']) ||
+                    toDisplayUrl(existing.stageUrls?.stage2) ||
+                    toDisplayUrl(existing.result?.stageUrls?.['2']) ||
+                    toDisplayUrl(existing.result?.stageUrls?.stage2) ||
+                    null
+                  );
+                // Only default on first selection, except when the card was pinned to a stale Stage 2
+                // placeholder during retry and the first real retry artifact has now arrived.
+                if (existingSelectedStage && !shouldFlipFromStaleStage2) return prev;
                 return { ...prev, [idx]: "retried" };
               });
             }
@@ -6118,6 +6137,17 @@ export default function BatchProcessor({
                 const existingRetryHistory = Array.isArray(results[imageIndex]?.retryHistory)
                   ? results[imageIndex].retryHistory
                   : [];
+                const existingStageUrls =
+                  results[imageIndex]?.stageUrls ||
+                  results[imageIndex]?.result?.stageUrls ||
+                  null;
+                const existingStage2Url =
+                  toDisplayUrl(existingStageUrls?.['2']) ||
+                  toDisplayUrl(existingStageUrls?.stage2) ||
+                  null;
+                const mergedRetryStageUrls = existingStage2Url
+                  ? (existingStageUrls || stageUrls || null)
+                  : (stageUrls || existingStageUrls || null);
                 const retryParentJobId =
                   job.parentJobId ||
                   job.retryInfo?.parentJobId ||
@@ -6140,7 +6170,7 @@ export default function BatchProcessor({
                     mode: job.mode || "staged",
                     originalImageUrl: preservedOriginalUrl,
                     qualityEnhancedUrl: preservedQualityEnhancedUrl,
-                    stageUrls: r?.stageUrls || stageUrls || null,
+                    stageUrls: mergedRetryStageUrls,
                     imageId: imageIdFromJob || r?.imageId,
                     retryLatestJobId: jobId,
                     latestRetryUrl: completedStage2OutputUrl,
@@ -6170,7 +6200,7 @@ export default function BatchProcessor({
                       resultUrl: completedStage2OutputUrl,
                       previewUrl: completedStage2OutputUrl,
                       originalImageUrl: preservedOriginalUrl,
-                      stageUrls: r?.result?.stageUrls || r?.stageUrls || stageUrls || (normalizedResult as any)?.stageUrls,
+                      stageUrls: mergedRetryStageUrls || (normalizedResult as any)?.stageUrls,
                       imageId: imageIdFromJob || (normalizedResult as any)?.imageId,
                       qualityEnhancedUrl: preservedQualityEnhancedUrl,
                       retryLatestJobId: jobId,

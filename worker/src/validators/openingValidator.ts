@@ -5,13 +5,30 @@ import {
   detectRelocation,
   extractStructuralBaseline,
   type StructuralBaseline,
+  type OpeningDiagnosticFinding,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
 import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueType } from "./issueTypes";
 import { computeOpeningGeometrySignal } from "./signalMetrics";
 import type { ValidatorOutcome } from "./validatorOutcome";
+import type { AdvisoryObservation } from "./runValidation";
 
-export type OpeningValidatorResult = ValidatorOutcome;
+export type OpeningValidatorDetail = {
+  id: string;
+  classification: "present" | "occluded" | "altered" | "removed" | "relocated" | "unknown";
+  reason: string;
+  explanation?: string;
+  location?: string;
+  machineReasons?: string[];
+  question?: string;
+};
+
+export type OpeningValidatorResult = ValidatorOutcome & {
+  explanation?: string;
+  findings?: OpeningDiagnosticFinding[];
+  advisoryObservations?: AdvisoryObservation[];
+  details?: OpeningValidatorDetail[];
+};
 
 const OPENING_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const OPENING_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
@@ -116,6 +133,95 @@ function buildOpeningRegions(openings: StructuralBaseline["openings"]): Array<{
       };
     })
     .filter((region): region is { bbox: [number, number, number, number]; type: "window" | "door" } => region !== null);
+}
+
+function bboxToApproximateLocation(
+  bbox?: [number, number, number, number]
+): AdvisoryObservation["approximateLocation"] {
+  if (!bbox) return undefined;
+  const cx = (bbox[0] + bbox[2]) / 2;
+  if (cx < 0.2) return "left";
+  if (cx < 0.4) return "center-left";
+  if (cx < 0.6) return "center";
+  if (cx < 0.8) return "center-right";
+  return "right";
+}
+
+function inferFindingIssueType(finding: OpeningDiagnosticFinding): string {
+  if (finding.status === "infilled") return ISSUE_TYPES.OPENING_INFILLED;
+  if (finding.status === "missing") return ISSUE_TYPES.OPENING_REMOVED;
+  if (finding.machineReasons.includes("opening_type_changed")) return ISSUE_TYPES.OPENING_ANOMALY;
+  if (finding.machineReasons.includes("wall_index_changed")) return ISSUE_TYPES.OPENING_RELOCATED;
+  if (
+    finding.machineReasons.includes("horizontal_band_changed") ||
+    finding.machineReasons.includes("vertical_band_changed")
+  ) {
+    return ISSUE_TYPES.OPENING_RELOCATED;
+  }
+  if (finding.machineReasons.some((reason) =>
+    reason === "wall_coverage_band_changed_gt_one" ||
+    reason === "pane_structure_changed" ||
+    reason === "orientation_changed" ||
+    reason.startsWith("window_sill_shift_gt_") ||
+    reason.startsWith("aperture_expanded_gt_")
+  )) {
+    return ISSUE_TYPES.OPENING_RESIZED_MINOR;
+  }
+  return ISSUE_TYPES.OPENING_ANOMALY;
+}
+
+function buildFindingContext(finding: OpeningDiagnosticFinding): string {
+  if (finding.status === "infilled") {
+    return "Local opening-preservation analysis could not match the baseline opening in this region and detected possible wall continuity where the opening previously existed.";
+  }
+  if (finding.status === "missing") {
+    return "Local opening-preservation analysis could not match the baseline opening in this region in the AFTER image.";
+  }
+  if (finding.machineReasons.includes("wall_index_changed")) {
+    return "Local opening-preservation analysis flagged this opening as potentially appearing on a different wall than in the original image.";
+  }
+  if (
+    finding.machineReasons.includes("horizontal_band_changed") ||
+    finding.machineReasons.includes("vertical_band_changed")
+  ) {
+    return "Local opening-preservation analysis flagged a possible shift in the opening's wall position.";
+  }
+  if (finding.machineReasons.includes("opening_type_changed")) {
+    return "Local opening-preservation analysis flagged a possible change in the type of opening at this location.";
+  }
+  return "Local opening-preservation analysis flagged a possible structural difference for this baseline opening.";
+}
+
+function buildOpeningAdvisoryObservations(findings: OpeningDiagnosticFinding[]): AdvisoryObservation[] {
+  return findings.map((finding) => ({
+    category: "openings",
+    validator: "openings",
+    issueType: inferFindingIssueType(finding),
+    location: finding.location,
+    approximateLocation: bboxToApproximateLocation(finding.bbox),
+    bbox: finding.bbox,
+    confidence: finding.confidence,
+    question: finding.question,
+    context: buildFindingContext(finding),
+    investigationTask: finding.question,
+  }));
+}
+
+function buildOpeningExplanation(
+  findings: OpeningDiagnosticFinding[],
+  fallbackReason: string,
+  summaryAnalysis?: string,
+): string {
+  if (findings.length > 0) {
+    return findings.slice(0, 2).map((finding) => finding.explanation).join(" ");
+  }
+  if (summaryAnalysis && summaryAnalysis.trim().length > 0) {
+    return summaryAnalysis.trim();
+  }
+  if (fallbackReason === "openings_preserved") {
+    return "All baseline openings appear preserved.";
+  }
+  return fallbackReason.replace(/\|/g, ", ");
 }
 
 function toBaselineOpeningType(input: string): "window" | "door" | "closet_door" | "opening" {
@@ -292,6 +398,8 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     issueType,
     issueTier: classifyIssueTier(issueType),
     advisorySignals,
+    details,
+    explanation: reason,
   };
 }
 
@@ -619,6 +727,9 @@ export async function runOpeningValidator(
 
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
     const reason = reasonParts.join("|");
+    const findings = Array.isArray(deterministic.findings) ? deterministic.findings : [];
+    const advisoryObservations = buildOpeningAdvisoryObservations(findings);
+    const explanation = buildOpeningExplanation(findings, reason, deterministic.summary.analysis);
     const relocationOnly = !hardFail && (deterministic.summary.openingRelocated || relocationDetected);
     const hasAdvisoryIssue = reason !== "openings_preserved" || advisorySignals.length > 0;
     const issueType = hasAdvisoryIssue
@@ -629,6 +740,7 @@ export async function runOpeningValidator(
           advisorySignals,
         })
       : ISSUE_TYPES.NONE;
+    const findingById = new Map(findings.map((finding) => [finding.id, finding]));
     const comparisonResult = {
       pass: !hardFail,
       issueType,
@@ -638,21 +750,33 @@ export async function runOpeningValidator(
       reason,
       details: baselineOpenings.openings.map((opening) => ({
         id: opening.id,
-        classification: hardFail
-          ? reason.includes("opening_removed") || reason.includes("opening_infilled") || reason.includes("opening_sealed")
-            ? "removed"
-            : reason.includes("opening_type_changed") ||
-              reason.includes("opening_class_mismatch") ||
-              reason.includes("opening_added") ||
-              reason.includes("opening_size_reduction") ||
-              reason.includes("opening_resized")
-              ? "altered"
-              : "present"
-          : reason.includes("occlusion")
-            ? "occluded"
-            : "present",
-        reason,
+        classification: findingById.has(opening.id)
+          ? ((): OpeningValidatorDetail["classification"] => {
+              const finding = findingById.get(opening.id)!;
+              if (finding.status === "missing" || finding.status === "infilled") return "removed";
+              if (finding.machineReasons.includes("wall_index_changed")) return "relocated";
+              return "altered";
+            })()
+          : hardFail
+            ? reason.includes("opening_removed") || reason.includes("opening_infilled") || reason.includes("opening_sealed")
+              ? "removed"
+              : reason.includes("opening_type_changed") ||
+                reason.includes("opening_class_mismatch") ||
+                reason.includes("opening_added") ||
+                reason.includes("opening_size_reduction") ||
+                reason.includes("opening_resized")
+                ? "altered"
+                : "present"
+            : reason.includes("occlusion")
+              ? "occluded"
+              : "present",
+        reason: findingById.get(opening.id)?.machineReasons.join("|") || reason,
+        explanation: findingById.get(opening.id)?.explanation,
+        location: findingById.get(opening.id)?.location,
+        machineReasons: findingById.get(opening.id)?.machineReasons,
+        question: findingById.get(opening.id)?.question,
       })),
+      explanation,
     };
 
     console.log("[OPENINGS_COMPARISON]", comparisonResult);
@@ -673,6 +797,10 @@ export async function runOpeningValidator(
       issueType,
       issueTier: classifyIssueTier(issueType),
       advisorySignals,
+      explanation,
+      findings,
+      advisoryObservations,
+      details: comparisonResult.details,
       structuralSignals: deterministic.structuralSignals,
       openingRegions,
     };

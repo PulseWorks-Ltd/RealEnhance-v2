@@ -9646,6 +9646,7 @@ All openings must remain identical in position and size to the original image.`;
       const specialistAdvisorySignals: string[] = [];
       const collectedStructuralSignals: StructuralSignal[] = [];
       const specialistAdvisoryObservations: AdvisoryObservation[] = [];
+      let openingAdvisoryObservations: AdvisoryObservation[] = [];
       let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
       let openingStructuralSignalDetected = false;
@@ -9814,6 +9815,9 @@ All openings must remain identical in position and size to the original image.`;
           subtype: (opRes as any).subtype,
         });
         appendAdvisories("openings", opRes.advisorySignals || []);
+        openingAdvisoryObservations = Array.isArray(opRes.advisoryObservations)
+          ? opRes.advisoryObservations
+          : [];
         openingRegions = Array.isArray(opRes.openingRegions) ? opRes.openingRegions : [];
         openingSignatureSignalDetected = (opRes.advisorySignals || [])
           .map((signal) => normalizeValidatorReason(String(signal || "")))
@@ -10325,8 +10329,13 @@ All openings must remain identical in position and size to the original image.`;
 
         const specialistAdvisoryObservationsBatch: AdvisoryObservation[] = [];
 
+        if (openingAdvisoryObservations.length > 0) {
+          specialistAdvisoryObservationsBatch.push(...openingAdvisoryObservations);
+        }
+
         for (const sig of specialistIssueSignals) {
           if (!sig.issueType || sig.issueType === "none") continue;
+          if (sig.validator === "openings" && openingAdvisoryObservations.length > 0) continue;
           const validatorDomain = (sig.validator === "openings" ? "openings" : sig.validator === "fixtures" ? "fixtures" : sig.validator) as AdvisoryObservation["validator"];
 
           // Try to find a matching bbox — prefer structural signal region, fall back to openingRegions

@@ -71,6 +71,7 @@ export type StructuralBaseline = {
 
 export type OpeningValidationResult = {
   results: OpeningResult[];
+  findings: OpeningDiagnosticFinding[];
   structuralSignals: StructuralSignal[];
   summary: {
     openingRemoved: boolean;
@@ -105,6 +106,19 @@ export type OpeningResult = {
   sealed: boolean;
   relocated: boolean;
   outOfFrame: boolean;
+  confidence: number;
+};
+
+export type OpeningDiagnosticFinding = {
+  id: string;
+  openingType: StructuralOpeningType;
+  status: "missing" | "infilled" | "altered";
+  location: string;
+  wallIndex: WallIndex;
+  bbox: [number, number, number, number];
+  machineReasons: string[];
+  explanation: string;
+  question: string;
   confidence: number;
 };
 
@@ -410,6 +424,80 @@ function mapBandToLegacyHorizontal(value: HorizontalBand): RelativeHorizontalPos
   if (value === "left_third") return "left_third";
   if (value === "right_third") return "right_third";
   return "center";
+}
+
+function describeWallIndex(wallIndex: WallIndex): string {
+  if (wallIndex === 0) return "near wall";
+  if (wallIndex === 1) return "right wall";
+  if (wallIndex === 2) return "far wall";
+  return "left wall";
+}
+
+function describeHorizontalBand(band: HorizontalBand): string {
+  if (band === "left_third") return "left side";
+  if (band === "right_third") return "right side";
+  return "center";
+}
+
+function describeOpeningType(type: StructuralOpeningType): string {
+  if (type === "window") return "window opening";
+  if (type === "door") return "door opening";
+  if (type === "closet_door") return "closet door opening";
+  return "walk-through opening";
+}
+
+function describeOpeningLocation(
+  opening: Pick<StructuralOpening, "type" | "wallIndex" | "horizontalBand">
+): string {
+  return `${describeOpeningType(opening.type)} in the ${describeHorizontalBand(opening.horizontalBand)} of the ${describeWallIndex(opening.wallIndex)}`;
+}
+
+function joinFragments(fragments: string[]): string {
+  if (fragments.length === 0) return "appears different from the original image";
+  if (fragments.length === 1) return fragments[0];
+  if (fragments.length === 2) return `${fragments[0]} and ${fragments[1]}`;
+  return `${fragments.slice(0, -1).join(", ")}, and ${fragments[fragments.length - 1]}`;
+}
+
+function buildAlteredOpeningNarrative(
+  opening: Pick<StructuralOpening, "type" | "wallIndex" | "horizontalBand">,
+  invariantReasons: string[]
+): { explanation: string; question: string } {
+  const location = describeOpeningLocation(opening);
+  const movedWall = invariantReasons.includes("wall_index_changed");
+  const shiftedOnWall = invariantReasons.includes("horizontal_band_changed") || invariantReasons.includes("vertical_band_changed");
+  const resized = invariantReasons.some((reason) =>
+    reason === "wall_coverage_band_changed_gt_one" ||
+    reason === "pane_structure_changed" ||
+    reason === "orientation_changed" ||
+    reason.startsWith("window_sill_shift_gt_") ||
+    reason.startsWith("aperture_expanded_gt_")
+  );
+  const typeChanged = invariantReasons.includes("opening_type_changed");
+  const stateChanged = invariantReasons.includes("door_leaf_state_changed");
+
+  const fragments: string[] = [];
+  if (movedWall) fragments.push("appears on a different wall than in the original image");
+  if (!movedWall && shiftedOnWall) fragments.push("appears shifted from its original wall position");
+  if (resized) fragments.push("appears materially different in size or shape");
+  if (typeChanged) fragments.push("appears to have changed opening type");
+  if (stateChanged) fragments.push("appears in a different door-leaf state");
+
+  let question = `Does the ${location} retain the same position and structure as in the original image?`;
+  if (movedWall) {
+    question = `Is the ${location} still present on the same wall as in the original image, or does it now appear on a different wall?`;
+  } else if (typeChanged) {
+    question = `Does the ${location} still appear as the same type of opening as in the original image?`;
+  } else if (resized) {
+    question = `Does the ${location} retain the same visible size and shape as in the original image?`;
+  } else if (shiftedOnWall) {
+    question = `Is the ${location} still in the same wall position as in the original image?`;
+  }
+
+  return {
+    explanation: `The ${location} ${joinFragments(fragments)}.`,
+    question,
+  };
 }
 
 function deriveVerticalBand(opening: Pick<StructuralOpening, "touchesFloor" | "touchesCeiling">): VerticalBand {
@@ -919,7 +1007,7 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     confidence: Math.max(0, Math.min(1, input.summary.confidence)),
   };
 
-  return { results, summary, detectedOpenings: [], structuralSignals: [] };
+  return { results, findings: [], summary, detectedOpenings: [], structuralSignals: [] };
 }
 
 export async function extractStructuralBaseline(
@@ -1009,6 +1097,7 @@ export async function validateOpeningPreservation(
   const isEditMode = options?.mode === "edit";
 
   const openingResults: OpeningResult[] = [];
+  const findings: OpeningDiagnosticFinding[] = [];
   const structuralSignals: StructuralSignal[] = [];
   const outOfFrameOpenings: string[] = [];
   let openingRemoved = false;
@@ -1076,6 +1165,23 @@ export async function validateOpeningPreservation(
       analysisNotes.push(
         `Baseline opening ${baseOpening.id} (${baseOpening.type}) near wallIndex=${baseOpening.wallIndex}, band=${baseOpening.horizontalBand}/${baseOpening.verticalBand} is not detectable in AFTER; classified as ${status.toLowerCase()}.`
       );
+      const location = describeOpeningLocation(baseOpening);
+      findings.push({
+        id: baseOpening.id,
+        openingType: baseOpening.type,
+        status: likelyInfilled ? "infilled" : "missing",
+        location,
+        wallIndex: baseOpening.wallIndex,
+        bbox: baseOpening.bbox,
+        machineReasons: [reason],
+        explanation: likelyInfilled
+          ? `The ${location} is not detectable in the AFTER image and appears to have been replaced by continuous wall surface.`
+          : `The ${location} is not detectable in the AFTER image.` ,
+        question: likelyInfilled
+          ? `Is the ${location} still present in the AFTER image, or does this area now appear to be continuous wall surface?`
+          : `Is the ${location} still visible in the AFTER image, or is it no longer present?`,
+        confidence: 0.99,
+      });
 
       openingResults.push({
         id: baseOpening.id,
@@ -1233,6 +1339,23 @@ export async function validateOpeningPreservation(
       }`
     );
 
+    if (altered) {
+      const location = describeOpeningLocation(baseOpening);
+      const narrative = buildAlteredOpeningNarrative(baseOpening, invariantReasons);
+      findings.push({
+        id: baseOpening.id,
+        openingType: baseOpening.type,
+        status: "altered",
+        location,
+        wallIndex: baseOpening.wallIndex,
+        bbox: baseOpening.bbox,
+        machineReasons: invariantReasons,
+        explanation: narrative.explanation,
+        question: narrative.question,
+        confidence: Math.min(baseOpening.confidence, match.confidence),
+      });
+    }
+
     openingResults.push({
       id: baseOpening.id,
       present: !altered,
@@ -1356,6 +1479,7 @@ export async function validateOpeningPreservation(
 
   return {
     results: openingResults,
+    findings,
     structuralSignals,
     summary,
     detectedOpenings: detected.openings,
