@@ -3,6 +3,8 @@ import { ShieldCheck, Sofa, Zap, CheckCircle, Upload, ArrowRight } from 'lucide-
 import { Button } from "@/components/ui/button";
 
 export default function Landing() {
+  const landingSliderImageClassName = 'h-full w-full object-contain object-center';
+
   const sampleImages = [
     {
       type: 'lounge',
@@ -74,11 +76,11 @@ export default function Landing() {
           {/* Right Col (Visual) */}
           <div className="lg:col-span-3 relative flex items-center justify-center">
             <div className="relative w-full rounded-2xl shadow-xl overflow-hidden border border-slate-200 bg-slate-100">
-              <div className="h-[420px] lg:h-[520px] xl:h-[600px]">
+              <div className="h-[420px] p-4 lg:h-[520px] xl:h-[600px]">
                 <ReactCompareSlider
                   className="h-full w-full"
-                  itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" className="h-full w-full object-cover object-[center_55%]" />}
-                  itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" className="h-full w-full object-cover object-[center_55%]" />}
+                  itemOne={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01.jpg" alt="Example Exterior Image 01 before enhancement" className={landingSliderImageClassName} />}
+                  itemTwo={<ReactCompareSliderImage src="/landing-samples/example-exterior-image-01-enhanced.jpg" alt="Example Exterior Image 01 enhanced result" className={landingSliderImageClassName} />}
                 />
               </div>
               <div className="absolute top-3 left-3 bg-white/80 backdrop-blur px-3 py-1 text-xs font-medium rounded-full shadow-sm pointer-events-none z-10">
@@ -121,10 +123,11 @@ export default function Landing() {
                 href="/login"
                 className="group relative overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 shadow-sm hover:shadow-lg transition-all duration-200 hover:scale-[1.03]"
               >
-                <div className="relative h-96 bg-slate-100">
+                <div className="relative h-96 bg-slate-100 p-4">
                   <ReactCompareSlider
-                    itemOne={<ReactCompareSliderImage src={sample.beforeSrc} alt={`${sample.label} before`} className={sample.type === 'messy-living-room' ? "object-contain [clip-path:inset(7%_0_7%_0)]" : "object-contain"} />}
-                    itemTwo={<ReactCompareSliderImage src={sample.afterSrc} alt={`${sample.label} after`} className="object-contain" />}
+                    className="h-full w-full"
+                    itemOne={<ReactCompareSliderImage src={sample.beforeSrc} alt={`${sample.label} before`} className={landingSliderImageClassName} />}
+                    itemTwo={<ReactCompareSliderImage src={sample.afterSrc} alt={`${sample.label} after`} className={landingSliderImageClassName} />}
                   />
                   <div className="absolute top-3 left-3 bg-white/80 backdrop-blur px-3 py-1 text-xs font-medium rounded-full shadow-sm pointer-events-none z-10">
                     Original
