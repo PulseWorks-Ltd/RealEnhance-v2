@@ -6,6 +6,7 @@ export type ValidatorOutcome = {
   reason: string;
   confidence: number;
   hardFail: boolean;
+  advisory?: boolean;
   issueType: ValidationIssueType;
   issueTier: ValidationIssueTier;
   advisorySignals: string[];

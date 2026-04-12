@@ -9863,6 +9863,32 @@ All openings must remain identical in position and size to the original image.`;
           }
         }
 
+        // HIGH-CONFIDENCE REMOVAL GUARD: Prevent sensor-based downgrade for undeniable opening removals.
+        // When the opening validator explicitly hard-failed with opening_removed or opening_infilled
+        // at high confidence and no occlusion evidence, preserve the hard-fail and skip the
+        // sensor pass path that would otherwise log a misleading PASS.
+        const openingOcclusionIndicator = /\b(curtains?|blinds?|drapes?|window[\s_-]?coverings?)\b/i.test(
+          [opRes.reason || "", ...(opRes.advisorySignals || [])].join(" ")
+        );
+        const isHighConfidenceOpeningRemoval =
+          hasMaterialOpeningViolation &&
+          (specialistResults.opening.issueType === ISSUE_TYPES.OPENING_REMOVED ||
+           specialistResults.opening.issueType === ISSUE_TYPES.OPENING_INFILLED) &&
+          (opRes.confidence ?? 0) >= 0.9 &&
+          !openingOcclusionIndicator;
+
+        if (isHighConfidenceOpeningRemoval) {
+          nLog("[OPENING_HIGH_CONFIDENCE_REMOVAL_GUARD]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType: specialistResults.opening.issueType,
+            confidence: opRes.confidence,
+            reason: opRes.reason,
+            action: "preserve_hard_fail_skip_sensor_downgrade",
+          });
+        }
+
         const openingSignals = extractOpeningSignals(opRes);
         const openingConfidence = evaluateOpeningStructuralConfidence(openingSignals);
         const openingReason = openingConfidence.reason;
@@ -9930,27 +9956,31 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        nLog("[STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)");
-        nLog("[OPENING_SIGNATURE_TELEMETRY]", {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          signalDetected: openingSignatureSignalDetected,
-          decision: "proceed",
-          decisionPath: "post_opening_validator",
-          stage2Blocked,
-        });
-        logValidatorResult({
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          validator: "openingValidator",
-          result: "PASS",
-          reason:
-            openingConfidence.level !== "none"
-              ? normalizeValidatorReason(`sensor_${openingReason || "opening_signal"}`)
-              : "none",
-        });
+        // Skip the sensor-pass downgrade path when the high-confidence removal guard is active.
+        // The opening FAIL is preserved; sensor signals are still extracted above for telemetry.
+        if (!isHighConfidenceOpeningRemoval) {
+          nLog("[STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)");
+          nLog("[OPENING_SIGNATURE_TELEMETRY]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            signalDetected: openingSignatureSignalDetected,
+            decision: "proceed",
+            decisionPath: "post_opening_validator",
+            stage2Blocked,
+          });
+          logValidatorResult({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            validator: "openingValidator",
+            result: "PASS",
+            reason:
+              openingConfidence.level !== "none"
+                ? normalizeValidatorReason(`sensor_${openingReason || "opening_signal"}`)
+                : "none",
+          });
+        }
 
         const fixRes = await runFixtureValidator(validationBasePath, path2, {
           jobId: payload.jobId,
@@ -10499,9 +10529,9 @@ All openings must remain identical in position and size to the original image.`;
       const ALLOWED_HARDFAIL_ISSUES = new Set<ValidationIssueType>([
         ISSUE_TYPES.OPENING_REMOVED,
         ISSUE_TYPES.OPENING_INFILLED,
-        ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED,
-        ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS,
         ISSUE_TYPES.FIXTURE_CHANGED,
+        // ENVELOPE_CORNER_FLATTENED removed: envelope signals are advisory-only.
+        // ENVELOPE_VERTICAL_EDGE_LOSS removed: envelope signals are advisory-only.
         // FLOOR_CHANGED removed: floor validator never sets hardFail=true,
         // so it should not trigger pre-Unified blocking.
       ]);
@@ -10674,11 +10704,9 @@ All openings must remain identical in position and size to the original image.`;
       }
 
       if (!structuralOverrideBlock && hasCollapse) {
-        structuralOverrideBlock = filteredSignals.find(
-          (signal) =>
-            signal.issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
-            signal.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
-        );
+        // Envelope collapse signals are now advisory-only.
+        // They no longer trigger structuralOverrideBlock pre-Unified.
+        // Unified will adjudicate extreme envelope collapse claims.
       }
 
       // SINGLE-AUTHORITY: categoricalBlock uses the strict whitelist gate.

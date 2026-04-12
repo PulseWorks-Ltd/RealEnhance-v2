@@ -76,14 +76,19 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     reason: reasonCode || "envelope_preserved",
   });
 
+  // ENVELOPE ADVISORY DEMOTION: Envelope validator is always advisory.
+  // Subtle geometry changes (recess flattened, indentation removed, corner smoothed,
+  // vertical edge loss) must NOT hard-fail. These signals are passed to Unified for
+  // adjudication. True opening removals are caught by the opening validator.
   return {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
-    hardFail: parsed.ok ? false : (geometricCertainty && confidence >= 0.85),
+    hardFail: false,
     issueType,
     issueTier: classifyIssueTier(issueType),
     advisorySignals,
+    advisory: envelopeDetectedChange ? true : undefined,
   };
 }
 
