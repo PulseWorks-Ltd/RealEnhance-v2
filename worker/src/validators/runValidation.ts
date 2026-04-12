@@ -1776,12 +1776,13 @@ export async function runUnifiedValidation(
       (c) => c.result === "CONFIRMED" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
     );
 
-    // SINGLE-AUTHORITY: UNCERTAIN claims on prohibited structures are treated as failures (conservative)
+    // SINGLE-AUTHORITY: UNCERTAIN claims on prohibited structures are advisory only.
+    // Per intended architecture: UNCERTAIN → PASS (default). Only CONFIRMED triggers enforcement.
     const uncertainProhibited = geminiVerdict!.adjudicatedClaims!.filter(
       (c) => c.result === "UNCERTAIN" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
     );
 
-    const actionableClaims = [...confirmedProhibited, ...uncertainProhibited];
+    const actionableClaims = [...confirmedProhibited];
 
     if (actionableClaims.length > 0) {
       blockSource = "gemini";
@@ -1814,13 +1815,30 @@ export async function runUnifiedValidation(
     }
   }
 
-  // SINGLE-AUTHORITY: If any local validator failed and Gemini did not run or did not
-  // set blockSource, local failures still block. No log-only escape hatch.
+  // SINGLE-AUTHORITY: For Stage 2, if Gemini (Unified) ran and passed,
+  // local heuristic failures are advisory only — Unified is the final authority.
+  // For other stages, or if Gemini did not run, local failures still block.
   if (!blockSource && !allPassed) {
-    blockSource = "local";
-    if (reasons.length === 0) {
-      const failedNames = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff").map(r => r.name);
-      reasons.push(`local_validators_failed: ${failedNames.join(", ")}`);
+    const geminiRanAndPassed = results.geminiSemantic && results.geminiSemantic.passed === true;
+    if (stage === "2" && geminiRanAndPassed) {
+      // Stage 2: Unified PASS is authoritative — local failures become warnings only
+      const failedNames = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff" && r.name !== "geminiSemantic").map(r => r.name);
+      if (failedNames.length > 0) {
+        warnings.push(`local_validators_advisory: ${failedNames.join(", ")}`);
+        nLog("[UNIFIED_AUTHORITY] Local validator failures overridden by Gemini PASS", {
+          jobId: jobId || "unknown",
+          stage,
+          failedValidators: failedNames,
+          geminiPassed: true,
+          action: "advisory_only",
+        });
+      }
+    } else {
+      blockSource = "local";
+      if (reasons.length === 0) {
+        const failedNames = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff").map(r => r.name);
+        reasons.push(`local_validators_failed: ${failedNames.join(", ")}`);
+      }
     }
   }
 

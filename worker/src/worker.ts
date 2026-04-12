@@ -9430,7 +9430,9 @@ All openings must remain identical in position and size to the original image.`;
         issueType?: ValidationIssueType;
         issueTier?: ValidationIssueTier;
       }): SpecialistDecisionResult => {
-        const pass = params.status === "pass" && params.hardFail !== true;
+        // SINGLE-AUTHORITY: Only explicit hardFail determines specialist failure.
+        // status="fail" with hardFail=false is advisory — passed to Unified for adjudication.
+        const pass = params.hardFail !== true;
         const rawConfidence = Number(params.confidence);
         const confidence = Number.isFinite(rawConfidence)
           ? clamp01(rawConfidence)
@@ -9708,19 +9710,17 @@ All openings must remain identical in position and size to the original image.`;
           t === ISSUE_TYPES.OPENING_REMOVED ||
           t === ISSUE_TYPES.OPENING_SEALED
         ) {
-          const confidence = Number(signal.confidence);
-          const hasEnvelopeSupport = allSignals.some(
-            (s) =>
-              s.issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
-              s.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
-          );
-
-          if (
-            Number.isFinite(confidence) &&
-            confidence >= HIGH_CONFIDENCE_THRESHOLD &&
-            hasEnvelopeSupport
-          ) {
-            return "REMOVAL";
+          // SINGLE-AUTHORITY: Only explicit specialist hardFail triggers REMOVAL classification.
+          // Confidence-only signals are advisory for Unified adjudication.
+          if (signal.hardFail === true) {
+            const hasEnvelopeSupport = allSignals.some(
+              (s) =>
+                s.issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
+                s.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
+            );
+            if (hasEnvelopeSupport) {
+              return "REMOVAL";
+            }
           }
 
           return "UNKNOWN";
@@ -9730,7 +9730,9 @@ All openings must remain identical in position and size to the original image.`;
           t === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
           t === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
         ) {
-          if (signal.hardFail === true || Number(signal.confidence) >= HIGH_CONFIDENCE_THRESHOLD) {
+          // SINGLE-AUTHORITY: Only explicit specialist hardFail triggers COLLAPSE.
+          // Confidence alone must not bypass Unified.
+          if (signal.hardFail === true) {
             return "COLLAPSE";
           }
           return "UNKNOWN";
@@ -10500,10 +10502,17 @@ All openings must remain identical in position and size to the original image.`;
         ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED,
         ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS,
         ISSUE_TYPES.FIXTURE_CHANGED,
-        ISSUE_TYPES.FLOOR_CHANGED,
+        // FLOOR_CHANGED removed: floor validator never sets hardFail=true,
+        // so it should not trigger pre-Unified blocking.
       ]);
 
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
+        // SINGLE-AUTHORITY: Only specialist-acknowledged hardFail may trigger pre-Unified block.
+        // Confidence alone is never sufficient — the specialist must have explicitly decided hardFail.
+        if (signal.hardFail !== true) {
+          return false;
+        }
+
         const issueType = signal.issueType as ValidationIssueType | undefined;
         if (!issueType || issueType === ISSUE_TYPES.NONE) {
           return false;
@@ -10511,12 +10520,6 @@ All openings must remain identical in position and size to the original image.`;
 
         // SINGLE-AUTHORITY: Only whitelist issues may hard-fail
         if (!ALLOWED_HARDFAIL_ISSUES.has(issueType)) {
-          return false;
-        }
-
-        const confidence = Number(signal.confidence);
-        // Require high confidence for pre-unified hard-fail
-        if (!Number.isFinite(confidence) || confidence < HIGH_CONFIDENCE_THRESHOLD) {
           return false;
         }
 
@@ -10528,14 +10531,14 @@ All openings must remain identical in position and size to the original image.`;
       };
 
       // SINGLE-AUTHORITY: Unconditional hard-fail restricted to whitelist only.
-      // Requires high confidence AND whitelist membership.
+      // Requires explicit specialist hardFail AND whitelist membership.
       const isCriticalUnconditionalHardFail = (signal: SpecialistIssueSignal): boolean => {
+        if (signal.hardFail !== true) return false;
         const issueType = signal.issueType as ValidationIssueType | undefined;
         if (!issueType || issueType === ISSUE_TYPES.NONE) return false;
         if (!ALLOWED_HARDFAIL_ISSUES.has(issueType)) return false;
         if (issueType === ISSUE_TYPES.FIXTURE_CHANGED || issueType === ISSUE_TYPES.HVAC_CHANGED) return false;
-        const confidence = Number(signal.confidence);
-        return Number.isFinite(confidence) && confidence >= HIGH_CONFIDENCE_THRESHOLD;
+        return true;
       };
 
       const OPENING_OCCLUSION_GUARD_KEYWORDS = [

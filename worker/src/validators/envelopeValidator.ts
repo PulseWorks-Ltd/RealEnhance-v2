@@ -277,6 +277,8 @@ Non-fail certainty guard:
       });
 
       // ── Feature 1: Vertical Projection Histogram flag ──────────────
+      // SINGLE-AUTHORITY: VED is advisory only. It must NOT override Gemini's
+      // semantic decision. Advisory signals are emitted for Unified adjudication.
       if (vedResult.verticalEdgeLossDetected) {
         geminiResult.advisorySignals.push("envelope_vertical_edge_loss");
         // Upgrade issue type if Gemini didn't already flag a critical envelope issue
@@ -284,23 +286,30 @@ Non-fail certainty guard:
           geminiResult.issueType = ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS;
           geminiResult.issueTier = classifyIssueTier(ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS);
         }
-        if (geminiResult.status === "pass") {
-          geminiResult.status = "fail";
+        // Only upgrade status to fail when Gemini also detected an envelope issue
+        // (i.e. Gemini already returned ok: false). Do NOT override a Gemini PASS.
+        if (geminiResult.status !== "pass") {
           geminiResult.reason = `envelope_vertical_edge_loss: ${geminiResult.reason}`;
         }
       }
 
       // ── Feature 2: Corner Persistence → Structural Signal for Gemini ──
+      // SINGLE-AUTHORITY: VED corner persistence is advisory only.
+      // Emit advisory signals and structural signals for Unified adjudication.
+      // Do NOT override Gemini's own semantic verdict.
       if (vedResult.cornerPersistenceFailure) {
         geminiResult.advisorySignals.push("envelope_corner_flattened");
-        geminiResult.issueType = ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
-        geminiResult.issueTier = classifyIssueTier(ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED);
-        geminiResult.status = "fail";
+        // Only upgrade status/issueType when Gemini also detected an issue (ok: false).
+        // When Gemini returned ok: true (pass), keep it as advisory signal only.
+        if (geminiResult.status !== "pass") {
+          geminiResult.issueType = ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
+          geminiResult.issueTier = classifyIssueTier(ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED);
+          if (!geminiResult.reason.includes("corner")) {
+            geminiResult.reason = `envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. ${geminiResult.reason}`;
+          }
+        }
         // Do NOT hard-fail autonomously — emit structural signal and let Gemini adjudicate via mandatory verification.
         // Hard-fail will come from Gemini confirming the structural claim in runValidation.
-        if (!geminiResult.reason.includes("corner")) {
-          geminiResult.reason = `envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. ${geminiResult.reason}`;
-        }
         console.log("[SPECIALIST_REVIEW][ENVELOPE]", {
           event: "corner_persistence_failure",
           worstRetention: vedResult.worstRetention.toFixed(3),
