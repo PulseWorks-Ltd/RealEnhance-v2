@@ -20,7 +20,12 @@ import {
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
-import { convertTrialAndDetachUsageIfNeeded, getTrialSummary, redeemPromoForExistingAgency } from "../services/trials.js";
+import {
+  convertTrialAndDetachUsageIfNeeded,
+  getTrialSummary,
+  redeemCreditPromoForExistingAgency,
+  redeemPromoForExistingAgency,
+} from "../services/trials.js";
 import { pool } from "../db/index.js";
 
 const router = Router();
@@ -33,6 +38,9 @@ const stripe = process.env.STRIPE_SECRET_KEY
   : null;
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+const UNRESTRICTED_CREDIT_PROMO_CODES = new Set<string>([
+  "giveme100",
+]);
 
 async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
   const plan = getStripePlan(planTier);
@@ -540,6 +548,37 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       return res.status(400).json({ error: "Promo code is required" });
     }
 
+    const normalizedPromoCode = promoCode.toLowerCase();
+
+    if (UNRESTRICTED_CREDIT_PROMO_CODES.has(normalizedPromoCode)) {
+      const { bundle, promo, duplicated } = await redeemCreditPromoForExistingAgency({
+        agencyId: agency.agencyId,
+        promoCode,
+      });
+
+      const usage = await getUsageSnapshot(agency.agencyId);
+
+      return res.json({
+        success: true,
+        duplicated,
+        code: promo.code,
+        promoType: "credit_bundle",
+        grant: {
+          expiresAt: bundle.expiresAt,
+          creditsTotal: bundle.imagesPurchased,
+          remaining: Math.max(0, bundle.imagesPurchased - bundle.imagesUsed),
+        },
+        allowance: {
+          monthlyIncluded: usage.includedLimit,
+          monthlyRemaining: usage.includedRemaining,
+          addonBalance: usage.addonBalance,
+          addonRemaining: usage.addonRemaining,
+          totalRemaining: usage.remaining,
+          monthKey: usage.monthKey,
+        },
+      });
+    }
+
     if (!user.email) {
       return res.status(400).json({ error: "User email is required" });
     }
@@ -560,6 +599,7 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
     return res.json({
       success: true,
       code: promo.code,
+      promoType: "trial",
       trial: {
         status: trial.trial_status,
         expiresAt: trial.trial_expires_at,

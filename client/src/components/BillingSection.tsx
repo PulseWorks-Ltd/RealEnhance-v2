@@ -63,6 +63,7 @@ interface PromoRedeemSuccess {
   code: string;
   expiresAt: string | null;
   creditsTotal: number;
+  promoType: "trial" | "credit_bundle";
 }
 
 const PLAN_NAMES: Record<string, string> = {
@@ -263,12 +264,16 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
       setPromoCode("");
       setPromoRedeemSuccess({
         code: data?.code || code,
-        expiresAt: data?.trial?.expiresAt || null,
-        creditsTotal: Number(data?.trial?.creditsTotal || 0),
+        expiresAt: data?.grant?.expiresAt || data?.trial?.expiresAt || null,
+        creditsTotal: Number(data?.grant?.creditsTotal || data?.trial?.creditsTotal || 0),
+        promoType: data?.promoType === "credit_bundle" ? "credit_bundle" : "trial",
       });
       toast({
         title: "Promo redeemed",
-        description: "Your free Starter trial has been applied.",
+        description:
+          data?.promoType === "credit_bundle"
+            ? "Your free promo credits have been applied."
+            : "Your free Starter trial has been applied.",
       });
 
       await fetchSubscription();
@@ -427,7 +432,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         {promoRedeemSuccess && (
           <Alert>
             <AlertDescription>
-              Promo code {promoRedeemSuccess.code} applied. Your Starter trial is active for {promoRedeemSuccess.creditsTotal} images and expires on {promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.
+              Promo code {promoRedeemSuccess.code} applied. {promoRedeemSuccess.promoType === "credit_bundle" ? `You received ${promoRedeemSuccess.creditsTotal} free credits` : `Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images`} and it expires on {promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.
             </AlertDescription>
           </Alert>
         )}
@@ -436,7 +441,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           <div>
             <p className="text-sm font-medium">Have a promo code?</p>
             <p className="text-sm text-muted-foreground">
-              Redeem a one-time Starter trial. This is only available if your agency has never used a trial and has never had a paid subscription.
+              Redeem a promo code for a trial or promotional credit grant.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">

@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { createImageBundle, type AgencyImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { pool, withTransaction } from "../db/index.js";
 import { getUserByEmail } from "./users.js";
 import type { PoolClient } from "pg";
@@ -33,6 +34,12 @@ export interface PromoCodeRow {
   credits_granted: number;
 }
 
+const UNRESTRICTED_CREDIT_PROMO_CODES = new Set<string>([
+  "giveme100",
+]);
+
+const PROMO_CREDIT_GRANT_SOURCE = "promo_code_credit_grant";
+
 export interface TrialOrgRow {
   agency_id: string;
   trial_status: TrialStatus;
@@ -64,6 +71,10 @@ async function fetchPromoByCode(client: PoolClient, codeRaw: string): Promise<Pr
     [codeNormalized]
   );
   return res.rowCount ? res.rows[0] : null;
+}
+
+function isUnrestrictedCreditPromo(promo: PromoCodeRow): boolean {
+  return UNRESTRICTED_CREDIT_PROMO_CODES.has(String(promo.code_normalized || "").trim().toLowerCase());
 }
 
 async function ensureTrialRow(client: PoolClient, agencyId: string): Promise<TrialOrgRow> {
@@ -293,6 +304,139 @@ export async function redeemPromoForExistingAgency(params: {
     );
 
     return { trial: trialRes.rows[0], promo };
+  });
+}
+
+export async function redeemCreditPromoForExistingAgency(params: {
+  agencyId: string;
+  promoCode: string;
+}): Promise<{ promo: PromoCodeRow; bundle: AgencyImageBundle; duplicated: boolean }> {
+  const now = new Date();
+
+  return withTransaction(async (client) => {
+    const promo = await fetchPromoByCode(client, params.promoCode);
+    if (!promo) {
+      const err: any = new Error("INVALID_PROMO");
+      err.code = "INVALID_PROMO";
+      throw err;
+    }
+    if (!promo.is_active) {
+      const err: any = new Error("PROMO_INACTIVE");
+      err.code = "PROMO_INACTIVE";
+      throw err;
+    }
+    if (promo.expires_at && new Date(promo.expires_at) < now) {
+      const err: any = new Error("PROMO_EXPIRED");
+      err.code = "PROMO_EXPIRED";
+      throw err;
+    }
+    if (!isUnrestrictedCreditPromo(promo)) {
+      const err: any = new Error("PROMO_NOT_CREDIT_GRANT");
+      err.code = "PROMO_NOT_CREDIT_GRANT";
+      throw err;
+    }
+    if (promo.max_redemptions !== null && promo.redemptions_count >= promo.max_redemptions) {
+      const err: any = new Error("PROMO_MAXED");
+      err.code = "PROMO_MAXED";
+      throw err;
+    }
+
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `${PROMO_CREDIT_GRANT_SOURCE}:${params.agencyId}:${promo.code_normalized}`,
+    ]);
+
+    const existingGrant = await client.query<{
+      quantity: number;
+      metadata: Record<string, any> | null;
+    }>(
+      `SELECT quantity, metadata
+         FROM addon_purchases
+        WHERE agency_id = $1
+          AND source = $2
+          AND metadata ->> 'promoCodeNormalized' = $3
+        LIMIT 1`,
+      [params.agencyId, PROMO_CREDIT_GRANT_SOURCE, promo.code_normalized]
+    );
+
+    if (existingGrant.rowCount && existingGrant.rows[0]?.metadata) {
+      const existingMetadata = existingGrant.rows[0].metadata || {};
+      return {
+        promo,
+        duplicated: true,
+        bundle: {
+          id: String(existingMetadata.bundleId || `promo_credit_${promo.id}_${params.agencyId}`),
+          agencyId: params.agencyId,
+          monthKey: String(existingMetadata.monthKey || ""),
+          bundleType: "promo",
+          bundleCode: String(existingMetadata.bundleCode || `PROMO_${promo.code_normalized.toUpperCase()}`),
+          imagesPurchased: Number(existingGrant.rows[0].quantity || promo.credits_granted || 0),
+          imagesUsed: 0,
+          stripePaymentIntentId: String(existingMetadata.paymentIntentId || `${PROMO_CREDIT_GRANT_SOURCE}:${promo.id}:${params.agencyId}`),
+          stripeSessionId: String(existingMetadata.sessionId || `${PROMO_CREDIT_GRANT_SOURCE}:${promo.code_normalized}`),
+          purchasedAt: String(existingMetadata.grantedAt || now.toISOString()),
+          expiresAt: String(existingMetadata.expiresAt || now.toISOString()),
+        },
+      };
+    }
+
+    const bundleCode = `PROMO_${promo.code_normalized.toUpperCase()}`;
+    const paymentIntentId = `${PROMO_CREDIT_GRANT_SOURCE}:${promo.id}:${params.agencyId}`;
+    const sessionId = `${PROMO_CREDIT_GRANT_SOURCE}:${promo.code_normalized}`;
+    const bundleResult = await createImageBundle({
+      agencyId: params.agencyId,
+      bundleType: "promo",
+      bundleCode,
+      imagesPurchased: promo.credits_granted,
+      stripePaymentIntentId: paymentIntentId,
+      stripeSessionId: sessionId,
+      expiresInDays: promo.trial_days,
+    });
+
+    if (!bundleResult.created || !bundleResult.bundle) {
+      throw new Error(`Failed to create promo credit bundle: ${bundleResult.reason || "unknown"}`);
+    }
+
+    await client.query(
+      `INSERT INTO agency_accounts (agency_id, monthly_included_images, plan_tier, addon_images_balance)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (agency_id) DO UPDATE
+         SET addon_images_balance = agency_accounts.addon_images_balance + EXCLUDED.addon_images_balance,
+             updated_at = NOW()`,
+      [params.agencyId, 0, "starter", promo.credits_granted]
+    );
+
+    await client.query(
+      `INSERT INTO addon_purchases (agency_id, quantity, source, metadata)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        params.agencyId,
+        promo.credits_granted,
+        PROMO_CREDIT_GRANT_SOURCE,
+        JSON.stringify({
+          type: "promo_code_credit_grant",
+          promoCodeId: promo.id,
+          promoCode: promo.code,
+          promoCodeNormalized: promo.code_normalized,
+          bundleId: bundleResult.bundle.id,
+          bundleCode,
+          paymentIntentId,
+          sessionId,
+          expiresAt: bundleResult.bundle.expiresAt,
+          grantedAt: now.toISOString(),
+          monthKey: bundleResult.bundle.monthKey,
+        }),
+      ]
+    );
+
+    await client.query(
+      `UPDATE promo_codes
+          SET redemptions_count = redemptions_count + 1,
+              updated_at = NOW()
+        WHERE id = $1`,
+      [promo.id]
+    );
+
+    return { promo, bundle: bundleResult.bundle, duplicated: false };
   });
 }
 
