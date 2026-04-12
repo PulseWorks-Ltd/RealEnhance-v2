@@ -596,8 +596,10 @@ export function retrySingleRouter() {
           selectedSourceUrl = sourceUrlRaw;
           retrySourceStage = toRetryPayloadStage(sourceStage);
           retrySourceUrl = sourceUrlRaw;
-          retryFromStage = requestedStage === "2" && executionSourceStage === "1A" ? "1B" : undefined;
-          stage2OnlyDisabled = requestedStage === "2" && executionSourceStage === "1A";
+          // Only require 1B rebuild before stage 2 when 1B was part of the original pipeline.
+          // When the pipeline was 1A→2 (no 1B), stage 2 can run directly from the 1A baseline.
+          retryFromStage = requestedStage === "2" && executionSourceStage === "1A" && stage1BWasRequested ? "1B" : undefined;
+          stage2OnlyDisabled = requestedStage === "2" && executionSourceStage === "1A" && stage1BWasRequested;
           retryMode = "stage_resume";
 
           // Keep UI intent as Stage 2, but resolve execution from a valid baseline.

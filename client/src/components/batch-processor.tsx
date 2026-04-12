@@ -5244,9 +5244,22 @@ export default function BatchProcessor({
         return out;
       })();
 
+      // Determine whether the original pipeline included stage 2 (virtual staging)
+      const originalPipelineHadStage2 = requestedStagesList.includes("2")
+        || !!(requestedStages?.stage2 === true || requestedStages?.stage2 === "true")
+        || !!res?.options?.virtualStage
+        || !!res?.result?.options?.virtualStage;
+      const originalPipelineHad1B = requestedStagesList.includes("1B") || stage1BWasRequestedByPipeline;
+
+      // When source is "1A" and stage 2 was part of the original pipeline,
+      // resume from 1A by running the remaining stages rather than re-running 1A.
+      const stage1ARetryPlan: StageKey[] = originalPipelineHadStage2
+        ? (originalPipelineHad1B ? ["1B", "2"] : ["2"])
+        : ["1A"];
+
       const stagePlanBySource: Record<SourceStageLabel, StageKey[]> = {
         original: ["1A", "1B", "2"],
-        "1A": ["1A"],
+        "1A": stage1ARetryPlan,
         "1B": ["2"],
         "2": ["2"],
         retry: ["2"],
