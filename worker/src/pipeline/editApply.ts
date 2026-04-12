@@ -503,11 +503,26 @@ export async function applyEdit({
     const baseImageBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
 
+    // For Remove mode, load Stage 1A baseline so Gemini can see what's behind the item
+    let stage1AReferenceBuffer: Buffer | undefined;
+    if (mode === "Remove" && stage1AReferencePath) {
+      try {
+        stage1AReferenceBuffer = await sharp(stage1AReferencePath).webp().toBuffer();
+        console.log("[editApply] Stage 1A baseline loaded for Remove reference", {
+          path: stage1AReferencePath,
+          size: stage1AReferenceBuffer.length,
+        });
+      } catch (err) {
+        console.warn("[editApply] Could not load Stage 1A reference, proceeding without it", err);
+      }
+    }
+
     const prompt = buildRegionEditPrompt({
       userInstruction: instruction,
       roomType,
       sceneType: sceneType || "interior",
       preserveStructure: true,
+      hasStage1ABaseline: mode === "Remove" && !!stage1AReferenceBuffer,
     });
     const finalPrompt = prompt;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);
@@ -518,6 +533,7 @@ export async function applyEdit({
       jobId,
       imageId,
       baseImageBuffer,
+      referenceImageBuffer: stage1AReferenceBuffer,
       maskPngBuffer,
       roomType,
       sceneType: sceneType || "interior",

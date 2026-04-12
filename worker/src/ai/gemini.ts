@@ -25,11 +25,12 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     editMode,
   } = args;
 
+  const isRemoveWithBaseline = editMode === "Remove" && !!referenceImageBuffer;
+
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: prompt.length,
     hasMask: !!maskPngBuffer,
-    hasReferenceImage: false,
-    referenceImageProvidedButIgnored: !!referenceImageBuffer,
+    hasReferenceImage: isRemoveWithBaseline,
     baseSize: baseImageBuffer.length,
     roomType,
     sceneType,
@@ -45,7 +46,17 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
       },
     },
   ];
-  // Reference image intentionally not sent for region edit generation.
+  // For Remove mode, include Stage 1A baseline so Gemini can see what was
+  // behind the item being removed (empty-room reference).
+  if (isRemoveWithBaseline) {
+    parts.push({ text: "STAGE_1A_BASELINE_IMAGE (empty-room reference — shows what exists behind the item being removed):" });
+    parts.push({
+      inlineData: {
+        mimeType: "image/webp",
+        data: referenceImageBuffer!.toString("base64"),
+      },
+    });
+  }
   if (maskPngBuffer) {
     parts.push({ text: "EDIT_MASK_IMAGE (WHITE=EDIT, BLACK=KEEP):" });
     parts.push({
