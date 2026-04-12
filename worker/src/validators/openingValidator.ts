@@ -38,6 +38,32 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+/**
+ * Signal coherence gate: only allow hard-fail when the opening signal is
+ * internally consistent — a clear structural removal/infill without
+ * contradictory resize, occlusion, or addition signals that indicate noise.
+ */
+function isOpeningSignalCoherent(params: {
+  issueType: string;
+  allIssueTypes: string[];
+  hasResize: boolean;
+  hasOcclusion: boolean;
+  hasBandMismatch: boolean;
+}): boolean {
+  const structuralTypes = ["opening_removed", "opening_infilled", "opening_sealed"];
+
+  const hasPrimaryStructural = structuralTypes.includes(params.issueType);
+
+  const hasConflictingSignals =
+    params.hasResize ||
+    params.hasOcclusion ||
+    params.hasBandMismatch ||
+    params.allIssueTypes.includes("opening_added") ||
+    params.allIssueTypes.includes("opening_resized_major");
+
+  return hasPrimaryStructural && !hasConflictingSignals;
+}
+
 function evaluateDoorFunctionalBlockage(
   baselineOpening: StructuralBaseline["openings"][number],
   detectedOpening: StructuralBaseline["openings"][number],
@@ -239,7 +265,15 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
       : []
     : [reason];
 
-  const hardFail = !pass && anyRemoved && confidence >= HARD_FAIL_CONFIDENCE_THRESHOLD;
+  // ── COHERENCE GATE (fallback path) ──
+  const fallbackCoherent = isOpeningSignalCoherent({
+    issueType: anyRemoved ? "opening_removed" : "none",
+    allIssueTypes: [issueType],
+    hasResize: false,
+    hasOcclusion: anyOccluded,
+    hasBandMismatch: false,
+  });
+  const hardFail = !pass && anyRemoved && confidence >= HARD_FAIL_CONFIDENCE_THRESHOLD && fallbackCoherent;
   const comparisonResult = {
     pass,
     issueType,
@@ -549,8 +583,39 @@ export async function runOpeningValidator(
     const hasHighConfidenceMicroHardFailSignal = reasonParts.some((part) =>
       part === "light_anchor_opening_infilled" || part === "light_anchor_opening_removed"
     );
+
+    // ── COHERENCE GATE: only hard-fail when signals are internally consistent ──
+    const primaryIssueType = deterministic.summary.openingRemoved
+      ? "opening_removed"
+      : deterministic.summary.openingInfilled
+        ? "opening_infilled"
+        : deterministic.summary.openingSealed
+          ? "opening_sealed"
+          : "none";
+
+    const signalCoherent = isOpeningSignalCoherent({
+      issueType: primaryIssueType,
+      allIssueTypes: reasonParts,
+      hasResize: openingSizeReductionDetected || !!deterministic.summary.openingResized,
+      hasOcclusion: strictDoorOcclusionFail || strictWindowOcclusionFail,
+      hasBandMismatch: !!deterministic.summary.openingBandMismatch,
+    });
+
     hardFail = (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal) &&
-      hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD;
+      hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD &&
+      signalCoherent;
+
+    if (!signalCoherent && (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal) && hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD) {
+      advisorySignals.push("opening_signal_incoherent_downgraded");
+      console.log("[OPENING_COHERENCE_DOWNGRADE]", {
+        primaryIssueType,
+        reasonParts,
+        hasResize: openingSizeReductionDetected || !!deterministic.summary.openingResized,
+        hasOcclusion: strictDoorOcclusionFail || strictWindowOcclusionFail,
+        hasBandMismatch: !!deterministic.summary.openingBandMismatch,
+        action: "downgrade_to_advisory",
+      });
+    }
 
     if (reasonParts.length === 0) reasonParts.push("openings_preserved");
     const reason = reasonParts.join("|");

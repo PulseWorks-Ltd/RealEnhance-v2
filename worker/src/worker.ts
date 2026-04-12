@@ -10536,6 +10536,20 @@ All openings must remain identical in position and size to the original image.`;
         // so it should not trigger pre-Unified blocking.
       ]);
 
+      // ── ENVELOPE CONTRADICTION CHECK for opening signals ──
+      // If envelope explicitly says room is preserved, or lacks geometric certainty
+      // about a structural change, opening hard-fails are downgraded to advisory
+      // and forwarded to Unified for adjudication.
+      const envelopeSignal = specialistIssueSignals.find(s => s.validator === "envelope");
+      const envelopeContradicts =
+        specialistResults.envelope.pass === true ||
+        !String(envelopeSignal?.reason || "").includes("envelope_confirmed_structural_change");
+
+      const isOpeningIssue = (issueType?: string): boolean =>
+        issueType === ISSUE_TYPES.OPENING_REMOVED ||
+        issueType === ISSUE_TYPES.OPENING_INFILLED ||
+        issueType === ISSUE_TYPES.OPENING_SEALED;
+
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
         // SINGLE-AUTHORITY: Only specialist-acknowledged hardFail may trigger pre-Unified block.
         // Confidence alone is never sufficient — the specialist must have explicitly decided hardFail.
@@ -10557,6 +10571,22 @@ All openings must remain identical in position and size to the original image.`;
           return isTargetCriticalFixtureChange(signal);
         }
 
+        // Opening signals contradicted by envelope → downgrade to advisory for Unified
+        if (isOpeningIssue(issueType) && envelopeContradicts) {
+          nLog("[OPENING_ENVELOPE_CONTRADICTION_DOWNGRADE]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType,
+            reason: signal.reason,
+            confidence: signal.confidence,
+            envelopePass: specialistResults.envelope.pass,
+            envelopeReason: envelopeSignal?.reason,
+            action: "downgrade_to_advisory_continue_unified",
+          });
+          return false;
+        }
+
         return true;
       };
 
@@ -10568,6 +10598,8 @@ All openings must remain identical in position and size to the original image.`;
         if (!issueType || issueType === ISSUE_TYPES.NONE) return false;
         if (!ALLOWED_HARDFAIL_ISSUES.has(issueType)) return false;
         if (issueType === ISSUE_TYPES.FIXTURE_CHANGED || issueType === ISSUE_TYPES.HVAC_CHANGED) return false;
+        // Opening signals contradicted by envelope → downgrade to advisory for Unified
+        if (isOpeningIssue(issueType) && envelopeContradicts) return false;
         return true;
       };
 
