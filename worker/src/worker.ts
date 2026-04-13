@@ -9717,7 +9717,8 @@ All openings must remain identical in position and size to the original image.`;
             const hasEnvelopeSupport = allSignals.some(
               (s) =>
                 s.issueType === ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED ||
-                s.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS
+                s.issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS ||
+                String(s.reason || "").includes("envelope_confirmed_structural_change")
             );
             if (hasEnvelopeSupport) {
               return "REMOVAL";
@@ -10550,14 +10551,28 @@ All openings must remain identical in position and size to the original image.`;
       // about a structural change, opening hard-fails are downgraded to advisory
       // and forwarded to Unified for adjudication.
       const envelopeSignal = specialistIssueSignals.find(s => s.validator === "envelope");
+      const envelopeReason = String(envelopeSignal?.reason || "");
+      const envelopeConfirmsStructuralChange =
+        envelopeReason.includes("envelope_confirmed_structural_change");
       const envelopeContradicts =
-        specialistResults.envelope.pass === true ||
-        !String(envelopeSignal?.reason || "").includes("envelope_confirmed_structural_change");
+        !envelopeConfirmsStructuralChange &&
+        specialistResults.envelope.pass === true;
 
       const isOpeningIssue = (issueType?: string): boolean =>
         issueType === ISSUE_TYPES.OPENING_REMOVED ||
         issueType === ISSUE_TYPES.OPENING_INFILLED ||
         issueType === ISSUE_TYPES.OPENING_SEALED;
+
+      const logOpeningEnvelopeRelation = (issueType: ValidationIssueType, openingHardFail?: boolean) => {
+        console.log("[OPENING_ENVELOPE_RELATION]", {
+          jobId: payload.jobId,
+          issueType,
+          openingHardFail,
+          envelopePass: specialistResults.envelope.pass,
+          envelopeConfirmsStructuralChange,
+          envelopeContradicts,
+        });
+      };
 
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
         // SINGLE-AUTHORITY: Only specialist-acknowledged hardFail may trigger pre-Unified block.
@@ -10580,8 +10595,16 @@ All openings must remain identical in position and size to the original image.`;
           return isTargetCriticalFixtureChange(signal);
         }
 
+        if (isOpeningIssue(issueType)) {
+          logOpeningEnvelopeRelation(issueType, signal.hardFail);
+        }
+
         // Opening signals contradicted by envelope → downgrade to advisory for Unified
-        if (isOpeningIssue(issueType) && envelopeContradicts) {
+        if (
+          isOpeningIssue(issueType) &&
+          envelopeContradicts &&
+          !envelopeConfirmsStructuralChange
+        ) {
           nLog("[OPENING_ENVELOPE_CONTRADICTION_DOWNGRADE]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
@@ -10590,7 +10613,7 @@ All openings must remain identical in position and size to the original image.`;
             reason: signal.reason,
             confidence: signal.confidence,
             envelopePass: specialistResults.envelope.pass,
-            envelopeReason: envelopeSignal?.reason,
+            envelopeReason,
             action: "downgrade_to_advisory_continue_unified",
           });
           return false;
@@ -10607,8 +10630,15 @@ All openings must remain identical in position and size to the original image.`;
         if (!issueType || issueType === ISSUE_TYPES.NONE) return false;
         if (!ALLOWED_HARDFAIL_ISSUES.has(issueType)) return false;
         if (issueType === ISSUE_TYPES.FIXTURE_CHANGED || issueType === ISSUE_TYPES.HVAC_CHANGED) return false;
+        if (isOpeningIssue(issueType)) {
+          logOpeningEnvelopeRelation(issueType, signal.hardFail);
+        }
         // Opening signals contradicted by envelope → downgrade to advisory for Unified
-        if (isOpeningIssue(issueType) && envelopeContradicts) return false;
+        if (
+          isOpeningIssue(issueType) &&
+          envelopeContradicts &&
+          !envelopeConfirmsStructuralChange
+        ) return false;
         return true;
       };
 
