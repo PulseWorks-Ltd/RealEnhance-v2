@@ -1052,6 +1052,7 @@ router.post("/subscription/change-plan", requireAuth, async (req: Request, res: 
 
 const LISTING_PACK_CREDITS = 15;
 const LISTING_PACK_PRICE_NZD = 4900; // $49 NZD in cents
+const STRIPE_LISTING_PACK_PRICE_ID = process.env.STRIPE_LISTING_PACK || "";
 
 /**
  * POST /api/billing/listing-pack/checkout
@@ -1071,23 +1072,27 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
 
     const stripeCustomerId = await ensureValidStripeCustomerId({ stripe, agency, user });
 
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = STRIPE_LISTING_PACK_PRICE_ID
+      ? [{ price: STRIPE_LISTING_PACK_PRICE_ID, quantity: 1 }]
+      : [
+          {
+            price_data: {
+              currency: "nzd",
+              product_data: {
+                name: "Listing Pack",
+                description: "Enhance up to 15 images — no subscription required",
+              },
+              unit_amount: LISTING_PACK_PRICE_NZD,
+            },
+            quantity: 1,
+          },
+        ];
+
     const session = await stripe.checkout.sessions.create({
       customer: stripeCustomerId,
       client_reference_id: agency.agencyId,
       mode: "payment",
-      line_items: [
-        {
-          price_data: {
-            currency: "nzd",
-            product_data: {
-              name: "Listing Pack",
-              description: "Enhance up to 15 images — no subscription required",
-            },
-            unit_amount: LISTING_PACK_PRICE_NZD,
-          },
-          quantity: 1,
-        },
-      ],
+      line_items: lineItems,
       success_url: `${CLIENT_URL}/agency?listing_pack=success`,
       cancel_url: `${CLIENT_URL}/agency`,
       metadata: {
