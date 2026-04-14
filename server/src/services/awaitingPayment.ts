@@ -2,15 +2,25 @@ import { getUserById } from "./users.js";
 import { commitReservation, getUsageSnapshot, releaseReservation, reserveAllowance } from "./usageLedger.js";
 import { enqueueStoredEnhanceJob, listAwaitingPaymentEnhanceJobs } from "./jobs.js";
 import { getTrialSummary } from "./trials.js";
+import { pool } from "../db/index.js";
+
+async function getListingPackCredits(agencyId: string): Promise<number> {
+  const res = await pool.query(
+    `SELECT listing_pack_credits FROM agency_accounts WHERE agency_id = $1`,
+    [agencyId]
+  );
+  return Math.max(0, Number(res.rows[0]?.listing_pack_credits || 0));
+}
 
 export async function getAvailableCredits(userId: string): Promise<number> {
   const user = await getUserById(userId);
   const agencyId = user?.agencyId;
   if (!agencyId) return 0;
 
-  const [usage, trial] = await Promise.all([
+  const [usage, trial, listingPack] = await Promise.all([
     getUsageSnapshot(agencyId),
     getTrialSummary(agencyId),
+    getListingPackCredits(agencyId),
   ]);
 
   const now = Date.now();
@@ -22,7 +32,8 @@ export async function getAvailableCredits(userId: string): Promise<number> {
   const trialRemaining = trialActive ? Math.max(0, Number(trial.remaining || 0)) : 0;
 
   // During promo trial, trial credits are additive to normal usage allowance.
-  return usageRemaining + trialRemaining;
+  // Listing pack credits are always additive.
+  return usageRemaining + trialRemaining + listingPack;
 }
 
 export async function releaseAwaitingPaymentJobs(userId: string): Promise<{

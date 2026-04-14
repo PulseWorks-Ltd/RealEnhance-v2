@@ -121,7 +121,7 @@ export function BundlePurchase() {
           <CardTitle>Additional Images</CardTitle>
         </div>
         <CardDescription>
-          Need more enhanced images this month? Purchase a one-time image bundle
+          Need more images on top of your plan? Purchase a one-time image bundle
         </CardDescription>
       </CardHeader>
       <CardContent>

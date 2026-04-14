@@ -38,6 +38,9 @@ export interface Agency {
   // UI metadata for one-time agency-level upgrade banner display
   upgradeBannerSeen?: boolean;
 
+  // Listing Pack credits (one-time purchase, no expiry for now)
+  listingPackCredits?: number;
+
   createdAt: string;
   updatedAt?: string;
 }

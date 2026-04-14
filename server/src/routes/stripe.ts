@@ -252,6 +252,61 @@ router.post(
             await markTrialConvertedSafe(agency.agencyId, "checkout.session.completed");
 
             console.log(`[STRIPE] ✅ Subscription activated for agency ${agencyId}: ${planTier} (${subscription.status})`);
+          } else if (session.metadata?.type === "listing_pack") {
+            // Handle listing pack one-time purchase
+            const { agencyId, credits, purchasedByUserId } = session.metadata;
+            const creditsToAdd = parseInt(credits || "15", 10);
+
+            if (!agencyId || !creditsToAdd) {
+              console.error("[STRIPE] Missing listing_pack metadata:", session.metadata);
+              break;
+            }
+
+            // Idempotency: use session ID to prevent duplicate credit grants
+            const dupCheck = await pool.query(
+              `SELECT 1 FROM listing_pack_purchases WHERE stripe_session_id = $1 LIMIT 1`,
+              [session.id]
+            );
+            if (dupCheck.rowCount && dupCheck.rowCount > 0) {
+              console.log(`[STRIPE] ⚠️  Duplicate listing pack purchase skipped (session ${session.id})`);
+              break;
+            }
+
+            // Grant credits atomically
+            await pool.query(
+              `UPDATE agency_accounts
+                 SET listing_pack_credits = listing_pack_credits + $1,
+                     updated_at = NOW()
+               WHERE agency_id = $2`,
+              [creditsToAdd, agencyId]
+            );
+
+            // If no agency_accounts row exists yet, insert one
+            await pool.query(
+              `INSERT INTO agency_accounts (agency_id, listing_pack_credits)
+               VALUES ($1, $2)
+               ON CONFLICT (agency_id) DO NOTHING`,
+              [agencyId, creditsToAdd]
+            );
+
+            // Record purchase for audit / reconciliation
+            await pool.query(
+              `INSERT INTO listing_pack_purchases (agency_id, credits_added, stripe_session_id)
+               VALUES ($1, $2, $3)`,
+              [agencyId, creditsToAdd, session.id]
+            );
+
+            console.log(
+              `[STRIPE] ✅ Listing pack purchased: +${creditsToAdd} credits for agency ${agencyId} (session ${session.id})`
+            );
+
+            // Release any awaiting-payment jobs
+            if (purchasedByUserId) {
+              const releaseResult = await releaseAwaitingPaymentJobs(purchasedByUserId);
+              console.log(
+                `[STRIPE] ✅ Released awaiting_payment jobs for user ${purchasedByUserId}: released=${releaseResult.released} remaining=${releaseResult.remainingAwaiting}`
+              );
+            }
           } else {
             // Handle bundle checkout
             const { agencyId, bundleCode, images } = session.metadata || {};

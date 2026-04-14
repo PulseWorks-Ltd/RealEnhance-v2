@@ -214,7 +214,8 @@ export async function reserveAllowance(params: {
 
     const includedRemaining = Math.max(0, usage.included_limit - usage.included_used);
     const addonRemaining = await getTotalBundleRemaining(params.agencyId, monthKey);
-    const totalRemaining = includedRemaining + addonRemaining;
+    const listingPackCredits = Math.max(0, Number(acct.listing_pack_credits || 0));
+    const totalRemaining = includedRemaining + addonRemaining + listingPackCredits;
     if (params.requiredImages > totalRemaining) {
       const snap = buildSnapshot(usage, addonRemaining, monthKey);
       const err: any = new Error("QUOTA_EXCEEDED");
@@ -224,11 +225,12 @@ export async function reserveAllowance(params: {
     }
 
     // Allocate sequentially: Stage12 first (if requested), then Stage2.
-    // Consume plan allowance first, then add-on bundles.
-    const allocations: { stage: "1" | "2"; fromIncluded: number; fromAddon: number }[] = [];
+    // Priority: included → add-on → listing pack (cheapest first, listing pack last).
+    const allocations: { stage: "1" | "2"; fromIncluded: number; fromAddon: number; fromListingPack: number }[] = [];
     let remainingNeed = params.requiredImages;
     let remainingIncluded = includedRemaining;
     let remainingAddon = addonRemaining;
+    let remainingListingPack = listingPackCredits;
 
     const stages: Array<{ key: "1" | "2"; requested: boolean }> = [
       { key: "1", requested: params.requestedStage12 },
@@ -243,14 +245,24 @@ export async function reserveAllowance(params: {
       const takeAddon = Math.min(remainingNeed, remainingAddon);
       remainingAddon -= takeAddon;
       remainingNeed -= takeAddon;
-      allocations.push({ stage: s.key, fromIncluded: takeIncluded, fromAddon: takeAddon });
+      const takeListingPack = Math.min(remainingNeed, remainingListingPack);
+      remainingListingPack -= takeListingPack;
+      remainingNeed -= takeListingPack;
+      allocations.push({ stage: s.key, fromIncluded: takeIncluded, fromAddon: takeAddon, fromListingPack: takeListingPack });
     }
 
     const reservedFromIncluded = allocations.reduce((sum, a) => sum + a.fromIncluded, 0);
     const reservedFromAddon = allocations.reduce((sum, a) => sum + a.fromAddon, 0);
+    const reservedFromListingPack = allocations.reduce((sum, a) => sum + a.fromListingPack, 0);
 
-    const stage1Alloc = allocations.find((a) => a.stage === "1") || { fromIncluded: 0, fromAddon: 0 };
-    const stage2Alloc = allocations.find((a) => a.stage === "2") || { fromIncluded: 0, fromAddon: 0 };
+    const stage1Alloc = allocations.find((a) => a.stage === "1") || { fromIncluded: 0, fromAddon: 0, fromListingPack: 0 };
+    const stage2Alloc = allocations.find((a) => a.stage === "2") || { fromIncluded: 0, fromAddon: 0, fromListingPack: 0 };
+
+    if (reservedFromListingPack > 0) {
+      console.log(
+        `[USAGE] Listing pack credits used: ${reservedFromListingPack} for job ${params.jobId} (agency ${params.agencyId})`
+      );
+    }
 
     await client.query(
       `INSERT INTO job_reservations (
@@ -258,11 +270,11 @@ export async function reserveAllowance(params: {
          requested_stage12, requested_stage2,
          reserved_images, reservation_status,
          reserved_stage12, reserved_stage2,
-         reserved_from_included, reserved_from_addon,
-         stage12_from_included, stage12_from_addon,
-         stage2_from_included, stage2_from_addon,
+         reserved_from_included, reserved_from_addon, reserved_from_listing_pack,
+         stage12_from_included, stage12_from_addon, stage12_from_listing_pack,
+         stage2_from_included, stage2_from_addon, stage2_from_listing_pack,
          created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14,$15,NOW(),NOW())
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW(),NOW())
        ON CONFLICT (job_id) DO NOTHING;`,
       [
         params.jobId,
@@ -276,10 +288,13 @@ export async function reserveAllowance(params: {
         params.requestedStage2,
         reservedFromIncluded,
         reservedFromAddon,
+        reservedFromListingPack,
         stage1Alloc.fromIncluded,
         stage1Alloc.fromAddon,
+        stage1Alloc.fromListingPack,
         stage2Alloc.fromIncluded,
         stage2Alloc.fromAddon,
+        stage2Alloc.fromListingPack,
       ]
     );
 
@@ -316,6 +331,7 @@ export async function commitReservation(params: { jobId: string }): Promise<void
 
     const reserveIncluded = Math.max(0, Number(jr.reserved_from_included || 0));
     const reserveAddon = Math.max(0, Number(jr.reserved_from_addon || 0));
+    const reserveListingPack = Math.max(0, Number(jr.reserved_from_listing_pack || 0));
 
     if (reserveIncluded > 0 || reserveAddon > 0) {
       await client.query(
@@ -334,6 +350,20 @@ export async function commitReservation(params: { jobId: string }): Promise<void
                updated_at = NOW()
          WHERE agency_id = $2`,
         [reserveAddon, jr.agency_id]
+      );
+    }
+
+    // Deduct listing pack credits from agency_accounts
+    if (reserveListingPack > 0) {
+      await client.query(
+        `UPDATE agency_accounts
+           SET listing_pack_credits = GREATEST(0, listing_pack_credits - $1),
+               updated_at = NOW()
+         WHERE agency_id = $2`,
+        [reserveListingPack, jr.agency_id]
+      );
+      console.log(
+        `[USAGE] Committed listing pack credits: -${reserveListingPack} for job ${params.jobId} (agency ${jr.agency_id})`
       );
     }
 
@@ -421,6 +451,7 @@ export async function finalizeReservation(params: {
 
     let refundIncluded = 0;
     let refundAddon = 0;
+    let refundListingPack = 0;
     let consumeStage12 = false;
     let consumeStage2 = false;
 
@@ -430,6 +461,7 @@ export async function finalizeReservation(params: {
       } else {
         refundIncluded += jr.stage12_from_included;
         refundAddon += jr.stage12_from_addon;
+        refundListingPack += Math.max(0, Number(jr.stage12_from_listing_pack || 0));
       }
     }
 
@@ -439,6 +471,7 @@ export async function finalizeReservation(params: {
       } else {
         refundIncluded += jr.stage2_from_included;
         refundAddon += jr.stage2_from_addon;
+        refundListingPack += Math.max(0, Number(jr.stage2_from_listing_pack || 0));
       }
     }
 
@@ -458,6 +491,20 @@ export async function finalizeReservation(params: {
                updated_at = NOW()
          WHERE agency_id = $2`,
         [refundAddon, jr.agency_id]
+      );
+    }
+
+    // Refund listing pack credits on failed stages
+    if (refundListingPack > 0) {
+      await client.query(
+        `UPDATE agency_accounts
+           SET listing_pack_credits = listing_pack_credits + $1,
+               updated_at = NOW()
+         WHERE agency_id = $2`,
+        [refundListingPack, jr.agency_id]
+      );
+      console.log(
+        `[USAGE] Refunded listing pack credits: +${refundListingPack} for job ${params.jobId} (agency ${jr.agency_id})`
       );
     }
 

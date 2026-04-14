@@ -123,6 +123,8 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [listingPackCredits, setListingPackCredits] = useState<number>(0);
+  const [listingPackLoading, setListingPackLoading] = useState(false);
   const { toast } = useToast();
 
   const effectiveStatus = subscription?.status || agency.subscriptionStatus;
@@ -314,6 +316,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         canManage: data.canManage,
       });
       setUpgradeOptions(data.upgradeOptions || []);
+      setListingPackCredits(Number(data.listingPackCredits || 0));
     } catch (error: any) {
       console.error("Failed to load subscription", error);
       toast({
@@ -373,7 +376,49 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
     fetchSubscription();
   }, [agency.agencyId, fetchSubscription]);
 
+  const handleBuyListingPack = async () => {
+    if (manageDisabled) return;
+    if (user?.emailVerified !== true) {
+      toast({
+        title: "Email Verification Required",
+        description: "Please confirm your email address before purchasing.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setListingPackLoading(true);
+    try {
+      const response = await fetch(api("/api/billing/listing-pack/checkout"), {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Failed to create checkout session";
+        try {
+          const error = await response.json();
+          errorMessage = error.message || error.error || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start listing pack purchase",
+        variant: "destructive",
+      });
+    } finally {
+      setListingPackLoading(false);
+    }
+  };
+
   return (
+    <>
     <Card>
       <CardHeader>
         <CardTitle>Subscription & Billing</CardTitle>
@@ -614,5 +659,35 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         </DialogContent>
       </Dialog>
     </Card>
+
+    {/* Listing Pack — standalone card, visually separate from subscription */}
+    <Card className="border-primary/20 bg-primary/[0.02]">
+      <CardContent className="pt-6 space-y-4">
+        <div className="space-y-1">
+          <p className="text-lg font-semibold">No subscription? No problem.</p>
+          <p className="text-sm text-muted-foreground">
+            Enhance a full listing from $49 — no ongoing commitment.
+          </p>
+        </div>
+        <Button
+          onClick={handleBuyListingPack}
+          disabled={listingPackLoading || manageDisabled}
+          className="w-full"
+          size="lg"
+          title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+        >
+          {listingPackLoading ? "Loading..." : "Buy Listing Pack – $49"}
+        </Button>
+        {listingPackCredits > 0 && (
+          <p className="text-sm text-muted-foreground text-center">
+            You have <span className="font-medium text-foreground">{listingPackCredits}</span> images remaining from your listing pack
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground text-center">
+          Covers up to ~15 images per listing. Buy as many packs as you need.
+        </p>
+      </CardContent>
+    </Card>
+    </>
   );
 }

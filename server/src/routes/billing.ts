@@ -643,10 +643,15 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
   try {
     const { user, agency } = await loadUserAndAgency(req);
 
-    const [usage, trial] = await Promise.all([
+    const [usage, trial, listingPackRow] = await Promise.all([
       getUsageSnapshot(agency.agencyId),
       getTrialSummary(agency.agencyId),
+      pool.query(
+        `SELECT listing_pack_credits FROM agency_accounts WHERE agency_id = $1`,
+        [agency.agencyId]
+      ),
     ]);
+    const listingPackCredits = Math.max(0, Number(listingPackRow.rows[0]?.listing_pack_credits || 0));
     const agencyPlanTier = agency.planTier ?? null;
     const hasActiveStripeSubscription =
       !!agency.stripeSubscriptionId &&
@@ -724,6 +729,7 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
         balance: usage.addonBalance,
         remaining: usage.addonRemaining,
       },
+      listingPackCredits,
       upgradeOptions,
       canManage: requireAgencyAdmin(user),
     });
@@ -1039,6 +1045,68 @@ router.post("/subscription/change-plan", requireAuth, async (req: Request, res: 
     console.error("[BILLING] change-plan error", error);
     const status = error?.status || 500;
     return res.status(status).json({ error: error?.message || "Change plan failed" });
+  }
+});
+
+// ─── Listing Pack ────────────────────────────────────────────────────────────
+
+const LISTING_PACK_CREDITS = 15;
+const LISTING_PACK_PRICE_NZD = 4900; // $49 NZD in cents
+
+/**
+ * POST /api/billing/listing-pack/checkout
+ * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD)
+ */
+router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({
+        error: "Stripe not configured",
+        message: "Stripe billing is not configured. Please contact support.",
+      });
+    }
+
+    const { user, agency } = await loadUserAndAgency(req);
+    if (blockIfEmailUnverified(user, res)) return;
+
+    const stripeCustomerId = await ensureValidStripeCustomerId({ stripe, agency, user });
+
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      client_reference_id: agency.agencyId,
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "nzd",
+            product_data: {
+              name: "Listing Pack",
+              description: "Enhance up to 15 images — no subscription required",
+            },
+            unit_amount: LISTING_PACK_PRICE_NZD,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${CLIENT_URL}/agency?listing_pack=success`,
+      cancel_url: `${CLIENT_URL}/agency`,
+      metadata: {
+        type: "listing_pack",
+        agencyId: agency.agencyId,
+        credits: String(LISTING_PACK_CREDITS),
+        purchasedByUserId: user.id,
+      },
+    });
+
+    console.log(`[BILLING] Created listing-pack checkout session ${session.id} for agency ${agency.agencyId}`);
+
+    res.json({ url: session.url });
+  } catch (error: any) {
+    console.error("[BILLING] Listing pack checkout error:", error);
+    res.status(500).json({
+      error: "Checkout failed",
+      message: error.message || "Failed to create listing pack checkout session",
+    });
   }
 });
 
