@@ -49,12 +49,10 @@ async function normalizeMaskToImageSpace(mask: Buffer, width: number, height: nu
 
   if (needsResize) {
     pipeline = pipeline.resize(width, height, {
-      fit: "contain",
-      position: normalizeSharpResizePosition("top-left"),
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
+      fit: "fill",
       kernel: sharp.kernel.nearest,
     });
-    console.log("[editApply] Mask normalized with contain/left top (no geometric distortion)");
+    console.log("[editApply] Mask normalized with fill to exact base image dimensions");
   } else {
     console.log("[editApply] Mask dimensions already match base image");
   }
@@ -208,7 +206,7 @@ async function compositeStrictMask(
 
   return sharp(originalMasked)
     .composite([{ input: generatedMasked, blend: "over" }])
-    .webp()
+    .png()
     .toBuffer();
 }
 
@@ -321,7 +319,7 @@ async function blendMaskEdgeTones(
       corrected[idx + 2] = Math.min(255, Math.max(0, Math.round(compRaw[idx + 2]! * corrections[2]!)));
     }
 
-    return sharp(corrected, { raw: { width, height, channels: 3 } }).webp().toBuffer();
+    return sharp(corrected, { raw: { width, height, channels: 3 } }).png().toBuffer();
   } catch (err) {
     console.warn("[editApply] blendMaskEdgeTones failed (non-blocking):", (err as any)?.message || err);
     return compositeBuffer;
