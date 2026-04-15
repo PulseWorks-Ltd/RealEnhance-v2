@@ -34,11 +34,24 @@ export function authUserRouter() {
     const includeImages = String((req.query as any)?.includeImages || "0") === "1";
 
     // Compute site-admin flag from env allowlist (not stored on user record)
-    const adminEmails = (process.env.REALENHANCE_ADMIN_EMAILS || "")
+    const rawAdminEmails = process.env.REALENHANCE_ADMIN_EMAILS || "";
+    if (!process.env.REALENHANCE_ADMIN_EMAILS) {
+      console.warn("[ADMIN_CHECK] REALENHANCE_ADMIN_EMAILS is not set");
+    }
+
+    const adminEmails = rawAdminEmails
       .split(",")
-      .map((e) => e.trim().toLowerCase())
+      .map((email) => email.trim().toLowerCase())
       .filter(Boolean);
-    const isSiteAdmin = full.email ? adminEmails.includes(full.email.toLowerCase()) : false;
+    const userEmail = (full.email || "").trim().toLowerCase();
+    const isSiteAdmin = adminEmails.includes(userEmail);
+
+    console.log("[ADMIN_CHECK]", {
+      env: process.env.REALENHANCE_ADMIN_EMAILS,
+      parsed: adminEmails,
+      userEmail: full.email,
+      isSiteAdmin,
+    });
 
     const payload: any = {
       id: full.id,
