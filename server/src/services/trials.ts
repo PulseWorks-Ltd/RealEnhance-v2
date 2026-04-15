@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { createImageBundle, type AgencyImageBundle } from "@realenhance/shared/usage/imageBundles.js";
+import { createImageBundle, getBundleHistory, type AgencyImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { pool, withTransaction } from "../db/index.js";
 import { getUserByEmail } from "./users.js";
 import type { PoolClient } from "pg";
@@ -34,8 +34,14 @@ export interface PromoCodeRow {
   credits_granted: number;
 }
 
-const UNRESTRICTED_CREDIT_PROMO_CODES = new Set<string>([
+const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "giveme100",
+  "newuser10",
+]);
+
+const NEW_AGENCY_ONLY_PROMO_CODES = new Set<string>([
+  "foundingmember",
+  "newuser10",
 ]);
 
 const PROMO_CREDIT_GRANT_SOURCE = "promo_code_credit_grant";
@@ -73,8 +79,16 @@ async function fetchPromoByCode(client: PoolClient, codeRaw: string): Promise<Pr
   return res.rowCount ? res.rows[0] : null;
 }
 
-function isUnrestrictedCreditPromo(promo: PromoCodeRow): boolean {
-  return UNRESTRICTED_CREDIT_PROMO_CODES.has(String(promo.code_normalized || "").trim().toLowerCase());
+function getNormalizedPromoCode(promo: PromoCodeRow): string {
+  return String(promo.code_normalized || "").trim().toLowerCase();
+}
+
+function isCreditGrantPromo(promo: PromoCodeRow): boolean {
+  return CREDIT_GRANT_PROMO_CODES.has(getNormalizedPromoCode(promo));
+}
+
+function requiresNewAgencyEligibility(promo: PromoCodeRow): boolean {
+  return NEW_AGENCY_ONLY_PROMO_CODES.has(getNormalizedPromoCode(promo));
 }
 
 async function ensureTrialRow(client: PoolClient, agencyId: string): Promise<TrialOrgRow> {
@@ -114,6 +128,27 @@ async function hasAgencyHadPaidSubscription(client: PoolClient, agencyId: string
   );
 
   return (priorInvoice.rowCount ?? 0) > 0;
+}
+
+async function hasAgencyPurchasedOneOffCredits(client: PoolClient, agencyId: string): Promise<boolean> {
+  const [bundleHistory, listingPackPurchases, addonPurchases] = await Promise.all([
+    getBundleHistory(agencyId),
+    client.query(`SELECT 1 FROM listing_pack_purchases WHERE agency_id = $1 LIMIT 1`, [agencyId]),
+    client.query(
+      `SELECT 1
+         FROM addon_purchases
+        WHERE agency_id = $1
+          AND source IN ('paid_bundle_purchase', 'listing_pack_purchase')
+        LIMIT 1`,
+      [agencyId]
+    ),
+  ]);
+
+  return (
+    bundleHistory.some((bundle) => bundle.bundleType === "paid") ||
+    (listingPackPurchases.rowCount ?? 0) > 0 ||
+    (addonPurchases.rowCount ?? 0) > 0
+  );
 }
 
 function hasAgencyUsedAnyTrial(trial: TrialOrgRow): boolean {
@@ -259,18 +294,27 @@ export async function redeemPromoForExistingAgency(params: {
       throw err;
     }
 
-    const trial = await ensureTrialRow(client, params.agencyId);
-    if (hasAgencyUsedAnyTrial(trial)) {
-      const err: any = new Error("AGENCY_ALREADY_USED_TRIAL");
-      err.code = "AGENCY_ALREADY_USED_TRIAL";
-      throw err;
-    }
+    if (requiresNewAgencyEligibility(promo)) {
+      const trial = await ensureTrialRow(client, params.agencyId);
+      if (hasAgencyUsedAnyTrial(trial)) {
+        const err: any = new Error("AGENCY_ALREADY_USED_TRIAL");
+        err.code = "AGENCY_ALREADY_USED_TRIAL";
+        throw err;
+      }
 
-    const hadSubscription = await hasAgencyHadPaidSubscription(client, params.agencyId);
-    if (hadSubscription) {
-      const err: any = new Error("AGENCY_PREVIOUSLY_SUBSCRIBED");
-      err.code = "AGENCY_PREVIOUSLY_SUBSCRIBED";
-      throw err;
+      const hadSubscription = await hasAgencyHadPaidSubscription(client, params.agencyId);
+      if (hadSubscription) {
+        const err: any = new Error("AGENCY_PREVIOUSLY_SUBSCRIBED");
+        err.code = "AGENCY_PREVIOUSLY_SUBSCRIBED";
+        throw err;
+      }
+
+      const hadOneOffPurchase = await hasAgencyPurchasedOneOffCredits(client, params.agencyId);
+      if (hadOneOffPurchase) {
+        const err: any = new Error("AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF");
+        err.code = "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF";
+        throw err;
+      }
     }
 
     const expiresAt = new Date(now.getTime() + promo.trial_days * 24 * 60 * 60 * 1000);
@@ -330,7 +374,7 @@ export async function redeemCreditPromoForExistingAgency(params: {
       err.code = "PROMO_EXPIRED";
       throw err;
     }
-    if (!isUnrestrictedCreditPromo(promo)) {
+    if (!isCreditGrantPromo(promo)) {
       const err: any = new Error("PROMO_NOT_CREDIT_GRANT");
       err.code = "PROMO_NOT_CREDIT_GRANT";
       throw err;
@@ -339,6 +383,29 @@ export async function redeemCreditPromoForExistingAgency(params: {
       const err: any = new Error("PROMO_MAXED");
       err.code = "PROMO_MAXED";
       throw err;
+    }
+
+    if (requiresNewAgencyEligibility(promo)) {
+      const trial = await ensureTrialRow(client, params.agencyId);
+      if (hasAgencyUsedAnyTrial(trial)) {
+        const err: any = new Error("AGENCY_ALREADY_USED_TRIAL");
+        err.code = "AGENCY_ALREADY_USED_TRIAL";
+        throw err;
+      }
+
+      const hadSubscription = await hasAgencyHadPaidSubscription(client, params.agencyId);
+      if (hadSubscription) {
+        const err: any = new Error("AGENCY_PREVIOUSLY_SUBSCRIBED");
+        err.code = "AGENCY_PREVIOUSLY_SUBSCRIBED";
+        throw err;
+      }
+
+      const hadOneOffPurchase = await hasAgencyPurchasedOneOffCredits(client, params.agencyId);
+      if (hadOneOffPurchase) {
+        const err: any = new Error("AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF");
+        err.code = "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF";
+        throw err;
+      }
     }
 
     await client.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [

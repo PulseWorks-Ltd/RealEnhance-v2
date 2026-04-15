@@ -60,10 +60,11 @@ interface SubscriptionInfo {
 }
 
 interface PromoRedeemSuccess {
+  promoType: "trial" | "credit_bundle";
   code: string;
   expiresAt: string | null;
   creditsTotal: number;
-  promoType: "trial" | "credit_bundle";
+  remaining?: number;
 }
 
 const PLAN_NAMES: Record<string, string> = {
@@ -123,8 +124,6 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
-  const [listingPackCredits, setListingPackCredits] = useState<number>(0);
-  const [listingPackLoading, setListingPackLoading] = useState(false);
   const { toast } = useToast();
 
   const effectiveStatus = subscription?.status || agency.subscriptionStatus;
@@ -259,22 +258,24 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           TRIAL_ALREADY_CLAIMED: "This user has already claimed a promo trial.",
           AGENCY_ALREADY_USED_TRIAL: "This agency has already used a trial before.",
           AGENCY_PREVIOUSLY_SUBSCRIBED: "This agency has already had a paid subscription and is not eligible.",
+          AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF: "This agency has already purchased a one-off bundle and is not eligible.",
         };
         throw new Error(messageMap[errorCode] || errorCode);
       }
 
       setPromoCode("");
       setPromoRedeemSuccess({
-        code: data?.code || code,
-        expiresAt: data?.grant?.expiresAt || data?.trial?.expiresAt || null,
-        creditsTotal: Number(data?.grant?.creditsTotal || data?.trial?.creditsTotal || 0),
         promoType: data?.promoType === "credit_bundle" ? "credit_bundle" : "trial",
+        code: data?.code || code,
+        expiresAt: data?.trial?.expiresAt || data?.grant?.expiresAt || null,
+        creditsTotal: Number(data?.trial?.creditsTotal || data?.grant?.creditsTotal || 0),
+        remaining: Number(data?.trial?.remaining || data?.grant?.remaining || 0),
       });
       toast({
         title: "Promo redeemed",
         description:
           data?.promoType === "credit_bundle"
-            ? "Your free promo credits have been applied."
+            ? "Your promotional credits have been applied."
             : "Your free Starter trial has been applied.",
       });
 
@@ -316,7 +317,6 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         canManage: data.canManage,
       });
       setUpgradeOptions(data.upgradeOptions || []);
-      setListingPackCredits(Number(data.listingPackCredits || 0));
     } catch (error: any) {
       console.error("Failed to load subscription", error);
       toast({
@@ -376,49 +376,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
     fetchSubscription();
   }, [agency.agencyId, fetchSubscription]);
 
-  const handleBuyListingPack = async () => {
-    if (manageDisabled) return;
-    if (user?.emailVerified !== true) {
-      toast({
-        title: "Email Verification Required",
-        description: "Please confirm your email address before purchasing.",
-        variant: "destructive",
-      });
-      return;
-    }
-    setListingPackLoading(true);
-    try {
-      const response = await fetch(api("/api/billing/listing-pack/checkout"), {
-        method: "POST",
-        credentials: "include",
-      });
-
-      if (!response.ok) {
-        let errorMessage = "Failed to create checkout session";
-        try {
-          const error = await response.json();
-          errorMessage = error.message || error.error || errorMessage;
-        } catch {
-          errorMessage = `Server error: ${response.status} ${response.statusText}`;
-        }
-        throw new Error(errorMessage);
-      }
-
-      const { url } = await response.json();
-      window.location.href = url;
-    } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "Failed to start listing pack purchase",
-        variant: "destructive",
-      });
-    } finally {
-      setListingPackLoading(false);
-    }
-  };
-
   return (
-    <>
     <Card>
       <CardHeader>
         <CardTitle>Subscription & Billing</CardTitle>
@@ -477,7 +435,9 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         {promoRedeemSuccess && (
           <Alert>
             <AlertDescription>
-              Promo code {promoRedeemSuccess.code} applied. {promoRedeemSuccess.promoType === "credit_bundle" ? `You received ${promoRedeemSuccess.creditsTotal} free credits` : `Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images`} and it expires on {promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.
+              {promoRedeemSuccess.promoType === "credit_bundle"
+                ? `Promo code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.remaining ?? promoRedeemSuccess.creditsTotal} credits are now available and expire on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`
+                : `Promo code ${promoRedeemSuccess.code} applied. Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images and expires on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`}
             </AlertDescription>
           </Alert>
         )}
@@ -486,7 +446,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           <div>
             <p className="text-sm font-medium">Have a promo code?</p>
             <p className="text-sm text-muted-foreground">
-              Redeem a promo code for a trial or promotional credit grant.
+              Redeem a one-time trial or temporary credit grant. Availability depends on your agency's previous subscriptions, trials, and one-off purchases.
             </p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -659,35 +619,5 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         </DialogContent>
       </Dialog>
     </Card>
-
-    {/* Listing Pack — standalone card, visually separate from subscription */}
-    <Card className="border-primary/20 bg-primary/[0.02]">
-      <CardContent className="pt-6 space-y-4">
-        <div className="space-y-1">
-          <p className="text-lg font-semibold">No subscription? No problem.</p>
-          <p className="text-sm text-muted-foreground">
-            Enhance a full listing from $49 — no ongoing commitment.
-          </p>
-        </div>
-        <Button
-          onClick={handleBuyListingPack}
-          disabled={listingPackLoading || manageDisabled}
-          className="w-full"
-          size="lg"
-          title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
-        >
-          {listingPackLoading ? "Loading..." : "Buy Listing Pack – $49"}
-        </Button>
-        {listingPackCredits > 0 && (
-          <p className="text-sm text-muted-foreground text-center">
-            You have <span className="font-medium text-foreground">{listingPackCredits}</span> images remaining from your listing pack
-          </p>
-        )}
-        <p className="text-xs text-muted-foreground text-center">
-          Covers up to ~15 images per listing. Buy as many packs as you need.
-        </p>
-      </CardContent>
-    </Card>
-    </>
   );
 }

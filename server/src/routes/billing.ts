@@ -38,8 +38,9 @@ const stripe = process.env.STRIPE_SECRET_KEY
   : null;
 
 const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
-const UNRESTRICTED_CREDIT_PROMO_CODES = new Set<string>([
+const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "giveme100",
+  "newuser10",
 ]);
 
 async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
@@ -550,7 +551,7 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
 
     const normalizedPromoCode = promoCode.toLowerCase();
 
-    if (UNRESTRICTED_CREDIT_PROMO_CODES.has(normalizedPromoCode)) {
+    if (CREDIT_GRANT_PROMO_CODES.has(normalizedPromoCode)) {
       const { bundle, promo, duplicated } = await redeemCreditPromoForExistingAgency({
         agencyId: agency.agencyId,
         promoCode,
@@ -625,7 +626,8 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "PROMO_MAXED" ||
       code === "TRIAL_ALREADY_CLAIMED" ||
       code === "AGENCY_ALREADY_USED_TRIAL" ||
-      code === "AGENCY_PREVIOUSLY_SUBSCRIBED"
+      code === "AGENCY_PREVIOUSLY_SUBSCRIBED" ||
+      code === "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF"
     ) {
       return res.status(400).json({ error: code });
     }

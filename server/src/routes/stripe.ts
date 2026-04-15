@@ -338,6 +338,23 @@ router.post(
 
             if (result.created) {
               console.log(`[STRIPE] ✅ Bundle created: ${result.bundle?.id} - ${images} images`);
+              await pool.query(
+                `INSERT INTO addon_purchases (agency_id, quantity, source, metadata)
+                 VALUES ($1, $2, $3, $4)
+                 ON CONFLICT DO NOTHING`,
+                [
+                  agencyId,
+                  parseInt(images, 10),
+                  "paid_bundle_purchase",
+                  JSON.stringify({
+                    bundleId: result.bundle?.id || null,
+                    bundleCode,
+                    stripePaymentIntentId: session.payment_intent as string,
+                    stripeSessionId: session.id,
+                    purchasedAt: new Date().toISOString(),
+                  }),
+                ]
+              );
               const purchasedByUserId = session.metadata?.purchasedByUserId;
               if (purchasedByUserId) {
                 const releaseResult = await releaseAwaitingPaymentJobs(purchasedByUserId);
