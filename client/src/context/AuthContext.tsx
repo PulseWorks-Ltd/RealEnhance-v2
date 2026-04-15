@@ -68,6 +68,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
           const data = await clientApi.request<AuthUser>("/api/auth-user");
+          console.log("[AUTH_REFRESH_AFTER_LOGIN]", data);
           setUser(data);
           return data;
         } catch (e: any) {
@@ -224,33 +225,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithEmail = useCallback(async (email: string, password: string): Promise<AuthUser> => {
     try {
-      const response = await apiFetch("/api/auth/login", {
+      // Authenticate — apiFetch throws ApiError on non-2xx
+      await apiFetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const userData = await response.json();
-      setUser(userData);
-      return userData;
+      // Always hydrate from /api/auth-user so isSiteAdmin (and any other
+      // server-computed flags) are present before the caller navigates.
+      const refreshed = await refreshUser();
+      if (!refreshed) throw new Error("Login succeeded but failed to load user data");
+      return refreshed;
     } catch (error: any) {
       throw new Error(error.message || "Login failed");
     }
-  }, []);
+  }, [refreshUser]);
 
   const signUpWithEmail = useCallback(async (agencyName: string, fullName: string, email: string, password: string, confirmPassword: string): Promise<AuthUser> => {
     try {
-      const response = await apiFetch("/api/auth/signup", {
+      // Create account — apiFetch throws ApiError on non-2xx (returns 201 on success)
+      await apiFetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agencyName, fullName, email, password, confirmPassword }),
       });
-      const userData = await response.json();
-      setUser(userData);
-      return userData;
+      // Hydrate full user state (including isSiteAdmin) from /api/auth-user
+      const refreshed = await refreshUser();
+      if (!refreshed) throw new Error("Signup succeeded but failed to load user data");
+      return refreshed;
     } catch (error: any) {
       throw new Error(error.message || "Signup failed");
     }
-  }, []);
+  }, [refreshUser]);
 
   const value: AuthState = {
     user,
