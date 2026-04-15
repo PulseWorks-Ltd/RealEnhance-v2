@@ -203,6 +203,7 @@ export function attachGoogleAuth(app: Express) {
           sameSite: "lax" as const,
           secure: process.env.NODE_ENV === "production",
           domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
+          path: "/",
         };
 
         if (req.session) {
@@ -295,6 +296,7 @@ export function attachGoogleAuth(app: Express) {
           sameSite: "lax",
           secure: process.env.NODE_ENV === "production",
           domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
+          path: "/",
         });
         res.json({ ok: true });
       });

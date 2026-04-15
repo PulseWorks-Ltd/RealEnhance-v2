@@ -54,6 +54,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const IS_PROD = NODE_ENV === "production";
+const PROD_SESSION_COOKIE_DOMAIN = ".realenhance.co.nz";
 const PROD_ALLOWED_ORIGINS = [
   "https://realenhance.co.nz",
   "https://www.realenhance.co.nz",
@@ -250,7 +251,8 @@ async function main() {
       httpOnly: true,
       sameSite: "lax",
       secure: IS_PROD,
-      domain: IS_PROD ? ".realenhance.co.nz" : undefined,
+      domain: IS_PROD ? PROD_SESSION_COOKIE_DOMAIN : undefined,
+      path: "/",
       maxAge: 1000 * 60 * 60 * 24 * 7 // 7 days
     }
   };

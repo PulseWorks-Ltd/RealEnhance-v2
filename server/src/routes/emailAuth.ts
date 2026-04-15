@@ -190,6 +190,13 @@ export function emailAuthRouter() {
       const sessionUser = buildSessionUser(user);
       (req.session as any).user = sessionUser;
 
+      console.log("[AUTH_COOKIE_SET]", {
+        domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
+        sameSite: "lax",
+        secure: process.env.NODE_ENV === "production",
+        path: "/",
+      });
+
       // Return user (without password fields)
       res.json(sessionUser);
 
