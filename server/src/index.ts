@@ -249,7 +249,7 @@ async function main() {
     store,
     cookie: {
       httpOnly: true,
-      sameSite: "lax",
+      sameSite: "none",
       secure: IS_PROD,
       domain: IS_PROD ? PROD_SESSION_COOKIE_DOMAIN : undefined,
       path: "/",

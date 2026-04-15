@@ -192,7 +192,7 @@ export function emailAuthRouter() {
 
       console.log("[AUTH_COOKIE_SET]", {
         domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
-        sameSite: "lax",
+        sameSite: "none",
         secure: process.env.NODE_ENV === "production",
         path: "/",
       });
