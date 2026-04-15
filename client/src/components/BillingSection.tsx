@@ -124,6 +124,8 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const [upgradeOptions, setUpgradeOptions] = useState<UpgradeOption[]>([]);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [listingPackCredits, setListingPackCredits] = useState<number>(0);
+  const [listingPackLoading, setListingPackLoading] = useState(false);
   const { toast } = useToast();
 
   const effectiveStatus = subscription?.status || agency.subscriptionStatus;
@@ -317,6 +319,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         canManage: data.canManage,
       });
       setUpgradeOptions(data.upgradeOptions || []);
+      setListingPackCredits(Number(data.listingPackCredits || 0));
     } catch (error: any) {
       console.error("Failed to load subscription", error);
       toast({
@@ -376,248 +379,313 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
     fetchSubscription();
   }, [agency.agencyId, fetchSubscription]);
 
+  const handleBuyListingPack = async () => {
+    if (manageDisabled) return;
+    if (user?.emailVerified !== true) {
+      toast({
+        title: "Email Verification Required",
+        description: "Please confirm your email address before purchasing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setListingPackLoading(true);
+    try {
+      const response = await fetch(api("/api/billing/listing-pack/checkout"), {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Failed to create checkout session";
+        try {
+          const error = await response.json();
+          errorMessage = error.message || error.error || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start listing pack purchase",
+        variant: "destructive",
+      });
+    } finally {
+      setListingPackLoading(false);
+    }
+  };
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Subscription & Billing</CardTitle>
-        <CardDescription>
-          Manage your subscription plan and billing details
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Status Banner */}
-        {(agency.subscriptionStatus === "PAST_DUE" || agency.subscriptionStatus === "CANCELLED") && (
-          <Alert variant="destructive">
-            <AlertDescription>
-              {agency.subscriptionStatus === "PAST_DUE" && (
-                <>
-                  Your subscription payment is overdue. Please update your payment method to continue using RealEnhance.
-                </>
-              )}
-              {agency.subscriptionStatus === "CANCELLED" && (
-                <>
-                  Your subscription has been cancelled. Resubscribe to continue enhancing images.
-                </>
-              )}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Current Plan */}
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium">Current Plan</p>
-            <p className="text-2xl font-bold">{currentPlanName}</p>
-          </div>
-          <Badge variant={statusConfig.variant}>
-            {statusConfig.label}
-          </Badge>
-        </div>
-
-        {/* Period End */}
-        {currentPeriodEnd && hasSubscription && (
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Current period ends: {new Date(currentPeriodEnd).toLocaleDateString()}
-            </p>
-          </div>
-        )}
-
-        {/* Billing Region */}
-        {currentBillingCountry && (
-          <div>
-            <p className="text-sm text-muted-foreground">
-              Billing region: {currentBillingCountry} ({currentBillingCurrency?.toUpperCase()})
-            </p>
-          </div>
-        )}
-
-        {promoRedeemSuccess && (
-          <Alert>
-            <AlertDescription>
-              {promoRedeemSuccess.promoType === "credit_bundle"
-                ? `Promo code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.remaining ?? promoRedeemSuccess.creditsTotal} credits are now available and expire on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`
-                : `Promo code ${promoRedeemSuccess.code} applied. Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images and expires on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="rounded-lg border p-4 space-y-3">
-          <div>
-            <p className="text-sm font-medium">Have a promo code?</p>
-            <p className="text-sm text-muted-foreground">
-              Redeem a one-time trial or temporary credit grant. Availability depends on your agency's previous subscriptions, trials, and one-off purchases.
-            </p>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row">
-            <Input
-              value={promoCode}
-              onChange={(e) => setPromoCode(e.target.value)}
-              placeholder="Enter promo code"
-              disabled={manageDisabled || promoLoading}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleRedeemPromo}
-              disabled={manageDisabled || promoLoading}
-            >
-              {promoLoading ? "Redeeming..." : "Redeem Code"}
-            </Button>
-          </div>
-        </div>
-
-        {/* Subscribe Section (if no subscription) */}
-        {!hasSubscription && (
-          <div className="space-y-4 pt-4 border-t">
-            <div>
-              <label className="text-sm font-medium">Select Plan</label>
-              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                <SelectTrigger className="w-full mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PLAN_DISPLAY_OPTIONS.map((plan) => {
-                    const perImage = (plan.monthlyPriceNZD / plan.monthlyAllowance).toFixed(2);
-                    return (
-                      <SelectItem key={plan.value} value={plan.value}>
-                        <div className="flex flex-col items-start">
-                          <span className="font-medium">{plan.displayName} - ${plan.monthlyPriceNZD} NZD/mo</span>
-                          <span className="text-xs text-muted-foreground">
-                            {plan.monthlyAllowance} enhanced images (${perImage} per image)
-                          </span>
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <label className="text-sm font-medium">Billing Country</label>
-              <Select value={selectedCountry} onValueChange={setSelectedCountry}>
-                <SelectTrigger className="w-full mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="NZ">New Zealand (NZD)</SelectItem>
-                  <SelectItem value="AU">Australia (AUD)</SelectItem>
-                  <SelectItem value="ZA">South Africa (ZAR)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              onClick={handleSubscribe}
-              disabled={loading || manageDisabled}
-              className="w-full"
-              size="lg"
-              title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
-            >
-              {loading ? "Loading..." : "Subscribe Now"}
-            </Button>
-          </div>
-        )}
-
-        {/* Manage Subscription (if has subscription) */}
-        {hasSubscription && (
-          <div className="pt-4 border-t">
-            <Button
-              onClick={handleManageSubscription}
-              disabled={loading || manageDisabled}
-              className="w-full"
-              variant="outline"
-              title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
-            >
-              {loading ? "Loading..." : "Manage Subscription"}
-            </Button>
-            <p className="text-xs text-muted-foreground mt-2 text-center">
-              {manageDisabled
-                ? "Contact an agency owner or admin to update billing."
-                : "Update payment method, view invoices, or cancel subscription"}
-            </p>
-            {upgradeOptions.length > 0 && (
-              <div className="mt-4 space-y-2">
-                <Button
-                  onClick={() => setUpgradeOpen(true)}
-                  disabled={loading || manageDisabled}
-                  className="w-full"
-                  variant="default"
-                  title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
-                >
-                  Upgrade Plan
-                </Button>
-                <p className="text-xs text-muted-foreground text-center">
-                  Upgrades apply immediately with prorated charges handled by Stripe.
-                </p>
-                {manageDisabled && (
-                  <p className="text-xs text-muted-foreground text-center">
-                    Only owners or admins can upgrade plans.
-                  </p>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle>Subscription & Billing</CardTitle>
+          <CardDescription>
+            Manage your subscription plan and billing details
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {(agency.subscriptionStatus === "PAST_DUE" || agency.subscriptionStatus === "CANCELLED") && (
+            <Alert variant="destructive">
+              <AlertDescription>
+                {agency.subscriptionStatus === "PAST_DUE" && (
+                  <>
+                    Your subscription payment is overdue. Please update your payment method to continue using RealEnhance.
+                  </>
                 )}
-              </div>
-            )}
+                {agency.subscriptionStatus === "CANCELLED" && (
+                  <>
+                    Your subscription has been cancelled. Resubscribe to continue enhancing images.
+                  </>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Current Plan</p>
+              <p className="text-2xl font-bold">{currentPlanName}</p>
+            </div>
+            <Badge variant={statusConfig.variant}>
+              {statusConfig.label}
+            </Badge>
           </div>
-        )}
 
-        {/* Info */}
-        <div className="text-xs text-muted-foreground pt-4 border-t">
-          <p>✓ Unlimited users per agency</p>
-          <p>✓ Monthly image allowances reset on your billing date</p>
-          <p>✓ Purchase additional image bundles anytime</p>
-        </div>
-      </CardContent>
+          {currentPeriodEnd && hasSubscription && (
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Current period ends: {new Date(currentPeriodEnd).toLocaleDateString()}
+              </p>
+            </div>
+          )}
 
-      <Dialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Upgrade Plan</DialogTitle>
-            <DialogDescription>
-              Choose a higher tier to unlock more allowance. No credit card data stored, all payments handled through Stripe.
-            </DialogDescription>
-          </DialogHeader>
+          {currentBillingCountry && (
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Billing region: {currentBillingCountry} ({currentBillingCurrency?.toUpperCase()})
+              </p>
+            </div>
+          )}
 
-          <div className="space-y-3">
-            {upgradeOptions.map((option) => (
-              <div key={option.planTier} className="border rounded-lg p-4 space-y-1">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium">{formatPlanDisplayName(option.planTier, option.displayName)}</p>
-                    <p className="text-xs text-muted-foreground">{option.monthlyAllowance} images / month</p>
-                  </div>
-                  <p className="text-sm font-semibold">{option.priceFormatted || `${option.price / 100}`}</p>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per image
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {option.seatLimit ? `${option.seatLimit} seats included` : "Unlimited seats"}
-                </p>
-                <div className="flex justify-end">
+          {promoRedeemSuccess && (
+            <Alert>
+              <AlertDescription>
+                {promoRedeemSuccess.promoType === "credit_bundle"
+                  ? `Promo code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.remaining ?? promoRedeemSuccess.creditsTotal} credits are now available and expire on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`
+                  : `Promo code ${promoRedeemSuccess.code} applied. Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images and expires on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium">Have a promo code?</p>
+              <p className="text-sm text-muted-foreground">
+                Redeem a one-time trial or temporary credit grant. Availability depends on your agency's previous subscriptions, trials, and one-off purchases.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value)}
+                placeholder="Enter promo code"
+                disabled={manageDisabled || promoLoading}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRedeemPromo}
+                disabled={manageDisabled || promoLoading}
+              >
+                {promoLoading ? "Redeeming..." : "Redeem Code"}
+              </Button>
+            </div>
+          </div>
+
+          {!hasSubscription && (
+            <div className="space-y-4 pt-4 border-t">
+              <div>
+                <label className="text-sm font-medium">Select Plan</label>
+                <Select value={selectedPlan} onValueChange={setSelectedPlan}>
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PLAN_DISPLAY_OPTIONS.map((plan) => {
+                      const perImage = (plan.monthlyPriceNZD / plan.monthlyAllowance).toFixed(2);
+                      return (
+                        <SelectItem key={plan.value} value={plan.value}>
+                          <div className="flex flex-col items-start">
+                            <span className="font-medium">{plan.displayName} - ${plan.monthlyPriceNZD} NZD/mo</span>
+                            <span className="text-xs text-muted-foreground">
+                              {plan.monthlyAllowance} enhanced images (${perImage} per image)
+                            </span>
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium">Billing Country</label>
+                <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+                  <SelectTrigger className="w-full mt-2">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="NZ">New Zealand (NZD)</SelectItem>
+                    <SelectItem value="AU">Australia (AUD)</SelectItem>
+                    <SelectItem value="ZA">South Africa (ZAR)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <Button
+                onClick={handleSubscribe}
+                disabled={loading || manageDisabled}
+                className="w-full"
+                size="lg"
+                title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+              >
+                {loading ? "Loading..." : "Subscribe Now"}
+              </Button>
+            </div>
+          )}
+
+          {hasSubscription && (
+            <div className="pt-4 border-t">
+              <Button
+                onClick={handleManageSubscription}
+                disabled={loading || manageDisabled}
+                className="w-full"
+                variant="outline"
+                title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+              >
+                {loading ? "Loading..." : "Manage Subscription"}
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2 text-center">
+                {manageDisabled
+                  ? "Contact an agency owner or admin to update billing."
+                  : "Update payment method, view invoices, or cancel subscription"}
+              </p>
+              {upgradeOptions.length > 0 && (
+                <div className="mt-4 space-y-2">
                   <Button
-                    size="sm"
-                    disabled={upgradeLoading || manageDisabled}
-                    onClick={() => handleUpgrade(option.priceId)}
+                    onClick={() => setUpgradeOpen(true)}
+                    disabled={loading || manageDisabled}
+                    className="w-full"
+                    variant="default"
+                    title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
                   >
-                    {upgradeLoading ? "Upgrading..." : `Upgrade to ${option.displayName}`}
+                    Upgrade Plan
                   </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Upgrades apply immediately with prorated charges handled by Stripe.
+                  </p>
+                  {manageDisabled && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      Only owners or admins can upgrade plans.
+                    </p>
+                  )}
                 </div>
-              </div>
-            ))}
+              )}
+            </div>
+          )}
 
-            {!loadingSubscription && upgradeOptions.length === 0 && (
-              <p className="text-sm text-muted-foreground">No higher tiers available.</p>
-            )}
+          <div className="text-xs text-muted-foreground pt-4 border-t">
+            <p>✓ Unlimited users per agency</p>
+            <p>✓ Monthly image allowances reset on your billing date</p>
+            <p>✓ Purchase additional image bundles anytime</p>
           </div>
+        </CardContent>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setUpgradeOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </Card>
+        <Dialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Upgrade Plan</DialogTitle>
+              <DialogDescription>
+                Choose a higher tier to unlock more allowance. No credit card data stored, all payments handled through Stripe.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3">
+              {upgradeOptions.map((option) => (
+                <div key={option.planTier} className="border rounded-lg p-4 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium">{formatPlanDisplayName(option.planTier, option.displayName)}</p>
+                      <p className="text-xs text-muted-foreground">{option.monthlyAllowance} images / month</p>
+                    </div>
+                    <p className="text-sm font-semibold">{option.priceFormatted || `${option.price / 100}`}</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per image
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {option.seatLimit ? `${option.seatLimit} seats included` : "Unlimited seats"}
+                  </p>
+                  <div className="flex justify-end">
+                    <Button
+                      size="sm"
+                      disabled={upgradeLoading || manageDisabled}
+                      onClick={() => handleUpgrade(option.priceId)}
+                    >
+                      {upgradeLoading ? "Upgrading..." : `Upgrade to ${option.displayName}`}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+
+              {!loadingSubscription && upgradeOptions.length === 0 && (
+                <p className="text-sm text-muted-foreground">No higher tiers available.</p>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setUpgradeOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </Card>
+
+      <Card>
+        <CardContent className="pt-6 space-y-4">
+          <div className="space-y-1">
+            <p className="text-lg font-semibold">No subscription? No problem.</p>
+            <p className="text-sm text-muted-foreground">
+              Enhance a full listing from $49 - no ongoing commitment.
+            </p>
+          </div>
+          <Button
+            onClick={handleBuyListingPack}
+            disabled={listingPackLoading || manageDisabled}
+            className="w-full"
+            size="lg"
+            title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+          >
+            {listingPackLoading ? "Loading..." : "Buy Listing Pack - $49"}
+          </Button>
+          {listingPackCredits > 0 && (
+            <p className="text-sm text-muted-foreground text-center">
+              You have <span className="font-medium text-foreground">{listingPackCredits}</span> images remaining from your listing pack
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground text-center">
+            Covers up to ~15 images per listing. Buy as many packs as you need.
+          </p>
+        </CardContent>
+      </Card>
+    </>
   );
 }
