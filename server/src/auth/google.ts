@@ -200,7 +200,7 @@ export function attachGoogleAuth(app: Express) {
         const cookieName = "realsess";
         const cookieOpts = {
           httpOnly: true,
-          sameSite: "none" as const,
+          sameSite: "lax" as const,
           secure: process.env.NODE_ENV === "production",
           domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
           path: "/",
@@ -293,7 +293,7 @@ export function attachGoogleAuth(app: Express) {
       req.session.destroy(() => {
         res.clearCookie("realsess", {
           httpOnly: true,
-          sameSite: "none",
+          sameSite: "lax",
           secure: process.env.NODE_ENV === "production",
           domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
           path: "/",
