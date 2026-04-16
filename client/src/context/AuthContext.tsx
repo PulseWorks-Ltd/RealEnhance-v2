@@ -153,6 +153,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let mounted = true;
     let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
+    const finishBootstrap = (nextUser: AuthUser | null, logLabel = "[AUTH_BOOTSTRAP_DONE]") => {
+      if (!mounted) return;
+
+      setUser(nextUser);
+      setInitialising(false);
+      console.log(logLabel, {
+        user: nextUser,
+        hasUser: !!nextUser,
+      });
+    };
+
     const bootstrapAuth = async () => {
       let nextUser: AuthUser | null = null;
       let sawDefinitiveUnauthed = false;
@@ -160,9 +171,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const firstResult = await probeUserInternal();
         if (firstResult.type === "user") {
-          nextUser = firstResult.user;
+          finishBootstrap(firstResult.user, "[AUTH_BOOTSTRAP_DONE - EARLY USER]");
+          return;
         } else if (firstResult.type === "unauthenticated") {
-          sawDefinitiveUnauthed = true;
+          finishBootstrap(null);
+          return;
         }
       } catch (error) {
         if (mounted) {
@@ -177,9 +190,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         try {
           const secondResult = await probeUserInternal();
           if (secondResult.type === "user") {
-            nextUser = secondResult.user;
+            finishBootstrap(secondResult.user, "[AUTH_BOOTSTRAP_DONE - EARLY USER]");
+            return;
           } else if (secondResult.type === "unauthenticated") {
-            sawDefinitiveUnauthed = true;
+            finishBootstrap(null);
+            return;
           }
         } catch (retryError) {
           if (mounted) {
@@ -213,12 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      setUser(nextUser);
-      setInitialising(false);
-      console.log("[AUTH_BOOTSTRAP_DONE]", {
-        user: nextUser,
-        hasUser: !!nextUser,
-      });
+      finishBootstrap(nextUser);
     };
 
     bootstrapAuth();
