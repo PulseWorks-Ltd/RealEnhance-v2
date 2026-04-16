@@ -57,9 +57,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [authError, setAuthError] = useState<string | null>(null);
   const pendingActionRef = useRef<null | (() => void)>(null);
   const refreshInFlightRef = useRef(0);
+  const initialisingRef = useRef(true);
   // Ref tracks latest user so signOut callback never reads stale closure
   const userRef = useRef<AuthUser | null>(null);
   useEffect(() => { userRef.current = user; }, [user]);
+  useEffect(() => { initialisingRef.current = initialising; }, [initialising]);
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -92,17 +94,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch (e: any) {
       const status = Number(e?.status ?? e?.code ?? 0);
       const unauthorized = status === 401 || String(e?.message || "").includes("401");
-      const notModified = status === 304;
 
       if (unauthorized) {
         return { type: "unauthenticated" };
       }
 
-      if (notModified) {
-        return { type: "unresolved" };
-      }
-
-      throw e;
+      // Any other error (304, network failure, timeout) → unresolved, never throw
+      console.warn("[AUTH_PROBE] non-definitive error, treating as unresolved", status, e?.message);
+      return { type: "unresolved" };
     }
   }, []);
 
@@ -165,79 +164,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const bootstrapAuth = async () => {
-      let nextUser: AuthUser | null = null;
-      let sawDefinitiveUnauthed = false;
-
-      try {
-        const firstResult = await probeUserInternal();
-        if (firstResult.type === "user") {
-          finishBootstrap(firstResult.user, "[AUTH_BOOTSTRAP_DONE - EARLY USER]");
-          return;
-        } else if (firstResult.type === "unauthenticated") {
-          finishBootstrap(null);
-          return;
-        }
-      } catch (error) {
-        if (mounted) {
-          console.error("Initial auth refresh failed", error);
-        }
+      // Attempt 1
+      const firstResult = await probeUserInternal();
+      if (firstResult.type === "user") {
+        finishBootstrap(firstResult.user, "[AUTH_BOOTSTRAP_DONE - EARLY USER]");
+        return;
       }
-
-      if (!nextUser && !sawDefinitiveUnauthed && mounted) {
-        await sleep(200);
-        if (!mounted) return;
-
-        try {
-          const secondResult = await probeUserInternal();
-          if (secondResult.type === "user") {
-            finishBootstrap(secondResult.user, "[AUTH_BOOTSTRAP_DONE - EARLY USER]");
-            return;
-          } else if (secondResult.type === "unauthenticated") {
-            finishBootstrap(null);
-            return;
-          }
-        } catch (retryError) {
-          if (mounted) {
-            console.error("Initial auth retry failed", retryError);
-          }
-        }
+      if (firstResult.type === "unauthenticated") {
+        finishBootstrap(null);
+        return;
       }
 
       if (!mounted) return;
 
-      if (!nextUser && !sawDefinitiveUnauthed) {
-        fallbackTimer = setTimeout(() => {
-          if (!mounted) return;
+      // Attempt 2 (brief pause then retry)
+      await sleep(200);
+      if (!mounted) return;
 
-          refreshUser()
-            .catch((error) => {
-              if (mounted) {
-                console.error("Deferred auth refresh failed", error);
-              }
-            })
-            .finally(() => {
-              if (!mounted) return;
-
-              setInitialising(false);
-              console.log("[AUTH_BOOTSTRAP_DONE]", {
-                user: userRef.current,
-                hasUser: !!userRef.current,
-              });
-            });
-        }, 1000);
+      const secondResult = await probeUserInternal();
+      if (secondResult.type === "user") {
+        finishBootstrap(secondResult.user, "[AUTH_BOOTSTRAP_DONE - RETRY USER]");
+        return;
+      }
+      if (secondResult.type === "unauthenticated") {
+        finishBootstrap(null);
         return;
       }
 
-      finishBootstrap(nextUser);
+      if (!mounted) return;
+
+      // Attempt 3 (deferred)
+      fallbackTimer = setTimeout(() => {
+        if (!mounted) return;
+
+        refreshUser()
+          .catch((error) => {
+            if (mounted) {
+              console.error("Deferred auth refresh failed", error);
+            }
+          })
+          .finally(() => {
+            if (!mounted) return;
+            finishBootstrap(userRef.current, "[AUTH_BOOTSTRAP_DONE - DEFERRED]");
+          });
+      }, 800);
     };
 
     bootstrapAuth();
 
+    // Hard safety net: no matter what, bootstrap must resolve
+    const MAX_BOOTSTRAP_TIME = 4000;
+    const safetyTimer = setTimeout(() => {
+      if (mounted && initialisingRef.current) {
+        console.warn("[AUTH_BOOTSTRAP_TIMEOUT] forcing resolution after", MAX_BOOTSTRAP_TIME, "ms");
+        setUser(null);
+        setInitialising(false);
+      }
+    }, MAX_BOOTSTRAP_TIME);
+
     return () => {
       mounted = false;
-      if (fallbackTimer) {
-        clearTimeout(fallbackTimer);
-      }
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+      clearTimeout(safetyTimer);
     };
   }, [refreshUser, refreshUserInternal]);
 
