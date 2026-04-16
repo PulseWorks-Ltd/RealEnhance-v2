@@ -15,12 +15,12 @@ import { useNavigate, useLocation } from "react-router-dom";
  * protected features, while existing users are unaffected.
  */
 export function RequireAgency({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, initialising } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
-    if (loading || !user) return;
+    if (loading || initialising || !user) return;
 
     // RULE 1: User has agency → allow access immediately.
     if (user.agencyId) return;
@@ -31,7 +31,7 @@ export function RequireAgency({ children }: { children: React.ReactNode }) {
       console.log("[RequireAgency] No agency found, redirecting to agency creation");
       navigate("/agency", { replace: true });
     }
-  }, [user, loading, navigate, location.pathname]);
+  }, [user, loading, initialising, navigate, location.pathname]);
 
   return <>{children}</>;
 }

@@ -15,11 +15,11 @@ import { useUsage } from "@/hooks/use-usage";
  * This ensures users cannot access Enhance without proper credits/subscription.
  */
 export function RequireSubscription({ children }: { children: React.ReactNode }) {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, initialising } = useAuth();
   const { usage, loading: usageLoading, error: usageError } = useUsage();
 
   useEffect(() => {
-    if (authLoading || usageLoading) return;
+    if (authLoading || initialising || usageLoading) return;
 
     if (!user || !user.agencyId) return;
 
@@ -38,7 +38,7 @@ export function RequireSubscription({ children }: { children: React.ReactNode })
     if (!hasAccess) {
       console.log("[RequireSubscription] No active subscription or credits; deferring enforcement to upload gate");
     }
-  }, [user, authLoading, usage, usageLoading, usageError]);
+  }, [user, authLoading, initialising, usage, usageLoading, usageError]);
 
   return <>{children}</>;
 }

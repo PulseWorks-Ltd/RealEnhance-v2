@@ -4,15 +4,17 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 
 export function useAuthGuard() {
-  const { user, loading, refreshUser, authError } = useAuth();
+  const { user, loading, initialising, refreshUser, authError } = useAuth();
   const navigate = useNavigate();
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
-    if (!loading) {
+    if (!loading && !initialising) {
       setIsReady(true);
+    } else {
+      setIsReady(false);
     }
-  }, [loading]);
+  }, [loading, initialising]);
 
   const redirectToLogin = useCallback(() => {
     const currentPath = window.location.pathname;
@@ -100,6 +102,7 @@ export function useAuthGuard() {
     user,
     isReady,
     isAuthed: !!user,
+    initialising,
     authError,
     redirectToLogin,
     ensureLoggedInAndCredits

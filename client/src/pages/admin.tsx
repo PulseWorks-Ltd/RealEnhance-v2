@@ -141,7 +141,7 @@ function statusColor(status: string): string {
 /* ── Component ─────────────────────────────────────────── */
 
 export default function AdminDashboard() {
-  const { user, loading } = useAuth();
+  const { user, loading, initialising } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -167,10 +167,14 @@ export default function AdminDashboard() {
 
   // Guard: redirect non-admins
   useEffect(() => {
-    if (!loading && (!user || !user.isSiteAdmin)) {
+    if (loading || initialising || !user) {
+      return;
+    }
+
+    if (!user.isSiteAdmin) {
       navigate("/home", { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, initialising, navigate]);
 
   // Fetch data
   useEffect(() => {
@@ -317,7 +321,7 @@ export default function AdminDashboard() {
     }
   }
 
-  if (loading || loadingData) {
+  if (loading || initialising || loadingData) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-3">
@@ -326,6 +330,10 @@ export default function AdminDashboard() {
         </div>
       </div>
     );
+  }
+
+  if (!user) {
+    return null;
   }
 
   if (error) {

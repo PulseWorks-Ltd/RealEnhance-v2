@@ -15,18 +15,18 @@ import { Loader2 } from "lucide-react";
  * the app, maintaining existing user flow.
  */
 export function AuthenticatedHome() {
-  const { user, loading } = useAuth();
+  const { user, loading, initialising } = useAuth();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && user) {
+    if (!loading && !initialising && user) {
       // RULE 1: Existing users with agency go to /home
       // Guards will redirect new users to /agency if needed
       navigate("/home", { replace: true });
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, initialising, navigate]);
 
-  if (loading) {
+  if (loading || initialising) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center space-y-3">

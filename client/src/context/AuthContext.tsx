@@ -24,6 +24,7 @@ type AuthUser = {
 type AuthState = {
   user: AuthUser | null;
   loading: boolean;
+  initialising: boolean;
   authError: string | null;
   ensureSignedIn: (opts?: { reason?: string }) => Promise<AuthUser>;
   signOut: () => Promise<void>;
@@ -43,6 +44,7 @@ const AuthCtx = createContext<AuthState | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [initialising, setInitialising] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const pendingActionRef = useRef<null | (() => void)>(null);
   const refreshInFlightRef = useRef(0);
@@ -65,13 +67,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   };
 
-  const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
+  const refreshUserInternal = useCallback(async ({
+    tolerateUnauthorized = false,
+    retryUnauthorized = false,
+    maxAttempts = 2,
+  }: {
+    tolerateUnauthorized?: boolean;
+    retryUnauthorized?: boolean;
+    maxAttempts?: number;
+  } = {}): Promise<AuthUser | null> => {
     refreshInFlightRef.current += 1;
     setLoading(true);
     setAuthError(null);
 
     try {
-      const maxAttempts = 2;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
           const data = await clientApi.request<AuthUser>("/api/auth-user");
@@ -83,8 +92,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           const status = Number(e?.status ?? e?.code ?? 0);
           const unauthorized = status === 401 || String(e?.message || "").includes("401");
           if (unauthorized) {
+            const canRetryUnauthorized = retryUnauthorized && attempt < maxAttempts;
+            if (canRetryUnauthorized) {
+              console.warn("[AUTH_REFRESH_UNAUTHORIZED_RETRY]", { attempt, maxAttempts });
+              await sleep(350);
+              continue;
+            }
+
             setAuthError(null);
-            setUser(null);
+            if (!tolerateUnauthorized) {
+              setUser(null);
+            } else {
+              console.warn("[AUTH_REFRESH_UNAUTHORIZED_TOLERATED]", e);
+            }
             return null;
           }
 
@@ -107,13 +127,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
+  const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
+    return refreshUserInternal();
+  }, [refreshUserInternal]);
+
   // Auto-check session on mount to maintain logged-in state across page loads
   // This ensures users stay logged in when returning from external redirects (e.g., Stripe)
   useEffect(() => {
-    refreshUser().catch((error) => {
-      console.error("Initial auth refresh failed", error);
-    });
-  }, [refreshUser]);
+    let cancelled = false;
+
+    const bootstrapAuth = async () => {
+      try {
+        await refreshUserInternal({
+          tolerateUnauthorized: true,
+          retryUnauthorized: true,
+          maxAttempts: 4,
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Initial auth refresh failed", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setInitialising(false);
+        }
+      }
+    };
+
+    bootstrapAuth();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshUserInternal]);
 
   const signOut = useCallback(async () => {
     try {
@@ -231,10 +277,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [refreshUser]);
 
   const ensureSignedIn = useCallback(async (_opts?: { reason?: string }) => {
-    if (loading) await new Promise((r) => setTimeout(r, 200));
+    if (loading || initialising) await new Promise((r) => setTimeout(r, 200));
     if (user) return user;
     return openPopupLogin();
-  }, [loading, user, openPopupLogin]);
+  }, [loading, initialising, user, openPopupLogin]);
 
   const signInWithEmail = useCallback(async (email: string, password: string): Promise<AuthUser> => {
     try {
@@ -274,6 +320,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value: AuthState = {
     user,
     loading,
+    initialising,
     authError,
     ensureSignedIn,
     signOut,
