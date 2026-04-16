@@ -54,73 +54,39 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const shouldRetryBootstrapError = (error: any): boolean => {
-    const status = Number(error?.status ?? error?.code ?? 0);
-    const message = String(error?.message || "").toLowerCase();
-    if (status === 401 || status === 403) return false;
-    if (status >= 500) return true;
-    return (
-      message.includes("failed to fetch") ||
-      message.includes("network") ||
-      message.includes("timeout") ||
-      message.includes("abort")
-    );
-  };
-
-  const refreshUserInternal = useCallback(async ({
-    tolerateUnauthorized = false,
-    retryUnauthorized = false,
-    maxAttempts = 2,
-  }: {
-    tolerateUnauthorized?: boolean;
-    retryUnauthorized?: boolean;
-    maxAttempts?: number;
-  } = {}): Promise<AuthUser | null> => {
+  const refreshUserInternal = useCallback(async (): Promise<AuthUser | null> => {
     refreshInFlightRef.current += 1;
     setLoading(true);
     setAuthError(null);
 
     try {
-      for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        try {
-          const data = await clientApi.request<AuthUser>("/api/auth-user");
-          console.log("[AUTH_REFRESH_AFTER_LOGIN]", data);
-          setAuthError(null);
-          setUser(data);
-          return data;
-        } catch (e: any) {
-          const status = Number(e?.status ?? e?.code ?? 0);
-          const unauthorized = status === 401 || String(e?.message || "").includes("401");
-          if (unauthorized) {
-            const canRetryUnauthorized = retryUnauthorized && attempt < maxAttempts;
-            if (canRetryUnauthorized) {
-              console.warn("[AUTH_REFRESH_UNAUTHORIZED_RETRY]", { attempt, maxAttempts });
-              await sleep(350);
-              continue;
-            }
+      const data = await clientApi.request<AuthUser>("/api/auth-user", {
+        cache: "no-store",
+      });
+      console.log("[AUTH_REFRESH_AFTER_LOGIN]", data);
+      setAuthError(null);
+      setUser(data);
+      return data;
+    } catch (e: any) {
+      const status = Number(e?.status ?? e?.code ?? 0);
+      const unauthorized = status === 401 || String(e?.message || "").includes("401");
+      const notModified = status === 304;
 
-            setAuthError(null);
-            if (!tolerateUnauthorized) {
-              setUser(null);
-            } else {
-              console.warn("[AUTH_REFRESH_UNAUTHORIZED_TOLERATED]", e);
-            }
-            return null;
-          }
-
-          const canRetry = attempt < maxAttempts && shouldRetryBootstrapError(e);
-          if (canRetry) {
-            await sleep(350);
-            continue;
-          }
-
-          console.error(e);
-          setAuthError("Failed to load session");
-          throw e;
-        }
+      if (unauthorized) {
+        setAuthError(null);
+        setUser(null);
+        return null;
       }
 
-      return null;
+      if (notModified) {
+        console.warn("[AUTH_REFRESH_NOT_MODIFIED]", { hasCachedUser: !!userRef.current });
+        setAuthError(null);
+        return userRef.current;
+      }
+
+      console.error(e);
+      setAuthError("Failed to load session");
+      throw e;
     } finally {
       refreshInFlightRef.current = Math.max(0, refreshInFlightRef.current - 1);
       setLoading(refreshInFlightRef.current > 0);
@@ -138,14 +104,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const bootstrapAuth = async () => {
       try {
-        await refreshUserInternal({
-          tolerateUnauthorized: true,
-          retryUnauthorized: true,
-          maxAttempts: 4,
-        });
+        const firstUser = await refreshUserInternal();
+        if (!firstUser && !cancelled) {
+          await sleep(150);
+          if (!cancelled) {
+            await refreshUserInternal();
+          }
+        }
       } catch (error) {
         if (!cancelled) {
           console.error("Initial auth refresh failed", error);
+          await sleep(150);
+          if (!cancelled) {
+            try {
+              await refreshUserInternal();
+            } catch (retryError) {
+              console.error("Initial auth retry failed", retryError);
+            }
+          }
         }
       } finally {
         if (!cancelled) {
