@@ -24,6 +24,7 @@ type AuthUser = {
 type AuthState = {
   user: AuthUser | null;
   loading: boolean;
+  authError: string | null;
   ensureSignedIn: (opts?: { reason?: string }) => Promise<AuthUser>;
   signOut: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
@@ -42,7 +43,9 @@ const AuthCtx = createContext<AuthState | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const pendingActionRef = useRef<null | (() => void)>(null);
+  const refreshInFlightRef = useRef(0);
   // Ref tracks latest user so signOut callback never reads stale closure
   const userRef = useRef<AuthUser | null>(null);
   useEffect(() => { userRef.current = user; }, [user]);
@@ -63,18 +66,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const refreshUser = useCallback(async (): Promise<AuthUser | null> => {
+    refreshInFlightRef.current += 1;
+    setLoading(true);
+    setAuthError(null);
+
     try {
       const maxAttempts = 2;
       for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
         try {
           const data = await clientApi.request<AuthUser>("/api/auth-user");
           console.log("[AUTH_REFRESH_AFTER_LOGIN]", data);
+          setAuthError(null);
           setUser(data);
           return data;
         } catch (e: any) {
           const status = Number(e?.status ?? e?.code ?? 0);
           const unauthorized = status === 401 || String(e?.message || "").includes("401");
           if (unauthorized) {
+            setAuthError(null);
             setUser(null);
             return null;
           }
@@ -86,20 +95,24 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
 
           console.error(e);
-          return null;
+          setAuthError("Failed to load session");
+          throw e;
         }
       }
 
       return null;
     } finally {
-      setLoading(false);
+      refreshInFlightRef.current = Math.max(0, refreshInFlightRef.current - 1);
+      setLoading(refreshInFlightRef.current > 0);
     }
   }, []);
 
   // Auto-check session on mount to maintain logged-in state across page loads
   // This ensures users stay logged in when returning from external redirects (e.g., Stripe)
   useEffect(() => {
-    refreshUser();
+    refreshUser().catch((error) => {
+      console.error("Initial auth refresh failed", error);
+    });
   }, [refreshUser]);
 
   const signOut = useCallback(async () => {
@@ -261,6 +274,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const value: AuthState = {
     user,
     loading,
+    authError,
     ensureSignedIn,
     signOut,
     refreshUser,

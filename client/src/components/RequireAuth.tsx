@@ -1,7 +1,7 @@
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 
 export function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { isReady, isAuthed, redirectToLogin } = useAuthGuard();
+  const { isReady, isAuthed, authError, redirectToLogin } = useAuthGuard();
 
   if (!isReady)
     return (
@@ -11,6 +11,14 @@ export function RequireAuth({ children }: { children: React.ReactNode }) {
     );
 
   if (!isAuthed) {
+    if (authError) {
+      return (
+        <div className="p-8 text-center text-muted-foreground">
+          Unable to verify your session right now. Please retry in a moment.
+        </div>
+      );
+    }
+
     redirectToLogin();
     return (
       <div className="p-8 text-center text-muted-foreground">

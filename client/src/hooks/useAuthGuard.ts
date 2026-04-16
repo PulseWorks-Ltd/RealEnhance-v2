@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { api } from "@/lib/api";
 
 export function useAuthGuard() {
-  const { user, loading, refreshUser } = useAuth();
+  const { user, loading, refreshUser, authError } = useAuth();
   const navigate = useNavigate();
   const [isReady, setIsReady] = useState(false);
 
@@ -100,6 +100,7 @@ export function useAuthGuard() {
     user,
     isReady,
     isAuthed: !!user,
+    authError,
     redirectToLogin,
     ensureLoggedInAndCredits
   };

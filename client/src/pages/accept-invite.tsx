@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useAuth } from "@/context/AuthContext";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Label } from "@/components/ui/label";
 export default function AcceptInvite() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
   const token = searchParams.get("token") || "";
 
   const [name, setName] = useState("");
@@ -55,14 +57,19 @@ export default function AcceptInvite() {
         throw new Error(data.error || "Failed to accept invite");
       }
 
-      // On success, user is logged in via session cookie; send them to home/agency
+      const refreshed = await refreshUser();
+      if (!refreshed) {
+        throw new Error("Invite accepted but failed to load user data");
+      }
+
+      // On success, user is logged in via session cookie and hydrated in client state
       navigate("/home", { replace: true });
     } catch (e: any) {
       setError(e.message || "Failed to accept invite");
     } finally {
       setLoading(false);
     }
-  }, [token, name, password, confirm, navigate]);
+  }, [token, name, password, confirm, navigate, refreshUser]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">

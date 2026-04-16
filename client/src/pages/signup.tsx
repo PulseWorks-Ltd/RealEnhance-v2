@@ -21,7 +21,7 @@ export default function Signup() {
   const [inviteInfo, setInviteInfo] = useState<{ email: string; agencyName: string } | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
-  const { signUpWithEmail, ensureSignedIn } = useAuth();
+  const { signUpWithEmail, ensureSignedIn, refreshUser } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectTo = searchParams.get("redirect") || "/upload";
@@ -96,7 +96,12 @@ export default function Signup() {
           throw new Error(errorData.error || "Failed to accept invite");
         }
 
-        // Invite accepted, user created and logged in
+        const refreshed = await refreshUser();
+        if (!refreshed) {
+          throw new Error("Invite accepted but failed to load user data");
+        }
+
+        // Invite accepted, user created and hydrated
         navigate("/upload");
       } else {
         // Regular signup flow
