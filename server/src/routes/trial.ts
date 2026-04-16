@@ -7,6 +7,7 @@ import { getDisplayName } from "@realenhance/shared/users.js";
 import { assertEligibleForTrial, normalizeEmail, recordTrialStart, sha256 } from "../services/trials.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { pool } from "../db/index.js";
+import { saveSession } from "../utils/session.js";
 
 const router = Router();
 
@@ -108,6 +109,7 @@ router.post("/start", rateLimit, async (req: Request, res: Response) => {
     };
 
     (req.session as any).user = sessionUser;
+    await saveSession(req);
 
     return res.status(201).json({
       agency,

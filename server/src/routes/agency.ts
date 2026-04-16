@@ -26,6 +26,7 @@ import { AGENCY_SIGNUP_PROMO_CREDITS } from "@realenhance/shared/plans.js";
 import { sendInvitationEmail } from "../services/email.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { invalidateSessionsForUser } from "../services/sessionStore.js";
+import { saveSession } from "../utils/session.js";
 import { getTrialSummary } from "../services/trials.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
@@ -635,6 +636,7 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
         role: user.role || "member",
         hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
       };
+      await saveSession(req);
 
       return res.json({
         user: {
@@ -682,6 +684,7 @@ router.post("/invite/accept", async (req: Request, res: Response) => {
       role: user.role || "member",
       hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
     };
+    await saveSession(req);
 
     res.status(201).json({
       user: {

@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { getUserById } from "../services/users.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { listImagesForUser } from "../services/images.js";
+import { saveSession } from "../utils/session.js";
 
 export function authUserRouter() {
   const r = Router();
@@ -30,6 +31,7 @@ export function authUserRouter() {
       role: (full.role as any) ?? "member",
       hasSeenWelcome: full.hasSeenWelcome === false ? false : true,
     };
+    await saveSession(req);
 
     const includeImages = String((req.query as any)?.includeImages || "0") === "1";
 

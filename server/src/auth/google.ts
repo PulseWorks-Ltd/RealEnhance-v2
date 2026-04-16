@@ -4,6 +4,7 @@ import { Strategy as GoogleStrategy, type StrategyOptions } from "passport-googl
 import { upsertUserFromGoogle, getUserByEmail, updateUser } from "../services/users.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { createAgency } from "@realenhance/shared/agencies.js";
+import { saveSession } from "../utils/session.js";
 // Seat limits removed - unlimited users per agency
 
 /** Resolve public base URL safely (prod vs local) */
@@ -243,6 +244,7 @@ export function attachGoogleAuth(app: Express) {
         role: (fullUser?.role as any) ?? authed.role ?? "member",
         hasSeenWelcome: fullUser?.hasSeenWelcome === false ? false : true,
       };
+      await saveSession(req);
 
       const clientOrigins = (process.env.PUBLIC_ORIGIN || "").split(",").map(s => s.trim()).filter(Boolean);
       const client = clientOrigins[0] || "http://localhost:3000";

@@ -7,6 +7,7 @@ import { getDisplayName } from "@realenhance/shared/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { createAgency } from "@realenhance/shared/agencies.js";
 import { createEmailVerificationToken, consumeEmailVerificationToken } from "../services/emailVerificationTokens.js";
+import { saveSession } from "../utils/session.js";
 // Seat limits removed - unlimited users per agency
 
 export function emailAuthRouter() {
@@ -141,6 +142,7 @@ export function emailAuthRouter() {
 
       // Create session (same as Google OAuth)
       (req.session as any).user = sessionUser;
+      await saveSession(req);
 
       // Return user (without password fields)
       res.status(201).json(sessionUser);
@@ -189,6 +191,7 @@ export function emailAuthRouter() {
 
       const sessionUser = buildSessionUser(user);
       (req.session as any).user = sessionUser;
+      await saveSession(req);
 
       console.log("[AUTH_COOKIE_SET]", {
         domain: process.env.NODE_ENV === "production" ? ".realenhance.co.nz" : undefined,
@@ -338,6 +341,7 @@ export function emailAuthRouter() {
 
       // Refresh session
       (req.session as any).user = buildSessionUser(updated);
+      await saveSession(req);
 
       return res.json({ ok: true });
     } catch (err) {
@@ -385,6 +389,7 @@ export function emailAuthRouter() {
 
       // Refresh session
       (req.session as any).user = buildSessionUser(updated);
+      await saveSession(req);
 
       console.log(`[auth] Password set for OAuth user ${user.id}`);
       return res.json({
@@ -418,6 +423,7 @@ export function emailAuthRouter() {
       const updated = await updateUser(user.id, { emailVerified: true });
       if ((req.session as any)?.user?.id === updated.id) {
         (req.session as any).user = buildSessionUser(updated);
+        await saveSession(req);
       }
 
       return res.json({ ok: true, verified: true });
@@ -466,6 +472,7 @@ export function emailAuthRouter() {
 
       const updated = await updateUser(user.id, { hasSeenWelcome: true });
       (req.session as any).user = buildSessionUser(updated);
+      await saveSession(req);
       return res.json({ ok: true });
     } catch (err) {
       console.error("[auth] welcome-seen error", err);

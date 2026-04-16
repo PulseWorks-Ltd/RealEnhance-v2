@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { getUserById, updateUser } from "../services/users.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
+import { saveSession } from "../utils/session.js";
 
 const router = Router();
 
@@ -57,6 +58,7 @@ router.post("/update", async (req: Request, res: Response) => {
 
     const sessionUser = buildSessionUser(updated);
     (req.session as any).user = sessionUser;
+    await saveSession(req);
 
     return res.json({ user: sessionUser });
   } catch (err) {
