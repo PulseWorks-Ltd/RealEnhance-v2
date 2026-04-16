@@ -1,6 +1,6 @@
 // client/src/context/AuthContext.tsx
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
-import clientApi, { apiFetch } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import { apiFetchSoft } from "@/lib/api";
 import { requestClearEnhancementState } from "@/lib/enhancement-state";
 
@@ -41,6 +41,15 @@ type AuthState = {
 
 const AuthCtx = createContext<AuthState | null>(null);
 
+function isAuthUser(value: unknown): value is AuthUser {
+  return !!value && typeof value === "object" && typeof (value as AuthUser).id === "string";
+}
+
+type AuthProbeResult =
+  | { type: "user"; user: AuthUser }
+  | { type: "unauthenticated" }
+  | { type: "unresolved" };
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,36 +63,77 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const refreshUserInternal = useCallback(async (): Promise<AuthUser | null> => {
-    refreshInFlightRef.current += 1;
-    setLoading(true);
-    setAuthError(null);
-
+  const probeUserInternal = useCallback(async (): Promise<AuthProbeResult> => {
     try {
-      const data = await clientApi.request<AuthUser>("/api/auth-user", {
+      const res = await apiFetch("/api/auth-user", {
         cache: "no-store",
       });
-      console.log("[AUTH_REFRESH_AFTER_LOGIN]", data);
-      setAuthError(null);
-      setUser(data);
-      return data;
+
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.includes("application/json")) {
+        return { type: "unresolved" };
+      }
+
+      let data: unknown = null;
+      try {
+        data = await res.json();
+      } catch (error) {
+        if (error instanceof SyntaxError) {
+          return { type: "unresolved" };
+        }
+        throw error;
+      }
+
+      if (!isAuthUser(data)) {
+        return { type: "unresolved" };
+      }
+
+      return { type: "user", user: data };
     } catch (e: any) {
       const status = Number(e?.status ?? e?.code ?? 0);
       const unauthorized = status === 401 || String(e?.message || "").includes("401");
       const notModified = status === 304;
 
       if (unauthorized) {
-        setAuthError(null);
-        setUser(null);
-        return null;
+        return { type: "unauthenticated" };
       }
 
       if (notModified) {
-        console.warn("[AUTH_REFRESH_NOT_MODIFIED]", { hasCachedUser: !!userRef.current });
-        setAuthError(null);
-        return userRef.current;
+        return { type: "unresolved" };
       }
 
+      throw e;
+    }
+  }, []);
+
+  const refreshUserInternal = useCallback(async ({ commit = true }: { commit?: boolean } = {}): Promise<AuthUser | null> => {
+    refreshInFlightRef.current += 1;
+    setLoading(true);
+    setAuthError(null);
+
+    try {
+      const result = await probeUserInternal();
+
+      if (result.type === "user") {
+        console.log("[AUTH_REFRESH_AFTER_LOGIN]", result.user);
+        setAuthError(null);
+        if (commit) {
+          setUser(result.user);
+        }
+        return result.user;
+      }
+
+      if (result.type === "unauthenticated") {
+        setAuthError(null);
+        if (commit) {
+          setUser(null);
+        }
+        return null;
+      }
+
+      setAuthError(null);
+      return null;
+    } catch (e: any) {
       console.error(e);
       setAuthError("Failed to load session");
       throw e;
@@ -100,42 +150,86 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Auto-check session on mount to maintain logged-in state across page loads
   // This ensures users stay logged in when returning from external redirects (e.g., Stripe)
   useEffect(() => {
-    let cancelled = false;
+    let mounted = true;
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
     const bootstrapAuth = async () => {
+      let nextUser: AuthUser | null = null;
+      let sawDefinitiveUnauthed = false;
+
       try {
-        const firstUser = await refreshUserInternal();
-        if (!firstUser && !cancelled) {
-          await sleep(150);
-          if (!cancelled) {
-            await refreshUserInternal();
-          }
+        const firstResult = await probeUserInternal();
+        if (firstResult.type === "user") {
+          nextUser = firstResult.user;
+        } else if (firstResult.type === "unauthenticated") {
+          sawDefinitiveUnauthed = true;
         }
       } catch (error) {
-        if (!cancelled) {
+        if (mounted) {
           console.error("Initial auth refresh failed", error);
-          await sleep(150);
-          if (!cancelled) {
-            try {
-              await refreshUserInternal();
-            } catch (retryError) {
-              console.error("Initial auth retry failed", retryError);
-            }
-          }
-        }
-      } finally {
-        if (!cancelled) {
-          setInitialising(false);
         }
       }
+
+      if (!nextUser && !sawDefinitiveUnauthed && mounted) {
+        await sleep(200);
+        if (!mounted) return;
+
+        try {
+          const secondResult = await probeUserInternal();
+          if (secondResult.type === "user") {
+            nextUser = secondResult.user;
+          } else if (secondResult.type === "unauthenticated") {
+            sawDefinitiveUnauthed = true;
+          }
+        } catch (retryError) {
+          if (mounted) {
+            console.error("Initial auth retry failed", retryError);
+          }
+        }
+      }
+
+      if (!mounted) return;
+
+      if (!nextUser && !sawDefinitiveUnauthed) {
+        fallbackTimer = setTimeout(() => {
+          if (!mounted) return;
+
+          refreshUser()
+            .catch((error) => {
+              if (mounted) {
+                console.error("Deferred auth refresh failed", error);
+              }
+            })
+            .finally(() => {
+              if (!mounted) return;
+
+              setInitialising(false);
+              console.log("[AUTH_BOOTSTRAP_DONE]", {
+                user: userRef.current,
+                hasUser: !!userRef.current,
+              });
+            });
+        }, 1000);
+        return;
+      }
+
+      setUser(nextUser);
+      setInitialising(false);
+      console.log("[AUTH_BOOTSTRAP_DONE]", {
+        user: nextUser,
+        hasUser: !!nextUser,
+      });
     };
 
     bootstrapAuth();
 
     return () => {
-      cancelled = true;
+      mounted = false;
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+      }
     };
-  }, [refreshUserInternal]);
+  }, [refreshUser, refreshUserInternal]);
 
   const signOut = useCallback(async () => {
     try {
