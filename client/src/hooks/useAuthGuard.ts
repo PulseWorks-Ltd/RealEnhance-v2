@@ -9,6 +9,15 @@ export function useAuthGuard() {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
+    console.log("AUTH_GUARD", {
+      user,
+      isSiteAdmin: user?.isSiteAdmin,
+      loading,
+      initialising,
+    });
+  }, [user, loading, initialising]);
+
+  useEffect(() => {
     if (!loading && !initialising) {
       setIsReady(true);
     } else {

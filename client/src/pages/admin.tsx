@@ -165,6 +165,15 @@ export default function AdminDashboard() {
   const [sortKey, setSortKey] = useState<SortKey>("createdAt");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
+  useEffect(() => {
+    console.log("ADMIN_RENDER", {
+      user,
+      isSiteAdmin: user?.isSiteAdmin,
+      loading,
+      initialising,
+    });
+  }, [user, loading, initialising]);
+
   // Guard: redirect non-admins
   useEffect(() => {
     if (loading || initialising || !user) {
