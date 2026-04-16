@@ -317,8 +317,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new Error(err.error || "Failed to update profile");
       }
       const data = await res.json();
-      setUser(data.user || data);
-      return data.user || data;
+      const nextUser = data.user || data;
+      setUser((prev) => (prev ? { ...prev, ...nextUser } : nextUser));
+      return nextUser;
     },
   };
 
