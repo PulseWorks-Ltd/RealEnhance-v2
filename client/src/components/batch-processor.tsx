@@ -7306,7 +7306,7 @@ export default function BatchProcessor({
 
         {/* Images Tab - Studio Layout */}
         {activeTab === "images" && (
-          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-[#F9FAFB]">
+          <div className="h-full w-full flex min-h-0 flex-col overflow-hidden bg-slate-100">
             {files.length === 0 ? (
               <div className="flex-1 min-h-0 overflow-y-auto p-8">
                 <EmptyStateLaunchpad
@@ -7323,12 +7323,12 @@ export default function BatchProcessor({
               </div>
             ) : (
               <div className="w-full flex-1 min-h-0 flex overflow-hidden">
-                <aside className="w-[340px] min-h-0 shrink-0 flex h-full flex-col overflow-y-auto border-r border-[#E5E7EB] bg-white px-5 pt-2">
-                  <div className="space-y-4 pr-1 pb-4">
-                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white pt-4 pb-3 z-10">
+                <aside className="w-80 min-h-0 shrink-0 flex h-full flex-col overflow-y-auto border-r border-slate-200 bg-white p-3 pt-2">
+                  <div className="space-y-3 pr-1 pb-2">
+                    <div className="flex items-start justify-between gap-2 sticky top-0 bg-white pt-3 pb-2 z-10">
                       <div>
-                        <h2 className="text-2xl font-bold text-slate-900 tracking-tight">Image Preparation</h2>
-                        <p className="text-sm text-slate-500 leading-5 mt-0.5">Global settings for this batch.</p>
+                        <h2 className="text-lg font-semibold text-slate-900">Image Preparation</h2>
+                        <p className="text-sm text-slate-600 leading-5">Global settings for this batch.</p>
                       </div>
                       <button
                         onClick={() => setActiveTab("upload")}
@@ -7370,7 +7370,7 @@ export default function BatchProcessor({
                         <input
                           id="property-address-input"
                           type="text"
-                          className="w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                           value={propertyAddress}
                           onChange={(e) => setPropertyAddress(e.target.value)}
                           placeholder="e.g., 21 Smith Street"
@@ -7384,7 +7384,7 @@ export default function BatchProcessor({
                         </label>
                         <select
                           id="staging-style-select-left"
-                          className="w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-slate-700 appearance-none bg-[length:16px_16px] bg-[right_0.5rem_center] bg-no-repeat bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22%236b7280%22%3E%3Cpath%20fill-rule%3D%22evenodd%22%20d%3D%22M5.23%207.21a.75.75%200%20011.06.02L10%2011.168l3.71-3.938a.75.75%200%20111.08%201.04l-4.25%204.5a.75.75%200%2001-1.08%200l-4.25-4.5a.75.75%200%2001.02-1.06z%22%20clip-rule%3D%22evenodd%22%2F%3E%3C%2Fsvg%3E')] pr-8 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                           value={stagingStyle}
                           onChange={(e) => setStagingStyle(e.target.value as StagingStyle)}
                           data-testid="select-staging-style"
@@ -7404,7 +7404,7 @@ export default function BatchProcessor({
                         </label>
                         <textarea
                           id="specific-requirements-input-left"
-                          className="w-full rounded-md border border-[#E5E7EB] bg-white p-3 text-sm text-slate-700 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                          className="w-full rounded-md border border-slate-300 bg-white p-3 text-sm text-slate-700"
                           rows={5}
                           placeholder="e.g., brighten interior, realistic daylight, preserve existing style"
                           value={globalGoal}
@@ -7416,9 +7416,9 @@ export default function BatchProcessor({
                   </div>
                 </aside>
 
-                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-[#F9FAFB] px-5 grid grid-rows-[minmax(0,1fr)_36px_128px]">
-                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden py-2">
-                    <div className="relative flex h-[90%] min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-[#E5E7EB] bg-white mx-auto self-center">
+                <div className="flex-1 min-h-0 min-w-0 overflow-hidden bg-slate-50 px-5 grid grid-rows-[minmax(0,1fr)_36px_128px]">
+                  <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden py-1">
+                    <div className="relative flex h-full max-h-[70vh] min-h-0 w-full min-w-0 items-center justify-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
                       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-center justify-between gap-3">
                         <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                           Image {currentImageIndex + 1} of {files.length}
@@ -7560,7 +7560,7 @@ export default function BatchProcessor({
                   </div>
                 </div>
 
-                <section className="w-[340px] min-h-0 shrink-0 h-full overflow-hidden border-l border-[#E5E7EB] bg-white px-5 py-4 flex flex-col">
+                <section className="w-[360px] min-h-0 shrink-0 h-full overflow-hidden border-l border-slate-200 bg-white p-4 flex flex-col">
                   {(() => {
                     const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                     const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
@@ -7601,7 +7601,7 @@ export default function BatchProcessor({
                     return (
                       <>
                         <div className="space-y-4 flex-1 min-h-0 overflow-y-auto pr-1 pt-2">
-                          <div className="rounded-xl border border-[#E5E7EB] bg-[#F9FAFB] px-4 py-3">
+                          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
                             <p className="text-xs uppercase tracking-wide text-slate-500">Image Progress</p>
                             <p className="text-sm font-semibold text-slate-900">Image {currentImageIndex + 1} of {files.length}</p>
                             <p className="text-xs text-slate-600 mt-0.5">{configuredImagesCount}/{files.length} configured</p>
@@ -7619,7 +7619,7 @@ export default function BatchProcessor({
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                   setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: false }));
                                 }}
-                                className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-[#E5E7EB] bg-white text-slate-700 hover:bg-slate-50"}`}
+                                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${sceneType === "interior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                               >
                                 Interior
                               </button>
@@ -7633,7 +7633,7 @@ export default function BatchProcessor({
                                   setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
                                   setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: "" }));
                                 }}
-                                className={`rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-[#E5E7EB] bg-white text-slate-700 hover:bg-slate-50"}`}
+                                className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                               >
                                 Exterior
                               </button>
@@ -7660,7 +7660,7 @@ export default function BatchProcessor({
                                 }
                                 flashAssignedThumbnail(currentImageIndex);
                               }}
-                              className="w-full rounded-md border border-[#E5E7EB] bg-white px-3 py-2 text-sm text-slate-700 appearance-none bg-[length:16px_16px] bg-[right_0.5rem_center] bg-no-repeat bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2020%2020%22%20fill%3D%22%236b7280%22%3E%3Cpath%20fill-rule%3D%22evenodd%22%20d%3D%22M5.23%207.21a.75.75%200%20011.06.02L10%2011.168l3.71-3.938a.75.75%200%20111.08%201.04l-4.25%204.5a.75.75%200%2001-1.08%200l-4.25-4.5a.75.75%200%2001.02-1.06z%22%20clip-rule%3D%22evenodd%22%2F%3E%3C%2Fsvg%3E')] pr-8 focus:outline-none focus:ring-1 focus:ring-slate-300"
+                              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
                             >
                               <option value="">Select room type...</option>
                               {INTERIOR_ROOM_TYPES.map((room) => (
@@ -7674,7 +7674,7 @@ export default function BatchProcessor({
 
                         </div>
 
-                        <footer className="mt-auto shrink-0 border-t border-[#E5E7EB] bg-white pt-4 pb-2">
+                        <footer className="mt-auto shrink-0 border-t border-slate-200 bg-white p-4">
                           <div className="transition-all duration-200">
                             {allImagesConfigured ? (
                               <button
