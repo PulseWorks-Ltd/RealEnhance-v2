@@ -521,6 +521,7 @@ export async function applyEdit({
       sceneType: sceneType || "interior",
       preserveStructure: true,
       hasStage1ABaseline: mode === "Remove" && !!stage1AReferenceBuffer,
+      editMode: mode,
     });
     const finalPrompt = prompt;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);

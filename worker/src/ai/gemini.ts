@@ -49,7 +49,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   // For Remove mode, include Stage 1A baseline so Gemini can see what was
   // behind the item being removed (empty-room reference).
   if (isRemoveWithBaseline) {
-    parts.push({ text: "STAGE_1A_BASELINE_IMAGE (empty-room reference — shows what exists behind the item being removed):" });
+    parts.push({ text: "STAGE_1A_BASELINE_IMAGE (original property photo — structural reference ONLY, do NOT reproduce furniture or movable items from this image):" });
     parts.push({
       inlineData: {
         mimeType: "image/webp",
