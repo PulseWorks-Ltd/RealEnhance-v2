@@ -231,7 +231,7 @@ export interface EditJobPayload {
   type: "edit";
   jobType?: "edit";
   baseVersionId: string;
-  mode: "Add" | "Remove" | "Replace" | "Restore";
+  mode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
   instruction: string;
   mask: unknown;
   createdAt: string; // ISO
@@ -239,6 +239,15 @@ export interface EditJobPayload {
   stagingStyle?: string;
   propertyId?: string;
   sourceImageId?: string;
+}
+
+export interface ReinstateConfig {
+  targetType: "window" | "doorway" | "opening" | "auto";
+  geometry?: {
+    bbox: { x: number; y: number; width: number; height: number };
+    confidence?: number;
+    openingId?: string;
+  };
 }
 
 export interface RegionEditJobPayload {
@@ -256,13 +265,14 @@ export interface RegionEditJobPayload {
   baseVersionId: string;
   baselineStage?: "stage1A" | "stage1B" | "stage2";
   stageUrls?: Record<string, string | null>;
-  mode: "Add" | "Remove" | "Replace" | "Restore";
-  editIntent?: "add" | "remove" | "replace";
+  mode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+  editIntent?: "add" | "remove" | "replace" | "reinstate";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
   instruction?: string;
   currentImageUrl?: string;
   baseImageUrl?: string;
   restoreFromUrl?: string;
+  reinstateConfig?: ReinstateConfig;
   mask: unknown;
   stage1AReferenceUrl?: string;
   createdAt: string; // ISO

@@ -13,6 +13,7 @@ interface RegionEditResult {
 export function RegionEditPage() {
   const [result, setResult] = useState<RegionEditResult | null>(null);
   const [showComparison, setShowComparison] = useState(false);
+  const [initialGoal, setInitialGoal] = useState("");
 
   const handleComplete = (editResult: RegionEditResult) => {
     setResult(editResult);
@@ -22,6 +23,13 @@ export function RegionEditPage() {
   const handleReset = () => {
     setResult(null);
     setShowComparison(false);
+    setInitialGoal("");
+  };
+
+  const handleLaunchSmartReinstate = () => {
+    setResult(null);
+    setShowComparison(false);
+    setInitialGoal("reinstate window");
   };
 
   return (
@@ -35,7 +43,7 @@ export function RegionEditPage() {
         </div>
 
         {!showComparison ? (
-          <RegionEditor onComplete={handleComplete} />
+          <RegionEditor onComplete={handleComplete} initialGoal={initialGoal} />
         ) : (
           <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -121,8 +129,8 @@ export function RegionEditPage() {
                   If you're not satisfied with specific parts of the enhancement, you can use Smart Reinstate 
                   to restore selected regions to their original state while keeping other improvements.
                 </p>
-                <Button variant="outline" disabled data-testid="button-smart-reinstate">
-                  Launch Smart Reinstate (Coming Soon)
+                <Button variant="outline" onClick={handleLaunchSmartReinstate} data-testid="button-smart-reinstate">
+                  Launch Smart Reinstate
                 </Button>
               </CardContent>
             </Card>

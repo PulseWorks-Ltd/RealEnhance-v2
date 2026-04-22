@@ -4,6 +4,7 @@ import sharp from "sharp";
 import { regionEditWithGemini } from "../ai/gemini";
 import { buildRegionEditPrompt } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
+import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 
 const MIN_PROJECTION_DILATE_PX = 2;
 const MAX_PROJECTION_DILATE_PX = 4;
@@ -334,7 +335,167 @@ function classifyOutsideLeakPct(pct: number | null): "none" | "soft_anomaly" | "
   return "real_leak";
 }
 
-export type EditMode = "Add" | "Remove" | "Replace" | "Restore";
+function intersectsNormBbox(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+): boolean {
+  return !(a[2] <= b[0] || a[0] >= b[2] || a[3] <= b[1] || a[1] >= b[3]);
+}
+
+function intersectionAreaNormBbox(
+  a: [number, number, number, number],
+  b: [number, number, number, number],
+): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+}
+
+function getNormBboxCenter(bbox: [number, number, number, number]): { cx: number; cy: number } {
+  return {
+    cx: bbox[0] + ((bbox[2] - bbox[0]) / 2),
+    cy: bbox[1] + ((bbox[3] - bbox[1]) / 2),
+  };
+}
+
+function computeNormalizedCenterDistance(
+  a: { cx: number; cy: number },
+  b: { cx: number; cy: number },
+): number {
+  const dx = a.cx - b.cx;
+  const dy = a.cy - b.cy;
+  return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+async function maskToNormalizedBbox(maskPngBuffer: Buffer, width: number, height: number): Promise<[number, number, number, number] | null> {
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = raw.data[y * width + x] ?? 0;
+      if (value <= 127) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < 0 || maxY < 0) return null;
+
+  return [
+    minX / width,
+    minY / height,
+    (maxX + 1) / width,
+    (maxY + 1) / height,
+  ];
+}
+
+function openingMatchesReinstateTarget(
+  opening: OpeningRegion,
+  targetType: ReinstateConfig["targetType"],
+): boolean {
+  if (targetType === "auto") return true;
+  if (targetType === "opening") return true;
+  return opening.type === targetType;
+}
+
+function selectBestOpening(
+  openings: OpeningRegion[],
+  userMaskBbox: [number, number, number, number],
+): OpeningRegion | null {
+  const maskCenter = getNormBboxCenter(userMaskBbox);
+  const ranked = openings
+    .map((opening) => {
+      const intersectionScore = intersectionAreaNormBbox(userMaskBbox, opening.normalizedBbox);
+      const confidenceScore = Math.max(0, Math.min(1, opening.confidence));
+      const openingCenter = getNormBboxCenter(opening.normalizedBbox);
+      const distance = computeNormalizedCenterDistance(maskCenter, openingCenter);
+      const proximityScore = 1 - Math.min(distance, 1);
+      const score =
+        (0.5 * intersectionScore) +
+        (0.3 * confidenceScore) +
+        (0.2 * proximityScore);
+
+      return {
+        opening,
+        score,
+        intersectionScore,
+        confidenceScore,
+        proximityScore,
+      };
+    })
+    .filter((entry) => entry.intersectionScore > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.intersectionScore !== a.intersectionScore) return b.intersectionScore - a.intersectionScore;
+      return b.confidenceScore - a.confidenceScore;
+    });
+
+  const topCandidates = ranked.slice(0, 3).map((entry) => ({
+    score: Number(entry.score.toFixed(6)),
+    intersection: Number(entry.intersectionScore.toFixed(6)),
+    confidence: Number(entry.confidenceScore.toFixed(6)),
+    proximity: Number(entry.proximityScore.toFixed(6)),
+    bbox: entry.opening.bbox,
+  }));
+
+  const best = ranked[0] || null;
+  if (best) {
+    console.log("[Reinstate Selection]", {
+      chosen: topCandidates[0],
+      alternatives: topCandidates.slice(1),
+    });
+  }
+
+  return best?.opening ?? null;
+}
+
+async function buildMaskFromOpeningBBox(
+  bbox: { x: number; y: number; width: number; height: number },
+  width: number,
+  height: number,
+  paddingPx = 5,
+): Promise<Buffer> {
+  const x1 = Math.max(0, Math.floor(bbox.x * width) - paddingPx);
+  const y1 = Math.max(0, Math.floor(bbox.y * height) - paddingPx);
+  const x2 = Math.min(width, Math.ceil((bbox.x + bbox.width) * width) + paddingPx);
+  const y2 = Math.min(height, Math.ceil((bbox.y + bbox.height) * height) + paddingPx);
+
+  const maskRaw = Buffer.alloc(width * height, 0);
+  for (let y = y1; y < y2; y += 1) {
+    const rowOffset = y * width;
+    for (let x = x1; x < x2; x += 1) {
+      maskRaw[rowOffset + x] = 255;
+    }
+  }
+
+  return sharp(maskRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+export type ReinstateConfig = {
+  targetType: "window" | "doorway" | "opening" | "auto";
+  geometry?: {
+    bbox: { x: number; y: number; width: number; height: number };
+    confidence?: number;
+    openingId?: string;
+  };
+};
+
+export type EditMode = "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
 
 export interface ApplyEditArgs {
   jobId?: string;
@@ -345,6 +506,7 @@ export interface ApplyEditArgs {
   instruction: string;        // user’s natural-language instruction
   restoreFromPath?: string;   // optional path to original/enhanced image for restore mode
   stage1AReferencePath?: string; // optional Stage-1A enhanced reference image (remove mode)
+  reinstateConfig?: ReinstateConfig;
   onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;  roomType?: string;
   sceneType?: "interior" | "exterior";}
 
@@ -361,6 +523,7 @@ export async function applyEdit({
   instruction,
   restoreFromPath,
   stage1AReferencePath,
+  reinstateConfig,
   onAnchorValidation,
   roomType,
   sceneType,
@@ -404,6 +567,47 @@ export async function applyEdit({
         max: maskStats.channels.map((c:any)=>c.max),
         sum: maskStats.channels.map((c:any)=>c.sum),
       });
+    }
+
+    if (mode === "Reinstate" && maskPngBuffer && stage1AReferencePath) {
+      try {
+        const userMaskBbox = await maskToNormalizedBbox(maskPngBuffer, meta.width, meta.height);
+        const openings = await detectOpeningsFromStage1A(stage1AReferencePath, { jobId, imageId });
+        const filteredOpenings = openings.filter((opening) => openingMatchesReinstateTarget(opening, reinstateConfig?.targetType || "auto"));
+        const intersectingOpenings = userMaskBbox
+          ? filteredOpenings.filter((opening) => intersectsNormBbox(userMaskBbox, opening.normalizedBbox))
+          : [];
+        const targetOpening = userMaskBbox ? selectBestOpening(intersectingOpenings, userMaskBbox) : null;
+
+        if (targetOpening && targetOpening.confidence >= 0.65) {
+          maskPngBuffer = await buildMaskFromOpeningBBox(targetOpening.bbox, meta.width, meta.height, 5);
+          if (reinstateConfig) {
+            reinstateConfig.geometry = {
+              bbox: targetOpening.bbox,
+              confidence: targetOpening.confidence,
+              openingId: targetOpening.openingId,
+            };
+          }
+          console.log("[Reinstate Geometry]", {
+            detectedOpenings: openings.length,
+            matched: intersectingOpenings.length,
+            usingRefinedMask: true,
+            bbox: targetOpening.bbox,
+            confidence: targetOpening.confidence,
+            openingId: targetOpening.openingId,
+          });
+        } else {
+          console.log("[Reinstate] No reliable opening geometry found, using user mask");
+          console.log("[Reinstate Geometry]", {
+            detectedOpenings: openings.length,
+            matched: intersectingOpenings.length,
+            usingRefinedMask: false,
+            bbox: userMaskBbox,
+          });
+        }
+      } catch (err) {
+        console.warn("[Reinstate] No reliable opening geometry found, using user mask", (err as any)?.message || err);
+      }
     }
 
     const dir = require("path").dirname(baseImagePath);
@@ -503,12 +707,13 @@ export async function applyEdit({
 
     // For Remove mode, load Stage 1A baseline so Gemini can see what's behind the item
     let stage1AReferenceBuffer: Buffer | undefined;
-    if (mode === "Remove" && stage1AReferencePath) {
+    if ((mode === "Remove" || mode === "Reinstate") && stage1AReferencePath) {
       try {
         stage1AReferenceBuffer = await sharp(stage1AReferencePath).webp().toBuffer();
-        console.log("[editApply] Stage 1A baseline loaded for Remove reference", {
+        console.log("[editApply] Stage 1A baseline loaded for edit reference", {
           path: stage1AReferencePath,
           size: stage1AReferenceBuffer.length,
+          mode,
         });
       } catch (err) {
         console.warn("[editApply] Could not load Stage 1A reference, proceeding without it", err);
@@ -520,8 +725,9 @@ export async function applyEdit({
       roomType,
       sceneType: sceneType || "interior",
       preserveStructure: true,
-      hasStage1ABaseline: mode === "Remove" && !!stage1AReferenceBuffer,
+      hasStage1ABaseline: (mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer,
       editMode: mode,
+      reinstateConfig,
     });
     const finalPrompt = prompt;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);

@@ -30,8 +30,13 @@ function stripTransientQueryParams(urlValue?: string | null): string {
   }
 }
 
-function inferEditIntentFromInstruction(instruction: string): "add" | "remove" | "replace" {
+function inferEditIntentFromInstruction(instruction: string): "add" | "remove" | "replace" | "reinstate" {
   const text = String(instruction || "").toLowerCase();
+  if (
+    /\breinstate\b|\brestore\s+(the\s+)?(window|door|doorway|opening)\b|\bput\s+(the\s+)?(window|door|doorway|opening)\s+back\b|\bbring\s+(the\s+)?(window|door|doorway|opening)\s+back\b|\breopen\b|\breturn\s+(the\s+)?opening\b/.test(text)
+  ) {
+    return "reinstate";
+  }
   if (text.includes("remove") || text.includes("delete") || text.includes("take out")) return "remove";
   if (text.includes("add") || text.includes("place") || text.includes("insert")) return "add";
   return "replace";
@@ -1248,7 +1253,7 @@ export function RegionEditor({
         <div className="space-y-2">
           <h2 className="text-xl font-semibold text-slate-900">Edit Image</h2>
           <p className="text-sm text-slate-600">
-            Draw a mask and describe what you want to add, remove, or replace.
+            Draw a mask and describe what you want to add, remove, replace, or reinstate.
           </p>
         </div>
 

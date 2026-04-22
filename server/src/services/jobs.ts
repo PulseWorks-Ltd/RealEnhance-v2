@@ -830,7 +830,7 @@ export async function enqueueEditJob(params: {
   sourceImageId?: string;
   imageId: ImageId;
   baseVersionId: string;
-  mode: "Add" | "Remove" | "Replace" | "Restore";
+  mode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
   instruction: string;
   mask: unknown;
   remoteBaseUrl?: string;
@@ -879,8 +879,8 @@ export async function enqueueRegionEditJob(params: {
   imageId?: ImageId;
   baselineStage?: "stage1A" | "stage1B" | "stage2";
   stageUrls?: Record<string, string | null>;
-  mode: "add" | "remove" | "restore" | "replace";
-  editIntent?: "add" | "remove" | "replace";
+  mode: "add" | "remove" | "restore" | "replace" | "reinstate";
+  editIntent?: "add" | "remove" | "replace" | "reinstate";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
   executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   prompt?: string;
@@ -889,6 +889,7 @@ export async function enqueueRegionEditJob(params: {
   mask: string;
   imageIndex?: number;
   restoreFromUrl?: string;
+  reinstateConfig?: { targetType: "window" | "doorway" | "opening" | "auto" };
   stage1AReferenceUrl?: string;
 }) {
   assertDerivedJobLineage({
@@ -939,6 +940,7 @@ export async function enqueueRegionEditJob(params: {
     mask: params.mask,
     imageIndex: params.imageIndex,
     restoreFromUrl: params.restoreFromUrl,
+    reinstateConfig: params.reinstateConfig,
     stage1AReferenceUrl: params.stage1AReferenceUrl,
     createdAt: now,
   } as any;

@@ -1,3 +1,12 @@
+export interface ReinstateConfig {
+  targetType: "window" | "doorway" | "opening" | "auto";
+  geometry?: {
+    bbox: { x: number; y: number; width: number; height: number };
+    confidence?: number;
+    openingId?: string;
+  };
+}
+
 export interface RegionEditJobPayload {
   jobId: JobId;
   userId: UserId;
@@ -12,13 +21,14 @@ export interface RegionEditJobPayload {
   executionSourceStage?: "original" | "1A" | "1B" | "2" | "retry" | "edit";
   stageUrls?: Record<string, string | null>;
   galleryParentImageId?: string | null;
-  mode: "Add" | "Remove" | "Replace" | "Restore";
-  editIntent?: "add" | "remove" | "replace";
+  mode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+  editIntent?: "add" | "remove" | "replace" | "reinstate";
   editSourceStage?: "stage1A" | "stage1B" | "stage2";
   instruction?: string;
   currentImageUrl?: string;
   baseImageUrl?: string;
   restoreFromUrl?: string;
+  reinstateConfig?: ReinstateConfig;
   mask: unknown;
   stage1AReferenceUrl?: string;
   createdAt: string;
@@ -211,7 +221,7 @@ export interface EditJobPayload {
   jobType?: "edit";
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   baseVersionId: string;
-  mode: "Add" | "Remove" | "Replace" | "Restore";
+  mode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
   instruction: string;
   mask: unknown;
   allowStaging?: boolean;

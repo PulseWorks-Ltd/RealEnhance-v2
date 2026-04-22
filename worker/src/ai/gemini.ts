@@ -8,7 +8,7 @@ export interface RegionEditArgs {
   roomType?: string;
   sceneType?: "interior" | "exterior";
   preserveStructure?: boolean;
-  editMode?: "Add" | "Remove" | "Replace" | "Restore";
+  editMode?: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
 }
 
 export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer> {
@@ -25,12 +25,12 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     editMode,
   } = args;
 
-  const isRemoveWithBaseline = editMode === "Remove" && !!referenceImageBuffer;
+  const usesReferenceImage = (editMode === "Remove" || editMode === "Reinstate") && !!referenceImageBuffer;
 
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: prompt.length,
     hasMask: !!maskPngBuffer,
-    hasReferenceImage: isRemoveWithBaseline,
+    hasReferenceImage: usesReferenceImage,
     baseSize: baseImageBuffer.length,
     roomType,
     sceneType,
@@ -46,10 +46,11 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
       },
     },
   ];
-  // For Remove mode, include Stage 1A baseline so Gemini can see what was
-  // behind the item being removed (empty-room reference).
-  if (isRemoveWithBaseline) {
-    parts.push({ text: "STAGE_1A_BASELINE_IMAGE (original property photo — structural reference ONLY, do NOT reproduce furniture or movable items from this image):" });
+  if (usesReferenceImage) {
+    const referenceLabel = editMode === "Reinstate"
+      ? "STAGE_1A_BASELINE_IMAGE (original property photo — architectural reference ONLY, restore only the requested opening and do NOT reproduce furniture or movable items from this image):"
+      : "STAGE_1A_BASELINE_IMAGE (original property photo — structural reference ONLY, do NOT reproduce furniture or movable items from this image):";
+    parts.push({ text: referenceLabel });
     parts.push({
       inlineData: {
         mimeType: "image/webp",
@@ -82,6 +83,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     Remove: "region-remove",
     Replace: "region-replace",
     Restore: "region-restore",
+    Reinstate: "region-replace",
   };
   const genOperation = operationMap[editMode || "Replace"] || "region-replace";
   const genProfile = getGenerationConfig(genOperation, resolvedScene);

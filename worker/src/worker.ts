@@ -13213,7 +13213,8 @@ const worker = new Worker(
           // Normalize mode to capitalized form ("add" -> "Add", "remove" -> "Remove", etc.)
           const rawMode = regionAny.mode || "replace";
           const mode = rawMode.charAt(0).toUpperCase() + rawMode.slice(1).toLowerCase();
-          const isStrictEditMode = mode !== "Restore";
+          const isReinstateMode = mode === "Reinstate";
+          const isStrictEditMode = mode !== "Restore" && !isReinstateMode;
 
           if (isStrictEditMode) {
             nLog("[STRICT_EDIT_MODE] active for image", {
@@ -13284,6 +13285,7 @@ const worker = new Worker(
               instruction: prompt,
               restoreFromPath: restoreFromPath || basePath,
               stage1AReferencePath,
+              reinstateConfig: regionAny.reinstateConfig,
               roomType: regionRoomType,
               sceneType: regionSceneType,
             });
@@ -13292,8 +13294,9 @@ const worker = new Worker(
             const isAddMode = lowerMode === "add";
             const isReplaceMode = lowerMode === "replace";
             const isRemoveMode = lowerMode === "remove";
-            const runEditOpeningsValidation = !isStrictEditMode && (isAddMode || isReplaceMode || isRemoveMode);
-            openingsValidationRequiredForPublish = !isStrictEditMode && (isAddMode || isReplaceMode);
+            const isReinstateRawMode = lowerMode === "reinstate";
+            const runEditOpeningsValidation = isReinstateMode || (!isStrictEditMode && (isAddMode || isReplaceMode || isRemoveMode));
+            openingsValidationRequiredForPublish = isReinstateMode || (!isStrictEditMode && (isAddMode || isReplaceMode));
             let attempt = 1;
             const maxAttempts = isStrictEditMode ? 1 : 2;
             let lastSummary: any = null;
@@ -13323,6 +13326,7 @@ const worker = new Worker(
                 instruction: attemptInstruction,
                 restoreFromPath: restoreFromPath || basePath,
                 stage1AReferencePath,
+                reinstateConfig: regionAny.reinstateConfig,
                 onAnchorValidation: (result) => {
                   if (!isStrictEditMode) {
                     anchorPassed = result.passed;
@@ -13358,6 +13362,9 @@ const worker = new Worker(
                     jobId: regionPayload.jobId,
                     imageId: regionPayload.imageId,
                     attempt,
+                    validationMode: isReinstateMode ? "reinstate" : "preserve",
+                    referenceImagePath: isReinstateMode ? stage1AReferencePath : undefined,
+                    reinstateConfig: isReinstateRawMode ? regionAny.reinstateConfig : undefined,
                   },
                 );
                 openingsValidationSummary = {

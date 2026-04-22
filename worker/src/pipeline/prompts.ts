@@ -6,10 +6,18 @@ type RegionEditPromptArgs = {
   sceneType?: "interior" | "exterior";
   preserveStructure?: boolean;
   hasStage1ABaseline?: boolean;
-  editMode?: "Add" | "Remove" | "Replace" | "Restore";
+  editMode?: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+  reinstateConfig?: {
+    targetType: "window" | "doorway" | "opening" | "auto";
+    geometry?: {
+      bbox: { x: number; y: number; width: number; height: number };
+      confidence?: number;
+      openingId?: string;
+    };
+  };
 };
 
-const STRICT_EDIT_PROMPT = `
+const COMMON_EDIT_PROMPT = `
 IMPORTANT: This image has ALREADY been virtually staged. You are making a TARGETED EDIT to an existing staged image — you are NOT re-staging or re-enhancing the room.
 
 Apply the requested edit ONLY within the white mask region.
@@ -23,6 +31,10 @@ COLOR & TONE PRESERVATION:
 - Do NOT re-interpret or re-render existing furniture, decor, or surfaces.
 - The edited region must blend seamlessly with the surrounding pixels in tone, saturation, and brightness.
 
+Follow the user's instruction exactly.
+`;
+
+const STRUCTURAL_LOCK_PROMPT = `
 STRUCTURAL CONSTRAINTS — Do not change:
 - walls, ceilings, floors
 - windows, doors, architectural openings
@@ -32,6 +44,48 @@ STRUCTURAL CONSTRAINTS — Do not change:
 Follow the user's instruction exactly.
 `;
 
+function formatReinstateTargetLabel(targetType: "window" | "doorway" | "opening" | "auto"): string {
+  if (targetType === "doorway") return "doorway";
+  if (targetType === "window") return "window";
+  if (targetType === "opening") return "architectural opening";
+  return "requested architectural opening";
+}
+
+function buildReinstateModeHint(targetType: "window" | "doorway" | "opening" | "auto"): string {
+  const targetLabel = formatReinstateTargetLabel(targetType);
+  return `
+REINSTATE MODE — ARCHITECTURAL RECOVERY:
+You are restoring a ${targetLabel} that should exist in the room.
+
+Inputs:
+- BASE_IMAGE_TO_EDIT is the current enhanced image and is the ground truth for lighting, style, furniture, and all non-target content.
+- STAGE_1A_BASELINE_IMAGE is a structural reference that shows the original architectural opening.
+
+Instructions:
+1. Restore ONLY the requested architectural opening inside the masked region.
+2. Use the reference image ONLY to reconstruct the opening (frame, glass, doorway shape, trim, and visible wall boundary).
+3. Do NOT restore furniture, decor, rugs, wall art, or any movable objects from the reference image.
+
+OCCLUSION RULES:
+- If an object fully blocks the opening, remove that object and restore the opening.
+- If an object partially overlaps the opening, restore the opening behind the object and keep the visible object natural.
+- If the opening is already visible and structurally correct, make no change.
+
+GEOMETRY RULES:
+- The highlighted region corresponds to a precise architectural opening.
+- The bounding box defines the exact geometry of the opening.
+- Reconstruct the opening exactly within this region.
+- Do not expand or shrink the opening beyond this area.
+- If objects overlap, preserve their visible edges and reconstruct the opening only behind them.
+
+STRICT RULES:
+- Do not alter any other part of the image.
+- Do not modify any other openings.
+- Do not change camera perspective.
+- Match the surrounding enhanced image exactly in colour, tone, lighting, and finish.
+`;
+}
+
 export function buildRegionEditPrompt({
   userInstruction,
   roomType,
@@ -39,6 +93,7 @@ export function buildRegionEditPrompt({
   preserveStructure = true,
   hasStage1ABaseline = false,
   editMode,
+  reinstateConfig,
 }: RegionEditPromptArgs): string {
   const roomLabel = roomType
     ? `This is a ${roomType.replace(/_/g, " ")}.`
@@ -48,6 +103,7 @@ export function buildRegionEditPrompt({
   const preserveHint = preserveStructure
     ? "Preserve all structural elements unless they are explicitly inside the white mask."
     : "";
+  const isReinstateMode = editMode === "Reinstate";
 
   const addModeHint = editMode === "Add"
     ? `
@@ -75,7 +131,20 @@ LIGHTING & SHADOWS:
 `
     : "";
 
-  const stage1AHint = hasStage1ABaseline
+  const reinstateModeHint = isReinstateMode
+    ? `${buildReinstateModeHint(reinstateConfig?.targetType || "auto")}${reinstateConfig?.geometry?.bbox
+        ? `
+
+PRECISE OPENING GEOMETRY:
+- x=${reinstateConfig.geometry.bbox.x.toFixed(4)}
+- y=${reinstateConfig.geometry.bbox.y.toFixed(4)}
+- width=${reinstateConfig.geometry.bbox.width.toFixed(4)}
+- height=${reinstateConfig.geometry.bbox.height.toFixed(4)}
+`
+        : ""}`
+    : "";
+
+  const stage1AHint = hasStage1ABaseline && editMode === "Remove"
     ? `
 MASK INTERPRETATION FOR REMOVAL:
 The white mask region shows you WHERE to focus — it is an approximate area of interest, NOT
@@ -125,10 +194,11 @@ ${sceneLabel}
 You will receive:
 ${inputList}
 
-${STRICT_EDIT_PROMPT}
+${COMMON_EDIT_PROMPT}
+${isReinstateMode ? reinstateModeHint : STRUCTURAL_LOCK_PROMPT}
 ${addModeHint}
 ${stage1AHint}
-${preserveHint}
+${isReinstateMode ? "" : preserveHint}
 
 USER INSTRUCTION:
 """${userInstruction}"""

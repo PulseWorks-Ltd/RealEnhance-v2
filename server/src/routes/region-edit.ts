@@ -55,6 +55,8 @@ function normalizeLookupUrl(urlValue?: string): string {
 type EditSourceStage = Parameters<typeof enqueueRegionEditJob>[0]["editSourceStage"];
 type ExecutionSourceStage = Parameters<typeof enqueueRegionEditJob>[0]["executionSourceStage"];
 
+type ReinstateTargetType = "window" | "doorway" | "opening" | "auto";
+
 function normalizeEditSourceStage(raw?: string): EditSourceStage {
   const value = raw?.trim().toLowerCase();
   if (!value) return undefined;
@@ -117,6 +119,14 @@ function deriveImageIdFromUrl(urlValue: string): string {
   const canonicalUrl = canonicalizeUrlForIdentity(urlValue);
   const digest = createHash("sha1").update(canonicalUrl).digest("hex").slice(0, 24);
   return `url_${digest}`;
+}
+
+function inferReinstateTargetType(instruction: string): ReinstateTargetType {
+  const text = String(instruction || "").toLowerCase();
+  if (/\bwindow(s)?\b/.test(text)) return "window";
+  if (/\bdoor\b|\bdoorway\b|\bdoor frame\b|\bentry\b/.test(text)) return "doorway";
+  if (/\bopening\b|\barch\b|\bwalkthrough\b|\bpass-through\b|\bpass through\b/.test(text)) return "opening";
+  return "auto";
 }
 
 async function resolveCanonicalRegionEditParent(sourceJobId: string): Promise<{
@@ -259,8 +269,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     const clientBaseImageUrl = normalizeLookupUrl(rawClientBaseImageUrl);
     const mode = body.mode as "edit" | "restore_original" | undefined;
     const explicitEditIntent = typeof body.editIntent === "string" ? body.editIntent.trim().toLowerCase() : undefined;
-    const editIntent = explicitEditIntent === "add" || explicitEditIntent === "remove" || explicitEditIntent === "replace"
-      ? (explicitEditIntent as "add" | "remove" | "replace")
+    const editIntent = explicitEditIntent === "add" || explicitEditIntent === "remove" || explicitEditIntent === "replace" || explicitEditIntent === "reinstate"
+      ? (explicitEditIntent as "add" | "remove" | "replace" | "reinstate")
       : undefined;
     const goal = typeof body.goal === "string" ? body.goal : "";
     const sceneType = body.sceneType;
@@ -596,13 +606,18 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       : "Restore original pixels for the masked region.";
 
     // ===== DETERMINE WORKER MODE (explicit intent first, parser fallback) =====
-    let workerMode: "Add" | "Remove" | "Replace" | "Restore";
+    let workerMode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+    const reinstateConfig = editIntent === "reinstate"
+      ? { targetType: inferReinstateTargetType(goal) }
+      : undefined;
     if (mode === "restore_original") {
       // User wants to restore original pixels - no Gemini needed
       workerMode = "Restore";
     } else if (mode === "edit") {
       // Prefer explicit client intent; fall back to goal parsing for backward compatibility.
-      if (editIntent === "add") {
+      if (editIntent === "reinstate") {
+        workerMode = "Reinstate";
+      } else if (editIntent === "add") {
         workerMode = "Add";
       } else if (editIntent === "remove") {
         workerMode = "Remove";
@@ -687,11 +702,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     // Map workerMode to API mode for enqueueRegionEditJob
     // Note: "Replace" mode should use Gemini, not pixel restoration
-    let apiMode: "add" | "remove" | "restore" | "replace";
+    let apiMode: "add" | "remove" | "restore" | "replace" | "reinstate";
     if (workerMode === "Add") {
       apiMode = "add";
     } else if (workerMode === "Remove") {
       apiMode = "remove";
+    } else if (workerMode === "Reinstate") {
+      apiMode = "reinstate";
     } else if (workerMode === "Restore") {
       apiMode = "restore";
     } else {
@@ -752,6 +769,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       stageUrls: effectiveStageUrls,
       executionSourceStage: effectiveExecutionSourceStage,
       ...(restoreFromUrl ? { restoreFromUrl } : {}),
+      ...(reinstateConfig ? { reinstateConfig } : {}),
       ...(stage1AReferenceUrl ? { stage1AReferenceUrl } : {}),
       ...(editSourceStage ? { editSourceStage } : {}),
       ...(roomType ? { roomType } : {}),

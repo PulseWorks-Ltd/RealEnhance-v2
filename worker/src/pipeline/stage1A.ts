@@ -181,6 +181,166 @@ function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
   });
 }
 
+interface Stage1AAnalysis {
+  lumMean: number;
+  lumStdev: number;
+  edgeDensity: number;
+  isExterior: boolean;
+  isBlurry: boolean;
+  sceneType: "interior" | "exterior";
+}
+
+interface Stage1AFactors {
+  shadowLift: number;
+  highlightCompress: number;
+  gammaBoost: number;
+  contrastBoost: number;
+}
+
+const STAGE1A_BLUR_EDGE_THRESHOLD = 15;
+const STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD = 45;
+
+const clampStage1AFactor = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
+
+function normalizeRange(value: number, min: number, max: number) {
+  if (value <= min) return 0;
+  if (value >= max) return 1;
+  return (value - min) / (max - min);
+}
+
+async function computeEdgeDensity(image: sharp.Sharp): Promise<number> {
+  const kernel = {
+    width: 3,
+    height: 3,
+    kernel: [
+      0, 1, 0,
+      1, -4, 1,
+      0, 1, 0,
+    ],
+  };
+
+  const { data } = await image
+    .greyscale()
+    .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+    .convolve(kernel)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  if (!data.length) {
+    return 0;
+  }
+
+  let mean = 0;
+  for (let index = 0; index < data.length; index += 1) {
+    mean += data[index] ?? 0;
+  }
+  mean /= data.length;
+
+  let variance = 0;
+  for (let index = 0; index < data.length; index += 1) {
+    const diff = (data[index] ?? 0) - mean;
+    variance += diff * diff;
+  }
+  variance /= data.length;
+
+  return Number(variance.toFixed(3));
+}
+
+async function inferStage1ASceneType(
+  inputPath: string,
+  sceneType?: string
+): Promise<"interior" | "exterior"> {
+  if (sceneType === "interior" || sceneType === "exterior") {
+    return sceneType;
+  }
+
+  const { data, info } = await sharp(inputPath)
+    .rotate()
+    .removeAlpha()
+    .resize(256, 256, { fit: "inside", withoutEnlargement: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = info.width || 0;
+  const height = info.height || 0;
+  const channels = info.channels || 3;
+  if (!width || !height || channels < 3) {
+    return "interior";
+  }
+
+  const pixelCount = width * height;
+  let skyLike = 0;
+  let greenLike = 0;
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    const channelIndex = pixelIndex * channels;
+    const red = data[channelIndex] ?? 0;
+    const green = data[channelIndex + 1] ?? 0;
+    const blue = data[channelIndex + 2] ?? 0;
+    const luma = (red + green + blue) / 3;
+
+    if (luma > 110 && blue > green + 10 && blue > red + 18) {
+      skyLike += 1;
+    }
+    if (green > 72 && green > red + 10 && green > blue + 8) {
+      greenLike += 1;
+    }
+  }
+
+  const exteriorSignal = (skyLike + greenLike) / Math.max(1, pixelCount);
+  return exteriorSignal >= 0.16 ? "exterior" : "interior";
+}
+
+async function analyzeStage1AInput(
+  inputPath: string,
+  sceneType?: string
+): Promise<Stage1AAnalysis> {
+  const image = sharp(inputPath).rotate().removeAlpha();
+  const stats = await image.clone().greyscale().stats();
+  const lumMean = Number((stats.channels[0]?.mean || 0).toFixed(2));
+  const lumStdev = Number((stats.channels[0]?.stdev || 0).toFixed(2));
+  const edgeDensity = await computeEdgeDensity(image.clone());
+  const resolvedSceneType = await inferStage1ASceneType(inputPath, sceneType);
+  const isExterior = resolvedSceneType === "exterior";
+
+  let isBlurry = false;
+  if (edgeDensity < STAGE1A_BLUR_EDGE_THRESHOLD) {
+    if (lumMean > 150 && lumStdev < 20) {
+      isBlurry = false;
+    } else {
+      isBlurry = true;
+    }
+  }
+
+  return {
+    lumMean,
+    lumStdev,
+    edgeDensity,
+    isExterior,
+    isBlurry,
+    sceneType: resolvedSceneType,
+  };
+}
+
+function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
+  const darkness = clampStage1AFactor((70 - analysis.lumMean) / 40);
+  const brightness = clampStage1AFactor((analysis.lumMean - 180) / 40);
+  const lowContrast = clampStage1AFactor((30 - analysis.lumStdev) / 30);
+
+  let shadowLift = darkness;
+  if (analysis.isExterior) {
+    const exteriorScale = clampStage1AFactor(analysis.lumStdev / 40, 0.2, 0.6);
+    shadowLift *= exteriorScale;
+  }
+
+  return {
+    shadowLift,
+    gammaBoost: darkness * 0.8,
+    highlightCompress: brightness,
+    contrastBoost: lowContrast * 0.5,
+  };
+}
+
 type Stage1ANeutralBalance = {
   redGain: number;
   greenGain: number;
@@ -188,11 +348,19 @@ type Stage1ANeutralBalance = {
   sampleCount: number;
 };
 
+type Stage1ANeutralBalanceOptions = {
+  strength?: number;
+  highlightBias?: boolean;
+};
+
 function clampStage1AColorGain(value: number): number {
   return Math.max(0.94, Math.min(1.06, Number(value.toFixed(4))));
 }
 
-async function estimateStage1ANeutralBalance(img: sharp.Sharp): Promise<Stage1ANeutralBalance | null> {
+async function estimateStage1ANeutralBalance(
+  img: sharp.Sharp,
+  options?: Stage1ANeutralBalanceOptions
+): Promise<Stage1ANeutralBalance | null> {
   const { data, info } = await img
     .clone()
     .ensureAlpha()
@@ -210,7 +378,9 @@ async function estimateStage1ANeutralBalance(img: sharp.Sharp): Promise<Stage1AN
     return null;
   }
 
-  const sampleThresholds = [188, 170, 152];
+  const sampleThresholds = options?.highlightBias
+    ? [210, 196, 182, 168]
+    : [188, 170, 152];
   let selected: Stage1ANeutralBalance | null = null;
 
   for (const minLuma of sampleThresholds) {
@@ -280,22 +450,35 @@ async function estimateStage1ANeutralBalance(img: sharp.Sharp): Promise<Stage1AN
   return selected;
 }
 
-async function applyStage1ANeutralBalance(img: sharp.Sharp): Promise<{
+async function applyStage1ANeutralBalance(
+  img: sharp.Sharp,
+  options?: Stage1ANeutralBalanceOptions
+): Promise<{
   image: sharp.Sharp;
   balance: Stage1ANeutralBalance | null;
 }> {
-  const balance = await estimateStage1ANeutralBalance(img).catch(() => null);
+  const balance = await estimateStage1ANeutralBalance(img, options).catch(() => null);
   if (!balance) {
     return { image: img, balance: null };
   }
 
+  const strength = clampStage1AFactor(options?.strength ?? 1, 0, 1);
+  const redGain = 1 + ((balance.redGain - 1) * strength);
+  const greenGain = 1 + ((balance.greenGain - 1) * strength);
+  const blueGain = 1 + ((balance.blueGain - 1) * strength);
+
   return {
     image: img.linear([
-      balance.redGain,
-      balance.greenGain,
-      balance.blueGain,
+      redGain,
+      greenGain,
+      blueGain,
     ], [0, 0, 0]),
-    balance,
+    balance: {
+      ...balance,
+      redGain,
+      greenGain,
+      blueGain,
+    },
   };
 }
 
@@ -345,8 +528,13 @@ export async function runStage1A(
     stage: "1A",
     attempt: 1,
   };
+  const analysis = await analyzeStage1AInput(inputPath, sceneType);
+  console.log("[Stage1A Analysis]", analysis);
+  const factors = computeStage1AFactors(analysis);
+  console.log("[Stage1A Factors]", factors);
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
-  const isInterior = sceneType === "interior";
+  const effectiveSceneType = analysis.sceneType;
+  const isInterior = effectiveSceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
     ? options.interiorProfile
@@ -359,28 +547,75 @@ export async function runStage1A(
   
   const sharpOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A-sharp.webp");
   const finalOutputPath = inputPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-1A.webp");
-  const inputMeanBrightness = await getAverageLuminance(inputPath).catch(() => undefined);
+  const path1ACore = finalOutputPath;
+  const inputMeanBrightness = analysis.lumMean || await getAverageLuminance(inputPath).catch(() => undefined);
   
   let img = sharp(inputPath);
   const metadata = await img.metadata();
   
   // 1. Auto-rotate based on EXIF orientation
   img = img.rotate();
+
+  if (analysis.isBlurry && shouldUseStabilityStage1A()) {
+    await img
+      .clone()
+      .webp({
+        quality: 97,
+        effort: 6,
+        smartSubsample: true,
+        nearLossless: false,
+      })
+      .toFile(sharpOutputPath);
+
+    await logImageAttemptUrl({
+      ctx: stage1ACtx,
+      localPath: sharpOutputPath,
+    });
+
+    logIfNotFocusMode("[stage1A] Blurry image detected — bypassing heavy Sharp enhancement and routing directly to Stability");
+
+    try {
+      const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, effectiveSceneType);
+      const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
+      await applyTransformation(stabilityJpeg, stabilityWebp, s => s.webp({ quality: 95 }), jobIdResolved);
+      await logImageAttemptUrl({
+        ctx: stage1ACtx,
+        localPath: stabilityWebp,
+      });
+      const fs = await import("fs/promises");
+      await fs.rename(stabilityWebp, path1ACore);
+      await logImageAttemptUrl({
+        ctx: stage1ACtx,
+        localPath: path1ACore,
+      });
+      return path1ACore;
+    } catch (err) {
+      logIfNotFocusMode("[stage1A] Stability blur rescue failed — continuing with softened Sharp path", err);
+      img = sharp(inputPath).rotate();
+    }
+  }
   
-  // 2. Mild noise reduction BEFORE sharpening (keeps walls smooth, edges crisp)
-  img = img.median(3);
+  // 2. Conservative denoise: keep interiors clean, preserve exterior texture and blurry detail.
+  if (!analysis.isBlurry && !analysis.isExterior && (factors.shadowLift > 0.12 || factors.contrastBoost > 0.08)) {
+    img = img.median(3);
+  }
   
   // 3. Apply lens correction for wide-angle shots
-  img = await applyLensCorrection(img);
+  if (!analysis.isBlurry) {
+    img = await applyLensCorrection(img);
+  }
   
-  // 4. Normalize histogram (automatic exposure + white balance correction)
-  img = img.normalize();
+  // 4. Exposure triage: normalize only when the image is dark or compressed.
+  if (factors.shadowLift > 0.18 || factors.contrastBoost > 0.24) {
+    img = img.normalize();
+  }
 
   // 4b. Re-anchor white balance on bright low-chroma regions so neutral walls
   // and ceilings stay optically neutral without flattening genuine warm lights.
   const neutralBalanceResult = await applyStage1ANeutralBalance(img);
   img = neutralBalanceResult.image;
   if (neutralBalanceResult.balance) {
+    console.log("[Stage1A] Neutral balance applied:", neutralBalanceResult.balance);
     logIfNotFocusMode(
       `[stage1A] Neutral balance applied (samples=${neutralBalanceResult.balance.sampleCount}, redGain=${neutralBalanceResult.balance.redGain.toFixed(3)}, greenGain=${neutralBalanceResult.balance.greenGain.toFixed(3)}, blueGain=${neutralBalanceResult.balance.blueGain.toFixed(3)})`
     );
@@ -388,66 +623,94 @@ export async function runStage1A(
     logIfNotFocusMode("[stage1A] Neutral balance skipped (insufficient neutral highlights)");
   }
   
-  // 5. HDR tone mapping first (lift shadows, retain highlights)
-  img = applyHDRToneMapping(img);
+  // 5. Apply scaled corrections rather than hard switching.
+  if (factors.shadowLift > 0.05) {
+    img = img.gamma(1 + (factors.gammaBoost * 0.6));
+    if (!analysis.isExterior) {
+      img = img.linear(1 + (factors.shadowLift * 0.08), 0);
+    }
+  }
+
+  if (factors.highlightCompress > 0.05) {
+    img = img.linear(1 - (factors.highlightCompress * 0.2), 0);
+  }
+
+  if (factors.contrastBoost > 0.05) {
+    img = img.linear(1 + (factors.contrastBoost * 0.3), 0);
+  }
+
+  if (factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) {
+    const postToneNeutralBalance = await applyStage1ANeutralBalance(img, {
+      strength: 0.4,
+      highlightBias: true,
+    });
+    img = postToneNeutralBalance.image;
+    if (postToneNeutralBalance.balance) {
+      console.log("[Stage1A] Post-tone neutral rebalance applied", postToneNeutralBalance.balance);
+      logIfNotFocusMode(
+        `[stage1A] Post-tone neutral rebalance applied (samples=${postToneNeutralBalance.balance.sampleCount}, redGain=${postToneNeutralBalance.balance.redGain.toFixed(3)}, greenGain=${postToneNeutralBalance.balance.greenGain.toFixed(3)}, blueGain=${postToneNeutralBalance.balance.blueGain.toFixed(3)})`
+      );
+    }
+  }
   
   // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
   if (applyInteriorProfile) {
-    const baseBrightness = 1 + interiorCfg.brightnessBoost; // strong global lift
+    const baseBrightness = 1 + (interiorCfg.brightnessBoost * (0.14 + (factors.shadowLift * 0.42)));
     const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
-    // Base saturation 1.15 plus profile extra (kept lower than exterior to avoid colour cast)
-    const saturation = 1.15 + interiorCfg.saturation;
+    const saturation = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03);
     img = img.modulate({ brightness, saturation });
-    // Additional midtone/local contrast shaping
-    img = img.gamma(1.0 + (interiorCfg.midtoneLift * 0.12)); // gentle gamma tweak for midtones
-    img = img.linear(1 + interiorCfg.localContrast, -(128 * interiorCfg.localContrast));
+    if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35) {
+      img = img.linear(
+        1 + (interiorCfg.localContrast * 0.4),
+        -(128 * interiorCfg.localContrast * 0.35)
+      );
+    }
     logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   } else {
-    const baseBrightness = 1.10; // reduced lift for opening stability
+    const baseBrightness = analysis.isExterior
+      ? 1 + (factors.shadowLift * 0.05)
+      : 1 + (factors.shadowLift * 0.08);
     const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
+    const saturation = analysis.isExterior
+      ? 1.01 + (factors.contrastBoost * 0.02)
+      : 1.04 + (factors.contrastBoost * 0.04);
     img = img.modulate({
       brightness,
-      saturation: 1.16,
+      saturation,
     });
-    logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=1.20, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
+    logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   }
   
-  // 7. Gamma correction for shadow detail (lower = brighter shadows)
-  if (!applyInteriorProfile) {
-    img = img.gamma(1.05);
-  } else {
-    // Profile already adjusted gamma; apply mild shadow lift using linear offset
-    img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.15));
+  // 7. Keep only a very mild interior shadow offset; preserve exterior shadows.
+  if (!analysis.isExterior && factors.shadowLift > 0.12) {
+    if (applyInteriorProfile) {
+      img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift));
+    } else {
+      img = img.linear(1.0, 2);
+    }
   }
   
   // 8. Sky enhancement (explicit-only): avoid implicit sky edits that can introduce haze.
-  if (sceneType === "exterior" && skyMode === "strong") {
+  if (effectiveSceneType === "exterior" && skyMode === "strong") {
     img = applySkyEnhancement(img);
     logIfNotFocusMode("[stage1A] Sky enhancement pre-pass enabled (scene=exterior, skyMode=strong)");
   } else {
-    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${sceneType || "unknown"}, skyMode=${skyMode})`);
+    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${effectiveSceneType}, skyMode=${skyMode})`);
   }
   
-  // 9. Local contrast enhancement (CLAHE-like clarity boost)
-  img = img.linear(1.08, -(128 * 0.08));
+  // 9. Keep edge brightening narrow and only for darker interiors.
+  if (!analysis.isExterior && factors.shadowLift > 0.18) {
+    img = img.linear(1.0, 3);
+  }
   
-  // 10. Vignette reduction (brighten edges by 3-5%)
-  img = img.linear(1.0, 5);  // Subtle edge lift
-  
-  // 11. Advanced unsharp mask sharpening (2-pass for HD clarity)
-  // Pass 1: Macro detail and structure
-  img = img.sharpen({
-    sigma: 1.2,     // Radius for textures
-    m1: 2.0,        // Strong amount (professional grade)
-    m2: 0.6,        // Low threshold = sharpen more areas
-  });
-  
-  // Pass 2: Micro detail and edges
-  img = img.sharpen({
-    sigma: 0.5,     // Tight radius for fine detail
-    m1: 1.2,        // Moderate amount to avoid halos
-    m2: 0.8,        // High threshold = only crisp edges
-  });
+  // 10. Sharpen only for non-blurry images with moderate edge density.
+  if (!analysis.isBlurry && analysis.edgeDensity >= STAGE1A_BLUR_EDGE_THRESHOLD && analysis.edgeDensity < STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD) {
+    img = img.sharpen({
+      sigma: analysis.isExterior ? 0.85 : 0.95,
+      m1: analysis.isExterior ? 1.1 : 1.25,
+      m2: 0.9,
+    });
+  }
   
   // 12. Export Sharp enhancement with maximum quality
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifactsCache" });
@@ -514,7 +777,7 @@ export async function runStage1A(
       const { validateStage1AStructural } = await import("../validators/stage1AValidator.js");
       const maskPath = await loadOrComputeStructuralMask(jobIdResolved, baselinePath, baseArtifacts);
       const masks = { structuralMask: maskPath };
-      const verdict = await validateStage1AStructural(baselinePath, candidatePath, masks, sceneType as any);
+      const verdict = await validateStage1AStructural(baselinePath, candidatePath, masks, effectiveSceneType as any);
       logIfNotFocusMode(`[stage1A] Structural validator verdict (${label}):`, verdict);
       if (!verdict.ok) {
         logIfNotFocusMode(`[stage1A] HARD FAIL: ${verdict.reason}`);
@@ -541,7 +804,7 @@ export async function runStage1A(
 
       if (forceGemini) {
         logIfNotFocusMode("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
-        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
         return geminiOutputPath;
       }
     } else {
@@ -552,7 +815,7 @@ export async function runStage1A(
 
     logIfNotFocusMode("[stage1A] ✅ Using Stability primary (Gemini fallback on error)");
     try {
-      const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, sceneType);
+      const stabilityJpeg = await enhanceWithStabilityConservativeStage1A(sharpOutputPath, effectiveSceneType);
       const stabilityWebp = sharpOutputPath.replace("-1A-sharp.webp", "-1A-stability.webp");
       // AUDIT FIX: routed through applyTransformation for safe cleanup
       await applyTransformation(stabilityJpeg, stabilityWebp, s => s.webp({ quality: 95 }), jobIdResolved);
@@ -567,7 +830,7 @@ export async function runStage1A(
         lockStabilityPrimary("Stability credits exhausted (payment_required)");
       }
       logIfNotFocusMode("[stage1A] 🔁 Falling back to Gemini...");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
     }
 
     // ✅ AUTHORITATIVE CONTENT VALIDATION
@@ -581,29 +844,29 @@ export async function runStage1A(
       logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
 
         await runStage1AStructuralValidationSafely(sharpOutputPath, geminiImage, "gemini output");
 
         const fs = await import("fs/promises");
-        await fs.rename(geminiImage, finalOutputPath);
+        await fs.rename(geminiImage, path1ACore);
         await logImageAttemptUrl({
           ctx: stage1ACtx,
-          localPath: finalOutputPath,
+          localPath: path1ACore,
         });
-        logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
-        return finalOutputPath;
+        logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${path1ACore}`);
+        return path1ACore;
 
       } catch {
         logIfNotFocusMode("[stage1A] 🔴 Gemini failed — FINAL fallback to Sharp only");
         const fs = await import("fs/promises");
-        await fs.rename(sharpOutputPath, finalOutputPath);
+        await fs.rename(sharpOutputPath, path1ACore);
         await logImageAttemptUrl({
           ctx: stage1ACtx,
-          localPath: finalOutputPath,
+          localPath: path1ACore,
         });
-        logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
-        return finalOutputPath;
+        logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${path1ACore}`);
+        return path1ACore;
       }
     } else if (!diffResult.passed) {
       logIfNotFocusMode("[stage1A] ⚠️ Content diff failed but strict mode disabled — keeping Stability output");
@@ -614,13 +877,13 @@ export async function runStage1A(
     await runStage1AStructuralValidationSafely(sharpOutputPath, primary1AImage, "primary output");
 
     const fs = await import("fs/promises");
-    await fs.rename(primary1AImage, finalOutputPath);
+    await fs.rename(primary1AImage, path1ACore);
     await logImageAttemptUrl({
       ctx: stage1ACtx,
-      localPath: finalOutputPath,
+      localPath: path1ACore,
     });
-    logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
-    return finalOutputPath;
+    logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${path1ACore}`);
+    return path1ACore;
   }
 
   // --- LEGACY FALLBACK (if Stability disabled) ---
@@ -632,7 +895,7 @@ export async function runStage1A(
         : "feature flag off";
     logIfNotFocusMode(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, sceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
 
     logIfNotFocusMode("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
@@ -640,13 +903,13 @@ export async function runStage1A(
       await runStage1AStructuralValidationSafely(sharpOutputPath, geminiOutputPath, "gemini output");
 
       const fs = await import("fs/promises");
-      await fs.rename(geminiOutputPath, finalOutputPath);
+      await fs.rename(geminiOutputPath, path1ACore);
       await logImageAttemptUrl({
         ctx: stage1ACtx,
-        localPath: finalOutputPath,
+        localPath: path1ACore,
       });
-      logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
-      return finalOutputPath;
+      logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${path1ACore}`);
+      return path1ACore;
     }
 
   } catch (err) {
@@ -656,11 +919,11 @@ export async function runStage1A(
   // --- FINAL EMERGENCY FALLBACK: Sharp Only ---
   logIfNotFocusMode("[stage1A] ℹ️ Using Sharp enhancement only (all AI failed)");
   const fs = await import("fs/promises");
-  await fs.rename(sharpOutputPath, finalOutputPath);
+  await fs.rename(sharpOutputPath, path1ACore);
   await logImageAttemptUrl({
     ctx: stage1ACtx,
-    localPath: finalOutputPath,
+    localPath: path1ACore,
   });
-  logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${finalOutputPath}`);
-  return finalOutputPath;
+  logIfNotFocusMode(`[stage1A] Professional enhancement complete: ${inputPath} → ${path1ACore}`);
+  return path1ACore;
 }

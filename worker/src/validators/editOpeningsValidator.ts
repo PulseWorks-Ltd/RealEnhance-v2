@@ -8,6 +8,9 @@ import {
 } from "./openingPreservationValidator";
 
 export type EditOpeningsComparedAgainst = "stage1a" | "edit_input";
+export type EditOpeningsValidationMode = "preserve" | "reinstate";
+export type ReinstateTargetType = "window" | "doorway" | "opening" | "auto";
+type PixelBbox = { x: number; y: number; width: number; height: number };
 
 type NormalizedBox = [number, number, number, number];
 
@@ -21,6 +24,7 @@ export type EditOpeningsValidationSummary = {
   validator: "edit_openings";
   passed: boolean;
   comparedAgainst: EditOpeningsComparedAgainst;
+  validationMode?: EditOpeningsValidationMode;
   reason: string;
   details?: string;
   evaluatedOpeningsCount: number;
@@ -134,6 +138,15 @@ function openingKind(opening: StructuralOpening): "window" | "door" | null {
   return null;
 }
 
+function openingMatchesReinstateTarget(opening: StructuralOpening, targetType: ReinstateTargetType): boolean {
+  if (targetType === "auto") {
+    return opening.type === "window" || opening.type === "door" || opening.type === "walkthrough";
+  }
+  if (targetType === "window") return opening.type === "window";
+  if (targetType === "doorway") return opening.type === "door" || opening.type === "walkthrough";
+  return opening.type === "window" || opening.type === "door" || opening.type === "walkthrough";
+}
+
 function toPixels(bbox: NormalizedBox, width: number, height: number): { left: number; top: number; width: number; height: number } {
   const left = Math.max(0, Math.floor(bbox[0] * width));
   const top = Math.max(0, Math.floor(bbox[1] * height));
@@ -147,12 +160,31 @@ function toPixels(bbox: NormalizedBox, width: number, height: number): { left: n
   };
 }
 
+function pixelBboxToNormBbox(bbox: PixelBbox): NormalizedBox {
+  return toNormBbox([
+    bbox.x,
+    bbox.y,
+    bbox.x + bbox.width,
+    bbox.y + bbox.height,
+  ]);
+}
+
 export async function runEditOpeningsValidator(
   baselineImagePath: string,
   editedImagePath: string,
   mask: Buffer,
   comparedAgainst: EditOpeningsComparedAgainst = "stage1a",
-  options?: { jobId?: string; imageId?: string; attempt?: number },
+  options?: {
+    jobId?: string;
+    imageId?: string;
+    attempt?: number;
+    validationMode?: EditOpeningsValidationMode;
+    referenceImagePath?: string;
+    reinstateConfig?: {
+      targetType: ReinstateTargetType;
+      geometry?: { bbox: PixelBbox };
+    };
+  },
 ): Promise<EditOpeningsValidationSummary> {
   if (!String(baselineImagePath || "").trim() || !String(editedImagePath || "").trim() || !mask || mask.length === 0) {
     throw new Error("VALIDATION_INPUT_MISSING");
@@ -161,16 +193,23 @@ export async function runEditOpeningsValidator(
   const baselineMeta = await sharp(baselineImagePath).metadata();
   const width = baselineMeta.width || 0;
   const height = baselineMeta.height || 0;
+  const validationMode = options?.validationMode || "preserve";
   if (width <= 0 || height <= 0) {
     throw new Error("edit_openings_validator_failed: invalid_baseline_dimensions");
   }
 
-  const maskBbox = await maskToBbox(mask, width, height);
+  const rawMaskBbox = await maskToBbox(mask, width, height);
+  const geometryMaskBbox =
+    validationMode === "reinstate" && options?.reinstateConfig?.geometry?.bbox
+      ? pixelBboxToNormBbox(options.reinstateConfig.geometry.bbox)
+      : null;
+  const maskBbox = geometryMaskBbox || rawMaskBbox;
   if (!maskBbox) {
     return {
       validator: "edit_openings",
       passed: true,
       comparedAgainst,
+      validationMode,
       reason: "mask_empty",
       evaluatedOpeningsCount: 0,
       evaluatedOpenings: [],
@@ -203,6 +242,203 @@ export async function runEditOpeningsValidator(
     return intersects(bbox, expandedMaskBbox);
   });
 
+  const reinstateTargetType = options?.reinstateConfig?.targetType || "auto";
+
+  if (validationMode === "reinstate") {
+    if (!options?.referenceImagePath) {
+      return {
+        validator: "edit_openings",
+        passed: false,
+        comparedAgainst,
+        validationMode,
+        reason: "reinstate_reference_missing",
+        details: "Reinstate validation requires a Stage 1A or original reference image.",
+        evaluatedOpeningsCount: 0,
+        evaluatedOpenings: [],
+        maskRegion: {
+          bbox: maskBbox,
+          expandedBbox: expandedMaskBbox,
+        },
+        roi: {
+          bbox: expandedMaskBbox,
+          width,
+          height,
+        },
+        gemini: {
+          model: EDIT_OPENINGS_GEMINI_MODEL,
+          rawResponse: "{\"passed\":false,\"reason\":\"reinstate_reference_missing\"}",
+        },
+      };
+    }
+
+    const referenceStructural = await extractStructuralBaseline(options.referenceImagePath, {
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      attempt: options?.attempt,
+    });
+
+    const referenceTargets = referenceStructural.openings.filter((opening) => {
+      if (!openingMatchesReinstateTarget(opening, reinstateTargetType)) return false;
+      const bbox = toNormBbox(opening.bbox as NormalizedBox);
+      return intersects(bbox, expandedMaskBbox);
+    });
+
+    if (referenceTargets.length === 0) {
+      return {
+        validator: "edit_openings",
+        passed: false,
+        comparedAgainst,
+        validationMode,
+        reason: "reinstate_target_not_found_in_reference",
+        details: `No ${reinstateTargetType} opening was found in the reference image near the masked region.`,
+        evaluatedOpeningsCount: 0,
+        evaluatedOpenings: [],
+        maskRegion: {
+          bbox: maskBbox,
+          expandedBbox: expandedMaskBbox,
+        },
+        roi: {
+          bbox: expandedMaskBbox,
+          width,
+          height,
+        },
+        gemini: {
+          model: EDIT_OPENINGS_GEMINI_MODEL,
+          rawResponse: "{\"passed\":false,\"reason\":\"reinstate_target_not_found_in_reference\"}",
+        },
+      };
+    }
+
+    const nonTargetCurrentOpenings = relevantOpenings.filter((opening) => !openingMatchesReinstateTarget(opening, reinstateTargetType));
+    const roiBbox = expand(
+      union([
+        expandedMaskBbox,
+        ...referenceTargets.map((o) => toNormBbox(o.bbox as NormalizedBox)),
+        ...nonTargetCurrentOpenings.map((o) => toNormBbox(o.bbox as NormalizedBox)),
+      ]),
+      ROI_PADDING,
+    );
+    const roiPx = toPixels(roiBbox, width, height);
+
+    const beforeCurrentCrop = await sharp(baselineImagePath)
+      .extract(roiPx)
+      .webp()
+      .toBuffer();
+
+    const referenceCrop = await sharp(options.referenceImagePath)
+      .resize(width, height, { fit: "fill" })
+      .extract(roiPx)
+      .webp()
+      .toBuffer();
+
+    const afterCrop = await sharp(editedImagePath)
+      .resize(width, height, { fit: "fill" })
+      .extract(roiPx)
+      .webp()
+      .toBuffer();
+
+    const ai = getGeminiClient();
+    const referenceTargetsJson = JSON.stringify(
+      referenceTargets.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+    );
+    const currentNonTargetsJson = JSON.stringify(
+      nonTargetCurrentOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+    );
+    const prompt = `You are validating architectural reinstate output for a real-estate image edit.
+
+Compare CURRENT_BEFORE vs REFERENCE vs AFTER in the provided ROI crop only.
+
+Reinstate rules:
+- TARGET openings listed in REFERENCE_TARGET_OPENINGS_JSON must exist in AFTER.
+- Each target opening must match the reference location and shape closely enough that the original architectural opening has been restored.
+- Openings listed in CURRENT_NON_TARGET_OPENINGS_JSON must remain unchanged unless they are clearly part of the same target opening.
+- Furniture or decor may overlap the opening only if the opening itself remains visibly and structurally present.
+- FAIL if the target opening is still missing, walled over, badly misplaced, or if a non-target opening has changed.
+
+Return strict JSON only:
+{
+  "passed": boolean,
+  "reason": "reinstate_valid" | "reinstate_target_missing" | "reinstate_target_mismatch" | "reinstate_non_target_changed",
+  "details": string
+}
+
+TARGET_TYPE:
+${reinstateTargetType}
+
+REFERENCE_TARGET_OPENINGS_JSON:
+${referenceTargetsJson}
+
+CURRENT_NON_TARGET_OPENINGS_JSON:
+${currentNonTargetsJson}`;
+
+    const requestStartedAt = Date.now();
+    const response = await (ai as any).models.generateContent({
+      model: EDIT_OPENINGS_GEMINI_MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { text: "CURRENT_BEFORE_ROI:" },
+            { inlineData: { mimeType: "image/webp", data: beforeCurrentCrop.toString("base64") } },
+            { text: "REFERENCE_ROI:" },
+            { inlineData: { mimeType: "image/webp", data: referenceCrop.toString("base64") } },
+            { text: "AFTER_ROI:" },
+            { inlineData: { mimeType: "image/webp", data: afterCrop.toString("base64") } },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        topP: 0.2,
+        maxOutputTokens: 220,
+        responseMimeType: "application/json",
+      },
+    });
+    logGeminiUsage({
+      ctx: {
+        jobId: options?.jobId || "",
+        imageId: options?.imageId || "",
+        stage: "validator",
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+      },
+      model: EDIT_OPENINGS_GEMINI_MODEL,
+      callType: "validator",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
+    });
+
+    const rawResponse = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    const verdict = extractJson(rawResponse);
+
+    return {
+      validator: "edit_openings",
+      passed: verdict.passed,
+      comparedAgainst,
+      validationMode,
+      reason: verdict.reason,
+      details: verdict.details,
+      evaluatedOpeningsCount: referenceTargets.length + nonTargetCurrentOpenings.length,
+      evaluatedOpenings: [
+        ...referenceTargets.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+        ...nonTargetCurrentOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+      ],
+      maskRegion: {
+        bbox: maskBbox,
+        expandedBbox: expandedMaskBbox,
+      },
+      roi: {
+        bbox: roiBbox,
+        width: roiPx.width,
+        height: roiPx.height,
+      },
+      gemini: {
+        model: EDIT_OPENINGS_GEMINI_MODEL,
+        rawResponse,
+      },
+    };
+  }
+
   nLog("[edit-openings-validator] openings_near_mask", {
     count: relevantOpenings.length,
     maskBbox,
@@ -215,6 +451,7 @@ export async function runEditOpeningsValidator(
       validator: "edit_openings",
       passed: true,
       comparedAgainst,
+      validationMode,
       reason: "no_openings_near_mask",
       evaluatedOpeningsCount: 0,
       evaluatedOpenings: [],
@@ -322,6 +559,7 @@ ${openingsJson}`;
     validator: "edit_openings",
     passed: verdict.passed,
     comparedAgainst,
+    validationMode,
     reason: verdict.reason,
     details: verdict.details,
     evaluatedOpeningsCount: relevantOpenings.length,
