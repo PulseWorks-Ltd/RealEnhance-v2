@@ -9,6 +9,7 @@
     "build": "pnpm --filter @realenhance/shared run build && pnpm exec tsc -p tsconfig.json && node -e \"require('fs').cpSync('src/db/migrations', 'dist/db/migrations', {recursive: true})\"",
     "migrate": "tsx src/db/migrate.ts",
     "start": "NODE_ENV=production node dist/index.js",
+    "admin:dump": "tsx scripts/admin-dump.ts",
     "enqueue:test": "pnpm run build && node dist/scripts/test-enqueue.js",
     "stripe:cutover:dry-run": "tsx scripts/stripe-cutover-cleanup.ts",
     "stripe:cutover:apply": "tsx scripts/stripe-cutover-cleanup.ts --apply"

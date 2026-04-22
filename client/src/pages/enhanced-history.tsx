@@ -24,6 +24,26 @@ import { ImageOff, Loader2, Info, Download, Eye, Folder } from 'lucide-react';
 
 const GALLERY_FETCH_LIMIT = 5000;
 
+const DOWNLOAD_MIME_EXTENSION_MAP: Record<string, string> = {
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/png': '.png',
+  'image/webp': '.webp',
+  'image/gif': '.gif',
+  'image/avif': '.avif',
+};
+
+function getExtensionFromMime(contentType?: string | null): string {
+  const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
+  return DOWNLOAD_MIME_EXTENSION_MAP[normalized] || '';
+}
+
+function getDownloadFilename(filenameBase: string, contentType?: string | null): string {
+  const ext = getExtensionFromMime(contentType) || '.jpg';
+  const baseName = String(filenameBase || 'enhanced-image').trim() || 'enhanced-image';
+  return /^.+\.[a-z0-9]+$/i.test(baseName) ? baseName : `${baseName}${ext}`;
+}
+
 export default function EnhancedHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -80,7 +100,7 @@ export default function EnhancedHistoryPage() {
     [properties, unassignedImages]
   );
 
-  const handleDownload = (image: EnhancedImageListItem) => {
+  const handleDownload = async (image: EnhancedImageListItem) => {
     if (user?.emailVerified !== true) {
       toast({
         title: 'Email Verification Required',
@@ -89,12 +109,47 @@ export default function EnhancedHistoryPage() {
       });
       return;
     }
-    const link = document.createElement('a');
-    link.href = `/api/enhanced-images/${encodeURIComponent(image.id)}/download`;
-    link.download = `enhanced-${image.auditRef}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+
+    try {
+      if (!image.publicUrl) {
+        throw new Error('Image is not available for download');
+      }
+
+      const fallbackFilename = `enhanced_${String(image.auditRef || image.id || 'image').trim() || 'image'}`;
+      const response = await apiFetch('/api/enhanced-images/download-file', {
+        method: 'POST',
+        body: JSON.stringify({
+          filename: fallbackFilename,
+          url: image.publicUrl,
+        }),
+      }, 120_000);
+
+      const blob = await response.blob();
+      if (!blob.size) {
+        throw new Error('Downloaded file was empty');
+      }
+
+      const contentType = blob.type || response.headers.get('content-type');
+      if (!String(contentType || '').toLowerCase().startsWith('image/')) {
+        throw new Error('Download response was not an image');
+      }
+
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = getDownloadFilename(fallbackFilename, contentType);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => window.URL.revokeObjectURL(objectUrl), 0);
+    } catch (error) {
+      console.error('[enhanced-history] Download failed:', error);
+      toast({
+        title: 'Download Failed',
+        description: error instanceof Error ? error.message : 'Unable to download the image. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const planName = usage?.planName;

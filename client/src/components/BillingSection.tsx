@@ -45,6 +45,10 @@ interface PlanDisplayOption {
   displayName: string;
   monthlyPriceNZD: number;
   monthlyAllowance: number;
+  listingsRange: string;
+  subtext: string;
+  helperText: string;
+  badge?: string;
 }
 
 interface SubscriptionInfo {
@@ -79,18 +83,28 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
     displayName: "Starter",
     monthlyPriceNZD: 149,
     monthlyAllowance: 75,
+    listingsRange: "Covers ~5-8 listings per month",
+    subtext: "Ideal for occasional use",
+    helperText: "Based on ~10-15 images per listing",
   },
   {
     value: "pro",
     displayName: "Pro",
     monthlyPriceNZD: 249,
     monthlyAllowance: 150,
+    listingsRange: "Covers ~8-15 listings per month",
+    subtext: "Best for agencies running multiple listings each week",
+    helperText: "Based on ~10-15 images per listing",
+    badge: "⭐ Most Popular",
   },
   {
     value: "agency",
     displayName: "Agency",
     monthlyPriceNZD: 449,
     monthlyAllowance: 300,
+    listingsRange: "Covers ~15-30 listings per month",
+    subtext: "Designed for teams using this across most or all listings",
+    helperText: "Based on ~10-15 images per listing",
   },
 ];
 
@@ -115,7 +129,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const { user } = useAuth();
   const [loading, setLoading] = useState(false);
   const [loadingSubscription, setLoadingSubscription] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<string>(agency.planTier || "starter");
+  const [selectedPlan, setSelectedPlan] = useState<PlanDisplayOption["value"]>(agency.planTier || "starter");
   const [selectedCountry, setSelectedCountry] = useState<string>(agency.billingCountry || "NZ");
   const [promoCode, setPromoCode] = useState("");
   const [promoLoading, setPromoLoading] = useState(false);
@@ -484,60 +498,89 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
             </Alert>
           )}
 
-          <div className="rounded-lg border p-4 space-y-3">
-            <div>
-              <p className="text-sm font-medium">Have a promo code?</p>
-              <p className="text-sm text-muted-foreground">
-                Redeem a one-time trial or temporary credit grant. Availability depends on your agency's previous subscriptions, trials, and one-off purchases.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Input
-                value={promoCode}
-                onChange={(e) => setPromoCode(e.target.value)}
-                placeholder="Enter promo code"
-                disabled={manageDisabled || promoLoading}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleRedeemPromo}
-                disabled={manageDisabled || promoLoading}
-              >
-                {promoLoading ? "Redeeming..." : "Redeem Code"}
-              </Button>
-            </div>
-          </div>
-
           {!hasSubscription && (
-            <div className="space-y-4 pt-4 border-t">
-              <div>
-                <label className="text-sm font-medium">Select Plan</label>
-                <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                  <SelectTrigger className="w-full mt-2">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PLAN_DISPLAY_OPTIONS.map((plan) => {
-                      const perImage = (plan.monthlyPriceNZD / plan.monthlyAllowance).toFixed(2);
-                      return (
-                        <SelectItem key={plan.value} value={plan.value}>
-                          <div className="flex flex-col items-start">
-                            <span className="font-medium">{plan.displayName} - ${plan.monthlyPriceNZD} NZD/mo</span>
-                            <span className="text-xs text-muted-foreground">
-                              {plan.monthlyAllowance} enhanced images (${perImage} per image)
-                            </span>
+            <div className="space-y-5 pt-4 border-t">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-base font-semibold">Choose a plan based on your monthly listings</p>
+                  <p className="text-sm text-muted-foreground">
+                    Run full property listings through in one go - no need to pick and choose images.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+                  {PLAN_DISPLAY_OPTIONS.map((plan) => {
+                    const isSelected = selectedPlan === plan.value;
+                    const isPopular = plan.value === "pro";
+
+                    return (
+                      <button
+                        key={plan.value}
+                        type="button"
+                        onClick={() => setSelectedPlan(plan.value)}
+                        aria-pressed={isSelected}
+                        className={`relative flex h-full flex-col rounded-xl border p-4 text-left transition-all hover:border-primary/60 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ${
+                          isSelected
+                            ? "border-primary bg-primary/5 shadow-sm"
+                            : isPopular
+                              ? "border-primary/40 bg-primary/5"
+                              : "border-border bg-background"
+                        } ${isPopular ? "md:-my-1 md:shadow-sm" : ""}`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-lg font-semibold">{plan.displayName}</p>
+                            <p className="mt-1 text-2xl font-bold tracking-tight">
+                              ${plan.monthlyPriceNZD} NZD
+                              <span className="ml-1 text-sm font-medium text-muted-foreground">/mo</span>
+                            </p>
                           </div>
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
+                          {plan.badge && (
+                            <span className="rounded-full bg-primary px-2.5 py-1 text-xs font-semibold text-primary-foreground">
+                              {plan.badge}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                          <p className="text-sm font-medium text-foreground">{plan.listingsRange}</p>
+                          <p className="text-sm text-muted-foreground">{plan.subtext}</p>
+                        </div>
+
+                        <div className="mt-auto pt-4">
+                          <p className="text-xs text-muted-foreground">{plan.helperText}</p>
+                          <p className="mt-2 text-xs font-medium text-foreground/80">
+                            {isSelected ? "Selected plan" : "Click to select"}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  Plans reset monthly. Add more images anytime if needed.
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Selected plan: <span className="font-medium text-foreground">{PLAN_NAMES[selectedPlan]}</span>
+                </p>
+                <Button
+                  onClick={handleSubscribe}
+                  disabled={loading || manageDisabled}
+                  className="w-full"
+                  size="lg"
+                  title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+                >
+                  {loading ? "Loading..." : "Subscribe Now"}
+                </Button>
               </div>
 
               <div>
                 <label className="text-sm font-medium">Billing Country</label>
-                <Select value={selectedCountry} onValueChange={setSelectedCountry}>
+                <Select value={selectedCountry} onValueChange={(value) => setSelectedCountry(value)}>
                   <SelectTrigger className="w-full mt-2">
                     <SelectValue />
                   </SelectTrigger>
@@ -548,16 +591,6 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
                   </SelectContent>
                 </Select>
               </div>
-
-              <Button
-                onClick={handleSubscribe}
-                disabled={loading || manageDisabled}
-                className="w-full"
-                size="lg"
-                title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
-              >
-                {loading ? "Loading..." : "Subscribe Now"}
-              </Button>
             </div>
           )}
 
@@ -600,6 +633,31 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
               )}
             </div>
           )}
+
+          <div className="rounded-lg border p-4 space-y-3">
+            <div>
+              <p className="text-sm font-medium">Have a promo code?</p>
+              <p className="text-sm text-muted-foreground">
+                Redeem a one-time trial or temporary credit grant. Availability depends on your agency's previous subscriptions, trials, and one-off purchases.
+              </p>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Input
+                value={promoCode}
+                onChange={(e) => setPromoCode(e.target.value)}
+                placeholder="Enter promo code"
+                disabled={manageDisabled || promoLoading}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleRedeemPromo}
+                disabled={manageDisabled || promoLoading}
+              >
+                {promoLoading ? "Redeeming..." : "Redeem Code"}
+              </Button>
+            </div>
+          </div>
 
           <div className="text-xs text-muted-foreground pt-4 border-t">
             <p>✓ Unlimited users per agency</p>
@@ -660,9 +718,10 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
       </Card>
 
       <Card>
-        <CardContent className="pt-6 space-y-4">
+        <CardContent className="space-y-4 rounded-lg bg-muted/20 pt-6">
           <div className="space-y-1">
-            <p className="text-lg font-semibold">No subscription? No problem.</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">One-off listing pack</p>
+            <p className="text-base font-semibold">No subscription? No problem.</p>
             <p className="text-sm text-muted-foreground">
               Enhance a full listing from $49 - no ongoing commitment.
             </p>
@@ -672,6 +731,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
             disabled={listingPackLoading || manageDisabled}
             className="w-full"
             size="lg"
+            variant="outline"
             title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
           >
             {listingPackLoading ? "Loading..." : "Buy Listing Pack - $49"}
