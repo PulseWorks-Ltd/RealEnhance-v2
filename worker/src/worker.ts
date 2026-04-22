@@ -7165,17 +7165,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const detectedAnchors = Array.isArray(geminiAnalysis?.detectedAnchors)
             ? geminiAnalysis.detectedAnchors
             : [];
-          const furnitureItems = Array.isArray(geminiAnalysis?.furnitureItems)
-            ? geminiAnalysis.furnitureItems
-            : [];
+          const furnitureItems = geminiAnalysis?.furnitureItems;
           const anchorCount = detectedAnchors.length;
-          const totalFurniture = furnitureItems.length;
-          const excessFurnitureCount = Math.max(0, totalFurniture - anchorCount);
+          let totalFurniture: number | null = null;
+          if (Array.isArray(furnitureItems)) {
+            totalFurniture = furnitureItems.length;
+          }
+          let excessFurnitureCount: number | null = null;
+          if (totalFurniture !== null) {
+            excessFurnitureCount = Math.max(0, totalFurniture - anchorCount);
+          }
           const anchorDetected = geminiAnalysis ? geminiAnalysis.hasFurniture === true : false;
           const skipStage1B = gateDecision.decision === "furnished_refresh"
             && anchorDetected
             && !hasClutter
-            && excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE;
+            && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE);
 
           logger.info("INTERIOR_FURNITURE_ANALYSIS", jobLogContext(payload, {
             event: "INTERIOR_FURNITURE_ANALYSIS",
@@ -7267,9 +7271,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } else if (routingSnapshot.declutterMode === "stage-ready") {
       const anchorDetected = routingSnapshot.geminiHasFurniture === true;
       const hasClutter = routingSnapshot.hasClutter === true;
-      const excessFurnitureCount = Math.max(0, routingSnapshot.excessFurnitureCount ?? 0);
+      const excessFurnitureCount = typeof routingSnapshot.excessFurnitureCount === "number"
+        ? Math.max(0, routingSnapshot.excessFurnitureCount)
+        : null;
 
-      if (anchorDetected && !hasClutter && excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE) {
+      if (anchorDetected && !hasClutter && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE)) {
         // Explicit refresh override from 1A when anchors exist but no clutter requires Stage 1B.
         payload.options.declutter = false;
         (payload.options as any).declutterMode = null;

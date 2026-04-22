@@ -7,16 +7,33 @@ export interface DetectedItem {
   confidence: number;
 }
 
+export type FurnitureItemType =
+  | "bed"
+  | "sofa"
+  | "chair"
+  | "table"
+  | "desk"
+  | "nightstand"
+  | "dresser"
+  | "tv"
+  | "appliance"
+  | "decor"
+  | "other";
+
 export interface FurnitureItem {
-  type: 'sofa' | 'chair' | 'table' | 'bed' | 'dresser' | 'bookshelf' | 'tv_stand' | 'coffee_table' | 'dining_table' | 'nightstand' | 'wardrobe' | 'desk' | 'side_table' | 'console_table' | 'display_unit' | 'wall_art' | 'decorative_object' | 'plant' | 'soft_furnishing' | 'counter_clutter' | 'window_sill_item' | 'surface_clutter' | 'other';
-  condition: 'good' | 'worn' | 'outdated' | 'poor' | 'clutter';
-  location: {
+  type: FurnitureItemType;
+  label: string;
+  isAnchor: boolean;
+  confidence: number;
+  legacyType?: string;
+  condition?: 'good' | 'worn' | 'outdated' | 'poor' | 'clutter';
+  location?: {
     bbox: [number, number, number, number]; // [x, y, width, height]
     description: string; // e.g., "center of room", "against back wall", "on kitchen counter", "window sill"
   };
-  style: string; // e.g., "traditional", "modern", "rustic", "vintage", "mixed", "cluttered"
-  replaceable: boolean; // whether this item is a good candidate for replacement
-  size: 'small' | 'medium' | 'large';
+  style?: string; // e.g., "traditional", "modern", "rustic", "vintage", "mixed", "cluttered"
+  replaceable?: boolean; // whether this item is a good candidate for replacement
+  size?: 'small' | 'medium' | 'large';
 }
 
 export interface FurnitureAnalysis {
@@ -30,7 +47,7 @@ export interface FurnitureAnalysis {
   hasLoosePortableItems: boolean;
   isStageReady: boolean;
   roomType: 'living_room' | 'bedroom' | 'dining_room' | 'office' | 'kitchen' | 'bathroom' | 'other';
-  furnitureItems: FurnitureItem[];
+  furnitureItems?: FurnitureItem[];
   layoutDescription: string;
   replacementOpportunity: 'high' | 'medium' | 'low' | 'none';
   suggestions: string[];
@@ -213,6 +230,108 @@ function normalizeDetectedItems(rawItems: unknown): DetectedItem[] {
     .filter((item): item is DetectedItem => !!item);
 }
 
+function normalizeFurnitureItemType(rawType: unknown, label: string): FurnitureItemType {
+  const normalized = String(rawType || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+  const labelLower = label.toLowerCase();
+
+  if (normalized === "bed" || labelLower.includes("bed")) return "bed";
+  if (normalized === "sofa" || normalized === "couch" || labelLower.includes("sofa") || labelLower.includes("couch")) return "sofa";
+  if (normalized === "chair" || normalized === "stool" || normalized === "armchair" || normalized === "loose_chair" || labelLower.includes("chair") || labelLower.includes("stool")) return "chair";
+  if (
+    normalized === "table"
+    || normalized === "dining_table"
+    || normalized === "coffee_table"
+    || normalized === "side_table"
+    || normalized === "console_table"
+    || normalized === "tv_stand"
+    || labelLower.includes("table")
+    || labelLower.includes("stand")
+  ) return "table";
+  if (normalized === "desk" || labelLower.includes("desk")) return "desk";
+  if (normalized === "nightstand" || labelLower.includes("nightstand") || labelLower.includes("bedside")) return "nightstand";
+  if (
+    normalized === "dresser"
+    || normalized === "wardrobe"
+    || normalized === "freestanding_wardrobe"
+    || normalized === "large_freestanding_cabinet"
+    || labelLower.includes("dresser")
+    || labelLower.includes("wardrobe")
+    || labelLower.includes("cabinet")
+  ) return "dresser";
+  if (normalized === "tv" || labelLower.includes("tv") || labelLower.includes("television")) return "tv";
+  if (normalized === "appliance" || labelLower.includes("appliance")) return "appliance";
+  if (
+    normalized === "decor"
+    || normalized === "wall_art"
+    || normalized === "decorative_object"
+    || normalized === "plant"
+    || normalized === "soft_furnishing"
+    || normalized === "display_unit"
+    || normalized === "bookshelf"
+    || normalized === "counter_clutter"
+    || normalized === "window_sill_item"
+    || normalized === "surface_clutter"
+    || labelLower.includes("decor")
+    || labelLower.includes("art")
+    || labelLower.includes("plant")
+  ) return "decor";
+  return "other";
+}
+
+function normalizeFurnitureItems(rawItems: unknown): FurnitureItem[] | undefined {
+  if (!Array.isArray(rawItems)) return undefined;
+
+  const normalizedItems: FurnitureItem[] = [];
+
+  for (const item of rawItems) {
+    if (!item || typeof item !== "object") continue;
+
+    const rawType = String((item as any).type || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+    const label = String((item as any).label || rawType || "other").trim();
+    const type = normalizeFurnitureItemType(rawType, label);
+    const confidence = typeof (item as any).confidence === "number"
+      ? Math.max(0, Math.min(1, (item as any).confidence))
+      : 0;
+    const isAnchor = typeof (item as any).isAnchor === "boolean"
+      ? (item as any).isAnchor
+      : CORE_ANCHOR_SET.has(rawType);
+
+    const bboxRaw = Array.isArray((item as any).location?.bbox) ? (item as any).location.bbox : null;
+    const bbox = bboxRaw && bboxRaw.length === 4
+      ? [
+          Number(bboxRaw[0]) || 0,
+          Number(bboxRaw[1]) || 0,
+          Number(bboxRaw[2]) || 0,
+          Number(bboxRaw[3]) || 0,
+        ] as [number, number, number, number]
+      : [0, 0, 0, 0] as [number, number, number, number];
+
+    const condition = (item as any).condition;
+    const size = (item as any).size;
+    const normalizedItem: FurnitureItem = {
+      type,
+      label,
+      isAnchor,
+      confidence,
+      ...(rawType && rawType !== type ? { legacyType: rawType } : {}),
+      condition: condition === "good" || condition === "worn" || condition === "outdated" || condition === "poor" || condition === "clutter"
+        ? condition
+        : "good",
+      location: {
+        bbox,
+        description: String((item as any).location?.description || label || type),
+      },
+      style: typeof (item as any).style === "string" ? (item as any).style : "unknown",
+      replaceable: typeof (item as any).replaceable === "boolean" ? (item as any).replaceable : !isAnchor,
+      size: size === "small" || size === "medium" || size === "large" ? size : "medium",
+    };
+
+    normalizedItems.push(normalizedItem);
+  }
+
+  return normalizedItems;
+}
+
 /**
  * Analyzes an image to detect existing furniture and assess replacement opportunities
  */
@@ -230,6 +349,14 @@ Return JSON only with this exact structure:
   "hasFurniture": boolean,
   "detectedAnchors": string[],
   "detectedItems": [{ "type": string, "confidence": number }],
+  "furnitureItems": [
+    {
+      "type": "bed" | "sofa" | "chair" | "table" | "desk" | "nightstand" | "dresser" | "tv" | "appliance" | "decor" | "other",
+      "label": string,
+      "isAnchor": boolean,
+      "confidence": number
+    }
+  ],
   "confidence": number,
   "hasMovableSeating": boolean,
   "hasCounterClutter": boolean,
@@ -313,6 +440,9 @@ Return JSON only with this exact structure:
 Rules:
 - detectedAnchors must only contain canonical values from the allowed anchor list above.
 - detectedItems should usually be [] for interior scenes unless you are highly confident about a clearly identifiable portable clutter object.
+- furnitureItems must contain a complete list of visible furniture in the room, including both anchor furniture and secondary items.
+- Include ALL visible furniture items. If unsure, include your best guess with a lower confidence rather than omitting the item.
+- Do NOT omit furnitureItems. Use [] only when there is truly no visible furniture.
 - confidence must be between 0 and 1.
 - hasMovableSeating=true if movable stools/chairs/seating are clearly visible.
 - hasCounterClutter=true if clutter is clearly visible on kitchen counters/island.
@@ -375,7 +505,7 @@ Rules:
         hasLoosePortableItems: toBool((parsed as any).hasLoosePortableItems),
         isStageReady: toBool((parsed as any).isStageReady),
         roomType: (parsed.roomType as FurnitureAnalysis["roomType"]) || "other",
-        furnitureItems: Array.isArray(parsed.furnitureItems) ? parsed.furnitureItems as FurnitureItem[] : [],
+        furnitureItems: normalizeFurnitureItems((parsed as any).furnitureItems),
         layoutDescription: typeof parsed.layoutDescription === "string" ? parsed.layoutDescription : "",
         replacementOpportunity: (parsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
         suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map((s) => String(s)) : [],
@@ -387,7 +517,7 @@ Rules:
         return null;
       }
       
-      console.log(`[FURNITURE DETECTOR] hasFurniture=${analysis.hasFurniture} anchors=${JSON.stringify(analysis.detectedAnchors)} confidence=${analysis.confidence}`);
+      console.log(`[FURNITURE DETECTOR] hasFurniture=${analysis.hasFurniture} anchors=${JSON.stringify(analysis.detectedAnchors)} itemsCount=${analysis.furnitureItems?.length ?? "MISSING"} confidence=${analysis.confidence}`);
       
       return analysis;
     } catch (e) {
@@ -422,6 +552,7 @@ Rules:
         return {
           hasFurniture: Boolean(trimmedParsed.hasFurniture),
           detectedAnchors: normalizedAnchors,
+          detectedItems: normalizeDetectedItems((trimmedParsed as any).detectedItems),
           confidence: normalizedConfidence,
           hasMovableSeating: toBool((trimmedParsed as any).hasMovableSeating),
           hasCounterClutter: toBool((trimmedParsed as any).hasCounterClutter),
@@ -429,7 +560,7 @@ Rules:
           hasLoosePortableItems: toBool((trimmedParsed as any).hasLoosePortableItems),
           isStageReady: toBool((trimmedParsed as any).isStageReady),
           roomType: (trimmedParsed.roomType as FurnitureAnalysis["roomType"]) || "other",
-          furnitureItems: Array.isArray(trimmedParsed.furnitureItems) ? trimmedParsed.furnitureItems as FurnitureItem[] : [],
+          furnitureItems: normalizeFurnitureItems((trimmedParsed as any).furnitureItems),
           layoutDescription: typeof trimmedParsed.layoutDescription === "string" ? trimmedParsed.layoutDescription : "",
           replacementOpportunity: (trimmedParsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
           suggestions: Array.isArray(trimmedParsed.suggestions) ? trimmedParsed.suggestions.map((s) => String(s)) : [],
@@ -457,6 +588,7 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
     console.log(`[FURNITURE RULES] No furniture detected - returning empty rules`);
     return [];
   }
+  const furnitureItems = Array.isArray(analysis.furnitureItems) ? analysis.furnitureItems : [];
   
   // Define ALWAYS_REPLACE categories - these MUST be removed regardless of condition
   // Uses only categories that exist in FurnitureItem.type schema
@@ -480,15 +612,15 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
   // When force mode is active, bypass opportunity check and ensure at least 1 item is replaceable
   if (forceReplacementMode) {
     console.log(`[FURNITURE RULES] ⚡ FORCE REPLACEMENT MODE ACTIVE - User explicitly wants furniture replaced`);
-    console.log(`[FURNITURE RULES] Detected ${analysis.furnitureItems.length} items, forcing ALL to be replaceable`);
+    console.log(`[FURNITURE RULES] Detected ${furnitureItems.length} items, forcing ALL to be replaceable`);
     
     // Force ALL detected items to be replaceable (override AI's condition assessment)
-    analysis.furnitureItems.forEach(item => {
-      const wasPreviouslyReplaceable = item.replaceable;
+    furnitureItems.forEach(item => {
+      const wasPreviouslyReplaceable = item.replaceable === true;
       item.replaceable = true; // Force everything
       
       if (!wasPreviouslyReplaceable) {
-        console.log(`[FURNITURE RULES] Forced ${item.type} at ${item.location.description} to be replaceable (was: false)`);
+        console.log(`[FURNITURE RULES] Forced ${item.legacyType || item.type} at ${item.location?.description || item.label} to be replaceable (was: false)`);
       }
     });
     
@@ -499,15 +631,16 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
     }
   } else {
     // Non-force mode: still enforce ALWAYS_REPLACE categories
-    analysis.furnitureItems.forEach(item => {
-      if (ALWAYS_REPLACE.has(item.type) && !item.replaceable) {
-        console.log(`[FURNITURE RULES] Forcing ${item.type} to replaceable (ALWAYS_REPLACE category)`);
+    furnitureItems.forEach(item => {
+      const itemKey = item.legacyType || item.type;
+      if (ALWAYS_REPLACE.has(itemKey) && !item.replaceable) {
+        console.log(`[FURNITURE RULES] Forcing ${itemKey} to replaceable (ALWAYS_REPLACE category)`);
         item.replaceable = true;
       }
     });
     
     // Check if there are any replaceable items after ALWAYS_REPLACE enforcement
-    const hasReplaceableItems = analysis.furnitureItems.some(item => item.replaceable);
+    const hasReplaceableItems = furnitureItems.some(item => item.replaceable === true);
     
     // Only exit early if truly no replaceable items (not even ALWAYS_REPLACE categories)
     if (analysis.replacementOpportunity === 'none' && !hasReplaceableItems) {
@@ -536,7 +669,7 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
   rules.push("- PRESERVE TRAFFIC FLOW: Maintain existing pathways and room circulation");
   
   // EXPLICIT PER-ITEM REMOVAL DIRECTIVES
-  const replaceableItems = analysis.furnitureItems.filter(item => item.replaceable);
+  const replaceableItems = furnitureItems.filter(item => item.replaceable === true);
   
   console.log(`[FURNITURE RULES] Building explicit removal directives for ${replaceableItems.length} items`);
   
@@ -547,22 +680,24 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
     rules.push("");
     
     // TWO-PASS APPROACH: ALWAYS_REPLACE categories first, then others
-    const mandatoryRemoveItems = replaceableItems.filter(item => ALWAYS_REPLACE.has(item.type));
-    const otherReplaceableItems = replaceableItems.filter(item => !ALWAYS_REPLACE.has(item.type));
+    const mandatoryRemoveItems = replaceableItems.filter(item => ALWAYS_REPLACE.has(item.legacyType || item.type));
+    const otherReplaceableItems = replaceableItems.filter(item => !ALWAYS_REPLACE.has(item.legacyType || item.type));
     
     // Pass 1: Mandatory removals (décor, clutter, wall art - ALWAYS remove)
     if (mandatoryRemoveItems.length > 0) {
       rules.push("🎯 MANDATORY REMOVALS (décor, wall art, clutter - MUST remove ALL):");
       mandatoryRemoveItems.forEach(item => {
-        const bbox = item.location.bbox;
+        const bbox = item.location?.bbox || [0, 0, 0, 0];
         const bboxStr = `[${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}]`;
+        const itemKey = item.legacyType || item.type;
+        const description = item.location?.description || item.label;
         
-        if (item.type === 'counter_clutter' || item.type === 'window_sill_item' || item.type === 'surface_clutter') {
-          rules.push(`  REMOVE: ${item.type} at ${item.location.description} ${bboxStr} - CLEAR COMPLETELY`);
-        } else if (item.type === 'wall_art') {
-          rules.push(`  REMOVE: ${item.type} at ${item.location.description} ${bboxStr} - ${item.style} ${item.condition} frame/print`);
+        if (itemKey === 'counter_clutter' || itemKey === 'window_sill_item' || itemKey === 'surface_clutter') {
+          rules.push(`  REMOVE: ${itemKey} at ${description} ${bboxStr} - CLEAR COMPLETELY`);
+        } else if (itemKey === 'wall_art') {
+          rules.push(`  REMOVE: ${itemKey} at ${description} ${bboxStr} - ${item.style || 'unknown'} ${item.condition || 'good'} frame/print`);
         } else {
-          rules.push(`  REMOVE/REPLACE: ${item.type} at ${item.location.description} ${bboxStr} - Replace with modern alternative`);
+          rules.push(`  REMOVE/REPLACE: ${itemKey} at ${description} ${bboxStr} - Replace with modern alternative`);
         }
       });
       rules.push("");
@@ -572,9 +707,9 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
     if (otherReplaceableItems.length > 0) {
       rules.push("🪑 FURNITURE REPLACEMENTS (replace ALL furniture regardless of quality):");
       otherReplaceableItems.forEach(item => {
-        const bbox = item.location.bbox;
+        const bbox = item.location?.bbox || [0, 0, 0, 0];
         const bboxStr = `[${bbox[0]},${bbox[1]},${bbox[2]},${bbox[3]}]`;
-        rules.push(`  REPLACE: ${item.type} at ${item.location.description} ${bboxStr} - MUST be replaced → modern ${item.size} alternative`);
+        rules.push(`  REPLACE: ${item.legacyType || item.type} at ${item.location?.description || item.label} ${bboxStr} - MUST be replaced → modern ${item.size || 'medium'} alternative`);
       });
       rules.push("");
     }
@@ -649,18 +784,19 @@ export function buildFurnitureReplacementRules(analysis: FurnitureAnalysis | nul
  */
 export function shouldEnableFurnitureReplacement(analysis: FurnitureAnalysis | null, forceReplacementMode: boolean = false): boolean {
   if (!analysis) return false;
+  const furnitureItems = Array.isArray(analysis.furnitureItems) ? analysis.furnitureItems : [];
   
   // Force mode: enable if ANY furniture detected (even 1 item)
   if (forceReplacementMode) {
-    const hasAnyItems = analysis.hasFurniture && analysis.furnitureItems.length > 0;
-    console.log(`[FURNITURE ENABLE] Force mode: ${hasAnyItems ? 'ENABLED' : 'DISABLED'} (${analysis.furnitureItems.length} items detected)`);
+    const hasAnyItems = analysis.hasFurniture && furnitureItems.length > 0;
+    console.log(`[FURNITURE ENABLE] Force mode: ${hasAnyItems ? 'ENABLED' : 'DISABLED'} (${furnitureItems.length} items detected)`);
     return hasAnyItems;
   }
   
   // Normal mode: respect opportunity assessment
   const enabled = analysis.hasFurniture && 
          analysis.replacementOpportunity !== 'none' &&
-         analysis.furnitureItems.some(item => item.replaceable);
+         furnitureItems.some(item => item.replaceable === true);
   console.log(`[FURNITURE ENABLE] Normal mode: ${enabled ? 'ENABLED' : 'DISABLED'} (opportunity: ${analysis.replacementOpportunity})`);
   return enabled;
 }

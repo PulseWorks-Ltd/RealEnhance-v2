@@ -181,6 +181,124 @@ function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
   });
 }
 
+type Stage1ANeutralBalance = {
+  redGain: number;
+  greenGain: number;
+  blueGain: number;
+  sampleCount: number;
+};
+
+function clampStage1AColorGain(value: number): number {
+  return Math.max(0.94, Math.min(1.06, Number(value.toFixed(4))));
+}
+
+async function estimateStage1ANeutralBalance(img: sharp.Sharp): Promise<Stage1ANeutralBalance | null> {
+  const { data, info } = await img
+    .clone()
+    .ensureAlpha()
+    .removeAlpha()
+    .toColourspace("srgb")
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  if (!info.width || !info.height || info.channels < 3) {
+    return null;
+  }
+
+  const pixelCount = info.width * info.height;
+  if (!pixelCount) {
+    return null;
+  }
+
+  const sampleThresholds = [188, 170, 152];
+  let selected: Stage1ANeutralBalance | null = null;
+
+  for (const minLuma of sampleThresholds) {
+    let redSum = 0;
+    let greenSum = 0;
+    let blueSum = 0;
+    let sampleCount = 0;
+
+    for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+      const channelIndex = pixelIndex * info.channels;
+      const red = data[channelIndex] ?? 0;
+      const green = data[channelIndex + 1] ?? 0;
+      const blue = data[channelIndex + 2] ?? 0;
+      const maxChannel = Math.max(red, green, blue);
+      const minChannel = Math.min(red, green, blue);
+      const luma = (red + green + blue) / 3;
+      if (luma < minLuma) {
+        continue;
+      }
+
+      const channelSpread = maxChannel - minChannel;
+      const normalizedSpread = channelSpread / Math.max(luma, 1);
+      if (normalizedSpread > 0.09) {
+        continue;
+      }
+
+      redSum += red;
+      greenSum += green;
+      blueSum += blue;
+      sampleCount += 1;
+    }
+
+    if (sampleCount < 512) {
+      continue;
+    }
+
+    const redMean = redSum / sampleCount;
+    const greenMean = greenSum / sampleCount;
+    const blueMean = blueSum / sampleCount;
+    const neutralMean = (redMean + greenMean + blueMean) / 3;
+    if (!Number.isFinite(neutralMean) || neutralMean <= 0) {
+      continue;
+    }
+
+    const redGain = clampStage1AColorGain(neutralMean / Math.max(redMean, 1));
+    const greenGain = clampStage1AColorGain(neutralMean / Math.max(greenMean, 1));
+    const blueGain = clampStage1AColorGain(neutralMean / Math.max(blueMean, 1));
+    const maxGainDelta = Math.max(
+      Math.abs(redGain - 1),
+      Math.abs(greenGain - 1),
+      Math.abs(blueGain - 1)
+    );
+
+    if (maxGainDelta < 0.006) {
+      return null;
+    }
+
+    selected = {
+      redGain,
+      greenGain,
+      blueGain,
+      sampleCount,
+    };
+    break;
+  }
+
+  return selected;
+}
+
+async function applyStage1ANeutralBalance(img: sharp.Sharp): Promise<{
+  image: sharp.Sharp;
+  balance: Stage1ANeutralBalance | null;
+}> {
+  const balance = await estimateStage1ANeutralBalance(img).catch(() => null);
+  if (!balance) {
+    return { image: img, balance: null };
+  }
+
+  return {
+    image: img.linear([
+      balance.redGain,
+      balance.greenGain,
+      balance.blueGain,
+    ], [0, 0, 0]),
+    balance,
+  };
+}
+
 function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: number): number {
   if (typeof meanBrightness !== "number" || !Number.isFinite(meanBrightness)) {
     return baseBrightness;
@@ -257,6 +375,18 @@ export async function runStage1A(
   
   // 4. Normalize histogram (automatic exposure + white balance correction)
   img = img.normalize();
+
+  // 4b. Re-anchor white balance on bright low-chroma regions so neutral walls
+  // and ceilings stay optically neutral without flattening genuine warm lights.
+  const neutralBalanceResult = await applyStage1ANeutralBalance(img);
+  img = neutralBalanceResult.image;
+  if (neutralBalanceResult.balance) {
+    logIfNotFocusMode(
+      `[stage1A] Neutral balance applied (samples=${neutralBalanceResult.balance.sampleCount}, redGain=${neutralBalanceResult.balance.redGain.toFixed(3)}, greenGain=${neutralBalanceResult.balance.greenGain.toFixed(3)}, blueGain=${neutralBalanceResult.balance.blueGain.toFixed(3)})`
+    );
+  } else {
+    logIfNotFocusMode("[stage1A] Neutral balance skipped (insufficient neutral highlights)");
+  }
   
   // 5. HDR tone mapping first (lift shadows, retain highlights)
   img = applyHDRToneMapping(img);
