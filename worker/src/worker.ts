@@ -117,6 +117,27 @@ const STAGE1B_BLANK_RANGE_MAX = Math.max(
   0,
   Number(process.env.STAGE1B_BLANK_RANGE_MAX || 4)
 );
+const EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD || 0.75))
+);
+const ALLOWED_EXTERIOR_DECLUTTER_TYPES = new Set([
+  "bicycle",
+  "scooter",
+  "ladder",
+  "tools",
+  "wheelbarrow",
+  "hose",
+  "sprinkler",
+  "extension_cord",
+  "bucket",
+  "bin",
+  "trash",
+  "loose_chair",
+  "loose_table",
+  "building_material",
+  "debris",
+]);
 import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
 import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
 import { runUnifiedValidator, type Stage2LocalSignals } from "./validators/unifiedValidator";
@@ -3731,6 +3752,38 @@ async function runStage2ValidationPipeline<TSpecialistResults = any, TCompliance
   };
 }
 
+function normalizeExteriorDetectedItemType(rawType: unknown): string {
+  const normalized = String(rawType || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+  if (normalized === "extension_lead") return "extension_cord";
+  if (normalized === "garden_hose") return "hose";
+  if (normalized === "garbage_bin" || normalized === "trash_bin") return "bin";
+  if (normalized === "trash_can" || normalized === "rubbish") return "trash";
+  return normalized;
+}
+
+function getExteriorDetectedItems(detectorResult: Awaited<ReturnType<typeof detectFurniture>>): Array<{ type: string; confidence: number | null }> {
+  const rawItems = Array.isArray(detectorResult?.detectedItems) ? detectorResult.detectedItems : [];
+  return rawItems
+    .map((item) => ({
+      type: normalizeExteriorDetectedItemType(item?.type),
+      confidence: typeof item?.confidence === "number" ? item.confidence : null,
+    }))
+    .filter((item) => !!item.type);
+}
+
+function shouldRunExteriorDeclutter(detectorResult: Awaited<ReturnType<typeof detectFurniture>>): boolean {
+  const confidence = typeof detectorResult?.confidence === "number"
+    ? Math.max(0, Math.min(1, detectorResult.confidence))
+    : 0;
+
+  if (confidence < EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD) {
+    return false;
+  }
+
+  const detectedItems = getExteriorDetectedItems(detectorResult);
+  return detectedItems.some((item) => ALLOWED_EXTERIOR_DECLUTTER_TYPES.has(item.type));
+}
+
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Start memory tracking for this job
@@ -3875,6 +3928,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     geminiConfidence: number | null;
     hasClutter: boolean | null;
     skipStage1B: boolean;
+    stage1BSkippedByDesign?: boolean;
     declutterMode: "light" | "stage-ready" | null;
     stage1BRequired: boolean;
   };
@@ -7015,11 +7069,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         if (shouldResolveExteriorDeclutter) {
           const ai = getGeminiClient();
-          const geminiAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
-          const hasSurfaceClutter = geminiAnalysis?.hasSurfaceClutter === true;
-          const hasLoosePortableItems = geminiAnalysis?.hasLoosePortableItems === true;
-          const hasCounterClutter = geminiAnalysis?.hasCounterClutter === true;
-          const hasClutter = hasSurfaceClutter || hasLoosePortableItems || hasCounterClutter;
+          const geminiAnalysis = await detectFurniture(ai as any, toBase64(path1A).data, { sceneType: "exterior" });
+          const detectedItems = getExteriorDetectedItems(geminiAnalysis);
+          const hasClutter = shouldRunExteriorDeclutter(geminiAnalysis);
 
           routingSnapshot = {
             authority: "exteriorClutter",
@@ -7027,19 +7079,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiHasFurniture: null,
             geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
             hasClutter,
-            skipStage1B: false,
+            skipStage1B: !hasClutter,
+            stage1BSkippedByDesign: !hasClutter,
             declutterMode: hasClutter ? "light" : null,
             stage1BRequired: hasClutter,
           };
 
+          if (!hasClutter) {
+            logger.info("EXTERIOR_DECLUTTER_SKIPPED", jobLogContext(payload, {
+              event: "EXTERIOR_DECLUTTER_SKIPPED",
+              confidence: routingSnapshot.geminiConfidence,
+              detectedItems,
+            }));
+          }
+
           nLog("[EXTERIOR_ROUTING]", {
             jobId: payload.jobId,
             clutterDetected: hasClutter,
+            confidence: routingSnapshot.geminiConfidence,
+            detectedItems,
             stage1B: routingSnapshot.stage1BRequired,
             stage2: false,
           });
           nLog(
-            `[ROUTING] authority=exteriorClutter | hasSurfaceClutter=${hasSurfaceClutter} | hasLoosePortableItems=${hasLoosePortableItems} | hasCounterClutter=${hasCounterClutter} | hasClutter=${routingSnapshot.hasClutter === true} | stage1BRequired=${routingSnapshot.stage1BRequired}`
+            `[ROUTING] authority=exteriorClutter | confidence=${routingSnapshot.geminiConfidence === null ? "null" : routingSnapshot.geminiConfidence.toFixed(2)} | detectedItems=${JSON.stringify(detectedItems.map((item) => item.type))} | hasClutter=${routingSnapshot.hasClutter === true} | stage1BRequired=${routingSnapshot.stage1BRequired} | skipStage1B=${routingSnapshot.skipStage1B === true}`
           );
         } else if (localEmpty) {
           routingSnapshot = {
@@ -7111,6 +7174,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 source: routingSnapshot.authority,
                 escalated: routingSnapshot.authority === "gemini",
                 stage1BRan: routingSnapshot.stage1BRequired,
+                stage1BSkippedByDesign: routingSnapshot.stage1BSkippedByDesign === true,
                 hasVirtualStage,
                 isStage2Only,
                 gateDecision: routingSnapshot.declutterMode === "stage-ready"
@@ -7131,7 +7195,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     }
 
     if (isExteriorScene) {
-      const hasClutter = routingSnapshot.hasClutter === true;
+      const hasClutter = routingSnapshot.stage1BRequired === true;
 
       payload.options.declutter = hasClutter;
       (payload.options as any).declutterMode = hasClutter ? "light" : null;
@@ -7209,6 +7273,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         payload.options.declutter = false;
         (payload.options as any).declutterMode = null;
         declutterMode = null;
+        routingSnapshot.declutterMode = null;
+        routingSnapshot.stage1BRequired = false;
+        routingSnapshot.skipStage1B = false;
         (payload.options as any).furnishedState = "empty";
         (payload.options as any).stagingPreference = "full";
         (payload.options as any).stage2Mode = "FROM_EMPTY";
@@ -7284,8 +7351,25 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     frozenRoutingSnapshot = inferredSnapshot;
   }
 
-  const stage1BRequired = frozenRoutingSnapshot.stage1BRequired === true;
-  const skipStage1B = frozenRoutingSnapshot.skipStage1B === true;
+  const resolvedDeclutterMode: "light" | "stage-ready" | null =
+    declutterMode === "light" || declutterMode === "stage-ready"
+      ? declutterMode
+      : null;
+  const resolvedRoutingState = {
+    declutter: payload.options.declutter === true,
+    declutterMode: resolvedDeclutterMode,
+    skipStage1B: frozenRoutingSnapshot.skipStage1B === true,
+    stage1BRequired:
+      payload.options.declutter === true
+      && resolvedDeclutterMode !== null
+      && frozenRoutingSnapshot.skipStage1B !== true,
+  };
+
+  frozenRoutingSnapshot.declutterMode = resolvedRoutingState.declutterMode;
+  frozenRoutingSnapshot.stage1BRequired = resolvedRoutingState.stage1BRequired;
+
+  const stage1BRequired = resolvedRoutingState.stage1BRequired;
+  const skipStage1B = resolvedRoutingState.skipStage1B;
 
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   nLog(`[WORKER] Stage 1B virtualStage: ${payload.options.virtualStage}`);
@@ -8059,8 +8143,40 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isExternalImage = imageSourceRaw === "external";
   const stage2Allowed = stagingGuardResult.allowed && !exteriorNoStaging && !isExternalImage;
   const shouldSkipStage2ForExternal = isExternalImage && stage2Requested && !stage2Allowed;
+  const shouldSkipStage2ForExterior = sceneLabel === "exterior" && stage2Requested;
 
-  if (shouldSkipStage2ForExternal) {
+  if (shouldSkipStage2ForExterior) {
+    stage2Skipped = true;
+    stage2SkipReason = "exterior_scene_not_supported_for_staging";
+    payload.options.virtualStage = false;
+    (payload.options as any).stage2Mode = null;
+    (payload.options as any).stage2Variant = null;
+    stage2Blocked = false;
+    stage2BlockedReason = undefined;
+    stage2FallbackStage = path1B ? "1B" : "1A";
+    const exteriorStageCompleted = path1B ? "1B" : "1A";
+
+    nLog("[PIPELINE] Stage-2 skipped - exterior image", {
+      jobId: payload.jobId,
+      stage2Requested,
+      reason: stage2SkipReason,
+      finalStage: exteriorStageCompleted,
+    });
+    updateJob(payload.jobId, {
+      warnings: ["Stage 2 skipped for exterior image; completed without staging."],
+      stageCompleted: exteriorStageCompleted,
+      stage2Skipped: true,
+      stage2SkipReason,
+      meta: {
+        ...(sceneLabel ? { ...sceneMeta } : {}),
+        stageCompleted: exteriorStageCompleted,
+        stage2Skipped: true,
+        stage2SkipReason,
+      },
+    });
+  }
+
+  if (!shouldSkipStage2ForExterior && shouldSkipStage2ForExternal) {
     stage2Skipped = true;
     stage2SkipReason = "external_images_not_supported_for_staging";
     payload.options.virtualStage = false;
@@ -11987,6 +12103,7 @@ All openings must remain identical in position and size to the original image.`;
   // Build metadata BEFORE any async operations that could fail
   const meta = {
     ...sceneMeta,
+    routingSnapshot: frozenRoutingSnapshot || undefined,
     roomTypeDetected: detectedRoom,
     roomType: payload.options.roomType || undefined,
     allowStaging,
@@ -11997,7 +12114,8 @@ All openings must remain identical in position and size to the original image.`;
     ...(path1B ? { stage1BStructuralSafe } : {}),
     ...(stage1BDeclutterResult ? { stage1BDeclutterResult } : {}),
     ...(unifiedValidation ? { unifiedValidation } : {}),
-    ...(stage2Skipped ? { stage2Skipped: true, stage2SkipReason, stageCompleted: "1A" } : {}),
+    ...(stage2Skipped ? { stage2Skipped: true, stage2SkipReason, stageCompleted: committedFinalStageLabel } : {}),
+    ...(frozenRoutingSnapshot?.stage1BSkippedByDesign === true ? { stage1BSkippedByDesign: true, stage1BSkipReason: "exterior_declutter_gate" } : {}),
     ...(stage2Blocked ? { stage2Blocked: true, stage2BlockedReason, validationNote: stage2BlockedReason, fallbackStage: stage2FallbackStage, partial: true } : {}),
     ...(stage2AdvertisedButMissing ? { stage2AdvertisedButMissing: true } : {}),
   };

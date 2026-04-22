@@ -359,6 +359,46 @@ function getPerImageStagingAllowed(item: any): boolean {
   return true;
 }
 
+function getRoutingSnapshot(item: any): any {
+  return item?.meta?.routingSnapshot || item?.result?.meta?.routingSnapshot || item?.metadata?.routingSnapshot || null;
+}
+
+function isExteriorSceneLabel(sceneLabel: string): boolean {
+  return sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
+}
+
+function shouldExpectStage1B(params: {
+  item: any;
+  declutterRequested: boolean;
+  sceneLabel: string;
+}): boolean {
+  const { item, declutterRequested, sceneLabel } = params;
+  if (!declutterRequested) return false;
+  if (!isExteriorSceneLabel(sceneLabel)) return true;
+
+  if (item?.meta?.stage1BSkippedByDesign === true || item?.result?.meta?.stage1BSkippedByDesign === true) {
+    return false;
+  }
+
+  const routingSnapshot = getRoutingSnapshot(item);
+  if (routingSnapshot && routingSnapshot.stage1BRequired === false) {
+    return false;
+  }
+
+  return true;
+}
+
+function resolveRequestedFinalStage(params: {
+  item: any;
+  stage2Expected: boolean;
+  declutterRequested: boolean;
+  sceneLabel: string;
+}): StageKey {
+  const { item, stage2Expected, declutterRequested, sceneLabel } = params;
+  if (stage2Expected) return "2";
+  return shouldExpectStage1B({ item, declutterRequested, sceneLabel }) ? "1B" : "1A";
+}
+
 function deriveUnifiedCompletionState(params: {
   requestedFinalStage: StageKey;
   stage1AUrl: string | null;
@@ -3400,7 +3440,12 @@ export default function BatchProcessor({
           const hasOutputs = !!(stagePreview || resultUrlSafe || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url);
 
           // Target stage and completion interpretation are derived only from requested pipeline + available outputs.
-          const requestedFinalStage: StageKey = stage2Expected ? "2" : (declutterRequested ? "1B" : "1A");
+          const requestedFinalStage: StageKey = resolveRequestedFinalStage({
+            item: it,
+            stage2Expected,
+            declutterRequested,
+            sceneLabel,
+          });
           const unifiedCompletion = deriveUnifiedCompletionState({
             requestedFinalStage,
             stage1AUrl: stage1aUrl,
@@ -4399,7 +4444,12 @@ export default function BatchProcessor({
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const declutterRequested = getPerImageDeclutterRequested(r);
           const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
-          const requestedFinalStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+          const requestedFinalStage: StageKey = resolveRequestedFinalStage({
+            item: r,
+            stage2Expected,
+            declutterRequested,
+            sceneLabel,
+          });
 
           const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
           const stage2Url = stageMap?.['2'] || stageMap?.stage2 || null;
@@ -7801,7 +7851,12 @@ export default function BatchProcessor({
                             const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
                             const declutterRequested = getPerImageDeclutterRequested(r);
                             const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
-                            const requestedFinalStage: StageKey = stage2Expected ? "2" : declutterRequested ? "1B" : "1A";
+                            const requestedFinalStage: StageKey = resolveRequestedFinalStage({
+                              item: r,
+                              stage2Expected,
+                              declutterRequested,
+                              sceneLabel,
+                            });
                             
                             // Check if target URL is present
                             const stageMap = r?.stageUrls || r?.result?.stageUrls || {};
@@ -8006,7 +8061,12 @@ export default function BatchProcessor({
                           null;
                         const hasPreviewOutputs = !!(stage2Url || stage1BUrl || stage1AUrl);
                         const hasOutputs = hasPreviewOutputs || !!finalResultUrl;
-                        const requestedFinalStage: StageKey = stage2Expected ? "2" : (declutterRequested ? "1B" : "1A");
+                        const requestedFinalStage: StageKey = resolveRequestedFinalStage({
+                          item: result,
+                          stage2Expected,
+                          declutterRequested,
+                          sceneLabel,
+                        });
                         const unifiedCompletion = deriveUnifiedCompletionState({
                           requestedFinalStage,
                           stage1AUrl,

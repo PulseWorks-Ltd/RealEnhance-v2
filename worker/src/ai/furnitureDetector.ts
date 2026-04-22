@@ -2,6 +2,11 @@
 
 import { GoogleGenAI } from '@google/genai';
 
+export interface DetectedItem {
+  type: string;
+  confidence: number;
+}
+
 export interface FurnitureItem {
   type: 'sofa' | 'chair' | 'table' | 'bed' | 'dresser' | 'bookshelf' | 'tv_stand' | 'coffee_table' | 'dining_table' | 'nightstand' | 'wardrobe' | 'desk' | 'side_table' | 'console_table' | 'display_unit' | 'wall_art' | 'decorative_object' | 'plant' | 'soft_furnishing' | 'counter_clutter' | 'window_sill_item' | 'surface_clutter' | 'other';
   condition: 'good' | 'worn' | 'outdated' | 'poor' | 'clutter';
@@ -17,6 +22,7 @@ export interface FurnitureItem {
 export interface FurnitureAnalysis {
   hasFurniture: boolean;
   detectedAnchors: string[];
+  detectedItems?: DetectedItem[];
   confidence: number;
   hasMovableSeating: boolean;
   hasCounterClutter: boolean;
@@ -183,11 +189,89 @@ export function getAnchorClassSet(analysis: FurnitureAnalysis | null | undefined
   );
 }
 
+function normalizeDetectedItems(rawItems: unknown): DetectedItem[] {
+  if (!Array.isArray(rawItems)) return [];
+
+  return rawItems
+    .map((item) => {
+      if (typeof item === "string") {
+        return {
+          type: item.toLowerCase().trim().replace(/[\s-]+/g, "_"),
+          confidence: 0,
+        };
+      }
+      if (!item || typeof item !== "object") return null;
+
+      const rawType = String((item as any).type || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+      const confidence = typeof (item as any).confidence === "number"
+        ? Math.max(0, Math.min(1, (item as any).confidence))
+        : 0;
+
+      if (!rawType) return null;
+      return { type: rawType, confidence };
+    })
+    .filter((item): item is DetectedItem => !!item);
+}
+
 /**
  * Analyzes an image to detect existing furniture and assess replacement opportunities
  */
-export async function detectFurniture(ai: GoogleGenAI, imageBase64: string): Promise<FurnitureAnalysis | null> {
-  const system = `
+export async function detectFurniture(
+  ai: GoogleGenAI,
+  imageBase64: string,
+  options?: { sceneType?: "interior" | "exterior" }
+): Promise<FurnitureAnalysis | null> {
+  const sceneType = options?.sceneType === "exterior" ? "exterior" : "interior";
+  const system = sceneType === "exterior" ? `
+You are determining whether this EXTERIOR real estate image contains clearly identifiable, removable clutter.
+
+Return JSON only with this exact structure:
+{
+  "hasFurniture": boolean,
+  "detectedAnchors": string[],
+  "detectedItems": [{ "type": string, "confidence": number }],
+  "confidence": number,
+  "hasMovableSeating": boolean,
+  "hasCounterClutter": boolean,
+  "hasSurfaceClutter": boolean,
+  "hasLoosePortableItems": boolean,
+  "isStageReady": boolean
+}
+
+For detectedItems, only use these canonical removable clutter labels when clearly visible:
+- bicycle
+- scooter
+- ladder
+- tools
+- wheelbarrow
+- hose
+- sprinkler
+- extension_cord
+- bucket
+- bin
+- trash
+- loose_chair
+- loose_table
+- building_material
+- debris
+
+Do NOT treat any of the following as clutter:
+- leaves, grass, natural elements, landscaping features
+- decorative or intentionally staged outdoor setups
+- full outdoor furniture sets
+- general messiness, texture noise, shadows, or small ambiguous objects
+
+Rules:
+- confidence must be between 0 and 1 and reflect your confidence in the clutter assessment.
+- detectedItems must be [] unless at least one clearly identifiable removable clutter item is visible.
+- hasSurfaceClutter=true only when removable clutter is clearly visible on exterior surfaces such as decks, patios, tables, or paths.
+- hasLoosePortableItems=true only when clearly removable portable exterior clutter is visible.
+- hasCounterClutter should be false for exteriors unless obvious removable clutter is visible on an outdoor kitchen or utility surface.
+- hasMovableSeating=true only for loose single chairs or stools that are clearly removable, not full outdoor sets.
+- If uncertain, set detectedItems to [] and all clutter booleans to false.
+- detectedAnchors should be [] for exterior scenes unless one of the canonical anchor labels is undeniably visible.
+- isStageReady=true only when no clearly removable clutter is visible.
+` : `
 You are determining whether this room contains LARGE MOVABLE FURNITURE ANCHORS.
 
 A room is considered FURNISHED only if at least one clearly visible anchor exists from this list:
@@ -217,6 +301,7 @@ Return JSON only with this exact structure:
 {
   "hasFurniture": boolean,
   "detectedAnchors": string[],
+  "detectedItems": [{ "type": string, "confidence": number }],
   "confidence": number,
   "hasMovableSeating": boolean,
   "hasCounterClutter": boolean,
@@ -227,6 +312,7 @@ Return JSON only with this exact structure:
 
 Rules:
 - detectedAnchors must only contain canonical values from the allowed anchor list above.
+- detectedItems should usually be [] for interior scenes unless you are highly confident about a clearly identifiable portable clutter object.
 - confidence must be between 0 and 1.
 - hasMovableSeating=true if movable stools/chairs/seating are clearly visible.
 - hasCounterClutter=true if clutter is clearly visible on kitchen counters/island.
@@ -281,6 +367,7 @@ Rules:
       const analysis: FurnitureAnalysis = {
         hasFurniture: Boolean(parsed.hasFurniture),
         detectedAnchors: normalizedAnchors,
+        detectedItems: normalizeDetectedItems((parsed as any).detectedItems),
         confidence: normalizedConfidence,
         hasMovableSeating: toBool((parsed as any).hasMovableSeating),
         hasCounterClutter: toBool((parsed as any).hasCounterClutter),
