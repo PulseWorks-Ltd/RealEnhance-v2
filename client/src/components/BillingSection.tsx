@@ -48,6 +48,7 @@ interface PlanDisplayOption {
   listingsRange: string;
   subtext: string;
   helperText: string;
+  imageAllowanceText: string;
   badge?: string;
 }
 
@@ -86,6 +87,7 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
     listingsRange: "Covers ~5-8 listings per month",
     subtext: "Ideal for occasional use",
     helperText: "Based on ~10-15 images per listing",
+    imageAllowanceText: "Includes ~75 images per month",
   },
   {
     value: "pro",
@@ -95,6 +97,7 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
     listingsRange: "Covers ~8-15 listings per month",
     subtext: "Best for agencies running multiple listings each week",
     helperText: "Based on ~10-15 images per listing",
+    imageAllowanceText: "Includes ~150 images per month",
     badge: "⭐ Most Popular",
   },
   {
@@ -105,6 +108,7 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
     listingsRange: "Covers ~15-30 listings per month",
     subtext: "Designed for teams using this across most or all listings",
     helperText: "Based on ~10-15 images per listing",
+    imageAllowanceText: "Includes ~300 images per month",
   },
 ];
 
@@ -549,6 +553,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
 
                         <div className="mt-auto pt-4">
                           <p className="text-xs text-muted-foreground">{plan.helperText}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{plan.imageAllowanceText}</p>
                           <p className="mt-2 text-xs font-medium text-foreground/80">
                             {isSelected ? "Selected plan" : "Click to select"}
                           </p>
