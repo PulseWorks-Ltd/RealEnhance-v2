@@ -121,6 +121,10 @@ const EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD = Math.max(
   0,
   Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD || 0.75))
 );
+const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = (() => {
+  const configured = Number(process.env.INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE || 1);
+  return Number.isFinite(configured) ? Math.max(0, Math.floor(configured)) : 1;
+})();
 const ALLOWED_EXTERIOR_DECLUTTER_TYPES = new Set([
   "bicycle",
   "scooter",
@@ -3242,8 +3246,18 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
   return publishImage(deliveryPath);
 }
 
+function isStage2DeliveryStage(stageLabel: string): boolean {
+  const normalizedStageLabel = String(stageLabel || "").trim().toLowerCase();
+  return normalizedStageLabel === "2"
+    || normalizedStageLabel.startsWith("2-")
+    || normalizedStageLabel.endsWith("-2")
+    || normalizedStageLabel.includes("stage2")
+    || normalizedStageLabel.includes("partial-2");
+}
+
 async function upscaleAndEnhanceForDelivery(
   inputBuffer: Buffer,
+  stageLabel: string,
   targetLongSide = DELIVERY_EXPORT_MIN_LONG_SIDE
 ): Promise<Buffer> {
   const baseImage = sharp(inputBuffer).rotate();
@@ -3259,6 +3273,8 @@ async function upscaleAndEnhanceForDelivery(
   const resizeOptions = width >= height
     ? { width: targetLongSide }
     : { height: targetLongSide };
+  const isStage2 = isStage2DeliveryStage(stageLabel);
+  const enhancementsApplied = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2;
 
   let pipeline = baseImage.clone();
 
@@ -3271,7 +3287,7 @@ async function upscaleAndEnhanceForDelivery(
     });
   }
 
-  if (DELIVERY_EXPORT_ENHANCE_ENABLED) {
+  if (enhancementsApplied) {
     pipeline = pipeline
       .gamma(DELIVERY_EXPORT_GAMMA)
       .sharpen({
@@ -3285,7 +3301,15 @@ async function upscaleAndEnhanceForDelivery(
       .modulate({ saturation: 1.03 });
   }
 
+  nLog("[DELIVERY_EXPORT_MODE]", {
+    stageLabel,
+    enhancementsApplied,
+    isStage2,
+    resized: shouldResize,
+  });
+
   return pipeline
+    .withMetadata()
     .jpeg({
       quality: DELIVERY_EXPORT_JPEG_QUALITY,
       chromaSubsampling: "4:4:4",
@@ -3313,7 +3337,7 @@ async function prepareDeliveryExport(localPath: string, stageLabel: string): Pro
 
   const currentLongSide = Math.max(width, height);
   const needsUpscale = DELIVERY_EXPORT_UPSCALE_ENABLED && currentLongSide < DELIVERY_EXPORT_MIN_LONG_SIDE;
-  const needsEnhancement = DELIVERY_EXPORT_ENHANCE_ENABLED;
+  const needsEnhancement = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2DeliveryStage(stageLabel);
   if (!needsUpscale && !needsEnhancement) {
     return localPath;
   }
@@ -3322,7 +3346,7 @@ async function prepareDeliveryExport(localPath: string, stageLabel: string): Pro
   const exportPath = siblingOutPath(localPath, `-${safeSuffix}-delivery`, ".jpg");
 
   const inputBuffer = await fs.promises.readFile(localPath);
-  const outputBuffer = await upscaleAndEnhanceForDelivery(inputBuffer, DELIVERY_EXPORT_MIN_LONG_SIDE);
+  const outputBuffer = await upscaleAndEnhanceForDelivery(inputBuffer, stageLabel, DELIVERY_EXPORT_MIN_LONG_SIDE);
   const outputMeta = await sharp(outputBuffer).metadata();
 
   await fs.promises.writeFile(exportPath, outputBuffer);
@@ -3927,6 +3951,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     geminiHasFurniture: boolean | null;
     geminiConfidence: number | null;
     hasClutter: boolean | null;
+    excessFurnitureCount?: number | null;
     skipStage1B: boolean;
     stage1BSkippedByDesign?: boolean;
     declutterMode: "light" | "stage-ready" | null;
@@ -7137,8 +7162,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiAnalysis?.hasLoosePortableItems === true ||
             geminiAnalysis?.hasMovableSeating === true
           );
+          const detectedAnchors = Array.isArray(geminiAnalysis?.detectedAnchors)
+            ? geminiAnalysis.detectedAnchors
+            : [];
+          const furnitureItems = Array.isArray(geminiAnalysis?.furnitureItems)
+            ? geminiAnalysis.furnitureItems
+            : [];
+          const anchorCount = detectedAnchors.length;
+          const totalFurniture = furnitureItems.length;
+          const excessFurnitureCount = Math.max(0, totalFurniture - anchorCount);
           const anchorDetected = geminiAnalysis ? geminiAnalysis.hasFurniture === true : false;
-          const skipStage1B = gateDecision.decision === "furnished_refresh" && anchorDetected && !hasClutter;
+          const skipStage1B = gateDecision.decision === "furnished_refresh"
+            && anchorDetected
+            && !hasClutter
+            && excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE;
+
+          logger.info("INTERIOR_FURNITURE_ANALYSIS", jobLogContext(payload, {
+            event: "INTERIOR_FURNITURE_ANALYSIS",
+            anchorCount,
+            totalFurniture,
+            excessFurnitureCount,
+            anchorDetected,
+            hasClutter,
+            skipStage1B,
+          }));
 
           routingSnapshot = {
             authority: "gemini",
@@ -7146,6 +7193,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiHasFurniture: anchorDetected,
             geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
             hasClutter,
+            excessFurnitureCount,
             skipStage1B,
             declutterMode: resolvedDeclutterMode,
             stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
@@ -7219,8 +7267,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     } else if (routingSnapshot.declutterMode === "stage-ready") {
       const anchorDetected = routingSnapshot.geminiHasFurniture === true;
       const hasClutter = routingSnapshot.hasClutter === true;
+      const excessFurnitureCount = Math.max(0, routingSnapshot.excessFurnitureCount ?? 0);
 
-      if (anchorDetected && !hasClutter) {
+      if (anchorDetected && !hasClutter && excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE) {
         // Explicit refresh override from 1A when anchors exist but no clutter requires Stage 1B.
         payload.options.declutter = false;
         (payload.options as any).declutterMode = null;
@@ -7234,6 +7283,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           originalUserDeclutter,
           anchorDetected,
           hasClutter,
+          excessFurnitureCount,
           hasFurniture: routingSnapshot.geminiHasFurniture,
         });
         nLog("[ROUTING_DECISION]", {
@@ -7247,6 +7297,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           originalUserDeclutter,
           hasFurniture: routingSnapshot.geminiHasFurniture,
           hasClutter,
+          excessFurnitureCount,
         });
         payload.options.declutter = true;
         (payload.options as any).declutterMode = "stage-ready";
