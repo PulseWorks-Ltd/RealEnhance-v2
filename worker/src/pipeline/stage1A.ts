@@ -191,10 +191,13 @@ interface Stage1AAnalysis {
 }
 
 interface Stage1AFactors {
+  darkness: number;
   shadowLift: number;
   highlightCompress: number;
   gammaBoost: number;
   contrastBoost: number;
+  saturationBoost: number;
+  sharpenAmount: number;
 }
 
 const STAGE1A_BLUR_EDGE_THRESHOLD = 15;
@@ -323,21 +326,45 @@ async function analyzeStage1AInput(
 }
 
 function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
-  const darkness = clampStage1AFactor((70 - analysis.lumMean) / 40);
+  const darkness = clampStage1AFactor((95 - analysis.lumMean) / 50);
   const brightness = clampStage1AFactor((analysis.lumMean - 180) / 40);
-  const lowContrast = clampStage1AFactor((30 - analysis.lumStdev) / 30);
+  const edgeDensity = normalizeRange(
+    analysis.edgeDensity,
+    STAGE1A_BLUR_EDGE_THRESHOLD,
+    STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD
+  );
 
-  let shadowLift = darkness;
+  let gammaBoost = darkness * 0.9;
+  let shadowLift = darkness * 0.75;
+  let contrastBoost = darkness * 0.25;
+
   if (analysis.isExterior) {
-    const exteriorScale = clampStage1AFactor(analysis.lumStdev / 40, 0.2, 0.6);
-    shadowLift *= exteriorScale;
+    gammaBoost *= 1.1;
+    contrastBoost *= 1.2;
+  }
+
+  if (edgeDensity > 0.15) {
+    contrastBoost += 0.05;
+  }
+
+  let saturationBoost = 0;
+  if (analysis.isExterior) {
+    saturationBoost = 0.05 + (darkness * 0.1);
+  }
+
+  let sharpenAmount = 0;
+  if (!analysis.isBlurry && edgeDensity > 0.12 && edgeDensity < 0.35) {
+    sharpenAmount = 0.6 + (edgeDensity * 0.8);
   }
 
   return {
+    darkness,
     shadowLift,
-    gammaBoost: darkness * 0.8,
+    gammaBoost,
     highlightCompress: brightness,
-    contrastBoost: lowContrast * 0.5,
+    contrastBoost,
+    saturationBoost,
+    sharpenAmount,
   };
 }
 
@@ -657,7 +684,7 @@ export async function runStage1A(
   if (applyInteriorProfile) {
     const baseBrightness = 1 + (interiorCfg.brightnessBoost * (0.14 + (factors.shadowLift * 0.42)));
     const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
-    const saturation = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03);
+    const saturation = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03) + factors.saturationBoost;
     img = img.modulate({ brightness, saturation });
     if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35) {
       img = img.linear(
@@ -672,7 +699,7 @@ export async function runStage1A(
       : 1 + (factors.shadowLift * 0.08);
     const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
     const saturation = analysis.isExterior
-      ? 1.01 + (factors.contrastBoost * 0.02)
+      ? 1.01 + (factors.contrastBoost * 0.02) + factors.saturationBoost
       : 1.04 + (factors.contrastBoost * 0.04);
     img = img.modulate({
       brightness,
@@ -704,11 +731,14 @@ export async function runStage1A(
   }
   
   // 10. Sharpen only for non-blurry images with moderate edge density.
-  if (!analysis.isBlurry && analysis.edgeDensity >= STAGE1A_BLUR_EDGE_THRESHOLD && analysis.edgeDensity < STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD) {
+  if (factors.sharpenAmount > 0) {
     img = img.sharpen({
-      sigma: analysis.isExterior ? 0.85 : 0.95,
-      m1: analysis.isExterior ? 1.1 : 1.25,
-      m2: 0.9,
+      sigma: 1.2,
+      m1: 1.0,
+      m2: factors.sharpenAmount,
+      x1: 2.0,
+      y2: 10.0,
+      y3: 20.0,
     });
   }
   
