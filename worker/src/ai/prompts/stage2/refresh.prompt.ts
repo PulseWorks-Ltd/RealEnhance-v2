@@ -71,12 +71,15 @@ CONSTRAINT PRIORITY ORDER
 
 1. Architecture & openings (highest priority)
 2. Built-ins & fixed fixtures
-3. Anchor furniture
+3. Anchor furniture scale, position, and footprint
 4. Layout optimization (lowest priority)
 
 If any rule conflicts:
 - Lower priority rules must yield
 - Never modify architecture or built-ins to satisfy layout or anchor placement
+- Never modify anchor scale or footprint to satisfy layout optimization
+- Specifically: do NOT shrink or compress anchor furniture (e.g. beds, sofas) to create space for additional items
+- If additional furniture cannot fit around the anchor at original scale → OMIT the additional furniture
 `.trim();
 
 const REFRESH_COMPLETENESS_ENFORCEMENT_BLOCK = `
@@ -124,9 +127,15 @@ REFRESH TRANSFORMATION FREEDOM
 Refresh mode is judged by the quality and realism of the final staged image, not by similarity to the input furniture.
 
 ALLOWED STAGING TRANSFORMATIONS
-- Furniture may be replaced, removed, resized, or repositioned to produce the best realistic staged result for the selected room type.
+- Non-anchor furniture may be replaced, removed, or repositioned to produce the best realistic staged result for the selected room type.
 - Layout may improve when needed for better function, circulation, composition, or buyer appeal.
-- Original furniture does NOT need to be preserved, matched, re-skinned, or treated as a style guide.
+- Original non-anchor furniture does NOT need to be preserved, matched, re-skinned, or treated as a style guide.
+
+ANCHOR FURNITURE SIZE LOCK — NON-NEGOTIABLE
+- The primary anchor furniture item (e.g. bed, sofa) must NOT be resized, scaled down, or scaled up under any circumstances.
+- You must NOT shrink, compress, or reduce the anchor to manufacture additional floor space for other furniture.
+- If additional furniture does not fit around the anchor at its original scale, OMIT the additional furniture entirely.
+- Solving a layout conflict by altering anchor scale is a structural error.
 
 NON-NEGOTIABLE LIMITS
 - The room itself must remain the same room.
@@ -207,7 +216,7 @@ Allowed transformation (paint-over only):
 
 - You may restyle the anchor by painting over the existing piece.
 - You may change fabric, color, material, finish, and detailing.
-- You may make subtle geometry refinements for realism, but must preserve original footprint, placement, and scale.
+- Geometry of the anchor is FROZEN — no size change, no footprint change, no scale change is permitted for any reason.
 
 Composition rule:
 

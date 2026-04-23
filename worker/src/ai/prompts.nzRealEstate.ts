@@ -1598,6 +1598,20 @@ Do NOT:
 
 If an area becomes empty after decluttering, leave it empty and realistic.
 
+FURNITURE GEOMETRY LOCK — NON-NEGOTIABLE
+
+Every piece of furniture present in the original image must retain its exact shape, footprint, and silhouette.
+
+You must NOT:
+- Extend, enlarge, or add sections to any sofa, couch, chair, or seat (e.g. do NOT convert a straight sofa into an L-shape or add a chaise)
+- Change the number of seat cushions or back cushions visible on a sofa
+- Alter the outline, dimensions, or apparent structure of any furniture item
+- Reposition furniture to fill space or improve composition
+
+This rule applies even during cushion tidying or textile straightening.
+If a sofa has 3 seat cushions in the original, it must have exactly 3 seat cushions in the output.
+If a sofa is a straight 3-seater, it must remain a straight 3-seater — never an L-shape.
+
 DECLUTTER OBJECT CLASS RULES — LIGHT MODE
 
 Remove loose, portable, personal-use items that are not furniture and not built-in.
@@ -1620,10 +1634,10 @@ REMOVE SMALL SURFACE CLUTTER:
 - random containers and loose items
 
 TIDY BUT DO NOT REMOVE:
-- beds (smooth and straighten bedding)
-- sofa cushions and pillows (align neatly)
-- chairs (push neatly under tables)
-- rugs (straighten)
+- beds (smooth and straighten bedding — do not change headboard or footboard shape)
+- sofa cushions and pillows (align and straighten only — do not change the count, arrangement pattern, or sofa shape)
+- chairs (push neatly under tables — do not change chair form)
+- rugs (straighten — do not resize or reposition significantly)
 
 NEVER REMOVE:
 - beds, sofas, desks, tables, wardrobes, shelving
@@ -1683,11 +1697,17 @@ PRESENTATION TIDYING — REQUIRED WHEN NEEDED
 You should tidy presentation when items appear messy or unprepared.
 
 Allowed tidying actions:
-- Align pillows and couch cushions
+- Straighten and neaten existing pillows and couch cushions in-place (same count, same positions)
 - Push loose chairs neatly under tables
 - Straighten rugs
 - Neaten visible loose textiles
 - Organize small remaining items into a cleaner arrangement
+
+CRITICAL — cushion/sofa tidying rules:
+- You may only straighten or smooth cushions that already exist
+- You must NOT add cushions, remove cushions, or change cushion count
+- You must NOT extend a sofa's seat run or add an arm, chaise, or corner section
+- The sofa silhouette after tidying must match the sofa silhouette in the original exactly
 
 These are expected actions when messiness is visible.
 Do not leave beds, sofas, or soft furnishings visibly messy.
