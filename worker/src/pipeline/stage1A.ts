@@ -181,7 +181,7 @@ function applySkyEnhancement(img: sharp.Sharp): sharp.Sharp {
   });
 }
 
-interface Stage1AAnalysis {
+export interface Stage1AAnalysis {
   lumMean: number;
   lumStdev: number;
   edgeDensity: number;

@@ -17,6 +17,7 @@ import sharp from "sharp";
 import { randomUUID } from "crypto";
 
 import { runStage1A } from "./pipeline/stage1A";
+import type { Stage1AAnalysis } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
 import {
@@ -195,6 +196,165 @@ const LOCAL_VALIDATORS_FULL = LOCAL_VALIDATOR_TIER === LocalValidatorTier.FULL;
 // Temporary hard-disable until fairness flow is redesigned for BullMQ active-claim semantics.
 const FAIR_SCHEDULER_ENABLED = false;
 const logger = console;
+
+const FINAL_POLISH_BLUR_EDGE_THRESHOLD = 15;
+
+function clampFinalPolish(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+async function computeFinalPolishEdgeDensity(input: Buffer): Promise<number> {
+  const kernel = {
+    width: 3,
+    height: 3,
+    kernel: [
+      0, 1, 0,
+      1, -4, 1,
+      0, 1, 0,
+    ],
+  };
+
+  const { data } = await sharp(input)
+    .rotate()
+    .removeAlpha()
+    .greyscale()
+    .resize(512, 512, { fit: "inside", withoutEnlargement: true })
+    .convolve(kernel)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  if (!data.length) {
+    return 0;
+  }
+
+  let mean = 0;
+  for (let index = 0; index < data.length; index += 1) {
+    mean += data[index] ?? 0;
+  }
+  mean /= data.length;
+
+  let variance = 0;
+  for (let index = 0; index < data.length; index += 1) {
+    const diff = (data[index] ?? 0) - mean;
+    variance += diff * diff;
+  }
+  variance /= data.length;
+
+  return Number(variance.toFixed(3));
+}
+
+async function inferFinalPolishSceneType(input: Buffer): Promise<"interior" | "exterior"> {
+  const { data, info } = await sharp(input)
+    .rotate()
+    .removeAlpha()
+    .resize(256, 256, { fit: "inside", withoutEnlargement: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = info.width || 0;
+  const height = info.height || 0;
+  const channels = info.channels || 3;
+  if (!width || !height || channels < 3) {
+    return "interior";
+  }
+
+  const pixelCount = width * height;
+  let skyLike = 0;
+  let greenLike = 0;
+
+  for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+    const channelIndex = pixelIndex * channels;
+    const red = data[channelIndex] ?? 0;
+    const green = data[channelIndex + 1] ?? 0;
+    const blue = data[channelIndex + 2] ?? 0;
+    const luma = (red + green + blue) / 3;
+
+    if (luma > 110 && blue > green + 10 && blue > red + 18) {
+      skyLike += 1;
+    }
+    if (green > 72 && green > red + 10 && green > blue + 8) {
+      greenLike += 1;
+    }
+  }
+
+  const exteriorSignal = (skyLike + greenLike) / Math.max(1, pixelCount);
+  return exteriorSignal >= 0.16 ? "exterior" : "interior";
+}
+
+async function analyzeFinalPresentationPolish(input: Buffer): Promise<Stage1AAnalysis> {
+  const image = sharp(input).rotate().removeAlpha();
+  const stats = await image.clone().greyscale().stats();
+  const lumMean = Number((stats.channels[0]?.mean || 0).toFixed(2));
+  const lumStdev = Number((stats.channels[0]?.stdev || 0).toFixed(2));
+  const edgeDensity = await computeFinalPolishEdgeDensity(input);
+  const sceneType = await inferFinalPolishSceneType(input);
+  const isExterior = sceneType === "exterior";
+  const isBlurry = edgeDensity < FINAL_POLISH_BLUR_EDGE_THRESHOLD;
+
+  return {
+    lumMean,
+    lumStdev,
+    edgeDensity,
+    isExterior,
+    isBlurry,
+    sceneType,
+  };
+}
+
+async function applyFinalPresentationPolish(buffer: Buffer, analysis: Stage1AAnalysis): Promise<Buffer> {
+  const luminanceMean = analysis.lumMean;
+  const luminanceStdev = analysis.lumStdev;
+  const isExterior = analysis.isExterior;
+
+  let brightnessLift = luminanceMean < 110
+    ? clampFinalPolish((110 - luminanceMean) / 110, 0, 0.35)
+    : 0;
+
+  if (luminanceMean > 200) {
+    brightnessLift = 0;
+  }
+
+  let contrastBoost = luminanceStdev < 55
+    ? clampFinalPolish((55 - luminanceStdev) / 55, 0, 0.25)
+    : 0;
+
+  if (analysis.edgeDensity < FINAL_POLISH_BLUR_EDGE_THRESHOLD && luminanceStdev < 35) {
+    contrastBoost *= 0.5;
+  }
+
+  const saturationBoost = isExterior ? 0.08 : 0.04;
+
+  console.log("[Stage2 Polish]", {
+    luminanceMean,
+    luminanceStdev,
+    brightnessLift,
+    contrastBoost,
+    saturationBoost,
+    isExterior,
+  });
+
+  let pipeline = sharp(buffer).rotate();
+
+  if (brightnessLift > 0.05) {
+    pipeline = pipeline.gamma(1 + brightnessLift * 0.4);
+  }
+
+  if (contrastBoost > 0.05) {
+    const scale = 1 + (contrastBoost * 0.2);
+    const offset = -(128 * (scale - 1));
+    pipeline = pipeline.linear(scale, offset);
+  }
+
+  pipeline = pipeline.modulate({
+    saturation: 1 + (isExterior ? saturationBoost + 0.03 : saturationBoost),
+  });
+
+  return pipeline.withMetadata().jpeg({
+    quality: DELIVERY_EXPORT_JPEG_QUALITY,
+    chromaSubsampling: "4:4:4",
+    mozjpeg: true,
+  }).toBuffer();
+}
 
 function jobLogContext(job: any, extra: Record<string, any> = {}) {
   const source = (job && typeof job === "object" && "data" in job ? (job as any).data : job) || {};
@@ -3275,6 +3435,7 @@ async function upscaleAndEnhanceForDelivery(
     : { height: targetLongSide };
   const isStage2 = isStage2DeliveryStage(stageLabel);
   const enhancementsApplied = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2;
+  const shouldApplyStage2Polish = isStage2;
 
   let pipeline = baseImage.clone();
 
@@ -3305,8 +3466,15 @@ async function upscaleAndEnhanceForDelivery(
     stageLabel,
     enhancementsApplied,
     isStage2,
+    stage2PolishApplied: shouldApplyStage2Polish,
     resized: shouldResize,
   });
+
+  if (shouldApplyStage2Polish) {
+    const resizedBuffer = await pipeline.withMetadata().toBuffer();
+    const analysis = await analyzeFinalPresentationPolish(resizedBuffer);
+    return applyFinalPresentationPolish(resizedBuffer, analysis);
+  }
 
   return pipeline
     .withMetadata()
@@ -3338,7 +3506,8 @@ async function prepareDeliveryExport(localPath: string, stageLabel: string): Pro
   const currentLongSide = Math.max(width, height);
   const needsUpscale = DELIVERY_EXPORT_UPSCALE_ENABLED && currentLongSide < DELIVERY_EXPORT_MIN_LONG_SIDE;
   const needsEnhancement = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2DeliveryStage(stageLabel);
-  if (!needsUpscale && !needsEnhancement) {
+  const needsStage2Polish = isStage2DeliveryStage(stageLabel);
+  if (!needsUpscale && !needsEnhancement && !needsStage2Polish) {
     return localPath;
   }
 
