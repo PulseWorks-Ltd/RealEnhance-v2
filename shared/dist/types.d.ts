@@ -56,6 +56,7 @@ export interface UserRecord {
     role?: "owner" | "admin" | "member";
     isActive?: boolean;
     hasSeenWelcome?: boolean;
+    hasReceivedSignupCredits?: boolean;
     plan?: "free" | "individual" | "agency";
     usageStats?: {
         monthlyImages: number;

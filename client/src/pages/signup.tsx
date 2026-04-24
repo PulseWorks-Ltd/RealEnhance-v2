@@ -52,11 +52,6 @@ export default function Signup() {
     setSubmitted(true);
     setError("");
 
-    if (!inviteToken && !agencyName.trim()) {
-      setError("Agency name is required");
-      return;
-    }
-
     if (!fullName.trim()) {
       setError("Full name is required");
       return;
@@ -100,7 +95,7 @@ export default function Signup() {
         navigate("/upload");
       } else {
         // Regular signup flow
-        await signUpWithEmail(agencyName.trim(), fullName.trim(), email.trim(), password, confirmPassword);
+        await signUpWithEmail(agencyName.trim() || undefined, fullName.trim(), email.trim(), password, confirmPassword);
         navigate(redirectTo);
       }
     } catch (err: any) {
@@ -135,7 +130,7 @@ export default function Signup() {
     return baseInputClasses;
   };
 
-  const agencyNameValid = agencyName.trim().length > 1;
+  const agencyNameValid = agencyName.trim().length === 0 || agencyName.trim().length > 1;
   const fullNameValid = fullName.trim().length > 1;
   const emailValid = email.trim().length > 0;
   const passwordValid = password.length >= 8;
@@ -194,7 +189,7 @@ export default function Signup() {
                 {!inviteInfo && (
                   <div className="space-y-2">
                     <Label htmlFor="agencyName" className="text-sm font-medium text-slate-700">
-                      Agency Name
+                      Agency Name <span className="text-slate-400">(optional)</span>
                     </Label>
                     <Input
                       id="agencyName"
@@ -202,18 +197,19 @@ export default function Signup() {
                       placeholder="Rivera Realty"
                       value={agencyName}
                       onChange={(e) => setAgencyName(e.target.value)}
-                      required
                       disabled={loading}
                       className={inputTone(submitted && !agencyNameValid, agencyNameValid)}
                       aria-invalid={submitted && !agencyNameValid}
                     />
                     {submitted && !agencyNameValid ? (
                       <p className="text-xs text-rose-600" role="alert">
-                        Agency name is required
+                        Add at least 2 characters or leave it blank
                       </p>
-                    ) : agencyNameValid ? (
+                    ) : agencyName.trim() ? (
                       <p className="text-xs text-emerald-600">Thanks, looks good.</p>
-                    ) : null}
+                    ) : (
+                      <p className="text-xs text-slate-500">Leave blank to continue with an individual account.</p>
+                    )}
                   </div>
                 )}
 

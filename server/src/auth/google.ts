@@ -3,7 +3,6 @@ import passport from "passport";
 import { Strategy as GoogleStrategy, type StrategyOptions } from "passport-google-oauth20";
 import { upsertUserFromGoogle, getUserByEmail, updateUser } from "../services/users.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
-import { createAgency } from "@realenhance/shared/agencies.js";
 // Seat limits removed - unlimited users per agency
 
 /** Resolve public base URL safely (prod vs local) */
@@ -98,23 +97,8 @@ function initPassport() {
             console.log(`[Google OAuth] Created new Google user ${user.id}`);
           }
 
-          // Ensure Google-first signups get the same trial onboarding as email signup users.
-          if (!user.agencyId) {
-            const ownerName = String(user.name || name || email.split("@")[0] || "").trim();
-            const agencyName = ownerName ? `${ownerName} Agency` : "New Agency";
-
-            const agency = await createAgency({
-              name: agencyName,
-              ownerId: user.id,
-            });
-
-            user = await updateUser(user.id, {
-              agencyId: agency.agencyId,
-              role: "owner",
-              hasSeenWelcome: false,
-            });
-
-            // Launch trial removed from auto-signup; users must enter a promo code via /trial/start
+          if (!user.agencyId && user.hasSeenWelcome !== false) {
+            user = await updateUser(user.id, { hasSeenWelcome: false });
           }
 
           const displayName = getDisplayName(user);

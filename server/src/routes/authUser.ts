@@ -29,6 +29,7 @@ export function authUserRouter() {
       agencyId: full.agencyId ?? null,
       role: (full.role as any) ?? "member",
       hasSeenWelcome: full.hasSeenWelcome === false ? false : true,
+      hasReceivedSignupCredits: full.hasReceivedSignupCredits === true,
     };
 
     const includeImages = String((req.query as any)?.includeImages || "0") === "1";
@@ -65,6 +66,7 @@ export function authUserRouter() {
       agencyId: full.agencyId,
       role: full.role,
       hasSeenWelcome: full.hasSeenWelcome === false ? false : true,
+      hasReceivedSignupCredits: full.hasReceivedSignupCredits === true,
       isSiteAdmin,
     };
 

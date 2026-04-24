@@ -76,7 +76,7 @@ export function ProfileDropdown() {
           🔒 Change Password
         </DropdownMenuItem>
         <DropdownMenuItem onClick={handleAgencySettings} data-testid="button-agency-settings">
-          🏢 Agency Settings
+          🏢 Account & Agency
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={handleSignOut} data-testid="button-signout">

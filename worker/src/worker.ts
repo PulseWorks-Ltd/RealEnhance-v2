@@ -100,6 +100,8 @@ const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
+const STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS = 2500;
+const STAGE2_POST_STAGE1B_ANCHOR_CONFIDENCE_MIN = 0.9;
 const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCALE_ENABLED ?? "true").toLowerCase() !== "false";
 const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHANCE_ENABLED ?? "true").toLowerCase() !== "false";
 const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
@@ -4126,6 +4128,85 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     declutterMode: "light" | "stage-ready" | null;
     stage1BRequired: boolean;
   };
+
+  const detectHighConfidenceAnchorAfterStage1B = (
+    analysis: any,
+    minConfidence: number
+  ): boolean => {
+    if (!analysis || typeof analysis !== "object") return false;
+
+    const normalize = (value: unknown) =>
+      String(value || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[\s-]+/g, "_");
+
+    const hasStrongFurnitureItemAnchor = Array.isArray(analysis.furnitureItems)
+      ? analysis.furnitureItems.some((item: any) => {
+          const confidence = typeof item?.confidence === "number" ? item.confidence : 0;
+          if (confidence < minConfidence) return false;
+
+          const type = normalize(item?.type);
+          const label = normalize(item?.label);
+          const isBed = type === "bed" || label.includes("bed");
+          const isSofa = type === "sofa" || type === "couch" || label.includes("sofa") || label.includes("couch");
+          const isLargeCabinetOrWardrobe =
+            (type === "dresser" || type === "wardrobe" || type === "cabinet" || type === "freestanding_wardrobe" || type === "large_freestanding_cabinet")
+            && (label.includes("wardrobe") || label.includes("cabinet") || type === "freestanding_wardrobe" || type === "large_freestanding_cabinet");
+
+          return isBed || isSofa || isLargeCabinetOrWardrobe;
+        })
+      : false;
+
+    const hasStrongDetectedItemAnchor = Array.isArray(analysis.detectedItems)
+      ? analysis.detectedItems.some((item: any) => {
+          const confidence = typeof item?.confidence === "number" ? item.confidence : 0;
+          if (confidence < minConfidence) return false;
+          const type = normalize(item?.type);
+          return (
+            type === "bed"
+            || type === "sofa"
+            || type === "couch"
+            || type === "freestanding_wardrobe"
+            || type === "large_freestanding_cabinet"
+            || type === "wardrobe"
+            || type === "cabinet"
+          );
+        })
+      : false;
+
+    const overallConfidence = typeof analysis.confidence === "number" ? analysis.confidence : 0;
+    const hasStrongAnchorClassSignal = overallConfidence >= minConfidence && Array.isArray(analysis.detectedAnchors)
+      ? analysis.detectedAnchors.some((anchor: unknown) => {
+          const normalized = normalize(anchor);
+          return (
+            normalized === "bed"
+            || normalized === "sofa"
+            || normalized === "couch"
+            || normalized === "freestanding_wardrobe"
+            || normalized === "large_freestanding_cabinet"
+          );
+        })
+      : false;
+
+    return hasStrongFurnitureItemAnchor || hasStrongDetectedItemAnchor || hasStrongAnchorClassSignal;
+  };
+
+  const resolvePostStage1BAnchorPresence = (params: {
+    analysis: any | null;
+    routingSnapshot: RoutingSnapshot | null;
+    minConfidence: number;
+  }): boolean => {
+    if (detectHighConfidenceAnchorAfterStage1B(params.analysis, params.minConfidence)) {
+      return true;
+    }
+
+    const snapshotConfidence = typeof params.routingSnapshot?.geminiConfidence === "number"
+      ? params.routingSnapshot.geminiConfidence
+      : 0;
+    return params.routingSnapshot?.geminiHasFurniture === true && snapshotConfidence >= params.minConfidence;
+  };
+
   let frozenRoutingSnapshot: RoutingSnapshot | null = null;
 
   try {
@@ -8581,6 +8662,69 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     using: stage2InputUsing,
     pathSuffix: stage2InputSuffix,
   });
+
+  if (payload.options.virtualStage && !isExteriorScene && stage2InputPath) {
+    if (frozenRoutingSnapshot?.geminiHasFurniture === false) {
+      (payload.options as any).stage2Mode = "FROM_EMPTY";
+      nLog("[ANCHOR_DETECTION_BYPASS]", {
+        reason: "no_furniture_post_1B",
+        anchorDetectionUsed: false,
+      });
+    } else {
+      let anchorDetectionUsed = false;
+      const start = Date.now();
+      try {
+        const ai = getGeminiClient();
+        let detectorTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        let didTimeout = false;
+        const detectorPromise = detectFurniture(ai as any, toBase64(stage2InputPath).data, { sceneType: "interior" });
+        const timeoutPromise = new Promise<"timeout">((resolve) => {
+          detectorTimeoutHandle = setTimeout(() => {
+            didTimeout = true;
+            resolve("timeout");
+          }, STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS);
+        });
+
+        const detectorResult = await Promise.race<[Awaited<ReturnType<typeof detectFurniture>> | "timeout"]>([
+          detectorPromise,
+          timeoutPromise,
+        ] as any);
+        const durationMs = Date.now() - start;
+
+        if (!didTimeout && detectorTimeoutHandle) {
+          clearTimeout(detectorTimeoutHandle);
+        }
+
+        if (detectorResult === "timeout") {
+          nLog("[ANCHOR_DETECTION_TIMEOUT]", {
+            anchorDetectionUsed: false,
+            timeoutMs: STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS,
+            durationMs,
+          });
+        } else if (detectorResult && typeof detectorResult === "object") {
+          const anchorDetected = resolvePostStage1BAnchorPresence({
+            analysis: detectorResult,
+            routingSnapshot: frozenRoutingSnapshot,
+            minConfidence: STAGE2_POST_STAGE1B_ANCHOR_CONFIDENCE_MIN,
+          });
+          anchorDetectionUsed = true;
+          nLog("[ANCHOR_DETECTION]", { anchorDetected, anchorDetectionUsed, durationMs });
+
+          const forcedStage2Mode: "REFRESH" | "FROM_EMPTY" = anchorDetected ? "REFRESH" : "FROM_EMPTY";
+          (payload.options as any).stage2Mode = forcedStage2Mode;
+        } else {
+          nLog("[ANCHOR_DETECTION]", { anchorDetectionUsed: false, durationMs });
+        }
+      } catch (error: any) {
+        const durationMs = Date.now() - start;
+        nLog("[ANCHOR_DETECTION_ERROR]", {
+          anchorDetectionUsed: false,
+          durationMs,
+          error: error?.message || String(error),
+        });
+      }
+    }
+  }
   
   // ✅ Resolve Stage 2 routing from lineage + effective Stage1B mode + room override
   const recordedStage1BMode = (sceneMeta as any).stage1BMode;

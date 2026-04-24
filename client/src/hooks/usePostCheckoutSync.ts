@@ -16,7 +16,7 @@ import { useToast } from "@/hooks/use-toast";
  * 
  * RULE 4: Stripe Success Return Handling
  * 
- * On Stripe success return (?subscription=success or ?bundle=success):
+ * On Stripe success return (?subscription=success, ?bundle=success, ?listing_pack=success, or ?hero_pack=success):
  * 1. Detect success query param
  * 2. Trigger refetchAgency, refetchBilling, refetchUsage
  * 3. Poll for subscription activation (agency.subscriptionStatus === "ACTIVE")
@@ -256,6 +256,8 @@ export function usePostCheckoutSync() {
       // Clean up URL
       const newParams = new URLSearchParams(searchParams);
       newParams.delete("bundle");
+      newParams.delete("listing_pack");
+      newParams.delete("hero_pack");
       setSearchParams(newParams, { replace: true });
 
       // Redirect to Enhance
@@ -287,7 +289,10 @@ export function usePostCheckoutSync() {
   // Effect to detect and handle success returns
   useEffect(() => {
     const subscriptionSuccess = searchParams.get("subscription") === "success";
-    const bundleSuccess = searchParams.get("bundle") === "success";
+    const bundleSuccess =
+      searchParams.get("bundle") === "success" ||
+      searchParams.get("listing_pack") === "success" ||
+      searchParams.get("hero_pack") === "success";
 
     if (subscriptionSuccess && !syncing) {
       handleSubscriptionSuccess();

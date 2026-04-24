@@ -35,6 +35,8 @@ export interface UserRecord extends AuthUser {
   role?: "owner" | "admin" | "member";
   /** Whether user account is active (can log in) */
   isActive?: boolean;
+  /** One-time signup bonus has already been granted */
+  hasReceivedSignupCredits?: boolean;
   /** Future: plan-based limits (not enforced yet) */
   plan?: "free" | "individual" | "agency";
   /** Usage tracking for analytics (not enforcement) */

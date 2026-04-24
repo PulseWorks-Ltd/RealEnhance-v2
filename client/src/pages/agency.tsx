@@ -524,25 +524,30 @@ export default function AgencyPage() {
 
   // Create agency state
   if (!agencyInfo) {
+    const accountName = user?.displayName || user?.firstName || user?.email || "Your account";
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Get Started"
-          description="Create your organization to start enhancing property photos"
+          title="Individual Account"
+          description="Use RealEnhance as an individual, or create an agency later if you want a shared workspace."
         />
         <Card className="max-w-md mx-auto">
           <CardHeader className="text-center">
             <div className="w-12 h-12 rounded-full bg-action-50 flex items-center justify-center mx-auto mb-3">
               <Building2 className="w-6 h-6 text-action-600" />
             </div>
-            <CardTitle>Create Your Organization</CardTitle>
+            <CardTitle>{accountName}</CardTitle>
             <CardDescription>
-              Set up your organization to manage billing and invite team members
+              No agency linked yet. Create one only if you want team management and agency-scoped billing.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
+              <div className="font-medium text-slate-900">Account type</div>
+              <div>Individual</div>
+            </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Organization Name</label>
+              <label className="text-sm font-medium text-foreground">Create an agency workspace</label>
               <Input
                 placeholder="e.g., Smith Real Estate"
                 value={agencyName}
@@ -563,7 +568,7 @@ export default function AgencyPage() {
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Create Organization
+                  Create Agency Workspace
                 </>
               )}
             </Button>

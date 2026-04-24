@@ -9,6 +9,7 @@ type AuthUser = {
   email?: string | null;
   emailVerified?: boolean;
   hasSeenWelcome?: boolean;
+  hasReceivedSignupCredits?: boolean;
   deviceId?: string | null;
   credits: number;
   name?: string | null;
@@ -28,7 +29,7 @@ type AuthState = {
   signOut: () => Promise<void>;
   refreshUser: () => Promise<AuthUser | null>;
   signInWithEmail: (email: string, password: string) => Promise<AuthUser>;
-  signUpWithEmail: (agencyName: string, fullName: string, email: string, password: string, confirmPassword: string) => Promise<AuthUser>;
+  signUpWithEmail: (agencyName: string | null | undefined, fullName: string, email: string, password: string, confirmPassword: string) => Promise<AuthUser>;
   requestPasswordReset: (email: string) => Promise<void>;
   confirmPasswordReset: (token: string, newPassword: string) => Promise<void>;
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
@@ -241,13 +242,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [refreshUser]);
 
-  const signUpWithEmail = useCallback(async (agencyName: string, fullName: string, email: string, password: string, confirmPassword: string): Promise<AuthUser> => {
+  const signUpWithEmail = useCallback(async (agencyName: string | null | undefined, fullName: string, email: string, password: string, confirmPassword: string): Promise<AuthUser> => {
     try {
       // Create account — apiFetch throws ApiError on non-2xx (returns 201 on success)
       await apiFetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agencyName, fullName, email, password, confirmPassword }),
+        body: JSON.stringify({ agencyName: agencyName?.trim() || undefined, fullName, email, password, confirmPassword }),
       });
       // Hydrate full user state (including isSiteAdmin) from /api/auth-user
       const refreshed = await refreshUser();

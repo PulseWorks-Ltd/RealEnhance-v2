@@ -1602,7 +1602,7 @@ export default function BatchProcessor({
   const isAdminUser = user?.role === "owner" || user?.role === "admin";
   const hasRoleInfo = !!user?.role;
   const billingHref = "/agency#billing-section";
-  const addonHref = "/agency#bundle-purchase";
+  const addonHref = "/agency#hero-pack";
 
   const showQuotaExceededToast = useCallback(() => {
     const message = getQuotaExceededMessage({ isAdmin: isAdminUser, hasRoleInfo });
@@ -1618,7 +1618,7 @@ export default function BatchProcessor({
                 <a href={billingHref}>Go to Billing</a>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <a href={addonHref}>Buy add-on bundle</a>
+                <a href={addonHref}>Get 7 images for $19</a>
               </Button>
             </div>
           )}
@@ -2132,13 +2132,11 @@ export default function BatchProcessor({
   const handleContinueEnhancementCheckout = useCallback(async () => {
     if (!requireVerifiedEmail("billing")) return;
     try {
-      const res = await apiFetch("/api/agency/bundles/checkout", {
+      const res = await apiFetch("/api/billing/hero-pack/checkout", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ bundleCode: "BUNDLE_20" }),
       });
       const data = await res.json().catch(() => ({}));
-      const checkoutUrl = String(data?.checkoutUrl || data?.url || "").trim();
+      const checkoutUrl = String(data?.url || data?.checkoutUrl || "").trim();
       if (!checkoutUrl) {
         throw new Error("Failed to create checkout session");
       }
@@ -9094,7 +9092,7 @@ export default function BatchProcessor({
             <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
               This enhancement requires {creditGateModal.requiredCredits} images, but your plan currently includes {creditGateModal.availableCredits} remaining.
-              Add {creditGateModal.missingCredits} more images to continue processing your batch.
+              Add {creditGateModal.missingCredits} more images to continue processing your batch. Get 7 images for $19 — no subscription required.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
@@ -9107,7 +9105,7 @@ export default function BatchProcessor({
               type="button"
               onClick={handleContinueEnhancementCheckout}
             >
-              Add Starter Pack (20 Images) - $50 Continue Enhancement
+              Get 7 images for $19 — no subscription required
             </Button>
             <Button
               type="button"

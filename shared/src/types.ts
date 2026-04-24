@@ -53,6 +53,7 @@ export interface UserRecord {
   role?: "owner" | "admin" | "member"; // Agency role, defaults to "member"
   isActive?: boolean; // Whether user can log in, defaults to true
   hasSeenWelcome?: boolean;
+  hasReceivedSignupCredits?: boolean;
   plan?: "free" | "individual" | "agency"; // Future: plan-based limits
   usageStats?: {
     monthlyImages: number;

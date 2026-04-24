@@ -4,7 +4,7 @@ import multer from "multer";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
-import { addImageToUser } from "../services/users.js";
+import { addImageToUser, updateUser } from "../services/users.js";
 import { cancelEnqueuedJob, createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
 import { uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
@@ -304,12 +304,10 @@ export function uploadRouter() {
 
     // Get agencyId for image tracking and retention (reusing fullUser from subscription gate above)
     const agencyId = fullUser?.agencyId || undefined;
-    if (!agencyId) {
-      return res.status(400).json({ error: "agency_required", message: "Uploads require an agency context" });
-    }
+    const isIndividualAccount = !agencyId;
 
     let propertyIdForBatch: string | null = null;
-    if (propertyAddressRaw) {
+    if (propertyAddressRaw && agencyId) {
       try {
         const property = await findOrCreateProperty({
           agencyId,
@@ -388,14 +386,20 @@ export function uploadRouter() {
       });
 
       requiredCredits = estimateBatchCredits(estimateImages);
-      const usageSnapshot = await getUsageSnapshot(agencyId);
-      monthlyRemaining = Math.max(0, Number(usageSnapshot.includedRemaining || 0));
-      addonRemaining = Math.max(0, Number(usageSnapshot.addonRemaining || 0));
-      availableCredits = await getAvailableCredits(sessUser.id);
+      if (agencyId) {
+        const usageSnapshot = await getUsageSnapshot(agencyId);
+        monthlyRemaining = Math.max(0, Number(usageSnapshot.includedRemaining || 0));
+        addonRemaining = Math.max(0, Number(usageSnapshot.addonRemaining || 0));
+        availableCredits = await getAvailableCredits(sessUser.id);
+      } else {
+        availableCredits = Math.max(0, Number(fullUser?.credits || 0));
+        monthlyRemaining = availableCredits;
+        addonRemaining = 0;
+      }
 
       console.log(
         `[CREDIT_PREFLIGHT_ENFORCED] ` +
-        `agencyId=${agencyId} ` +
+        `agencyId=${agencyId || "individual"} ` +
         `userId=${sessUser.id} ` +
         `imageCount=${files.length} ` +
         `requiredCredits=${requiredCredits} ` +
@@ -405,8 +409,18 @@ export function uploadRouter() {
       );
 
       if (requiredCredits > availableCredits) {
-        requiresPayment = true;
-        deficit = requiredCredits - availableCredits;
+        if (agencyId) {
+          requiresPayment = true;
+          deficit = requiredCredits - availableCredits;
+        } else {
+          return res.status(402).json({
+            code: "INSUFFICIENT_CREDITS",
+            message: "Your individual account does not have enough credits to process this batch.",
+            requiredCredits,
+            availableCredits,
+            missingCredits: requiredCredits - availableCredits,
+          });
+        }
       }
     } catch (creditGateErr) {
       console.error("[CREDIT_PREFLIGHT_ENFORCED] Failed to validate credits:", creditGateErr);
@@ -661,6 +675,7 @@ export function uploadRouter() {
       const requiredImages = 1;
 
       const trialEligible = Boolean(
+        agencyId &&
         trialSummary &&
         trialSummary.status === "active" &&
         trialSummary.remaining > 0 &&
@@ -668,7 +683,7 @@ export function uploadRouter() {
       );
       let usedTrial = false;
 
-      if (!requiresPayment && trialEligible) {
+      if (!requiresPayment && agencyId && trialEligible) {
         try {
           const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages });
           if (trialReserve.allowed) {
@@ -692,7 +707,7 @@ export function uploadRouter() {
       }
 
       // Only reserve subscription allowance if trial did not satisfy this job
-      if (!requiresPayment && !usedTrial) {
+      if (!requiresPayment && agencyId && !usedTrial) {
         try {
           const reservation = await reserveAllowance({
             jobId,
@@ -839,6 +854,14 @@ export function uploadRouter() {
         // Trial reservations are only released on pre-processing/enqueue failure.
         trialReservedJobs.length = 0;
         reservedJobs.length = 0;
+
+        if (isIndividualAccount && requiredCredits > 0 && fullUser) {
+          const nextCredits = Math.max(0, Number(fullUser.credits || 0) - requiredCredits);
+          await updateUser(fullUser.id, { credits: nextCredits });
+          if ((req.session as any)?.user) {
+            (req.session as any).user.credits = nextCredits;
+          }
+        }
 
         for (const staged of stagedJobs) {
           // Track usage for analytics (non-blocking)

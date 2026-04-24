@@ -3,6 +3,7 @@ import { createUserWithPassword, getUserByEmail, getUserById, updateUser } from 
 import { hashPassword, comparePassword, validatePassword, validateEmail } from "../utils/password.js";
 import { createResetToken, consumeResetToken, checkResetThrottle } from "../services/passwordResetTokens.js";
 import { sendEmailVerificationEmail, sendPasswordResetEmail } from "../services/email.js";
+import { grantSignupCreditsOnce } from "../services/signupCredits.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import type { UserRecord } from "@realenhance/shared/types.js";
 import { createAgency } from "@realenhance/shared/agencies.js";
@@ -60,10 +61,6 @@ export function emailAuthRouter() {
       const cleanedAgencyName = typeof agencyName === "string" ? agencyName.trim() : "";
       const cleanedFullName = typeof fullName === "string" ? fullName.trim() : "";
 
-      if (!cleanedAgencyName) {
-        return res.status(400).json({ error: "Agency name is required" });
-      }
-
       if (!cleanedFullName) {
         return res.status(400).json({ error: "User full name is required" });
       }
@@ -109,35 +106,46 @@ export function emailAuthRouter() {
         firstName: cleanedFirst,
         lastName: cleanedLast,
         passwordHash,
-        role: "owner",
+        role: cleanedAgencyName ? "owner" : undefined,
       });
 
-      // Create agency and assign owner to it
-      const agency = await createAgency({
-        name: cleanedAgencyName,
-        ownerId: newUser.id,
-      });
-
-      const ownerUser = await updateUser(newUser.id, {
-        agencyId: agency.agencyId,
-        role: "owner",
+      let signedUpUser = await updateUser(newUser.id, {
         emailVerified: false,
         hasSeenWelcome: false,
       });
 
+      if (cleanedAgencyName) {
+        const agency = await createAgency({
+          name: cleanedAgencyName,
+          ownerId: newUser.id,
+        });
+
+        signedUpUser = await updateUser(newUser.id, {
+          agencyId: agency.agencyId,
+          role: "owner",
+          emailVerified: false,
+          hasSeenWelcome: false,
+        });
+
+        await grantSignupCreditsOnce({
+          userId: signedUpUser.id,
+          agencyId: agency.agencyId,
+        });
+      }
+
       // Launch trial removed from auto-signup; users must enter a promo code via /trial/start
 
       // Create verification token + send email
-      const tokenRecord = await createEmailVerificationToken(ownerUser.id);
+      const tokenRecord = await createEmailVerificationToken(signedUpUser.id);
       const clientBase = (process.env.CLIENT_URL || req.headers.origin || `${req.protocol}://${req.get("host")}`).replace(/\/+$/, "");
       const verifyLink = `${clientBase}/verify-email?token=${encodeURIComponent(tokenRecord.token)}`;
       await sendEmailVerificationEmail({
-        toEmail: ownerUser.email,
+        toEmail: signedUpUser.email,
         verifyLink,
-        displayName: getDisplayName(ownerUser),
+        displayName: getDisplayName(signedUpUser),
       });
 
-      const sessionUser = buildSessionUser(ownerUser);
+      const sessionUser = buildSessionUser(signedUpUser);
 
       // Create session (same as Google OAuth)
       (req.session as any).user = sessionUser;

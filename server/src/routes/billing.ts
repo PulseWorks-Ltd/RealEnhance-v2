@@ -1050,15 +1050,21 @@ router.post("/subscription/change-plan", requireAuth, async (req: Request, res: 
   }
 });
 
-// ─── Listing Pack ────────────────────────────────────────────────────────────
+// ─── One-Off Packs (No Subscription) ────────────────────────────────────────
 
-const LISTING_PACK_CREDITS = 15;
+const LISTING_PACK_CREDITS = 20;
 const LISTING_PACK_PRICE_NZD = 4900; // $49 NZD in cents
-const STRIPE_LISTING_PACK_PRICE_ID = process.env.STRIPE_LISTING_PACK || "";
+const HERO_PACK_CREDITS = 7;
+const HERO_PACK_PRICE_NZD = 1900; // $19 NZD in cents
+
+// New env vars (preferred)
+const STRIPE_HERO_PACK_PRICE_ID = process.env.STRIPE_PRICE_HERO_PACK || "";
+const STRIPE_LISTING_PACK_20_PRICE_ID =
+  process.env.STRIPE_PRICE_LISTING_PACK_20 || process.env.STRIPE_LISTING_PACK || "";
 
 /**
  * POST /api/billing/listing-pack/checkout
- * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD)
+ * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD, 20 images)
  */
 router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1074,15 +1080,15 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
 
     const stripeCustomerId = await ensureValidStripeCustomerId({ stripe, agency, user });
 
-    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = STRIPE_LISTING_PACK_PRICE_ID
-      ? [{ price: STRIPE_LISTING_PACK_PRICE_ID, quantity: 1 }]
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = STRIPE_LISTING_PACK_20_PRICE_ID
+      ? [{ price: STRIPE_LISTING_PACK_20_PRICE_ID, quantity: 1 }]
       : [
           {
             price_data: {
               currency: "nzd",
               product_data: {
                 name: "Listing Pack",
-                description: "Enhance up to 15 images — no subscription required",
+                description: "Enhance up to 20 images - no subscription required",
               },
               unit_amount: LISTING_PACK_PRICE_NZD,
             },
@@ -1099,6 +1105,8 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
       cancel_url: `${CLIENT_URL}/agency`,
       metadata: {
         type: "listing_pack",
+        packCode: "listing_pack_20",
+        priceId: STRIPE_LISTING_PACK_20_PRICE_ID,
         agencyId: agency.agencyId,
         credits: String(LISTING_PACK_CREDITS),
         purchasedByUserId: user.id,
@@ -1113,6 +1121,69 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
     res.status(500).json({
       error: "Checkout failed",
       message: error.message || "Failed to create listing pack checkout session",
+    });
+  }
+});
+
+/**
+ * POST /api/billing/hero-pack/checkout
+ * Create a Stripe Checkout session for a one-time Hero Pack purchase ($19 NZD, 7 images)
+ */
+router.post("/hero-pack/checkout", requireAuth, async (req: Request, res: Response) => {
+  try {
+    if (!stripe) {
+      return res.status(503).json({
+        error: "Stripe not configured",
+        message: "Stripe billing is not configured. Please contact support.",
+      });
+    }
+
+    const { user, agency } = await loadUserAndAgency(req);
+    if (blockIfEmailUnverified(user, res)) return;
+
+    const stripeCustomerId = await ensureValidStripeCustomerId({ stripe, agency, user });
+
+    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = STRIPE_HERO_PACK_PRICE_ID
+      ? [{ price: STRIPE_HERO_PACK_PRICE_ID, quantity: 1 }]
+      : [
+          {
+            price_data: {
+              currency: "nzd",
+              product_data: {
+                name: "Hero Pack",
+                description: "Get 7 images for $19 - no subscription required",
+              },
+              unit_amount: HERO_PACK_PRICE_NZD,
+            },
+            quantity: 1,
+          },
+        ];
+
+    const session = await stripe.checkout.sessions.create({
+      customer: stripeCustomerId,
+      client_reference_id: agency.agencyId,
+      mode: "payment",
+      line_items: lineItems,
+      success_url: `${CLIENT_URL}/agency?hero_pack=success`,
+      cancel_url: `${CLIENT_URL}/agency`,
+      metadata: {
+        type: "hero_pack",
+        packCode: "hero_pack",
+        priceId: STRIPE_HERO_PACK_PRICE_ID,
+        agencyId: agency.agencyId,
+        credits: String(HERO_PACK_CREDITS),
+        purchasedByUserId: user.id,
+      },
+    });
+
+    console.log(`[BILLING] Created hero-pack checkout session ${session.id} for agency ${agency.agencyId}`);
+
+    res.json({ url: session.url });
+  } catch (error: any) {
+    console.error("[BILLING] Hero pack checkout error:", error);
+    res.status(500).json({
+      error: "Checkout failed",
+      message: error.message || "Failed to create hero pack checkout session",
     });
   }
 });

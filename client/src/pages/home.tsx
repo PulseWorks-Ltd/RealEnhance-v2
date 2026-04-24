@@ -19,11 +19,10 @@ export default function Home() {
     promoCreditsGranted: boolean;
   } | null>(null);
 
-  const isAgencyOwnerOrAdmin = user?.role === "owner" || user?.role === "admin";
+  const shouldHighlightSignupCredits = user?.hasReceivedSignupCredits === true;
   const shouldShowWelcome = !!user
     && user.hasSeenWelcome === false
-    && isAgencyOwnerOrAdmin
-    && agencyOnboarding?.promoCreditsGranted === true;
+    && (shouldHighlightSignupCredits || agencyOnboarding?.promoCreditsGranted === true || !user.agencyId);
   const isUnverified = !!user && user.emailVerified !== true;
 
   useEffect(() => {
@@ -103,9 +102,13 @@ export default function Home() {
           </CardHeader>
           <CardContent className="space-y-3">
             <p className="text-sm text-emerald-900">
-              Your account includes 20 free image enhancements.
+              {shouldHighlightSignupCredits
+                ? "You’ve got 5 free images to try this out."
+                : "Your account includes 20 free image enhancements."}
             </p>
-            <p className="text-sm text-emerald-800">Upload your first property photo to start.</p>
+            <p className="text-sm text-emerald-800">
+              Upload your first property photo to start.
+            </p>
             <div className="flex gap-2">
               <Button onClick={dismissWelcome} disabled={dismissingWelcome}>
                 Upload Your First Image

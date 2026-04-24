@@ -22,6 +22,15 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: stripeApiVersion })
   : null;
 
+const STRIPE_PRICE_HERO_PACK = process.env.STRIPE_PRICE_HERO_PACK || "";
+const STRIPE_PRICE_LISTING_PACK_20 =
+  process.env.STRIPE_PRICE_LISTING_PACK_20 || process.env.STRIPE_LISTING_PACK || "";
+
+const ONE_OFF_PRICE_ID_TO_CREDITS: Record<string, number> = {
+  ...(STRIPE_PRICE_HERO_PACK ? { [STRIPE_PRICE_HERO_PACK]: 7 } : {}),
+  ...(STRIPE_PRICE_LISTING_PACK_20 ? { [STRIPE_PRICE_LISTING_PACK_20]: 20 } : {}),
+};
+
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "";
 
 function resolvePlanTierWithFallback(priceId: string | null | undefined, context: string): PlanTier {
@@ -34,6 +43,31 @@ function resolvePlanTierWithFallback(priceId: string | null | undefined, context
     `[STRIPE] Unknown price ID ${priceId || "null"} in ${context}; defaulting to starter`
   );
   return "starter";
+}
+
+function resolveOneOffPackCredits(session: Stripe.Checkout.Session): number {
+  const metadata = session.metadata || {};
+
+  const metadataPriceId = String(metadata.priceId || "").trim();
+  if (metadataPriceId && ONE_OFF_PRICE_ID_TO_CREDITS[metadataPriceId]) {
+    return ONE_OFF_PRICE_ID_TO_CREDITS[metadataPriceId];
+  }
+
+  const packCode = String(metadata.packCode || "").trim();
+  if (packCode === "hero_pack") return 7;
+  if (packCode === "listing_pack_20") return 20;
+
+  // Backward compatibility for already-issued sessions that still carry `credits=15`.
+  const metadataCredits = Number.parseInt(String(metadata.credits || ""), 10);
+  if (Number.isFinite(metadataCredits) && metadataCredits > 0) {
+    return Math.floor(metadataCredits);
+  }
+
+  const purchaseType = String(metadata.type || "").trim();
+  if (purchaseType === "hero_pack") return 7;
+  if (purchaseType === "listing_pack") return 20;
+
+  return 0;
 }
 
 async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
@@ -252,13 +286,17 @@ router.post(
             await markTrialConvertedSafe(agency.agencyId, "checkout.session.completed");
 
             console.log(`[STRIPE] ✅ Subscription activated for agency ${agencyId}: ${planTier} (${subscription.status})`);
-          } else if (session.metadata?.type === "listing_pack") {
-            // Handle listing pack one-time purchase
-            const { agencyId, credits, purchasedByUserId } = session.metadata;
-            const creditsToAdd = parseInt(credits || "15", 10);
+          } else if (
+            session.metadata?.type === "listing_pack" ||
+            session.metadata?.type === "hero_pack" ||
+            session.metadata?.type === "one_off_pack"
+          ) {
+            // Handle one-off no-subscription packs.
+            const { agencyId, purchasedByUserId } = session.metadata;
+            const creditsToAdd = resolveOneOffPackCredits(session);
 
             if (!agencyId || !creditsToAdd) {
-              console.error("[STRIPE] Missing listing_pack metadata:", session.metadata);
+              console.error("[STRIPE] Missing one_off_pack metadata:", session.metadata);
               break;
             }
 
@@ -275,7 +313,7 @@ router.post(
             // Grant credits atomically
             await pool.query(
               `UPDATE agency_accounts
-                 SET listing_pack_credits = listing_pack_credits + $1,
+                 SET listing_pack_credits = GREATEST(0, listing_pack_credits) + $1,
                      updated_at = NOW()
                WHERE agency_id = $2`,
               [creditsToAdd, agencyId]
@@ -297,7 +335,7 @@ router.post(
             );
 
             console.log(
-              `[STRIPE] ✅ Listing pack purchased: +${creditsToAdd} credits for agency ${agencyId} (session ${session.id})`
+              `[STRIPE] ✅ One-off pack purchased: +${creditsToAdd} credits for agency ${agencyId} (session ${session.id})`
             );
 
             // Release any awaiting-payment jobs

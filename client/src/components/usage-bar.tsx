@@ -148,7 +148,7 @@ export function UsageSummary({
                   )}
                   {addonHref && (
                     <Button asChild size="sm" variant="outline">
-                      <a href={addonHref}>Buy add-on bundle</a>
+                      <a href={addonHref}>Get 7 images for $19</a>
                     </Button>
                   )}
                 </div>

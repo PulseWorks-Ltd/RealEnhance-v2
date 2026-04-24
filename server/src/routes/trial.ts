@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { createAgency } from "@realenhance/shared/agencies.js";
 import { createUserWithPassword } from "../services/users.js";
+import { grantSignupCreditsOnce } from "../services/signupCredits.js";
 import { hashPassword, validateEmail, validatePassword } from "../utils/password.js";
 import { getDisplayName } from "@realenhance/shared/users.js";
 import { assertEligibleForTrial, normalizeEmail, recordTrialStart, sha256 } from "../services/trials.js";
@@ -92,6 +93,11 @@ router.post("/start", rateLimit, async (req: Request, res: Response) => {
       passwordHash,
       agencyId: agency.agencyId,
       role: "owner",
+    });
+
+    await grantSignupCreditsOnce({
+      userId: newUser.id,
+      agencyId: agency.agencyId,
     });
 
     const displayName = getDisplayName(newUser);

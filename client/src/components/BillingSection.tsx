@@ -143,6 +143,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [listingPackCredits, setListingPackCredits] = useState<number>(0);
+  const [heroPackLoading, setHeroPackLoading] = useState(false);
   const [listingPackLoading, setListingPackLoading] = useState(false);
   const { toast } = useToast();
 
@@ -439,6 +440,48 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
     }
   };
 
+  const handleBuyHeroPack = async () => {
+    if (manageDisabled) return;
+    if (user?.emailVerified !== true) {
+      toast({
+        title: "Email Verification Required",
+        description: "Please confirm your email address before purchasing.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setHeroPackLoading(true);
+    try {
+      const response = await fetch(api("/api/billing/hero-pack/checkout"), {
+        method: "POST",
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Failed to create checkout session";
+        try {
+          const error = await response.json();
+          errorMessage = error.message || error.error || errorMessage;
+        } catch {
+          errorMessage = `Server error: ${response.status} ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const { url } = await response.json();
+      window.location.href = url;
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to start Hero Pack purchase",
+        variant: "destructive",
+      });
+    } finally {
+      setHeroPackLoading(false);
+    }
+  };
+
   return (
     <>
       <Card>
@@ -722,32 +765,44 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
         </Dialog>
       </Card>
 
-      <Card>
+      <Card id="one-off-packs-section">
         <CardContent className="space-y-4 rounded-lg bg-muted/20 pt-6">
           <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">One-off listing pack</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">One-off packs</p>
             <p className="text-base font-semibold">No subscription? No problem.</p>
             <p className="text-sm text-muted-foreground">
-              Enhance a full listing from $49 - no ongoing commitment.
+              Buy image packs as needed with no recurring commitment.
             </p>
           </div>
-          <Button
-            onClick={handleBuyListingPack}
-            disabled={listingPackLoading || manageDisabled}
-            className="w-full"
-            size="lg"
-            variant="outline"
-            title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
-          >
-            {listingPackLoading ? "Loading..." : "Buy Listing Pack - $49"}
-          </Button>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <Button
+              id="hero-pack"
+              onClick={handleBuyHeroPack}
+              disabled={heroPackLoading || listingPackLoading || manageDisabled}
+              className="w-full"
+              size="lg"
+              title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+            >
+              {heroPackLoading ? "Loading..." : "Hero Pack - 7 images - $19"}
+            </Button>
+            <Button
+              onClick={handleBuyListingPack}
+              disabled={heroPackLoading || listingPackLoading || manageDisabled}
+              className="w-full"
+              size="lg"
+              variant="outline"
+              title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
+            >
+              {listingPackLoading ? "Loading..." : "Listing Pack - 20 images - $49"}
+            </Button>
+          </div>
           {listingPackCredits > 0 && (
             <p className="text-sm text-muted-foreground text-center">
               You have <span className="font-medium text-foreground">{listingPackCredits}</span> images remaining from your listing pack
             </p>
           )}
           <p className="text-xs text-muted-foreground text-center">
-            Covers up to ~15 images per listing. Buy as many packs as you need.
+            Hero Pack: 7 images for $19. Listing Pack: 20 images for $49. No subscription required.
           </p>
         </CardContent>
       </Card>
