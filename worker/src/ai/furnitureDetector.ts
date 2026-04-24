@@ -53,6 +53,10 @@ export interface FurnitureAnalysis {
   suggestions: string[];
 }
 
+export type FurnitureDetectionSuccess = FurnitureAnalysis & { status: "success" };
+export type FurnitureDetectionFailure = { status: "failed" };
+export type FurnitureDetectionResult = FurnitureDetectionSuccess | FurnitureDetectionFailure;
+
 export type FurnishedGateDecisionType = "furnished_refresh" | "empty_full_stage" | "needs_declutter_light";
 
 export interface FurnishedGateDecision {
@@ -90,8 +94,129 @@ function isLivingRoomType(normalizedRoomType: string): boolean {
   return normalizedRoomType === "living_room" || normalizedRoomType === "living" || normalizedRoomType === "lounge";
 }
 
+function parseErrorStatusCode(err: any): number | null {
+  const direct = Number((err as any)?.status ?? (err as any)?.statusCode);
+  if (Number.isFinite(direct) && direct > 0) {
+    return direct;
+  }
+
+  const code = String((err as any)?.code ?? "").trim();
+  if (/^\d{3}$/.test(code)) {
+    return Number(code);
+  }
+
+  const msg = String((err as any)?.message ?? "");
+  const httpMatch = msg.match(/\b(429|5\d\d)\b/);
+  if (httpMatch) {
+    return Number(httpMatch[1]);
+  }
+
+  return null;
+}
+
+function isTimeoutError(err: any): boolean {
+  const code = String((err as any)?.code ?? "").toLowerCase();
+  const msg = String((err as any)?.message ?? "").toLowerCase();
+  return (
+    code.includes("timeout")
+    || code === "etimedout"
+    || code === "aborted"
+    || msg.includes("timeout")
+    || msg.includes("timed out")
+    || msg.includes("deadline exceeded")
+  );
+}
+
+function isRateLimitError(err: any): boolean {
+  return parseErrorStatusCode(err) === 429;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function normalizeFurnitureAnalysis(
+  parsed: Partial<FurnitureAnalysis> & { detectedAnchors?: unknown; confidence?: unknown }
+): FurnitureAnalysis {
+  const normalizedAnchors = Array.isArray(parsed.detectedAnchors)
+    ? parsed.detectedAnchors
+      .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
+      .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
+    : [];
+
+  const normalizedConfidence = typeof parsed.confidence === "number"
+    ? Math.max(0, Math.min(1, parsed.confidence))
+    : 0;
+
+  return {
+    hasFurniture: Boolean(parsed.hasFurniture),
+    detectedAnchors: normalizedAnchors,
+    detectedItems: normalizeDetectedItems((parsed as any).detectedItems),
+    confidence: normalizedConfidence,
+    hasMovableSeating: toBool((parsed as any).hasMovableSeating),
+    hasCounterClutter: toBool((parsed as any).hasCounterClutter),
+    hasSurfaceClutter: toBool((parsed as any).hasSurfaceClutter),
+    hasLoosePortableItems: toBool((parsed as any).hasLoosePortableItems),
+    isStageReady: toBool((parsed as any).isStageReady),
+    roomType: (parsed.roomType as FurnitureAnalysis["roomType"]) || "other",
+    furnitureItems: normalizeFurnitureItems((parsed as any).furnitureItems),
+    layoutDescription: typeof parsed.layoutDescription === "string" ? parsed.layoutDescription : "",
+    replacementOpportunity: (parsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
+    suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map((suggestion) => String(suggestion)) : [],
+  };
+}
+
+function parseFurnitureAnalysisResponse(text: string): FurnitureAnalysis {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    throw new Error("No JSON object found in response");
+  }
+
+  let jsonStr = jsonMatch[0];
+  console.log("[FURNITURE DETECTOR] Extracted JSON:", JSON.stringify(jsonStr));
+
+  try {
+    const parsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
+      detectedAnchors?: unknown;
+      confidence?: unknown;
+    };
+    return normalizeFurnitureAnalysis(parsed);
+  } catch (error) {
+    let braceCount = 0;
+    let jsonEnd = -1;
+    for (let index = 0; index < jsonStr.length; index += 1) {
+      if (jsonStr[index] === '{') braceCount += 1;
+      if (jsonStr[index] === '}') {
+        braceCount -= 1;
+        if (braceCount === 0) {
+          jsonEnd = index;
+          break;
+        }
+      }
+    }
+
+    if (jsonEnd > 0) {
+      jsonStr = jsonStr.substring(0, jsonEnd + 1);
+      console.log("[FURNITURE DETECTOR] Trimmed JSON:", JSON.stringify(jsonStr));
+      const trimmedParsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
+        detectedAnchors?: unknown;
+        confidence?: unknown;
+      };
+      return normalizeFurnitureAnalysis(trimmedParsed);
+    }
+
+    throw error;
+  }
+}
+
+export function isFurnitureDetectionSuccess(
+  result: FurnitureDetectionResult | null | undefined
+): result is FurnitureDetectionSuccess {
+  return result?.status === "success";
+}
+
 export function resolveFurnishedGateDecision(params: {
-  analysis: FurnitureAnalysis | null;
+  analysis: FurnitureDetectionResult | null;
   localEmpty: boolean;
   roomType?: string;
   minConfidence?: number;
@@ -115,17 +240,19 @@ export function resolveFurnishedGateDecision(params: {
     };
   }
 
-  if (!params.analysis) {
+  if (!params.analysis || params.analysis.status === "failed") {
     return {
-      decision: "needs_declutter_light",
-      reason: "detector_null_fail_safe",
+      decision: "empty_full_stage",
+      reason: params.analysis?.status === "failed" ? "detector_failed_conservative" : "detector_missing_conservative",
       confidence: 0,
       anchors: [],
     };
   }
 
-  const anchors = Array.isArray(params.analysis.detectedAnchors)
-    ? params.analysis.detectedAnchors
+  const analysis = params.analysis;
+
+  const anchors = Array.isArray(analysis.detectedAnchors)
+    ? analysis.detectedAnchors
       .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
       .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
     : [];
@@ -135,16 +262,16 @@ export function resolveFurnishedGateDecision(params: {
   const hasEligibleAnchor = hasNonTvAnchor || (livingRoomLike && hasTvAnchor);
   const tvOnlyAnchor = hasTvAnchor && !hasNonTvAnchor;
   const hasEligibleFurnitureSignal =
-    params.analysis.hasFurniture === true && (!tvOnlyAnchor || livingRoomLike);
+    analysis.hasFurniture === true && (!tvOnlyAnchor || livingRoomLike);
 
-  const confidence = typeof params.analysis.confidence === "number"
-    ? Math.max(0, Math.min(1, params.analysis.confidence))
+  const confidence = typeof analysis.confidence === "number"
+    ? Math.max(0, Math.min(1, analysis.confidence))
     : 0;
 
-  const hasCounterClutter = toBool(params.analysis.hasCounterClutter);
-  const hasSurfaceClutter = toBool(params.analysis.hasSurfaceClutter);
-  const hasLoosePortableItems = toBool(params.analysis.hasLoosePortableItems);
-  const hasMovableSeating = toBool(params.analysis.hasMovableSeating);
+  const hasCounterClutter = toBool(analysis.hasCounterClutter);
+  const hasSurfaceClutter = toBool(analysis.hasSurfaceClutter);
+  const hasLoosePortableItems = toBool(analysis.hasLoosePortableItems);
+  const hasMovableSeating = toBool(analysis.hasMovableSeating);
   const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems;
   const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
 
@@ -177,7 +304,7 @@ export function resolveFurnishedGateDecision(params: {
     };
   }
 
-  if (params.analysis.isStageReady === true) {
+  if (analysis.isStageReady === true) {
     return {
       decision: "empty_full_stage",
       reason: "stage_ready_no_signals",
@@ -194,8 +321,8 @@ export function resolveFurnishedGateDecision(params: {
   };
 }
 
-export function getAnchorClassSet(analysis: FurnitureAnalysis | null | undefined): Set<string> {
-  if (!analysis) return new Set<string>();
+export function getAnchorClassSet(analysis: FurnitureAnalysis | FurnitureDetectionResult | null | undefined): Set<string> {
+  if (!analysis || (analysis as FurnitureDetectionResult).status === "failed") return new Set<string>();
   const rawAnchors = Array.isArray((analysis as any).detectedAnchors)
     ? (analysis as any).detectedAnchors
     : [];
@@ -339,7 +466,15 @@ export async function detectFurniture(
   ai: GoogleGenAI,
   imageBase64: string,
   options?: { sceneType?: "interior" | "exterior" }
-): Promise<FurnitureAnalysis | null> {
+): Promise<FurnitureDetectionResult> {
+  return detectFurnitureWithRetry(ai, imageBase64, options);
+}
+
+async function detectFurnitureOnce(
+  ai: GoogleGenAI,
+  imageBase64: string,
+  options?: { sceneType?: "interior" | "exterior" }
+): Promise<FurnitureAnalysis> {
   const sceneType = options?.sceneType === "exterior" ? "exterior" : "interior";
   const system = sceneType === "exterior" ? `
 You are determining whether this EXTERIOR real estate image contains clearly identifiable, removable clutter.
@@ -467,114 +602,50 @@ Rules:
     const text = resp.candidates?.[0]?.content?.parts?.map(p => p.text).join("") ?? "{}";
     
     console.log("[FURNITURE DETECTOR] Raw AI response:", JSON.stringify(text));
-    
-    // Extract JSON using robust method
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      console.warn("[FURNITURE DETECTOR] No JSON object found in response");
-      return null;
-    }
-    
-    let jsonStr = jsonMatch[0];
-    console.log("[FURNITURE DETECTOR] Extracted JSON:", JSON.stringify(jsonStr));
-    
-    try {
-      const parsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
-        detectedAnchors?: unknown;
-        confidence?: unknown;
-      };
-
-      const normalizedAnchors = Array.isArray(parsed.detectedAnchors)
-        ? parsed.detectedAnchors
-          .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
-          .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
-        : [];
-
-      const normalizedConfidence = typeof parsed.confidence === "number"
-        ? Math.max(0, Math.min(1, parsed.confidence))
-        : 0;
-
-      const analysis: FurnitureAnalysis = {
-        hasFurniture: Boolean(parsed.hasFurniture),
-        detectedAnchors: normalizedAnchors,
-        detectedItems: normalizeDetectedItems((parsed as any).detectedItems),
-        confidence: normalizedConfidence,
-        hasMovableSeating: toBool((parsed as any).hasMovableSeating),
-        hasCounterClutter: toBool((parsed as any).hasCounterClutter),
-        hasSurfaceClutter: toBool((parsed as any).hasSurfaceClutter),
-        hasLoosePortableItems: toBool((parsed as any).hasLoosePortableItems),
-        isStageReady: toBool((parsed as any).isStageReady),
-        roomType: (parsed.roomType as FurnitureAnalysis["roomType"]) || "other",
-        furnitureItems: normalizeFurnitureItems((parsed as any).furnitureItems),
-        layoutDescription: typeof parsed.layoutDescription === "string" ? parsed.layoutDescription : "",
-        replacementOpportunity: (parsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
-        suggestions: Array.isArray(parsed.suggestions) ? parsed.suggestions.map((s) => String(s)) : [],
-      };
-      
-      // Validate the response structure
-      if (typeof analysis.hasFurniture !== 'boolean') {
-        console.warn("[FURNITURE DETECTOR] Invalid hasFurniture field");
-        return null;
-      }
-      
-      console.log(`[FURNITURE DETECTOR] hasFurniture=${analysis.hasFurniture} anchors=${JSON.stringify(analysis.detectedAnchors)} itemsCount=${analysis.furnitureItems?.length ?? "MISSING"} confidence=${analysis.confidence}`);
-      
-      return analysis;
-    } catch (e) {
-      // Try to find just the first complete JSON object if parsing fails
-      let braceCount = 0;
-      let jsonEnd = -1;
-      for (let i = 0; i < jsonStr.length; i++) {
-        if (jsonStr[i] === '{') braceCount++;
-        if (jsonStr[i] === '}') {
-          braceCount--;
-          if (braceCount === 0) {
-            jsonEnd = i;
-            break;
-          }
-        }
-      }
-      if (jsonEnd > 0) {
-        jsonStr = jsonStr.substring(0, jsonEnd + 1);
-        console.log("[FURNITURE DETECTOR] Trimmed JSON:", JSON.stringify(jsonStr));
-        const trimmedParsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
-          detectedAnchors?: unknown;
-          confidence?: unknown;
-        };
-        const normalizedAnchors = Array.isArray(trimmedParsed.detectedAnchors)
-          ? trimmedParsed.detectedAnchors
-            .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
-            .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
-          : [];
-        const normalizedConfidence = typeof trimmedParsed.confidence === "number"
-          ? Math.max(0, Math.min(1, trimmedParsed.confidence))
-          : 0;
-        return {
-          hasFurniture: Boolean(trimmedParsed.hasFurniture),
-          detectedAnchors: normalizedAnchors,
-          detectedItems: normalizeDetectedItems((trimmedParsed as any).detectedItems),
-          confidence: normalizedConfidence,
-          hasMovableSeating: toBool((trimmedParsed as any).hasMovableSeating),
-          hasCounterClutter: toBool((trimmedParsed as any).hasCounterClutter),
-          hasSurfaceClutter: toBool((trimmedParsed as any).hasSurfaceClutter),
-          hasLoosePortableItems: toBool((trimmedParsed as any).hasLoosePortableItems),
-          isStageReady: toBool((trimmedParsed as any).isStageReady),
-          roomType: (trimmedParsed.roomType as FurnitureAnalysis["roomType"]) || "other",
-          furnitureItems: normalizeFurnitureItems((trimmedParsed as any).furnitureItems),
-          layoutDescription: typeof trimmedParsed.layoutDescription === "string" ? trimmedParsed.layoutDescription : "",
-          replacementOpportunity: (trimmedParsed.replacementOpportunity as FurnitureAnalysis["replacementOpportunity"]) || "none",
-          suggestions: Array.isArray(trimmedParsed.suggestions) ? trimmedParsed.suggestions.map((s) => String(s)) : [],
-        };
-      }
-      throw e;
-    }
+    const analysis = parseFurnitureAnalysisResponse(text);
+    console.log(`[FURNITURE DETECTOR] hasFurniture=${analysis.hasFurniture} anchors=${JSON.stringify(analysis.detectedAnchors)} itemsCount=${analysis.furnitureItems?.length ?? "MISSING"} confidence=${analysis.confidence}`);
+    return analysis;
   } catch (error) {
     console.error("[FURNITURE DETECTOR] ❌ Failed to detect furniture");
     console.error("[FURNITURE DETECTOR] Error message:", error instanceof Error ? error.message : String(error));
     console.error("[FURNITURE DETECTOR] Stack trace:", error instanceof Error ? error.stack : 'No stack trace available');
     console.error("[FURNITURE DETECTOR] Error details:", JSON.stringify(error, Object.getOwnPropertyNames(error), 2));
-    return null;
+    throw error;
   }
+}
+
+export async function detectFurnitureWithRetry(
+  ai: GoogleGenAI,
+  imageBase64: string,
+  options?: { sceneType?: "interior" | "exterior" }
+): Promise<FurnitureDetectionResult> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const analysis = await detectFurnitureOnce(ai, imageBase64, options);
+      return {
+        status: "success",
+        ...analysis,
+      };
+    } catch (error) {
+      const retryable = isRateLimitError(error) || isTimeoutError(error);
+      const lastAttempt = attempt === 1;
+      console.warn("[FURNITURE DETECTOR] Detection attempt failed", {
+        attempt: attempt + 1,
+        retryable,
+        statusCode: parseErrorStatusCode(error),
+        message: error instanceof Error ? error.message : String(error),
+      });
+
+      if (retryable && !lastAttempt) {
+        await delay(300 + attempt * 300);
+        continue;
+      }
+
+      break;
+    }
+  }
+
+  return { status: "failed" };
 }
 
 /**

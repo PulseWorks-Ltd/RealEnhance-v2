@@ -44,7 +44,13 @@ import {
 import { applyExteriorRelighting } from "./ai/exteriorRelighting";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
-import { detectFurniture, getAnchorClassSet, resolveFurnishedGateDecision } from "./ai/furnitureDetector";
+import {
+  detectFurniture,
+  detectFurnitureWithRetry,
+  isFurnitureDetectionSuccess,
+  getAnchorClassSet,
+  resolveFurnishedGateDecision,
+} from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 
 import {
@@ -3964,7 +3970,11 @@ function normalizeExteriorDetectedItemType(rawType: unknown): string {
 }
 
 function getExteriorDetectedItems(detectorResult: Awaited<ReturnType<typeof detectFurniture>>): Array<{ type: string; confidence: number | null }> {
-  const rawItems = Array.isArray(detectorResult?.detectedItems) ? detectorResult.detectedItems : [];
+  if (!isFurnitureDetectionSuccess(detectorResult)) {
+    return [];
+  }
+
+  const rawItems = Array.isArray(detectorResult.detectedItems) ? detectorResult.detectedItems : [];
   return rawItems
     .map((item) => ({
       type: normalizeExteriorDetectedItemType(item?.type),
@@ -3973,17 +3983,165 @@ function getExteriorDetectedItems(detectorResult: Awaited<ReturnType<typeof dete
     .filter((item) => !!item.type);
 }
 
-function shouldRunExteriorDeclutter(detectorResult: Awaited<ReturnType<typeof detectFurniture>>): boolean {
-  const confidence = typeof detectorResult?.confidence === "number"
-    ? Math.max(0, Math.min(1, detectorResult.confidence))
-    : 0;
+type ExteriorDeclutterImageStats = {
+  objectCount: number;
+  edgeDensity: number;
+  colorVariance: number;
+};
 
-  if (confidence < EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD) {
-    return false;
+function likelyExteriorClutter(imageStats: ExteriorDeclutterImageStats): boolean {
+  return (
+    imageStats.objectCount > 6
+    || imageStats.edgeDensity > 0.25
+    || imageStats.colorVariance > 0.4
+  );
+}
+
+async function computeExteriorDeclutterImageStats(imagePath: string): Promise<ExteriorDeclutterImageStats> {
+  const { data, info } = await sharp(imagePath)
+    .rotate()
+    .removeAlpha()
+    .resize(160, 160, { fit: "inside", withoutEnlargement: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = info.width || 0;
+  const height = info.height || 0;
+  const channels = info.channels || 3;
+  if (!width || !height || channels < 3) {
+    return { objectCount: 0, edgeDensity: 0, colorVariance: 0 };
   }
 
-  const detectedItems = getExteriorDetectedItems(detectorResult);
-  return detectedItems.some((item) => ALLOWED_EXTERIOR_DECLUTTER_TYPES.has(item.type));
+  const startRow = Math.max(0, Math.floor(height * 0.2));
+  const cellColumns = 4;
+  const cellRows = 4;
+  const cellComparisons = new Array<number>(cellColumns * cellRows).fill(0);
+  const cellEdgeHits = new Array<number>(cellColumns * cellRows).fill(0);
+
+  let comparisons = 0;
+  let edgeHits = 0;
+  let redSum = 0;
+  let greenSum = 0;
+  let blueSum = 0;
+  let redSqSum = 0;
+  let greenSqSum = 0;
+  let blueSqSum = 0;
+
+  const getLuma = (pixelIndex: number): number => {
+    const offset = pixelIndex * channels;
+    const red = data[offset] ?? 0;
+    const green = data[offset + 1] ?? 0;
+    const blue = data[offset + 2] ?? 0;
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const pixelIndex = y * width + x;
+      const offset = pixelIndex * channels;
+      const red = data[offset] ?? 0;
+      const green = data[offset + 1] ?? 0;
+      const blue = data[offset + 2] ?? 0;
+
+      redSum += red;
+      greenSum += green;
+      blueSum += blue;
+      redSqSum += red * red;
+      greenSqSum += green * green;
+      blueSqSum += blue * blue;
+
+      if (y < startRow) {
+        continue;
+      }
+
+      const rowRatio = (y - startRow) / Math.max(1, height - startRow);
+      const cellRow = Math.min(cellRows - 1, Math.floor(rowRatio * cellRows));
+      const cellColumn = Math.min(cellColumns - 1, Math.floor((x / Math.max(1, width)) * cellColumns));
+      const cellIndex = cellRow * cellColumns + cellColumn;
+      const centerLuma = getLuma(pixelIndex);
+
+      if (x + 1 < width) {
+        const diff = Math.abs(centerLuma - getLuma(pixelIndex + 1));
+        comparisons += 1;
+        cellComparisons[cellIndex] += 1;
+        if (diff > 28) {
+          edgeHits += 1;
+          cellEdgeHits[cellIndex] += 1;
+        }
+      }
+
+      if (y + 1 < height) {
+        const diff = Math.abs(centerLuma - getLuma(pixelIndex + width));
+        comparisons += 1;
+        cellComparisons[cellIndex] += 1;
+        if (diff > 28) {
+          edgeHits += 1;
+          cellEdgeHits[cellIndex] += 1;
+        }
+      }
+    }
+  }
+
+  const totalPixels = width * height;
+  const redMean = redSum / Math.max(1, totalPixels);
+  const greenMean = greenSum / Math.max(1, totalPixels);
+  const blueMean = blueSum / Math.max(1, totalPixels);
+  const redStd = Math.sqrt(Math.max(0, (redSqSum / Math.max(1, totalPixels)) - (redMean * redMean)));
+  const greenStd = Math.sqrt(Math.max(0, (greenSqSum / Math.max(1, totalPixels)) - (greenMean * greenMean)));
+  const blueStd = Math.sqrt(Math.max(0, (blueSqSum / Math.max(1, totalPixels)) - (blueMean * blueMean)));
+
+  const objectCount = cellEdgeHits.reduce((count, hits, index) => {
+    const density = hits / Math.max(1, cellComparisons[index]);
+    return density > 0.18 ? count + 1 : count;
+  }, 0);
+
+  return {
+    objectCount,
+    edgeDensity: comparisons > 0 ? edgeHits / comparisons : 0,
+    colorVariance: Math.max(0, Math.min(1, ((redStd + greenStd + blueStd) / 3) / 128)),
+  };
+}
+
+async function shouldRunExteriorDeclutter(params: {
+  detection: Awaited<ReturnType<typeof detectFurniture>>;
+  imagePath: string;
+}): Promise<{ hasClutter: boolean; fallbackUsed: boolean; imageStats: ExteriorDeclutterImageStats | null }> {
+  if (isFurnitureDetectionSuccess(params.detection)) {
+    const confidence = typeof params.detection.confidence === "number"
+      ? Math.max(0, Math.min(1, params.detection.confidence))
+      : 0;
+
+    if (confidence < EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD) {
+      return { hasClutter: false, fallbackUsed: false, imageStats: null };
+    }
+
+    const detectedItems = getExteriorDetectedItems(params.detection);
+    return {
+      hasClutter: detectedItems.some((item) => ALLOWED_EXTERIOR_DECLUTTER_TYPES.has(item.type)),
+      fallbackUsed: false,
+      imageStats: null,
+    };
+  }
+
+  console.warn("[DECLUTTER] Furniture detection failed — using fallback heuristic");
+  const imageStats = await computeExteriorDeclutterImageStats(params.imagePath);
+  return {
+    hasClutter: likelyExteriorClutter(imageStats),
+    fallbackUsed: true,
+    imageStats,
+  };
+}
+
+function summarizeExteriorDeclutterStats(imageStats: ExteriorDeclutterImageStats | null): Record<string, number> | undefined {
+  if (!imageStats) {
+    return undefined;
+  }
+
+  return {
+    objectCount: Number(imageStats.objectCount.toFixed(0)),
+    edgeDensity: Number(imageStats.edgeDensity.toFixed(3)),
+    colorVariance: Number(imageStats.colorVariance.toFixed(3)),
+  };
 }
 
 // handle "enhance" pipeline
@@ -7414,15 +7572,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
         if (shouldResolveExteriorDeclutter) {
           const ai = getGeminiClient();
-          const geminiAnalysis = await detectFurniture(ai as any, toBase64(path1A).data, { sceneType: "exterior" });
+          const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data, { sceneType: "exterior" });
           const detectedItems = getExteriorDetectedItems(geminiAnalysis);
-          const hasClutter = shouldRunExteriorDeclutter(geminiAnalysis);
+          const exteriorDeclutterDecision = await shouldRunExteriorDeclutter({
+            detection: geminiAnalysis,
+            imagePath: path1A,
+          });
+          const hasClutter = exteriorDeclutterDecision.hasClutter;
+          const fallbackStats = summarizeExteriorDeclutterStats(exteriorDeclutterDecision.imageStats);
 
           routingSnapshot = {
             authority: "exteriorClutter",
             localEmpty: false,
             geminiHasFurniture: null,
-            geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
+            geminiConfidence: isFurnitureDetectionSuccess(geminiAnalysis) && typeof geminiAnalysis.confidence === "number"
+              ? geminiAnalysis.confidence
+              : null,
             hasClutter,
             skipStage1B: !hasClutter,
             stage1BSkippedByDesign: !hasClutter,
@@ -7435,6 +7600,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               event: "EXTERIOR_DECLUTTER_SKIPPED",
               confidence: routingSnapshot.geminiConfidence,
               detectedItems,
+              detectionStatus: geminiAnalysis.status,
+              fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
+              fallbackStats,
             }));
           }
 
@@ -7443,6 +7611,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             clutterDetected: hasClutter,
             confidence: routingSnapshot.geminiConfidence,
             detectedItems,
+            detectionStatus: geminiAnalysis.status,
+            fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
+            fallbackStats,
             stage1B: routingSnapshot.stage1BRequired,
             stage2: false,
           });
@@ -7463,7 +7634,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog("[ROUTING] authority=localEmptyBypass | stage1BRequired=false");
         } else {
           const ai = getGeminiClient();
-          const geminiAnalysis = await detectFurniture(ai as any, toBase64(path1A).data);
+          const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data);
           const gateDecision = resolveFurnishedGateDecision({
             analysis: geminiAnalysis,
             localEmpty: false,
@@ -7476,16 +7647,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             : gateDecision.decision === "furnished_refresh"
               ? "stage-ready"
               : null;
+          const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
           const hasClutter = Boolean(
-            geminiAnalysis?.hasCounterClutter === true ||
-            geminiAnalysis?.hasSurfaceClutter === true ||
-            geminiAnalysis?.hasLoosePortableItems === true ||
-            geminiAnalysis?.hasMovableSeating === true
+            analysis?.hasCounterClutter === true ||
+            analysis?.hasSurfaceClutter === true ||
+            analysis?.hasLoosePortableItems === true ||
+            analysis?.hasMovableSeating === true
           );
-          const detectedAnchors = Array.isArray(geminiAnalysis?.detectedAnchors)
-            ? geminiAnalysis.detectedAnchors
+          const detectedAnchors = Array.isArray(analysis?.detectedAnchors)
+            ? analysis.detectedAnchors
             : [];
-          const furnitureItems = geminiAnalysis?.furnitureItems;
+          const furnitureItems = analysis?.furnitureItems;
           const anchorCount = detectedAnchors.length;
           let totalFurniture: number | null = null;
           if (Array.isArray(furnitureItems)) {
@@ -7495,7 +7667,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           if (totalFurniture !== null) {
             excessFurnitureCount = Math.max(0, totalFurniture - anchorCount);
           }
-          const anchorDetected = geminiAnalysis ? geminiAnalysis.hasFurniture === true : false;
+          const anchorDetected = analysis ? analysis.hasFurniture === true : false;
           const skipStage1B = gateDecision.decision === "furnished_refresh"
             && anchorDetected
             && !hasClutter
@@ -7515,7 +7687,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             authority: "gemini",
             localEmpty: false,
             geminiHasFurniture: anchorDetected,
-            geminiConfidence: geminiAnalysis && typeof geminiAnalysis.confidence === "number" ? geminiAnalysis.confidence : null,
+            geminiConfidence: analysis && typeof analysis.confidence === "number" ? analysis.confidence : null,
             hasClutter,
             excessFurnitureCount,
             skipStage1B,
@@ -8747,7 +8919,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const ai = getGeminiClient();
         let detectorTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
         let didTimeout = false;
-        const detectorPromise = detectFurniture(ai as any, toBase64(stage2InputPath).data, { sceneType: "interior" });
+        const detectorPromise = detectFurnitureWithRetry(ai as any, toBase64(stage2InputPath).data, { sceneType: "interior" });
         const timeoutPromise = new Promise<"timeout">((resolve) => {
           detectorTimeoutHandle = setTimeout(() => {
             didTimeout = true;
@@ -8771,7 +8943,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             timeoutMs: STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS,
             durationMs,
           });
-        } else if (detectorResult && typeof detectorResult === "object") {
+        } else if (isFurnitureDetectionSuccess(detectorResult)) {
           const anchorDetected = resolvePostStage1BAnchorPresence({
             analysis: detectorResult,
             routingSnapshot: frozenRoutingSnapshot,
