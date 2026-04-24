@@ -37,11 +37,11 @@ import { preprocessToCanonical } from "./pipeline/preprocess";
 import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
 import {
   analyzeExteriorEnvironment,
-  applyExteriorRelighting,
   determineLightingDecision,
   type GeminiEnvironmentResult,
   type LightingDecision,
 } from "./ai/exteriorEnvironmentAnalyzer";
+import { applyExteriorRelighting } from "./ai/exteriorRelighting";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
 import { detectFurniture, getAnchorClassSet, resolveFurnishedGateDecision } from "./ai/furnitureDetector";
@@ -7034,6 +7034,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Stage1A probable exterior fallback: resolvedScene=${sceneLabel} -> stage1AScene=exterior`);
   }
 
+  let hasRoofStructure = false;
+  if (stage1ASceneLabel === "exterior") {
+    try {
+      const { detectRoofOrPergola } = await import("./validators/pergolaGuard.js");
+      hasRoofStructure = await detectRoofOrPergola(origPath);
+    } catch (e) {
+      nLog(`[WORKER] Pergola detector error during environment precheck:`, (e as any)?.message || e);
+    }
+  }
+
   const userSceneOverride = manualSceneOverride && (payload.options.sceneType === "interior" || payload.options.sceneType === "exterior")
     ? { sceneOverride: payload.options.sceneType as "interior" | "exterior" }
     : undefined;
@@ -7045,7 +7055,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const shouldAnalyzeExteriorEnvironment = Boolean(
     sceneDetectionForLighting.needsConfirm ||
     sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
-    userSceneOverride?.sceneOverride === "exterior"
+    userSceneOverride?.sceneOverride === "exterior" ||
+    hasRoofStructure
   );
 
   if (shouldAnalyzeExteriorEnvironment) {
@@ -7120,12 +7131,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (stage1ASceneLabel === "exterior") {
     try {
-      const { detectRoofOrPergola } = await import("./validators/pergolaGuard.js");
-      const hasRoof = await detectRoofOrPergola(origPath);
-      if (hasRoof) {
-        safeReplaceSky = false;
-        skyModeForStage1A = "safe";
-        nLog(`[WORKER] Sky Safeguard: pergola/roof detected → disable sky replacement`);
+      if (hasRoofStructure) {
+        if (exteriorEnvironment?.environment === "exterior_partial_cover") {
+          safeReplaceSky = true;
+          skyModeForStage1A = "strong";
+          nLog(`[WORKER] Sky Safeguard: pergola/roof detected with partial-cover environment → allow sky replacement`);
+        } else {
+          safeReplaceSky = false;
+          skyModeForStage1A = "safe";
+          nLog(`[WORKER] Sky Safeguard: pergola/roof detected without partial-cover environment → disable sky replacement`);
+        }
       }
     } catch (e) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
@@ -7162,7 +7177,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
 
   if (exteriorLightingDecision?.shouldRelight) {
-    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision);
+    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
   }
 
   if (structuralBaseline) {

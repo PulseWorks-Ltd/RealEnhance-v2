@@ -1,7 +1,4 @@
-import sharp from "sharp";
-
 import { getGeminiClient } from "./gemini";
-import { siblingOutPath } from "../utils/images";
 
 export type SceneType = "interior" | "exterior";
 
@@ -10,6 +7,7 @@ export type EnvironmentType =
   | "exterior_overcast"
   | "exterior_sunny"
   | "exterior_no_sky"
+  | "exterior_partial_cover"
   | "uncertain";
 
 export interface SceneDetectionResult {
@@ -42,14 +40,38 @@ export interface LightingDecision {
 }
 
 function finalizeLightingDecision(decision: LightingDecision): LightingDecision {
-  if (!decision.shouldReplaceSky) {
-    return decision;
-  }
-
   return {
     ...decision,
-    strength: Math.min(1, decision.strength + 0.15),
+    strength: Math.max(0, Math.min(0.85, decision.strength)),
   };
+}
+
+function finalizeLightingDecisionForEnvironment(
+  environment: EnvironmentType,
+  decision: LightingDecision,
+  geminiConfidence?: number
+): LightingDecision {
+  let strength = decision.strength;
+
+  if (decision.shouldReplaceSky) {
+    strength += 0.15;
+    if (environment === "exterior_partial_cover") {
+      strength += 0.1;
+    }
+  }
+
+  if (
+    environment === "exterior_partial_cover" &&
+    typeof geminiConfidence === "number" &&
+    geminiConfidence < 0.75
+  ) {
+    strength -= 0.1;
+  }
+
+  return finalizeLightingDecision({
+    ...decision,
+    strength: Math.min(strength, 1),
+  });
 }
 
 const GEMINI_MODEL = "gemini-2.0-flash";
@@ -60,6 +82,7 @@ const VALID_ENVIRONMENTS: ReadonlySet<EnvironmentType> = new Set([
   "exterior_overcast",
   "exterior_sunny",
   "exterior_no_sky",
+  "exterior_partial_cover",
   "uncertain",
 ]);
 
@@ -71,12 +94,16 @@ interior
 exterior_overcast (flat white/grey sky, cloudy, low contrast)
 exterior_sunny (blue sky, strong light, clear conditions)
 exterior_no_sky (outdoor but sky not visible, e.g. courtyard, under cover)
+exterior_partial_cover (Outdoor space with overhead structure like pergola, louvre roof, or awning, but with visible sky or open sides)
 uncertain
 
 Rules:
 
 Do NOT guess. If unsure, return "uncertain".
 Overcast sky may appear white or grey and must NOT be classified as interior ceiling.
+If overhead structure exists AND sky visible, classify as "exterior_partial_cover".
+Do NOT classify these as interior.
+Do NOT classify these as exterior_no_sky.
 Only return valid JSON.
 
 Output format:
@@ -227,127 +254,57 @@ export function determineLightingDecision(params: {
 
   switch (finalEnv) {
     case "exterior_overcast":
-      return finalizeLightingDecision({
+      return finalizeLightingDecisionForEnvironment(finalEnv, {
         shouldRelight: true,
         shouldReplaceSky: true,
         profile: "bright_premium",
         strength: 0.85,
         reason: "Overcast exterior — high uplift opportunity",
-      });
+      }, params.gemini?.confidence);
 
     case "exterior_sunny":
-      return finalizeLightingDecision({
+      return finalizeLightingDecisionForEnvironment(finalEnv, {
         shouldRelight: true,
         shouldReplaceSky: false,
         profile: "light_sunny",
         strength: 0.35,
         reason: "Already sunny — preserve realism",
-      });
+      }, params.gemini?.confidence);
+
+    case "exterior_partial_cover":
+      return finalizeLightingDecisionForEnvironment(finalEnv, {
+        shouldRelight: true,
+        shouldReplaceSky: true,
+        profile: "light_sunny",
+        strength: 0.65,
+        reason: "Covered exterior with visible sky — uplift with controlled sunlight",
+      }, params.gemini?.confidence);
 
     case "exterior_no_sky":
-      return finalizeLightingDecision({
+      return finalizeLightingDecisionForEnvironment(finalEnv, {
         shouldRelight: true,
         shouldReplaceSky: false,
         profile: "overcast",
         strength: 0.4,
         reason: "Exterior without sky — gentle enhancement only",
-      });
+      }, params.gemini?.confidence);
 
     case "uncertain":
-      return finalizeLightingDecision({
+      return finalizeLightingDecisionForEnvironment(finalEnv, {
         shouldRelight: true,
         shouldReplaceSky: false,
         profile: "overcast",
         strength: 0.3,
         reason: "Uncertain environment — safe fallback",
-      });
+      }, params.gemini?.confidence);
 
     default:
-      return finalizeLightingDecision({
+      return finalizeLightingDecisionForEnvironment(finalEnv, {
         shouldRelight: false,
         shouldReplaceSky: false,
         profile: "overcast",
         strength: 0,
         reason: "Unhandled case",
-      });
+      }, params.gemini?.confidence);
   }
-}
-
-export async function applyExteriorRelighting(
-  inputPath: string,
-  decision: LightingDecision
-): Promise<string> {
-  if (!decision.shouldRelight || decision.strength <= 0) {
-    return inputPath;
-  }
-
-  const strength = Math.max(0, Math.min(1, decision.strength));
-  const settings: Record<LightingProfile, {
-    brightness: number;
-    saturation: number;
-    gamma: number;
-    contrast: number;
-    redGain: number;
-    greenGain: number;
-    blueGain: number;
-  }> = {
-    overcast: {
-      brightness: 1.06,
-      saturation: 1.03,
-      gamma: 1.02,
-      contrast: 1.03,
-      redGain: 1.008,
-      greenGain: 1.0,
-      blueGain: 0.998,
-    },
-    light_sunny: {
-      brightness: 1.025,
-      saturation: 1.02,
-      gamma: 1.01,
-      contrast: 1.015,
-      redGain: 1.004,
-      greenGain: 1.0,
-      blueGain: 0.999,
-    },
-    bright_premium: {
-      brightness: 1.1,
-      saturation: 1.05,
-      gamma: 1.03,
-      contrast: 1.05,
-      redGain: 1.01,
-      greenGain: 1.0,
-      blueGain: 0.996,
-    },
-    dusk_dawn: {
-      brightness: 1.04,
-      saturation: 1.04,
-      gamma: 1.015,
-      contrast: 1.03,
-      redGain: 1.018,
-      greenGain: 1.0,
-      blueGain: 0.992,
-    },
-  };
-
-  const profile = settings[decision.profile];
-  const brightness = 1 + ((profile.brightness - 1) * strength);
-  const saturation = 1 + ((profile.saturation - 1) * strength);
-  const gamma = 1 + ((profile.gamma - 1) * strength);
-  const contrast = 1 + ((profile.contrast - 1) * strength);
-  const redGain = 1 + ((profile.redGain - 1) * strength);
-  const greenGain = 1 + ((profile.greenGain - 1) * strength);
-  const blueGain = 1 + ((profile.blueGain - 1) * strength);
-  const offset = -(128 * (contrast - 1) * 0.35);
-  const outputPath = siblingOutPath(inputPath, "-env-relit");
-
-  await sharp(inputPath)
-    .rotate()
-    .linear([redGain, greenGain, blueGain], [0, 0, 0])
-    .modulate({ brightness, saturation })
-    .gamma(gamma)
-    .linear(contrast, offset)
-    .webp({ quality: 95, effort: 6 })
-    .toFile(outputPath);
-
-  return outputPath;
 }
