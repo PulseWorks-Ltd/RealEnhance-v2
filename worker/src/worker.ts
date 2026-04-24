@@ -35,6 +35,13 @@ import { applyEdit } from "./pipeline/editApply";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
 import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
+import {
+  analyzeExteriorEnvironment,
+  applyExteriorRelighting,
+  determineLightingDecision,
+  type GeminiEnvironmentResult,
+  type LightingDecision,
+} from "./ai/exteriorEnvironmentAnalyzer";
 import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
 import { detectFurniture, getAnchorClassSet, resolveFurnishedGateDecision } from "./ai/furnitureDetector";
@@ -6931,6 +6938,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   timings.sceneDetectMs = Date.now() - tScene;
 
   const sceneMeta: Record<string, any> = { scene: { label: sceneLabel as any, confidence: scenePrimary?.confidence ?? null }, scenePrimary };
+  let exteriorEnvironment: GeminiEnvironmentResult | null = null;
+  let exteriorLightingDecision: LightingDecision | null = null;
 
   if (await isCancelled(payload.jobId)) {
     await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
@@ -7025,6 +7034,37 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Stage1A probable exterior fallback: resolvedScene=${sceneLabel} -> stage1AScene=exterior`);
   }
 
+  const userSceneOverride = manualSceneOverride && (payload.options.sceneType === "interior" || payload.options.sceneType === "exterior")
+    ? { sceneOverride: payload.options.sceneType as "interior" | "exterior" }
+    : undefined;
+  const sceneDetectionForLighting = {
+    sceneType: scenePrimary?.label === "exterior" ? "exterior" : "interior",
+    confidence: typeof scenePrimary?.confidence === "number" ? scenePrimary.confidence : 0,
+    needsConfirm: Boolean(scenePrimary?.needsConfirm || requiresSceneConfirm),
+  } as const;
+  const shouldAnalyzeExteriorEnvironment = Boolean(
+    sceneDetectionForLighting.needsConfirm ||
+    sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
+    userSceneOverride?.sceneOverride === "exterior"
+  );
+
+  if (shouldAnalyzeExteriorEnvironment) {
+    exteriorEnvironment = await analyzeExteriorEnvironment(toBase64(canonicalPath).data);
+    exteriorLightingDecision = determineLightingDecision({
+      scene: sceneDetectionForLighting,
+      userOverride: userSceneOverride,
+      gemini: exteriorEnvironment,
+    });
+
+    sceneMeta.exteriorEnvironment = exteriorEnvironment;
+    sceneMeta.exteriorLightingDecision = exteriorLightingDecision;
+    nLog(
+      `[EXTERIOR_ENV] environment=${exteriorEnvironment.environment} envConfidence=${exteriorEnvironment.confidence.toFixed(2)} ` +
+      `profile=${exteriorLightingDecision.profile} strength=${exteriorLightingDecision.strength.toFixed(2)} ` +
+      `replaceSky=${exteriorLightingDecision.shouldReplaceSky} reason=${exteriorLightingDecision.reason}`
+    );
+  }
+
   // Stage 1A: Always run Gemini for quality enhancement (HDR, color, sharpness)
   // SKY SAFEGUARD: compute safeReplaceSky using manual override + pergola/roof detection
   let safeReplaceSky: boolean = ((): boolean => {
@@ -7062,24 +7102,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     safeReplaceSky = false;
     nLog(`[WORKER] Sky Safeguard: manualSceneOverride=1 → disable sky replacement`);
   }
+
+  let skyModeForStage1A: "safe" | "strong" = stage1ASceneLabel === "exterior"
+    ? (((scenePrimary as any)?.skyModeResult || (scenePrimary ? determineSkyMode(scenePrimary as any) : null))?.mode || "safe")
+    : "safe";
+
+  if (stage1ASceneLabel === "exterior" && exteriorLightingDecision) {
+    if (exteriorLightingDecision.shouldReplaceSky) {
+      safeReplaceSky = true;
+      skyModeForStage1A = "strong";
+      nLog(`[WORKER] Exterior environment override: forcing Stage1A sky replacement (profile=${exteriorLightingDecision.profile}, strength=${exteriorLightingDecision.strength.toFixed(2)})`);
+    } else {
+      safeReplaceSky = false;
+      nLog(`[WORKER] Exterior environment override: disabling Stage1A sky replacement (reason=${exteriorLightingDecision.reason})`);
+    }
+  }
+
   if (stage1ASceneLabel === "exterior") {
     try {
       const { detectRoofOrPergola } = await import("./validators/pergolaGuard.js");
       const hasRoof = await detectRoofOrPergola(origPath);
       if (hasRoof) {
         safeReplaceSky = false;
+        skyModeForStage1A = "safe";
         nLog(`[WORKER] Sky Safeguard: pergola/roof detected → disable sky replacement`);
       }
     } catch (e) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
     }
   }
-
-  // Determine sky mode from scene detection results (already force-safe applied in detection block)
-  const stage1ASkyModeResult = stage1ASceneLabel === "exterior"
-    ? ((scenePrimary as any)?.skyModeResult || (scenePrimary ? determineSkyMode(scenePrimary as any) : null))
-    : null;
-  const skyModeForStage1A = stage1ASkyModeResult?.mode || "safe";
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
   await safeWriteJobStatus(
@@ -7109,6 +7160,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     baseArtifactsCache: jobContext.baseArtifactsCache,
     jobSampling: jobContext.jobSampling,
   });
+
+  if (exteriorLightingDecision?.shouldRelight) {
+    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision);
+  }
 
   if (structuralBaseline) {
     nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=already_hydrated`);
@@ -7806,7 +7861,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[STAGE1B_DECAY_CONFIG] temp=${geminiConfig.temperature} topP=${geminiConfig.topP.toFixed(2)} topK=${geminiConfig.topK}`);
 
       const candidate = await runStage1B(path1A, {
-        replaceSky: false,
+        replaceSky: exteriorLightingDecision?.shouldReplaceSky === true,
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
         declutterMode,
@@ -9102,7 +9157,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     try {
       nLog(`[worker] [FALLBACK] using light declutter backstop after structured-retain retries exhausted`);
       const lightPath1B = await runStage1B(path1A, {
-        replaceSky: false,
+        replaceSky: exteriorLightingDecision?.shouldReplaceSky === true,
         sceneType: sceneLabel,
         roomType: payload.options.roomType,
         declutterMode: "light",
