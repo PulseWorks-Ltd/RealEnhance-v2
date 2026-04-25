@@ -55,6 +55,8 @@ export interface UserRecord {
     agencyId?: string | null;
     role?: "owner" | "admin" | "member";
     isActive?: boolean;
+    isSystemUser?: boolean;
+    creditUsageCount?: number;
     hasSeenWelcome?: boolean;
     hasReceivedSignupCredits?: boolean;
     plan?: "free" | "individual" | "agency";

@@ -52,6 +52,8 @@ export interface UserRecord {
   agencyId?: string | null; // Optional: links user to an agency for usage tracking
   role?: "owner" | "admin" | "member"; // Agency role, defaults to "member"
   isActive?: boolean; // Whether user can log in, defaults to true
+  isSystemUser?: boolean;
+  creditUsageCount?: number;
   hasSeenWelcome?: boolean;
   hasReceivedSignupCredits?: boolean;
   plan?: "free" | "individual" | "agency"; // Future: plan-based limits

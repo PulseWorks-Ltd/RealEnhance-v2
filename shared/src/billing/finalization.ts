@@ -8,6 +8,7 @@
  */
 
 import { computeCharge, type StageFlags } from "./rules.js";
+import { getUserById, incrementSystemUserCreditUsage } from "../users.js";
 
 export type { StageFlags } from "./rules.js";
 
@@ -60,6 +61,7 @@ export async function finalizeImageCharge(params: {
       charge_amount: number;
       charge_log: string | null;
       agency_id?: string | null;
+      user_id?: string | null;
     };
 
     // Idempotent guard: check if already finalized
@@ -117,6 +119,18 @@ export async function finalizeImageCharge(params: {
       `charge=${amount} ` +
       `reason=${reason}`
     );
+
+    const shouldTrackInternalUsage = String(process.env.INTERNAL_API_TRACK_USAGE || "true").toLowerCase() !== "false";
+    const userId = String(reservation.user_id || "").trim();
+    if (shouldTrackInternalUsage && userId) {
+      const user = await getUserById(userId as any);
+      if (user?.isSystemUser === true) {
+        const updated = await incrementSystemUserCreditUsage(userId as any, amount);
+        console.log(
+          `[SYSTEM_USER_USAGE] jobId=${params.jobId} userId=${userId} amount=${amount} creditUsageCount=${Math.max(0, Number(updated?.creditUsageCount || 0))}`
+        );
+      }
+    }
 
     return {
       charged: true,

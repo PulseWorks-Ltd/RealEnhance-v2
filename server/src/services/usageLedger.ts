@@ -6,6 +6,7 @@ import { PLAN_LIMITS } from "@realenhance/shared/plans.js";
 import { getAgency } from "@realenhance/shared/agencies.js";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
+import { getUserById } from "./users.js";
 
 export type ReservationStatus = "reserved" | "committed" | "consumed" | "released" | "partially_released";
 
@@ -205,6 +206,8 @@ export async function reserveAllowance(params: {
   requestedStage2: boolean;
 }): Promise<ReservationResult> {
   const monthKey = await getBillingCycleKey(params.agencyId);
+  const user = await getUserById(params.userId as any);
+  const isSystemUser = user?.isSystemUser === true;
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(params.agencyId);
     const agency = await getAgency(params.agencyId);
@@ -216,7 +219,7 @@ export async function reserveAllowance(params: {
     const addonRemaining = await getTotalBundleRemaining(params.agencyId, monthKey);
     const listingPackCredits = Math.max(0, Number(acct.listing_pack_credits || 0));
     const totalRemaining = includedRemaining + addonRemaining + listingPackCredits;
-    if (params.requiredImages > totalRemaining) {
+    if (!isSystemUser && params.requiredImages > totalRemaining) {
       const snap = buildSnapshot(usage, addonRemaining, monthKey);
       const err: any = new Error("QUOTA_EXCEEDED");
       err.code = "QUOTA_EXCEEDED";
@@ -227,7 +230,7 @@ export async function reserveAllowance(params: {
     // Allocate sequentially: Stage12 first (if requested), then Stage2.
     // Priority: included → add-on → listing pack (cheapest first, listing pack last).
     const allocations: { stage: "1" | "2"; fromIncluded: number; fromAddon: number; fromListingPack: number }[] = [];
-    let remainingNeed = params.requiredImages;
+    let remainingNeed = isSystemUser ? 0 : params.requiredImages;
     let remainingIncluded = includedRemaining;
     let remainingAddon = addonRemaining;
     let remainingListingPack = listingPackCredits;
@@ -262,6 +265,10 @@ export async function reserveAllowance(params: {
       console.log(
         `[USAGE] Listing pack credits used: ${reservedFromListingPack} for job ${params.jobId} (agency ${params.agencyId})`
       );
+    }
+
+    if (isSystemUser) {
+      console.log(`[SYSTEM_USER_RESERVATION] jobId=${params.jobId} userId=${params.userId} agencyId=${params.agencyId} requiredImages=${params.requiredImages}`);
     }
 
     await client.query(

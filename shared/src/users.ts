@@ -107,6 +107,8 @@ export async function createUser(params: {
     agencyId: params.agencyId,
     role: params.role,
     isActive: true,
+    isSystemUser: false,
+    creditUsageCount: 0,
     hasSeenWelcome: false,
     hasReceivedSignupCredits: false,
     credits: getInitialCredits(),
@@ -134,6 +136,8 @@ export async function createUser(params: {
         agencyId: user.agencyId || "",
         role: user.role || "",
         credits: user.credits.toString(),
+        isSystemUser: String(user.isSystemUser === true),
+        creditUsageCount: String(Math.max(0, Number(user.creditUsageCount || 0))),
         hasSeenWelcome: String(user.hasSeenWelcome === true),
         hasReceivedSignupCredits: String(user.hasReceivedSignupCredits === true),
         imageIds: JSON.stringify(user.imageIds),
@@ -188,6 +192,8 @@ export async function getUserById(userId: UserId): Promise<UserRecord | null> {
         agencyId: data.agencyId || undefined,
         role: (data.role as "owner" | "admin" | "member") || undefined,
         isActive: data.isActive !== "false",
+        isSystemUser: data.isSystemUser === "true",
+        creditUsageCount: Math.max(0, parseInt(data.creditUsageCount || "0", 10) || 0),
         hasSeenWelcome: data.hasSeenWelcome === "true",
         hasReceivedSignupCredits: data.hasReceivedSignupCredits === "true",
         credits: parseInt(data.credits || "0", 10),
@@ -261,6 +267,8 @@ export async function updateUser(user: UserRecord): Promise<void> {
         role: user.role || "",
         isActive: String(user.isActive !== false),
         credits: user.credits.toString(),
+        isSystemUser: String(user.isSystemUser === true),
+        creditUsageCount: String(Math.max(0, Number(user.creditUsageCount || 0))),
         hasSeenWelcome: String(user.hasSeenWelcome === true),
         hasReceivedSignupCredits: String(user.hasReceivedSignupCredits === true),
         imageIds: JSON.stringify(user.imageIds),
@@ -358,6 +366,17 @@ export async function upsertUserFromEmail(params: {
     await updateUser(user);
     return user;
   }
+}
+
+export async function incrementSystemUserCreditUsage(userId: UserId, amount: number): Promise<UserRecord | null> {
+  const normalizedAmount = Number.isFinite(amount) ? Math.max(0, Math.floor(amount)) : 0;
+  const user = await getUserById(userId);
+  if (!user) return null;
+  if (user.isSystemUser !== true) return user;
+
+  user.creditUsageCount = Math.max(0, Number(user.creditUsageCount || 0)) + normalizedAmount;
+  await updateUser(user);
+  return user;
 }
 
 /**

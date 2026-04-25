@@ -44,6 +44,7 @@ import adminDashboardRouter from "./routes/admin.js";
 import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
 import { enhanceRouter } from "./routes/enhance.js";
+import { internalEnhanceRouter } from "./routes/internalEnhance.js";
 import fs from "fs";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 import { ensureS3Ready } from "./utils/s3.js";
@@ -173,12 +174,45 @@ async function initializeAsyncServices(): Promise<void> {
   console.log("[startup] background initialization complete");
 }
 
+async function ensureInternalApiUserReady(): Promise<void> {
+  const internalUserId = String(process.env.INTERNAL_API_USER_ID || "").trim();
+  const internalApiKey = String(process.env.INTERNAL_API_KEY || "").trim();
+
+  if (!internalUserId && !internalApiKey) {
+    return;
+  }
+
+  if (!internalUserId || !internalApiKey) {
+    throw new Error("[startup] INTERNAL_API_USER_ID and INTERNAL_API_KEY must both be set when internal API is enabled");
+  }
+
+  const internalUser = await getUserById(internalUserId as any);
+  if (!internalUser) {
+    throw new Error(`[startup] internal API user not found: ${internalUserId}`);
+  }
+  if (internalUser.isSystemUser !== true) {
+    throw new Error(`[startup] internal API user must have isSystemUser=true: ${internalUserId}`);
+  }
+
+  const agencyId = String(process.env.INTERNAL_API_AGENCY_ID || internalUser.agencyId || "").trim();
+  if (!agencyId) {
+    throw new Error(`[startup] internal API user must have an agencyId or INTERNAL_API_AGENCY_ID must be set: ${internalUserId}`);
+  }
+
+  console.log("[startup] internal API user ready", {
+    userId: internalUserId,
+    agencyId,
+    trackingEnabled: String(process.env.INTERNAL_API_TRACK_USAGE || "true").toLowerCase() !== "false",
+  });
+}
+
 async function main() {
   const STUCK_RECOVERY_SCAN_INTERVAL_MS = Math.max(60_000, Number(process.env.STUCK_RECOVERY_SCAN_INTERVAL_MS || 5 * 60 * 1000));
   let stuckRecoveryTimer: NodeJS.Timeout | null = null;
 
   try {
     await runMigrations();
+    await ensureInternalApiUserReady();
   } catch (err) {
     console.error("[startup] migration failed:", err);
     process.exit(1);
@@ -383,6 +417,7 @@ async function main() {
   app.use("/api/trial", trialRouter());
   // Enhancement preflight/resume/cancel (payment continuation flow)
   app.use("/api/enhance", enhanceRouter());
+  app.use("/api/internal", internalEnhanceRouter());
   // Batch submission with individual job queueing
   app.use("/api/batch", batchSubmitRouter);
   // One-time admin data reset (heavily guarded)

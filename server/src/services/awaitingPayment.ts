@@ -14,6 +14,9 @@ async function getListingPackCredits(agencyId: string): Promise<number> {
 
 export async function getAvailableCredits(userId: string): Promise<number> {
   const user = await getUserById(userId);
+  if (user?.isSystemUser === true) {
+    return Number.MAX_SAFE_INTEGER;
+  }
   const agencyId = user?.agencyId;
   if (!agencyId) return 0;
 
