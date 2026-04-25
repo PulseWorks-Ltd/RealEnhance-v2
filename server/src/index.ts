@@ -65,9 +65,13 @@ const PROD_ALLOWED_ORIGINS = [
 const startupState: {
   schemaReady: boolean;
   schemaError: string | null;
+  internalApiReady: boolean;
+  internalApiError: string | null;
 } = {
   schemaReady: false,
   schemaError: null,
+  internalApiReady: true,
+  internalApiError: null,
 };
 
 async function checkDbConnection(): Promise<boolean> {
@@ -207,13 +211,44 @@ async function ensureInternalApiUserReady(): Promise<void> {
   });
 }
 
+async function ensureInternalApiUserReadyWithRetry(): Promise<void> {
+  const internalUserId = String(process.env.INTERNAL_API_USER_ID || "").trim();
+  const internalApiKey = String(process.env.INTERNAL_API_KEY || "").trim();
+
+  if (!internalUserId && !internalApiKey) {
+    startupState.internalApiReady = true;
+    startupState.internalApiError = null;
+    return;
+  }
+
+  const retryDelayMs = 10_000;
+  let attempt = 0;
+
+  startupState.internalApiReady = false;
+
+  while (!startupState.internalApiReady) {
+    attempt += 1;
+    try {
+      await ensureInternalApiUserReady();
+      startupState.internalApiReady = true;
+      startupState.internalApiError = null;
+      console.log(`[startup] internal API configuration confirmed (attempt ${attempt})`);
+      return;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      startupState.internalApiError = message;
+      console.error(`[startup] internal API configuration check failed (attempt ${attempt})`, err);
+      await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));
+    }
+  }
+}
+
 async function main() {
   const STUCK_RECOVERY_SCAN_INTERVAL_MS = Math.max(60_000, Number(process.env.STUCK_RECOVERY_SCAN_INTERVAL_MS || 5 * 60 * 1000));
   let stuckRecoveryTimer: NodeJS.Timeout | null = null;
 
   try {
     await runMigrations();
-    await ensureInternalApiUserReady();
   } catch (err) {
     console.error("[startup] migration failed:", err);
     process.exit(1);
@@ -349,14 +384,17 @@ async function main() {
   app.get("/ready", async (_req, res) => {
     const dbReady = await checkDbConnection();
     const schemaReady = startupState.schemaReady;
+    const internalApiReady = startupState.internalApiReady;
 
-    if (!dbReady || !schemaReady) {
+    if (!dbReady || !schemaReady || !internalApiReady) {
       return res.status(503).json({
         ok: false,
         status: "starting",
         dbReady,
         schemaReady,
         schemaError: startupState.schemaError,
+        internalApiReady,
+        internalApiError: startupState.internalApiError,
         env: process.env.NODE_ENV || "dev",
         time: new Date().toISOString(),
       });
@@ -367,6 +405,7 @@ async function main() {
       status: "ok",
       dbReady,
       schemaReady,
+      internalApiReady,
       env: process.env.NODE_ENV || "dev",
       time: new Date().toISOString(),
     });
@@ -378,7 +417,8 @@ async function main() {
   app.get("/health", async (_req, res) => {
     const dbReady = await checkDbConnection();
     const schemaReady = startupState.schemaReady;
-    const ready = dbReady && schemaReady;
+    const internalApiReady = startupState.internalApiReady;
+    const ready = dbReady && schemaReady && internalApiReady;
 
     res.status(200).json({
       ok: true,
@@ -387,6 +427,8 @@ async function main() {
       dbReady,
       schemaReady,
       schemaError: startupState.schemaError,
+      internalApiReady,
+      internalApiError: startupState.internalApiError,
       env: process.env.NODE_ENV || "dev",
       time: new Date().toISOString(),
     });
@@ -458,6 +500,7 @@ async function main() {
   const httpServer = app.listen(PORT, HOST, () => {
     console.log(`[server] listening on ${HOST}:${PORT} (NODE_ENV=${process.env.NODE_ENV || 'development'}, PORT=${PORT})`);
     void ensureSchemaCompatibilityWithRetry();
+    void ensureInternalApiUserReadyWithRetry();
     void initializeAsyncServices();
 
     const runStuckRecovery = async () => {
