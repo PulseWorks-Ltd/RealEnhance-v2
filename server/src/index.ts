@@ -54,7 +54,6 @@ import createSystemUserRouter from "./routes/createSystemUser.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-app.use("/internal", createSystemUserRouter);
 
 const IS_PROD = NODE_ENV === "production";
 const PROD_SESSION_COOKIE_DOMAIN = ".realenhance.co.nz";
@@ -398,6 +397,8 @@ async function main() {
   app.use("/api/admin/usage", adminUsageRouter);
   // Admin dashboard (agencies, usage, billing overview)
   app.use("/api/admin/dashboard", adminDashboardRouter);
+  // Internal system-user setup endpoint
+  app.use("/internal", createSystemUserRouter);
   // Admin subscription management (protected by API key)
   app.use("/internal/admin", adminSubscriptionRouter);
   // Agency management endpoints
