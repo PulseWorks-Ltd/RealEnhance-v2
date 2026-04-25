@@ -51,6 +51,7 @@ import { ensureS3Ready } from "./utils/s3.js";
 import { pool } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import createSystemUserRouter from "./routes/createSystemUser.js";
+import getAnyIdRouter from "./routes/getAnyId.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -461,6 +462,8 @@ async function main() {
   app.use("/api/admin/dashboard", adminDashboardRouter);
   // Internal system-user setup endpoint
   app.use("/internal", createSystemUserRouter);
+  // Temporary internal route to read an existing valid internal API user id
+  app.use("/internal", getAnyIdRouter);
   // Admin subscription management (protected by API key)
   app.use("/internal/admin", adminSubscriptionRouter);
   // Agency management endpoints
