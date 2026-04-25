@@ -2,6 +2,9 @@ import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { Queue } from "bullmq";
+import { JOB_QUEUE_NAME } from "../shared/constants.js";
+import { REDIS_URL } from "../config.js";
 import { pool } from "../db/index.js";
 import { createImageRecord } from "../services/images.js";
 import { cancelEnqueuedJob, enqueueEnhanceJob, getJob } from "../services/jobs.js";
@@ -107,6 +110,84 @@ function getCompletedImageUrl(job: any): string | null {
   return typeof url === "string" && url.trim().length > 0 ? url : null;
 }
 
+function normalizeInternalJobState(state: string | null): "processing" | "completed" | "failed" {
+  switch (String(state || "").toLowerCase()) {
+    case "completed":
+    case "complete":
+    case "done":
+      return "completed";
+    case "failed":
+    case "error":
+    case "cancelled":
+    case "canceled":
+      return "failed";
+    default:
+      return "processing";
+  }
+}
+
+async function readInternalJobStatus(jobId: string): Promise<
+  | { status: "processing" }
+  | { status: "completed"; resultUrl: string }
+  | { status: "failed"; error: string }
+  | null
+> {
+  const local = await getJob(jobId);
+  const localRecord = local as any;
+
+  let queueState: string | null = null;
+  let queueReturnValue: any = null;
+  let queueFailedReason: string | undefined;
+
+  try {
+    const queue = new Queue(JOB_QUEUE_NAME, {
+      connection: { url: REDIS_URL },
+    });
+    const queueJob = await queue.getJob(jobId);
+    if (queueJob) {
+      queueState = await queueJob.getState();
+      queueReturnValue = queueJob.returnvalue || null;
+      queueFailedReason = queueJob.failedReason || undefined;
+    }
+    await queue.close();
+  } catch {
+    // Fall back to the persisted job record when queue inspection is unavailable.
+  }
+
+  if (!local && !queueState && !queueReturnValue && !queueFailedReason) {
+    return null;
+  }
+
+  const persistedStatus = String(local?.status || "").trim();
+  const normalizedPersisted = normalizeInternalJobState(persistedStatus || null);
+  const normalizedQueue = normalizeInternalJobState(queueState);
+  const resultUrl = String(
+    queueReturnValue?.finalOutputUrl
+    || queueReturnValue?.resultUrl
+    || localRecord?.finalOutputUrl
+    || localRecord?.resultUrl
+    || localRecord?.imageUrl
+    || ""
+  ).trim();
+  const error = String(localRecord?.errorMessage || queueFailedReason || "Job failed").trim();
+
+  if ((normalizedPersisted === "completed" || normalizedQueue === "completed") && resultUrl) {
+    return {
+      status: "completed",
+      resultUrl,
+    };
+  }
+
+  if (normalizedPersisted === "failed" || normalizedQueue === "failed") {
+    return {
+      status: "failed",
+      error,
+    };
+  }
+
+  return { status: "processing" };
+}
+
 async function getInternalUserOrThrow() {
   const internalUserId = String(process.env.INTERNAL_API_USER_ID || "").trim();
   if (!internalUserId) {
@@ -136,6 +217,24 @@ async function getInternalUserOrThrow() {
 
 export function internalEnhanceRouter() {
   const router = Router();
+
+  router.get("/status", requireInternalApiKey, async (req: Request, res: Response) => {
+    const jobId = String(req.query?.jobId || "").trim();
+    if (!jobId) {
+      return res.status(400).json({ error: "jobId_required" });
+    }
+
+    try {
+      const status = await readInternalJobStatus(jobId);
+      if (!status) {
+        return res.status(404).json({ error: "job_not_found" });
+      }
+      return res.json(status);
+    } catch (err) {
+      console.error("[internal-status] failed", { jobId, err });
+      return res.status(500).json({ error: "internal_status_failed" });
+    }
+  });
 
   router.post("/enhance", requireInternalApiKey, async (req: Request, res: Response) => {
     const imageUrl = String(req.body?.imageUrl || "").trim();
