@@ -346,7 +346,7 @@ async function main() {
   });
 
   // Readiness: dependencies/schema are usable for full traffic.
-  app.get("/health", async (_req, res) => {
+  app.get("/ready", async (_req, res) => {
     const dbReady = await checkDbConnection();
     const schemaReady = startupState.schemaReady;
 
@@ -367,6 +367,26 @@ async function main() {
       status: "ok",
       dbReady,
       schemaReady,
+      env: process.env.NODE_ENV || "dev",
+      time: new Date().toISOString(),
+    });
+  });
+
+  // Compatibility health endpoint for platforms that still probe /health.
+  // Keep this non-failing once the process is serving so deploy healthchecks
+  // do not flap while deeper schema compatibility retries are still running.
+  app.get("/health", async (_req, res) => {
+    const dbReady = await checkDbConnection();
+    const schemaReady = startupState.schemaReady;
+    const ready = dbReady && schemaReady;
+
+    res.status(200).json({
+      ok: true,
+      status: ready ? "ok" : "starting",
+      ready,
+      dbReady,
+      schemaReady,
+      schemaError: startupState.schemaError,
       env: process.env.NODE_ENV || "dev",
       time: new Date().toISOString(),
     });
