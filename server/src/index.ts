@@ -50,9 +50,11 @@ import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./conf
 import { ensureS3Ready } from "./utils/s3.js";
 import { pool } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
+import createSystemUserRouter from "./routes/createSystemUser.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+app.use("/internal", createSystemUserRouter);
 
 const IS_PROD = NODE_ENV === "production";
 const PROD_SESSION_COOKIE_DOMAIN = ".realenhance.co.nz";
