@@ -479,19 +479,13 @@ async function detectFurnitureOnce(
   const system = sceneType === "exterior" ? `
 You are determining whether this EXTERIOR real estate image contains clearly identifiable, removable clutter.
 
+Bias toward NO clutter. If you are uncertain, ambiguous, or the object boundary is unclear, return no clutter.
+
 Return JSON only with this exact structure:
 {
   "hasFurniture": boolean,
   "detectedAnchors": string[],
   "detectedItems": [{ "type": string, "confidence": number }],
-  "furnitureItems": [
-    {
-      "type": "bed" | "sofa" | "chair" | "table" | "desk" | "nightstand" | "dresser" | "tv" | "appliance" | "decor" | "other",
-      "label": string,
-      "isAnchor": boolean,
-      "confidence": number
-    }
-  ],
   "confidence": number,
   "hasMovableSeating": boolean,
   "hasCounterClutter": boolean,
@@ -523,14 +517,26 @@ Do NOT treat any of the following as clutter:
 - full outdoor furniture sets
 - general messiness, texture noise, shadows, or small ambiguous objects
 
+Non-removable / structural / material conditions are NEVER clutter and must NEVER trigger declutter:
+- driveways, paving, concrete, decking, walls, fences, roofs, gutters, paths, steps, pergolas
+- cracks, chips, stains, weathering, worn paint, texture variation, patchy concrete, dirty surfaces
+- mulch, gravel, soil, dirt patches, lawn variation, weeds, garden beds, edging, stones
+- fixed outdoor kitchens, fixed BBQs, built-in benches, fixed planters, retaining walls
+- drain covers, service covers, expansion joints, shadows, reflections, water marks
+
+"debris" and "building_material" are only valid when there is a clearly separate portable pile or object with a visible boundary, such as loose boards, offcuts, rubble, packaging, or discarded renovation materials.
+Do NOT use "debris" or "building_material" for surface wear, cracked paving, soil, mulch, gravel, or landscaping.
+
 Rules:
 - confidence must be between 0 and 1 and reflect your confidence in the clutter assessment.
-- detectedItems must be [] unless at least one clearly identifiable removable clutter item is visible.
+- detectedItems must be [] unless at least one clearly identifiable removable clutter item is visible as a separate portable object.
+- Only report a detected item when the object has a clear boundary and could be removed without reinterpreting or repairing the underlying surface.
 - hasSurfaceClutter=true only when removable clutter is clearly visible on exterior surfaces such as decks, patios, tables, or paths.
 - hasLoosePortableItems=true only when clearly removable portable exterior clutter is visible.
 - hasCounterClutter should be false for exteriors unless obvious removable clutter is visible on an outdoor kitchen or utility surface.
 - hasMovableSeating=true only for loose single chairs or stools that are clearly removable, not full outdoor sets.
 - If uncertain, set detectedItems to [] and all clutter booleans to false.
+- If a candidate signal could also be explained by landscaping, fixed structure, surface damage, weathering, shadows, or texture variation, treat it as NOT clutter.
 - detectedAnchors should be [] for exterior scenes unless one of the canonical anchor labels is undeniably visible.
 - isStageReady=true only when no clearly removable clutter is visible.
 ` : `

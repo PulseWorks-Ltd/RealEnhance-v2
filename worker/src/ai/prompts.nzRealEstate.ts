@@ -959,6 +959,13 @@ You must NOT add, create, or invent ANY structural features or landscape element
 
 If you add ANY structural feature that wasn't already visible, the task is FAILED.
 
+STRICT SUBTRACTIVE BOUNDARY:
+
+Only remove clearly separate portable man-made objects.
+Do NOT reinterpret, repair, smooth, beautify, repaint, or retexture any material or surface.
+If removal would require guessing what a surface should look like, KEEP the object.
+If an area is ambiguous, attached, blended into the surface, or could be structural/material wear, KEEP it.
+
 CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
 
 Do NOT rotate, crop, zoom, warp, reframe, or shift viewpoint.
@@ -976,7 +983,7 @@ Do NOT invent or add any new:
 - extractor fans, wall lights, ceiling fixtures
 - plumbing points, built-ins, or structural details
 
-If uncertain, extend existing texture/paint/material conservatively.
+If uncertain, KEEP the original pixels conceptually intact.
 Never create new architectural or service elements.
 
 COLOR PRESERVATION — LOCKED
@@ -985,7 +992,6 @@ All surface colors must remain IDENTICAL to the input image:
 - Do NOT change wall colors, cladding colors, or paint tones
 - Do NOT change deck colors, paving colors, or surface tones
 - Do NOT brighten, darken, or shift any surface colors
-- When reconstructing behind furniture, match the EXACT surrounding surface color
 - Wall colors = LOCKED | Surface colors = LOCKED
 
 REMOVE:
@@ -1011,10 +1017,11 @@ DO NOT TOUCH:
 - Windows, doors, frames
 - Trees, shrubs, landscaping, and garden beds
 - Exterior views and background scenery
+- Surface wear, cracks, stains, texture variation, weathering, and fixed material imperfections
 
 ${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 
-Preserve surface textures and shadows.`.trim();
+Preserve surface textures and shadows exactly as they are. Do not beautify materials.`.trim();
     }
 
       return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
@@ -1410,7 +1417,7 @@ Return only the empty room image.`.trim();
       return `REALENHANCE — STAGE 1B: LIGHT DECLUTTER (EXTERIOR)
 
     TASK:
-    Remove loose, portable clutter ONLY to depersonalize and tidy the outdoor space.
+    Remove clearly separate, loose, portable clutter ONLY to depersonalize and tidy the outdoor space.
     Preserve all architecture, hardscape, landscaping, and major outdoor furniture.
 
     PRIMARY OBJECTIVE — LISTING-READY PRESENTATION
@@ -1420,8 +1427,9 @@ Return only the empty room image.`.trim();
 
     This is NOT staging or redesign — but the space should look clearly tidied and prepared for photography.
 
-    If an item is loose, personal, messy, or visually distracting — remove it or tidy it.
-    If movable textiles or seating setups look messy — straighten and neaten them.
+    Only remove clearly separate portable objects.
+    Do NOT reinterpret surface damage, structural wear, landscaping texture, or material imperfections as clutter.
+    If a candidate object is ambiguous or blended into the scene, KEEP IT.
 
     NO NEW OBJECTS — STRICT
 
@@ -1478,8 +1486,7 @@ Return only the empty room image.`.trim();
     REMOVE SMALL SURFACE CLUTTER:
     - small loose items on outdoor tables/benches
     - random containers and scattered accessories
-    - loose personal items and visual clutter hotspots
-    - small decorative pot plants causing visual clutter (only if clearly minor and portable)
+    - loose personal items with clear separate object boundaries
 
     TIDY BUT DO NOT REMOVE:
     - outdoor dining suites (align chairs neatly around table)
@@ -1513,7 +1520,8 @@ Return only the empty room image.`.trim();
     Do not alter walls, fences, decking, paths, driveways, plumbing fixtures, or fixed structures.
     Do not create holes, openings, or remove architectural elements.
     Only remove loose, portable, non-attached items.
-    Match surrounding surface colors when reconstructing behind removed items.
+    Do NOT reinterpret, repair, smooth, beautify, repaint, or retexture any material.
+    Surface wear, cracks, stains, weathering, dirt patches, and texture variation are not clutter.
 
     NATURAL ENVIRONMENT LOCK
 
@@ -1536,7 +1544,9 @@ Return only the empty room image.`.trim();
     If unsure → KEEP IT.
 
     SURFACE RESTORATION:
-    Repair surfaces realistically where items are removed.
+    Do not repair or beautify surfaces.
+    Only reveal already-implied background where a clearly separate portable object was occluding it.
+    If removal would require inventing material detail, KEEP the object.
 
     OUTDOOR PRESENTATION TIDY — REQUIRED WHEN NEEDED
 
@@ -1559,6 +1569,7 @@ Return only the empty room image.`.trim();
     - Do NOT add new objects
     - Do NOT remove major objects
     - Do NOT redesign or restyle
+    - Do NOT reinterpret or repair materials
 
     This is presentation tidying only — not staging or redesign.
 

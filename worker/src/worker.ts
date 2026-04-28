@@ -137,6 +137,22 @@ const EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD = Math.max(
   0,
   Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD || 0.75))
 );
+const EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN || 0.6))
+);
+const EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD = Math.max(
+  1,
+  Math.floor(Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD || 14))
+);
+const EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD || 0.58))
+);
+const EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD || 0.62))
+);
 const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = (() => {
   const configured = Number(process.env.INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE || 1);
   return Number.isFinite(configured) ? Math.max(0, Math.floor(configured)) : 1;
@@ -3980,7 +3996,17 @@ function getExteriorDetectedItems(detectorResult: Awaited<ReturnType<typeof dete
       type: normalizeExteriorDetectedItemType(item?.type),
       confidence: typeof item?.confidence === "number" ? item.confidence : null,
     }))
-    .filter((item) => !!item.type);
+    .filter((item) => {
+      if (!item.type || !ALLOWED_EXTERIOR_DECLUTTER_TYPES.has(item.type)) {
+        return false;
+      }
+
+      if (typeof item.confidence !== "number") {
+        return false;
+      }
+
+      return item.confidence >= EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN;
+    });
 }
 
 type ExteriorDeclutterImageStats = {
@@ -3990,11 +4016,14 @@ type ExteriorDeclutterImageStats = {
 };
 
 function likelyExteriorClutter(imageStats: ExteriorDeclutterImageStats): boolean {
-  return (
-    imageStats.objectCount > 6
-    || imageStats.edgeDensity > 0.25
-    || imageStats.colorVariance > 0.4
-  );
+  const extremeSignals = [
+    imageStats.objectCount >= EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD,
+    imageStats.edgeDensity >= EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD,
+    imageStats.colorVariance >= EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD,
+  ];
+
+  const extremeSignalCount = extremeSignals.filter(Boolean).length;
+  return extremeSignalCount >= 2;
 }
 
 async function computeExteriorDeclutterImageStats(imagePath: string): Promise<ExteriorDeclutterImageStats> {
@@ -4117,7 +4146,7 @@ async function shouldRunExteriorDeclutter(params: {
 
     const detectedItems = getExteriorDetectedItems(params.detection);
     return {
-      hasClutter: detectedItems.some((item) => ALLOWED_EXTERIOR_DECLUTTER_TYPES.has(item.type)),
+      hasClutter: detectedItems.length > 0,
       fallbackUsed: false,
       imageStats: null,
     };
