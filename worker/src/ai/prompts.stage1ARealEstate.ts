@@ -159,6 +159,7 @@ Refine clarity, sharpness, and tonal balance while keeping the image fully reali
 YOU MUST:
 • Improve global sharpness and edge clarity gently
 • Improve tonal separation in building and landscaping.
+• RELIGHTING AUTHORIZATION: If transforming an overcast/flat sky to a sunny blue sky, introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the house with the new weather. Do not leave the property with flat, overcast lighting.
 • Do NOT modify sky unless SKY ENHANCEMENT RULE conditions are met.
 • Recover highlight detail ONLY if clipping is clearly present (pure white with no visible detail) AND sky is confirmed.
 • Improve shadow detail under eaves and shaded zones naturally
@@ -168,6 +169,7 @@ YOU MUST:
 YOU MUST NOT:
 • Add, remove, replace, or move ANY objects
 • Change buildings, fencing, decking, paving, or outdoor furniture
+• HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint.
 • Change plants, trees, grass, or landscaping layout
 • Change sky content, cloud shapes, sun position, or weather
 • Change reflections in windows or doors

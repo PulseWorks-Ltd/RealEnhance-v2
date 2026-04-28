@@ -19,6 +19,7 @@ type StatusItem = {
   id: string;
   state: NormalizedState;               // canonical pipeline status
   status: NormalizedState;              // alias for backward compatibility
+  effectiveStage1BRequired?: boolean;
   isTerminal?: boolean;                 // authoritative terminal flag
   terminalAt?: string | null;           // terminal write timestamp when available
   terminalReason?: string | null;       // terminal reason (failed reason or completion reason)
@@ -132,6 +133,57 @@ function resolveTerminalMetadata(
       : (local?.completionReason || "final_complete");
 
   return { isTerminal: true, terminalAt, terminalReason };
+}
+
+function resolveEffectiveStage1BRequired(params: {
+  local: any;
+  payload: any;
+  requestedStages: any;
+}): boolean {
+  const { local, payload, requestedStages } = params;
+  const requestedDeclutter =
+    !!requestedStages?.stage1b ||
+    (typeof requestedStages?.declutter === "boolean" ? requestedStages.declutter : false) ||
+    !!payload?.options?.declutter;
+
+  const meta = local?.meta || {};
+  const routingSnapshot =
+    meta?.routingSnapshot ||
+    local?.metadata?.routingSnapshot ||
+    local?.routingSnapshot ||
+    null;
+  const skippedByDesign =
+    meta?.stage1BSkippedByDesign === true ||
+    meta?.furnishedGate?.stage1BSkippedByDesign === true ||
+    routingSnapshot?.stage1BSkippedByDesign === true;
+
+  if (skippedByDesign) {
+    return false;
+  }
+
+  return requestedDeclutter || routingSnapshot?.stage1BRequired === true;
+}
+
+function resolveBestAvailableStage(params: {
+  stageUrls: Record<string, string | null>;
+  stage2Expected: boolean;
+  effectiveStage1BRequired: boolean;
+}): { stage: string | null; url: string | null } {
+  const { stageUrls, stage2Expected, effectiveStage1BRequired } = params;
+
+  if (stage2Expected) {
+    return { stage: null, url: null };
+  }
+
+  if (stageUrls.stage1B || stageUrls["1B"]) {
+    return { stage: "1B", url: stageUrls.stage1B || stageUrls["1B"] || null };
+  }
+
+  if (!effectiveStage1BRequired && (stageUrls.stage1A || stageUrls["1A"])) {
+    return { stage: "1A", url: stageUrls.stage1A || stageUrls["1A"] || null };
+  }
+
+  return { stage: null, url: null };
 }
 
 function normalizeStateToQueueStatus(state: string | null): QueueStatus {
@@ -346,14 +398,12 @@ export function statusRouter() {
           || stage2SkipReason === "outdoor_staging_disabled";
         const stagingAllowed = local?.meta?.allowStaging !== false;
         const stage2Expected = requestedStage2 === true && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
-        const bestAvailableStage: { stage: string | null; url: string | null } = (() => {
-          // For scenarios where Stage 2 is not expected (exterior or staging disabled), use best available
-          if (!stage2Expected) {
-            if (stageUrls.stage1B || stageUrls['1B']) return { stage: '1B', url: stageUrls.stage1B || stageUrls['1B'] || null };
-            if (stageUrls.stage1A || stageUrls['1A']) return { stage: '1A', url: stageUrls.stage1A || stageUrls['1A'] || null };
-          }
-          return { stage: null, url: null };
-        })();
+        const effectiveStage1BRequired = resolveEffectiveStage1BRequired({ local, payload, requestedStages });
+        const bestAvailableStage = resolveBestAvailableStage({
+          stageUrls,
+          stage2Expected,
+          effectiveStage1BRequired,
+        });
         
         // ✅ FIX 1: Stage-based completion detection
         const stage1BPresent = !!(stageUrls.stage1B || stageUrls['1B']);
@@ -365,7 +415,7 @@ export function statusRouter() {
           if (requestedStage2 && stage2Expected) {
             return stage2Present; // Need Stage 2
           }
-          if (declutterRequested) {
+          if (effectiveStage1BRequired) {
             return stage1BPresent; // Need Stage 1B
           }
           return stage1APresent; // Just need Stage 1A
@@ -555,6 +605,7 @@ export function statusRouter() {
           id,
           state: pipelineStatus,
           status: pipelineStatus,
+          effectiveStage1BRequired,
           isTerminal: terminalMeta.isTerminal,
           terminalAt: terminalMeta.terminalAt,
           terminalReason: terminalMeta.terminalReason,
@@ -806,13 +857,19 @@ export function statusRouter() {
         || stage2SkipReason === "outdoor_staging_disabled";
       const stagingAllowed = local?.meta?.allowStaging !== false;
       const stage2Expected = requestedStage2 === true && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
+      const effectiveStage1BRequired = resolveEffectiveStage1BRequired({ local, payload, requestedStages });
+      const bestAvailableStage = resolveBestAvailableStage({
+        stageUrls,
+        stage2Expected,
+        effectiveStage1BRequired,
+      });
       
       // ✅ FIX 1: Stage-based completion detection (single-job endpoint)
       const allRequestedStagesPresent = (() => {
         if (requestedStage2 && stage2Expected) {
           return stage2Present;
         }
-        if (declutterRequested) {
+        if (effectiveStage1BRequired) {
           return stage1BPresent;
         }
         return stage1APresent;
@@ -828,7 +885,13 @@ export function statusRouter() {
         statusSource = "persisted";
       }
 
-      const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl);
+      const resolvedResultUrl = resultUrl || (!stage2Expected ? (bestAvailableStage.url || null) : null);
+      const resolvedFinalStage =
+        local.finalStage ||
+        local.resultStage ||
+        (rv && (rv.finalStage || rv.resultStage)) ||
+        (!stage2Expected ? (bestAvailableStage.stage || null) : null);
+      const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl || bestAvailableStage.url);
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
       }
@@ -864,11 +927,11 @@ export function statusRouter() {
       else if (warnings.length) uiStatus = "warning";
 
       const success =
-        stateOut === "completed" && typeof resultUrl === "string";
-      if (stateOut === "completed" && !resultUrl) {
+        stateOut === "completed" && typeof resolvedResultUrl === "string";
+      if (stateOut === "completed" && !resolvedResultUrl) {
         console.warn("[INVALID_STATUS_COMPLETED_NO_IMAGE]", { jobId });
       }
-      if (stateOut === "processing" && !!resultUrl) {
+      if (stateOut === "processing" && !!resolvedResultUrl) {
         console.warn("[INCONSISTENT_STATUS_IMAGE_PRESENT]", { jobId });
       }
       const terminalMeta = resolveTerminalMetadata(local, stateOut, failedReason);
@@ -876,6 +939,7 @@ export function statusRouter() {
         id: jobId,
         state: stateOut,
         status: stateOut,
+        effectiveStage1BRequired,
         isTerminal: terminalMeta.isTerminal,
         terminalAt: terminalMeta.terminalAt,
         terminalReason: terminalMeta.terminalReason,
@@ -884,14 +948,18 @@ export function statusRouter() {
         queueStatus,
         success,
         imageId,
-        finalOutputUrl,
+        finalOutputUrl: resolvedResultUrl,
         stage2Url: stageUrls.stage2 || stageUrls['2'] || null,
-        imageUrl: resultUrl,
+        imageUrl: resolvedResultUrl,
         originalUrl,
         maskUrl,
-        publishedUrl: resultUrl,
+        publishedUrl: resolvedResultUrl,
         warnings,
         hardFail,
+        finalStage: resolvedFinalStage || undefined,
+        resultStage: resolvedFinalStage ?? null,
+        stageCompleted: local.stageCompleted || resolvedFinalStage || null,
+        resultUrl: resolvedResultUrl ?? null,
         blockedStage: blockedStage || null,
         fallbackStage: fallbackStageMeta || null,
         validationNote: validationNote || null,

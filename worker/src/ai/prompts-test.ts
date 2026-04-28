@@ -82,8 +82,8 @@ Enhance this exterior property image for real estate marketing.
 Your tasks:
 • Improve exposure, color, clarity, and sharpness.
 • Replace an overcast sky with a natural blue sky with soft clouds.
-• Add subtle, realistic warm sunlight appropriate to the scene.
-• Improve lawn health, fill patchy grass, and trim lawn edges.
+• Add subtle, realistic warm sunlight appropriate to the scene (no flat, overcast lighting).
+• Improve health and colour of existing grass only (do not expand grass over driveways, paths, or dirt patches).
 • Clean visible driveways, paths, patios, decks, fences, and walls to remove dirt, mould, and stains by roughly 30–40%, while keeping material and pattern identical.
 
 HARD RULES — NON-NEGOTIABLE:

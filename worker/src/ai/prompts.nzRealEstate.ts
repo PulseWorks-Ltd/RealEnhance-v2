@@ -847,6 +847,7 @@ SKY ENHANCEMENT (CONDITIONAL & GUARDED)
 If the existing sky is flat grey or overcast:
 • You MAY replace it with a 'New Zealand Summer Blue' sky
   that is saturated but natural.
+• RELIGHTING AUTHORIZATION: If replacing an overcast sky, you MUST introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the house with the new weather. Do not leave the property with flat, overcast lighting.
 
 CRITICAL SKY RULES:
 • The sky mask MUST fully preserve antennas, chimneys,
@@ -873,6 +874,7 @@ LANDSCAPE VIBRANCY
 ────────────────────────────────
 
 • LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.
+• HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint to "fix" worn or dirt patches.
 
 ────────────────────────────────
 ALLOWED ADJUSTMENTS (GLOBAL ONLY)
