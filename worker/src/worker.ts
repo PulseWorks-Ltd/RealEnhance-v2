@@ -4375,6 +4375,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     geminiConfidence: number | null;
     roomState?: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
     hasClutter: boolean | null;
+    exteriorDetectionStatus?: "success" | "failed" | null;
+    exteriorFallbackUsed?: boolean;
     excessFurnitureCount?: number | null;
     skipStage1B: boolean;
     stage1BSkippedByDesign?: boolean;
@@ -7581,11 +7583,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const localEmpty = await isRoomEmpty(stage1ABuffer);
 
         if (shouldResolveExteriorDeclutter) {
+          const ai = getGeminiClient();
+          logger.info("DETECTOR_STARTED", jobLogContext(payload, {
+            event: "DETECTOR_STARTED",
+            detector: "furniture",
+            detectorModel: "gemini-2.0-flash",
+            sceneType: "exterior",
+            confidence: null,
+            finalSkipStage1B: null,
+          }));
+          const exteriorDetection = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data, {
+            sceneType: "exterior",
+          });
           const exteriorDeclutterDecision = await shouldRunExteriorDeclutter({
-            detection: { status: "failed" },
+            detection: exteriorDetection,
             imagePath: path1A,
           });
-          const detectedItems: Array<{ type: string; confidence: number | null }> = [];
+          const detectedItems = getExteriorDetectedItems(exteriorDetection);
+          const detectionStatus = exteriorDetection.status;
+          const detectionConfidence = isFurnitureDetectionSuccess(exteriorDetection)
+            && typeof exteriorDetection.confidence === "number"
+            ? exteriorDetection.confidence
+            : null;
           const hasClutter = exteriorDeclutterDecision.hasClutter;
           const fallbackStats = summarizeExteriorDeclutterStats(exteriorDeclutterDecision.imageStats);
 
@@ -7593,22 +7612,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             authority: "exteriorClutter",
             localEmpty: false,
             geminiHasFurniture: null,
-            geminiConfidence: null,
+            geminiConfidence: detectionConfidence,
             hasClutter,
+            exteriorDetectionStatus: detectionStatus,
+            exteriorFallbackUsed: exteriorDeclutterDecision.fallbackUsed,
             skipStage1B: !hasClutter,
             stage1BSkippedByDesign: !hasClutter,
             declutterMode: hasClutter ? "light" : null,
             stage1BRequired: hasClutter,
           };
 
+          logger.info("DETECTOR_RESULT", jobLogContext(payload, {
+            event: "DETECTOR_RESULT",
+            detector: "furniture",
+            confidence: detectionConfidence,
+            detectedItems,
+            detectionStatus,
+            fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
+            finalSkipStage1B: !hasClutter,
+          }));
+
           if (!hasClutter) {
             logger.info("EXTERIOR_DECLUTTER_SKIPPED", jobLogContext(payload, {
               event: "EXTERIOR_DECLUTTER_SKIPPED",
               confidence: routingSnapshot.geminiConfidence,
               detectedItems,
-              detectionStatus: "disabled",
+              detectionStatus,
               fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
               fallbackStats,
+              reason: exteriorDeclutterDecision.fallbackUsed ? "heuristic_no_clutter" : "detector_no_clutter",
             }));
           }
 
@@ -7617,7 +7649,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             clutterDetected: hasClutter,
             confidence: routingSnapshot.geminiConfidence,
             detectedItems,
-            detectionStatus: "disabled",
+            detectionStatus,
             fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
             fallbackStats,
             stage1B: routingSnapshot.stage1BRequired,
@@ -7965,12 +7997,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   nLog(`[WORKER] Stage 1B skipStage1B=${skipStage1B}`);
 
   if (skipStage1B) {
-    nLog("[STAGE1B_BYPASSED]", {
-      jobId: payload.jobId,
-      reason: "anchor_detected_no_clutter",
-      stage1BRequired,
-      skipStage1B,
-    });
+    if (isExteriorScene && frozenRoutingSnapshot.authority === "exteriorClutter") {
+      nLog("[EXTERIOR_DECLUTTER_SKIPPED]", {
+        jobId: payload.jobId,
+        reason: frozenRoutingSnapshot.exteriorFallbackUsed ? "heuristic_no_clutter" : "detector_no_clutter",
+        detectionStatus: frozenRoutingSnapshot.exteriorDetectionStatus ?? null,
+        stage1BRequired,
+        skipStage1B,
+      });
+    } else {
+      nLog("[STAGE1B_BYPASSED]", {
+        jobId: payload.jobId,
+        reason: "anchor_detected_no_clutter",
+        stage1BRequired,
+        skipStage1B,
+      });
+    }
   } else if (!stage1BRequired) {
     nLog(`[WORKER] ❌ Stage 1B DISABLED — declutterMode is null, skipping`);
   } else {
