@@ -57,14 +57,19 @@ export type FurnitureDetectionSuccess = FurnitureAnalysis & { status: "success" 
 export type FurnitureDetectionFailure = { status: "failed" };
 export type FurnitureDetectionResult = FurnitureDetectionSuccess | FurnitureDetectionFailure;
 
+/** @deprecated Use deriveRoomState instead. */
 export type FurnishedGateDecisionType = "furnished_refresh" | "empty_full_stage" | "needs_declutter_light";
 
+/** @deprecated Use deriveRoomState instead. */
 export interface FurnishedGateDecision {
   decision: FurnishedGateDecisionType;
   reason: string;
   confidence: number;
   anchors: string[];
 }
+
+/** Canonical room state output from the furniture detector. Routing decisions are made in worker.ts. */
+export type RoomState = "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED";
 
 export const CORE_ANCHOR_CLASSES = [
   "bed",
@@ -78,6 +83,33 @@ export const CORE_ANCHOR_CLASSES = [
 ] as const;
 
 const CORE_ANCHOR_SET = new Set<string>(CORE_ANCHOR_CLASSES);
+
+/**
+ * Returns true when an item type is a natural supporting companion for the present anchors
+ * and should NOT count as excess furniture.
+ */
+function isSupportingItem(itemType: FurnitureItemType, anchors: string[]): boolean {
+  // Decor is always supporting (wall art, plants, decorative objects)
+  if (itemType === "decor") return true;
+
+  if (anchors.includes("bed")) {
+    if (itemType === "nightstand" || itemType === "dresser") return true;
+  }
+
+  if (anchors.includes("sofa") || anchors.includes("coffee_table")) {
+    if (itemType === "table" || itemType === "chair") return true;
+  }
+
+  if (anchors.includes("dining_table")) {
+    if (itemType === "chair") return true;
+  }
+
+  if (anchors.includes("desk")) {
+    if (itemType === "chair") return true;
+  }
+
+  return false;
+}
 
 function toBool(value: unknown): boolean {
   return value === true;
@@ -215,6 +247,54 @@ export function isFurnitureDetectionSuccess(
   return result?.status === "success";
 }
 
+/**
+ * Derives the canonical room state from a furniture analysis.
+ * This is the single routing signal consumed by worker.ts — no routing logic lives here.
+ */
+export function deriveRoomState(analysis: FurnitureAnalysis): RoomState {
+  const hasClutter =
+    analysis.hasCounterClutter ||
+    analysis.hasSurfaceClutter ||
+    analysis.hasLoosePortableItems;
+
+  const anchors = analysis.detectedAnchors;
+  const items: FurnitureItem[] = Array.isArray(analysis.furnitureItems) ? analysis.furnitureItems : [];
+
+  const state: RoomState = (() => {
+    if (!analysis.hasFurniture && !hasClutter) {
+      return "EMPTY";
+    }
+
+    if (hasClutter) {
+      return "CLUTTERED";
+    }
+
+    const nonSupportingItems = items.filter(
+      (item) => !item.isAnchor && !isSupportingItem(item.type, anchors)
+    );
+
+    if (anchors.length > 0 && nonSupportingItems.length === 0) {
+      return "ANCHOR_CLEAN";
+    }
+
+    return "CLUTTERED";
+  })();
+
+  console.log("[detector-state]", {
+    state,
+    anchors,
+    furnitureItems: items.map((item) => item.type),
+    clutterFlags: {
+      hasCounterClutter: analysis.hasCounterClutter,
+      hasSurfaceClutter: analysis.hasSurfaceClutter,
+      hasLoosePortableItems: analysis.hasLoosePortableItems,
+    },
+  });
+
+  return state;
+}
+
+/** @deprecated Use deriveRoomState + worker.ts routing instead. */
 export function resolveFurnishedGateDecision(params: {
   analysis: FurnitureDetectionResult | null;
   localEmpty: boolean;

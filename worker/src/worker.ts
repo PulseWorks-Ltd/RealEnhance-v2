@@ -49,7 +49,7 @@ import {
   detectFurnitureWithRetry,
   isFurnitureDetectionSuccess,
   getAnchorClassSet,
-  resolveFurnishedGateDecision,
+  deriveRoomState,
 } from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 
@@ -7664,51 +7664,38 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         } else {
           const ai = getGeminiClient();
           const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data);
-          const gateDecision = resolveFurnishedGateDecision({
-            analysis: geminiAnalysis,
-            localEmpty: false,
-            roomType: canonicalRoomType,
-            userSelectedDeclutter: originalUserDeclutter,
-          });
-
-          const resolvedDeclutterMode: "light" | "stage-ready" | null = gateDecision.decision === "needs_declutter_light"
-            ? "light"
-            : gateDecision.decision === "furnished_refresh"
-              ? "stage-ready"
-              : null;
           const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
+          const roomState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" = analysis ? deriveRoomState(analysis) : "EMPTY";
+          const anchorDetected = analysis ? analysis.hasFurniture === true : false;
           const hasClutter = Boolean(
             analysis?.hasCounterClutter === true ||
             analysis?.hasSurfaceClutter === true ||
-            analysis?.hasLoosePortableItems === true ||
-            analysis?.hasMovableSeating === true
+            analysis?.hasLoosePortableItems === true
           );
-          const detectedAnchors = Array.isArray(analysis?.detectedAnchors)
-            ? analysis.detectedAnchors
-            : [];
-          const furnitureItems = analysis?.furnitureItems;
-          const anchorCount = detectedAnchors.length;
-          let totalFurniture: number | null = null;
-          if (Array.isArray(furnitureItems)) {
-            totalFurniture = furnitureItems.length;
+          const detectedAnchors = Array.isArray(analysis?.detectedAnchors) ? analysis.detectedAnchors : [];
+
+          // Map RoomState → declutterMode and skipStage1B
+          let resolvedDeclutterMode: "light" | "stage-ready" | null;
+          let skipStage1B: boolean;
+
+          if (roomState === "EMPTY") {
+            resolvedDeclutterMode = null;
+            skipStage1B = true;
+          } else if (roomState === "ANCHOR_CLEAN") {
+            resolvedDeclutterMode = "stage-ready";
+            skipStage1B = true;
+          } else {
+            // CLUTTERED — always run Stage 1B
+            resolvedDeclutterMode = anchorDetected ? "stage-ready" : "light";
+            skipStage1B = false;
           }
-          let excessFurnitureCount: number | null = null;
-          if (totalFurniture !== null) {
-            excessFurnitureCount = Math.max(0, totalFurniture - anchorCount);
-          }
-          const anchorDetected = analysis ? analysis.hasFurniture === true : false;
-          const skipStage1B = gateDecision.decision === "furnished_refresh"
-            && anchorDetected
-            && !hasClutter
-            && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE);
 
           logger.info("INTERIOR_FURNITURE_ANALYSIS", jobLogContext(payload, {
             event: "INTERIOR_FURNITURE_ANALYSIS",
-            anchorCount,
-            totalFurniture,
-            excessFurnitureCount,
+            roomState,
             anchorDetected,
             hasClutter,
+            anchors: detectedAnchors,
             skipStage1B,
           }));
 
@@ -7718,7 +7705,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiHasFurniture: anchorDetected,
             geminiConfidence: analysis && typeof analysis.confidence === "number" ? analysis.confidence : null,
             hasClutter,
-            excessFurnitureCount,
+            excessFurnitureCount: null,
             skipStage1B,
             declutterMode: resolvedDeclutterMode,
             stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
@@ -7840,43 +7827,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
     } else if (routingSnapshot.declutterMode === "light") {
-      if (!originalUserDeclutter && routingSnapshot.geminiHasFurniture === false) {
-        // User did NOT select declutter and Gemini confirms no true furniture present.
-        // Clutter-only signals must NOT auto-escalate Stage1B — treat as empty-room path.
-        nLog("[ROUTING_RECOMMENDATION] Light declutter recommended but user did not select declutter — skipping Stage1B override", {
-          jobId: payload.jobId,
-          roomType: canonicalRoomType,
-          authority: routingSnapshot.authority,
-        });
-        payload.options.declutter = false;
-        (payload.options as any).declutterMode = null;
-        declutterMode = null;
-        routingSnapshot.declutterMode = null;
-        routingSnapshot.stage1BRequired = false;
-        routingSnapshot.skipStage1B = false;
-        (payload.options as any).furnishedState = "empty";
-        (payload.options as any).stagingPreference = "full";
-        (payload.options as any).stage2Mode = "FROM_EMPTY";
-        (payload.options as any).stage2Variant = "2B";
-      } else {
-        // User explicitly selected declutter OR Gemini detected furniture — proceed with light declutter.
-        payload.options.declutter = true;
-        (payload.options as any).declutterMode = "light";
-        declutterMode = "light";
-        // Stage 2 variant depends on whether furniture remains post-declutter.
-        // Clutter-only rooms are empty after light cleanup → use full empty-room stage (2B).
-        // Rooms with furniture after declutter still need refresh mode (2A).
-        const postDeclutterHasFurniture = routingSnapshot.geminiHasFurniture === true;
-        (payload.options as any).furnishedState = postDeclutterHasFurniture ? "needs_declutter" : "empty";
-        (payload.options as any).stagingPreference = postDeclutterHasFurniture ? "refresh" : "full";
-        (payload.options as any).stage2Mode = postDeclutterHasFurniture ? "REFRESH" : "FROM_EMPTY";
-        (payload.options as any).stage2Variant = postDeclutterHasFurniture ? "2A" : "2B";
-        nLog("[ROUTING_DECISION]", {
-          jobId: payload.jobId,
-          path: postDeclutterHasFurniture ? "1A->1B(light)->2(refresh)" : "1A->1B(light)->2(full)",
-          reason: routingSnapshot.authority,
-        });
-      }
+      // CLUTTERED state without anchor furniture — always run Stage 1B for declutter.
+      payload.options.declutter = true;
+      (payload.options as any).declutterMode = "light";
+      declutterMode = "light";
+      const postDeclutterHasFurniture = routingSnapshot.geminiHasFurniture === true;
+      (payload.options as any).furnishedState = postDeclutterHasFurniture ? "needs_declutter" : "empty";
+      (payload.options as any).stagingPreference = postDeclutterHasFurniture ? "refresh" : "full";
+      (payload.options as any).stage2Mode = postDeclutterHasFurniture ? "REFRESH" : "FROM_EMPTY";
+      (payload.options as any).stage2Variant = postDeclutterHasFurniture ? "2A" : "2B";
+      nLog("[ROUTING_DECISION]", {
+        jobId: payload.jobId,
+        path: postDeclutterHasFurniture ? "1A->1B(light)->2(refresh)" : "1A->1B(light)->2(full)",
+        reason: routingSnapshot.authority,
+      });
     } else {
       payload.options.declutter = false;
       (payload.options as any).declutterMode = null;

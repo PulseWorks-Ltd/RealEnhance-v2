@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { resolveFurnishedGateDecision, type FurnitureAnalysis, type FurnitureItem } from "../ai/furnitureDetector";
-
-const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = 1;
+import { deriveRoomState, type FurnitureAnalysis, type FurnitureItem } from "../ai/furnitureDetector";
 
 function baseAnalysis(overrides: Partial<FurnitureAnalysis> = {}): FurnitureAnalysis {
   return {
@@ -32,167 +30,112 @@ function baseFurnitureItem(overrides: Partial<FurnitureItem> = {}): FurnitureIte
   };
 }
 
-function deriveInteriorRoutingState(analysis: FurnitureAnalysis) {
-  const gateDecision = resolveFurnishedGateDecision({
-    analysis,
-    localEmpty: false,
-    roomType: analysis.roomType,
-    userSelectedDeclutter: false,
-  });
-  const detectedAnchors = Array.isArray(analysis.detectedAnchors) ? analysis.detectedAnchors : [];
-  const anchorCount = detectedAnchors.length;
-  const furnitureItems = analysis.furnitureItems;
-  let totalFurniture: number | null = null;
-  if (Array.isArray(furnitureItems)) {
-    totalFurniture = furnitureItems.length;
-  }
-  let excessFurnitureCount: number | null = null;
-  if (totalFurniture !== null) {
-    excessFurnitureCount = Math.max(0, totalFurniture - anchorCount);
-  }
-  const anchorDetected = analysis.hasFurniture === true;
-  const hasClutter = analysis.hasMovableSeating || analysis.hasCounterClutter || analysis.hasSurfaceClutter || analysis.hasLoosePortableItems;
-  const skipStage1B = gateDecision.decision === "furnished_refresh"
-    && anchorDetected
-    && !hasClutter
-    && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE);
-
-  return {
-    gateDecision: gateDecision.decision,
-    totalFurniture,
-    excessFurnitureCount,
-    skipStage1B,
-  };
-}
-
 function run() {
-  const kitchenCluttered = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({
-      roomType: "kitchen",
-      hasMovableSeating: true,
-      hasCounterClutter: true,
-      isStageReady: false,
-    }),
-    localEmpty: false,
-    roomType: "kitchen",
-  });
-  assert.equal(kitchenCluttered.decision, "needs_declutter_light", "Kitchen with stools+counter clutter must route to light declutter");
+  // Kitchen with counter clutter → CLUTTERED
+  assert.equal(
+    deriveRoomState(baseAnalysis({ roomType: "kitchen", hasCounterClutter: true, isStageReady: false })),
+    "CLUTTERED",
+    "Kitchen with counter clutter must be CLUTTERED"
+  );
 
-  const emptyFromLocalPrefilter = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({ isStageReady: false, hasCounterClutter: true }),
-    localEmpty: true,
-    roomType: "kitchen",
-  });
-  assert.equal(emptyFromLocalPrefilter.decision, "empty_full_stage", "Local-empty prefilter must keep full-stage route");
-
-  const anchoredFurnished = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({
+  // Anchor furniture, no clutter → ANCHOR_CLEAN
+  assert.equal(
+    deriveRoomState(baseAnalysis({
       hasFurniture: true,
       detectedAnchors: ["sofa"],
       isStageReady: false,
-    }),
-    localEmpty: false,
-    roomType: "living_room",
-  });
-  assert.equal(anchoredFurnished.decision, "furnished_refresh", "Anchor furniture must route to refresh");
+      furnitureItems: [baseFurnitureItem({ type: "sofa", label: "sofa", isAnchor: true })],
+    })),
+    "ANCHOR_CLEAN",
+    "Anchor without clutter must be ANCHOR_CLEAN"
+  );
 
-  const livingRoomTvOnly = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({
+  // Anchor + supporting items only → ANCHOR_CLEAN
+  assert.equal(
+    deriveRoomState(baseAnalysis({
       hasFurniture: true,
-      detectedAnchors: ["tv"],
+      detectedAnchors: ["sofa"],
       isStageReady: false,
-    }),
-    localEmpty: false,
-    roomType: "living_room",
-  });
-  assert.equal(livingRoomTvOnly.decision, "furnished_refresh", "Living room TV-only anchor must route to refresh");
+      furnitureItems: [
+        baseFurnitureItem({ type: "sofa", label: "sofa", isAnchor: true }),
+        baseFurnitureItem({ type: "table", label: "coffee table", isAnchor: false }),
+        baseFurnitureItem({ type: "chair", label: "accent chair", isAnchor: false }),
+      ],
+    })),
+    "ANCHOR_CLEAN",
+    "Sofa + coffee table + accent chair must be ANCHOR_CLEAN (all supporting)"
+  );
 
-  const bedroomTvOnly = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({
+  // Bed + two nightstands → ANCHOR_CLEAN (not excess furniture)
+  assert.equal(
+    deriveRoomState(baseAnalysis({
       hasFurniture: true,
-      detectedAnchors: ["tv"],
+      detectedAnchors: ["bed"],
       isStageReady: false,
-    }),
-    localEmpty: false,
-    roomType: "bedroom",
-  });
-  assert.notEqual(bedroomTvOnly.decision, "furnished_refresh", "Non-living TV-only anchor must not route to refresh");
+      furnitureItems: [
+        baseFurnitureItem({ type: "bed", label: "bed", isAnchor: true }),
+        baseFurnitureItem({ type: "nightstand", label: "nightstand", isAnchor: false }),
+        baseFurnitureItem({ type: "nightstand", label: "nightstand", isAnchor: false }),
+      ],
+    })),
+    "ANCHOR_CLEAN",
+    "Bed + two nightstands must be ANCHOR_CLEAN (nightstands are supporting)"
+  );
 
-  const detectorNull = resolveFurnishedGateDecision({
-    analysis: null,
-    localEmpty: false,
-    roomType: "kitchen",
-  });
-  assert.equal(detectorNull.decision, "needs_declutter_light", "Null detector result must fail-safe to light declutter");
+  // Anchor + non-supporting item → CLUTTERED
+  assert.equal(
+    deriveRoomState(baseAnalysis({
+      hasFurniture: true,
+      detectedAnchors: ["bed"],
+      isStageReady: false,
+      furnitureItems: [
+        baseFurnitureItem({ type: "bed", label: "bed", isAnchor: true }),
+        baseFurnitureItem({ type: "sofa", label: "sofa in bedroom", isAnchor: false }),
+      ],
+    })),
+    "CLUTTERED",
+    "Bed + sofa (non-supporting for bed) must be CLUTTERED"
+  );
 
-  const lowConfidence = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({
+  // No furniture, no clutter → EMPTY
+  assert.equal(
+    deriveRoomState(baseAnalysis({ hasFurniture: false, isStageReady: true })),
+    "EMPTY",
+    "No furniture and no clutter must be EMPTY"
+  );
+
+  // Surface clutter, no furniture → CLUTTERED
+  assert.equal(
+    deriveRoomState(baseAnalysis({ roomType: "other", hasSurfaceClutter: true, isStageReady: false })),
+    "CLUTTERED",
+    "Surface clutter without furniture must be CLUTTERED"
+  );
+
+  // Low confidence does not affect state — anchor still gives ANCHOR_CLEAN
+  assert.equal(
+    deriveRoomState(baseAnalysis({
+      hasFurniture: true,
+      detectedAnchors: ["desk"],
       confidence: 0.2,
-      roomType: "kitchen",
-      isStageReady: false,
-    }),
-    localEmpty: false,
-    roomType: "kitchen",
-  });
-  assert.equal(lowConfidence.decision, "needs_declutter_light", "Low confidence must fail-safe to light declutter");
+      furnitureItems: [baseFurnitureItem({ type: "desk", label: "desk", isAnchor: true })],
+    })),
+    "ANCHOR_CLEAN",
+    "Low confidence must NOT affect room state — anchor present means ANCHOR_CLEAN"
+  );
 
-  const cleanKitchenNoAnchors = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({ roomType: "kitchen", isStageReady: true }),
-    localEmpty: false,
-    roomType: "kitchen",
-  });
-  assert.equal(cleanKitchenNoAnchors.decision, "empty_full_stage", "Clean kitchen without anchors should route to full stage");
-
-  const clutterNoAnchorsNonKitchen = resolveFurnishedGateDecision({
-    analysis: baseAnalysis({
-      roomType: "other",
+  // Clutter overrides furniture signal → CLUTTERED
+  assert.equal(
+    deriveRoomState(baseAnalysis({
+      hasFurniture: true,
+      detectedAnchors: ["sofa"],
       hasSurfaceClutter: true,
-      isStageReady: false,
-    }),
-    localEmpty: false,
-    roomType: "other",
-  });
-  assert.equal(clutterNoAnchorsNonKitchen.decision, "needs_declutter_light", "Clutter-only scene should not skip declutter");
+      furnitureItems: [baseFurnitureItem({ type: "sofa", label: "sofa", isAnchor: true })],
+    })),
+    "CLUTTERED",
+    "Anchor with surface clutter must be CLUTTERED"
+  );
 
-  const populatedInventoryRouting = deriveInteriorRoutingState(baseAnalysis({
-    roomType: "living_room",
-    hasFurniture: true,
-    detectedAnchors: ["sofa"],
-    isStageReady: false,
-    furnitureItems: [
-      baseFurnitureItem({ type: "sofa", label: "sofa", isAnchor: true }),
-      baseFurnitureItem({ type: "chair", label: "accent chair" }),
-      baseFurnitureItem({ type: "table", label: "coffee table" }),
-    ],
-  }));
-  assert.equal(populatedInventoryRouting.gateDecision, "furnished_refresh", "Populated inventory should stay on furnished refresh path");
-  assert.equal(populatedInventoryRouting.totalFurniture, 3, "Populated inventory should preserve furniture count");
-  assert.equal(populatedInventoryRouting.excessFurnitureCount, 2, "Populated inventory should compute excess furniture");
-  assert.equal(populatedInventoryRouting.skipStage1B, false, "Populated excess inventory should force Stage 1B");
-
-  const emptyInventoryRouting = deriveInteriorRoutingState(baseAnalysis({
-    roomType: "living_room",
-    hasFurniture: true,
-    detectedAnchors: ["sofa"],
-    isStageReady: false,
-    furnitureItems: [],
-  }));
-  assert.equal(emptyInventoryRouting.totalFurniture, 0, "Empty inventory should remain distinguishable from missing inventory");
-  assert.equal(emptyInventoryRouting.excessFurnitureCount, 0, "Empty inventory should compute zero excess furniture");
-  assert.equal(emptyInventoryRouting.skipStage1B, true, "Explicitly empty inventory should preserve skip behavior");
-
-  const missingInventoryRouting = deriveInteriorRoutingState(baseAnalysis({
-    roomType: "living_room",
-    hasFurniture: true,
-    detectedAnchors: ["sofa"],
-    isStageReady: false,
-    furnitureItems: undefined,
-  }));
-  assert.equal(missingInventoryRouting.totalFurniture, null, "Missing inventory should stay missing");
-  assert.equal(missingInventoryRouting.excessFurnitureCount, null, "Missing inventory should not be coerced to zero");
-  assert.equal(missingInventoryRouting.skipStage1B, true, "Missing inventory should fall back to legacy skip behavior without assuming zero");
-
-  console.log("[PASS] Furnished gate acceptance tests");
+  console.log("[PASS] Room state acceptance tests");
 }
 
 run();
