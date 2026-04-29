@@ -56,6 +56,15 @@ export interface FurnitureAnalysis {
 export type FurnitureDetectionSuccess = FurnitureAnalysis & { status: "success" };
 export type FurnitureDetectionFailure = { status: "failed" };
 export type FurnitureDetectionResult = FurnitureDetectionSuccess | FurnitureDetectionFailure;
+export type RoomStateDetectionResult =
+  | {
+      success: true;
+      state: RoomState;
+    }
+  | {
+      success: false;
+      error: string;
+    };
 
 /** @deprecated Use deriveRoomState instead. */
 export type FurnishedGateDecisionType = "furnished_refresh" | "empty_full_stage" | "needs_declutter_light";
@@ -165,6 +174,11 @@ function isRateLimitError(err: any): boolean {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function delayWithBackoff(attemptIndex: number): Promise<void> {
+  const delays = [0, 1500, 3000, 5000];
+  return delay(delays[attemptIndex] ?? 5000);
 }
 
 function normalizeFurnitureAnalysis(
@@ -292,6 +306,116 @@ export function deriveRoomState(analysis: FurnitureAnalysis): RoomState {
   });
 
   return state;
+}
+
+function parseRoomStateResponse(text: string): { state?: RoomState } {
+  const jsonMatch = text.match(/\{[\s\S]*\}/);
+  if (!jsonMatch) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]) as { state?: unknown };
+    const state = String(parsed?.state || "").trim().toUpperCase();
+    if (state === "EMPTY" || state === "ANCHOR_CLEAN" || state === "CLUTTERED") {
+      return { state: state as RoomState };
+    }
+  } catch {
+    return {};
+  }
+
+  return {};
+}
+
+function isValidRoomStateResult(result: { state?: RoomState } | null | undefined): result is { state: RoomState } {
+  return !!result?.state && ["EMPTY", "ANCHOR_CLEAN", "CLUTTERED"].includes(result.state);
+}
+
+async function callGeminiRoomState(
+  ai: GoogleGenAI,
+  imageBase64: string,
+  model: "gemini-2.0-flash" | "gemini-2.5-flash"
+): Promise<{ state?: RoomState }> {
+  const prompt = `You are classifying an interior real estate image for deterministic staging workflow routing.
+
+Return JSON only in this exact format:
+{"state":"EMPTY"}
+or
+{"state":"ANCHOR_CLEAN"}
+or
+{"state":"CLUTTERED"}
+
+Definitions:
+- EMPTY: no clearly visible large movable furniture anchors and no visible clutter requiring declutter.
+- ANCHOR_CLEAN: clearly visible large movable furniture anchors are present, but the room is already clean enough to skip declutter.
+- CLUTTERED: visible clutter, loose portable items, or secondary movable items are present and declutter is required before staging.
+
+Allowed large movable furniture anchors:
+- bed
+- sofa
+- dining_table
+- coffee_table
+- desk
+- tv (living rooms only)
+- freestanding_wardrobe
+- large_freestanding_cabinet
+
+Do not count curtains, blinds, rugs alone, wall art, ceiling fixtures, HVAC, or built-in cabinetry as anchors.
+Do not guess. If uncertain, return {"state":"INVALID"}.`;
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: [{
+      role: "user",
+      parts: [
+        { text: prompt },
+        { inlineData: { data: imageBase64, mimeType: "image/png" } },
+      ],
+    }],
+  });
+
+  const text = response.candidates?.[0]?.content?.parts?.map((part) => part.text).join("") ?? "{}";
+  console.log("[ROOM STATE DETECTOR] Raw AI response:", JSON.stringify(text));
+  return parseRoomStateResponse(text);
+}
+
+export async function detectRoomStateWithRetry(
+  ai: GoogleGenAI,
+  imageBase64: string
+): Promise<RoomStateDetectionResult> {
+  const models: Array<{ model: "gemini-2.0-flash" | "gemini-2.5-flash"; attempts: number }> = [
+    { model: "gemini-2.0-flash", attempts: 2 },
+    { model: "gemini-2.5-flash", attempts: 2 },
+  ];
+
+  let globalAttemptIndex = 0;
+
+  for (const { model, attempts } of models) {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      try {
+        const result = await callGeminiRoomState(ai, imageBase64, model);
+        if (isValidRoomStateResult(result)) {
+          return { success: true, state: result.state };
+        }
+      } catch (error) {
+        console.warn("[ROOM STATE DETECTOR] Attempt failed", {
+          attempt: globalAttemptIndex + 1,
+          model,
+          retryable: isRateLimitError(error) || isTimeoutError(error),
+          statusCode: parseErrorStatusCode(error),
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+
+      await delayWithBackoff(globalAttemptIndex);
+      globalAttemptIndex += 1;
+    }
+  }
+
+  return {
+    success: false,
+    error: "DETECTION_FAILED_AFTER_RETRIES",
+  };
 }
 
 /** @deprecated Use deriveRoomState + worker.ts routing instead. */

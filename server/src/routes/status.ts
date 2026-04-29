@@ -215,7 +215,7 @@ function normalizePipelineState(raw: string | null | undefined): NormalizedState
   if (s === "processing" || s === "active") return "processing";
   if (s === "complete" || s === "completed" || s === "done") return "completed";
   if (s === "cancelled" || s === "canceled" || s === "aborted" || s === "terminated") return "cancelled";
-  if (s === "failed" || s === "error") return "failed";
+  if (s === "failed" || s === "error" || s === "failed_detection") return "failed";
   if (s === "queued" || s === "waiting" || s === "waiting-children" || s === "delayed") return "queued";
   return "unknown";
 }

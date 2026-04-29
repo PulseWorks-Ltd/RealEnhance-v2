@@ -47,9 +47,9 @@ import { classifyScene } from "./validators/scene-classifier";
 import {
   detectFurniture,
   detectFurnitureWithRetry,
+  detectRoomStateWithRetry,
   isFurnitureDetectionSuccess,
   getAnchorClassSet,
-  deriveRoomState,
 } from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 
@@ -7663,16 +7663,55 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog("[ROUTING] authority=localEmptyBypass | stage1BRequired=false");
         } else {
           const ai = getGeminiClient();
-          const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data);
-          const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
-          const roomState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" = analysis ? deriveRoomState(analysis) : "EMPTY";
-          const anchorDetected = analysis ? analysis.hasFurniture === true : false;
-          const hasClutter = Boolean(
-            analysis?.hasCounterClutter === true ||
-            analysis?.hasSurfaceClutter === true ||
-            analysis?.hasLoosePortableItems === true
-          );
-          const detectedAnchors = Array.isArray(analysis?.detectedAnchors) ? analysis.detectedAnchors : [];
+          const detection = await detectRoomStateWithRetry(ai as any, toBase64(path1A).data);
+          console.log("[detector]", {
+            success: detection.success,
+            state: detection.success ? detection.state : undefined,
+            error: detection.success ? undefined : detection.error,
+          });
+
+          if (!detection.success) {
+            timestamps.completed = Date.now();
+            await safeWriteJobStatus(
+              payload.jobId,
+              {
+                status: "FAILED_DETECTION",
+                currentStage: "FAILED_DETECTION",
+                stage: "1A",
+                progress: 100,
+                finalStage: "1A",
+                resultStage: "1A",
+                finalOutputUrl: pub1AUrl ?? null,
+                resultUrl: pub1AUrl ?? null,
+                imageUrl: pub1AUrl ?? null,
+                output: pub1AUrl ?? path1A,
+                retryable: true,
+                errorMessage: detection.error || "DETECTION_FAILED_AFTER_RETRIES",
+                validationNote: detection.error || "DETECTION_FAILED_AFTER_RETRIES",
+                stageUrls: {
+                  "1A": pub1AUrl ?? null,
+                  "1B": null,
+                  "2": null,
+                },
+                meta: {
+                  ...sceneMeta,
+                  retryable: true,
+                  detection: {
+                    success: false,
+                    error: detection.error || "DETECTION_FAILED_AFTER_RETRIES",
+                  },
+                  timestamps,
+                },
+              },
+              "failed_detection"
+            );
+            return;
+          }
+
+          const roomState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" = detection.state;
+          const anchorDetected = roomState === "ANCHOR_CLEAN" || roomState === "CLUTTERED";
+          const hasClutter = roomState === "CLUTTERED";
+          const detectedAnchors: string[] = [];
 
           // Map RoomState → declutterMode and skipStage1B
           let resolvedDeclutterMode: "light" | "stage-ready" | null;
@@ -7703,7 +7742,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             authority: "gemini",
             localEmpty: false,
             geminiHasFurniture: anchorDetected,
-            geminiConfidence: analysis && typeof analysis.confidence === "number" ? analysis.confidence : null,
+            geminiConfidence: null,
             hasClutter,
             excessFurnitureCount: null,
             skipStage1B,

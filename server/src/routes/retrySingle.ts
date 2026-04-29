@@ -144,7 +144,7 @@ async function isRetrySourceReachable(url: string): Promise<boolean> {
 function normalizePersistedJobStatus(raw: unknown): "completed" | "failed" | "processing" | "queued" | "awaiting_payment" | "unknown" {
   const status = String(raw || "").toLowerCase();
   if (status === "complete" || status === "completed" || status === "done") return "completed";
-  if (status === "failed" || status === "error" || status === "cancelled") return "failed";
+  if (status === "failed" || status === "error" || status === "cancelled" || status === "failed_detection") return "failed";
   if (status === "processing" || status === "active") return "processing";
   if (status === "queued" || status === "waiting" || status === "waiting-children" || status === "delayed") return "queued";
   if (status === "awaiting_payment") return "awaiting_payment";

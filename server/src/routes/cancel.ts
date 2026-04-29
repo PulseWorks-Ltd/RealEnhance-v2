@@ -8,7 +8,7 @@ import { deleteBatchState, getJob, listBatchJobIds, listBatchJobIdsForUser, upda
 const cancelKey = (id: string) => `re:cancel:${id}`;
 
 function isTerminalStatus(status: string | undefined) {
-  return status === "complete" || status === "failed" || status === "cancelled";
+  return status === "complete" || status === "failed" || status === "failed_detection" || status === "cancelled";
 }
 
 async function markCancellingIfActive(jobId: string) {
