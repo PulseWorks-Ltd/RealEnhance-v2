@@ -207,6 +207,12 @@ async function withFurnitureDetectorSlot<T>(operation: () => Promise<T>): Promis
   }
 }
 
+export const detectorQueue = {
+  add<T>(operation: () => Promise<T>): Promise<T> {
+    return withFurnitureDetectorSlot(operation);
+  },
+};
+
 function getFurnitureDetectorRetryDelayMs(attemptIndex: number): number {
   const baseDelayMs = attemptIndex === 0 ? 600 : 1800;
   const jitterMs = Math.floor(Math.random() * 250);
@@ -940,7 +946,7 @@ export async function detectFurnitureWithRetry(
 ): Promise<FurnitureDetectionResult> {
   for (let attempt = 0; attempt < FURNITURE_DETECTOR_MAX_ATTEMPTS; attempt += 1) {
     try {
-      const analysis = await withFurnitureDetectorSlot(() =>
+      const analysis = await detectorQueue.add(() =>
         detectFurnitureOnce(ai, imageBase64, {
           ...options,
           timeoutMs: options?.timeoutMs ?? FURNITURE_DETECTOR_TIMEOUT_MS,

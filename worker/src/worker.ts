@@ -102,6 +102,7 @@ import {
 } from "./validators/stageAwareConfig";
 import { computeOpeningGeometrySignal } from "./validators/signalMetrics";
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
+const POST_1B_TIMEOUT_MS = 3000;
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
 const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
 const SIGN_ALL_STAGE_OUTPUTS_ENABLED = isDebugImageUrlLoggingEnabled();
@@ -4171,6 +4172,65 @@ function summarizeExteriorDeclutterStats(imageStats: ExteriorDeclutterImageStats
   };
 }
 
+async function runPostStage1BAnchorValidator(params: {
+  payload: EnhanceJobPayload;
+  imagePath: string;
+  intent: "stage" | "non_stage";
+  stage1BRan: boolean;
+  initialState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
+}): Promise<void> {
+  const { payload, imagePath, intent, stage1BRan, initialState } = params;
+  if (
+    intent !== "stage"
+    || stage1BRan !== true
+    || initialState !== "CLUTTERED"
+  ) {
+    return;
+  }
+
+  logger.info("POST_1B_DETECTOR_STARTED", jobLogContext(payload, {
+    event: "POST_1B_DETECTOR_STARTED",
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    initialState,
+  }));
+
+  try {
+    const ai = getGeminiClient();
+    const post1BAnalysis = await detectFurnitureWithRetry(
+      ai as any,
+      toBase64(imagePath).data,
+      { timeoutMs: POST_1B_TIMEOUT_MS }
+    );
+
+    if (!isFurnitureDetectionSuccess(post1BAnalysis)) {
+      logger.warn("POST_1B_DETECTOR_FAILED", jobLogContext(payload, {
+        event: "POST_1B_DETECTOR_FAILED",
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        error: "DETECTION_FAILED_AFTER_RETRIES",
+      }));
+      return;
+    }
+
+    const post1BState = deriveRoomState(post1BAnalysis);
+    logger.info("POST_1B_DETECTOR_RESULT", jobLogContext(payload, {
+      event: "POST_1B_DETECTOR_RESULT",
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      initialState,
+      post1BState,
+    }));
+  } catch (error) {
+    logger.warn("POST_1B_DETECTOR_FAILED", jobLogContext(payload, {
+      event: "POST_1B_DETECTOR_FAILED",
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      error: error instanceof Error ? error.message : String(error),
+    }));
+  }
+}
+
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Start memory tracking for this job
@@ -4313,6 +4373,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     localEmpty: boolean;
     geminiHasFurniture: boolean | null;
     geminiConfidence: number | null;
+    roomState?: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
     hasClutter: boolean | null;
     excessFurnitureCount?: number | null;
     skipStage1B: boolean;
@@ -7689,6 +7750,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             localEmpty: false,
             geminiHasFurniture: detectorFallback ? null : anchorDetected,
             geminiConfidence: analysis && typeof analysis.confidence === "number" ? analysis.confidence : null,
+            roomState: detectorFallback ? null : roomState,
             hasClutter: detectorFallback ? null : hasClutter,
             excessFurnitureCount,
             skipStage1B,
@@ -8625,6 +8687,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       mode: "local_non_blocking",
       retryTriggered: false,
       blocking: false,
+    });
+  }
+
+  if (path1B && path1B !== path1A && sceneLabel === "interior") {
+    const initialState = frozenRoutingSnapshot?.roomState
+      ?? (frozenRoutingSnapshot?.hasClutter === true ? "CLUTTERED" : null);
+    await runPostStage1BAnchorValidator({
+      payload,
+      imagePath: path1B,
+      intent: hasVirtualStage && stage2Requested ? "stage" : "non_stage",
+      stage1BRan: true,
+      initialState,
     });
   }
 
