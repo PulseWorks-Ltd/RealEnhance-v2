@@ -176,6 +176,43 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const FURNITURE_DETECTOR_MAX_CONCURRENCY = Math.max(
+  1,
+  Math.min(3, Number(process.env.FURNITURE_DETECTOR_MAX_CONCURRENCY || 2))
+);
+const FURNITURE_DETECTOR_TIMEOUT_MS = Math.max(
+  1000,
+  Number(process.env.FURNITURE_DETECTOR_TIMEOUT_MS || 8000)
+);
+const FURNITURE_DETECTOR_MAX_ATTEMPTS = 2;
+
+let activeFurnitureDetectorRequests = 0;
+const furnitureDetectorWaiters: Array<() => void> = [];
+
+async function withFurnitureDetectorSlot<T>(operation: () => Promise<T>): Promise<T> {
+  while (activeFurnitureDetectorRequests >= FURNITURE_DETECTOR_MAX_CONCURRENCY) {
+    await new Promise<void>((resolve) => furnitureDetectorWaiters.push(resolve));
+  }
+
+  activeFurnitureDetectorRequests += 1;
+
+  try {
+    return await operation();
+  } finally {
+    activeFurnitureDetectorRequests = Math.max(0, activeFurnitureDetectorRequests - 1);
+    const next = furnitureDetectorWaiters.shift();
+    if (next) {
+      next();
+    }
+  }
+}
+
+function getFurnitureDetectorRetryDelayMs(attemptIndex: number): number {
+  const baseDelayMs = attemptIndex === 0 ? 600 : 1800;
+  const jitterMs = Math.floor(Math.random() * 250);
+  return baseDelayMs + jitterMs;
+}
+
 function delayWithBackoff(attemptIndex: number): Promise<void> {
   const delays = [0, 1500, 3000, 5000];
   return delay(delays[attemptIndex] ?? 5000);
@@ -744,7 +781,7 @@ export async function detectFurniture(
 async function detectFurnitureOnce(
   ai: GoogleGenAI,
   imageBase64: string,
-  options?: { sceneType?: "interior" | "exterior" }
+  options?: { sceneType?: "interior" | "exterior"; timeoutMs?: number }
 ): Promise<FurnitureAnalysis> {
   const sceneType = options?.sceneType === "exterior" ? "exterior" : "interior";
   const system = sceneType === "exterior" ? `
@@ -873,7 +910,12 @@ Rules:
           { text: system },
           { inlineData: { data: imageBase64, mimeType: "image/png" } }
         ]
-      }]
+      }],
+      config: {
+        httpOptions: {
+          timeout: options?.timeoutMs ?? FURNITURE_DETECTOR_TIMEOUT_MS,
+        },
+      },
     });
 
     const text = resp.candidates?.[0]?.content?.parts?.map(p => p.text).join("") ?? "{}";
@@ -894,11 +936,16 @@ Rules:
 export async function detectFurnitureWithRetry(
   ai: GoogleGenAI,
   imageBase64: string,
-  options?: { sceneType?: "interior" | "exterior" }
+  options?: { sceneType?: "interior" | "exterior"; timeoutMs?: number }
 ): Promise<FurnitureDetectionResult> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < FURNITURE_DETECTOR_MAX_ATTEMPTS; attempt += 1) {
     try {
-      const analysis = await detectFurnitureOnce(ai, imageBase64, options);
+      const analysis = await withFurnitureDetectorSlot(() =>
+        detectFurnitureOnce(ai, imageBase64, {
+          ...options,
+          timeoutMs: options?.timeoutMs ?? FURNITURE_DETECTOR_TIMEOUT_MS,
+        })
+      );
       return {
         status: "success",
         ...analysis,
@@ -914,7 +961,7 @@ export async function detectFurnitureWithRetry(
       });
 
       if (retryable && !lastAttempt) {
-        await delay(300 + attempt * 300);
+        await delay(getFurnitureDetectorRetryDelayMs(attempt));
         continue;
       }
 

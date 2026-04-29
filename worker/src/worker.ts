@@ -47,8 +47,8 @@ import { classifyScene } from "./validators/scene-classifier";
 import {
   detectFurniture,
   detectFurnitureWithRetry,
+  deriveRoomState,
   isFurnitureDetectionSuccess,
-  getAnchorClassSet,
   resolveFurnishedGateDecision,
 } from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
@@ -113,8 +113,6 @@ const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
-const STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS = 2500;
-const STAGE2_POST_STAGE1B_ANCHOR_CONFIDENCE_MIN = 0.9;
 const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCALE_ENABLED ?? "true").toLowerCase() !== "false";
 const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHANCE_ENABLED ?? "true").toLowerCase() !== "false";
 const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
@@ -4323,84 +4321,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BRequired: boolean;
   };
 
-  const detectHighConfidenceAnchorAfterStage1B = (
-    analysis: any,
-    minConfidence: number
-  ): boolean => {
-    if (!analysis || typeof analysis !== "object") return false;
-
-    const normalize = (value: unknown) =>
-      String(value || "")
-        .toLowerCase()
-        .trim()
-        .replace(/[\s-]+/g, "_");
-
-    const hasStrongFurnitureItemAnchor = Array.isArray(analysis.furnitureItems)
-      ? analysis.furnitureItems.some((item: any) => {
-          const confidence = typeof item?.confidence === "number" ? item.confidence : 0;
-          if (confidence < minConfidence) return false;
-
-          const type = normalize(item?.type);
-          const label = normalize(item?.label);
-          const isBed = type === "bed" || label.includes("bed");
-          const isSofa = type === "sofa" || type === "couch" || label.includes("sofa") || label.includes("couch");
-          const isLargeCabinetOrWardrobe =
-            (type === "dresser" || type === "wardrobe" || type === "cabinet" || type === "freestanding_wardrobe" || type === "large_freestanding_cabinet")
-            && (label.includes("wardrobe") || label.includes("cabinet") || type === "freestanding_wardrobe" || type === "large_freestanding_cabinet");
-
-          return isBed || isSofa || isLargeCabinetOrWardrobe;
-        })
-      : false;
-
-    const hasStrongDetectedItemAnchor = Array.isArray(analysis.detectedItems)
-      ? analysis.detectedItems.some((item: any) => {
-          const confidence = typeof item?.confidence === "number" ? item.confidence : 0;
-          if (confidence < minConfidence) return false;
-          const type = normalize(item?.type);
-          return (
-            type === "bed"
-            || type === "sofa"
-            || type === "couch"
-            || type === "freestanding_wardrobe"
-            || type === "large_freestanding_cabinet"
-            || type === "wardrobe"
-            || type === "cabinet"
-          );
-        })
-      : false;
-
-    const overallConfidence = typeof analysis.confidence === "number" ? analysis.confidence : 0;
-    const hasStrongAnchorClassSignal = overallConfidence >= minConfidence && Array.isArray(analysis.detectedAnchors)
-      ? analysis.detectedAnchors.some((anchor: unknown) => {
-          const normalized = normalize(anchor);
-          return (
-            normalized === "bed"
-            || normalized === "sofa"
-            || normalized === "couch"
-            || normalized === "freestanding_wardrobe"
-            || normalized === "large_freestanding_cabinet"
-          );
-        })
-      : false;
-
-    return hasStrongFurnitureItemAnchor || hasStrongDetectedItemAnchor || hasStrongAnchorClassSignal;
-  };
-
-  const resolvePostStage1BAnchorPresence = (params: {
-    analysis: any | null;
-    routingSnapshot: RoutingSnapshot | null;
-    minConfidence: number;
-  }): boolean => {
-    if (detectHighConfidenceAnchorAfterStage1B(params.analysis, params.minConfidence)) {
-      return true;
-    }
-
-    const snapshotConfidence = typeof params.routingSnapshot?.geminiConfidence === "number"
-      ? params.routingSnapshot.geminiConfidence
-      : 0;
-    return params.routingSnapshot?.geminiHasFurniture === true && snapshotConfidence >= params.minConfidence;
-  };
-
   let frozenRoutingSnapshot: RoutingSnapshot | null = null;
 
   try {
@@ -7600,13 +7520,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const localEmpty = await isRoomEmpty(stage1ABuffer);
 
         if (shouldResolveExteriorDeclutter) {
-          const ai = getGeminiClient();
-          const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data, { sceneType: "exterior" });
-          const detectedItems = getExteriorDetectedItems(geminiAnalysis);
           const exteriorDeclutterDecision = await shouldRunExteriorDeclutter({
-            detection: geminiAnalysis,
+            detection: { status: "failed" },
             imagePath: path1A,
           });
+          const detectedItems: Array<{ type: string; confidence: number | null }> = [];
           const hasClutter = exteriorDeclutterDecision.hasClutter;
           const fallbackStats = summarizeExteriorDeclutterStats(exteriorDeclutterDecision.imageStats);
 
@@ -7614,9 +7532,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             authority: "exteriorClutter",
             localEmpty: false,
             geminiHasFurniture: null,
-            geminiConfidence: isFurnitureDetectionSuccess(geminiAnalysis) && typeof geminiAnalysis.confidence === "number"
-              ? geminiAnalysis.confidence
-              : null,
+            geminiConfidence: null,
             hasClutter,
             skipStage1B: !hasClutter,
             stage1BSkippedByDesign: !hasClutter,
@@ -7629,7 +7545,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               event: "EXTERIOR_DECLUTTER_SKIPPED",
               confidence: routingSnapshot.geminiConfidence,
               detectedItems,
-              detectionStatus: geminiAnalysis.status,
+              detectionStatus: "disabled",
               fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
               fallbackStats,
             }));
@@ -7640,7 +7556,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             clutterDetected: hasClutter,
             confidence: routingSnapshot.geminiConfidence,
             detectedItems,
-            detectionStatus: geminiAnalysis.status,
+            detectionStatus: "disabled",
             fallbackUsed: exteriorDeclutterDecision.fallbackUsed,
             fallbackStats,
             stage1B: routingSnapshot.stage1BRequired,
@@ -7673,6 +7589,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }));
           const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data);
           const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
+          const roomState = analysis ? deriveRoomState(analysis) : null;
           const gateDecision = analysis
             ? resolveFurnishedGateDecision({
                 analysis: geminiAnalysis,
@@ -7682,12 +7599,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               })
             : null;
 
-          const hasClutter = Boolean(
-            analysis?.hasCounterClutter === true
-            || analysis?.hasSurfaceClutter === true
-            || analysis?.hasLoosePortableItems === true
-            || analysis?.hasMovableSeating === true
-          );
+          const hasClutter = roomState === "CLUTTERED";
           const detectedAnchors = Array.isArray(analysis?.detectedAnchors)
             ? analysis.detectedAnchors
             : [];
@@ -7722,6 +7634,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               confidence: analysis.confidence,
               anchorDetected,
               hasClutter,
+              roomState,
               anchors: detectedAnchors,
               finalSkipStage1B: skipStage1B,
             }));
@@ -7743,6 +7656,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             confidence: analysis?.confidence ?? null,
             anchorDetected: analysis ? anchorDetected : null,
             hasClutter: analysis ? hasClutter : null,
+            roomState,
             anchors: detectedAnchors,
             gateDecision: gateDecision?.decision || "needs_declutter_light",
             gateReason: routingDecisionSource,
@@ -7764,6 +7678,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             excessFurnitureCount,
             anchorDetected,
             hasClutter: detectorFallback ? null : hasClutter,
+            roomState,
             anchors: detectedAnchors,
             skipStage1B,
             detectorFallback,
@@ -8972,62 +8887,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (frozenRoutingSnapshot?.geminiHasFurniture === false) {
       (payload.options as any).stage2Mode = "FROM_EMPTY";
       nLog("[ANCHOR_DETECTION_BYPASS]", {
-        reason: "no_furniture_post_1B",
+        reason: "no_furniture_post_1a",
         anchorDetectionUsed: false,
       });
-    } else {
-      let anchorDetectionUsed = false;
-      const start = Date.now();
-      try {
-        const ai = getGeminiClient();
-        let detectorTimeoutHandle: ReturnType<typeof setTimeout> | undefined;
-        let didTimeout = false;
-        const detectorPromise = detectFurnitureWithRetry(ai as any, toBase64(stage2InputPath).data, { sceneType: "interior" });
-        const timeoutPromise = new Promise<"timeout">((resolve) => {
-          detectorTimeoutHandle = setTimeout(() => {
-            didTimeout = true;
-            resolve("timeout");
-          }, STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS);
-        });
-
-        const detectorResult = await Promise.race<[Awaited<ReturnType<typeof detectFurniture>> | "timeout"]>([
-          detectorPromise,
-          timeoutPromise,
-        ] as any);
-        const durationMs = Date.now() - start;
-
-        if (!didTimeout && detectorTimeoutHandle) {
-          clearTimeout(detectorTimeoutHandle);
-        }
-
-        if (detectorResult === "timeout") {
-          nLog("[ANCHOR_DETECTION_TIMEOUT]", {
-            anchorDetectionUsed: false,
-            timeoutMs: STAGE2_ANCHOR_DETECTOR_TIMEOUT_MS,
-            durationMs,
-          });
-        } else if (isFurnitureDetectionSuccess(detectorResult)) {
-          const anchorDetected = resolvePostStage1BAnchorPresence({
-            analysis: detectorResult,
-            routingSnapshot: frozenRoutingSnapshot,
-            minConfidence: STAGE2_POST_STAGE1B_ANCHOR_CONFIDENCE_MIN,
-          });
-          anchorDetectionUsed = true;
-          nLog("[ANCHOR_DETECTION]", { anchorDetected, anchorDetectionUsed, durationMs });
-
-          const forcedStage2Mode: "REFRESH" | "FROM_EMPTY" = anchorDetected ? "REFRESH" : "FROM_EMPTY";
-          (payload.options as any).stage2Mode = forcedStage2Mode;
-        } else {
-          nLog("[ANCHOR_DETECTION]", { anchorDetectionUsed: false, durationMs });
-        }
-      } catch (error: any) {
-        const durationMs = Date.now() - start;
-        nLog("[ANCHOR_DETECTION_ERROR]", {
-          anchorDetectionUsed: false,
-          durationMs,
-          error: error?.message || String(error),
-        });
-      }
+    } else if (frozenRoutingSnapshot?.geminiHasFurniture === true) {
+      (payload.options as any).stage2Mode = "REFRESH";
+      nLog("[ANCHOR_DETECTION_BYPASS]", {
+        reason: "reuse_post_1a_detector",
+        anchorDetectionUsed: false,
+      });
     }
   }
   
