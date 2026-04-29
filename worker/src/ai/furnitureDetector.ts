@@ -224,8 +224,41 @@ function parseFurnitureAnalysisResponse(text: string): FurnitureAnalysis {
   try {
     const parsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
       detectedAnchors?: unknown;
+      detectedItems?: unknown;
       confidence?: unknown;
+      hasFurniture?: unknown;
+      hasMovableSeating?: unknown;
+      hasCounterClutter?: unknown;
+      hasSurfaceClutter?: unknown;
+      hasLoosePortableItems?: unknown;
+      isStageReady?: unknown;
     };
+    const hasExpectedSchema =
+      typeof parsed.hasFurniture === "boolean"
+      && Array.isArray(parsed.detectedAnchors)
+      && parsed.detectedAnchors.every((anchor) => typeof anchor === "string")
+      && Array.isArray(parsed.detectedItems)
+      && parsed.detectedItems.every((item) => {
+        if (!item || typeof item !== "object") {
+          return false;
+        }
+
+        return typeof (item as any).type === "string"
+          && typeof (item as any).confidence === "number"
+          && Number.isFinite((item as any).confidence);
+      })
+      && typeof parsed.confidence === "number"
+      && Number.isFinite(parsed.confidence)
+      && typeof parsed.hasMovableSeating === "boolean"
+      && typeof parsed.hasCounterClutter === "boolean"
+      && typeof parsed.hasSurfaceClutter === "boolean"
+      && typeof parsed.hasLoosePortableItems === "boolean"
+      && typeof parsed.isStageReady === "boolean";
+
+    if (!hasExpectedSchema) {
+      throw new Error("Detector response missing required schema fields");
+    }
+
     return normalizeFurnitureAnalysis(parsed);
   } catch (error) {
     let braceCount = 0;
@@ -246,8 +279,42 @@ function parseFurnitureAnalysisResponse(text: string): FurnitureAnalysis {
       console.log("[FURNITURE DETECTOR] Trimmed JSON:", JSON.stringify(jsonStr));
       const trimmedParsed = JSON.parse(jsonStr) as Partial<FurnitureAnalysis> & {
         detectedAnchors?: unknown;
+        detectedItems?: unknown;
         confidence?: unknown;
+        hasFurniture?: unknown;
+        hasMovableSeating?: unknown;
+        hasCounterClutter?: unknown;
+        hasSurfaceClutter?: unknown;
+        hasLoosePortableItems?: unknown;
+        isStageReady?: unknown;
       };
+
+      const hasExpectedSchema =
+        typeof trimmedParsed.hasFurniture === "boolean"
+        && Array.isArray(trimmedParsed.detectedAnchors)
+        && trimmedParsed.detectedAnchors.every((anchor) => typeof anchor === "string")
+        && Array.isArray(trimmedParsed.detectedItems)
+        && trimmedParsed.detectedItems.every((item) => {
+          if (!item || typeof item !== "object") {
+            return false;
+          }
+
+          return typeof (item as any).type === "string"
+            && typeof (item as any).confidence === "number"
+            && Number.isFinite((item as any).confidence);
+        })
+        && typeof trimmedParsed.confidence === "number"
+        && Number.isFinite(trimmedParsed.confidence)
+        && typeof trimmedParsed.hasMovableSeating === "boolean"
+        && typeof trimmedParsed.hasCounterClutter === "boolean"
+        && typeof trimmedParsed.hasSurfaceClutter === "boolean"
+        && typeof trimmedParsed.hasLoosePortableItems === "boolean"
+        && typeof trimmedParsed.isStageReady === "boolean";
+
+      if (!hasExpectedSchema) {
+        throw new Error("Detector response missing required schema fields");
+      }
+
       return normalizeFurnitureAnalysis(trimmedParsed);
     }
 

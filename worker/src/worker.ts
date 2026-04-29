@@ -47,9 +47,9 @@ import { classifyScene } from "./validators/scene-classifier";
 import {
   detectFurniture,
   detectFurnitureWithRetry,
-  detectRoomStateWithRetry,
   isFurnitureDetectionSuccess,
   getAnchorClassSet,
+  resolveFurnishedGateDecision,
 } from "./ai/furnitureDetector";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 
@@ -7663,88 +7663,119 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           nLog("[ROUTING] authority=localEmptyBypass | stage1BRequired=false");
         } else {
           const ai = getGeminiClient();
-          const detection = await detectRoomStateWithRetry(ai as any, toBase64(path1A).data);
-          console.log("[detector]", {
-            success: detection.success,
-            state: detection.success ? detection.state : undefined,
-            error: detection.success ? undefined : detection.error,
-          });
+          logger.info("DETECTOR_STARTED", jobLogContext(payload, {
+            event: "DETECTOR_STARTED",
+            detector: "furniture",
+            detectorModel: "gemini-2.0-flash",
+            sceneType: "interior",
+            confidence: null,
+            finalSkipStage1B: null,
+          }));
+          const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data);
+          const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
+          const gateDecision = analysis
+            ? resolveFurnishedGateDecision({
+                analysis: geminiAnalysis,
+                localEmpty: false,
+                roomType: canonicalRoomType,
+                userSelectedDeclutter: originalUserDeclutter,
+              })
+            : null;
 
-          if (!detection.success) {
-            timestamps.completed = Date.now();
-            await safeWriteJobStatus(
-              payload.jobId,
-              {
-                status: "FAILED_DETECTION",
-                currentStage: "FAILED_DETECTION",
-                stage: "1A",
-                progress: 100,
-                finalStage: "1A",
-                resultStage: "1A",
-                finalOutputUrl: pub1AUrl ?? null,
-                resultUrl: pub1AUrl ?? null,
-                imageUrl: pub1AUrl ?? null,
-                output: pub1AUrl ?? path1A,
-                retryable: true,
-                errorMessage: detection.error || "DETECTION_FAILED_AFTER_RETRIES",
-                validationNote: detection.error || "DETECTION_FAILED_AFTER_RETRIES",
-                stageUrls: {
-                  "1A": pub1AUrl ?? null,
-                  "1B": null,
-                  "2": null,
-                },
-                meta: {
-                  ...sceneMeta,
-                  retryable: true,
-                  detection: {
-                    success: false,
-                    error: detection.error || "DETECTION_FAILED_AFTER_RETRIES",
-                  },
-                  timestamps,
-                },
-              },
-              "failed_detection"
-            );
-            return;
-          }
+          const hasClutter = Boolean(
+            analysis?.hasCounterClutter === true
+            || analysis?.hasSurfaceClutter === true
+            || analysis?.hasLoosePortableItems === true
+            || analysis?.hasMovableSeating === true
+          );
+          const detectedAnchors = Array.isArray(analysis?.detectedAnchors)
+            ? analysis.detectedAnchors
+            : [];
+          const furnitureItems = analysis?.furnitureItems;
+          const anchorCount = detectedAnchors.length;
+          const totalFurniture = Array.isArray(furnitureItems) ? furnitureItems.length : null;
+          const excessFurnitureCount = totalFurniture === null ? null : Math.max(0, totalFurniture - anchorCount);
+          const anchorDetected = analysis ? analysis.hasFurniture === true : false;
+          const detectorFallback = !analysis;
+          const resolvedDeclutterMode: "light" | "stage-ready" | null = detectorFallback
+            ? "light"
+            : gateDecision?.decision === "needs_declutter_light"
+              ? "light"
+              : gateDecision?.decision === "furnished_refresh"
+                ? "stage-ready"
+                : null;
+          const skipStage1B = detectorFallback
+            ? false
+            : gateDecision?.decision === "furnished_refresh"
+              && anchorDetected
+              && !hasClutter
+              && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE);
+          const routingDecisionSource = detectorFallback
+            ? "detector_failed_safe_fallback"
+            : gateDecision?.reason || "gemini";
 
-          const roomState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" = detection.state;
-          const anchorDetected = roomState === "ANCHOR_CLEAN" || roomState === "CLUTTERED";
-          const hasClutter = roomState === "CLUTTERED";
-          const detectedAnchors: string[] = [];
-
-          // Map RoomState → declutterMode and skipStage1B
-          let resolvedDeclutterMode: "light" | "stage-ready" | null;
-          let skipStage1B: boolean;
-
-          if (roomState === "EMPTY") {
-            resolvedDeclutterMode = null;
-            skipStage1B = true;
-          } else if (roomState === "ANCHOR_CLEAN") {
-            resolvedDeclutterMode = "stage-ready";
-            skipStage1B = true;
+          if (analysis) {
+            logger.info("DETECTOR_SUCCESS", jobLogContext(payload, {
+              event: "DETECTOR_SUCCESS",
+              detector: "furniture",
+              detectorModel: "gemini-2.0-flash",
+              confidence: analysis.confidence,
+              anchorDetected,
+              hasClutter,
+              anchors: detectedAnchors,
+              finalSkipStage1B: skipStage1B,
+            }));
           } else {
-            // CLUTTERED — always run Stage 1B
-            resolvedDeclutterMode = anchorDetected ? "stage-ready" : "light";
-            skipStage1B = false;
+            logger.warn("DETECTOR_FAILED", jobLogContext(payload, {
+              event: "DETECTOR_FAILED",
+              detector: "furniture",
+              detectorModel: "gemini-2.0-flash",
+              confidence: null,
+              detectionStatus: geminiAnalysis.status,
+              finalSkipStage1B: false,
+              fallback: "run_stage1b",
+            }));
           }
+
+          logger.info("DETECTOR_RESULT", jobLogContext(payload, {
+            event: "DETECTOR_RESULT",
+            detector: "furniture",
+            confidence: analysis?.confidence ?? null,
+            anchorDetected: analysis ? anchorDetected : null,
+            hasClutter: analysis ? hasClutter : null,
+            anchors: detectedAnchors,
+            gateDecision: gateDecision?.decision || "needs_declutter_light",
+            gateReason: routingDecisionSource,
+            finalSkipStage1B: skipStage1B,
+          }));
+
+          logger.info("ROUTING_DECISION_SOURCE", jobLogContext(payload, {
+            event: "ROUTING_DECISION_SOURCE",
+            source: routingDecisionSource,
+            confidence: analysis?.confidence ?? null,
+            finalSkipStage1B: skipStage1B,
+            stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
+          }));
 
           logger.info("INTERIOR_FURNITURE_ANALYSIS", jobLogContext(payload, {
             event: "INTERIOR_FURNITURE_ANALYSIS",
-            roomState,
+            anchorCount,
+            totalFurniture,
+            excessFurnitureCount,
             anchorDetected,
-            hasClutter,
+            hasClutter: detectorFallback ? null : hasClutter,
             anchors: detectedAnchors,
             skipStage1B,
+            detectorFallback,
           }));
 
           routingSnapshot = {
             authority: "gemini",
             localEmpty: false,
-            geminiHasFurniture: anchorDetected,
-            geminiConfidence: null,
-            hasClutter,
-            excessFurnitureCount: null,
+            geminiHasFurniture: detectorFallback ? null : anchorDetected,
+            geminiConfidence: analysis && typeof analysis.confidence === "number" ? analysis.confidence : null,
+            hasClutter: detectorFallback ? null : hasClutter,
+            excessFurnitureCount,
             skipStage1B,
             declutterMode: resolvedDeclutterMode,
             stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
