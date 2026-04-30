@@ -118,7 +118,7 @@ const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCA
 const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHANCE_ENABLED ?? "true").toLowerCase() !== "false";
 const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
 const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
-const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.08)));
+const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.04)));
 const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 // SINGLE-AUTHORITY: composite local validator always blocks
