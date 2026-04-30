@@ -2231,6 +2231,7 @@ export async function applyEdit({
   editContext,
   sceneType,
 }: ApplyEditArgs): Promise<string> {
+    const normalizedMode = normalizeEditMode(mode);
     console.log("[editApply] Starting edit", {
       baseImagePath,
       mode,
@@ -2429,8 +2430,8 @@ export async function applyEdit({
 
     let baselineCompositeBuffer: Buffer | undefined;
     let stage1AReferenceBuffer: Buffer | undefined;
-    const useBaselineCompositeMode = (mode === "Remove" || mode === "Reinstate") && !!stage1AReferencePath;
-    if ((mode === "Remove" || mode === "Reinstate") && stage1AReferencePath) {
+    const useBaselineCompositeMode = normalizedMode === "reinstate" && !!stage1AReferencePath;
+    if (normalizedMode === "reinstate" && stage1AReferencePath) {
       try {
         const baselineMeta = await sharp(stage1AReferencePath).metadata().catch(() => null);
         baselineCompositeBuffer = await sharp(stage1AReferencePath)
@@ -2464,7 +2465,7 @@ export async function applyEdit({
     console.log("[editApply] Images converted to base64 (implicit)");
 
     const fallbackPrompt = buildEditPrompt({
-      mode: normalizeEditMode(mode),
+      mode: normalizedMode,
       userIntent: instruction,
       sceneHint: buildStructuredSceneHint({
         sceneType: sceneType || "interior",
@@ -2472,7 +2473,7 @@ export async function applyEdit({
         editContext,
       }),
     });
-    const fallbackUserPrompt = `${fallbackPrompt.user.trim()}${normalizeEditMode(mode) === "reinstate" && reinstateConfig?.targetType
+    const fallbackUserPrompt = `${fallbackPrompt.user.trim()}${normalizedMode === "reinstate" && reinstateConfig?.targetType
       ? `\n\nReinstate target: ${String(reinstateConfig.targetType).trim().toLowerCase()}.`
       : ""}${(mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer
       ? "\n\nReference note: Use any provided Stage 1A reference only to infer original region content or structural surfaces. Do not copy unrelated furniture or redesign the scene."

@@ -1,5 +1,8 @@
 // worker/src/pipeline/prompts.ts
 
+import { buildIntentPrompt } from "./intentPrompts";
+import { classifyEditIntent, isStructuralEdit, type EditIntent } from "./intentClassifier";
+
 type RegionEditPromptArgs = {
   userInstruction: string;
   roomType?: string;
@@ -87,6 +90,20 @@ function formatReinstateTargetLabel(targetType: "window" | "doorway" | "opening"
 
 function buildModeSceneHint(sceneHint?: string): string {
   return sceneHint?.trim() || "Context: This is an interior scene.";
+}
+
+function resolveIntentForMode(mode: EditMode, intent: EditIntent): EditIntent {
+  if (mode === "remove") {
+    if (intent === "trim_landscaping" || intent === "clean_surface" || intent === "repair_surface") {
+      return "declutter";
+    }
+  }
+
+  if (mode === "reinstate") {
+    return "generic";
+  }
+
+  return intent;
 }
 
 function buildRemovePrompt(userIntent?: string, sceneHint?: string): string {
@@ -246,6 +263,23 @@ export function buildSceneHint(sceneType: "interior" | "exterior", sceneDetail?:
 }
 
 export function buildEditPrompt({ mode, userIntent, sceneHint }: BuildEditPromptParams): { system: string; user: string } {
+  const normalizedUserIntent = String(userIntent || "").trim();
+  if (isStructuralEdit(normalizedUserIntent)) {
+    const error = new Error("Structural edits are not supported. Please try a non-structural edit.") as Error & { code?: string };
+    error.code = "STRUCTURAL_EDIT_NOT_ALLOWED";
+    throw error;
+  }
+
+  const rawIntent = classifyEditIntent(normalizedUserIntent);
+  const resolvedIntent = resolveIntentForMode(mode, rawIntent);
+  const intentPrompt = buildIntentPrompt(resolvedIntent, normalizedUserIntent);
+  console.info("EDIT_INTENT_CLASSIFICATION", {
+    mode,
+    rawIntent,
+    resolvedIntent,
+    userInstruction: normalizedUserIntent,
+  });
+
   let modePrompt = "";
 
   switch (mode) {
@@ -267,7 +301,7 @@ export function buildEditPrompt({ mode, userIntent, sceneHint }: BuildEditPrompt
 
   return {
     system: BASE_SYSTEM_PROMPT.trim(),
-    user: modePrompt.trim(),
+    user: `${intentPrompt.trim()}\n\n${modePrompt.trim()}`.trim(),
   };
 }
 
