@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, updateUser } from "../services/users.js";
 import { cancelEnqueuedJob, createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
-import { uploadOriginalToS3 } from "../utils/s3.js";
+import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3 } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
@@ -50,6 +50,40 @@ function safeParseOptions(raw: unknown): any[] {
   } catch {
     return [];
   }
+}
+
+interface DirectUploadedImage {
+  key: string;
+}
+
+function safeParseUploadedKeys(raw: unknown): DirectUploadedImage[] {
+  const parsed = typeof raw === "string"
+    ? (() => {
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return [];
+      }
+    })()
+    : raw;
+
+  if (!Array.isArray(parsed)) return [];
+
+  return parsed
+    .map((item) => {
+      if (typeof item === "string") {
+        return { key: item.trim() };
+      }
+      if (item && typeof item === "object" && typeof (item as any).key === "string") {
+        return { key: String((item as any).key).trim() };
+      }
+      return null;
+    })
+    .filter((item): item is DirectUploadedImage => Boolean(item?.key));
+}
+
+function isMultipartRequest(req: Request): boolean {
+  return req.is("multipart/form-data") === "multipart/form-data";
 }
 
 const CANONICAL_ROOM_TYPES = new Set([
@@ -128,8 +162,42 @@ export function uploadRouter() {
 
   // If your editor still shows overload errors, this cast silences them safely.
   const uploadMw: RequestHandler = upload.array("images", 20) as unknown as RequestHandler;
+  const maybeUploadMw: RequestHandler = (req, res, next) => {
+    if (isMultipartRequest(req)) {
+      console.warn("Legacy upload route hit – should not be used", {
+        path: req.path,
+        userId: (req.session as any)?.user?.id || null,
+      });
+      return uploadMw(req, res, next);
+    }
+    return next();
+  };
 
-  r.post("/upload", uploadMw, async (req: Request, res: Response) => {
+  r.post("/upload-url", async (req: Request, res: Response) => {
+    const sessUser = (req.session as any)?.user;
+    if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
+
+    const filename = String((req.body as any)?.filename || "").trim();
+    const contentType = String((req.body as any)?.contentType || "").trim();
+
+    if (!filename) {
+      return res.status(400).json({ error: "filename_required", message: "filename is required" });
+    }
+
+    if (contentType !== "image/jpeg") {
+      return res.status(400).json({ error: "invalid_content_type", message: "Only image/jpeg uploads are supported" });
+    }
+
+    try {
+      const signed = await createPresignedUploadUrl({ filename, contentType, expiresIn: 300 });
+      return res.json({ url: signed.url, key: signed.key });
+    } catch (error: any) {
+      console.error("[upload-url] failed to create signed URL", error);
+      return res.status(503).json({ error: "upload_url_failed", message: error?.message || "Failed to create upload URL" });
+    }
+  });
+
+  r.post("/upload", maybeUploadMw, async (req: Request, res: Response) => {
     const sessUser = (req.session as any)?.user;
     if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
 
@@ -148,7 +216,9 @@ export function uploadRouter() {
     }
 
     const files = (req.files as Express.Multer.File[]) || [];
-    if (!files.length) return res.status(400).json({ error: "no_files" });
+    const uploadedKeys = safeParseUploadedKeys((req.body as any)?.uploadedKeys);
+    const uploadCount = uploadedKeys.length || files.length;
+    if (!uploadCount) return res.status(400).json({ error: "no_files" });
 
     const optionsList = safeParseOptions((req.body as any)?.options);
     // Read high-level form toggles (string booleans)
@@ -324,7 +394,7 @@ export function uploadRouter() {
     // Server-side validation: if staging is enabled, every interior image must have a valid roomType
     if (allowStagingForm) {
       const invalidRoomType: number[] = [];
-      for (let i = 0; i < files.length; i++) {
+      for (let i = 0; i < uploadCount; i++) {
         // Determine sceneType and roomType from metaJson or options
         const meta = metaByIndex[i] || {};
         const sceneType = meta.sceneType || (optionsList[i]?.sceneType) || "auto";
@@ -354,7 +424,7 @@ export function uploadRouter() {
     let deficit = 0;
 
     try {
-      const estimateImages = files.map((_f, i) => {
+      const estimateImages = Array.from({ length: uploadCount }, (_unused, i) => {
         const meta = metaByIndex[i] || {};
         const opts: any = optionsList[i] ?? {};
         const sceneType = String(meta.sceneType || opts.sceneType || "auto").toLowerCase();
@@ -401,7 +471,7 @@ export function uploadRouter() {
         `[CREDIT_PREFLIGHT_ENFORCED] ` +
         `agencyId=${agencyId || "individual"} ` +
         `userId=${sessUser.id} ` +
-        `imageCount=${files.length} ` +
+        `imageCount=${uploadCount} ` +
         `requiredCredits=${requiredCredits} ` +
         `monthlyRemaining=${monthlyRemaining} ` +
         `addonRemaining=${addonRemaining} ` +
@@ -468,8 +538,9 @@ export function uploadRouter() {
       }
     }
 
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < uploadCount; i++) {
       const f = files[i];
+      const directUpload = uploadedKeys[i];
       const hasPerItemOptions = !!optionsList[i];
       const opts: any = optionsList[i] ?? {
         // NOTE: Do not set defaults for declutter or virtualStage here; allow form-level override below
@@ -730,24 +801,37 @@ export function uploadRouter() {
         }
       }
 
-      const finalPath = path.join(userDir, f.filename || f.originalname);
+      let finalPath: string | undefined;
+      let recordOriginalPath: string;
+      let remoteOriginalUrl: string | undefined = undefined;
+      let remoteOriginalKey: string | undefined = undefined;
 
-      // move file into user's folder
-      if ((f as any).path) {
-        const src = path.join((f as any).destination ?? uploadRoot, f.filename);
-        await fs
-          .rename(src, finalPath)
-          .catch(async () => {
-            const buf = await fs.readFile((f as any).path);
-            await fs.writeFile(finalPath, buf);
-            await fs.unlink((f as any).path).catch(() => {});
-          });
+      if (directUpload) {
+        remoteOriginalKey = directUpload.key;
+        remoteOriginalUrl = getS3PublicUrl(directUpload.key);
+        recordOriginalPath = directUpload.key;
+      } else {
+        const localFinalPath = path.join(userDir, f.filename || f.originalname);
+        finalPath = localFinalPath;
+
+        if ((f as any).path) {
+          const src = path.join((f as any).destination ?? uploadRoot, f.filename);
+          await fs
+            .rename(src, localFinalPath)
+            .catch(async () => {
+              const buf = await fs.readFile((f as any).path);
+              await fs.writeFile(localFinalPath, buf);
+              await fs.unlink((f as any).path).catch(() => {});
+            });
+        }
+
+        recordOriginalPath = localFinalPath;
       }
 
       const rec = createImageRecord({
         userId: sessUser.id,
         agencyId,
-        originalPath: finalPath,
+        originalPath: recordOriginalPath,
         roomType: opts.roomType,
         sceneType: opts.sceneType,
       });
@@ -758,20 +842,19 @@ export function uploadRouter() {
       // Upload original to S3.
       // In strict mode (production or REQUIRE_S3=1), failure will abort the request.
       // In non-strict mode, we continue but mark lack of remoteOriginalUrl.
-      let remoteOriginalUrl: string | undefined = undefined;
-      let remoteOriginalKey: string | undefined = undefined;
-      try {
-        const up = await uploadOriginalToS3(finalPath);
-        remoteOriginalUrl = up.url;
-        remoteOriginalKey = up.key;
-        // optionally, could store in record.versions here in future
-      } catch (e) {
-        const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
-        const msg = (e as any)?.message || String(e);
-        console.warn('[upload] original S3 upload failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without remote URL)');
-        if (strict) {
-          await releaseReservations();
-          return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
+      if (!directUpload && finalPath) {
+        try {
+          const up = await uploadOriginalToS3(finalPath);
+          remoteOriginalUrl = up.url;
+          remoteOriginalKey = up.key;
+        } catch (e) {
+          const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+          const msg = (e as any)?.message || String(e);
+          console.warn('[upload] original S3 upload failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without remote URL)');
+          if (strict) {
+            await releaseReservations();
+            return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
+          }
         }
       }
 

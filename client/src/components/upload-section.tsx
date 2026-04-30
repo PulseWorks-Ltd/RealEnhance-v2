@@ -28,7 +28,7 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
     accept: { "image/*": [".jpg",".jpeg",".png",".webp",".heic",".heif"] },
     maxFiles: processingMode === "batch" ? 10 : 1,
     multiple: processingMode === "batch",
-    maxSize: 15 * 1024 * 1024
+    maxSize: 25 * 1024 * 1024
   });
 
   useEffect(() => () => { previews.forEach(p => URL.revokeObjectURL(p.url)); }, [previews]);
@@ -51,7 +51,7 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
                     <p className="text-sm text-brand-500 font-medium">
                       Drag & drop image here, or click to select
                     </p>
-                    <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 15MB</p>
+                    <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 25MB</p>
                   </div>
                   <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image</div>
                 </>
@@ -94,7 +94,7 @@ export function UploadSection({ onFilesSelected, processingMode, onProcessingMod
                 <p className="text-sm text-brand-500 font-medium">
                   Drag & drop images here, or click to select
                 </p>
-                <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 15MB</p>
+                <p className="text-xs text-brand-400 mt-1">JPG, PNG, WEBP, HEIC up to 25MB</p>
               </div>
               <div className="text-center text-xs text-muted-foreground mt-1">1 credit per image</div>
             </CardContent>

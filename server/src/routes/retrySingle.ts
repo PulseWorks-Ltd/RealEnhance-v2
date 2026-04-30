@@ -291,9 +291,15 @@ export function retrySingleRouter() {
   const r = Router();
 
   const uploadMw: RequestHandler = upload.single("image") as unknown as RequestHandler;
+  const maybeUploadMw: RequestHandler = (req, res, next) => {
+    if (req.is("multipart/form-data") === "multipart/form-data") {
+      return uploadMw(req, res, next);
+    }
+    return next();
+  };
 
   // POST /api/batch/retry-single
-  r.post("/batch/retry-single", uploadMw, async (req: Request, res: Response) => {
+  r.post("/batch/retry-single", maybeUploadMw, async (req: Request, res: Response) => {
     try {
       const sessUser = (req.session as any)?.user;
       if (!sessUser) return res.status(401).json({ success: false, error: "not_authenticated" });

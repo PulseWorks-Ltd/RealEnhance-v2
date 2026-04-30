@@ -20,6 +20,13 @@ export interface S3UploadResult {
   contentType: string;
 }
 
+export interface S3PresignedUploadResult {
+  key: string;
+  url: string;
+  bucket: string;
+  contentType: string;
+}
+
 function sanitizeRegion(input?: string | null): string {
   const raw = (input || "").trim();
   if (!raw) return "us-east-1";
@@ -53,6 +60,48 @@ function guessMime(p: string): string {
   if (ext === ".webp") return "image/webp";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   return "application/octet-stream";
+}
+
+function sanitizeUploadFilename(filename: string): string {
+  const ext = path.extname(filename || "").toLowerCase();
+  const base = path.basename(filename || "upload", ext).replace(/[^a-zA-Z0-9._-]/g, "_") || "upload";
+  return `${base}${ext}`;
+}
+
+export function getS3PublicUrl(key: string): string {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+
+  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
+  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
+  return base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+}
+
+export async function createPresignedUploadUrl(params: {
+  filename: string;
+  contentType: string;
+  expiresIn?: number;
+}): Promise<S3PresignedUploadResult> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+
+  const prefix = (process.env.S3_PREFIX || "realenhance/originals").replace(/\/+$/, "");
+  const safeName = sanitizeUploadFilename(params.filename);
+  const key = `${prefix}/${Date.now()}-${randomUUID()}-${safeName}`.replace(/^\/+/, "");
+  const client = getClient();
+  const command = new PutObjectCommand({
+    Bucket: bucket,
+    Key: key,
+    ContentType: params.contentType,
+  });
+  const url = await getSignedUrl(client as any, command as any, { expiresIn: params.expiresIn ?? 300 });
+
+  return {
+    key,
+    url,
+    bucket,
+    contentType: params.contentType,
+  };
 }
 
 export async function uploadOriginalToS3(localPath: string): Promise<S3UploadResult> {
@@ -103,9 +152,7 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
     await client.send(new PutObjectCommand(putParamsBase));
   }
 
-  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
-  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
-  const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+  const url = getS3PublicUrl(key);
   return { key, url, bucket, size, contentType };
 }
 
@@ -154,9 +201,7 @@ export async function copyS3Object(sourceKey: string, targetKey: string): Promis
     CopySource: `${bucket}/${sourceKey}`,
   }));
 
-  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
-  const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
-  const url = base ? `${base}/${targetKey}` : `https://${bucket}.s3.${region}.amazonaws.com/${targetKey}`;
+  const url = getS3PublicUrl(targetKey);
   return { key: targetKey, url, bucket };
 }
 

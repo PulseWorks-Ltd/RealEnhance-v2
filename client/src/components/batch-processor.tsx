@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
+import { useImageUpload } from "@/hooks/useImageUpload";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import {
@@ -1048,7 +1049,7 @@ export default function BatchProcessor({
   
   // Constants for file validation
   const MAX_FILES = 50;
-  const MAX_FILE_SIZE_MB = 15;
+  const MAX_FILE_SIZE_MB = 25;
   const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
   
   // Tab state for clean UI flow - default to images tab when empty to show launchpad
@@ -1056,6 +1057,7 @@ export default function BatchProcessor({
     () => files.length === 0 ? "images" : "upload"
   );
   const [isUploading, setIsUploading] = useState(false);
+  const { handleUpload, progressByIndex, resetUploadState, stage: imageUploadStage } = useImageUpload();
   const [globalGoal, setGlobalGoal] = useState("");
   const [propertyAddress, setPropertyAddress] = useState("");
   const [preserveStructure, setPreserveStructure] = useState<boolean>(true);
@@ -4783,22 +4785,10 @@ export default function BatchProcessor({
     const controller = new AbortController();
     setAbortController(controller);
     
-  const fd = new FormData();
-    files.forEach(f => fd.append("images", f));
-    
     // Use shared industry mapping from component scope
     const goalToSend = globalGoal.trim() || "General, realistic enhancement for the selected industry.";
-    fd.append("goal", goalToSend);
-    fd.append("industry", industryMap[presetKey] || "Real Estate");
-    fd.append("preserveStructure", "true");
-    fd.append("allowStaging", allowStaging.toString());
-    fd.append("stagingStyle", allowStaging ? stagingStyle : "");
-    fd.append("allowRetouch", "true");
-    fd.append("furnitureReplacement", furnitureReplacement.toString());
-    fd.append("declutter", declutter.toString());
     const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
     if (declutter) {
-      fd.append("declutterMode", declutterMode);
       console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
     }
     const stage2Only = allowStaging && !declutter;
@@ -4823,18 +4813,36 @@ export default function BatchProcessor({
       files: files.length,
     });
     if (stage2Variant) {
-      fd.append("stage2Variant", stage2Variant);
     }
-    fd.append("stage2Only", stage2Only.toString());
-    fd.append("outdoorStaging", outdoorStaging);
+
+    const uploadRequestBody: Record<string, unknown> = {
+      goal: goalToSend,
+      industry: industryMap[presetKey] || "Real Estate",
+      preserveStructure: true,
+      allowStaging,
+      stagingStyle: allowStaging ? stagingStyle : "",
+      allowRetouch: true,
+      furnitureReplacement,
+      declutter,
+      stage2Only,
+      outdoorStaging,
+      metaJson,
+      clientBatchId: activeClientBatchId,
+    };
+
+    if (declutter) {
+      uploadRequestBody.declutterMode = declutterMode;
+    }
+    if (stage2Variant) {
+      uploadRequestBody.stage2Variant = stage2Variant;
+    }
     if (propertyAddress.trim()) {
-      fd.append("propertyAddress", propertyAddress.trim());
+      uploadRequestBody.propertyAddress = propertyAddress.trim();
     }
-    // NEW: Manual room linking metadata
-    fd.append("metaJson", metaJson);
     
     try {
       setIsUploading(true);
+      setProgressText("Compressing images...");
       console.info("[ENHANCE_REQUEST] sending", {
         files: files.length,
         allowStaging,
@@ -4849,12 +4857,33 @@ export default function BatchProcessor({
         stage2Only,
         stagesSelected: { stage1A: true, stage1B: declutter, stage2: allowStaging },
       });
+      const uploadedKeys = await handleUpload(files, {
+        signal: controller.signal,
+        onStageChange: (stage) => {
+          if (stage === "compressing") {
+            setProgressText("Compressing images...");
+          }
+          if (stage === "uploading") {
+            setProgressText(`Uploading images: 0/${files.length} complete`);
+          }
+        },
+        onBatchProgress: ({ completed, total, percent }) => {
+          if (!total) return;
+          setProgressText(
+            completed >= total
+              ? "Upload complete. Preparing job..."
+              : `Uploading images: ${completed}/${total} complete (${percent}%)`
+          );
+        },
+      });
+      uploadRequestBody.uploadedKeys = uploadedKeys;
+
       // Phase 1: Start batch processing with files
       const uploadOnce = async () => fetch(api("/api/upload"), {
         method: "POST",
-        body: fd,
+        body: JSON.stringify(uploadRequestBody),
         credentials: "include",
-        headers: withDevice().headers,
+        headers: withDevice({ headers: { "Content-Type": "application/json" } }).headers,
         signal: AbortSignal.any([controller.signal, AbortSignal.timeout(60_000)]),
       });
 
@@ -4907,6 +4936,7 @@ export default function BatchProcessor({
 
       const uploadResult = await uploadResp.json();
       setIsUploading(false);
+      resetUploadState();
       if (uploadResult?.requiresPayment) {
         const pendingJobs = Array.isArray(uploadResult.jobs) ? uploadResult.jobs : [];
         const pendingJobIds = pendingJobs.map((j: any) => String(j?.jobId || "").trim()).filter(Boolean);
@@ -4972,6 +5002,7 @@ export default function BatchProcessor({
       
     } catch (error: any) {
       setIsUploading(false);
+      resetUploadState();
       setRunState("idle");
       setProgressText("");
       setAbortController(null);
@@ -5791,55 +5822,6 @@ export default function BatchProcessor({
       return;
     }
 
-    const fileToRetry = files[imageIndex];
-    if (!fileToRetry) return;
-
-    // Check if this is a synthetic placeholder file created from batch persistence
-    const isPlaceholder = (fileToRetry as any).__restored === true;
-    const originalFromStoreUrl =
-      results[imageIndex]?.result?.originalImageUrl ||
-      results[imageIndex]?.result?.originalUrl ||
-      results[imageIndex]?.originalImageUrl ||
-      results[imageIndex]?.originalUrl;
-
-    // If we only have a placeholder, pull the original from storage so the retry uses a real image
-    let fileForUpload: File = fileToRetry;
-    if (isPlaceholder) {
-      if (!originalFromStoreUrl) {
-        toast({
-          title: "Need the original photo",
-          description: "Please re-upload the image before retrying so we can process the real file.",
-          variant: "destructive"
-        });
-        return;
-      }
-      try {
-        // AUDIT FIX: added timeout to prevent hung original re-download
-        const resp = await fetch(originalFromStoreUrl, { signal: AbortSignal.timeout(30_000) });
-        if (!resp.ok) throw new Error("Unable to download the original image");
-        const blob = await resp.blob();
-        const revived = new File([blob], fileToRetry.name || "retry-image.jpg", {
-          type: blob.type || fileToRetry.type || "image/jpeg",
-          lastModified: Date.now()
-        });
-        // Mark as real so subsequent retries use this file
-        (revived as any).__restored = false;
-        setFiles(prev => {
-          const next = [...prev];
-          next[imageIndex] = revived;
-          return next;
-        });
-        fileForUpload = revived;
-      } catch (err: any) {
-        toast({
-          title: "Couldn’t load the original",
-          description: err?.message || "Please re-upload the image and retry.",
-          variant: "destructive"
-        });
-        return;
-      }
-    }
-
     // ✅ Clear any previous timeout
     if (retryTimeoutRef.current) {
       clearTimeout(retryTimeoutRef.current);
@@ -5934,42 +5916,44 @@ export default function BatchProcessor({
         ? [baseGoal, customInstructions.trim(), retryFocus].filter(Boolean).join(" ")
         : [baseGoal, retryFocus].filter(Boolean).join(" ");
       
-      // Use dedicated retry endpoint that bypasses batch lock
-      const fd = new FormData();
-      fd.append("image", fileForUpload); // Correct field name for retry-single
-      fd.append("goal", goalToSend);
-      if (sceneType) fd.append("sceneType", sceneType);
-      if (sceneType && sceneType !== 'auto') fd.append("manualSceneOverride", "true");
-      if (typeof allowStagingOverride === 'boolean') fd.append("allowStaging", String(allowStagingOverride));
-      if (typeof furnitureReplacementOverride === 'boolean') fd.append("furnitureReplacement", String(furnitureReplacementOverride));
-      if (roomType) fd.append("roomType", roomType);
-      if (windowCount !== undefined) fd.append("windowCount", String(windowCount));
-      if (referenceImage) fd.append("referenceImage", referenceImage);
+      // Use dedicated retry endpoint that bypasses batch lock.
+      // Retry execution is server-resolved from canonical lineage, so no image binary needs to cross the backend.
+      const retryPayload: Record<string, unknown> = {
+        goal: goalToSend,
+        sourceStage: retrySource.stage,
+        uiSelectedTab: retrySource.stage,
+        sourceUrl: retrySource.url,
+        stage1BWasRequested: Boolean(stage1BWasRequested),
+        requestedStage: (retryStage || "2") as StageKey,
+      };
+
+      if (sceneType) retryPayload.sceneType = sceneType;
+      if (sceneType && sceneType !== 'auto') retryPayload.manualSceneOverride = true;
+      if (typeof allowStagingOverride === 'boolean') retryPayload.allowStaging = allowStagingOverride;
+      if (typeof furnitureReplacementOverride === 'boolean') retryPayload.furnitureReplacement = furnitureReplacementOverride;
+      if (roomType) retryPayload.roomType = roomType;
+      if (windowCount !== undefined) retryPayload.windowCount = windowCount;
       if (parentImageIdForRetry) {
-        fd.append("imageId", parentImageIdForRetry);
-        fd.append("retryParentImageId", parentImageIdForRetry);
+        retryPayload.imageId = parentImageIdForRetry;
+        retryPayload.retryParentImageId = parentImageIdForRetry;
       }
       if (parentJobIdForRetry) {
-        fd.append("parentJobId", parentJobIdForRetry);
-        fd.append("retryParentJobId", parentJobIdForRetry);
+        retryPayload.parentJobId = parentJobIdForRetry;
+        retryPayload.retryParentJobId = parentJobIdForRetry;
       }
-      if (clientBatchIdToSend) fd.append("clientBatchId", clientBatchIdToSend);
-      fd.append("sourceStage", retrySource.stage);
-      fd.append("uiSelectedTab", retrySource.stage);
-      fd.append("sourceUrl", retrySource.url);
-      fd.append("stage1BWasRequested", String(Boolean(stage1BWasRequested)));
-      if (baselineStage) fd.append("baselineStage", baselineStage);
-      if (baselineUrl) fd.append("baselineUrl", baselineUrl);
-      if (stagesToRun?.length) fd.append("stagesToRun", JSON.stringify(stagesToRun));
-      if (requestedStagesList?.length) fd.append("requestedStages", JSON.stringify(requestedStagesList));
-      fd.append("requestedStage", (retryStage || "2") as StageKey);
+      if (clientBatchIdToSend) retryPayload.clientBatchId = clientBatchIdToSend;
+      if (baselineStage) retryPayload.baselineStage = baselineStage;
+      if (baselineUrl) retryPayload.baselineUrl = baselineUrl;
+      if (stagesToRun?.length) retryPayload.stagesToRun = stagesToRun;
+      if (requestedStagesList?.length) retryPayload.requestedStages = requestedStagesList;
 
       try {
         // AUDIT FIX: added timeout to prevent hung retry requests
         const response = await fetch(api("/api/batch/retry-single"), withDevice({
           method: "POST",
-          body: fd,
+          body: JSON.stringify(retryPayload),
           credentials: "include",
+          headers: { "Content-Type": "application/json" },
           signal: AbortSignal.timeout(30_000)
         }));
 
@@ -8175,6 +8159,10 @@ export default function BatchProcessor({
                           : typeof result?.result?.progressPct === "number"
                           ? result.result.progressPct
                           : null;
+                        const uploadProgressValue = typeof progressByIndex[i] === "number"
+                          ? Math.max(0, Math.min(100, progressByIndex[i]))
+                          : null;
+                        const isClientUploadPhase = isUploading && (imageUploadStage === "compressing" || imageUploadStage === "uploading");
                         const lifecycleProgressPhase = resolveLifecycleProgressPhase({
                           displayStageKey: resolvedDisplayStageKey,
                           currentStage,
@@ -8194,9 +8182,17 @@ export default function BatchProcessor({
                         const stageProgressValue = isDone
                           ? 100
                           : Math.max(previousProgressValue ?? 0, resolvedProgressValue);
-                        const finalizedProgressValue = isEditComplete ? 100 : stageProgressValue;
-                        lastDisplayedProgressByImageRef.current[i] = stageProgressValue;
-                        const stageTitle = isDone
+                        const finalizedProgressValue = isEditComplete
+                          ? 100
+                          : isClientUploadPhase
+                          ? (imageUploadStage === "compressing" ? 0 : (uploadProgressValue ?? 0))
+                          : stageProgressValue;
+                        if (!isClientUploadPhase) {
+                          lastDisplayedProgressByImageRef.current[i] = stageProgressValue;
+                        }
+                        const stageTitle = isClientUploadPhase
+                          ? (imageUploadStage === "compressing" ? "Compressing Image" : "Uploading to S3")
+                          : isDone
                           ? STAGE_TITLES.completed
                           : (STAGE_TITLES[lifecycleProgressPhase] || STAGE_TITLES[resolvedDisplayStageKey] || STAGE_TITLES.stage1a);
                         const baseProcessingMessage = resolveActiveStageMessage({
@@ -8224,8 +8220,10 @@ export default function BatchProcessor({
                           ? "Enhancement Complete"
                           : (isStrictRetry || attempts > 1)
                           ? improvingMessage
-                          : isUploading
-                          ? "Uploading..."
+                          : isClientUploadPhase && imageUploadStage === "compressing"
+                          ? "Compressing image..."
+                          : isClientUploadPhase
+                          ? `Uploading to S3... ${uploadProgressValue ?? 0}%`
                           : isProcessing
                           ? baseProcessingMessage
                           : aiSteps[i] || "Waiting in queue...";
@@ -8430,6 +8428,20 @@ export default function BatchProcessor({
                               {!isProcessing && isUiComplete && (
                                 <div className="absolute inset-0 flex items-center justify-center bg-emerald-900/10 transition-opacity duration-500 animate-in fade-in zoom-in duration-300">
                                   <CheckCircle className="text-white w-6 h-6 shadow-sm drop-shadow-md" />
+                                </div>
+                              )}
+                              {isClientUploadPhase && (
+                                <div className="absolute inset-x-0 bottom-0 z-10 bg-slate-950/75 px-3 py-2 text-white">
+                                  <div className="flex items-center justify-between text-[11px] font-medium">
+                                    <span>{imageUploadStage === "compressing" ? "Compressing" : "Uploading"}</span>
+                                    <span>{imageUploadStage === "compressing" ? "Preparing" : `${uploadProgressValue ?? 0}%`}</span>
+                                  </div>
+                                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/20">
+                                    <div
+                                      className="h-full rounded-full bg-cyan-300 transition-all duration-300"
+                                      style={{ width: `${imageUploadStage === "compressing" ? 12 : (uploadProgressValue ?? 0)}%` }}
+                                    />
+                                  </div>
                                 </div>
                               )}
                             </div>
