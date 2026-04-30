@@ -185,6 +185,12 @@ export default function EnhancedHistoryPage() {
     setPreviewImage(image);
   }, []);
 
+  const handleEditFromPreview = useCallback(() => {
+    if (!previewImage) return;
+    setPreviewImage(null);
+    handleOpenEditor(previewImage);
+  }, [handleOpenEditor, previewImage]);
+
   const planName = usage?.planName;
   const monthlyIncludedImages = usage?.mainAllowance;
   const retentionCount = monthlyIncludedImages ? monthlyIncludedImages * 3 : null;
@@ -401,6 +407,13 @@ export default function EnhancedHistoryPage() {
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setPreviewImage(null)}>
                   Close
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={handleEditFromPreview}
+                >
+                  <Pencil className="w-4 h-4 mr-2" />
+                  Edit
                 </Button>
                 <Button variant="action" onClick={() => handleDownload(previewImage)}>
                   <Download className="w-4 h-4 mr-2" />

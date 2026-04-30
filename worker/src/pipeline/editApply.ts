@@ -8,6 +8,18 @@ import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingG
 
 const MIN_PROJECTION_DILATE_PX = 2;
 const MAX_PROJECTION_DILATE_PX = 4;
+const EXPANDED_EDIT_PADDING_RATIO = 0.2;
+const MIN_EXPANDED_EDIT_DIMENSION_PX = 64;
+const MIN_EXPANDED_EDIT_AREA_PX = 4096;
+const MIN_EXPANDED_EDGE_FEATHER_PX = 2;
+const MAX_EXPANDED_EDGE_FEATHER_PX = 5;
+
+type PixelBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
 
 function normalizeSharpResizePosition(position: unknown): any {
   const original = position;
@@ -60,6 +72,146 @@ async function normalizeMaskToImageSpace(mask: Buffer, width: number, height: nu
 
   return await pipeline
     .threshold(127, { grayscale: true })
+    .png()
+    .toBuffer();
+}
+
+async function getMaskPixelBBox(maskPngBuffer: Buffer, width: number, height: number): Promise<PixelBox | null> {
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = raw.data[y * width + x] ?? 0;
+      if (value <= 127) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < 0 || maxY < 0) return null;
+
+  return {
+    x: minX,
+    y: minY,
+    width: (maxX - minX) + 1,
+    height: (maxY - minY) + 1,
+  };
+}
+
+function expandPixelBox(box: PixelBox, imageWidth: number, imageHeight: number, paddingRatio = EXPANDED_EDIT_PADDING_RATIO): PixelBox {
+  const padX = Math.max(1, Math.ceil(box.width * paddingRatio));
+  const padY = Math.max(1, Math.ceil(box.height * paddingRatio));
+
+  const x1 = Math.max(0, box.x - padX);
+  const y1 = Math.max(0, box.y - padY);
+  const x2 = Math.min(imageWidth, box.x + box.width + padX);
+  const y2 = Math.min(imageHeight, box.y + box.height + padY);
+
+  return {
+    x: x1,
+    y: y1,
+    width: Math.max(1, x2 - x1),
+    height: Math.max(1, y2 - y1),
+  };
+}
+
+function isExpandedCropUsable(box: PixelBox | null): box is PixelBox {
+  if (!box) return false;
+  if (box.width < MIN_EXPANDED_EDIT_DIMENSION_PX) return false;
+  if (box.height < MIN_EXPANDED_EDIT_DIMENSION_PX) return false;
+  return (box.width * box.height) >= MIN_EXPANDED_EDIT_AREA_PX;
+}
+
+async function cropMaskToBox(maskPngBuffer: Buffer, box: PixelBox): Promise<Buffer> {
+  return sharp(maskPngBuffer)
+    .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
+    .png()
+    .toBuffer();
+}
+
+async function buildSoftGuidanceMask(croppedMaskPngBuffer: Buffer, width: number, height: number): Promise<Buffer> {
+  const croppedMaskRaw = await sharp(croppedMaskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const guidanceRaw = Buffer.alloc(width * height, 128);
+  for (let i = 0; i < width * height; i += 1) {
+    if ((croppedMaskRaw.data[i] ?? 0) > 127) {
+      guidanceRaw[i] = 255;
+    }
+  }
+
+  return sharp(guidanceRaw, { raw: { width, height, channels: 1 } })
+    .png()
+    .toBuffer();
+}
+
+async function buildFullImageBoxMask(box: PixelBox, width: number, height: number): Promise<Buffer> {
+  const maskRaw = Buffer.alloc(width * height, 0);
+  for (let y = box.y; y < box.y + box.height; y += 1) {
+    const rowOffset = y * width;
+    for (let x = box.x; x < box.x + box.width; x += 1) {
+      maskRaw[rowOffset + x] = 255;
+    }
+  }
+
+  return sharp(maskRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+function computeExpandedEdgeFeatherPx(box: PixelBox): number {
+  const scaled = Math.round(Math.max(box.width, box.height) * 0.01);
+  return Math.max(MIN_EXPANDED_EDGE_FEATHER_PX, Math.min(MAX_EXPANDED_EDGE_FEATHER_PX, scaled || 0));
+}
+
+async function compositeExpandedCrop(
+  originalImagePath: string,
+  generatedBuffer: Buffer,
+  box: PixelBox,
+  featherPx: number,
+): Promise<Buffer> {
+  const alignedGenerated = await sharp(generatedBuffer)
+    .resize(box.width, box.height, { fit: "fill" })
+    .removeAlpha()
+    .toBuffer();
+
+  const alphaRaw = Buffer.alloc(box.width * box.height, 255);
+  if (featherPx > 0) {
+    for (let y = 0; y < box.height; y += 1) {
+      for (let x = 0; x < box.width; x += 1) {
+        const edgeDistance = Math.min(x, y, (box.width - 1) - x, (box.height - 1) - y);
+        if (edgeDistance >= featherPx) continue;
+        const alpha = Math.max(0, Math.min(255, Math.round((edgeDistance / featherPx) * 255)));
+        alphaRaw[(y * box.width) + x] = alpha;
+      }
+    }
+  }
+
+  const overlayBuffer = await sharp(alignedGenerated, {
+    raw: { width: box.width, height: box.height, channels: 3 },
+  })
+    .joinChannel(alphaRaw, { raw: { width: box.width, height: box.height, channels: 1 } })
+    .png()
+    .toBuffer();
+
+  return sharp(originalImagePath)
+    .composite([{ input: overlayBuffer, left: box.x, top: box.y }])
     .png()
     .toBuffer();
 }
@@ -701,8 +853,7 @@ export async function applyEdit({
     // 🔹 For Add/Remove/Replace modes (or if Restore failed), use Gemini
     console.log("[editApply] Using Gemini for mode:", mode);
 
-    // Normalize base image to the same format you use in 1A/1B
-    const baseImageBuffer = await sharp(baseImagePath).webp().toBuffer();
+    const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
 
     // For Remove mode, load Stage 1A baseline so Gemini can see what's behind the item
@@ -729,23 +880,96 @@ export async function applyEdit({
       editMode: mode,
       reinstateConfig,
     });
-    const finalPrompt = prompt;
+    const cropPromptSuffix = `
+
+CROPPED REGION EDIT RULES:
+- You are editing ONLY the provided cropped region.
+- The white center area is the target edit zone.
+- The gray surrounding area is an allowed spill zone for realistic object placement.
+- You may extend slightly into the gray area when needed for natural edges, shadows, or object placement.
+- Do NOT redesign the surrounding environment.
+- Do NOT make global changes to the room.`;
+    const finalPrompt = `${prompt}${cropPromptSuffix}`;
     console.log("[editApply] Prompt built, length:", finalPrompt.length);
 
-    // 🚀 Call shared Gemini helper
+    const maskPixelBBox = await getMaskPixelBBox(maskPngBuffer!, meta.width, meta.height);
+    const expandedBox = maskPixelBBox
+      ? expandPixelBox(maskPixelBBox, meta.width, meta.height)
+      : null;
+    const useExpandedCrop = isExpandedCropUsable(expandedBox);
+
+    if (useExpandedCrop) {
+      const croppedEditableImageBuffer = await sharp(baseImagePath)
+        .extract({ left: expandedBox.x, top: expandedBox.y, width: expandedBox.width, height: expandedBox.height })
+        .webp()
+        .toBuffer();
+      const croppedMaskPngBuffer = await cropMaskToBox(maskPngBuffer!, expandedBox);
+      const guidanceMaskPngBuffer = await buildSoftGuidanceMask(croppedMaskPngBuffer, expandedBox.width, expandedBox.height);
+
+      console.log("[editApply] Using expanded crop region", {
+        maskPixelBBox,
+        expandedBox,
+      });
+
+      const editedBuffer = await regionEditWithGemini({
+        prompt: finalPrompt,
+        jobId,
+        imageId,
+        baseImageBuffer: croppedEditableImageBuffer,
+        fullSceneReferenceBuffer,
+        referenceImageBuffer: stage1AReferenceBuffer,
+        maskPngBuffer: guidanceMaskPngBuffer,
+        maskMode: "guidance",
+        roomType,
+        sceneType: sceneType || "interior",
+        editMode: mode,
+      });
+
+      const effectiveAllowedMask = await buildFullImageBoxMask(expandedBox, meta.width, meta.height);
+      const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
+      await sharp(effectiveAllowedMask).png().toFile(allowedMaskArtifactPath);
+
+      const recomposed = await compositeExpandedCrop(
+        baseImagePath,
+        editedBuffer,
+        expandedBox,
+        computeExpandedEdgeFeatherPx(expandedBox),
+      );
+
+      await sharp(recomposed).webp().toFile(outPath);
+
+      const maskStats = await sharp(effectiveAllowedMask).stats();
+      console.log("[editApply] Enforced mask zones", {
+        enforcementMode: "expanded_crop_hard_boundary",
+        expandedBox,
+        allowedPixels: maskStats.channels[0]?.sum ?? 0,
+        allowedMaskArtifactPath,
+      });
+
+      console.log("[editApply] Saved enforced region edit image to", outPath);
+      return outPath;
+    }
+
+    console.log("[editApply] Expanded crop unavailable, falling back to legacy full-image edit", {
+      maskPixelBBox,
+      expandedBox,
+      minDimensionPx: MIN_EXPANDED_EDIT_DIMENSION_PX,
+      minAreaPx: MIN_EXPANDED_EDIT_AREA_PX,
+    });
+
     const editedBuffer = await regionEditWithGemini({
-      prompt: finalPrompt,
+      prompt: prompt,
       jobId,
       imageId,
-      baseImageBuffer,
+      baseImageBuffer: fullSceneReferenceBuffer,
       referenceImageBuffer: stage1AReferenceBuffer,
       maskPngBuffer,
+      maskMode: "binary",
       roomType,
       sceneType: sceneType || "interior",
       editMode: mode,
     });
 
-    // Strict edit compositing only: original * (1 - mask) + generated * mask
     const effectiveAllowedMask = await sharp(maskPngBuffer!)
       .removeAlpha()
       .grayscale()
@@ -762,7 +986,6 @@ export async function applyEdit({
       meta.height,
     );
 
-    // Fix 4: Color/tone normalization — match generated region to surrounding original pixels
     const blendedComposite = await blendMaskEdgeTones(
       strictComposite,
       baseImagePath,
@@ -775,7 +998,7 @@ export async function applyEdit({
 
     const maskStats = await sharp(effectiveAllowedMask).stats();
     console.log("[editApply] Enforced mask zones", {
-      enforcementMode: "strict_inner_only",
+      enforcementMode: "strict_inner_only_fallback",
       innerMaskPixels: maskStats.channels[0]?.sum ?? 0,
       allowedMaskArtifactPath,
     });

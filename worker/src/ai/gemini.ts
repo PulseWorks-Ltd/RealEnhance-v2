@@ -3,8 +3,10 @@ export interface RegionEditArgs {
   jobId?: string;
   imageId?: string;
   baseImageBuffer: Buffer;
+  fullSceneReferenceBuffer?: Buffer;
   referenceImageBuffer?: Buffer;
   maskPngBuffer?: Buffer;
+  maskMode?: "binary" | "guidance";
   roomType?: string;
   sceneType?: "interior" | "exterior";
   preserveStructure?: boolean;
@@ -17,8 +19,10 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     jobId,
     imageId,
     baseImageBuffer,
+    fullSceneReferenceBuffer,
     referenceImageBuffer,
     maskPngBuffer,
+    maskMode = "binary",
     roomType,
     sceneType,
     preserveStructure,
@@ -26,11 +30,14 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   } = args;
 
   const usesReferenceImage = (editMode === "Remove" || editMode === "Reinstate") && !!referenceImageBuffer;
+  const hasFullSceneReference = !!fullSceneReferenceBuffer;
 
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: prompt.length,
     hasMask: !!maskPngBuffer,
+    maskMode,
     hasReferenceImage: usesReferenceImage,
+    hasFullSceneReference,
     baseSize: baseImageBuffer.length,
     roomType,
     sceneType,
@@ -38,7 +45,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
   });
 
   const parts: any[] = [
-    { text: "BASE_IMAGE_TO_EDIT:" },
+    { text: "EDITABLE_CROPPED_REGION:" },
     {
       inlineData: {
         mimeType: "image/webp",
@@ -46,6 +53,15 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
       },
     },
   ];
+  if (hasFullSceneReference) {
+    parts.push({ text: "FULL_SCENE_REFERENCE (reference only — do not redesign this wider environment):" });
+    parts.push({
+      inlineData: {
+        mimeType: "image/webp",
+        data: fullSceneReferenceBuffer!.toString("base64"),
+      },
+    });
+  }
   if (usesReferenceImage) {
     const referenceLabel = editMode === "Reinstate"
       ? "STAGE_1A_BASELINE_IMAGE (original property photo — architectural reference ONLY, restore only the requested opening and do NOT reproduce furniture or movable items from this image):"
@@ -59,7 +75,10 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     });
   }
   if (maskPngBuffer) {
-    parts.push({ text: "EDIT_MASK_IMAGE (WHITE=EDIT, BLACK=KEEP):" });
+    const maskLabel = maskMode === "guidance"
+      ? "EDIT_GUIDANCE_MASK (WHITE=target edit zone, GRAY=allowed spill zone inside the crop):"
+      : "EDIT_MASK_IMAGE (WHITE=EDIT, BLACK=KEEP):";
+    parts.push({ text: maskLabel });
     parts.push({
       inlineData: {
         mimeType: "image/png",
@@ -193,6 +212,15 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     baseWidth,
     baseHeight,
   });
+
+  if (baseWidth > 0 && baseHeight > 0 && (chosen.width !== baseWidth || chosen.height !== baseHeight)) {
+    focusLog("GEMINI_REGION_SIZE_MISMATCH", "[gemini.regionEdit] candidate dimensions differ from editable crop", {
+      chosenWidth: chosen.width,
+      chosenHeight: chosen.height,
+      expectedWidth: baseWidth,
+      expectedHeight: baseHeight,
+    });
+  }
 
   return chosen.buf;
 }
