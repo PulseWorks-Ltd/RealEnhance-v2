@@ -218,6 +218,60 @@ import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
 import { normalizeMaskBase64, normalizeMaskBufferToPng } from "./utils/mask";
 
+type CachedFurnitureDetectionResult = Awaited<ReturnType<typeof detectFurnitureWithRetry>>;
+
+function getFurnitureDetectionCacheKey(params: {
+  imagePath: string;
+  sceneType?: "interior" | "exterior";
+}): string {
+  return `${path.resolve(params.imagePath)}::${params.sceneType === "exterior" ? "exterior" : "interior"}`;
+}
+
+async function runFurnitureDetectionOnce(params: {
+  payload: EnhanceJobPayload;
+  imagePath: string;
+  detectorCache: Map<string, CachedFurnitureDetectionResult>;
+  detectorCacheStats: { requests: number; hits: number };
+  sceneType?: "interior" | "exterior";
+  timeoutMs?: number;
+  startedEvent: string;
+  startedFields?: Record<string, any>;
+}): Promise<CachedFurnitureDetectionResult> {
+  params.detectorCacheStats.requests += 1;
+  const cacheKey = getFurnitureDetectionCacheKey({
+    imagePath: params.imagePath,
+    sceneType: params.sceneType,
+  });
+  const cached = params.detectorCache.get(cacheKey);
+  if (cached) {
+    params.detectorCacheStats.hits += 1;
+    logger.info("DETECTOR_CACHE_HIT", jobLogContext(params.payload, {
+      event: "DETECTOR_CACHE_HIT",
+      detector: "furniture",
+      sceneType: params.sceneType === "exterior" ? "exterior" : "interior",
+      sourceEvent: params.startedEvent,
+      imagePath: path.basename(params.imagePath),
+    }));
+    return cached;
+  }
+
+  logger.info(params.startedEvent, jobLogContext(params.payload, {
+    event: params.startedEvent,
+    detector: "furniture",
+    detectorModel: "gemini-2.0-flash",
+    sceneType: params.sceneType === "exterior" ? "exterior" : "interior",
+    ...(params.startedFields || {}),
+  }));
+
+  const ai = getGeminiClient();
+  const result = await detectFurnitureWithRetry(ai as any, toBase64(params.imagePath).data, {
+    sceneType: params.sceneType,
+    timeoutMs: params.timeoutMs,
+  });
+  params.detectorCache.set(cacheKey, result);
+  return result;
+}
+
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
 const STAGE1A_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1A_MAX_ATTEMPTS || 3));
 const FREE_RETRY_LIMIT = Math.max(0, Number(process.env.FREE_RETRY_LIMIT || 1));
@@ -4175,11 +4229,13 @@ function summarizeExteriorDeclutterStats(imageStats: ExteriorDeclutterImageStats
 async function runPostStage1BAnchorValidator(params: {
   payload: EnhanceJobPayload;
   imagePath: string;
+  detectorCache: Map<string, CachedFurnitureDetectionResult>;
+  detectorCacheStats: { requests: number; hits: number };
   intent: "stage" | "non_stage";
   stage1BRan: boolean;
   initialState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
 }): Promise<void> {
-  const { payload, imagePath, intent, stage1BRan, initialState } = params;
+  const { payload, imagePath, detectorCache, detectorCacheStats, intent, stage1BRan, initialState } = params;
   if (
     intent !== "stage"
     || stage1BRan !== true
@@ -4188,20 +4244,20 @@ async function runPostStage1BAnchorValidator(params: {
     return;
   }
 
-  logger.info("POST_1B_DETECTOR_STARTED", jobLogContext(payload, {
-    event: "POST_1B_DETECTOR_STARTED",
-    jobId: payload.jobId,
-    imageId: payload.imageId,
-    initialState,
-  }));
-
   try {
-    const ai = getGeminiClient();
-    const post1BAnalysis = await detectFurnitureWithRetry(
-      ai as any,
-      toBase64(imagePath).data,
-      { timeoutMs: POST_1B_TIMEOUT_MS }
-    );
+    const post1BAnalysis = await runFurnitureDetectionOnce({
+      payload,
+      imagePath,
+      detectorCache,
+      detectorCacheStats,
+      timeoutMs: POST_1B_TIMEOUT_MS,
+      startedEvent: "POST_1B_DETECTOR_STARTED",
+      startedFields: {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        initialState,
+      },
+    });
 
     if (!isFurnitureDetectionSuccess(post1BAnalysis)) {
       logger.warn("POST_1B_DETECTOR_FAILED", jobLogContext(payload, {
@@ -4579,6 +4635,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     imageId: string;
     roomType?: string;
     canonicalPath: string | null;
+    furnitureDetectionCache: Map<string, CachedFurnitureDetectionResult>;
+    detectorCacheStats: { requests: number; hits: number };
     baseArtifacts: any;
     baseArtifactsCache: Map<string, any>;
     structuralMask: { width: number; height: number; data: Uint8Array } | null;
@@ -4595,6 +4653,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     imageId: payload.imageId,
     roomType: (payload.options as any)?.roomType,
     canonicalPath: null,
+    furnitureDetectionCache: new Map(),
+    detectorCacheStats: { requests: 0, hits: 0 },
     baseArtifacts: null,
     baseArtifactsCache: new Map(),
     structuralMask: null,
@@ -4812,6 +4872,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     logStructured("JOB_ATTEMPT_SUMMARY", {
       ...jobAttemptLog,
+      detectorCacheStats: {
+        requests: jobContext.detectorCacheStats.requests,
+        hits: jobContext.detectorCacheStats.hits,
+        hitRate: jobContext.detectorCacheStats.requests > 0
+          ? Number((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests).toFixed(4))
+          : 0,
+      },
       finalStatus,
     });
 
@@ -4822,6 +4889,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     lines.push(`Image: ${payload.jobId}`);
     lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
     lines.push(`Staging Style: ${normalizeForensicStagingStyle(jobAttemptLog.stagingStyle)}`);
+    lines.push(
+      `Detector Cache Hit Rate: ${jobContext.detectorCacheStats.requests > 0 ? `${Math.round((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests) * 100)}%` : "0%"} (${jobContext.detectorCacheStats.hits}/${jobContext.detectorCacheStats.requests})`
+    );
     lines.push("");
 
     const renderStage = (stageLabel: "1B" | "2") => {
@@ -7583,17 +7653,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const localEmpty = await isRoomEmpty(stage1ABuffer);
 
         if (shouldResolveExteriorDeclutter) {
-          const ai = getGeminiClient();
-          logger.info("DETECTOR_STARTED", jobLogContext(payload, {
-            event: "DETECTOR_STARTED",
-            detector: "furniture",
-            detectorModel: "gemini-2.0-flash",
+          const exteriorDetection = await runFurnitureDetectionOnce({
+            payload,
+            imagePath: path1A,
+            detectorCache: jobContext.furnitureDetectionCache,
+            detectorCacheStats: jobContext.detectorCacheStats,
             sceneType: "exterior",
-            confidence: null,
-            finalSkipStage1B: null,
-          }));
-          const exteriorDetection = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data, {
-            sceneType: "exterior",
+            startedEvent: "DETECTOR_STARTED",
+            startedFields: {
+              confidence: null,
+              finalSkipStage1B: null,
+            },
           });
           const exteriorDeclutterDecision = await shouldRunExteriorDeclutter({
             detection: exteriorDetection,
@@ -7671,16 +7741,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           };
           nLog("[ROUTING] authority=localEmptyBypass | stage1BRequired=false");
         } else {
-          const ai = getGeminiClient();
-          logger.info("DETECTOR_STARTED", jobLogContext(payload, {
-            event: "DETECTOR_STARTED",
-            detector: "furniture",
-            detectorModel: "gemini-2.0-flash",
-            sceneType: "interior",
-            confidence: null,
-            finalSkipStage1B: null,
-          }));
-          const geminiAnalysis = await detectFurnitureWithRetry(ai as any, toBase64(path1A).data);
+          const geminiAnalysis = await runFurnitureDetectionOnce({
+            payload,
+            imagePath: path1A,
+            detectorCache: jobContext.furnitureDetectionCache,
+            detectorCacheStats: jobContext.detectorCacheStats,
+            startedEvent: "DETECTOR_STARTED",
+            startedFields: {
+              confidence: null,
+              finalSkipStage1B: null,
+            },
+          });
           const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
           const roomState = analysis ? deriveRoomState(analysis) : null;
           const gateDecision = analysis
@@ -8738,6 +8809,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     await runPostStage1BAnchorValidator({
       payload,
       imagePath: path1B,
+      detectorCache: jobContext.furnitureDetectionCache,
+      detectorCacheStats: jobContext.detectorCacheStats,
       intent: hasVirtualStage && stage2Requested ? "stage" : "non_stage",
       stage1BRan: true,
       initialState,
