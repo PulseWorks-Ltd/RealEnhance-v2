@@ -14237,11 +14237,8 @@ const worker = new Worker(
           } else {
             const lowerMode = String(rawMode || "").toLowerCase();
             const isAddMode = lowerMode === "add";
-            const isReplaceMode = lowerMode === "replace";
-            const isRemoveMode = lowerMode === "remove";
-            const isReinstateRawMode = lowerMode === "reinstate";
-            const runEditOpeningsValidation = isReinstateMode || (!isStrictEditMode && (isAddMode || isReplaceMode || isRemoveMode));
-            openingsValidationRequiredForPublish = isReinstateMode || (!isStrictEditMode && (isAddMode || isReplaceMode));
+            const runEditOpeningsValidation = mode === "Reinstate";
+            openingsValidationRequiredForPublish = mode === "Reinstate";
             let attempt = 1;
             const maxAttempts = (isStrictEditMode || isDeterministicBaselineMode) ? 1 : 2;
             let lastSummary: any = null;
@@ -14291,6 +14288,13 @@ const worker = new Worker(
               const outsideMaskLeakSeverity = classifyOutsideLeakPct(outsideMaskChangedPct);
               const anchorFail = !isStrictEditMode && isAddMode && anchorPassed === false;
 
+              logger.info("EDIT_OPENINGS_VALIDATION", jobLogContext(regionPayload, {
+                event: "EDIT_OPENINGS_VALIDATION",
+                mode,
+                bypassed: !runEditOpeningsValidation,
+              }));
+
+              let openingsResult: any = null;
               let openingFail = false;
               if (runEditOpeningsValidation) {
                 const comparedAgainst = "edit_input";
@@ -14299,7 +14303,7 @@ const worker = new Worker(
                   throw new Error("VALIDATION_INPUT_MISSING");
                 }
 
-                const openingsValidation = await runEditOpeningsValidator(
+                openingsResult = await runEditOpeningsValidator(
                   validationBaselinePath,
                   outPath,
                   maskBuf,
@@ -14308,16 +14312,17 @@ const worker = new Worker(
                     jobId: regionPayload.jobId,
                     imageId: regionPayload.imageId,
                     attempt,
+                    mode,
                     validationMode: isReinstateMode ? "reinstate" : "preserve",
                     referenceImagePath: isReinstateMode ? stage1AReferencePath : undefined,
-                    reinstateConfig: isReinstateRawMode ? regionAny.reinstateConfig : undefined,
+                    reinstateConfig: isReinstateMode ? regionAny.reinstateConfig : undefined,
                   },
                 );
                 openingsValidationSummary = {
-                  ...openingsValidation,
+                  ...openingsResult,
                   mode,
                 };
-                openingFail = openingsValidation.passed !== true;
+                openingFail = mode === "Reinstate" && openingsResult?.passed !== true;
                 if (!openingFail && openingsValidationRequiredForPublish) {
                   openingsValidationPassedForPublish = true;
                 }
@@ -14326,7 +14331,8 @@ const worker = new Worker(
                   validator: "edit_openings",
                   passed: true,
                   comparedAgainst: "edit_input",
-                  reason: isStrictEditMode ? "strict_edit_mode_validators_skipped" : "validator_not_required_for_mode",
+                  bypassed: true,
+                  reason: "non_reinstate_mode_skip_opening_validation",
                   mode,
                 };
                 openingsValidationPassedForPublish = true;
@@ -14389,7 +14395,7 @@ const worker = new Worker(
                 }
 
                 const regionEditErr: any = new Error(
-                  `region_edit_validation_failed: openings=${openingFail ? "true" : "false"},anchor=${anchorFail ? "true" : "false"},reason=${String(openingsValidationSummary?.reason || "unknown")}`
+                  `region_edit_validation_failed: openings=${openingFail ? "true" : "false"},anchor=${anchorFail ? "true" : "false"},reason=${String((mode === "Reinstate" ? openingsResult?.reason : openingsValidationSummary?.reason) || "unknown")}`
                 );
                 regionEditErr.regionEditReview = {
                   resultUrl: failedReviewUrl,
@@ -14419,8 +14425,10 @@ const worker = new Worker(
               attempt += 1;
             }
 
-            openingsValidationSummary = openingsValidationSummary || lastSummary;
-            if (openingsValidationRequiredForPublish) {
+            if (runEditOpeningsValidation) {
+              openingsValidationSummary = openingsValidationSummary || lastSummary;
+            }
+            if (mode === "Reinstate") {
               openingsValidationPassedForPublish = openingsValidationSummary?.passed === true;
             }
           }

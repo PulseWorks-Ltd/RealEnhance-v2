@@ -18,6 +18,16 @@ type RegionEditPromptArgs = {
   };
 };
 
+export type EditMode = "remove" | "replace" | "add" | "reinstate";
+
+type LegacyEditMode = "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+
+type BuildEditPromptParams = {
+  mode: EditMode;
+  userIntent?: string;
+  sceneHint?: string;
+};
+
 export type EditContext = {
   roomType?: "bedroom" | "living_room" | "kitchen" | string;
   stagingStyle?: string;
@@ -25,32 +35,48 @@ export type EditContext = {
   anchorConstraints?: string[];
 };
 
-const COMMON_EDIT_PROMPT = `
-IMPORTANT: This image has ALREADY been virtually staged. You are making a TARGETED EDIT to an existing staged image — you are NOT re-staging or re-enhancing the room.
+export const BASE_SYSTEM_PROMPT = `
+You are generating a replacement image patch for a masked region of a photo.
 
-Apply the requested edit ONLY within the white mask region.
+This is a patch generation task, not a subtle edit task.
 
-Do not modify anything outside the mask.
-Keep the rest of the image pixel-identical.
+You must regenerate the content inside the target region according to the instruction.
 
-COLOR & TONE PRESERVATION:
-- Match the existing lighting, color temperature, white balance, and tonal range of the surrounding image exactly.
-- Do NOT apply any overall image enhancement, brightening, contrast boost, or color grading.
-- Do NOT re-interpret or re-render existing furniture, decor, or surfaces.
-- The edited region must blend seamlessly with the surrounding pixels in tone, saturation, and brightness.
+Rules:
+- Do not preserve original content unless the instruction explicitly requires restoration.
+- Output must be photorealistic.
+- Match lighting, perspective, geometry, materials, and environment consistency.
+- Blend seamlessly with the surrounding image outside the region.
+- Do not redesign the wider scene outside the requested region.
 
-Follow the user's instruction exactly.
+The generated region must remain consistent with the surrounding image.
+
+Do not introduce changes that would visibly conflict with adjacent areas, including:
+- mismatched colours (for example changing a white wall to blue)
+- inconsistent materials or textures
+- lighting or shadow direction differences
+
+The edit must blend seamlessly so the full image appears natural and unchanged outside the intended modification.
 `;
 
-const STRUCTURAL_LOCK_PROMPT = `
-STRUCTURAL CONSTRAINTS — Do not change:
-- walls, ceilings, floors
-- windows, doors, architectural openings
-- camera viewpoint, perspective, or depth
-- any existing objects outside the masked region
+const BLENDING_CONSTRAINTS = `
+Photorealism and blending requirements:
+- Match the surrounding lighting direction, exposure, shadows, white balance, and perspective.
+- Match nearby surfaces, materials, texture scale, and edge continuity.
+- Ensure the generated patch integrates naturally with the surrounding image.
+- Do not leave outlines, ghosting, seams, or incomplete reconstruction artifacts.
+`.trim();
 
-Follow the user's instruction exactly.
-`;
+const DESTRUCTIVE_REGENERATION_CLAUSE = `
+Regenerate the region sufficiently to achieve the requested outcome.
+
+Do not make minimal or barely visible changes, but also do not introduce unnecessary changes that conflict with surrounding context.
+`.trim();
+
+const NON_TARGET_PROTECTION_CLAUSE = `
+Do not redesign or reinterpret the wider image outside the requested patch.
+Keep architectural perspective and environmental continuity consistent with the surrounding scene.
+`.trim();
 
 function formatReinstateTargetLabel(targetType: "window" | "doorway" | "opening" | "auto"): string {
   if (targetType === "doorway") return "doorway";
@@ -59,37 +85,104 @@ function formatReinstateTargetLabel(targetType: "window" | "doorway" | "opening"
   return "reference content";
 }
 
-function buildReinstateModeHint(targetType: "window" | "doorway" | "opening" | "auto"): string {
+function buildModeSceneHint(sceneHint?: string): string {
+  return sceneHint?.trim() || "Context: This is an interior scene.";
+}
+
+function buildRemovePrompt(userIntent?: string, sceneHint?: string): string {
+  return `
+Remove the specified content from this region and reconstruct the area as if the removed content never existed.
+
+${buildModeSceneHint(sceneHint)}
+
+Removal requirements:
+- Rebuild the background and surrounding surfaces completely inside the region.
+- Restore plausible wall, floor, ceiling, ground, sky, landscaping, or architectural surface continuity as needed.
+- Preserve realistic geometry, depth, texture, and lighting.
+- Reconstruct the background so it matches surrounding surfaces exactly.
+- The result must be visually indistinguishable from adjacent areas.
+
+${BLENDING_CONSTRAINTS}
+
+${DESTRUCTIVE_REGENERATION_CLAUSE}
+
+${NON_TARGET_PROTECTION_CLAUSE}
+
+User intent: ${userIntent?.trim() || "Remove unwanted elements."}
+`;
+}
+
+function buildReplacePrompt(userIntent?: string, sceneHint?: string): string {
+  return `
+Replace the entire content of this region with the requested new content.
+
+${buildModeSceneHint(sceneHint)}
+
+Replacement requirements:
+- Fully overwrite the existing content inside the region.
+- Generate the requested replacement content at realistic scale and placement.
+- Match surrounding materials, perspective, lighting, and scene depth.
+- Replace the content while maintaining consistency with surrounding materials, colours, and lighting.
+- Do not introduce contrasting or conflicting elements unless explicitly requested.
+
+${BLENDING_CONSTRAINTS}
+
+${DESTRUCTIVE_REGENERATION_CLAUSE}
+
+${NON_TARGET_PROTECTION_CLAUSE}
+
+Requested replacement: ${userIntent?.trim() || "Replace the current content with the most plausible requested result."}
+`;
+}
+
+function buildAddPrompt(userIntent?: string, sceneHint?: string): string {
+  return `
+Add the requested content into this region as a complete, photorealistic insertion.
+
+${buildModeSceneHint(sceneHint)}
+
+Addition requirements:
+- Generate the added content so it is clearly present, physically grounded, and realistically supported.
+- Match scale, perspective, contact shadows, and material realism.
+- Keep the addition coherent with the surrounding scene and spatial layout.
+- Ensure the added object integrates naturally with the surrounding environment in colour, lighting, and perspective.
+
+${BLENDING_CONSTRAINTS}
+
+${DESTRUCTIVE_REGENERATION_CLAUSE}
+
+${NON_TARGET_PROTECTION_CLAUSE}
+
+Requested addition: ${userIntent?.trim() || "Add the requested content naturally within the region."}
+`;
+}
+
+function buildReinstatePrompt(
+  userIntent?: string,
+  sceneHint?: string,
+  targetType: "window" | "doorway" | "opening" | "auto" = "auto"
+): string {
   const targetLabel = formatReinstateTargetLabel(targetType);
   return `
-REINSTATE MODE — REFERENCE-GUIDED RESTORATION:
-You are restoring the ${targetLabel} shown in the reference image within the masked region.
+Restore the original ${targetLabel} content that should exist inside this region.
 
-Inputs:
-- BASE_IMAGE_TO_EDIT is the current enhanced image and is the ground truth for lighting, style, furniture, and all non-target content.
-- STAGE_1A_BASELINE_IMAGE is a reference for what should exist inside the masked region.
+${buildModeSceneHint(sceneHint)}
 
-Instructions:
-1. Restore ONLY what belongs inside the masked region.
-2. Use the reference image to recover the missing or covered content inside that region.
-3. Do NOT reinterpret the request based on terminology alone; match the visible reference content in the masked area.
-4. Do NOT restore unrelated furniture, decor, rugs, wall art, or other movable items from the reference image outside the target region.
+Reinstatement requirements:
+- Restore the original structure, material, and appearance faithfully.
+- Do not redesign or improve the content. Restore it faithfully.
+- If exact content is partially unclear, infer only the most plausible original state from the surrounding context.
+- Preserve realistic architectural alignment, material continuity, and environmental consistency.
+- Restore the original content while preserving consistency with surrounding areas.
+- Do not reinterpret or improve; match the existing scene.
 
-OCCLUSION RULES:
-- If an object fully blocks the reference content in the masked region, remove or replace only what is needed to restore that content.
-- If an object partially overlaps the target region, restore the reference content naturally within the overlap.
-- If the masked-region content is already correctly present, make no change.
+${BLENDING_CONSTRAINTS}
 
-GEOMETRY RULES:
-- The highlighted region defines the precise area to restore.
-- Keep the restored content aligned to the reference geometry inside that region.
-- Do not expand the restoration beyond the masked area unless minor edge blending is required.
+${DESTRUCTIVE_REGENERATION_CLAUSE}
 
-STRICT RULES:
-- Do not alter any other part of the image.
-- Do not modify unrelated nearby structures or objects.
-- Do not change camera perspective.
-- Match the surrounding enhanced image exactly in colour, tone, lighting, and finish.
+${NON_TARGET_PROTECTION_CLAUSE}
+
+Restoration request: ${userIntent?.trim() || "Reinstate the original content that belongs in this region."}
 `;
 }
 
@@ -118,142 +211,98 @@ function normalizeContextItems(items: string[] | undefined, limit = 5): string[]
   return normalized;
 }
 
-function buildEditContextSection(editContext: EditContext | undefined, roomType: string | undefined): string {
-  const resolvedRoom = humanizeContextLabel(editContext?.roomType || roomType || "room") || "room";
-  const resolvedStyle = humanizeContextLabel(editContext?.stagingStyle || "cohesive") || "cohesive";
-  const layoutHints = normalizeContextItems(editContext?.layoutHints);
-  const anchorConstraints = normalizeContextItems(editContext?.anchorConstraints);
+function buildLegacySceneDetail(editContext: EditContext | undefined, roomType: string | undefined): string | undefined {
+  const roomLabel = humanizeContextLabel(editContext?.roomType || roomType);
+  const styleLabel = humanizeContextLabel(editContext?.stagingStyle);
 
-  return `
-EDIT CONTEXT:
-You are editing a ${resolvedRoom}.
-Apply a ${resolvedStyle} interior design style.
+  if (roomLabel && styleLabel) {
+    return `${roomLabel} with ${styleLabel} styling`;
+  }
 
-${layoutHints.length ? `Current layout guidance:\n- ${layoutHints.join("\n- ")}` : ""}
+  return roomLabel || styleLabel || undefined;
+}
 
-${anchorConstraints.length ? `Constraints:\n- ${anchorConstraints.join("\n- ")}` : ""}
-`.trim();
+export function normalizeEditMode(mode: string): EditMode {
+  switch (String(mode || "").trim()) {
+    case "Restore":
+    case "Reinstate":
+      return "reinstate";
+    case "Remove":
+      return "remove";
+    case "Replace":
+      return "replace";
+    case "Add":
+      return "add";
+    default:
+      throw new Error(`Unsupported edit mode: ${mode}`);
+  }
+}
+
+export function buildSceneHint(sceneType: "interior" | "exterior", sceneDetail?: string): string {
+  const normalizedDetail = humanizeContextLabel(sceneDetail);
+  return normalizedDetail
+    ? `Context: This is an ${sceneType} scene showing ${normalizedDetail}.`
+    : `Context: This is an ${sceneType} scene.`;
+}
+
+export function buildEditPrompt({ mode, userIntent, sceneHint }: BuildEditPromptParams): { system: string; user: string } {
+  let modePrompt = "";
+
+  switch (mode) {
+    case "remove":
+      modePrompt = buildRemovePrompt(userIntent, sceneHint);
+      break;
+    case "replace":
+      modePrompt = buildReplacePrompt(userIntent, sceneHint);
+      break;
+    case "add":
+      modePrompt = buildAddPrompt(userIntent, sceneHint);
+      break;
+    case "reinstate":
+      modePrompt = buildReinstatePrompt(userIntent, sceneHint);
+      break;
+    default:
+      throw new Error(`Unsupported edit mode: ${mode}`);
+  }
+
+  return {
+    system: BASE_SYSTEM_PROMPT.trim(),
+    user: modePrompt.trim(),
+  };
 }
 
 export function buildRegionEditPrompt({
   userInstruction,
   roomType,
   sceneType = "interior",
-  preserveStructure = true,
   editContext,
-  hasStage1ABaseline = false,
-  editMode,
+  editMode = "Replace",
   reinstateConfig,
 }: RegionEditPromptArgs): string {
-  const resolvedRoomType = editContext?.roomType || roomType;
-  const roomLabel = resolvedRoomType
-    ? `This is a ${resolvedRoomType.replace(/_/g, " ")}.`
-    : "This is a real estate photograph of a room.";
+  const normalizedMode = normalizeEditMode(editMode as LegacyEditMode);
+  const sceneHint = buildSceneHint(sceneType, buildLegacySceneDetail(editContext, roomType));
+  const prompt = buildEditPrompt({
+    mode: normalizedMode,
+    userIntent: userInstruction,
+    sceneHint,
+  });
 
-  const sceneLabel = `Scene type: ${sceneType}.`;
-  const editContextSection = buildEditContextSection(editContext, roomType);
-  const preserveHint = preserveStructure
-    ? "Preserve all structural elements unless they are explicitly inside the white mask."
-    : "";
-  const isReinstateMode = editMode === "Reinstate";
-
-  const addModeHint = editMode === "Add"
+  const reinstateGeometry = normalizedMode === "reinstate" && reinstateConfig?.geometry?.bbox
     ? `
-ADD MODE — PLACEMENT & REALISM GUIDELINES:
-The mask shows approximately WHERE the user wants the new item placed. Place one
-appropriately-sized item within the masked area — do NOT fill the entire mask with furniture.
 
-PLACEMENT:
-- The item must sit naturally on the correct surface (floor, countertop, table, wall).
-- It must NOT float, clip through other objects, or overlap existing furniture.
-- Respect the room's perspective, depth, and vanishing points — scale the item so it
-  appears the correct real-world size at that depth in the scene.
-
-STYLE MATCHING:
-- Match the existing décor style, material palette, and colour tones already present
-  in the staged image. If the room is mid-century modern, the added item should be
-  mid-century modern. If the room is coastal, match that.
-
-LIGHTING & SHADOWS:
-- The added item must be lit consistently with the existing light direction and intensity
-  in the scene.
-- Render a natural shadow or ambient occlusion beneath / behind the item that matches
-  the shadow characteristics of other objects in the image.
-- Do NOT add the item as a flat, shadow-less cutout.
-`
-    : "";
-
-  const reinstateModeHint = isReinstateMode
-    ? `${buildReinstateModeHint(reinstateConfig?.targetType || "auto")}${reinstateConfig?.geometry?.bbox
-        ? `
-
-PRECISE OPENING GEOMETRY:
+Reference geometry:
 - x=${reinstateConfig.geometry.bbox.x.toFixed(4)}
 - y=${reinstateConfig.geometry.bbox.y.toFixed(4)}
 - width=${reinstateConfig.geometry.bbox.width.toFixed(4)}
-- height=${reinstateConfig.geometry.bbox.height.toFixed(4)}
-`
-        : ""}`
+- height=${reinstateConfig.geometry.bbox.height.toFixed(4)}`
     : "";
-
-  const stage1AHint = hasStage1ABaseline && editMode === "Remove"
+  const reinstateTarget = normalizedMode === "reinstate"
     ? `
-MASK INTERPRETATION FOR REMOVAL:
-The white mask region shows you WHERE to focus — it is an approximate area of interest, NOT
-a command to repaint the entire region. Read the user's text instruction to understand WHAT
-specifically needs to be removed. If the user asks to remove a single item that occupies only
-part of the mask, remove ONLY that item and leave everything else in the masked area
-untouched. Do not alter, regenerate, or repaint portions of the mask that are not related
-to the user's removal request.
 
-STAGE 1A STRUCTURAL REFERENCE (reference only — do NOT reproduce):
-You have also been provided a STAGE_1A_BASELINE_IMAGE. This is the original property photo
-BEFORE any virtual staging was applied. It may contain the original real furniture, wall art,
-rugs, decorations, and other movable items that were present in the property at the time of
-photography.
-
-USE THIS REFERENCE ONLY TO:
-- Understand what structural surfaces (walls, floor, ceiling, architraves, skirting boards,
-  cornices, built-in cabinetry) exist behind the staged item being removed
-- Gauge the general geometry, perspective lines, and surface materials in that area
-
-DO NOT:
-- Reproduce or copy pixel colors, tones, or lighting from the reference image
-- Reintroduce ANY furniture, wall art, rugs, decorations, soft furnishings, or movable items
-  that appear in the reference but are NOT in the current enhanced image
-- Revert any colour grading, lighting improvements, or styling present in the enhanced image
-- Treat the reference as a restoration target — it is a structural hint ONLY
-
-The cleared area MUST match the colour, tone, lighting, and style of the SURROUNDING
-ENHANCED IMAGE (the BASE_IMAGE_TO_EDIT), NOT the reference. Seamlessly extend the existing
-enhanced surfaces into the area where the removed item was.
-`
+Reference target: restore the ${formatReinstateTargetLabel(reinstateConfig?.targetType || "auto")}.${reinstateGeometry}`
     : "";
 
-  const inputList = hasStage1ABaseline
-    ? `- BASE_IMAGE_TO_EDIT (the current enhanced/staged image — this is the ground truth)
-- STAGE_1A_BASELINE_IMAGE (original property photo — structural reference ONLY, do NOT reproduce its contents)
-- EDIT_MASK_IMAGE (WHITE = area of interest to focus on, BLACK = locked region)`
-    : `- BASE_IMAGE_TO_EDIT
-- EDIT_MASK_IMAGE (WHITE = editable region, BLACK = locked region)`;
+  return `${prompt.system.trim()}
 
-  return `
-You are a professional real-estate photo editor.
-
-${roomLabel}
-${sceneLabel}
-${editContextSection}
-
-You will receive:
-${inputList}
-
-${COMMON_EDIT_PROMPT}
-${isReinstateMode ? reinstateModeHint : STRUCTURAL_LOCK_PROMPT}
-${addModeHint}
-${stage1AHint}
-${isReinstateMode ? "" : preserveHint}
-
-USER INSTRUCTION:
-"""${userInstruction}"""
-`;
+${prompt.user.trim()}${reinstateTarget}`.trim();
 }

@@ -7,7 +7,12 @@ import {
   runFurnitureDetectionSafe as runSharedFurnitureDetectionSafe,
   type FurnitureDetectionSceneType,
 } from "../ai/runFurnitureDetectionSafe";
-import { buildRegionEditPrompt, type EditContext } from "./prompts";
+import {
+  buildEditPrompt,
+  buildSceneHint,
+  normalizeEditMode,
+  type EditContext,
+} from "./prompts";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 import path from "path";
@@ -68,6 +73,39 @@ type PromptObjectHit = {
   length: number;
   matchedText: string;
 };
+
+type RegionPromptPayload = {
+  systemPrompt: string;
+  userPrompt: string;
+  promptText: string;
+};
+
+function normalizeSceneDetailLabel(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function buildStructuredSceneHint(params: {
+  sceneType: "interior" | "exterior";
+  roomType?: string;
+  editContext?: EditContext;
+}): string {
+  const roomLabel = normalizeSceneDetailLabel(params.editContext?.roomType || params.roomType);
+  const styleLabel = normalizeSceneDetailLabel(params.editContext?.stagingStyle);
+  const sceneDetail = roomLabel && styleLabel
+    ? `${roomLabel} with ${styleLabel} styling`
+    : roomLabel || styleLabel || undefined;
+
+  return buildSceneHint(params.sceneType, sceneDetail);
+}
+
+function composePromptText(systemPrompt: string, userPrompt: string): string {
+  return `${systemPrompt.trim()}
+
+${userPrompt.trim()}`.trim();
+}
 
 function shouldRunFurnitureDetection(ctx: {
   mode: EditMode;
@@ -873,7 +911,7 @@ function buildRegionScopedPrompt(params: {
   hasStage1ABaseline: boolean;
   totalRegions: number;
   regionIndex: number;
-}): string {
+}): RegionPromptPayload {
   const {
     userInstruction,
     roomType,
@@ -886,16 +924,22 @@ function buildRegionScopedPrompt(params: {
     regionIndex,
   } = params;
 
-  const prompt = buildRegionEditPrompt({
-    userInstruction,
-    roomType,
-    editContext,
-    sceneType,
-    preserveStructure: true,
-    hasStage1ABaseline,
-    editMode,
-    reinstateConfig,
+  const basePrompt = buildEditPrompt({
+    mode: normalizeEditMode(editMode),
+    userIntent: userInstruction,
+    sceneHint: buildStructuredSceneHint({
+      sceneType,
+      roomType,
+      editContext,
+    }),
   });
+
+  const reinstateTargetNote = normalizeEditMode(editMode) === "reinstate" && reinstateConfig?.targetType
+    ? `\n\nReinstate target: ${String(reinstateConfig.targetType).trim().toLowerCase()}.`
+    : "";
+  const baselineNote = hasStage1ABaseline
+    ? "\n\nReference note: Use any provided Stage 1A reference only to infer original region content or structural surfaces. Do not copy unrelated furniture or redesign the scene."
+    : "";
 
   const regionScopeSuffix = `
 
@@ -918,11 +962,19 @@ CROPPED REGION EDIT RULES:
 - Do NOT redesign the surrounding environment.
 - Do NOT make global changes to the room.`;
 
-  return `${prompt}${regionScopeSuffix}${cropPromptSuffix}`;
+  const userPrompt = `${basePrompt.user.trim()}${reinstateTargetNote}${baselineNote}${regionScopeSuffix}${cropPromptSuffix}`.trim();
+
+  return {
+    systemPrompt: basePrompt.system,
+    userPrompt,
+    promptText: composePromptText(basePrompt.system, userPrompt),
+  };
 }
 
 async function runRegionEditWithRetry(params: {
   prompt: string;
+  systemPrompt?: string;
+  userPrompt?: string;
   jobId?: string;
   imageId?: string;
   croppedEditableImageBuffer: Buffer;
@@ -937,6 +989,8 @@ async function runRegionEditWithRetry(params: {
 }): Promise<Buffer> {
   const {
     prompt,
+    systemPrompt,
+    userPrompt,
     jobId,
     imageId,
     croppedEditableImageBuffer,
@@ -953,8 +1007,7 @@ async function runRegionEditWithRetry(params: {
   let lastError: unknown = null;
   for (let attempt = 1; attempt <= MAX_REGION_EDIT_ATTEMPTS; attempt += 1) {
     const isRetry = attempt > 1;
-    const attemptPrompt = isRetry
-      ? `${prompt}
+    const retrySuffix = `
 
 RETRY INSTRUCTION:
 - Retry only region ${regionIndex + 1} of ${totalRegions}.
@@ -963,8 +1016,13 @@ RETRY INSTRUCTION:
 - Do not introduce additional objects.
 - Keep structure unchanged.
 - Preserve the existing surrounding composition exactly.
-- Do not alter content intended for any other region.`
-      : prompt;
+- Do not alter content intended for any other region.`;
+    const attemptUserPrompt = isRetry
+      ? `${(userPrompt || prompt).trim()}${retrySuffix}`
+      : (userPrompt || prompt).trim();
+    const attemptPrompt = systemPrompt
+      ? composePromptText(systemPrompt, attemptUserPrompt)
+      : attemptUserPrompt;
 
     try {
       console.log("[editApply] Region edit attempt", {
@@ -978,6 +1036,8 @@ RETRY INSTRUCTION:
 
       const editedBuffer = await regionEditWithGemini({
         prompt: attemptPrompt,
+        systemPrompt,
+        userPrompt: attemptUserPrompt,
         jobId,
         imageId,
         baseImageBuffer: croppedEditableImageBuffer,
@@ -2403,16 +2463,21 @@ export async function applyEdit({
     const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
 
-    const fallbackPrompt = buildRegionEditPrompt({
-      userInstruction: instruction,
-      roomType,
-      editContext,
-      sceneType: sceneType || "interior",
-      preserveStructure: true,
-      hasStage1ABaseline: (mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer,
-      editMode: mode,
-      reinstateConfig,
+    const fallbackPrompt = buildEditPrompt({
+      mode: normalizeEditMode(mode),
+      userIntent: instruction,
+      sceneHint: buildStructuredSceneHint({
+        sceneType: sceneType || "interior",
+        roomType,
+        editContext,
+      }),
     });
+    const fallbackUserPrompt = `${fallbackPrompt.user.trim()}${normalizeEditMode(mode) === "reinstate" && reinstateConfig?.targetType
+      ? `\n\nReinstate target: ${String(reinstateConfig.targetType).trim().toLowerCase()}.`
+      : ""}${(mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer
+      ? "\n\nReference note: Use any provided Stage 1A reference only to infer original region content or structural surfaces. Do not copy unrelated furniture or redesign the scene."
+      : ""}`.trim();
+    const fallbackPromptText = composePromptText(fallbackPrompt.system, fallbackUserPrompt);
 
     console.log("[editApply] EDIT_CONTEXT_LOG", {
       roomType: editContext?.roomType || roomType || null,
@@ -2463,6 +2528,9 @@ export async function applyEdit({
             })
             .webp()
             .toBuffer();
+          if (!croppedEditableImageBuffer.length) {
+            throw new Error(`Region ${regionIndex + 1} crop buffer is empty`);
+          }
           const croppedMaskPngBuffer = await cropMaskToBox(region.maskPngBuffer, region.expandedBox);
           const guidanceMaskPngBuffer = await buildSoftGuidanceMask(
             croppedMaskPngBuffer,
@@ -2524,13 +2592,15 @@ export async function applyEdit({
           });
           console.log("[editApply] PROMPT_PREVIEW", {
             regionIndex,
-            preview: regionPrompt.slice(0, 200),
+            preview: regionPrompt.promptText.slice(0, 200),
           });
 
           let exactSizedEditedBuffer: Buffer | null = null;
           try {
             const editedBuffer = await runRegionEditWithRetry({
-              prompt: regionPrompt,
+              prompt: regionPrompt.promptText,
+              systemPrompt: regionPrompt.systemPrompt,
+              userPrompt: regionPrompt.userPrompt,
               jobId,
               imageId,
               croppedEditableImageBuffer,
@@ -2656,7 +2726,9 @@ export async function applyEdit({
     }
 
     const editedBuffer = await regionEditWithGemini({
-      prompt: fallbackPrompt,
+      prompt: fallbackPromptText,
+      systemPrompt: fallbackPrompt.system,
+      userPrompt: fallbackUserPrompt,
       jobId,
       imageId,
       baseImageBuffer: fullSceneReferenceBuffer,

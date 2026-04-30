@@ -10,6 +10,7 @@ import {
 export type EditOpeningsComparedAgainst = "stage1a" | "edit_input";
 export type EditOpeningsValidationMode = "preserve" | "reinstate";
 export type ReinstateTargetType = "window" | "doorway" | "opening" | "auto";
+type EditMode = "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
 type PixelBbox = { x: number; y: number; width: number; height: number };
 
 type NormalizedBox = [number, number, number, number];
@@ -23,6 +24,7 @@ type GeminiVerdict = {
 export type EditOpeningsValidationSummary = {
   validator: "edit_openings";
   passed: boolean;
+  bypassed?: boolean;
   comparedAgainst: EditOpeningsComparedAgainst;
   validationMode?: EditOpeningsValidationMode;
   reason: string;
@@ -51,6 +53,7 @@ export type EditOpeningsValidationSummary = {
 const EDIT_OPENINGS_GEMINI_MODEL = String(process.env.EDIT_OPENINGS_GEMINI_MODEL || "gemini-2.5-flash");
 const MASK_MARGIN = Number(process.env.EDIT_OPENINGS_MASK_MARGIN || 0.06);
 const ROI_PADDING = Number(process.env.EDIT_OPENINGS_ROI_PADDING || 0.04);
+const log = console;
 
 function clamp01(n: number): number {
   return Math.max(0, Math.min(1, n));
@@ -182,6 +185,7 @@ export async function runEditOpeningsValidator(
     jobId?: string;
     imageId?: string;
     attempt?: number;
+    mode?: EditMode;
     validationMode?: EditOpeningsValidationMode;
     referenceImagePath?: string;
     reinstateConfig?: {
@@ -194,10 +198,43 @@ export async function runEditOpeningsValidator(
     throw new Error("VALIDATION_INPUT_MISSING");
   }
 
+  const validationMode = options?.validationMode || "preserve";
+  const mode = options?.mode || (validationMode === "reinstate" ? "Reinstate" : "Replace");
+
+  log.info("EDIT_OPENINGS_VALIDATION", {
+    mode,
+    bypassed: mode !== "Reinstate",
+  });
+
+  if (mode !== "Reinstate") {
+    return {
+      validator: "edit_openings",
+      passed: true,
+      bypassed: true,
+      comparedAgainst,
+      validationMode,
+      reason: "non_reinstate_mode_skip_opening_validation",
+      evaluatedOpeningsCount: 0,
+      evaluatedOpenings: [],
+      maskRegion: {
+        bbox: [0, 0, 0, 0],
+        expandedBbox: [0, 0, 0, 0],
+      },
+      roi: {
+        bbox: [0, 0, 1, 1],
+        width: 0,
+        height: 0,
+      },
+      gemini: {
+        model: EDIT_OPENINGS_GEMINI_MODEL,
+        rawResponse: "{\"passed\":true,\"reason\":\"non_reinstate_mode_skip_opening_validation\"}",
+      },
+    };
+  }
+
   const baselineMeta = await sharp(baselineImagePath).metadata();
   const width = baselineMeta.width || 0;
   const height = baselineMeta.height || 0;
-  const validationMode = options?.validationMode || "preserve";
   if (width <= 0 || height <= 0) {
     throw new Error("edit_openings_validator_failed: invalid_baseline_dimensions");
   }

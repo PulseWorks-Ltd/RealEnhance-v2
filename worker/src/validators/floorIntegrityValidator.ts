@@ -8,9 +8,13 @@ export type FloorIntegrityValidatorResult = ValidatorOutcome;
 
 type NormalizedFloorMaterialClass = "carpet" | "wood" | "tile" | "stone" | "concrete" | "mixed" | "unknown";
 
-const FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD = Math.max(
+const FLOOR_ADVISORY_CONFIDENCE_THRESHOLD = Math.max(
   0,
-  Math.min(1, Number(process.env.FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD || 0.85))
+  Math.min(1, Number(process.env.FLOOR_ADVISORY_CONFIDENCE_THRESHOLD || 0.75))
+);
+const FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD = Math.max(
+  FLOOR_ADVISORY_CONFIDENCE_THRESHOLD,
+  Math.min(1, Number(process.env.FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD || 0.9))
 );
 
 type FloorValidatorRawResponse = {
@@ -111,24 +115,32 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
     baselineVisible &&
     (stagedVisible || !stagedFullyCovered);
 
-  const finalOk = shouldForceFail ? false : parsed.ok;
-
+  const modelReportedFail = shouldForceFail ? true : parsed.ok === false;
   const reason = typeof parsed?.reason === "string" && parsed.reason.trim().length > 0
     ? parsed.reason.trim()
-    : finalOk ? "floor_integrity_preserved" : "floor_integrity_changed";
+    : modelReportedFail ? "floor_integrity_changed" : "floor_integrity_preserved";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
   const identityBreakingMaterialShift =
     shouldForceFail &&
     isIdentityBreakingFloorClassShift(baselineMaterial, stagedMaterial);
+  const advisory =
+    identityBreakingMaterialShift &&
+    confidence >= FLOOR_ADVISORY_CONFIDENCE_THRESHOLD &&
+    confidence < FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD;
   const hardFail =
-    !finalOk &&
     identityBreakingMaterialShift &&
     confidence >= FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD;
+  const ignoreIdentityBreakingShift =
+    identityBreakingMaterialShift &&
+    confidence < FLOOR_ADVISORY_CONFIDENCE_THRESHOLD;
+  const finalOk = ignoreIdentityBreakingShift ? true : !modelReportedFail;
   const advisorySignals = finalOk
     ? []
     : [
         reason,
         ...(identityBreakingMaterialShift ? ["floor_identity_breaking_material_shift"] : []),
+        ...(advisory ? ["floor_confidence_band:advisory"] : []),
+        ...(hardFail ? ["floor_confidence_band:block"] : []),
       ];
   const tokens = splitIssueTokens(reason, advisorySignals);
   const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
@@ -140,11 +152,13 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
 
   console.log("[SPECIALIST_REVIEW][FLOOR]", {
     ok: finalOk,
+    advisory,
     hardFail,
     confidence: confidence.toFixed(3),
     reason,
     baselineMaterial,
     stagedMaterial,
+    ignoredLowConfidenceShift: ignoreIdentityBreakingShift,
     issueType,
   });
 
@@ -153,6 +167,7 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
     reason,
     confidence,
     hardFail,
+    advisory: advisory || undefined,
     issueType,
     issueTier: classifyIssueTier(issueType),
     advisorySignals,

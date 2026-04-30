@@ -207,7 +207,7 @@ export async function runWithImageModelFallback(
 
     const validation = isValidImageResponse(resp);
     const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    console.info(`[GEMINI][${context}] Attempt with ${model} parts=${parts.length} hasImage=${validation.valid}`);
+    console.info(`[GEMINI][${context}] Attempt with ${model} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
 
     if (!validation.valid) {
       console.error(`[GEMINI][${context}] ${model} failed: ${validation.reason}`);
@@ -271,7 +271,7 @@ export async function runWithSelectedImageModel({
 
     const validation = isValidImageResponse(resp);
     const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    console.info(`[GEMINI][${context}] Attempt with ${selectedModel} parts=${parts.length} hasImage=${validation.valid}`);
+    console.info(`[GEMINI][${context}] Attempt with ${selectedModel} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
 
     if (!validation.valid) {
       logNoImageResponse(meta, stageLabel, selectedModel, parts);
@@ -349,7 +349,7 @@ export async function runWithPrimaryThenFallback({
 
     const validation = isValidImageResponse(resp);
     const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    console.info(`[GEMINI][${context}] Primary attempt with ${primaryModel} parts=${parts.length} hasImage=${validation.valid}`);
+    console.info(`[GEMINI][${context}] Primary attempt with ${primaryModel} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
 
     if (!validation.valid) {
       logNoImageResponse(meta, stageLabel, primaryModel, parts);
@@ -407,7 +407,7 @@ export async function runWithPrimaryThenFallback({
 
     const validation = isValidImageResponse(resp);
     const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-    console.info(`[GEMINI][${context}] Fallback attempt with ${fallbackModel} parts=${parts.length} hasImage=${validation.valid}`);
+    console.info(`[GEMINI][${context}] Fallback attempt with ${fallbackModel} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
 
     if (!validation.valid) {
       logNoImageResponse(meta, stageLabel, fallbackModel, parts);
