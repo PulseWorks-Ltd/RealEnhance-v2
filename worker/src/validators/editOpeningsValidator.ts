@@ -147,6 +147,10 @@ function openingMatchesReinstateTarget(opening: StructuralOpening, targetType: R
   return opening.type === "window" || opening.type === "door" || opening.type === "walkthrough";
 }
 
+function openingIsStructural(opening: StructuralOpening): boolean {
+  return opening.type === "window" || opening.type === "door" || opening.type === "walkthrough";
+}
+
 function toPixels(bbox: NormalizedBox, width: number, height: number): { left: number; top: number; width: number; height: number } {
   const left = Math.max(0, Math.floor(bbox[0] * width));
   const top = Math.max(0, Math.floor(bbox[1] * height));
@@ -277,20 +281,27 @@ export async function runEditOpeningsValidator(
       attempt: options?.attempt,
     });
 
-    const referenceTargets = referenceStructural.openings.filter((opening) => {
-      if (!openingMatchesReinstateTarget(opening, reinstateTargetType)) return false;
+    const referenceOpeningsNearMask = referenceStructural.openings.filter((opening) => {
+      if (!openingIsStructural(opening)) return false;
       const bbox = toNormBbox(opening.bbox as NormalizedBox);
       return intersects(bbox, expandedMaskBbox);
     });
 
-    if (referenceTargets.length === 0) {
+    const referenceTargets = referenceOpeningsNearMask.filter((opening) =>
+      openingMatchesReinstateTarget(opening, reinstateTargetType)
+    );
+    const referenceOpeningsToEvaluate = referenceTargets.length > 0
+      ? referenceTargets
+      : referenceOpeningsNearMask;
+
+    if (referenceOpeningsToEvaluate.length === 0) {
       return {
         validator: "edit_openings",
-        passed: false,
+        passed: true,
         comparedAgainst,
         validationMode,
-        reason: "reinstate_target_not_found_in_reference",
-        details: `No ${reinstateTargetType} opening was found in the reference image near the masked region.`,
+        reason: "reinstate_no_reference_openings_near_mask",
+        details: "No structural openings were detected in the reference image near the masked region, so opening validation was skipped for this reinstate edit.",
         evaluatedOpeningsCount: 0,
         evaluatedOpenings: [],
         maskRegion: {
@@ -304,17 +315,17 @@ export async function runEditOpeningsValidator(
         },
         gemini: {
           model: EDIT_OPENINGS_GEMINI_MODEL,
-          rawResponse: "{\"passed\":false,\"reason\":\"reinstate_target_not_found_in_reference\"}",
+          rawResponse: "{\"passed\":true,\"reason\":\"reinstate_no_reference_openings_near_mask\"}",
         },
       };
     }
 
-    const nonTargetCurrentOpenings = relevantOpenings.filter((opening) => !openingMatchesReinstateTarget(opening, reinstateTargetType));
+    const currentStructuralOpenings = relevantOpenings.filter((opening) => openingIsStructural(opening));
     const roiBbox = expand(
       union([
         expandedMaskBbox,
-        ...referenceTargets.map((o) => toNormBbox(o.bbox as NormalizedBox)),
-        ...nonTargetCurrentOpenings.map((o) => toNormBbox(o.bbox as NormalizedBox)),
+        ...referenceOpeningsToEvaluate.map((o) => toNormBbox(o.bbox as NormalizedBox)),
+        ...currentStructuralOpenings.map((o) => toNormBbox(o.bbox as NormalizedBox)),
       ]),
       ROI_PADDING,
     );
@@ -338,38 +349,35 @@ export async function runEditOpeningsValidator(
       .toBuffer();
 
     const ai = getGeminiClient();
-    const referenceTargetsJson = JSON.stringify(
-      referenceTargets.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+    const referenceOpeningsJson = JSON.stringify(
+      referenceOpeningsToEvaluate.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
     );
-    const currentNonTargetsJson = JSON.stringify(
-      nonTargetCurrentOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+    const currentOpeningsJson = JSON.stringify(
+      currentStructuralOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
     );
-    const prompt = `You are validating architectural reinstate output for a real-estate image edit.
+    const prompt = `You are validating reference-guided reinstate output for a real-estate image edit.
 
 Compare CURRENT_BEFORE vs REFERENCE vs AFTER in the provided ROI crop only.
 
 Reinstate rules:
-- TARGET openings listed in REFERENCE_TARGET_OPENINGS_JSON must exist in AFTER.
-- Each target opening must match the reference location and shape closely enough that the original architectural opening has been restored.
-- Openings listed in CURRENT_NON_TARGET_OPENINGS_JSON must remain unchanged unless they are clearly part of the same target opening.
-- Furniture or decor may overlap the opening only if the opening itself remains visibly and structurally present.
-- FAIL if the target opening is still missing, walled over, badly misplaced, or if a non-target opening has changed.
+- The masked region should be restored to match the visible reference content within that region.
+- Use REFERENCE_OPENINGS_JSON and CURRENT_OPENINGS_JSON only as supplemental structural hints for the ROI.
+- Do NOT fail merely because an opening label differs, a target type is ambiguous, or no specific opening terminology matches the request.
+- If the ROI contains structural openings, they should remain consistent with the reference and current scene geometry.
+- FAIL only if the masked-region reference content was not meaningfully reinstated, or if nearby structure was damaged or walled over.
 
 Return strict JSON only:
 {
   "passed": boolean,
-  "reason": "reinstate_valid" | "reinstate_target_missing" | "reinstate_target_mismatch" | "reinstate_non_target_changed",
+  "reason": "reinstate_valid" | "reinstate_reference_region_missing" | "reinstate_structure_mismatch" | "reinstate_neighbor_damage",
   "details": string
 }
 
-TARGET_TYPE:
-${reinstateTargetType}
+REFERENCE_OPENINGS_JSON:
+${referenceOpeningsJson}
 
-REFERENCE_TARGET_OPENINGS_JSON:
-${referenceTargetsJson}
-
-CURRENT_NON_TARGET_OPENINGS_JSON:
-${currentNonTargetsJson}`;
+CURRENT_OPENINGS_JSON:
+${currentOpeningsJson}`;
 
     const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
@@ -418,10 +426,10 @@ ${currentNonTargetsJson}`;
       validationMode,
       reason: verdict.reason,
       details: verdict.details,
-      evaluatedOpeningsCount: referenceTargets.length + nonTargetCurrentOpenings.length,
+      evaluatedOpeningsCount: referenceOpeningsToEvaluate.length + currentStructuralOpenings.length,
       evaluatedOpenings: [
-        ...referenceTargets.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
-        ...nonTargetCurrentOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+        ...referenceOpeningsToEvaluate.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
+        ...currentStructuralOpenings.map((o) => ({ id: o.id, type: o.type, bbox: toNormBbox(o.bbox as NormalizedBox) })),
       ],
       maskRegion: {
         bbox: maskBbox,

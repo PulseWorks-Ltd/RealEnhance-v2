@@ -55,40 +55,39 @@ Follow the user's instruction exactly.
 function formatReinstateTargetLabel(targetType: "window" | "doorway" | "opening" | "auto"): string {
   if (targetType === "doorway") return "doorway";
   if (targetType === "window") return "window";
-  if (targetType === "opening") return "architectural opening";
-  return "requested architectural opening";
+  if (targetType === "opening") return "reference content";
+  return "reference content";
 }
 
 function buildReinstateModeHint(targetType: "window" | "doorway" | "opening" | "auto"): string {
   const targetLabel = formatReinstateTargetLabel(targetType);
   return `
-REINSTATE MODE — ARCHITECTURAL RECOVERY:
-You are restoring a ${targetLabel} that should exist in the room.
+REINSTATE MODE — REFERENCE-GUIDED RESTORATION:
+You are restoring the ${targetLabel} shown in the reference image within the masked region.
 
 Inputs:
 - BASE_IMAGE_TO_EDIT is the current enhanced image and is the ground truth for lighting, style, furniture, and all non-target content.
-- STAGE_1A_BASELINE_IMAGE is a structural reference that shows the original architectural opening.
+- STAGE_1A_BASELINE_IMAGE is a reference for what should exist inside the masked region.
 
 Instructions:
-1. Restore ONLY the requested architectural opening inside the masked region.
-2. Use the reference image ONLY to reconstruct the opening (frame, glass, doorway shape, trim, and visible wall boundary).
-3. Do NOT restore furniture, decor, rugs, wall art, or any movable objects from the reference image.
+1. Restore ONLY what belongs inside the masked region.
+2. Use the reference image to recover the missing or covered content inside that region.
+3. Do NOT reinterpret the request based on terminology alone; match the visible reference content in the masked area.
+4. Do NOT restore unrelated furniture, decor, rugs, wall art, or other movable items from the reference image outside the target region.
 
 OCCLUSION RULES:
-- If an object fully blocks the opening, remove that object and restore the opening.
-- If an object partially overlaps the opening, restore the opening behind the object and keep the visible object natural.
-- If the opening is already visible and structurally correct, make no change.
+- If an object fully blocks the reference content in the masked region, remove or replace only what is needed to restore that content.
+- If an object partially overlaps the target region, restore the reference content naturally within the overlap.
+- If the masked-region content is already correctly present, make no change.
 
 GEOMETRY RULES:
-- The highlighted region corresponds to a precise architectural opening.
-- The bounding box defines the exact geometry of the opening.
-- Reconstruct the opening exactly within this region.
-- Do not expand or shrink the opening beyond this area.
-- If objects overlap, preserve their visible edges and reconstruct the opening only behind them.
+- The highlighted region defines the precise area to restore.
+- Keep the restored content aligned to the reference geometry inside that region.
+- Do not expand the restoration beyond the masked area unless minor edge blending is required.
 
 STRICT RULES:
 - Do not alter any other part of the image.
-- Do not modify any other openings.
+- Do not modify unrelated nearby structures or objects.
 - Do not change camera perspective.
 - Match the surrounding enhanced image exactly in colour, tone, lighting, and finish.
 `;

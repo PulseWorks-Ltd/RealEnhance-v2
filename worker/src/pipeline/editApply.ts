@@ -2217,10 +2217,14 @@ export async function applyEdit({
         const userMaskBbox = await maskToNormalizedBbox(maskPngBuffer, meta.width, meta.height);
         const openings = await detectOpeningsFromStage1A(stage1AReferencePath, { jobId, imageId });
         const filteredOpenings = openings.filter((opening) => openingMatchesReinstateTarget(opening, reinstateConfig?.targetType || "auto"));
+        const fallbackOpenings = userMaskBbox
+          ? openings.filter((opening) => intersectsNormBbox(userMaskBbox, opening.normalizedBbox))
+          : [];
         const intersectingOpenings = userMaskBbox
           ? filteredOpenings.filter((opening) => intersectsNormBbox(userMaskBbox, opening.normalizedBbox))
           : [];
-        const targetOpening = userMaskBbox ? selectBestOpening(intersectingOpenings, userMaskBbox) : null;
+        const effectiveIntersectingOpenings = intersectingOpenings.length > 0 ? intersectingOpenings : fallbackOpenings;
+        const targetOpening = userMaskBbox ? selectBestOpening(effectiveIntersectingOpenings, userMaskBbox) : null;
 
         if (targetOpening && targetOpening.confidence >= 0.65) {
           maskPngBuffer = await buildMaskFromOpeningBBox(targetOpening.bbox, meta.width, meta.height, 5);
@@ -2234,6 +2238,7 @@ export async function applyEdit({
           console.log("[Reinstate Geometry]", {
             detectedOpenings: openings.length,
             matched: intersectingOpenings.length,
+            fallbackMatched: fallbackOpenings.length,
             usingRefinedMask: true,
             bbox: targetOpening.bbox,
             confidence: targetOpening.confidence,

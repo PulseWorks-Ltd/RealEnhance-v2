@@ -6628,12 +6628,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
 
             if (specialistHardFailReasons.length > 0) {
+              stage2ValidationPassed = false;
+              if (!stage2OnlyBlockedReason) {
+                const normalizedStage2OnlyReason = String(specialistHardFailReasons[0] || "specialist_hard_fail")
+                  .trim()
+                  .toLowerCase()
+                  .replace(/\s+/g, "_")
+                  .replace(/[^a-z0-9:_-]+/g, "_")
+                  .replace(/_+/g, "_")
+                  .replace(/^_+|_+$/g, "");
+                stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${normalizedStage2OnlyReason || "specialist_hard_fail"}`;
+              }
               nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt: stage2OnlyAttemptNo,
                 reasons: specialistHardFailReasons,
-                action: "advisory_only",
+                action: "block_stage2_retry",
               });
             }
           } catch (specialistErr: any) {
@@ -11628,10 +11639,11 @@ All openings must remain identical in position and size to the original image.`;
         ISSUE_TYPES.OPENING_REMOVED,
         ISSUE_TYPES.OPENING_INFILLED,
         ISSUE_TYPES.FIXTURE_CHANGED,
+        ISSUE_TYPES.FLOOR_CHANGED,
         // ENVELOPE_CORNER_FLATTENED removed: envelope signals are advisory-only.
         // ENVELOPE_VERTICAL_EDGE_LOSS removed: envelope signals are advisory-only.
-        // FLOOR_CHANGED removed: floor validator never sets hardFail=true,
-        // so it should not trigger pre-Unified blocking.
+        // FLOOR_CHANGED is allowed only when the floor specialist explicitly hard-fails
+        // on a high-confidence, identity-breaking material-class shift.
       ]);
 
       // ── ENVELOPE CONTRADICTION CHECK for opening signals ──
