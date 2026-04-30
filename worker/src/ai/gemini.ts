@@ -39,8 +39,24 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
 ${(userPrompt || prompt).trim()}`.trim()
     : prompt;
 
-  const usesReferenceImage = (editMode === "Remove" || editMode === "Reinstate") && !!referenceImageBuffer;
-  const hasFullSceneReference = !!fullSceneReferenceBuffer;
+  const normalizedMode = normalizeEditMode(editMode || "Replace");
+  const includeBaselineReferences = normalizedMode !== "remove";
+  const usesReferenceImage = includeBaselineReferences && !!referenceImageBuffer;
+  const hasFullSceneReference = includeBaselineReferences && !!fullSceneReferenceBuffer;
+
+  if (!baseImageBuffer.length) {
+    throw new Error("Gemini region edit requires a non-empty editable image buffer");
+  }
+  if (!composedPrompt.trim()) {
+    throw new Error("Gemini region edit requires a non-empty prompt");
+  }
+
+  focusLog("REGION_EDIT_REFERENCE_USAGE", "[gemini.regionEdit] reference usage", {
+    mode: normalizedMode,
+    includeBaseline: includeBaselineReferences,
+    hasReferenceImage: usesReferenceImage,
+    hasFullSceneReference,
+  });
 
   focusLog("GEMINI_REGION_START", "[gemini.regionEdit] starting", {
     promptLength: composedPrompt.length,
@@ -244,6 +260,7 @@ import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
+import { normalizeEditMode } from "../pipeline/prompts";
 import { focusLog } from "../utils/logFocus";
 import { getGenerationConfig } from "./generationConfig";
 
