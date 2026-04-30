@@ -1,12 +1,16 @@
 
 
 import sharp from "sharp";
-import { detectFurniture } from "../ai/furnitureDetector";
-import { getGeminiClient } from "../ai/gemini";
+import { type FurnitureDetectionResult, type FurnitureItem } from "../ai/furnitureDetector";
 import { regionEditWithGemini } from "../ai/gemini";
+import {
+  runFurnitureDetectionSafe as runSharedFurnitureDetectionSafe,
+  type FurnitureDetectionSceneType,
+} from "../ai/runFurnitureDetectionSafe";
 import { buildRegionEditPrompt, type EditContext } from "./prompts";
-import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
+import { siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
+import path from "path";
 
 const MIN_PROJECTION_DILATE_PX = 2;
 const MAX_PROJECTION_DILATE_PX = 4;
@@ -64,6 +68,67 @@ type PromptObjectHit = {
   length: number;
   matchedText: string;
 };
+
+function shouldRunFurnitureDetection(ctx: {
+  mode: EditMode;
+  hasUserMask: boolean;
+  maskCoverageRatio: number;
+}): boolean {
+  if (ctx.mode === "Reinstate") {
+    return false;
+  }
+
+  if (ctx.mode === "Remove") {
+    if (!ctx.hasUserMask) return true;
+    if (ctx.maskCoverageRatio < 0.15) return true;
+    return false;
+  }
+
+  return false;
+}
+
+async function runFurnitureDetectionSafe(params: {
+  jobId?: string;
+  imageId?: string;
+  imagePath: string;
+  mode: EditMode;
+  hasUserMask: boolean;
+  maskCoverageRatio: number;
+  sceneType?: FurnitureDetectionSceneType;
+  timeoutMs?: number;
+}): Promise<FurnitureDetectionResult | null> {
+  if (!shouldRunFurnitureDetection({
+    mode: params.mode,
+    hasUserMask: params.hasUserMask,
+    maskCoverageRatio: params.maskCoverageRatio,
+  })) {
+    if (params.mode === "Reinstate") {
+      console.info("DETECTOR_SKIPPED_REINSTATE", {
+        event: "DETECTOR_SKIPPED_REINSTATE",
+        jobId: params.jobId,
+        imageId: params.imageId,
+        mode: params.mode,
+        imagePath: path.basename(params.imagePath),
+      });
+    }
+    return null;
+  }
+
+  const response = await runSharedFurnitureDetectionSafe({
+    imagePath: params.imagePath,
+    sceneType: params.sceneType,
+    timeoutMs: params.timeoutMs,
+    logContext: {
+      jobId: params.jobId,
+      imageId: params.imageId,
+      mode: params.mode,
+      extra: {
+        maskCoverageRatio: Number(params.maskCoverageRatio.toFixed(4)),
+      },
+    },
+  });
+  return response.result;
+}
 
 class RetryableRegionEditError extends Error {
   reason: RegionRetryReason;
@@ -1666,6 +1731,28 @@ async function maskToNormalizedBbox(maskPngBuffer: Buffer, width: number, height
   ];
 }
 
+async function computeMaskCoverageRatio(maskPngBuffer: Buffer, width: number, height: number): Promise<number> {
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const pixels = width * height;
+  if (pixels <= 0) return 0;
+
+  let coveredPixels = 0;
+  for (let index = 0; index < pixels; index += 1) {
+    if ((raw.data[index] ?? 0) > 127) {
+      coveredPixels += 1;
+    }
+  }
+
+  return coveredPixels / pixels;
+}
+
 function openingMatchesReinstateTarget(
   opening: OpeningRegion,
   targetType: ReinstateConfig["targetType"],
@@ -1911,11 +1998,15 @@ async function smoothMaskBoundary(maskPngBuffer: Buffer, width: number, height: 
     .toBuffer();
 }
 
-async function refineReinstateMaskAgainstObjects(params: {
+async function refineMaskAgainstDetectedObjects(params: {
+  jobId?: string;
+  imageId?: string;
+  mode: EditMode;
   baseImagePath: string;
   maskPngBuffer: Buffer;
   width: number;
   height: number;
+  sceneType?: FurnitureDetectionSceneType;
 }): Promise<Buffer> {
   const { baseImagePath, maskPngBuffer, width, height } = params;
   let currentMaskPngBuffer = maskPngBuffer;
@@ -1927,13 +2018,23 @@ async function refineReinstateMaskAgainstObjects(params: {
   const snapThresholdPx = 10;
   const accidentalTouchThreshold = 0.15;
   const intentionalRemovalThreshold = 0.6;
+  const maskCoverageRatio = await computeMaskCoverageRatio(maskPngBuffer, width, height);
 
   try {
-    const imageBase64 = toBase64(baseImagePath).data;
-    const detection = await detectFurniture(getGeminiClient(), imageBase64, { sceneType: "interior" });
-    if (detection.status !== "success" || !Array.isArray(detection.furnitureItems)) {
-      console.log("[editApply] REINSTATE_MASK_REFINEMENT", {
-        detectorStatus: detection.status,
+    const detection = await runFurnitureDetectionSafe({
+      jobId: params.jobId,
+      imageId: params.imageId,
+      imagePath: baseImagePath,
+      mode: params.mode,
+      hasUserMask: true,
+      maskCoverageRatio,
+      sceneType: params.sceneType === "exterior" ? "exterior" : "interior",
+    });
+    if (!detection || detection.status !== "success" || !Array.isArray(detection.furnitureItems)) {
+      console.log("[editApply] MASK_OBJECT_REFINEMENT", {
+        mode: params.mode,
+        detectorStatus: detection?.status || "skipped",
+        maskCoverageRatio: Number(maskCoverageRatio.toFixed(4)),
         refinementCount: 0,
       });
       return maskPngBuffer;
@@ -1945,7 +2046,7 @@ async function refineReinstateMaskAgainstObjects(params: {
         item,
         box: normalizedRectToPixelBox(item.location!.bbox, width, height),
       }))
-      .filter((entry): entry is { item: NonNullable<typeof detection.furnitureItems>[number]; box: PixelBox } => !!entry.box);
+      .filter((entry): entry is { item: FurnitureItem; box: PixelBox } => !!entry.box);
 
     const decisions: Array<Record<string, unknown>> = [];
     let refinementCount = 0;
@@ -2004,7 +2105,9 @@ async function refineReinstateMaskAgainstObjects(params: {
       currentMaskBox = getMaskPixelBBoxFromRaw(currentMaskRaw, width, height);
     }
 
-    console.log("[editApply] REINSTATE_MASK_REFINEMENT", {
+    console.log("[editApply] MASK_OBJECT_REFINEMENT", {
+      mode: params.mode,
+      maskCoverageRatio: Number(maskCoverageRatio.toFixed(4)),
       maskBbox: getMaskPixelBBoxFromRaw(await binaryMaskToRaw(maskPngBuffer, width, height), width, height),
       containmentTolerancePx,
       snapThresholdPx,
@@ -2017,7 +2120,7 @@ async function refineReinstateMaskAgainstObjects(params: {
 
     return currentMaskPngBuffer;
   } catch (error) {
-    console.warn("[editApply] Reinstate mask refinement skipped (non-blocking):", error instanceof Error ? error.message : String(error));
+    console.warn("[editApply] Mask refinement skipped (non-blocking):", error instanceof Error ? error.message : String(error));
     return maskPngBuffer;
   }
 }
@@ -2149,11 +2252,25 @@ export async function applyEdit({
         console.warn("[Reinstate] No reliable opening geometry found, using user mask", (err as any)?.message || err);
       }
 
-      maskPngBuffer = await refineReinstateMaskAgainstObjects({
+      console.info("DETECTOR_SKIPPED_REINSTATE", {
+        event: "DETECTOR_SKIPPED_REINSTATE",
+        jobId,
+        imageId,
+        mode,
+        imagePath: path.basename(baseImagePath),
+      });
+    }
+
+    if (mode === "Remove" && maskPngBuffer) {
+      maskPngBuffer = await refineMaskAgainstDetectedObjects({
+        jobId,
+        imageId,
+        mode,
         baseImagePath,
         maskPngBuffer,
         width: meta.width,
         height: meta.height,
+        sceneType,
       });
     }
 

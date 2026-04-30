@@ -958,7 +958,7 @@ export async function detectFurnitureWithRetry(
       };
     } catch (error) {
       const retryable = isRateLimitError(error) || isTimeoutError(error);
-      const lastAttempt = attempt === 1;
+      const lastAttempt = attempt === FURNITURE_DETECTOR_MAX_ATTEMPTS - 1;
       console.warn("[FURNITURE DETECTOR] Detection attempt failed", {
         attempt: attempt + 1,
         retryable,

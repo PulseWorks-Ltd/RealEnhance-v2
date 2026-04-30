@@ -47,11 +47,12 @@ import { detectRoomType } from "./ai/room-detector";
 import { classifyScene } from "./validators/scene-classifier";
 import {
   detectFurniture,
-  detectFurnitureWithRetry,
+  type FurnitureDetectionResult,
   deriveRoomState,
   isFurnitureDetectionSuccess,
   resolveFurnishedGateDecision,
 } from "./ai/furnitureDetector";
+import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 
 import {
@@ -219,7 +220,7 @@ import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
 import { normalizeMaskBase64, normalizeMaskBufferToPng } from "./utils/mask";
 
-type CachedFurnitureDetectionResult = Awaited<ReturnType<typeof detectFurnitureWithRetry>>;
+type CachedFurnitureDetectionResult = FurnitureDetectionResult | null;
 
 function getFurnitureDetectionCacheKey(params: {
   imagePath: string;
@@ -244,7 +245,7 @@ async function runFurnitureDetectionOnce(params: {
     sceneType: params.sceneType,
   });
   const cached = params.detectorCache.get(cacheKey);
-  if (cached) {
+  if (cached !== undefined) {
     params.detectorCacheStats.hits += 1;
     logger.info("DETECTOR_CACHE_HIT", jobLogContext(params.payload, {
       event: "DETECTOR_CACHE_HIT",
@@ -256,21 +257,33 @@ async function runFurnitureDetectionOnce(params: {
     return cached;
   }
 
-  logger.info(params.startedEvent, jobLogContext(params.payload, {
-    event: params.startedEvent,
-    detector: "furniture",
-    detectorModel: "gemini-2.0-flash",
-    sceneType: params.sceneType === "exterior" ? "exterior" : "interior",
-    ...(params.startedFields || {}),
-  }));
-
-  const ai = getGeminiClient();
-  const result = await detectFurnitureWithRetry(ai as any, toBase64(params.imagePath).data, {
+  const response = await runFurnitureDetectionSafe({
+    imagePath: params.imagePath,
     sceneType: params.sceneType,
     timeoutMs: params.timeoutMs,
+    logContext: {
+      jobId: String(params.payload.jobId || ""),
+      imageId: String(params.payload.imageId || ""),
+      sourceEvent: params.startedEvent,
+      startedFields: {
+        detector: "furniture",
+        detectorModel: "gemini-2.0-flash",
+        sceneType: params.sceneType === "exterior" ? "exterior" : "interior",
+        ...(params.startedFields || {}),
+      },
+      extra: {
+        detector: "furniture",
+        sourceEvent: params.startedEvent,
+      },
+    },
   });
-  params.detectorCache.set(cacheKey, result);
-  return result;
+
+  if (response.source === "cache_hit" || response.source === "inflight_join") {
+    params.detectorCacheStats.hits += 1;
+  }
+
+  params.detectorCache.set(cacheKey, response.result);
+  return response.result;
 }
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
@@ -4172,14 +4185,17 @@ async function runStage2ValidationPipeline<TSpecialistResults = any, TCompliance
 
 function normalizeExteriorDetectedItemType(rawType: unknown): string {
   const normalized = String(rawType || "").toLowerCase().trim().replace(/[\s-]+/g, "_");
+  if (normalized === "construction_material") return "building_material";
+  if (normalized === "loose_debris") return "debris";
   if (normalized === "extension_lead") return "extension_cord";
   if (normalized === "garden_hose") return "hose";
+  if (normalized === "hosepipe") return "hose";
   if (normalized === "garbage_bin" || normalized === "trash_bin") return "bin";
   if (normalized === "trash_can" || normalized === "rubbish") return "trash";
   return normalized;
 }
 
-function getExteriorDetectedItems(detectorResult: Awaited<ReturnType<typeof detectFurniture>>): Array<{ type: string; confidence: number | null }> {
+function getExteriorDetectedItems(detectorResult: FurnitureDetectionResult | null): Array<{ type: string; confidence: number | null }> {
   if (!isFurnitureDetectionSuccess(detectorResult)) {
     return [];
   }
@@ -4199,8 +4215,63 @@ function getExteriorDetectedItems(detectorResult: Awaited<ReturnType<typeof dete
         return false;
       }
 
-      return item.confidence >= EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN;
+      return item.confidence >= Math.min(EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN, 0.45);
     });
+}
+
+function countValidExteriorItems(items: Array<{ type: string; confidence: number | null }>): number {
+  return items.filter((item) => typeof item.confidence === "number" && item.confidence >= 0.45).length;
+}
+
+function computeExteriorClutterScore(
+  detection: FurnitureDetectionResult,
+  items: Array<{ type: string; confidence: number | null }>
+): number {
+  if (!isFurnitureDetectionSuccess(detection)) {
+    return 0;
+  }
+
+  const weights: Record<string, number> = {
+    ladder: 1.0,
+    building_material: 0.95,
+    tools: 0.85,
+    wheelbarrow: 0.8,
+    hose: 0.7,
+    hose_reel: 0.7,
+    bin: 0.6,
+    bucket: 0.6,
+    garden_clutter: 0.6,
+    debris: 0.6,
+    extension_cord: 0.55,
+    loose_chair: 0.45,
+    bicycle: 0.4,
+  };
+
+  let score = items.reduce((sum, item) => {
+    if (typeof item.confidence !== "number") {
+      return sum;
+    }
+    return sum + ((weights[item.type] || 0) * item.confidence);
+  }, 0);
+
+  if (detection.hasLoosePortableItems) score += 0.25;
+  if (detection.hasSurfaceClutter) score += 0.15;
+  if (items.length >= 2) score += 0.15;
+
+  return Number(score.toFixed(3));
+}
+
+function isCoherentOutdoorFurnitureSet(items: Array<{ type: string; confidence: number | null }>): boolean {
+  const looseChairCount = items.filter((item) => item.type === "loose_chair").length;
+  const looseTableCount = items.filter((item) => item.type === "loose_table").length;
+  const furnitureOnly = items.every((item) => item.type === "loose_chair" || item.type === "loose_table");
+  return furnitureOnly && looseTableCount >= 1 && looseChairCount >= 2;
+}
+
+function isLooseSeating(items: Array<{ type: string; confidence: number | null }>): boolean {
+  const looseChairCount = items.filter((item) => item.type === "loose_chair").length;
+  const looseTableCount = items.filter((item) => item.type === "loose_table").length;
+  return looseChairCount >= 2 && looseTableCount === 0;
 }
 
 type ExteriorDeclutterImageStats = {
@@ -4326,21 +4397,49 @@ async function computeExteriorDeclutterImageStats(imagePath: string): Promise<Ex
 }
 
 async function shouldRunExteriorDeclutter(params: {
-  detection: Awaited<ReturnType<typeof detectFurniture>>;
+  detection: FurnitureDetectionResult | null;
   imagePath: string;
 }): Promise<{ hasClutter: boolean; fallbackUsed: boolean; imageStats: ExteriorDeclutterImageStats | null }> {
   if (isFurnitureDetectionSuccess(params.detection)) {
     const confidence = typeof params.detection.confidence === "number"
       ? Math.max(0, Math.min(1, params.detection.confidence))
       : 0;
+    const detectedItems = getExteriorDetectedItems(params.detection)
+      .map((item) => ({
+        ...item,
+        type: normalizeExteriorDetectedItemType(item.type),
+      }))
+      .filter((item) => typeof item.confidence === "number" && item.confidence >= 0.45);
+    const score = computeExteriorClutterScore(params.detection, detectedItems);
+    const itemCount = countValidExteriorItems(detectedItems);
+    const coherentSet = isCoherentOutdoorFurnitureSet(detectedItems);
+    const looseSeating = isLooseSeating(detectedItems);
+    const hasRealClutterTypes = detectedItems.some((item) =>
+      ["ladder", "hose", "bin", "debris", "tools", "building_material"].includes(item.type)
+    );
 
-    if (confidence < EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD) {
-      return { hasClutter: false, fallbackUsed: false, imageStats: null };
-    }
+    console.info("EXTERIOR_DECLUTTER_SCORE", {
+      event: "EXTERIOR_DECLUTTER_SCORE",
+      imagePath: path.basename(params.imagePath),
+      confidence,
+      confidenceThreshold: EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD,
+      score,
+      itemCount,
+      coherentSet,
+      looseSeating,
+      hasRealClutterTypes,
+      detectedItems,
+    });
 
-    const detectedItems = getExteriorDetectedItems(params.detection);
     return {
-      hasClutter: detectedItems.length > 0,
+      hasClutter:
+        !coherentSet && (
+          score >= 0.55 ||
+          (itemCount >= 2 && score >= 0.5) ||
+          (params.detection.hasLoosePortableItems && score >= 0.35) ||
+          looseSeating ||
+          hasRealClutterTypes
+        ),
       fallbackUsed: false,
       imageStats: null,
     };
@@ -7811,7 +7910,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             imagePath: path1A,
           });
           const detectedItems = getExteriorDetectedItems(exteriorDetection);
-          const detectionStatus = exteriorDetection.status;
+          const detectionStatus = exteriorDetection?.status || null;
           const detectionConfidence = isFurnitureDetectionSuccess(exteriorDetection)
             && typeof exteriorDetection.confidence === "number"
             ? exteriorDetection.confidence
@@ -7949,7 +8048,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               detector: "furniture",
               detectorModel: "gemini-2.0-flash",
               confidence: null,
-              detectionStatus: geminiAnalysis.status,
+              detectionStatus: geminiAnalysis?.status || null,
               finalSkipStage1B: false,
               fallback: "run_stage1b",
             }));
