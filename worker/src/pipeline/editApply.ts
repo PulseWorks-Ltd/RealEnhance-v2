@@ -1,8 +1,10 @@
 
 
 import sharp from "sharp";
+import { detectFurniture } from "../ai/furnitureDetector";
+import { getGeminiClient } from "../ai/gemini";
 import { regionEditWithGemini } from "../ai/gemini";
-import { buildRegionEditPrompt } from "./prompts";
+import { buildRegionEditPrompt, type EditContext } from "./prompts";
 import { toBase64, siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 
@@ -432,6 +434,7 @@ function assignPromptInstructionsToRegions(prompt: string, regions: RegionCompon
   };
 
   if (regions.length <= 1) {
+    console.log("[editApply] CLAUSE_MAPPING", [{ clause: normalizedPrompt, regionIndex: 0 }]);
     return regions.map((region) => ({ ...region, ...defaultAssignment }));
   }
 
@@ -440,6 +443,10 @@ function assignPromptInstructionsToRegions(prompt: string, regions: RegionCompon
   segmentAssignments.sort((left, right) => getObjectClassRank(right.objectClass) - getObjectClassRank(left.objectClass));
 
   if (segmentAssignments.length < 2) {
+    console.log("[editApply] CLAUSE_MAPPING", regions.map((_region, regionIndex) => ({
+      clause: normalizedPrompt,
+      regionIndex,
+    })));
     return regions.map((region) => ({ ...region, ...defaultAssignment }));
   }
 
@@ -470,7 +477,7 @@ function assignPromptInstructionsToRegions(prompt: string, regions: RegionCompon
       if (!assigned) return null;
       return {
         clause: assigned.instruction,
-        region: index,
+        regionIndex: index,
       };
     })
     .filter((value) => !!value));
@@ -794,6 +801,7 @@ async function buildFullImageBoxMask(box: PixelBox, width: number, height: numbe
 function buildRegionScopedPrompt(params: {
   userInstruction: string;
   roomType?: string;
+  editContext?: EditContext;
   sceneType: "interior" | "exterior";
   editMode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
   reinstateConfig?: any;
@@ -804,6 +812,7 @@ function buildRegionScopedPrompt(params: {
   const {
     userInstruction,
     roomType,
+    editContext,
     sceneType,
     editMode,
     reinstateConfig,
@@ -815,6 +824,7 @@ function buildRegionScopedPrompt(params: {
   const prompt = buildRegionEditPrompt({
     userInstruction,
     roomType,
+    editContext,
     sceneType,
     preserveStructure: true,
     hasStage1ABaseline,
@@ -851,7 +861,6 @@ async function runRegionEditWithRetry(params: {
   jobId?: string;
   imageId?: string;
   croppedEditableImageBuffer: Buffer;
-  currentWorkingSceneReferenceBuffer: Buffer;
   stage1AReferenceBuffer?: Buffer;
   guidanceMaskPngBuffer: Buffer;
   roomType?: string;
@@ -866,7 +875,6 @@ async function runRegionEditWithRetry(params: {
     jobId,
     imageId,
     croppedEditableImageBuffer,
-    currentWorkingSceneReferenceBuffer,
     stage1AReferenceBuffer,
     guidanceMaskPngBuffer,
     roomType,
@@ -887,6 +895,7 @@ RETRY INSTRUCTION:
 - Retry only region ${regionIndex + 1} of ${totalRegions}.
 - ONLY modify this assigned region.
 - Do not modify surrounding area.
+- Do not introduce additional objects.
 - Keep structure unchanged.
 - Preserve the existing surrounding composition exactly.
 - Do not alter content intended for any other region.`
@@ -907,7 +916,6 @@ RETRY INSTRUCTION:
         jobId,
         imageId,
         baseImageBuffer: croppedEditableImageBuffer,
-        fullSceneReferenceBuffer: currentWorkingSceneReferenceBuffer,
         referenceImageBuffer: stage1AReferenceBuffer,
         maskPngBuffer: guidanceMaskPngBuffer,
         maskMode: "guidance",
@@ -916,7 +924,7 @@ RETRY INSTRUCTION:
         editMode: mode,
       });
 
-      return await validateRegionEditResultOrThrow(editedBuffer, expandedBox, regionIndex);
+      return await validateRegionEditResultOrThrow(editedBuffer, regionIndex);
     } catch (error) {
       lastError = error;
       const retryReason = getRetryReason(error);
@@ -1010,7 +1018,6 @@ function getRetryReason(error: unknown): RegionRetryReason | null {
 
 async function validateRegionEditResultOrThrow(
   generatedBuffer: Buffer,
-  expectedBox: PixelBox,
   regionIndex: number,
 ): Promise<Buffer> {
   if (!generatedBuffer?.length) {
@@ -1020,14 +1027,6 @@ async function validateRegionEditResultOrThrow(
   const generatedMeta = await sharp(generatedBuffer).metadata().catch(() => null);
   if (!generatedMeta?.width || !generatedMeta?.height) {
     throw new RetryableRegionEditError("corrupted_image", `Region ${regionIndex + 1} returned unreadable image data`);
-  }
-
-  const exactMatch = validateGeneratedCropDimensions(generatedMeta, expectedBox, regionIndex);
-  if (!exactMatch) {
-    throw new RetryableRegionEditError(
-      "dimension_mismatch",
-      `Region ${regionIndex + 1} returned ${generatedMeta.width}x${generatedMeta.height}; expected ${expectedBox.width}x${expectedBox.height}`,
-    );
   }
 
   return sharp(generatedBuffer)
@@ -1041,6 +1040,13 @@ async function ensureExactCropSize(
   regionIndex: number,
 ): Promise<Buffer> {
   const generatedMeta = await sharp(generatedBuffer).metadata().catch(() => null);
+  console.log("[editApply] REGION_AUDIT: generation result dimensions", {
+    regionIndex,
+    generatedWidth: generatedMeta?.width,
+    generatedHeight: generatedMeta?.height,
+    cropWidth: expectedBox.width,
+    cropHeight: expectedBox.height,
+  });
   const exactMatch = validateGeneratedCropDimensions(generatedMeta || {}, expectedBox, regionIndex);
 
   if (exactMatch) {
@@ -1207,6 +1213,115 @@ async function compositeExpandedCrop(
 
   return sharp(originalImagePath)
     .composite([{ input: overlayBuffer, left: box.x, top: box.y }])
+    .png()
+    .toBuffer();
+}
+
+function resolveMaskFeatherPx(box: PixelBox): number {
+  return Math.max(2, Math.min(4, computeExpandedEdgeFeatherPx(box)));
+}
+
+async function compositeMaskedSourceIntoBase(params: {
+  baseImage: string | Buffer;
+  sourceImage: string | Buffer;
+  maskPngBuffer: Buffer;
+  width: number;
+  height: number;
+  featherPx: number;
+}): Promise<Buffer> {
+  const { baseImage, sourceImage, maskPngBuffer, width, height, featherPx } = params;
+
+  const baseBuffer = await sharp(baseImage)
+    .resize(width, height, { fit: "fill" })
+    .removeAlpha()
+    .png()
+    .toBuffer();
+
+  const sourceBuffer = await sharp(sourceImage)
+    .resize(width, height, { fit: "fill" })
+    .removeAlpha()
+    .png()
+    .toBuffer();
+
+  const normalizedMask = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .png()
+    .toBuffer();
+
+  const featheredMask = featherPx > 0
+    ? await sharp(normalizedMask)
+      .blur(Math.max(0.3, featherPx / 2))
+      .png()
+      .toBuffer()
+    : normalizedMask;
+
+  const invertedMask = await sharp(featheredMask)
+    .negate()
+    .png()
+    .toBuffer();
+
+  const baseMasked = await sharp(baseBuffer)
+    .composite([{ input: invertedMask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+
+  const sourceMasked = await sharp(sourceBuffer)
+    .composite([{ input: featheredMask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
+
+  return sharp(baseMasked)
+    .composite([{ input: sourceMasked, blend: "over" }])
+    .png()
+    .toBuffer();
+}
+
+async function compositeBaselineCrop(params: {
+  originalImage: string | Buffer;
+  baselineImage: Buffer;
+  croppedMaskPngBuffer: Buffer;
+  box: PixelBox;
+  featherPx: number;
+  mode: EditMode;
+  regionIndex?: number;
+}): Promise<Buffer> {
+  const { originalImage, baselineImage, croppedMaskPngBuffer, box, featherPx, mode, regionIndex } = params;
+
+  const enhancedCrop = await sharp(originalImage)
+    .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
+    .removeAlpha()
+    .png()
+    .toBuffer();
+
+  const baselineCrop = await sharp(baselineImage)
+    .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
+    .removeAlpha()
+    .png()
+    .toBuffer();
+
+  console.log("[editApply] BASELINE_COMPOSITE_CROP", {
+    mode,
+    regionIndex,
+    expandedBox: box,
+    cropWidth: box.width,
+    cropHeight: box.height,
+    featherPx,
+  });
+
+  const outputCrop = await compositeMaskedSourceIntoBase({
+    baseImage: enhancedCrop,
+    sourceImage: baselineCrop,
+    maskPngBuffer: croppedMaskPngBuffer,
+    width: box.width,
+    height: box.height,
+    featherPx,
+  });
+
+  return sharp(originalImage)
+    .composite([{ input: outputCrop, left: box.x, top: box.y }])
     .png()
     .toBuffer();
 }
@@ -1633,6 +1748,280 @@ async function buildMaskFromOpeningBBox(
   return sharp(maskRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
 }
 
+function normalizedRectToPixelBox(
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+): PixelBox | null {
+  const [x, y, boxWidth, boxHeight] = bbox.map((value) => Number(value) || 0) as [number, number, number, number];
+  if (boxWidth <= 0 || boxHeight <= 0) return null;
+
+  const left = Math.max(0, Math.min(width - 1, Math.floor(x * width)));
+  const top = Math.max(0, Math.min(height - 1, Math.floor(y * height)));
+  const right = Math.max(left + 1, Math.min(width, Math.ceil((x + boxWidth) * width)));
+  const bottom = Math.max(top + 1, Math.min(height, Math.ceil((y + boxHeight) * height)));
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
+}
+
+async function unionMaskWithPixelBoxes(
+  maskPngBuffer: Buffer,
+  boxes: PixelBox[],
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  if (boxes.length === 0) return maskPngBuffer;
+
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const unionRaw = Buffer.from(raw.data);
+  for (const box of boxes) {
+    for (let y = box.y; y < box.y + box.height; y += 1) {
+      const rowOffset = y * width;
+      for (let x = box.x; x < box.x + box.width; x += 1) {
+        unionRaw[rowOffset + x] = 255;
+      }
+    }
+  }
+
+  return sharp(unionRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+async function subtractMaskWithPixelBoxes(
+  maskPngBuffer: Buffer,
+  boxes: PixelBox[],
+  width: number,
+  height: number,
+): Promise<Buffer> {
+  if (boxes.length === 0) return maskPngBuffer;
+
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const subtractedRaw = Buffer.from(raw.data);
+  for (const box of boxes) {
+    for (let y = box.y; y < box.y + box.height; y += 1) {
+      const rowOffset = y * width;
+      for (let x = box.x; x < box.x + box.width; x += 1) {
+        subtractedRaw[rowOffset + x] = 0;
+      }
+    }
+  }
+
+  return sharp(subtractedRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+async function binaryMaskToRaw(maskPngBuffer: Buffer, width: number, height: number): Promise<Buffer> {
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  return Buffer.from(raw.data);
+}
+
+async function rawMaskToPng(maskRaw: Buffer, width: number, height: number): Promise<Buffer> {
+  return sharp(maskRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+function getMaskPixelBBoxFromRaw(maskRaw: Buffer, width: number, height: number): PixelBox | null {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const value = maskRaw[(y * width) + x] ?? 0;
+      if (value <= 127) continue;
+      if (x < minX) minX = x;
+      if (y < minY) minY = y;
+      if (x > maxX) maxX = x;
+      if (y > maxY) maxY = y;
+    }
+  }
+
+  if (maxX < 0 || maxY < 0) return null;
+
+  return {
+    x: minX,
+    y: minY,
+    width: (maxX - minX) + 1,
+    height: (maxY - minY) + 1,
+  };
+}
+
+function expandPixelBoxWithTolerance(box: PixelBox, width: number, height: number, tolerancePx: number): PixelBox {
+  const left = Math.max(0, box.x - tolerancePx);
+  const top = Math.max(0, box.y - tolerancePx);
+  const right = Math.min(width, box.x + box.width + tolerancePx);
+  const bottom = Math.min(height, box.y + box.height + tolerancePx);
+
+  return {
+    x: left,
+    y: top,
+    width: Math.max(1, right - left),
+    height: Math.max(1, bottom - top),
+  };
+}
+
+function isPixelBoxFullyInside(inner: PixelBox, outer: PixelBox): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    (inner.x + inner.width) <= (outer.x + outer.width) &&
+    (inner.y + inner.height) <= (outer.y + outer.height)
+  );
+}
+
+function pixelBoxEdgeDistance(a: PixelBox, b: PixelBox): number {
+  const horizontalGap = Math.max(0, Math.max(a.x - (b.x + b.width), b.x - (a.x + a.width)));
+  const verticalGap = Math.max(0, Math.max(a.y - (b.y + b.height), b.y - (a.y + a.height)));
+  return Math.sqrt((horizontalGap * horizontalGap) + (verticalGap * verticalGap));
+}
+
+async function smoothMaskBoundary(maskPngBuffer: Buffer, width: number, height: number): Promise<Buffer> {
+  return sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .erode(1)
+    .dilate(1)
+    .png()
+    .toBuffer();
+}
+
+async function refineReinstateMaskAgainstObjects(params: {
+  baseImagePath: string;
+  maskPngBuffer: Buffer;
+  width: number;
+  height: number;
+}): Promise<Buffer> {
+  const { baseImagePath, maskPngBuffer, width, height } = params;
+  let currentMaskPngBuffer = maskPngBuffer;
+  let currentMaskRaw = await binaryMaskToRaw(currentMaskPngBuffer, width, height);
+  let currentMaskBox = getMaskPixelBBoxFromRaw(currentMaskRaw, width, height);
+  if (!currentMaskBox) return maskPngBuffer;
+
+  const containmentTolerancePx = 8;
+  const snapThresholdPx = 10;
+  const accidentalTouchThreshold = 0.15;
+  const intentionalRemovalThreshold = 0.6;
+
+  try {
+    const imageBase64 = toBase64(baseImagePath).data;
+    const detection = await detectFurniture(getGeminiClient(), imageBase64, { sceneType: "interior" });
+    if (detection.status !== "success" || !Array.isArray(detection.furnitureItems)) {
+      console.log("[editApply] REINSTATE_MASK_REFINEMENT", {
+        detectorStatus: detection.status,
+        refinementCount: 0,
+      });
+      return maskPngBuffer;
+    }
+
+    const candidateBoxes = detection.furnitureItems
+      .filter((item) => item.location?.bbox && item.confidence >= 0.35)
+      .map((item) => ({
+        item,
+        box: normalizedRectToPixelBox(item.location!.bbox, width, height),
+      }))
+      .filter((entry): entry is { item: NonNullable<typeof detection.furnitureItems>[number]; box: PixelBox } => !!entry.box);
+
+    const decisions: Array<Record<string, unknown>> = [];
+    let refinementCount = 0;
+
+    for (const entry of candidateBoxes) {
+      if (!currentMaskBox) break;
+
+      const intersectionArea = pixelBoxIntersectionArea(currentMaskBox, entry.box);
+      const overlapRatio = intersectionArea / Math.max(1, pixelBoxArea(entry.box));
+      const tolerantMaskBox = expandPixelBoxWithTolerance(
+        currentMaskBox,
+        width,
+        height,
+        containmentTolerancePx,
+      );
+      const fullyInsideMask = isPixelBoxFullyInside(entry.box, tolerantMaskBox);
+      const edgeDistancePx = pixelBoxEdgeDistance(currentMaskBox, entry.box);
+
+      let action = "ignore_ambiguous";
+      if (fullyInsideMask) {
+        action = "ignore_already_covered";
+      } else if (overlapRatio > intentionalRemovalThreshold) {
+        currentMaskPngBuffer = await unionMaskWithPixelBoxes(currentMaskPngBuffer, [entry.box], width, height);
+        currentMaskRaw = await binaryMaskToRaw(currentMaskPngBuffer, width, height);
+        currentMaskBox = getMaskPixelBBoxFromRaw(currentMaskRaw, width, height);
+        refinementCount += 1;
+        action = "expand_intentional_overlap";
+      } else if (intersectionArea > 0 && overlapRatio < accidentalTouchThreshold) {
+        currentMaskPngBuffer = await subtractMaskWithPixelBoxes(currentMaskPngBuffer, [entry.box], width, height);
+        currentMaskRaw = await binaryMaskToRaw(currentMaskPngBuffer, width, height);
+        currentMaskBox = getMaskPixelBBoxFromRaw(currentMaskRaw, width, height);
+        refinementCount += 1;
+        action = "shrink_accidental_touch";
+      } else if (intersectionArea === 0 && edgeDistancePx <= snapThresholdPx) {
+        currentMaskPngBuffer = await unionMaskWithPixelBoxes(currentMaskPngBuffer, [entry.box], width, height);
+        currentMaskRaw = await binaryMaskToRaw(currentMaskPngBuffer, width, height);
+        currentMaskBox = getMaskPixelBBoxFromRaw(currentMaskRaw, width, height);
+        refinementCount += 1;
+        action = "snap_expand_to_boundary";
+      }
+
+      decisions.push({
+        label: entry.item.label,
+        type: entry.item.type,
+        confidence: entry.item.confidence,
+        bbox: entry.box,
+        overlapRatio: Number(overlapRatio.toFixed(4)),
+        edgeDistancePx: Number(edgeDistancePx.toFixed(2)),
+        action,
+      });
+    }
+
+    if (refinementCount > 0) {
+      currentMaskPngBuffer = await smoothMaskBoundary(currentMaskPngBuffer, width, height);
+      currentMaskRaw = await binaryMaskToRaw(currentMaskPngBuffer, width, height);
+      currentMaskBox = getMaskPixelBBoxFromRaw(currentMaskRaw, width, height);
+    }
+
+    console.log("[editApply] REINSTATE_MASK_REFINEMENT", {
+      maskBbox: getMaskPixelBBoxFromRaw(await binaryMaskToRaw(maskPngBuffer, width, height), width, height),
+      containmentTolerancePx,
+      snapThresholdPx,
+      accidentalTouchThreshold,
+      intentionalRemovalThreshold,
+      refinementCount,
+      effectiveMaskBox: currentMaskBox,
+      decisions,
+    });
+
+    return currentMaskPngBuffer;
+  } catch (error) {
+    console.warn("[editApply] Reinstate mask refinement skipped (non-blocking):", error instanceof Error ? error.message : String(error));
+    return maskPngBuffer;
+  }
+}
+
 export type ReinstateConfig = {
   targetType: "window" | "doorway" | "opening" | "auto";
   geometry?: {
@@ -1654,8 +2043,11 @@ export interface ApplyEditArgs {
   restoreFromPath?: string;   // optional path to original/enhanced image for restore mode
   stage1AReferencePath?: string; // optional Stage-1A enhanced reference image (remove mode)
   reinstateConfig?: ReinstateConfig;
-  onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;  roomType?: string;
-  sceneType?: "interior" | "exterior";}
+  onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;
+  roomType?: string;
+  editContext?: EditContext;
+  sceneType?: "interior" | "exterior";
+}
 
 /**
  * Run a region edit with Gemini, using a mask and user instruction.
@@ -1673,6 +2065,7 @@ export async function applyEdit({
   reinstateConfig,
   onAnchorValidation,
   roomType,
+  editContext,
   sceneType,
 }: ApplyEditArgs): Promise<string> {
     console.log("[editApply] Starting edit", {
@@ -1755,6 +2148,13 @@ export async function applyEdit({
       } catch (err) {
         console.warn("[Reinstate] No reliable opening geometry found, using user mask", (err as any)?.message || err);
       }
+
+      maskPngBuffer = await refineReinstateMaskAgainstObjects({
+        baseImagePath,
+        maskPngBuffer,
+        width: meta.width,
+        height: meta.height,
+      });
     }
 
     const dir = require("path").dirname(baseImagePath);
@@ -1845,35 +2245,58 @@ export async function applyEdit({
       }
     }
 
-    // 🔹 For Add/Remove/Replace modes (or if Restore failed), use Gemini
-    console.log("[editApply] Using Gemini for mode:", mode);
-
-    const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
-    console.log("[editApply] Images converted to base64 (implicit)");
-
-    // For Remove mode, load Stage 1A baseline so Gemini can see what's behind the item
+    let baselineCompositeBuffer: Buffer | undefined;
     let stage1AReferenceBuffer: Buffer | undefined;
+    const useBaselineCompositeMode = (mode === "Remove" || mode === "Reinstate") && !!stage1AReferencePath;
     if ((mode === "Remove" || mode === "Reinstate") && stage1AReferencePath) {
       try {
+        const baselineMeta = await sharp(stage1AReferencePath).metadata().catch(() => null);
+        baselineCompositeBuffer = await sharp(stage1AReferencePath)
+          .resize(meta.width!, meta.height!, { fit: "fill" })
+          .removeAlpha()
+          .png()
+          .toBuffer();
         stage1AReferenceBuffer = await sharp(stage1AReferencePath).webp().toBuffer();
-        console.log("[editApply] Stage 1A baseline loaded for edit reference", {
+        console.log("[editApply] Stage 1A baseline loaded for deterministic edit", {
           path: stage1AReferencePath,
-          size: stage1AReferenceBuffer.length,
           mode,
+          originalWidth: baselineMeta?.width,
+          originalHeight: baselineMeta?.height,
+          targetWidth: meta.width,
+          targetHeight: meta.height,
+          resized: baselineMeta?.width !== meta.width || baselineMeta?.height !== meta.height,
         });
       } catch (err) {
         console.warn("[editApply] Could not load Stage 1A reference, proceeding without it", err);
       }
     }
 
+    // 🔹 For Add/Remove/Replace modes (or if Restore failed), use Gemini unless baseline-driven restore is available
+    if (!useBaselineCompositeMode || !baselineCompositeBuffer) {
+      console.log("[editApply] Using Gemini for mode:", mode);
+    } else {
+      console.log("[editApply] Using baseline-driven deterministic composite for mode:", mode);
+    }
+
+    const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
+    console.log("[editApply] Images converted to base64 (implicit)");
+
     const fallbackPrompt = buildRegionEditPrompt({
       userInstruction: instruction,
       roomType,
+      editContext,
       sceneType: sceneType || "interior",
       preserveStructure: true,
       hasStage1ABaseline: (mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer,
       editMode: mode,
       reinstateConfig,
+    });
+
+    console.log("[editApply] EDIT_CONTEXT_LOG", {
+      roomType: editContext?.roomType || roomType || null,
+      stagingStyle: editContext?.stagingStyle || null,
+      layoutHints: (editContext?.layoutHints || []).slice(0, 5),
+      anchorConstraints: (editContext?.anchorConstraints || []).slice(0, 5),
     });
 
     const detectedRegions = await splitMaskIntoRegions(maskPngBuffer!, meta.width, meta.height);
@@ -1924,8 +2347,6 @@ export async function applyEdit({
             region.expandedBox.width,
             region.expandedBox.height,
           );
-          const currentWorkingSceneReferenceBuffer = await sharp(workingImageBuffer).webp().toBuffer();
-
           console.log("[editApply] Processing adaptive region", {
             regionIndex,
             totalRegions: expandedRegions.length,
@@ -1935,6 +2356,13 @@ export async function applyEdit({
             instruction: region.instruction,
             assignmentSource: region.assignmentSource,
           });
+          console.log("[editApply] REGION_AUDIT: crop extracted", {
+            regionIndex,
+            cropWidth: region.expandedBox.width,
+            cropHeight: region.expandedBox.height,
+            expandedBox: region.expandedBox,
+            geminiInputKind: "editable_crop_only",
+          });
           console.log("[editApply] EDIT_DEBUG: region geometry", {
             regionIndex,
             bbox: region.bbox,
@@ -1942,15 +2370,39 @@ export async function applyEdit({
             expansionFactor: Number(region.expansionFactor.toFixed(3)),
           });
 
+          if (useBaselineCompositeMode && baselineCompositeBuffer) {
+            workingImageBuffer = await compositeBaselineCrop({
+              originalImage: workingImageBuffer,
+              baselineImage: baselineCompositeBuffer,
+              croppedMaskPngBuffer,
+              box: region.expandedBox,
+              featherPx: resolveMaskFeatherPx(region.expandedBox),
+              mode,
+              regionIndex,
+            });
+            processedExpandedBoxes.push(region.expandedBox);
+
+            const perRegionAllowedMask = await buildFullImageBoxMask(region.expandedBox, meta.width, meta.height);
+            const perRegionAllowedMaskPath = regionAllowedMaskArtifactPathForOutput(outPath, regionIndex);
+            await sharp(perRegionAllowedMask).png().toFile(perRegionAllowedMaskPath);
+            perRegionAllowedMaskPaths.push(perRegionAllowedMaskPath);
+            continue;
+          }
+
           const regionPrompt = buildRegionScopedPrompt({
             userInstruction: region.instruction,
             roomType,
+            editContext,
             sceneType: sceneType || "interior",
             editMode: mode,
             reinstateConfig,
             hasStage1ABaseline: (mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer,
             totalRegions: expandedRegions.length,
             regionIndex,
+          });
+          console.log("[editApply] PROMPT_PREVIEW", {
+            regionIndex,
+            preview: regionPrompt.slice(0, 200),
           });
 
           let exactSizedEditedBuffer: Buffer | null = null;
@@ -1960,7 +2412,6 @@ export async function applyEdit({
               jobId,
               imageId,
               croppedEditableImageBuffer,
-              currentWorkingSceneReferenceBuffer,
               stage1AReferenceBuffer,
               guidanceMaskPngBuffer,
               roomType,
@@ -2042,6 +2493,45 @@ export async function applyEdit({
       minDimensionPx: MIN_EXPANDED_EDIT_DIMENSION_PX,
       minAreaPx: MIN_EXPANDED_EDIT_AREA_PX,
     });
+
+    if (useBaselineCompositeMode && baselineCompositeBuffer) {
+      console.log("[editApply] BASELINE_COMPOSITE_FULL_IMAGE", {
+        mode,
+        width: meta.width,
+        height: meta.height,
+      });
+
+      const fullComposite = await compositeMaskedSourceIntoBase({
+        baseImage: baseImagePath,
+        sourceImage: baselineCompositeBuffer,
+        maskPngBuffer: maskPngBuffer!,
+        width: meta.width,
+        height: meta.height,
+        featherPx: 3,
+      });
+
+      const effectiveAllowedMask = await sharp(maskPngBuffer!)
+        .removeAlpha()
+        .grayscale()
+        .threshold(127, { grayscale: true })
+        .png()
+        .toBuffer();
+      const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
+      await sharp(effectiveAllowedMask).png().toFile(allowedMaskArtifactPath);
+      await sharp(fullComposite).webp().toFile(outPath);
+
+      const maskStats = await sharp(effectiveAllowedMask).stats();
+      console.log("[editApply] Saved deterministic baseline edit image to", outPath);
+      console.log("[editApply] Enforced mask zones", {
+        enforcementMode: "baseline_mask_composite",
+        regionCount: expandedRegions.length,
+        processedExpandedBoxes: [],
+        allowedPixels: maskStats.channels[0]?.sum ?? 0,
+        allowedMaskArtifactPath,
+        perRegionAllowedMaskPaths: [],
+      });
+      return outPath;
+    }
 
     const editedBuffer = await regionEditWithGemini({
       prompt: fallbackPrompt,

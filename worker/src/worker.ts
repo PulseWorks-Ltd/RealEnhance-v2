@@ -32,6 +32,7 @@ import { classifyStructuralFailure, type StructuralFailureType } from "./pipelin
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
+import type { EditContext } from "./pipeline/prompts";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
 import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
@@ -728,6 +729,146 @@ function normalizeForensicStagingStyle(raw: unknown): string {
   };
 
   return aliases[base] || DEFAULT_STAGING_STYLE;
+}
+
+function humanizeEditContextPhrase(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[\r\n]+/g, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function uniqueEditContextItems(items: Array<string | null | undefined>, limit = 5): string[] {
+  const seen = new Set<string>();
+  const result: string[] = [];
+
+  for (const item of items) {
+    const normalized = humanizeEditContextPhrase(item);
+    if (!normalized) continue;
+    const dedupeKey = normalized.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    result.push(normalized);
+    if (result.length >= limit) break;
+  }
+
+  return result;
+}
+
+function isPersistableStage2LayoutPlan(value: any): value is Stage2LayoutPlan {
+  return !!(
+    value &&
+    typeof value === "object" &&
+    typeof value.room_type === "string" &&
+    Array.isArray(value.layout) &&
+    Array.isArray(value.avoid_zones)
+  );
+}
+
+function pickRegionEditLayoutPlan(jobState: any): Stage2LayoutPlan | null {
+  const persistedLayoutPlans =
+    jobState?.meta?.stage2LayoutPlans ||
+    jobState?.metadata?.stage2LayoutPlans;
+  if (!persistedLayoutPlans || typeof persistedLayoutPlans !== "object") return null;
+
+  const plans = Object.entries(persistedLayoutPlans as Record<string, any>)
+    .filter((entry): entry is [string, Stage2LayoutPlan] => isPersistableStage2LayoutPlan(entry[1]))
+    .sort((left, right) => {
+      const leftScore = left[0].includes("|full|") ? 2 : left[0].includes("|refresh|") ? 1 : 0;
+      const rightScore = right[0].includes("|full|") ? 2 : right[0].includes("|refresh|") ? 1 : 0;
+      return rightScore - leftScore;
+    });
+
+  return plans[0]?.[1] || null;
+}
+
+function mapLayoutPlanToHints(layoutPlan: Stage2LayoutPlan | null | undefined): string[] {
+  if (!layoutPlan) return [];
+
+  const hints = (layoutPlan.layout || []).map((entry) => {
+    const item = humanizeEditContextPhrase(entry?.item);
+    const placement = humanizeEditContextPhrase(entry?.placement);
+    if (item && placement) return `${item} ${placement}`;
+    return item || placement;
+  });
+
+  return uniqueEditContextItems(hints, 5);
+}
+
+function mapAnchorsToConstraints(
+  layoutPlan: Stage2LayoutPlan | null | undefined,
+  structuralBaseline: StructuralBaseline | null | undefined,
+): string[] {
+  const constraints: Array<string | null | undefined> = [];
+
+  if (layoutPlan?.anchorConstraints?.avoidCoveringWindows) {
+    constraints.push("do not block windows");
+  }
+  if (layoutPlan?.anchorConstraints?.avoidAboveWindow) {
+    constraints.push("do not place items above windows");
+  }
+  if (layoutPlan?.anchorConstraints?.mountMode === "console_only") {
+    constraints.push("use console-based placement instead of wall mounting");
+  }
+  if (layoutPlan?.anchorConstraints?.mountMode === "wall_mount") {
+    constraints.push("keep wall-mounted pieces aligned to a clear wall zone");
+  }
+
+  constraints.push(...(layoutPlan?.anchorConstraints?.rules || []));
+  constraints.push(...(layoutPlan?.avoid_zones || []).map((zone) => `keep ${humanizeEditContextPhrase(zone)} clear`));
+  constraints.push(...(layoutPlan?.decorRestrictions || []).map((restriction) => restriction?.rule));
+  constraints.push(...(layoutPlan?.furnitureVisibilityRules?.rules || []));
+
+  const openings = structuralBaseline?.openings || [];
+  if (openings.some((opening) => opening.type === "window")) {
+    constraints.push("do not block windows");
+  }
+  if (openings.some((opening) => opening.type === "door" || opening.type === "walkthrough")) {
+    constraints.push("keep doorways clear");
+  }
+
+  return uniqueEditContextItems(constraints, 5);
+}
+
+function resolveRegionEditContext(params: {
+  regionPayload: any;
+  parentJob: any;
+  fallbackRoomType?: string;
+}): EditContext {
+  const { regionPayload, parentJob, fallbackRoomType } = params;
+  const parentPayload = (parentJob?.payload || {}) as any;
+  const parentOptions = (parentPayload?.options || {}) as any;
+  const parentMeta = ((parentJob?.meta || parentJob?.metadata || {})) as any;
+  const layoutPlan = pickRegionEditLayoutPlan(parentJob);
+  const structuralBaseline = (parentJob?.structuralBaseline || parentMeta?.structuralBaseline || null) as StructuralBaseline | null;
+
+  const roomType = humanizeEditContextPhrase(
+    regionPayload?.roomType ||
+    fallbackRoomType ||
+    parentOptions?.roomType ||
+    parentPayload?.roomType ||
+    parentMeta?.roomType ||
+    parentMeta?.roomTypeDetected ||
+    layoutPlan?.room_type ||
+    "",
+  ) || undefined;
+
+  const rawStagingStyle =
+    regionPayload?.stagingStyle ||
+    parentOptions?.stagingStyle ||
+    parentPayload?.stagingStyle ||
+    parentMeta?.stagingStyle;
+  const stagingStyle = rawStagingStyle
+    ? normalizeForensicStagingStyle(rawStagingStyle)
+    : undefined;
+
+  return {
+    roomType,
+    stagingStyle,
+    layoutHints: mapLayoutPlanToHints(layoutPlan),
+    anchorConstraints: mapAnchorsToConstraints(layoutPlan, structuralBaseline),
+  };
 }
 
 function normalizeWorkerUrl(urlValue?: string | null): string {
@@ -13699,6 +13840,7 @@ const worker = new Worker(
           const regionPayload = payload as RegionEditJobPayload;
           const regionAny = regionPayload as any;
           const editParentJobId = String(regionAny.parentJobId || "").trim() || undefined;
+          let editParentJob: any = null;
           const editSourceJobId = String(regionAny.sourceJobId || "").trim() || undefined;
           const editVisibleCardJobId = String(regionAny.currentCardJobId || "").trim() || undefined;
           const editPromotionTargetJobIds = Array.from(
@@ -13726,8 +13868,8 @@ const worker = new Worker(
           let parentImageId = "";
           if (editParentJobId) {
             try {
-              const parentJob = await getJob(editParentJobId);
-              parentImageId = String((parentJob as any)?.imageId || "").trim();
+              editParentJob = await getJob(editParentJobId);
+              parentImageId = String((editParentJob as any)?.imageId || "").trim();
             } catch (err: any) {
               nLog("[worker-region-edit] parent image lookup failed (non-blocking):", err?.message || String(err));
             }
@@ -13906,6 +14048,19 @@ const worker = new Worker(
           const regionSceneType: "interior" | "exterior" | undefined =
             (String(regionAny.sceneType || "").trim().toLowerCase() === "exterior" ? "exterior" : undefined)
             || (String(regionAny.sceneType || "").trim().toLowerCase() === "interior" ? "interior" : undefined);
+          const editContext = resolveRegionEditContext({
+            regionPayload: regionAny,
+            parentJob: editParentJob,
+            fallbackRoomType: regionRoomType,
+          });
+
+          nLog("[EDIT_CONTEXT_LOG]", {
+            jobId: regionPayload.jobId,
+            roomType: editContext.roomType || null,
+            stagingStyle: editContext.stagingStyle || null,
+            layoutHints: (editContext.layoutHints || []).slice(0, 5),
+            anchorConstraints: (editContext.anchorConstraints || []).slice(0, 5),
+          });
 
           const openingProtectedPromptSuffix =
             "Additional constraint:\nDo not modify windows, doors, or architectural openings.";
@@ -13923,7 +14078,8 @@ const worker = new Worker(
           let inheritedStageUrls: Record<string, string | null> = {};
           if (editParentJobId) {
             try {
-              const parentJob = await getJob(editParentJobId);
+              const parentJob = editParentJob || await getJob(editParentJobId);
+              editParentJob = parentJob;
               const parentStageUrls = (parentJob as any)?.stageUrls || (parentJob as any)?.stageOutputs || null;
               if (parentStageUrls && typeof parentStageUrls === "object") {
                 inheritedStageUrls = { ...(parentStageUrls as Record<string, string | null>) };
@@ -13944,6 +14100,8 @@ const worker = new Worker(
             }
           }
 
+          const isDeterministicBaselineMode = !!stage1AReferencePath && (mode === "Remove" || mode === "Reinstate");
+
           let outPath: string;
           let openingsValidationSummary: any = null;
           let openingsValidationRequiredForPublish = false;
@@ -13962,6 +14120,7 @@ const worker = new Worker(
               stage1AReferencePath,
               reinstateConfig: regionAny.reinstateConfig,
               roomType: regionRoomType,
+              editContext,
               sceneType: regionSceneType,
             });
           } else {
@@ -13973,7 +14132,7 @@ const worker = new Worker(
             const runEditOpeningsValidation = isReinstateMode || (!isStrictEditMode && (isAddMode || isReplaceMode || isRemoveMode));
             openingsValidationRequiredForPublish = isReinstateMode || (!isStrictEditMode && (isAddMode || isReplaceMode));
             let attempt = 1;
-            const maxAttempts = isStrictEditMode ? 1 : 2;
+            const maxAttempts = (isStrictEditMode || isDeterministicBaselineMode) ? 1 : 2;
             let lastSummary: any = null;
             const editRetryInfo: { anchorFail: boolean } = { anchorFail: false };
 
@@ -14009,6 +14168,7 @@ const worker = new Worker(
                   }
                 },
                 roomType: regionRoomType,
+                editContext,
                 sceneType: regionSceneType,
               });
 

@@ -5,6 +5,7 @@ type RegionEditPromptArgs = {
   roomType?: string;
   sceneType?: "interior" | "exterior";
   preserveStructure?: boolean;
+  editContext?: EditContext;
   hasStage1ABaseline?: boolean;
   editMode?: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
   reinstateConfig?: {
@@ -15,6 +16,13 @@ type RegionEditPromptArgs = {
       openingId?: string;
     };
   };
+};
+
+export type EditContext = {
+  roomType?: "bedroom" | "living_room" | "kitchen" | string;
+  stagingStyle?: string;
+  layoutHints?: string[];
+  anchorConstraints?: string[];
 };
 
 const COMMON_EDIT_PROMPT = `
@@ -86,20 +94,65 @@ STRICT RULES:
 `;
 }
 
+function humanizeContextLabel(value: unknown): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeContextItems(items: string[] | undefined, limit = 5): string[] {
+  if (!Array.isArray(items) || items.length === 0) return [];
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of items) {
+    const text = humanizeContextLabel(item);
+    if (!text) continue;
+    const dedupeKey = text.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    normalized.push(text);
+    if (normalized.length >= limit) break;
+  }
+
+  return normalized;
+}
+
+function buildEditContextSection(editContext: EditContext | undefined, roomType: string | undefined): string {
+  const resolvedRoom = humanizeContextLabel(editContext?.roomType || roomType || "room") || "room";
+  const resolvedStyle = humanizeContextLabel(editContext?.stagingStyle || "cohesive") || "cohesive";
+  const layoutHints = normalizeContextItems(editContext?.layoutHints);
+  const anchorConstraints = normalizeContextItems(editContext?.anchorConstraints);
+
+  return `
+EDIT CONTEXT:
+You are editing a ${resolvedRoom}.
+Apply a ${resolvedStyle} interior design style.
+
+${layoutHints.length ? `Current layout guidance:\n- ${layoutHints.join("\n- ")}` : ""}
+
+${anchorConstraints.length ? `Constraints:\n- ${anchorConstraints.join("\n- ")}` : ""}
+`.trim();
+}
+
 export function buildRegionEditPrompt({
   userInstruction,
   roomType,
   sceneType = "interior",
   preserveStructure = true,
+  editContext,
   hasStage1ABaseline = false,
   editMode,
   reinstateConfig,
 }: RegionEditPromptArgs): string {
-  const roomLabel = roomType
-    ? `This is a ${roomType.replace(/_/g, " ")}.`
+  const resolvedRoomType = editContext?.roomType || roomType;
+  const roomLabel = resolvedRoomType
+    ? `This is a ${resolvedRoomType.replace(/_/g, " ")}.`
     : "This is a real estate photograph of a room.";
 
   const sceneLabel = `Scene type: ${sceneType}.`;
+  const editContextSection = buildEditContextSection(editContext, roomType);
   const preserveHint = preserveStructure
     ? "Preserve all structural elements unless they are explicitly inside the white mask."
     : "";
@@ -190,6 +243,7 @@ You are a professional real-estate photo editor.
 
 ${roomLabel}
 ${sceneLabel}
+${editContextSection}
 
 You will receive:
 ${inputList}
