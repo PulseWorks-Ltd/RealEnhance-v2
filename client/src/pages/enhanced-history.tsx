@@ -130,6 +130,58 @@ export default function EnhancedHistoryPage() {
     [properties, unassignedImages]
   );
 
+  const editIndexByImageId = useMemo(() => {
+    const imageById = new Map(allImages.map((image) => [String(image.id), image]));
+
+    const resolveRootImageId = (image: EnhancedImageListItem): string => {
+      let current: EnhancedImageListItem | undefined = image;
+      const visited = new Set<string>();
+
+      while (current?.parentImageId) {
+        const currentId = String(current.id);
+        if (visited.has(currentId)) {
+          break;
+        }
+        visited.add(currentId);
+        current = imageById.get(String(current.parentImageId));
+      }
+
+      return current ? String(current.id) : String(image.parentImageId || image.id);
+    };
+
+    const editsByRootId = new Map<string, EnhancedImageListItem[]>();
+
+    for (const image of allImages) {
+      if (!image.parentImageId) {
+        continue;
+      }
+
+      const rootImageId = resolveRootImageId(image);
+      const existing = editsByRootId.get(rootImageId) || [];
+      existing.push(image);
+      editsByRootId.set(rootImageId, existing);
+    }
+
+    const editIndexes = new Map<string, number>();
+
+    for (const edits of editsByRootId.values()) {
+      edits
+        .slice()
+        .sort((left, right) => {
+          const createdAtCompare = new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+          if (createdAtCompare !== 0) {
+            return createdAtCompare;
+          }
+          return String(left.id).localeCompare(String(right.id));
+        })
+        .forEach((editImage, index) => {
+          editIndexes.set(String(editImage.id), index + 1);
+        });
+    }
+
+    return editIndexes;
+  }, [allImages]);
+
   const handleDownload = async (image: EnhancedImageListItem) => {
     if (user?.emailVerified !== true) {
       toast({
@@ -227,6 +279,7 @@ export default function EnhancedHistoryPage() {
   const renderImageCard = (image: EnhancedImageListItem) => (
     (() => {
       const statusBadge = resolveHistoryStatusBadge(editStatusByImageId[String(image.id)]);
+      const editIndex = editIndexByImageId.get(String(image.id));
 
       return (
         <div
@@ -256,10 +309,10 @@ export default function EnhancedHistoryPage() {
         <StatusBadge status={statusBadge.status} label={statusBadge.label} />
       </div>
 
-      {Number(image.versionCount || 0) > 0 && (
-        <div className="absolute top-2 left-2">
+      {editIndex && (
+        <div className="absolute top-2 left-2 z-10 pointer-events-none">
           <Badge variant="secondary" className="bg-black/65 text-white border-0">
-            Edited ({image.versionCount} versions)
+            Edit {editIndex}
           </Badge>
         </div>
       )}
@@ -354,7 +407,7 @@ export default function EnhancedHistoryPage() {
                     <span>{folder.address}</span>
                     <Badge variant="outline">{folder.images.length}</Badge>
                   </div>
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                     {folder.images.map(renderImageCard)}
                   </div>
                 </section>
@@ -367,7 +420,7 @@ export default function EnhancedHistoryPage() {
                   <Badge variant="outline">{unassignedImages.length}</Badge>
                 </div>
                 {unassignedImages.length > 0 ? (
-                  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-5">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6">
                     {unassignedImages.map(renderImageCard)}
                   </div>
                 ) : (
@@ -405,20 +458,22 @@ export default function EnhancedHistoryPage() {
           isOpen={!!previewImage}
           onClose={() => setPreviewImage(null)}
           title="Preview Image"
-          maxWidth="2xl"
+          maxWidth="full"
+          contentClassName="max-w-[90vw] max-h-[90vh] overflow-hidden p-8"
+          className="space-y-6"
         >
-          <div className="space-y-4">
+          <div className="space-y-6">
             {previewImage.originalUrl ? (
               <CompareSlider
                 originalImage={previewImage.originalUrl}
                 enhancedImage={previewImage.publicUrl}
-                height={520}
+                height="min(78vh, 960px)"
                 className="w-full rounded-lg overflow-hidden"
                 data-testid="history-compare-slider"
               />
             ) : (
-              <div className="flex flex-col items-center justify-center gap-4 py-8 bg-muted rounded-lg">
-                <img src={previewImage.publicUrl} alt="Enhanced" className="max-h-[460px] object-contain rounded-lg" />
+              <div className="flex flex-col items-center justify-center gap-4 py-8 bg-muted rounded-lg min-h-[60vh]">
+                <img src={previewImage.publicUrl} alt="Enhanced" className="max-h-[78vh] w-full object-contain rounded-lg" />
                 <p className="text-sm text-muted-foreground">Original image not available for comparison</p>
               </div>
             )}
