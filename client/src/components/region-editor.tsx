@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles, Loader2 } from "lucide-react";
+import { Brush, ZoomIn, ZoomOut, Move, RotateCcw, Sparkles, Loader2, Download } from "lucide-react";
 
 function stripTransientQueryParams(urlValue?: string | null): string {
   if (!urlValue) return "";
@@ -66,6 +66,7 @@ interface RegionEditorProps {
   initialIndustry?: string;
   initialSceneType?: "auto" | "interior" | "exterior";
   initialRoomType?: string;
+  source?: "batch" | "history";
 }
 
 export function RegionEditor({
@@ -85,6 +86,7 @@ export function RegionEditor({
   initialIndustry,
   initialSceneType,
   initialRoomType,
+  source = "batch",
 }: RegionEditorProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(
@@ -1247,6 +1249,51 @@ export function RegionEditor({
     (mode === "edit" && hasInstructions && hasMask) ||
     (mode === "restore_original" && hasMask);
 
+  const handleDownloadCurrentImage = useCallback(async () => {
+    if (!previewUrl) return;
+
+    try {
+      const response = await fetch(api("/api/enhanced-images/download-file"), {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          filename: `enhanced_${sourceImageId || sourceJobId || "image"}`,
+          url: previewUrl,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Unable to download the image");
+      }
+
+      const blob = await response.blob();
+      if (!blob.size) {
+        throw new Error("Downloaded file was empty");
+      }
+
+      const objectUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = `enhanced_${sourceImageId || sourceJobId || "image"}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      toast({
+        title: "Download failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "Unable to download the image. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }, [previewUrl, sourceImageId, sourceJobId, toast]);
+
   return (
     <div className="grid h-screen w-screen grid-cols-1 grid-rows-[minmax(0,1fr)_auto] bg-slate-50 rounded-none overflow-hidden lg:grid-cols-[280px_minmax(0,1fr)_320px]">
       <aside className="h-full border-b border-slate-200 bg-white p-6 lg:border-b-0 lg:border-r lg:overflow-y-auto flex flex-col">
@@ -1425,14 +1472,29 @@ export function RegionEditor({
 
       <div className="col-span-full grid grid-cols-1 border-t border-slate-200 bg-white shadow-[0_-4px_10px_rgba(0,0,0,0.02)] z-10 lg:grid-cols-[280px_minmax(0,1fr)_320px]">
         <div className="px-4 py-2 flex items-center lg:px-6 lg:py-3">
-          <Button
-            onClick={clearMask}
-            variant="outline"
-            size="sm"
-            data-testid="button-clear-mask"
-          >
-            Clear Mask
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              onClick={clearMask}
+              variant="outline"
+              size="sm"
+              data-testid="button-clear-mask"
+            >
+              Clear Mask
+            </Button>
+            {source === "history" && (
+              <Button
+                type="button"
+                onClick={handleDownloadCurrentImage}
+                variant="outline"
+                size="sm"
+                disabled={!previewUrl}
+                data-testid="button-download-history-image"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Download
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="px-4 py-2 text-xs text-slate-500 lg:px-6 lg:py-3 flex items-center justify-center">

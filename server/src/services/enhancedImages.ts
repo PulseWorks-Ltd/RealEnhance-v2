@@ -142,6 +142,7 @@ export async function listEnhancedImages(
   const listSql = `
     SELECT
       ei.id,
+      ei.job_id,
       ei.public_url,
       ei.thumbnail_url,
       ei.stages_completed,
@@ -199,6 +200,7 @@ export async function listEnhancedImages(
 
     const image: EnhancedImageListItem = {
       id: row.id,
+      jobId: row.job_id,
       thumbnailUrl: signedThumb || row.thumbnail_url,
       publicUrl: signedEnhanced || row.public_url,
       originalUrl: signedOriginal,
@@ -279,7 +281,7 @@ export async function getImageVersions(
   const params = userId ? [agencyId, userId, imageId] : [agencyId, imageId];
 
   const result = await pool.query(
-    `SELECT id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
+    `SELECT id, job_id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
             original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key,
             property_id, parent_image_id, source
      FROM enhanced_images
@@ -300,6 +302,7 @@ export async function getImageVersions(
 
     images.push({
       id: row.id,
+      jobId: row.job_id,
       thumbnailUrl: signedThumb || row.thumbnail_url,
       publicUrl: signedEnhanced || row.public_url,
       originalUrl: signedOriginal,

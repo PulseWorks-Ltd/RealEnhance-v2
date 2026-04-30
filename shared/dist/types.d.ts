@@ -304,6 +304,7 @@ export interface EnhancedImage {
  */
 export interface EnhancedImageListItem {
     id: string;
+    jobId: string;
     thumbnailUrl: string;
     publicUrl: string;
     originalUrl?: string | null;

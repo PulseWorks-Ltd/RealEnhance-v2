@@ -4,7 +4,7 @@
  * Displays previously enhanced/edited images grouped by property folder.
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -15,12 +15,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useUsage } from '@/hooks/use-usage';
 import { useToast } from '@/hooks/use-toast';
 import type { EnhancedImageGalleryResponse, EnhancedImageListItem, PropertyFolder } from '@realenhance/shared/types';
-import { CompareSlider } from '@/components/CompareSlider';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { ImageOff, Loader2, Info, Download, Eye, Folder } from 'lucide-react';
+import { ImageOff, Loader2, Info, Download, Pencil, Folder } from 'lucide-react';
+import { Modal } from '@/components/Modal';
+import { RegionEditor } from '@/components/region-editor';
+import type { SourceStageLabel } from '@/lib/edit-source';
 
 const GALLERY_FETCH_LIMIT = 5000;
 
@@ -44,6 +45,17 @@ function getDownloadFilename(filenameBase: string, contentType?: string | null):
   return /^.+\.[a-z0-9]+$/i.test(baseName) ? baseName : `${baseName}${ext}`;
 }
 
+function resolveHistoryEditSourceStage(image: EnhancedImageListItem): SourceStageLabel | null {
+  if (image.source === 'region-edit') return 'edit';
+
+  const completedStages = new Set((image.stagesCompleted || []).map((stage) => String(stage).toUpperCase()));
+  if (completedStages.has('2')) return '2';
+  if (completedStages.has('1B')) return '1B';
+  if (completedStages.has('1A') || completedStages.has('1')) return '1A';
+
+  return image.publicUrl ? '2' : null;
+}
+
 export default function EnhancedHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -55,9 +67,9 @@ export default function EnhancedHistoryPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selected, setSelected] = useState<EnhancedImageListItem | null>(null);
+  const [editingImage, setEditingImage] = useState<EnhancedImageListItem | null>(null);
 
-  const fetchImages = async () => {
+  const fetchImages = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -89,11 +101,11 @@ export default function EnhancedHistoryPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user?.agencyId]);
 
   useEffect(() => {
-    fetchImages();
-  }, [user?.agencyId]);
+    void fetchImages();
+  }, [fetchImages]);
 
   const allImages = useMemo(
     () => [...properties.flatMap((folder) => folder.images), ...unassignedImages],
@@ -152,6 +164,21 @@ export default function EnhancedHistoryPage() {
     }
   };
 
+  const handleOpenEditor = useCallback((image: EnhancedImageListItem) => {
+    const resolvedStage = resolveHistoryEditSourceStage(image);
+
+    if (!image.publicUrl || !image.jobId || !image.id || !resolvedStage) {
+      toast({
+        title: 'Edit unavailable',
+        description: 'This history item is missing persisted lineage required for editing.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setEditingImage(image);
+  }, [toast]);
+
   const planName = usage?.planName;
   const monthlyIncludedImages = usage?.mainAllowance;
   const retentionCount = monthlyIncludedImages ? monthlyIncludedImages * 3 : null;
@@ -173,7 +200,7 @@ export default function EnhancedHistoryPage() {
     <div
       key={image.id}
       className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
-      onClick={() => setSelected(image)}
+      onClick={() => handleOpenEditor(image)}
     >
       <div className="aspect-[4/3] bg-muted">
         <img
@@ -219,11 +246,11 @@ export default function EnhancedHistoryPage() {
             className="bg-white/20 hover:bg-white/30 text-white border-0"
             onClick={(e) => {
               e.stopPropagation();
-              window.open(image.publicUrl, '_blank');
+              handleOpenEditor(image);
             }}
           >
-            <Eye className="w-4 h-4 mr-1" />
-            View
+            <Pencil className="w-4 h-4 mr-1" />
+            Edit
           </Button>
           <Button
             size="sm"
@@ -330,48 +357,30 @@ export default function EnhancedHistoryPage() {
         </Card>
       )}
 
-      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
-        <DialogContent className="max-w-5xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3">
-              Compare Enhancement
-              <StatusBadge status="success" label="Ready" />
-            </DialogTitle>
-          </DialogHeader>
-          {selected && (
-            <div className="space-y-4">
-              {selected.originalUrl ? (
-                <CompareSlider
-                  originalImage={selected.originalUrl}
-                  enhancedImage={selected.publicUrl}
-                  height={520}
-                  className="w-full rounded-lg overflow-hidden"
-                  data-testid="history-compare-slider"
-                />
-              ) : (
-                <div className="flex flex-col items-center justify-center gap-4 py-8 bg-muted rounded-lg">
-                  <img src={selected.publicUrl} alt="Enhanced" className="max-h-[460px] object-contain rounded-lg" />
-                  <p className="text-sm text-muted-foreground">Original image not available for comparison</p>
-                </div>
-              )}
-              <div className="flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  Enhanced {new Date(selected.createdAt).toLocaleDateString()}
-                </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setSelected(null)}>
-                    Close
-                  </Button>
-                  <Button variant="action" onClick={() => handleDownload(selected)}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Download
-                  </Button>
-                </div>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {editingImage && (
+        <Modal
+          isOpen={!!editingImage}
+          onClose={() => setEditingImage(null)}
+          title="Edit Image"
+          maxWidth="full"
+          contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden"
+          className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent"
+        >
+          <RegionEditor
+            source="history"
+            initialImageUrl={editingImage.publicUrl}
+            originalImageUrl={editingImage.originalUrl || undefined}
+            editSourceUrl={editingImage.publicUrl}
+            editSourceStage={resolveHistoryEditSourceStage(editingImage) || undefined}
+            sourceJobId={editingImage.jobId}
+            sourceImageId={editingImage.id}
+            onCancel={() => setEditingImage(null)}
+            onComplete={() => {
+              void fetchImages();
+            }}
+          />
+        </Modal>
+      )}
     </div>
   );
 }

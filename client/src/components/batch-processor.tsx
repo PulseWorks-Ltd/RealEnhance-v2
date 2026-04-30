@@ -8771,6 +8771,7 @@ export default function BatchProcessor({
       {regionEditorOpen && editingImageIndex !== null && activeEditSource && (
         <Modal isOpen={regionEditorOpen} onClose={() => { setRegionEditorOpen(false); if (editingImageIndex !== null) { setEditingImages(prev => { const next = new Set(prev); next.delete(editingImageIndex); return next; }); } setEditingImageIndex(null); setActiveEditSource(null); }} maxWidth="full" contentClassName="w-screen h-screen max-w-none !p-0 !m-0 !rounded-none border-0 overflow-hidden" className="h-full w-full !p-0 !m-0 !space-y-0 bg-transparent">
           <RegionEditor
+            source="batch"
             initialImageUrl={activeEditSource.sourceUrl}
             editSourceUrl={activeEditSource.sourceUrl}
             editSourceStage={activeEditSource.sourceStage}
