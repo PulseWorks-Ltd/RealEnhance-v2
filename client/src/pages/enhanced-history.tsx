@@ -15,6 +15,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useUsage } from '@/hooks/use-usage';
 import { useToast } from '@/hooks/use-toast';
 import type { EnhancedImageGalleryResponse, EnhancedImageListItem, PropertyFolder } from '@realenhance/shared/types';
+import { CompareSlider } from '@/components/CompareSlider';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -67,6 +68,7 @@ export default function EnhancedHistoryPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<EnhancedImageListItem | null>(null);
   const [editingImage, setEditingImage] = useState<EnhancedImageListItem | null>(null);
 
   const fetchImages = useCallback(async () => {
@@ -179,6 +181,10 @@ export default function EnhancedHistoryPage() {
     setEditingImage(image);
   }, [toast]);
 
+  const handleOpenPreview = useCallback((image: EnhancedImageListItem) => {
+    setPreviewImage(image);
+  }, []);
+
   const planName = usage?.planName;
   const monthlyIncludedImages = usage?.mainAllowance;
   const retentionCount = monthlyIncludedImages ? monthlyIncludedImages * 3 : null;
@@ -199,17 +205,26 @@ export default function EnhancedHistoryPage() {
   const renderImageCard = (image: EnhancedImageListItem) => (
     <div
       key={image.id}
-      className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
-      onClick={() => handleOpenEditor(image)}
+      className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
     >
-      <div className="aspect-[4/3] bg-muted">
+      <button
+        type="button"
+        className="relative block aspect-[4/3] w-full overflow-hidden bg-muted text-left"
+        onClick={() => handleOpenPreview(image)}
+        aria-label="Preview enhanced image"
+      >
         <img
           src={image.thumbnailUrl}
           alt="Enhanced property photo"
           className="w-full h-full object-cover"
           loading="lazy"
         />
-      </div>
+        <div className="absolute inset-0 flex items-center justify-center bg-brand-900/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
+          <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-slate-900 shadow-sm">
+            Preview
+          </span>
+        </div>
+      </button>
 
       <div className="absolute top-2 right-2">
         <StatusBadge status="success" label="Ready" />
@@ -223,7 +238,7 @@ export default function EnhancedHistoryPage() {
         </div>
       )}
 
-      <div className="absolute inset-0 bg-brand-900/80 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-3 p-4">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-brand-950/90 via-brand-950/45 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100 flex flex-col items-center justify-end gap-3 p-4">
         <div className="flex gap-1 flex-wrap justify-center">
           {image.stagesCompleted.map((stage) => (
             <Badge key={`${image.id}-${stage}`} variant="secondary" className="text-xs bg-white/20 text-white border-0">
@@ -239,7 +254,7 @@ export default function EnhancedHistoryPage() {
 
         <p className="text-white/80 text-xs">{new Date(image.createdAt).toLocaleDateString()}</p>
 
-        <div className="flex gap-2">
+        <div className="pointer-events-auto flex gap-2">
           <Button
             size="sm"
             variant="secondary"
@@ -355,6 +370,46 @@ export default function EnhancedHistoryPage() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {previewImage && (
+        <Modal
+          isOpen={!!previewImage}
+          onClose={() => setPreviewImage(null)}
+          title="Preview Image"
+          maxWidth="2xl"
+        >
+          <div className="space-y-4">
+            {previewImage.originalUrl ? (
+              <CompareSlider
+                originalImage={previewImage.originalUrl}
+                enhancedImage={previewImage.publicUrl}
+                height={520}
+                className="w-full rounded-lg overflow-hidden"
+                data-testid="history-compare-slider"
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center gap-4 py-8 bg-muted rounded-lg">
+                <img src={previewImage.publicUrl} alt="Enhanced" className="max-h-[460px] object-contain rounded-lg" />
+                <p className="text-sm text-muted-foreground">Original image not available for comparison</p>
+              </div>
+            )}
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                Enhanced {new Date(previewImage.createdAt).toLocaleDateString()}
+              </p>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setPreviewImage(null)}>
+                  Close
+                </Button>
+                <Button variant="action" onClick={() => handleDownload(previewImage)}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Download
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Modal>
       )}
 
       {editingImage && (
