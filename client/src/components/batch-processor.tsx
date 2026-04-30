@@ -420,6 +420,7 @@ function resolveRequestedFinalStage(params: {
 }
 
 function deriveUnifiedCompletionState(params: {
+  item: any;
   requestedFinalStage: StageKey;
   stage1AUrl: string | null;
   stage1BUrl: string | null;
@@ -434,20 +435,28 @@ function deriveUnifiedCompletionState(params: {
   hasStage2: boolean;
   targetUrlPresent: boolean;
 } {
-  const { requestedFinalStage, stage1AUrl, stage1BUrl, stage2Url } = params;
+  const { item, requestedFinalStage, stage1AUrl, stage1BUrl, stage2Url } = params;
   const hasStage1A = !!stage1AUrl;
   const hasStage1B = !!stage1BUrl;
   const hasStage2 = !!stage2Url;
+  const routingSnapshot = getRoutingSnapshot(item);
+  const stage1BSkippedByDesign =
+    item?.meta?.stage1BSkippedByDesign === true ||
+    item?.result?.meta?.stage1BSkippedByDesign === true ||
+    routingSnapshot?.stage1BSkippedByDesign === true;
+  const stage1BCompletedWithoutOutput = requestedFinalStage === "1B" && stage1BSkippedByDesign && hasStage1A && !hasStage1B;
 
   const isFallback =
     requestedFinalStage === "2"
       ? !hasStage2 && hasStage1B
       : requestedFinalStage === "1B"
-      ? !hasStage1B && hasStage1A
+      ? !stage1BCompletedWithoutOutput && !hasStage1B && hasStage1A
       : false;
 
   let fallbackMessage: string | null = null;
-  if (isFallback) {
+  if (stage1BCompletedWithoutOutput) {
+    fallbackMessage = "No clutter detected - no changes needed.";
+  } else if (isFallback) {
     if (requestedFinalStage === "2") {
       fallbackMessage =
         "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again.";
@@ -470,7 +479,7 @@ function deriveUnifiedCompletionState(params: {
     requestedFinalStage === "2"
       ? hasStage2
       : requestedFinalStage === "1B"
-      ? hasStage1B
+      ? (hasStage1B || stage1BCompletedWithoutOutput)
       : hasStage1A;
 
   const status: "complete" | "failed" = hasStage1A ? "complete" : "failed";
@@ -1459,7 +1468,7 @@ export default function BatchProcessor({
   // Retry timeout safety (5 minutes max for full pipeline jobs)
   const RETRY_TIMEOUT_MS = 300_000;
   const STUCK_UI_MS = 120_000;
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Retry dialog state
   const [retryDialog, setRetryDialog] = useState<{ isOpen: boolean; imageIndex: number | null }>({
@@ -3466,6 +3475,7 @@ export default function BatchProcessor({
             sceneLabel,
           });
           const unifiedCompletion = deriveUnifiedCompletionState({
+            item: it,
             requestedFinalStage,
             stage1AUrl: stage1aUrl,
             stage1BUrl: stage1bUrl,
@@ -4299,10 +4309,10 @@ export default function BatchProcessor({
                 const shouldFlipFromStaleStage2 =
                   existingSelectedStage === "2" &&
                   !(
-                    toDisplayUrl(existing.stageUrls?.['2']) ||
-                    toDisplayUrl(existing.stageUrls?.stage2) ||
-                    toDisplayUrl(existing.result?.stageUrls?.['2']) ||
-                    toDisplayUrl(existing.result?.stageUrls?.stage2) ||
+                    toDisplayUrl(it?.stageUrls?.['2']) ||
+                    toDisplayUrl(it?.stageUrls?.stage2) ||
+                    toDisplayUrl(it?.result?.stageUrls?.['2']) ||
+                    toDisplayUrl(it?.result?.stageUrls?.stage2) ||
                     null
                   );
                 // Only default on first selection, except when the card was pinned to a stale Stage 2
@@ -4475,6 +4485,7 @@ export default function BatchProcessor({
           const stage1BUrl = stageMap?.['1B'] || stageMap?.['1b'] || stageMap?.stage1B || null;
           const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
           const unifiedCompletion = deriveUnifiedCompletionState({
+            item: r,
             requestedFinalStage,
             stage1AUrl,
             stage1BUrl,
@@ -7866,6 +7877,7 @@ export default function BatchProcessor({
                             const stage1AUrl = stageMap?.['1A'] || stageMap?.['1a'] || stageMap?.['1'] || stageMap?.stage1A || null;
 
                             const unifiedCompletion = deriveUnifiedCompletionState({
+                              item: r,
                               requestedFinalStage,
                               stage1AUrl,
                               stage1BUrl,
@@ -8069,6 +8081,7 @@ export default function BatchProcessor({
                           sceneLabel,
                         });
                         const unifiedCompletion = deriveUnifiedCompletionState({
+                          item: result,
                           requestedFinalStage,
                           stage1AUrl,
                           stage1BUrl,

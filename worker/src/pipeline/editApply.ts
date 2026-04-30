@@ -13,6 +13,9 @@ const MIN_EXPANDED_EDIT_DIMENSION_PX = 64;
 const MIN_EXPANDED_EDIT_AREA_PX = 4096;
 const MIN_EXPANDED_EDGE_FEATHER_PX = 2;
 const MAX_EXPANDED_EDGE_FEATHER_PX = 5;
+const MAX_REGION_EXPANSION_IMAGE_RATIO = 0.4;
+const REGION_OVERLAP_MERGE_RATIO = 0.05;
+const MAX_EXPANDED_REGION_AREA_RATIO = 0.35;
 
 type PixelBox = {
   x: number;
@@ -20,6 +23,54 @@ type PixelBox = {
   width: number;
   height: number;
 };
+
+type ObjectClass = "LARGE" | "MEDIUM" | "SMALL";
+
+type RegionComponent = {
+  maskPngBuffer: Buffer;
+  bbox: PixelBox;
+  area: number;
+};
+
+type RegionPromptAssignment = {
+  instruction: string;
+  objectClass: ObjectClass;
+  assignmentSource: "global" | "segment";
+  keyword: string | null;
+};
+
+type TargetRegion = RegionComponent & RegionPromptAssignment;
+
+type ExpandedRegion = TargetRegion & {
+  expandedBox: PixelBox;
+  expansionFactor: number;
+};
+
+type PromptObjectMatch = {
+  keyword: string;
+  objectClass: ObjectClass;
+  pattern: RegExp;
+};
+
+type PromptObjectHit = {
+  keyword: string;
+  objectClass: ObjectClass;
+  index: number;
+  length: number;
+  matchedText: string;
+};
+
+const PROMPT_OBJECT_MATCHERS: PromptObjectMatch[] = [
+  { keyword: "bed", objectClass: "LARGE", pattern: /\bbeds?\b/i },
+  { keyword: "sofa", objectClass: "LARGE", pattern: /\bsofas?\b|\bcouches?\b/i },
+  { keyword: "table", objectClass: "MEDIUM", pattern: /\btables?\b|\bdesks?\b/i },
+  { keyword: "chair", objectClass: "SMALL", pattern: /\bchairs?\b/i },
+  { keyword: "lamp", objectClass: "SMALL", pattern: /\blamps?\b/i },
+  { keyword: "plant", objectClass: "SMALL", pattern: /\bplants?\b/i },
+];
+
+const EDIT_VERB_PATTERN = /\b(add|remove|replace|reinstate|restore|swap|place|insert|delete|take out)\b/gi;
+const CLAUSE_BOUNDARY_PATTERN = /(?:\s*(?:,|;|\band\b|\bthen\b)\s*)/gi;
 
 function normalizeSharpResizePosition(position: unknown): any {
   const original = position;
@@ -44,6 +95,18 @@ function normalizeSharpResizePosition(position: unknown): any {
 
 function allowedMaskArtifactPathForOutput(outPath: string): string {
   return `${outPath}.allowed-mask.png`;
+}
+
+function regionAllowedMaskArtifactPathForOutput(outPath: string, regionIndex: number): string {
+  return siblingOutPath(outPath, `.allowed-mask.region-${regionIndex + 1}`, ".png");
+}
+
+function debugOverlayArtifactPathForOutput(outPath: string): string {
+  return siblingOutPath(outPath, ".debug-overlay", ".png");
+}
+
+function isEditDebugOverlayEnabled(): boolean {
+  return String(process.env.EDIT_DEBUG_OVERLAY || "").trim().toLowerCase() === "true";
 }
 
 function projectionDilatePx(width: number, height: number): number {
@@ -111,6 +174,543 @@ async function getMaskPixelBBox(maskPngBuffer: Buffer, width: number, height: nu
   };
 }
 
+async function splitMaskIntoRegions(maskPngBuffer: Buffer, width: number, height: number): Promise<RegionComponent[]> {
+  const raw = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const visited = new Uint8Array(width * height);
+  const regions: RegionComponent[] = [];
+  const neighborOffsets = [
+    [-1, -1], [0, -1], [1, -1],
+    [-1, 0],           [1, 0],
+    [-1, 1],  [0, 1],  [1, 1],
+  ];
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const startIndex = (y * width) + x;
+      if (visited[startIndex] || (raw.data[startIndex] ?? 0) <= 127) continue;
+
+      const queue: number[] = [startIndex];
+      const pixels: number[] = [];
+      visited[startIndex] = 1;
+
+      let minX = x;
+      let minY = y;
+      let maxX = x;
+      let maxY = y;
+
+      for (let cursor = 0; cursor < queue.length; cursor += 1) {
+        const index = queue[cursor]!;
+        const px = index % width;
+        const py = Math.floor(index / width);
+        pixels.push(index);
+
+        if (px < minX) minX = px;
+        if (py < minY) minY = py;
+        if (px > maxX) maxX = px;
+        if (py > maxY) maxY = py;
+
+        for (const [dx, dy] of neighborOffsets) {
+          const nx = px + dx;
+          const ny = py + dy;
+          if (nx < 0 || nx >= width || ny < 0 || ny >= height) continue;
+
+          const nextIndex = (ny * width) + nx;
+          if (visited[nextIndex] || (raw.data[nextIndex] ?? 0) <= 127) continue;
+
+          visited[nextIndex] = 1;
+          queue.push(nextIndex);
+        }
+      }
+
+      const maskRaw = Buffer.alloc(width * height, 0);
+      for (const pixelIndex of pixels) {
+        maskRaw[pixelIndex] = 255;
+      }
+
+      regions.push({
+        maskPngBuffer: await sharp(maskRaw, { raw: { width, height, channels: 1 } }).png().toBuffer(),
+        bbox: {
+          x: minX,
+          y: minY,
+          width: (maxX - minX) + 1,
+          height: (maxY - minY) + 1,
+        },
+        area: pixels.length,
+      });
+    }
+  }
+
+  return regions;
+}
+
+function getObjectClass(prompt: string): ObjectClass {
+  const text = String(prompt || "").toLowerCase();
+  if (/\bbed\b|\bsofa\b|\bcouch\b/.test(text)) return "LARGE";
+  if (/\btable\b|\bdesk\b/.test(text)) return "MEDIUM";
+  if (/\bchair\b|\bplant\b|\blamp\b/.test(text)) return "SMALL";
+  return "MEDIUM";
+}
+
+function getObjectClassRank(objectClass: ObjectClass): number {
+  if (objectClass === "LARGE") return 3;
+  if (objectClass === "MEDIUM") return 2;
+  return 1;
+}
+
+function hasLeadingEditVerb(text: string): boolean {
+  return /^(add|remove|replace|reinstate|restore|swap|place|insert|delete|take out)\b/i.test(text.trim());
+}
+
+function inferPrimaryEditVerb(prompt: string): string | null {
+  const match = String(prompt || "").match(/\b(add|remove|replace|reinstate|restore|swap|place|insert|delete|take out)\b/i);
+  return match?.[1]?.toLowerCase() || null;
+}
+
+function normalizeSegmentInstruction(segment: string, fallbackVerb: string | null): string {
+  const trimmed = String(segment || "").trim().replace(/[.;,:]+$/g, "");
+  if (!trimmed) return "";
+  if (hasLeadingEditVerb(trimmed) || !fallbackVerb) return trimmed;
+  return `${fallbackVerb} ${trimmed}`;
+}
+
+function cleanSegmentText(text: string): string {
+  return String(text || "")
+    .replace(/^(?:and|then|also)\b\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.;,:]+$/g, "");
+}
+
+function findEditVerbMatches(text: string): Array<{ verb: string; index: number; end: number }> {
+  const matches: Array<{ verb: string; index: number; end: number }> = [];
+  const pattern = new RegExp(EDIT_VERB_PATTERN.source, "gi");
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text)) !== null) {
+    matches.push({
+      verb: match[1]!.toLowerCase(),
+      index: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+  return matches;
+}
+
+function findPromptObjectHits(text: string): PromptObjectHit[] {
+  const hits: PromptObjectHit[] = [];
+
+  for (const matcher of PROMPT_OBJECT_MATCHERS) {
+    const pattern = new RegExp(matcher.pattern.source, matcher.pattern.flags);
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text)) !== null) {
+      hits.push({
+        keyword: matcher.keyword,
+        objectClass: matcher.objectClass,
+        index: match.index,
+        length: match[0].length,
+        matchedText: match[0],
+      });
+
+      if (match.index === pattern.lastIndex) {
+        pattern.lastIndex += 1;
+      }
+    }
+  }
+
+  hits.sort((left, right) => left.index - right.index || right.length - left.length);
+
+  const deduped: PromptObjectHit[] = [];
+  for (const hit of hits) {
+    const overlapsExisting = deduped.some((existing) => {
+      const existingEnd = existing.index + existing.length;
+      const hitEnd = hit.index + hit.length;
+      return hit.index < existingEnd && existing.index < hitEnd;
+    });
+    if (!overlapsExisting) {
+      deduped.push(hit);
+    }
+  }
+
+  return deduped;
+}
+
+function findClauseStart(text: string, hitIndex: number, verbMatches: Array<{ verb: string; index: number; end: number }>): number {
+  const precedingVerb = [...verbMatches].reverse().find((verb) => verb.index <= hitIndex);
+  const boundaryMatches = Array.from(text.matchAll(new RegExp(CLAUSE_BOUNDARY_PATTERN.source, "gi")));
+  const precedingBoundary = [...boundaryMatches]
+    .reverse()
+    .find((boundary) => boundary.index !== undefined && boundary.index < hitIndex);
+
+  const precedingBoundaryEnd = precedingBoundary ? precedingBoundary.index! + precedingBoundary[0].length : -1;
+  if (precedingVerb && (!precedingBoundary || precedingVerb.index >= precedingBoundaryEnd)) {
+    return precedingVerb.index;
+  }
+
+  return precedingBoundary ? precedingBoundary.index! + precedingBoundary[0].length : 0;
+}
+
+function findClauseEnd(text: string, startIndex: number, hit: PromptObjectHit, nextHit: PromptObjectHit | undefined): number {
+  const boundaryMatches = Array.from(text.matchAll(new RegExp(CLAUSE_BOUNDARY_PATTERN.source, "gi")));
+  const defaultEnd = nextHit ? nextHit.index : text.length;
+  const boundaryBeforeNextHit = boundaryMatches.find((boundary) => {
+    if (boundary.index === undefined) return false;
+    return boundary.index > (hit.index + hit.length) && boundary.index < defaultEnd;
+  });
+
+  if (boundaryBeforeNextHit) {
+    return Math.max(startIndex, boundaryBeforeNextHit.index);
+  }
+
+  return Math.max(startIndex, defaultEnd);
+}
+
+function extractPromptObjectSegments(prompt: string): RegionPromptAssignment[] {
+  const normalizedPrompt = String(prompt || "").trim();
+  const objectHits = findPromptObjectHits(normalizedPrompt);
+  if (objectHits.length === 0) return [];
+
+  const verbMatches = findEditVerbMatches(normalizedPrompt);
+  const primaryVerb = verbMatches[0]?.verb || inferPrimaryEditVerb(normalizedPrompt);
+  const assignments: RegionPromptAssignment[] = [];
+
+  for (let index = 0; index < objectHits.length; index += 1) {
+    const hit = objectHits[index]!;
+    const nextHit = objectHits[index + 1];
+    const clauseStart = findClauseStart(normalizedPrompt, hit.index, verbMatches);
+    const clauseEnd = findClauseEnd(normalizedPrompt, clauseStart, hit, nextHit);
+    const rawClause = normalizedPrompt.slice(clauseStart, clauseEnd);
+    const instruction = normalizeSegmentInstruction(cleanSegmentText(rawClause), primaryVerb);
+    if (!instruction) continue;
+    if (assignments.some((candidate) => candidate.instruction.toLowerCase() === instruction.toLowerCase())) {
+      continue;
+    }
+
+    assignments.push({
+      instruction,
+      objectClass: hit.objectClass,
+      assignmentSource: "segment",
+      keyword: hit.keyword,
+    });
+  }
+
+  return assignments;
+}
+
+function findPromptObjectMatch(text: string): PromptObjectMatch | null {
+  for (const matcher of PROMPT_OBJECT_MATCHERS) {
+    if (matcher.pattern.test(text)) return matcher;
+  }
+  return null;
+}
+
+function assignPromptInstructionsToRegions(prompt: string, regions: RegionComponent[]): TargetRegion[] {
+  const normalizedPrompt = String(prompt || "").trim();
+  const defaultAssignment: RegionPromptAssignment = {
+    instruction: normalizedPrompt,
+    objectClass: getObjectClass(normalizedPrompt),
+    assignmentSource: "global",
+    keyword: null,
+  };
+
+  if (regions.length <= 1) {
+    return regions.map((region) => ({ ...region, ...defaultAssignment }));
+  }
+
+  const segmentAssignments = extractPromptObjectSegments(normalizedPrompt);
+
+  segmentAssignments.sort((left, right) => getObjectClassRank(right.objectClass) - getObjectClassRank(left.objectClass));
+
+  if (segmentAssignments.length < 2) {
+    return regions.map((region) => ({ ...region, ...defaultAssignment }));
+  }
+
+  const regionsByArea = regions
+    .map((region, index) => ({ region, index }))
+    .sort((left, right) => right.region.area - left.region.area);
+
+  const assignedByIndex = new Map<number, RegionPromptAssignment>();
+  for (let segmentIndex = 0; segmentIndex < Math.min(segmentAssignments.length, regionsByArea.length); segmentIndex += 1) {
+    assignedByIndex.set(regionsByArea[segmentIndex]!.index, segmentAssignments[segmentIndex]!);
+  }
+
+  console.log("[editApply] Prompt-to-region mapping", {
+    regionCount: regions.length,
+    segmentCount: segmentAssignments.length,
+    assignments: regionsByArea.map(({ region, index }) => ({
+      regionIndex: index,
+      area: region.area,
+      assignedInstruction: assignedByIndex.get(index)?.instruction || null,
+      assignmentSource: assignedByIndex.get(index)?.assignmentSource || "skipped",
+      keyword: assignedByIndex.get(index)?.keyword || null,
+    })),
+  });
+
+  return regions
+    .map((region, index) => {
+      const assigned = assignedByIndex.get(index);
+      return assigned ? { ...region, ...assigned } : null;
+    })
+    .filter((region): region is TargetRegion => !!region);
+}
+
+function computeAdaptiveExpansionFactor(params: {
+  objectClass: ObjectClass;
+  area: number;
+  imageWidth: number;
+  imageHeight: number;
+}): number {
+  const { objectClass, area, imageWidth, imageHeight } = params;
+  const imageArea = Math.max(1, imageWidth * imageHeight);
+  const areaRatio = area / imageArea;
+
+  let factor = objectClass === "LARGE"
+    ? 1.42
+    : objectClass === "SMALL"
+      ? 1.15
+      : 1.25;
+
+  if (areaRatio < 0.01) {
+    factor += 0.08;
+  } else if (areaRatio < 0.03) {
+    factor += 0.04;
+  } else if (areaRatio > 0.15) {
+    factor -= 0.08;
+  } else if (areaRatio > 0.07) {
+    factor -= 0.04;
+  }
+
+  const minFactor = objectClass === "LARGE" ? 1.35 : objectClass === "SMALL" ? 1.1 : 1.2;
+  const maxFactor = objectClass === "LARGE" ? 1.5 : objectClass === "SMALL" ? 1.2 : 1.3;
+  return Math.max(minFactor, Math.min(maxFactor, factor));
+}
+
+function expandPixelBoxAdaptive(
+  box: PixelBox,
+  imageWidth: number,
+  imageHeight: number,
+  factor: number,
+): PixelBox {
+  const desiredExtraWidth = Math.max(0, Math.round(box.width * (factor - 1)));
+  const desiredExtraHeight = Math.max(0, Math.round(box.height * (factor - 1)));
+
+  const padX = Math.min(
+    Math.ceil(desiredExtraWidth / 2),
+    Math.floor(imageWidth * MAX_REGION_EXPANSION_IMAGE_RATIO),
+  );
+  const padY = Math.min(
+    Math.ceil(desiredExtraHeight / 2),
+    Math.floor(imageHeight * MAX_REGION_EXPANSION_IMAGE_RATIO),
+  );
+
+  const x1 = Math.max(0, box.x - padX);
+  const y1 = Math.max(0, box.y - padY);
+  const x2 = Math.min(imageWidth, box.x + box.width + padX);
+  const y2 = Math.min(imageHeight, box.y + box.height + padY);
+
+  return {
+    x: x1,
+    y: y1,
+    width: Math.max(1, x2 - x1),
+    height: Math.max(1, y2 - y1),
+  };
+}
+
+function buildInterpolatedBox(baseBox: PixelBox, expandedBox: PixelBox, t: number): PixelBox {
+  const expandedRight = expandedBox.x + expandedBox.width;
+  const expandedBottom = expandedBox.y + expandedBox.height;
+  const baseRight = baseBox.x + baseBox.width;
+  const baseBottom = baseBox.y + baseBox.height;
+
+  const x = Math.round(baseBox.x - ((baseBox.x - expandedBox.x) * t));
+  const y = Math.round(baseBox.y - ((baseBox.y - expandedBox.y) * t));
+  const right = Math.round(baseRight + ((expandedRight - baseRight) * t));
+  const bottom = Math.round(baseBottom + ((expandedBottom - baseBottom) * t));
+
+  return {
+    x,
+    y,
+    width: Math.max(1, right - x),
+    height: Math.max(1, bottom - y),
+  };
+}
+
+function capExpandedBoxArea(box: PixelBox, bbox: PixelBox, imageWidth: number, imageHeight: number): PixelBox {
+  const maxArea = Math.max(pixelBoxArea(bbox), Math.floor(imageWidth * imageHeight * MAX_EXPANDED_REGION_AREA_RATIO));
+  if (pixelBoxArea(box) <= maxArea) return box;
+
+  let low = 0;
+  let high = 1;
+  let best = bbox;
+
+  for (let iteration = 0; iteration < 16; iteration += 1) {
+    const mid = (low + high) / 2;
+    const candidate = buildInterpolatedBox(bbox, box, mid);
+    if (pixelBoxArea(candidate) <= maxArea) {
+      best = candidate;
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+
+  return best;
+}
+
+function isExpandedBoxAreaWithinLimit(box: PixelBox, imageWidth: number, imageHeight: number): boolean {
+  return pixelBoxArea(box) <= Math.floor(imageWidth * imageHeight * MAX_EXPANDED_REGION_AREA_RATIO);
+}
+
+function pixelBoxArea(box: PixelBox): number {
+  return Math.max(0, box.width) * Math.max(0, box.height);
+}
+
+function pixelBoxIntersectionArea(a: PixelBox, b: PixelBox): number {
+  const x1 = Math.max(a.x, b.x);
+  const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.width, b.x + b.width);
+  const y2 = Math.min(a.y + a.height, b.y + b.height);
+  return Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+}
+
+function shouldMergeExpandedRegions(a: ExpandedRegion, b: ExpandedRegion): boolean {
+  const intersection = pixelBoxIntersectionArea(a.expandedBox, b.expandedBox);
+  if (intersection <= 0) return false;
+  const smallerArea = Math.max(1, Math.min(pixelBoxArea(a.expandedBox), pixelBoxArea(b.expandedBox)));
+  return (intersection / smallerArea) >= REGION_OVERLAP_MERGE_RATIO;
+}
+
+function mergePixelBoxes(a: PixelBox, b: PixelBox): PixelBox {
+  const x1 = Math.min(a.x, b.x);
+  const y1 = Math.min(a.y, b.y);
+  const x2 = Math.max(a.x + a.width, b.x + b.width);
+  const y2 = Math.max(a.y + a.height, b.y + b.height);
+  return {
+    x: x1,
+    y: y1,
+    width: x2 - x1,
+    height: y2 - y1,
+  };
+}
+
+async function unionMaskBuffers(maskBuffers: Buffer[], width: number, height: number): Promise<Buffer> {
+  const unionRaw = Buffer.alloc(width * height, 0);
+
+  for (const maskBuffer of maskBuffers) {
+    const raw = await sharp(maskBuffer)
+      .removeAlpha()
+      .grayscale()
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+      .threshold(127, { grayscale: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    for (let i = 0; i < unionRaw.length; i += 1) {
+      if ((raw.data[i] ?? 0) > 127) unionRaw[i] = 255;
+    }
+  }
+
+  return sharp(unionRaw, { raw: { width, height, channels: 1 } }).png().toBuffer();
+}
+
+async function buildExpandedRegions(params: {
+  regions: TargetRegion[];
+  imageWidth: number;
+  imageHeight: number;
+}): Promise<ExpandedRegion[]> {
+  const { regions, imageWidth, imageHeight } = params;
+
+  let expandedRegions: ExpandedRegion[] = regions.map((region) => {
+    const expansionFactor = computeAdaptiveExpansionFactor({
+      objectClass: region.objectClass,
+      area: region.area,
+      imageWidth,
+      imageHeight,
+    });
+    const expandedBox = capExpandedBoxArea(
+      expandPixelBoxAdaptive(region.bbox, imageWidth, imageHeight, expansionFactor),
+      region.bbox,
+      imageWidth,
+      imageHeight,
+    );
+
+    return {
+      ...region,
+      expansionFactor,
+      expandedBox,
+    };
+  });
+
+  let merged = true;
+  while (merged) {
+    merged = false;
+
+    for (let i = 0; i < expandedRegions.length; i += 1) {
+      for (let j = i + 1; j < expandedRegions.length; j += 1) {
+        if (!shouldMergeExpandedRegions(expandedRegions[i]!, expandedRegions[j]!)) continue;
+
+        const left = expandedRegions[i]!;
+        const right = expandedRegions[j]!;
+        if (left.instruction.trim().toLowerCase() !== right.instruction.trim().toLowerCase()) {
+          continue;
+        }
+        const mergedMaskPngBuffer = await unionMaskBuffers(
+          [left.maskPngBuffer, right.maskPngBuffer],
+          imageWidth,
+          imageHeight,
+        );
+        const mergedBbox = mergePixelBoxes(left.bbox, right.bbox);
+        const mergedArea = left.area + right.area;
+        const expansionFactor = computeAdaptiveExpansionFactor({
+          objectClass: left.objectClass,
+          area: mergedArea,
+          imageWidth,
+          imageHeight,
+        });
+        const mergedExpandedBox = capExpandedBoxArea(
+          expandPixelBoxAdaptive(mergedBbox, imageWidth, imageHeight, expansionFactor),
+          mergedBbox,
+          imageWidth,
+          imageHeight,
+        );
+
+        if (!isExpandedBoxAreaWithinLimit(mergedExpandedBox, imageWidth, imageHeight)) {
+          console.log("[editApply] Skipping expanded region merge due to area cap", {
+            leftBox: left.expandedBox,
+            rightBox: right.expandedBox,
+            mergedBbox,
+            mergedExpandedBox,
+          });
+          continue;
+        }
+
+        expandedRegions.splice(i, 2, {
+          maskPngBuffer: mergedMaskPngBuffer,
+          bbox: mergedBbox,
+          area: mergedArea,
+          instruction: left.instruction,
+          objectClass: left.objectClass,
+          assignmentSource: left.assignmentSource,
+          keyword: left.keyword,
+          expansionFactor,
+          expandedBox: mergedExpandedBox,
+        });
+        merged = true;
+        break;
+      }
+
+      if (merged) break;
+    }
+  }
+
+  return expandedRegions.sort((a, b) => b.area - a.area);
+}
+
 function expandPixelBox(box: PixelBox, imageWidth: number, imageHeight: number, paddingRatio = EXPANDED_EDIT_PADDING_RATIO): PixelBox {
   const padX = Math.max(1, Math.ceil(box.width * paddingRatio));
   const padY = Math.max(1, Math.ceil(box.height * paddingRatio));
@@ -164,11 +764,72 @@ async function buildSoftGuidanceMask(croppedMaskPngBuffer: Buffer, width: number
 }
 
 async function buildFullImageBoxMask(box: PixelBox, width: number, height: number): Promise<Buffer> {
+  return buildFullImageBoxesMask([box], width, height);
+}
+
+function buildRegionScopedPrompt(params: {
+  userInstruction: string;
+  roomType?: string;
+  sceneType: "interior" | "exterior";
+  editMode: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+  reinstateConfig?: any;
+  hasStage1ABaseline: boolean;
+  totalRegions: number;
+  regionIndex: number;
+}): string {
+  const {
+    userInstruction,
+    roomType,
+    sceneType,
+    editMode,
+    reinstateConfig,
+    hasStage1ABaseline,
+    totalRegions,
+    regionIndex,
+  } = params;
+
+  const prompt = buildRegionEditPrompt({
+    userInstruction,
+    roomType,
+    sceneType,
+    preserveStructure: true,
+    hasStage1ABaseline,
+    editMode,
+    reinstateConfig,
+  });
+
+  const regionScopeSuffix = `
+
+REGION-SPECIFIC INSTRUCTION:
+- Apply only this region's assigned edit instruction: ${userInstruction}
+- This is region ${regionIndex + 1} of ${totalRegions}.
+
+CONSISTENCY RULES:
+- Preserve consistency with existing objects in image.
+- Match perspective, lighting, scale, and material cues already present.
+- Do not duplicate edits intended for other masked regions.`;
+
+  const cropPromptSuffix = `
+
+CROPPED REGION EDIT RULES:
+- You are editing ONLY the provided cropped region.
+- The white center area is the target edit zone.
+- The gray surrounding area is an allowed spill zone for realistic object placement.
+- You may extend slightly into the gray area when needed for natural edges, shadows, or object placement.
+- Do NOT redesign the surrounding environment.
+- Do NOT make global changes to the room.`;
+
+  return `${prompt}${regionScopeSuffix}${cropPromptSuffix}`;
+}
+
+async function buildFullImageBoxesMask(boxes: PixelBox[], width: number, height: number): Promise<Buffer> {
   const maskRaw = Buffer.alloc(width * height, 0);
-  for (let y = box.y; y < box.y + box.height; y += 1) {
-    const rowOffset = y * width;
-    for (let x = box.x; x < box.x + box.width; x += 1) {
-      maskRaw[rowOffset + x] = 255;
+  for (const box of boxes) {
+    for (let y = box.y; y < box.y + box.height; y += 1) {
+      const rowOffset = y * width;
+      for (let x = box.x; x < box.x + box.width; x += 1) {
+        maskRaw[rowOffset + x] = 255;
+      }
     }
   }
 
@@ -180,8 +841,169 @@ function computeExpandedEdgeFeatherPx(box: PixelBox): number {
   return Math.max(MIN_EXPANDED_EDGE_FEATHER_PX, Math.min(MAX_EXPANDED_EDGE_FEATHER_PX, scaled || 0));
 }
 
+function validateGeneratedCropDimensions(
+  generatedMeta: { width?: number; height?: number },
+  expectedBox: PixelBox,
+  regionIndex: number,
+): boolean {
+  const widthMatch = Number(generatedMeta.width || 0) === expectedBox.width;
+  const heightMatch = Number(generatedMeta.height || 0) === expectedBox.height;
+  console.log("[editApply] Generated crop validation", {
+    regionIndex,
+    expectedWidth: expectedBox.width,
+    expectedHeight: expectedBox.height,
+    actualWidth: generatedMeta.width,
+    actualHeight: generatedMeta.height,
+    widthMatch,
+    heightMatch,
+  });
+  return widthMatch && heightMatch;
+}
+
+async function ensureExactCropSize(
+  generatedBuffer: Buffer,
+  expectedBox: PixelBox,
+  regionIndex: number,
+): Promise<Buffer> {
+  const generatedMeta = await sharp(generatedBuffer).metadata().catch(() => null);
+  const exactMatch = validateGeneratedCropDimensions(generatedMeta || {}, expectedBox, regionIndex);
+
+  if (exactMatch) {
+    return sharp(generatedBuffer)
+      .removeAlpha()
+      .toBuffer();
+  }
+
+  console.warn("[editApply] EDIT_DEBUG: resizing generated crop to exact expanded box", {
+    regionIndex,
+    expectedWidth: expectedBox.width,
+    expectedHeight: expectedBox.height,
+    actualWidth: generatedMeta?.width,
+    actualHeight: generatedMeta?.height,
+  });
+
+  return sharp(generatedBuffer)
+    .resize(expectedBox.width, expectedBox.height, { fit: "fill" })
+    .removeAlpha()
+    .toBuffer();
+}
+
+function logMaskAlignment(regionIndex: number, bbox: PixelBox, expandedBox: PixelBox): void {
+  const mappedMaskBounds = {
+    x: bbox.x - expandedBox.x,
+    y: bbox.y - expandedBox.y,
+    width: bbox.width,
+    height: bbox.height,
+  };
+  const exceedsCropBounds =
+    mappedMaskBounds.x < 0 ||
+    mappedMaskBounds.y < 0 ||
+    (mappedMaskBounds.x + mappedMaskBounds.width) > expandedBox.width ||
+    (mappedMaskBounds.y + mappedMaskBounds.height) > expandedBox.height;
+
+  if (exceedsCropBounds) {
+    console.warn("[editApply] MASK ALIGNMENT ERROR", {
+      regionIndex,
+      bbox,
+      expandedBox,
+      mappedMaskBounds,
+    });
+    return;
+  }
+
+  console.log("[editApply] EDIT_DEBUG: mask alignment validated", {
+    regionIndex,
+    bbox,
+    expandedBox,
+    mappedMaskBounds,
+  });
+}
+
+function buildDebugBoxSvg(
+  width: number,
+  height: number,
+  expandedBoxes: PixelBox[],
+  compositeBoxes: PixelBox[],
+): string {
+  const expandedRects = expandedBoxes.map((box) => {
+    const x = box.x + 1;
+    const y = box.y + 1;
+    const rectWidth = Math.max(1, box.width - 2);
+    const rectHeight = Math.max(1, box.height - 2);
+    return `<rect x="${x}" y="${y}" width="${rectWidth}" height="${rectHeight}" fill="none" stroke="#22c55e" stroke-width="3" />`;
+  }).join("");
+
+  const compositeRects = compositeBoxes.map((box) => {
+    const x = box.x + 4;
+    const y = box.y + 4;
+    const rectWidth = Math.max(1, box.width - 8);
+    const rectHeight = Math.max(1, box.height - 8);
+    return `<rect x="${x}" y="${y}" width="${rectWidth}" height="${rectHeight}" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="8 6" />`;
+  }).join("");
+
+  return `
+    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg">
+      ${expandedRects}
+      ${compositeRects}
+    </svg>
+  `;
+}
+
+async function buildDebugMaskOverlay(maskPngBuffer: Buffer, width: number, height: number): Promise<Buffer> {
+  const rawMask = await sharp(maskPngBuffer)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .threshold(127, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const redRgb = Buffer.alloc(width * height * 3, 0);
+  const alpha = Buffer.alloc(width * height, 0);
+
+  for (let i = 0; i < width * height; i += 1) {
+    redRgb[(i * 3)] = 255;
+    alpha[i] = (rawMask.data[i] ?? 0) > 127 ? 96 : 0;
+  }
+
+  return sharp(redRgb, { raw: { width, height, channels: 3 } })
+    .joinChannel(alpha, { raw: { width, height, channels: 1 } })
+    .png()
+    .toBuffer();
+}
+
+async function writeDebugOverlayArtifact(params: {
+  outPath: string;
+  baseImage: string | Buffer;
+  maskPngBuffer: Buffer;
+  expandedBoxes: PixelBox[];
+  compositeBoxes: PixelBox[];
+  width: number;
+  height: number;
+}): Promise<void> {
+  if (!isEditDebugOverlayEnabled()) return;
+
+  const { outPath, baseImage, maskPngBuffer, expandedBoxes, compositeBoxes, width, height } = params;
+  const overlayPath = debugOverlayArtifactPathForOutput(outPath);
+  const maskOverlay = await buildDebugMaskOverlay(maskPngBuffer, width, height);
+  const boxOverlay = Buffer.from(buildDebugBoxSvg(width, height, expandedBoxes, compositeBoxes));
+
+  await sharp(baseImage)
+    .composite([
+      { input: maskOverlay, blend: "over" },
+      { input: boxOverlay, blend: "over" },
+    ])
+    .png()
+    .toFile(overlayPath);
+
+  console.log("[editApply] EDIT_DEBUG: wrote debug overlay artifact", {
+    overlayPath,
+    regionCount: expandedBoxes.length,
+  });
+}
+
 async function compositeExpandedCrop(
-  originalImagePath: string,
+  originalImagePath: string | Buffer,
   generatedBuffer: Buffer,
   box: PixelBox,
   featherPx: number,
@@ -203,9 +1025,7 @@ async function compositeExpandedCrop(
     }
   }
 
-  const overlayBuffer = await sharp(alignedGenerated, {
-    raw: { width: box.width, height: box.height, channels: 3 },
-  })
+  const overlayBuffer = await sharp(alignedGenerated)
     .joinChannel(alphaRaw, { raw: { width: box.width, height: box.height, channels: 1 } })
     .png()
     .toBuffer();
@@ -871,7 +1691,7 @@ export async function applyEdit({
       }
     }
 
-    const prompt = buildRegionEditPrompt({
+    const fallbackPrompt = buildRegionEditPrompt({
       userInstruction: instruction,
       roomType,
       sceneType: sceneType || "interior",
@@ -880,85 +1700,162 @@ export async function applyEdit({
       editMode: mode,
       reinstateConfig,
     });
-    const cropPromptSuffix = `
 
-CROPPED REGION EDIT RULES:
-- You are editing ONLY the provided cropped region.
-- The white center area is the target edit zone.
-- The gray surrounding area is an allowed spill zone for realistic object placement.
-- You may extend slightly into the gray area when needed for natural edges, shadows, or object placement.
-- Do NOT redesign the surrounding environment.
-- Do NOT make global changes to the room.`;
-    const finalPrompt = `${prompt}${cropPromptSuffix}`;
-    console.log("[editApply] Prompt built, length:", finalPrompt.length);
-
-    const maskPixelBBox = await getMaskPixelBBox(maskPngBuffer!, meta.width, meta.height);
-    const expandedBox = maskPixelBBox
-      ? expandPixelBox(maskPixelBBox, meta.width, meta.height)
-      : null;
-    const useExpandedCrop = isExpandedCropUsable(expandedBox);
+    const detectedRegions = await splitMaskIntoRegions(maskPngBuffer!, meta.width, meta.height);
+    const targetRegions = assignPromptInstructionsToRegions(instruction, detectedRegions);
+    const expandedRegions = await buildExpandedRegions({
+      regions: targetRegions,
+      imageWidth: meta.width,
+      imageHeight: meta.height,
+    });
+    const useExpandedCrop = expandedRegions.length > 0 && expandedRegions.every((region) => isExpandedCropUsable(region.expandedBox));
 
     if (useExpandedCrop) {
-      const croppedEditableImageBuffer = await sharp(baseImagePath)
-        .extract({ left: expandedBox.x, top: expandedBox.y, width: expandedBox.width, height: expandedBox.height })
-        .webp()
-        .toBuffer();
-      const croppedMaskPngBuffer = await cropMaskToBox(maskPngBuffer!, expandedBox);
-      const guidanceMaskPngBuffer = await buildSoftGuidanceMask(croppedMaskPngBuffer, expandedBox.width, expandedBox.height);
+      try {
+        console.log("[editApply] Adaptive region plan", {
+          regionCount: expandedRegions.length,
+          regions: expandedRegions.map((region, index) => ({
+            index,
+            bbox: region.bbox,
+            expandedBox: region.expandedBox,
+            area: region.area,
+            expansionFactor: Number(region.expansionFactor.toFixed(3)),
+            instruction: region.instruction,
+            objectClass: region.objectClass,
+            assignmentSource: region.assignmentSource,
+          })),
+        });
+        console.log("[editApply] EDIT_DEBUG: adaptive region count", { regionCount: expandedRegions.length });
 
-      console.log("[editApply] Using expanded crop region", {
-        maskPixelBBox,
-        expandedBox,
-      });
+        let workingImageBuffer = await sharp(baseImagePath).png().toBuffer();
+        const processedExpandedBoxes: PixelBox[] = [];
+        const perRegionAllowedMaskPaths: string[] = [];
 
-      const editedBuffer = await regionEditWithGemini({
-        prompt: finalPrompt,
-        jobId,
-        imageId,
-        baseImageBuffer: croppedEditableImageBuffer,
-        fullSceneReferenceBuffer,
-        referenceImageBuffer: stage1AReferenceBuffer,
-        maskPngBuffer: guidanceMaskPngBuffer,
-        maskMode: "guidance",
-        roomType,
-        sceneType: sceneType || "interior",
-        editMode: mode,
-      });
+        for (let regionIndex = 0; regionIndex < expandedRegions.length; regionIndex += 1) {
+          const region = expandedRegions[regionIndex]!;
+          logMaskAlignment(regionIndex, region.bbox, region.expandedBox);
+          const croppedEditableImageBuffer = await sharp(workingImageBuffer)
+            .extract({
+              left: region.expandedBox.x,
+              top: region.expandedBox.y,
+              width: region.expandedBox.width,
+              height: region.expandedBox.height,
+            })
+            .webp()
+            .toBuffer();
+          const croppedMaskPngBuffer = await cropMaskToBox(region.maskPngBuffer, region.expandedBox);
+          const guidanceMaskPngBuffer = await buildSoftGuidanceMask(
+            croppedMaskPngBuffer,
+            region.expandedBox.width,
+            region.expandedBox.height,
+          );
+          const currentWorkingSceneReferenceBuffer = await sharp(workingImageBuffer).webp().toBuffer();
 
-      const effectiveAllowedMask = await buildFullImageBoxMask(expandedBox, meta.width, meta.height);
-      const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
-      await sharp(effectiveAllowedMask).png().toFile(allowedMaskArtifactPath);
+          console.log("[editApply] Processing adaptive region", {
+            regionIndex,
+            totalRegions: expandedRegions.length,
+            expandedBox: region.expandedBox,
+            area: region.area,
+            expansionFactor: Number(region.expansionFactor.toFixed(3)),
+            instruction: region.instruction,
+            assignmentSource: region.assignmentSource,
+          });
+          console.log("[editApply] EDIT_DEBUG: region geometry", {
+            regionIndex,
+            bbox: region.bbox,
+            expandedBox: region.expandedBox,
+            expansionFactor: Number(region.expansionFactor.toFixed(3)),
+          });
 
-      const recomposed = await compositeExpandedCrop(
-        baseImagePath,
-        editedBuffer,
-        expandedBox,
-        computeExpandedEdgeFeatherPx(expandedBox),
-      );
+          const regionPrompt = buildRegionScopedPrompt({
+            userInstruction: region.instruction,
+            roomType,
+            sceneType: sceneType || "interior",
+            editMode: mode,
+            reinstateConfig,
+            hasStage1ABaseline: (mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer,
+            totalRegions: expandedRegions.length,
+            regionIndex,
+          });
 
-      await sharp(recomposed).webp().toFile(outPath);
+          const editedBuffer = await regionEditWithGemini({
+            prompt: regionPrompt,
+            jobId,
+            imageId,
+            baseImageBuffer: croppedEditableImageBuffer,
+            fullSceneReferenceBuffer: currentWorkingSceneReferenceBuffer,
+            referenceImageBuffer: stage1AReferenceBuffer,
+            maskPngBuffer: guidanceMaskPngBuffer,
+            maskMode: "guidance",
+            roomType,
+            sceneType: sceneType || "interior",
+            editMode: mode,
+          });
 
-      const maskStats = await sharp(effectiveAllowedMask).stats();
-      console.log("[editApply] Enforced mask zones", {
-        enforcementMode: "expanded_crop_hard_boundary",
-        expandedBox,
-        allowedPixels: maskStats.channels[0]?.sum ?? 0,
-        allowedMaskArtifactPath,
-      });
+          const exactSizedEditedBuffer = await ensureExactCropSize(editedBuffer, region.expandedBox, regionIndex);
 
-      console.log("[editApply] Saved enforced region edit image to", outPath);
-      return outPath;
+          workingImageBuffer = await compositeExpandedCrop(
+            workingImageBuffer,
+            exactSizedEditedBuffer,
+            region.expandedBox,
+            computeExpandedEdgeFeatherPx(region.expandedBox),
+          );
+          processedExpandedBoxes.push(region.expandedBox);
+
+          const perRegionAllowedMask = await buildFullImageBoxMask(region.expandedBox, meta.width, meta.height);
+          const perRegionAllowedMaskPath = regionAllowedMaskArtifactPathForOutput(outPath, regionIndex);
+          await sharp(perRegionAllowedMask).png().toFile(perRegionAllowedMaskPath);
+          perRegionAllowedMaskPaths.push(perRegionAllowedMaskPath);
+        }
+
+        const effectiveAllowedMask = await buildFullImageBoxesMask(processedExpandedBoxes, meta.width, meta.height);
+        const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
+        await sharp(effectiveAllowedMask).png().toFile(allowedMaskArtifactPath);
+        await sharp(workingImageBuffer).webp().toFile(outPath);
+        await writeDebugOverlayArtifact({
+          outPath,
+          baseImage: workingImageBuffer,
+          maskPngBuffer: maskPngBuffer!,
+          expandedBoxes: expandedRegions.map((region) => region.expandedBox),
+          compositeBoxes: processedExpandedBoxes,
+          width: meta.width,
+          height: meta.height,
+        });
+
+        const maskStats = await sharp(effectiveAllowedMask).stats();
+        console.log("[editApply] Enforced mask zones", {
+          enforcementMode: expandedRegions.length > 1
+            ? "multi_region_expanded_hard_boundary"
+            : "expanded_crop_hard_boundary",
+          regionCount: expandedRegions.length,
+          processedExpandedBoxes,
+          allowedPixels: maskStats.channels[0]?.sum ?? 0,
+          allowedMaskArtifactPath,
+          perRegionAllowedMaskPaths,
+        });
+
+        console.log("[editApply] Saved enforced region edit image to", outPath);
+        return outPath;
+      } catch (err) {
+        console.warn("[editApply] Adaptive region pipeline failed, falling back to legacy full-image edit", {
+          error: (err as any)?.message || err,
+        });
+      }
     }
 
     console.log("[editApply] Expanded crop unavailable, falling back to legacy full-image edit", {
-      maskPixelBBox,
-      expandedBox,
+      regionCount: expandedRegions.length,
+      regions: expandedRegions.map((region) => ({
+        bbox: region.bbox,
+        expandedBox: region.expandedBox,
+        area: region.area,
+      })),
       minDimensionPx: MIN_EXPANDED_EDIT_DIMENSION_PX,
       minAreaPx: MIN_EXPANDED_EDIT_AREA_PX,
     });
 
     const editedBuffer = await regionEditWithGemini({
-      prompt: prompt,
+      prompt: fallbackPrompt,
       jobId,
       imageId,
       baseImageBuffer: fullSceneReferenceBuffer,

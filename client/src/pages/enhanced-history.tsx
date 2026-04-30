@@ -57,6 +57,21 @@ function resolveHistoryEditSourceStage(image: EnhancedImageListItem): SourceStag
   return image.publicUrl ? '2' : null;
 }
 
+type HistoryEditStatus = 'processing' | 'success' | 'failed';
+
+function resolveHistoryStatusBadge(status?: HistoryEditStatus): { status: 'processing' | 'success' | 'error'; label: string } {
+  if (status === 'processing') {
+    return { status: 'processing', label: 'Editing' };
+  }
+  if (status === 'success') {
+    return { status: 'success', label: 'Edited' };
+  }
+  if (status === 'failed') {
+    return { status: 'error', label: 'Edit failed' };
+  }
+  return { status: 'success', label: 'Ready' };
+}
+
 export default function EnhancedHistoryPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -70,6 +85,7 @@ export default function EnhancedHistoryPage() {
   const [error, setError] = useState<string | null>(null);
   const [previewImage, setPreviewImage] = useState<EnhancedImageListItem | null>(null);
   const [editingImage, setEditingImage] = useState<EnhancedImageListItem | null>(null);
+  const [editStatusByImageId, setEditStatusByImageId] = useState<Record<string, HistoryEditStatus>>({});
 
   const fetchImages = useCallback(async () => {
     try {
@@ -209,10 +225,14 @@ export default function EnhancedHistoryPage() {
   }
 
   const renderImageCard = (image: EnhancedImageListItem) => (
-    <div
-      key={image.id}
-      className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
-    >
+    (() => {
+      const statusBadge = resolveHistoryStatusBadge(editStatusByImageId[String(image.id)]);
+
+      return (
+        <div
+          key={image.id}
+          className="group relative overflow-hidden rounded-xl border border-border bg-card shadow-sm hover:border-action-400 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200"
+        >
       <button
         type="button"
         className="relative block aspect-[4/3] w-full overflow-hidden bg-muted text-left"
@@ -233,7 +253,7 @@ export default function EnhancedHistoryPage() {
       </button>
 
       <div className="absolute top-2 right-2">
-        <StatusBadge status="success" label="Ready" />
+        <StatusBadge status={statusBadge.status} label={statusBadge.label} />
       </div>
 
       {Number(image.versionCount || 0) > 0 && (
@@ -286,7 +306,9 @@ export default function EnhancedHistoryPage() {
           </Button>
         </div>
       </div>
-    </div>
+        </div>
+      );
+    })()
   );
 
   return (
@@ -443,7 +465,24 @@ export default function EnhancedHistoryPage() {
             sourceJobId={editingImage.jobId}
             sourceImageId={editingImage.id}
             onCancel={() => setEditingImage(null)}
+            onStart={() => {
+              setEditStatusByImageId((current) => ({
+                ...current,
+                [String(editingImage.id)]: 'processing',
+              }));
+            }}
+            onError={() => {
+              setEditStatusByImageId((current) => ({
+                ...current,
+                [String(editingImage.id)]: 'failed',
+              }));
+            }}
             onComplete={() => {
+              setEditStatusByImageId((current) => ({
+                ...current,
+                [String(editingImage.id)]: 'success',
+              }));
+              setEditingImage(null);
               void fetchImages();
             }}
           />
