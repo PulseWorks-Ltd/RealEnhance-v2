@@ -16,6 +16,9 @@ const MAX_EXPANDED_EDGE_FEATHER_PX = 5;
 const MAX_REGION_EXPANSION_IMAGE_RATIO = 0.4;
 const REGION_OVERLAP_MERGE_RATIO = 0.05;
 const MAX_EXPANDED_REGION_AREA_RATIO = 0.35;
+const MAX_REGION_EDIT_ATTEMPTS = 2;
+
+type RegionRetryReason = "gemini_error" | "timeout" | "dimension_mismatch" | "empty_image" | "corrupted_image";
 
 type PixelBox = {
   x: number;
@@ -59,6 +62,16 @@ type PromptObjectHit = {
   length: number;
   matchedText: string;
 };
+
+class RetryableRegionEditError extends Error {
+  reason: RegionRetryReason;
+
+  constructor(reason: RegionRetryReason, message: string) {
+    super(message);
+    this.name = "RetryableRegionEditError";
+    this.reason = reason;
+  }
+}
 
 const PROMPT_OBJECT_MATCHERS: PromptObjectMatch[] = [
   { keyword: "bed", objectClass: "LARGE", pattern: /\bbeds?\b/i },
@@ -451,6 +464,17 @@ function assignPromptInstructionsToRegions(prompt: string, regions: RegionCompon
     })),
   });
 
+  console.log("[editApply] CLAUSE_MAPPING", regionsByArea
+    .map(({ index }) => {
+      const assigned = assignedByIndex.get(index);
+      if (!assigned) return null;
+      return {
+        clause: assigned.instruction,
+        region: index,
+      };
+    })
+    .filter((value) => !!value));
+
   return regions
     .map((region, index) => {
       const assigned = assignedByIndex.get(index);
@@ -822,6 +846,106 @@ CROPPED REGION EDIT RULES:
   return `${prompt}${regionScopeSuffix}${cropPromptSuffix}`;
 }
 
+async function runRegionEditWithRetry(params: {
+  prompt: string;
+  jobId?: string;
+  imageId?: string;
+  croppedEditableImageBuffer: Buffer;
+  currentWorkingSceneReferenceBuffer: Buffer;
+  stage1AReferenceBuffer?: Buffer;
+  guidanceMaskPngBuffer: Buffer;
+  roomType?: string;
+  sceneType: "interior" | "exterior";
+  mode: EditMode;
+  regionIndex: number;
+  totalRegions: number;
+  expandedBox: PixelBox;
+}): Promise<Buffer> {
+  const {
+    prompt,
+    jobId,
+    imageId,
+    croppedEditableImageBuffer,
+    currentWorkingSceneReferenceBuffer,
+    stage1AReferenceBuffer,
+    guidanceMaskPngBuffer,
+    roomType,
+    sceneType,
+    mode,
+    regionIndex,
+    totalRegions,
+    expandedBox,
+  } = params;
+
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= MAX_REGION_EDIT_ATTEMPTS; attempt += 1) {
+    const isRetry = attempt > 1;
+    const attemptPrompt = isRetry
+      ? `${prompt}
+
+RETRY INSTRUCTION:
+- Retry only region ${regionIndex + 1} of ${totalRegions}.
+- ONLY modify this assigned region.
+- Do not modify surrounding area.
+- Keep structure unchanged.
+- Preserve the existing surrounding composition exactly.
+- Do not alter content intended for any other region.`
+      : prompt;
+
+    try {
+      console.log("[editApply] Region edit attempt", {
+        regionIndex,
+        totalRegions,
+        attempt,
+        maxAttempts: MAX_REGION_EDIT_ATTEMPTS,
+        expandedBox,
+        isRetry,
+      });
+
+      const editedBuffer = await regionEditWithGemini({
+        prompt: attemptPrompt,
+        jobId,
+        imageId,
+        baseImageBuffer: croppedEditableImageBuffer,
+        fullSceneReferenceBuffer: currentWorkingSceneReferenceBuffer,
+        referenceImageBuffer: stage1AReferenceBuffer,
+        maskPngBuffer: guidanceMaskPngBuffer,
+        maskMode: "guidance",
+        roomType,
+        sceneType,
+        editMode: mode,
+      });
+
+      return await validateRegionEditResultOrThrow(editedBuffer, expandedBox, regionIndex);
+    } catch (error) {
+      lastError = error;
+      const retryReason = getRetryReason(error);
+      if (!retryReason) {
+        throw error;
+      }
+
+      console.warn("[editApply] REGION_RETRY", {
+        regionIndex,
+        attempt,
+        reason: retryReason,
+      });
+      console.warn("[editApply] Region edit attempt failed", {
+        regionIndex,
+        totalRegions,
+        attempt,
+        maxAttempts: MAX_REGION_EDIT_ATTEMPTS,
+        expandedBox,
+        reason: retryReason,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`Region ${regionIndex + 1} edit failed after ${MAX_REGION_EDIT_ATTEMPTS} attempts`);
+}
+
 async function buildFullImageBoxesMask(boxes: PixelBox[], width: number, height: number): Promise<Buffer> {
   const maskRaw = Buffer.alloc(width * height, 0);
   for (const box of boxes) {
@@ -858,6 +982,57 @@ function validateGeneratedCropDimensions(
     heightMatch,
   });
   return widthMatch && heightMatch;
+}
+
+function getRetryReason(error: unknown): RegionRetryReason | null {
+  if (error instanceof RetryableRegionEditError) {
+    return error.reason;
+  }
+
+  const message = String(error instanceof Error ? error.message : error || "").toLowerCase();
+  if (!message) return "gemini_error";
+  if (message.includes("timeout") || message.includes("timed out") || message.includes("deadline")) {
+    return "timeout";
+  }
+  if (
+    message.includes("gemini") ||
+    message.includes("generatecontent") ||
+    message.includes("candidate") ||
+    message.includes("429") ||
+    message.includes("503") ||
+    message.includes("api") ||
+    message.includes("network")
+  ) {
+    return "gemini_error";
+  }
+  return null;
+}
+
+async function validateRegionEditResultOrThrow(
+  generatedBuffer: Buffer,
+  expectedBox: PixelBox,
+  regionIndex: number,
+): Promise<Buffer> {
+  if (!generatedBuffer?.length) {
+    throw new RetryableRegionEditError("empty_image", `Region ${regionIndex + 1} returned an empty image buffer`);
+  }
+
+  const generatedMeta = await sharp(generatedBuffer).metadata().catch(() => null);
+  if (!generatedMeta?.width || !generatedMeta?.height) {
+    throw new RetryableRegionEditError("corrupted_image", `Region ${regionIndex + 1} returned unreadable image data`);
+  }
+
+  const exactMatch = validateGeneratedCropDimensions(generatedMeta, expectedBox, regionIndex);
+  if (!exactMatch) {
+    throw new RetryableRegionEditError(
+      "dimension_mismatch",
+      `Region ${regionIndex + 1} returned ${generatedMeta.width}x${generatedMeta.height}; expected ${expectedBox.width}x${expectedBox.height}`,
+    );
+  }
+
+  return sharp(generatedBuffer)
+    .removeAlpha()
+    .toBuffer();
 }
 
 async function ensureExactCropSize(
@@ -1778,21 +1953,35 @@ export async function applyEdit({
             regionIndex,
           });
 
-          const editedBuffer = await regionEditWithGemini({
-            prompt: regionPrompt,
-            jobId,
-            imageId,
-            baseImageBuffer: croppedEditableImageBuffer,
-            fullSceneReferenceBuffer: currentWorkingSceneReferenceBuffer,
-            referenceImageBuffer: stage1AReferenceBuffer,
-            maskPngBuffer: guidanceMaskPngBuffer,
-            maskMode: "guidance",
-            roomType,
-            sceneType: sceneType || "interior",
-            editMode: mode,
-          });
+          let exactSizedEditedBuffer: Buffer | null = null;
+          try {
+            const editedBuffer = await runRegionEditWithRetry({
+              prompt: regionPrompt,
+              jobId,
+              imageId,
+              croppedEditableImageBuffer,
+              currentWorkingSceneReferenceBuffer,
+              stage1AReferenceBuffer,
+              guidanceMaskPngBuffer,
+              roomType,
+              sceneType: sceneType || "interior",
+              mode,
+              regionIndex,
+              totalRegions: expandedRegions.length,
+              expandedBox: region.expandedBox,
+            });
 
-          const exactSizedEditedBuffer = await ensureExactCropSize(editedBuffer, region.expandedBox, regionIndex);
+            exactSizedEditedBuffer = await ensureExactCropSize(editedBuffer, region.expandedBox, regionIndex);
+          } catch (error) {
+            console.warn("[editApply] Skipping region after retry failure", {
+              regionIndex,
+              totalRegions: expandedRegions.length,
+              expandedBox: region.expandedBox,
+              reason: getRetryReason(error) || "non_retryable",
+              error: error instanceof Error ? error.message : String(error),
+            });
+            continue;
+          }
 
           workingImageBuffer = await compositeExpandedCrop(
             workingImageBuffer,
