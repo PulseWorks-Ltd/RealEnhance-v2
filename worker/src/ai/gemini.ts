@@ -15,6 +15,13 @@ export interface RegionEditArgs {
   editMode?: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
 }
 
+const EDIT_GENERATION_CONFIG = {
+  temperature: 0.60,
+  topP: 0.9,
+  topK: 40,
+  maxOutputTokens: 4096,
+};
+
 export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer> {
   const {
     prompt,
@@ -133,20 +140,34 @@ ${(userPrompt || prompt).trim()}`.trim()
   };
   const genOperation = operationMap[editMode || "Replace"] || "region-replace";
   const genProfile = getGenerationConfig(genOperation, resolvedScene);
+  const isEditMode = !!editMode && normalizedMode !== "reinstate";
+  const generationConfigToUse = isEditMode
+    ? EDIT_GENERATION_CONFIG
+    : genProfile.config;
+
+  focusLog("GEMINI_GENERATION_CONFIG", "[gemini.regionEdit] generation config", {
+    mode: isEditMode ? "edit" : "default",
+    editMode,
+    temperature: generationConfigToUse.temperature,
+    topP: generationConfigToUse.topP,
+    topK: generationConfigToUse.topK,
+    maxOutputTokens: isEditMode ? EDIT_GENERATION_CONFIG.maxOutputTokens : undefined,
+  });
+
   focusLog("GEMINI_REGION_GEN_CONFIG", "[gemini.regionEdit] generation config", {
     editMode,
     operation: genOperation,
     scene: resolvedScene,
     profile: genProfile.profile,
-    temperature: genProfile.config.temperature,
-    topP: genProfile.config.topP,
-    topK: genProfile.config.topK,
+    temperature: generationConfigToUse.temperature,
+    topP: generationConfigToUse.topP,
+    topK: generationConfigToUse.topK,
     rationale: genProfile.rationale,
   });
 
   const { resp } = await runWithImageModelFallback(
     getGeminiClient(),
-    { contents, config: { ...genProfile.config } },
+    { contents, config: { ...generationConfigToUse } },
     "[gemini.regionEdit]",
     { stage: "edit", jobId: jobId || "", imageId: imageId || "", reason: "region-edit", callType: "edit" }
   );
