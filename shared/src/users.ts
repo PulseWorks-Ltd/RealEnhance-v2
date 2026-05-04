@@ -11,7 +11,7 @@ function getInitialCredits(): number {
   const raw = process.env.INITIAL_FREE_CREDITS;
   const parsed = raw !== undefined ? Number(raw) : NaN;
   if (Number.isFinite(parsed) && parsed >= 0) return parsed;
-  return 50;
+  return 3;
 }
 
 // File fallback path (same as old users.json)

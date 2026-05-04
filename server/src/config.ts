@@ -25,7 +25,7 @@ export const GOOGLE_CALLBACK_URL = process.env.GOOGLE_CALLBACK_URL || "";
 // Default free credits granted on first user/org creation
 export const INITIAL_FREE_CREDITS = Number.isFinite(Number(process.env.INITIAL_FREE_CREDITS))
   ? Number(process.env.INITIAL_FREE_CREDITS)
-  : 50;
+  : 3;
 
 export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN
   ? process.env.PUBLIC_ORIGIN.split(",").map(v => v.trim())

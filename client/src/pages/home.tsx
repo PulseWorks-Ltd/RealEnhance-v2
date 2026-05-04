@@ -24,6 +24,11 @@ export default function Home() {
     && user.hasSeenWelcome === false
     && (shouldHighlightSignupCredits || agencyOnboarding?.promoCreditsGranted === true || !user.agencyId);
   const isUnverified = !!user && user.emailVerified !== true;
+  const welcomeMessage = isUnverified
+    ? "Verify your email to unlock your 3 free images."
+    : shouldHighlightSignupCredits
+      ? "Your email is confirmed and your 3 free images are ready."
+      : "Upload your first property photo to get started.";
 
   useEffect(() => {
     let cancelled = false;
@@ -101,11 +106,7 @@ export default function Home() {
             <CardTitle className="text-lg text-emerald-900">Welcome to RealEnhance</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <p className="text-sm text-emerald-900">
-              {shouldHighlightSignupCredits
-                ? "You’ve got 5 free images to try this out."
-                : "Your account includes 20 free image enhancements."}
-            </p>
+            <p className="text-sm text-emerald-900">{welcomeMessage}</p>
             <p className="text-sm text-emerald-800">
               Upload your first property photo to start.
             </p>
@@ -127,7 +128,7 @@ export default function Home() {
             <AlertDescription>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <div>Please verify your email to enable downloads and billing features.</div>
+                  <div>Please verify your email to unlock your 3 free images and enable downloads and billing features.</div>
                   <div className="text-xs text-slate-600 mt-1">
                     Didn&apos;t receive the verification email?
                   </div>

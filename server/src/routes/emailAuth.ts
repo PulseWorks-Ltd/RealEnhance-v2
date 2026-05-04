@@ -31,6 +31,7 @@ export function emailAuthRouter() {
       agencyId: user.agencyId ?? null,
       role: user.role ?? "member",
       hasSeenWelcome: user.hasSeenWelcome === false ? false : true,
+      hasReceivedSignupCredits: user.hasReceivedSignupCredits === true,
     };
   };
 
@@ -125,11 +126,6 @@ export function emailAuthRouter() {
           role: "owner",
           emailVerified: false,
           hasSeenWelcome: false,
-        });
-
-        await grantSignupCreditsOnce({
-          userId: signedUpUser.id,
-          agencyId: agency.agencyId,
         });
       }
 
@@ -424,8 +420,17 @@ export function emailAuthRouter() {
       }
 
       const updated = await updateUser(user.id, { emailVerified: true });
+      if (updated.agencyId) {
+        await grantSignupCreditsOnce({
+          userId: updated.id,
+          agencyId: updated.agencyId,
+        });
+      }
+
+      const refreshedUser = await getUserById(updated.id);
+      const sessionUser = buildSessionUser(refreshedUser || updated);
       if ((req.session as any)?.user?.id === updated.id) {
-        (req.session as any).user = buildSessionUser(updated);
+        (req.session as any).user = sessionUser;
       }
 
       return res.json({ ok: true, verified: true });

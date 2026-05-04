@@ -2,7 +2,7 @@ import { createImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { withTransaction } from "../db/index.js";
 import { getUserById, updateUser } from "./users.js";
 
-export const SIGNUP_BONUS_CREDITS = 5;
+export const SIGNUP_BONUS_CREDITS = 3;
 
 const SIGNUP_BONUS_SOURCE = "signup_bonus";
 const SIGNUP_BONUS_BUNDLE_CODE = "SIGNUP_BONUS";

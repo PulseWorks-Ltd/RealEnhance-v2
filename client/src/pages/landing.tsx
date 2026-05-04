@@ -56,7 +56,7 @@ export default function Landing() {
               </a>
             </div>
             <p className="text-xs text-slate-500 mt-3">
-              No credit card required • Originals always preserved
+              No credit card required • 3 free images after sign-up and email confirmation • Originals always preserved
             </p>
 
             <div className="flex flex-col gap-3 pt-2">
@@ -314,7 +314,7 @@ export default function Landing() {
               </Button>
             </a>
             <p className="text-sm text-slate-500 mt-4">
-               No credit card required · Originals preserved · 5 Free Credits
+              No credit card required · 3 free images after sign-up and email confirmation · Originals preserved
             </p>
           </div>
         </div>

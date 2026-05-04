@@ -213,7 +213,7 @@ router.post("/create", requireAuth, async (req: Request, res: Response) => {
       role: "owner",
     };
 
-    const initialCredits = Number.isFinite(INITIAL_FREE_CREDITS) ? INITIAL_FREE_CREDITS : 50;
+    const initialCredits = Number.isFinite(INITIAL_FREE_CREDITS) ? INITIAL_FREE_CREDITS : 3;
     if ((user.credits ?? 0) < initialCredits) {
       updatePayload.credits = initialCredits;
     }
