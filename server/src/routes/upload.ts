@@ -270,7 +270,7 @@ export function uploadRouter() {
     const fullUser = await getUserById(sessUser.id);
     if (!fullUser) return res.status(401).json({ error: "not_authenticated" });
 
-    if (ENFORCE_UNVERIFIED_PROCESSING_EXPIRY && fullUser.emailVerified !== true) {
+    if (authMode !== "internal" && ENFORCE_UNVERIFIED_PROCESSING_EXPIRY && fullUser.emailVerified !== true) {
       const createdAtMs = new Date(fullUser.createdAt).getTime();
       if (Number.isFinite(createdAtMs) && Date.now() - createdAtMs > UNVERIFIED_PROCESSING_TTL_HOURS * 60 * 60 * 1000) {
         return res.status(403).json({
