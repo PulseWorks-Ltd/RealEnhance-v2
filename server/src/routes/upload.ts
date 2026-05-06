@@ -18,6 +18,20 @@ import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
 
+function timingSafeEqual(a: string, b: string): boolean {
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
+function readBearerToken(req: Request): string | null {
+  const raw = String(req.headers.authorization || "").trim();
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 const UNVERIFIED_PROCESSING_TTL_HOURS = Number(process.env.UNVERIFIED_PROCESSING_TTL_HOURS || 48);
 const ENFORCE_UNVERIFIED_PROCESSING_EXPIRY = String(process.env.ENFORCE_UNVERIFIED_PROCESSING_EXPIRY || "true").toLowerCase() !== "false";
@@ -198,8 +212,60 @@ export function uploadRouter() {
   });
 
   r.post("/upload", maybeUploadMw, async (req: Request, res: Response) => {
-    const sessUser = (req.session as any)?.user;
-    if (!sessUser) return res.status(401).json({ error: "not_authenticated" });
+    let sessUser = (req.session as any)?.user;
+    let authMode: "session" | "internal" = "session";
+    let hasToken = false;
+
+    if (!sessUser) {
+      const expectedKey = String(process.env.INTERNAL_API_KEY || "").trim();
+      const internalUserId = String(process.env.INTERNAL_API_USER_ID || "").trim();
+      const token = readBearerToken(req);
+      hasToken = !!token;
+
+      if (!expectedKey || !token || token.length !== expectedKey.length || !timingSafeEqual(token, expectedKey)) {
+        return res.status(401).json({ error: "unauthorized" });
+      }
+
+      if (!internalUserId) {
+        return res.status(503).json({ error: "internal_api_user_not_configured" });
+      }
+
+      const internalUser = await getUserById(internalUserId as any);
+      if (!internalUser) {
+        return res.status(503).json({ error: "internal_api_user_not_found" });
+      }
+
+      if (internalUser.isSystemUser !== true) {
+        return res.status(503).json({ error: "internal_api_user_not_system_user" });
+      }
+
+      if (!internalUser.agencyId) {
+        return res.status(503).json({ error: "internal_api_agency_not_configured" });
+      }
+
+      (req.session as any).user = {
+        id: internalUser.id,
+        name: internalUser.name ?? null,
+        firstName: internalUser.firstName ?? null,
+        lastName: internalUser.lastName ?? null,
+        displayName: internalUser.name ?? internalUser.email,
+        email: internalUser.email,
+        emailVerified: internalUser.emailVerified === true,
+        credits: internalUser.credits,
+        agencyId: internalUser.agencyId ?? null,
+        role: internalUser.role ?? "member",
+        hasSeenWelcome: internalUser.hasSeenWelcome === false ? false : true,
+        hasReceivedSignupCredits: internalUser.hasReceivedSignupCredits === true,
+      };
+
+      sessUser = (req.session as any).user;
+      authMode = "internal";
+    }
+
+    console.log("upload route auth mode:", authMode, {
+      hasSession: !!sessUser,
+      hasToken,
+    });
 
     const fullUser = await getUserById(sessUser.id);
     if (!fullUser) return res.status(401).json({ error: "not_authenticated" });
