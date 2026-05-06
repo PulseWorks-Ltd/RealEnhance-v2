@@ -327,7 +327,7 @@ export function uploadRouter() {
     let trialSummary: Awaited<ReturnType<typeof getTrialSummary>> | null = null;
     const now = new Date();
 
-    if (fullUser && fullUser.agencyId) {
+    if (authMode !== "internal" && fullUser && fullUser.agencyId) {
       try {
         const agency = await getAgency(fullUser.agencyId);
 
