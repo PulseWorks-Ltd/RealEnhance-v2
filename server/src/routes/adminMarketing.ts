@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import crypto from "node:crypto";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import { pool } from "../db/index.js";
 import { getUserById } from "../services/users.js";
@@ -99,6 +100,70 @@ function requireSiteAdmin(req: Request, res: Response, next: Function) {
   }
 
   next();
+}
+
+function timingSafeEqual(a: string, b: string): boolean {
+  try {
+    return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
+  } catch {
+    return false;
+  }
+}
+
+function readBearerToken(req: Request): string | null {
+  const raw = String(req.headers.authorization || "").trim();
+  const match = raw.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
+async function requireMarketingAdminAccess(req: Request, res: Response, next: Function) {
+  const hasAuthorizationHeader = String(req.headers.authorization || "").trim().length > 0;
+
+  if (hasAuthorizationHeader) {
+    const providedKey = readBearerToken(req);
+    const expectedKey = String(process.env.REALENHANCE_INTERNAL_API_KEY || "").trim();
+
+    if (!providedKey || !expectedKey || !timingSafeEqual(providedKey, expectedKey)) {
+      console.warn("[ADMIN_MARKETING_AUTH] method=api-key result=forbidden");
+      return res.status(403).json({ error: "Invalid API key" });
+    }
+
+    console.log("[ADMIN_MARKETING_AUTH] method=api-key result=allowed");
+    return next();
+  }
+
+  const sessUser = (req.session as any)?.user;
+  if (!sessUser) {
+    console.warn("[ADMIN_MARKETING_AUTH] method=session result=unauthorized");
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  const fullUser = await getUserById(sessUser.id);
+  if (!fullUser) {
+    console.warn("[ADMIN_MARKETING_AUTH] method=session result=unauthorized");
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  (req as any).user = fullUser;
+
+  const user = fullUser as UserRecord;
+  if (!user.email) {
+    console.warn("[ADMIN_MARKETING_AUTH] method=session result=unauthorized");
+    return res.status(401).json({ error: "Authentication required" });
+  }
+
+  const adminEmails = (process.env.REALENHANCE_ADMIN_EMAILS || "")
+    .split(",")
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (!adminEmails.includes(user.email.toLowerCase())) {
+    console.warn("[ADMIN_MARKETING_AUTH] method=session result=forbidden email=%s", user.email.toLowerCase());
+    return res.status(403).json({ error: "Admin access required" });
+  }
+
+  console.log("[ADMIN_MARKETING_AUTH] method=session result=allowed email=%s", user.email.toLowerCase());
+  return next();
 }
 
 function normalizeNullable(value: string | null | undefined): string | null {
@@ -364,7 +429,7 @@ async function getCachedMarketingUsers(): Promise<MarketingUserRecord[]> {
   return data;
 }
 
-router.get("/marketing/users", requireAuth, requireSiteAdmin, async (_req: Request, res: Response) => {
+router.get("/marketing/users", requireMarketingAdminAccess, async (_req: Request, res: Response) => {
   try {
     const users = await getCachedMarketingUsers();
     res.setHeader("Cache-Control", "private, max-age=45");
