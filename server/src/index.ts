@@ -41,6 +41,7 @@ import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import { imageVersionsRouter } from "./routes/imageVersions.js";
 import adminResetRouter from "./routes/adminReset.js";
 import adminDashboardRouter from "./routes/admin.js";
+import adminMarketingRouter from "./routes/adminMarketing.js";
 import trialRouter from "./routes/trial.js";
 import batchSubmitRouter from "./routes/batch-submit.js";
 import { enhanceRouter } from "./routes/enhance.js";
@@ -481,6 +482,10 @@ async function main() {
   app.use("/api", imageVersionsRouter());
   // Admin analysis endpoints
   app.use("/api/admin", adminAnalysisRouter);
+  // Admin marketing identity + usage dataset (canonical path)
+  app.use("/api/admin", adminMarketingRouter);
+  // Internal alias retained for compatibility.
+  app.use("/admin", adminMarketingRouter);
   // Promo trial onboarding
   app.use("/api/trial", trialRouter());
   // Enhancement preflight/resume/cancel (payment continuation flow)
