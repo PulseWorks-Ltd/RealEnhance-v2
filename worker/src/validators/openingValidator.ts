@@ -8,7 +8,7 @@ import {
   type OpeningDiagnosticFinding,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
-import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueType } from "./issueTypes";
+import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue, type ValidationIssueType } from "./issueTypes";
 import { computeOpeningGeometrySignal } from "./signalMetrics";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { AdvisoryObservation } from "./runValidation";
@@ -301,7 +301,55 @@ function inferOpeningIssueType(params: {
   return params.hardFail ? ISSUE_TYPES.OPENING_RELOCATED : ISSUE_TYPES.OPENING_ANOMALY;
 }
 
-function parseOpeningResult(rawText: string): OpeningValidatorResult {
+function mapOpeningTypeToStructuredObject(input?: string): string {
+  if (input === "window") return "window";
+  if (input === "door") return "door";
+  if (input === "closet_door") return "closet_door";
+  return "opening";
+}
+
+function buildOpeningStructuredIssues(params: {
+  issueType: OpeningValidatorResult["issueType"];
+  issueTier: OpeningValidatorResult["issueTier"];
+  confidence: number;
+  reason: string;
+  advisorySignals: string[];
+  objectHint?: string;
+}): StructuredIssue[] {
+  if (params.issueType === ISSUE_TYPES.NONE) return [];
+
+  const tokens = splitIssueTokens(params.reason, params.advisorySignals);
+  const evidence = Array.from(new Set(tokens.filter((token) => token && !token.startsWith("light_anchor_microcheck_analysis"))));
+  const joined = evidence.join("|");
+
+  const action = /(^|_)opening_removed($|_)|light_anchor_opening_removed/.test(joined)
+    ? "removed"
+    : /(^|_)opening_infilled($|_)|light_anchor_opening_infilled/.test(joined)
+      ? "infilled"
+      : /(^|_)opening_sealed($|_)/.test(joined)
+        ? "sealed"
+        : /(^|_)opening_added($|_)/.test(joined)
+          ? "added"
+          : /(^|_)opening_relocated($|_)|opening_relocated_review|light_anchor_opening_relocated/.test(joined)
+            ? "relocated"
+            : /(^|_)opening_resized($|_)|opening_size_reduction_ge|opening_resize_ge_0_30|opening_resized_minor/.test(joined)
+              ? "resized"
+              : /occlusion|door_or_closet_occluded_review|window_occlusion_review/.test(joined)
+                ? "occluded"
+                : "resized";
+
+  return [createStructuredIssue({
+    type: "opening_change",
+    object: mapOpeningTypeToStructuredObject(params.objectHint),
+    action,
+    severity: mapIssueTierToSeverity(params.issueTier),
+    source: "opening_validator",
+    confidence: params.confidence,
+    evidence,
+  })];
+}
+
+export function parseOpeningResult(rawText: string): OpeningValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
   let parsed: any;
@@ -380,6 +428,14 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     hasBandMismatch: false,
   });
   const hardFail = !pass && anyRemoved && confidence >= HARD_FAIL_CONFIDENCE_THRESHOLD && fallbackCoherent;
+  const issueTier = classifyIssueTier(issueType);
+  const structuredIssues = buildOpeningStructuredIssues({
+    issueType,
+    issueTier,
+    confidence,
+    reason,
+    advisorySignals,
+  });
   const comparisonResult = {
     pass,
     issueType,
@@ -396,10 +452,12 @@ function parseOpeningResult(rawText: string): OpeningValidatorResult {
     confidence,
     hardFail,
     issueType,
-    issueTier: classifyIssueTier(issueType),
+    issueTier,
     advisorySignals,
     details,
     explanation: reason,
+    primaryStructuredIssue: structuredIssues[0],
+    structuredIssues,
   };
 }
 
@@ -740,6 +798,7 @@ export async function runOpeningValidator(
           advisorySignals,
         })
       : ISSUE_TYPES.NONE;
+    const issueTier = classifyIssueTier(issueType);
     const findingById = new Map(findings.map((finding) => [finding.id, finding]));
     const comparisonResult = {
       pass: !hardFail,
@@ -778,6 +837,15 @@ export async function runOpeningValidator(
       })),
       explanation,
     };
+    const primaryFinding = findings[0];
+    const structuredIssues = buildOpeningStructuredIssues({
+      issueType,
+      issueTier,
+      confidence: comparisonResult.confidence,
+      reason,
+      advisorySignals,
+      objectHint: primaryFinding?.openingType,
+    });
 
     console.log("[OPENINGS_COMPARISON]", comparisonResult);
     console.log("[SPECIALIST_REVIEW][OPENING]", {
@@ -795,7 +863,7 @@ export async function runOpeningValidator(
       confidence: comparisonResult.confidence,
       hardFail,
       issueType,
-      issueTier: classifyIssueTier(issueType),
+      issueTier,
       advisorySignals,
       explanation,
       findings,
@@ -803,6 +871,8 @@ export async function runOpeningValidator(
       details: comparisonResult.details,
       structuralSignals: deterministic.structuralSignals,
       openingRegions,
+      primaryStructuredIssue: structuredIssues[0],
+      structuredIssues,
     };
   }
 

@@ -1,7 +1,7 @@
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
-import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
+import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type FloorIntegrityValidatorResult = ValidatorOutcome;
@@ -82,7 +82,42 @@ function isIdentityBreakingFloorClassShift(
   return getFloorMaterialGroup(baselineMaterial) !== getFloorMaterialGroup(stagedMaterial);
 }
 
-function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResult {
+function buildFloorStructuredIssues(params: {
+  issueType: FloorIntegrityValidatorResult["issueType"];
+  issueTier: FloorIntegrityValidatorResult["issueTier"];
+  confidence: number;
+  baselineMaterial: NormalizedFloorMaterialClass;
+  stagedMaterial: NormalizedFloorMaterialClass;
+  identityBreakingMaterialShift: boolean;
+  materialChangedExplicit: boolean;
+  materialChangedByCompare: boolean;
+  advisorySignals: string[];
+}): StructuredIssue[] {
+  if (params.issueType === ISSUE_TYPES.NONE) return [];
+
+  const evidence = [
+    `baseline_material:${params.baselineMaterial}`,
+    `staged_material:${params.stagedMaterial}`,
+    ...(params.identityBreakingMaterialShift ? ["floor_identity_breaking_material_shift"] : []),
+    ...(params.materialChangedExplicit ? ["material_changed:explicit"] : []),
+    ...(params.materialChangedByCompare ? ["material_changed:compare"] : []),
+    ...params.advisorySignals.filter((signal) => signal.includes(":") || !/\s/.test(signal)),
+  ];
+
+  return [createStructuredIssue({
+    type: "floor_change",
+    object: "floor_material",
+    action: params.baselineMaterial !== "unknown" && params.stagedMaterial !== "unknown" && params.baselineMaterial !== params.stagedMaterial
+      ? "replaced"
+      : "changed",
+    severity: mapIssueTierToSeverity(params.issueTier),
+    source: "floor_validator",
+    confidence: params.confidence,
+    evidence,
+  })];
+}
+
+export function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
   let parsed: FloorValidatorRawResponse;
@@ -149,6 +184,18 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
     : hardFail || has("floor_changed") || has("floor_integrity") || has("floor")
       ? ISSUE_TYPES.FLOOR_CHANGED
       : ISSUE_TYPES.FLOOR_ANOMALY;
+  const issueTier = classifyIssueTier(issueType);
+  const structuredIssues = buildFloorStructuredIssues({
+    issueType,
+    issueTier,
+    confidence,
+    baselineMaterial,
+    stagedMaterial,
+    identityBreakingMaterialShift,
+    materialChangedExplicit,
+    materialChangedByCompare,
+    advisorySignals,
+  });
 
   console.log("[SPECIALIST_REVIEW][FLOOR]", {
     ok: finalOk,
@@ -169,8 +216,10 @@ function parseFloorIntegrityResult(rawText: string): FloorIntegrityValidatorResu
     hardFail,
     advisory: advisory || undefined,
     issueType,
-    issueTier: classifyIssueTier(issueType),
+    issueTier,
     advisorySignals,
+    primaryStructuredIssue: structuredIssues[0],
+    structuredIssues,
   };
 }
 

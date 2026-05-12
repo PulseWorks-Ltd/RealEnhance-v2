@@ -2,7 +2,7 @@ import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { computeMaterialSignal, computeOpeningGeometrySignal } from "./signalMetrics";
-import { classifyIssueTier, ISSUE_TYPES, normalizeReason, splitIssueTokens } from "./issueTypes";
+import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, normalizeReason, splitIssueTokens, type StructuredIssue } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 const logger = console;
@@ -57,6 +57,48 @@ function classifyFixtureIssueType(reason: string, advisorySignals: string[]): (t
   return ISSUE_TYPES.FIXTURE_ANOMALY;
 }
 
+function buildFixtureStructuredIssues(params: {
+  issueType: FixtureValidatorResult["issueType"];
+  issueTier: FixtureValidatorResult["issueTier"];
+  confidence: number;
+  reason: string;
+  advisorySignals: string[];
+}): StructuredIssue[] {
+  if (params.issueType === ISSUE_TYPES.NONE) return [];
+
+  const tokens = splitIssueTokens(params.reason, params.advisorySignals);
+  const evidence = Array.from(new Set(tokens)).filter(Boolean);
+  const joined = evidence.join("|");
+
+  const object = /(^|_)hvac(_|$)|air_conditioner|ac_unit|split_unit/.test(joined)
+    ? "hvac_unit"
+    : /(^|_)pendant(_|$)/.test(joined)
+      ? "pendant_light"
+      : /(^|_)chandelier(_|$)/.test(joined)
+        ? "chandelier"
+        : /light_fixture|downlight|recessed_light|ceiling_fan/.test(joined)
+          ? "light_fixture"
+          : "fixture";
+
+  const action = /(^|_)(add|added|addition|inserted|introduced|install|installed|installation)(_|$)/.test(joined)
+    ? "added"
+    : /(^|_)(remove|removed|removal|missing)(_|$)/.test(joined)
+      ? "removed"
+      : /(^|_)(replace|replaced|replacement)(_|$)/.test(joined)
+        ? "replaced"
+        : "changed";
+
+  return [createStructuredIssue({
+    type: "fixture_change",
+    object,
+    action,
+    severity: mapIssueTierToSeverity(params.issueTier),
+    source: "fixture_validator",
+    confidence: params.confidence,
+    evidence,
+  })];
+}
+
 export function parseFixtureResult(rawText: string): FixtureValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -80,6 +122,14 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     confidence >= FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD &&
     isHardFailEligibleFixtureMutation(reason, advisorySignals);
   const issueType = parsed.ok ? ISSUE_TYPES.NONE : classifyFixtureIssueType(reason, advisorySignals);
+  const issueTier = classifyIssueTier(issueType);
+  const structuredIssues = buildFixtureStructuredIssues({
+    issueType,
+    issueTier,
+    confidence,
+    reason,
+    advisorySignals,
+  });
 
   console.log("[SPECIALIST_REVIEW][FIXTURE]", {
     ok: parsed.ok,
@@ -95,8 +145,10 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     confidence,
     hardFail,
     issueType,
-    issueTier: classifyIssueTier(issueType),
+    issueTier,
     advisorySignals,
+    primaryStructuredIssue: structuredIssues[0],
+    structuredIssues,
   };
 }
 

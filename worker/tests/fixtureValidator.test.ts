@@ -69,6 +69,25 @@ describe("fixture validator mutation parsing", () => {
     expect(result.issueType).toBe(issueType);
   });
 
+  it("emits structured issue for pendant mutation", () => {
+    const result = parseFixtureResult(JSON.stringify({
+      ok: false,
+      reason: "pendant_light_added",
+      confidence: 1.0,
+    }));
+
+    expect(result.primaryStructuredIssue).toMatchObject({
+      type: "fixture_change",
+      object: "pendant_light",
+      action: "added",
+      severity: "critical",
+      source: "fixture_validator",
+      confidence: 1,
+    });
+    expect(result.structuredIssues).toHaveLength(1);
+    expect(result.primaryStructuredIssue?.evidence).toContain("pendant_light_added");
+  });
+
   it("keeps non-mutation fixture findings advisory", () => {
     const result = parseFixtureResult(JSON.stringify({
       ok: false,

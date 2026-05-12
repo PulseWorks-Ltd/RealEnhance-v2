@@ -1,7 +1,7 @@
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
-import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
+import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import { computeVerticalEdgeDelta, type VerticalEdgeDeltaResult } from "./verticalEdgeDelta";
 import type { StructuralSignal } from "./structuralSignal";
@@ -26,7 +26,50 @@ function hasClearGeometricChange(parsed: any): boolean {
   return boundaryLinesMissing && continuousSurfaceReplacement && noPlausibleVisualExplanation;
 }
 
-function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
+function buildEnvelopeStructuredIssues(params: {
+  issueType: EnvelopeValidatorResult["issueType"];
+  issueTier: EnvelopeValidatorResult["issueTier"];
+  confidence: number;
+  reasonCode?: EnvelopeReasonCode;
+  boundaryLinesMissing: boolean;
+  continuousSurfaceReplacement: boolean;
+  noPlausibleVisualExplanation: boolean;
+  visualAmbiguity: boolean;
+}): StructuredIssue[] {
+  if (params.issueType === ISSUE_TYPES.NONE) return [];
+
+  const object = params.continuousSurfaceReplacement || params.boundaryLinesMissing
+    ? "wall_plane"
+    : params.reasonCode === "envelope_visual_ambiguity"
+      ? "room_envelope"
+      : "wall_plane";
+
+  const action = params.reasonCode === "envelope_visual_ambiguity"
+    ? "uncertain"
+    : params.continuousSurfaceReplacement
+      ? "flattened"
+      : "changed";
+
+  const evidence = [
+    ...(params.reasonCode ? [params.reasonCode] : []),
+    ...(params.boundaryLinesMissing ? ["boundary_lines_missing"] : []),
+    ...(params.continuousSurfaceReplacement ? ["continuous_surface_replacement"] : []),
+    ...(params.noPlausibleVisualExplanation ? ["no_plausible_visual_explanation"] : []),
+    ...(params.visualAmbiguity ? ["visual_ambiguity"] : []),
+  ];
+
+  return [createStructuredIssue({
+    type: "envelope_change",
+    object,
+    action,
+    severity: mapIssueTierToSeverity(params.issueTier),
+    source: "envelope_validator",
+    confidence: params.confidence,
+    evidence,
+  })];
+}
+
+export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
   let parsed: any;
@@ -69,6 +112,17 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
       : has("wall_changed") || has("wall_plane") || has("wall")
         ? ISSUE_TYPES.WALL_CHANGED
         : ISSUE_TYPES.ENVELOPE_ANOMALY;
+  const issueTier = classifyIssueTier(issueType);
+  const structuredIssues = buildEnvelopeStructuredIssues({
+    issueType,
+    issueTier,
+    confidence,
+    reasonCode,
+    boundaryLinesMissing: parsed?.boundaryLinesMissing === true,
+    continuousSurfaceReplacement: parsed?.continuousSurfaceReplacement === true,
+    noPlausibleVisualExplanation: parsed?.noPlausibleVisualExplanation === true,
+    visualAmbiguity: parsed?.visualAmbiguity === true,
+  });
 
   console.log("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
     envelopeDetectedChange,
@@ -86,9 +140,11 @@ function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     confidence,
     hardFail: false,
     issueType,
-    issueTier: classifyIssueTier(issueType),
+    issueTier,
     advisorySignals,
     advisory: envelopeDetectedChange ? true : undefined,
+    primaryStructuredIssue: structuredIssues[0],
+    structuredIssues,
   };
 }
 
