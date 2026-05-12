@@ -19,4 +19,22 @@ describe("structural invariant decision parser", () => {
     expect(result.openingViolationDetected).toBe(false);
     expect(result.fail).toBe(false);
   });
+
+  it("detects underscore-delimited removal reasons", () => {
+    const result = evaluateStructuralInvariantDecision({
+      openings_before: 1,
+      openings_after: 1,
+      removed_openings_count: 0,
+      removed_opening_locations: ["window_removed"],
+      relocation_detected: false,
+      location_mismatch_detected: false,
+      wall_plane_replacement_detected: false,
+      confidence: 0.95,
+      reason: "window_removed",
+    });
+
+    expect(result.openingViolationDetected).toBe(true);
+    expect(result.fail).toBe(true);
+    expect(result.violationType).toBe("window_removed");
+  });
 });

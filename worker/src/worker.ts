@@ -190,6 +190,7 @@ import {
   classifyIssueTier,
   CRITICAL_ISSUES,
   ISSUE_TYPES,
+  normalizeReason,
   type ValidationIssueTier,
   type ValidationIssueType,
 } from "./validators/issueTypes";
@@ -11620,9 +11621,9 @@ All openings must remain identical in position and size to the original image.`;
       }
 
       const isTargetCriticalFixtureChange = (signal: SpecialistIssueSignal): boolean => {
-        const detail = [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])]
-          .join(" ")
-          .toLowerCase();
+        const detail = normalizeReason(
+          [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])].join(" ")
+        );
 
         const hasTargetFixture = /\b(hvac|air[\s_-]?conditioner|a\/c|ac\s+unit|split[\s_-]?unit|pendant|chandelier)\b/.test(detail);
         const hasMutationSignal = /\b(add(ed|ition)?|remove(d|al)?|replace(d|ment)?)\b/.test(detail);

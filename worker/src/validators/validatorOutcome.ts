@@ -1,4 +1,4 @@
-import type { ValidationIssueTier, ValidationIssueType } from "./issueTypes";
+import type { StructuredIssue, ValidationIssueTier, ValidationIssueType } from "./issueTypes";
 import type { StructuralSignal } from "./structuralSignal";
 
 export type ValidatorOutcome = {
@@ -10,6 +10,8 @@ export type ValidatorOutcome = {
   issueType: ValidationIssueType;
   issueTier: ValidationIssueTier;
   advisorySignals: string[];
+  primaryStructuredIssue?: StructuredIssue;
+  structuredIssues?: StructuredIssue[];
   structuralSignals?: StructuralSignal[];
   maskedDriftRegions?: Array<{
     bbox: [number, number, number, number];

@@ -1,3 +1,5 @@
+import { normalizeReason } from "./issueTypes";
+
 export type StructuralInvariantViolationType =
   | "opening_removed"
   | "opening_infilled"
@@ -29,9 +31,9 @@ export function evaluateStructuralInvariantDecision(parsed: any): StructuralInva
       : 0;
 
   const countDecrease = openingsAfter < openingsBefore;
-  const reasonText = String(parsed.reason || "").toLowerCase();
+  const reasonText = normalizeReason(String(parsed.reason || ""));
   const rawViolationType = typeof parsed.violationType === "string"
-    ? parsed.violationType.toLowerCase()
+    ? normalizeReason(parsed.violationType)
     : "";
   const negationPatterns = [
     "no openings were",
@@ -49,7 +51,7 @@ export function evaluateStructuralInvariantDecision(parsed: any): StructuralInva
   const hasNegation = negationPatterns.some((pattern) => reasonText.includes(pattern));
   const shouldUseReasonKeywords = !hasNegation;
   const removedLocations = Array.isArray(parsed.removed_opening_locations)
-    ? parsed.removed_opening_locations.map((value: any) => String(value || "").toLowerCase()).join(" ")
+    ? parsed.removed_opening_locations.map((value: any) => normalizeReason(String(value || ""))).join(" ")
     : "";
 
   const structuredOpeningRemovedSignal =

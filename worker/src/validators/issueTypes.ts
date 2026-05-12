@@ -27,6 +27,32 @@ export const ISSUE_TYPES = {
 export type ValidationIssueType = (typeof ISSUE_TYPES)[keyof typeof ISSUE_TYPES];
 export type ValidationIssueTier = "none" | "advisory" | "review" | "critical";
 
+export type StructuredIssueType =
+  | "opening_change"
+  | "fixture_change"
+  | "floor_change"
+  | "envelope_change"
+  | "camera_change"
+  | "built_in_change"
+  | "unknown";
+
+export type StructuredIssueSeverity = "none" | "advisory" | "review" | "critical";
+
+export type StructuredIssue = {
+  type: StructuredIssueType;
+  object: string;
+  action: string;
+  severity: StructuredIssueSeverity;
+  source: string;
+  // Issue-level confidence only. This is preserved for future arbitration and
+  // routing, but Stage 0 does not make any runtime decisions from it.
+  confidence?: number;
+  // Evidence is provenance only: machine-readable support markers such as
+  // tokens, claim IDs, or raw validator reason fragments. It is not the
+  // primary semantic contract and must not become fallback prose summaries.
+  evidence?: string[];
+};
+
 export const CRITICAL_ISSUES = new Set<ValidationIssueType>([
   ISSUE_TYPES.OPENING_REMOVED,
   ISSUE_TYPES.OPENING_INFILLED,
@@ -59,11 +85,51 @@ export const ADVISORY_ISSUES = new Set<ValidationIssueType>([
   ISSUE_TYPES.NONE,
 ]);
 
+export function normalizeReason(reason: string): string {
+  return String(reason || "")
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function classifyIssueTier(issueType: ValidationIssueType): ValidationIssueTier {
   if (CRITICAL_ISSUES.has(issueType)) return "critical";
   if (REVIEW_ISSUES.has(issueType)) return "review";
   if (ADVISORY_ISSUES.has(issueType)) return "advisory";
   return "review";
+}
+
+export function mapIssueTierToSeverity(issueTier: ValidationIssueTier): StructuredIssueSeverity {
+  switch (issueTier) {
+    case "none":
+      return "none";
+    case "advisory":
+      return "advisory";
+    case "review":
+      return "review";
+    case "critical":
+      return "critical";
+    default:
+      return "review";
+  }
+}
+
+export function createStructuredIssue(issue: StructuredIssue): StructuredIssue {
+  return {
+    ...issue,
+    evidence: Array.isArray(issue.evidence) ? issue.evidence.filter(Boolean) : undefined,
+  };
+}
+
+export function isStructuredIssue(value: unknown): value is StructuredIssue {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<StructuredIssue>;
+  return typeof candidate.type === "string"
+    && typeof candidate.object === "string"
+    && typeof candidate.action === "string"
+    && typeof candidate.severity === "string"
+    && typeof candidate.source === "string";
 }
 
 function normalizeToken(value: string): string {
@@ -77,7 +143,7 @@ function normalizeToken(value: string): string {
 
 export function splitIssueTokens(reason?: string, advisorySignals?: string[]): string[] {
   const splitTokens = (value: string): string[] =>
-    String(value || "")
+    normalizeReason(value)
       .split(/[|,;]/g)
       .map((token) => normalizeToken(token))
       .filter(Boolean);

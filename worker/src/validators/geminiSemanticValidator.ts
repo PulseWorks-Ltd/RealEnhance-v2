@@ -13,6 +13,7 @@ import {
   hasStage1BStructuralSignal,
   isStage1BMinorReconstructionSignal,
 } from "./stageAwareConfig";
+import { normalizeReason } from "./issueTypes";
 import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
 import { buildStructuralClaimBlock, parseStructuralClaims } from "./structuralSignal";
 import type { StructuralSignal } from "./structuralSignal";
@@ -459,7 +460,7 @@ function bboxToMetrics(bbox: BBox) {
 }
 
 function hasOpeningStateChangeSignal(reasons: string[]): boolean {
-  const reasonText = reasons.join(" ").toLowerCase();
+  const reasonText = normalizeReason(reasons.join(" "));
   return [
     "opening sealed",
     "sealed opening",
@@ -3153,7 +3154,7 @@ export async function runGeminiSemanticValidator(opts: {
       confidence: parsed.confidence,
     });
 
-    const reasonText = (parsed.reasons || []).join(" ").toLowerCase();
+    const reasonText = normalizeReason((parsed.reasons || []).join(" "));
     const boundaryAdjacentFurnitureCue = [
       "window frame",
       "sliding door",

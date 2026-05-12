@@ -31,7 +31,7 @@ import { buildValidationBuffers, type ValidationBuffers } from "./validationBuff
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
-import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
+import { classifyIssueTier, ISSUE_TYPES, normalizeReason, splitIssueTokens, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
 import {
   LOCAL_VALIDATOR_TIER,
   LocalValidatorTier,
@@ -413,13 +413,13 @@ function buildSpecialistObservationHints(signals?: string[]): string[] {
   const hints = new Set<string>();
 
   for (const raw of signals) {
-    const value = String(raw || "").trim().toLowerCase();
+    const value = normalizeReason(String(raw || ""));
     if (!value) continue;
 
     const domain = value.includes(":") ? value.split(":", 1)[0] : "";
     const normalized = value
       .replace(/[0-9]+(\.[0-9]+)?/g, "")
-      .replace(/[_|:]+/g, " ")
+      .replace(/[|:]+/g, " ")
       .replace(/\b(confidence|hardfail|hard fail|fail|failed|error|invalid|retry|threshold|score|status)\b/g, "")
       .replace(/\s+/g, " ")
       .trim();

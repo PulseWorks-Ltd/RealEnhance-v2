@@ -2,30 +2,62 @@ import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { computeMaterialSignal, computeOpeningGeometrySignal } from "./signalMetrics";
-import { classifyIssueTier, ISSUE_TYPES, splitIssueTokens } from "./issueTypes";
+import { classifyIssueTier, ISSUE_TYPES, normalizeReason, splitIssueTokens } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 const logger = console;
 const FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
+const FIXTURE_MUTATION_REGEX = /\b(add|added|addition|inserted|introduced|install|installed|installation|replace|replaced|replacement|remove|removed|removal|missing)\b/;
+const HVAC_TARGET_REGEX = /\b(hvac|air conditioner|ac unit|split unit|fixed ac unit|wall mounted split unit)\b/;
+const FIXTURE_TARGET_REGEX = /\b(pendant|chandelier|ceiling fan|recessed light|recessed lights|downlight|downlights|ceiling vent|ceiling vents|smoke detector|smoke detectors|light fixture|light fixtures)\b/;
 
 export type FixtureValidatorResult = ValidatorOutcome;
 
-function isPendantOrChandelierAdditionRemoval(reason: string, advisorySignals: string[]): boolean {
+function buildNormalizedSignals(reason: string, advisorySignals: string[]): string[] {
   const signals = [reason, ...advisorySignals]
-    .map((value) => String(value || "").toLowerCase())
+    .map((value) => normalizeReason(String(value || "")))
     .filter(Boolean);
 
-  const mentionsTargetFixture = signals.some((value) =>
-    /pendant|chandelier/.test(value)
-  );
-  if (!mentionsTargetFixture) return false;
+  return signals;
+}
+
+function hasMutationSignal(value: string): boolean {
+  return FIXTURE_MUTATION_REGEX.test(normalizeReason(value));
+}
+
+function isHardFailEligibleFixtureMutation(reason: string, advisorySignals: string[]): boolean {
+  const signals = buildNormalizedSignals(reason, advisorySignals);
 
   return signals.some((value) =>
-    /\b(add|added|addition|inserted|introduced|remove|removed|removal|missing)\b/.test(value)
+    hasMutationSignal(value) && (FIXTURE_TARGET_REGEX.test(value) || HVAC_TARGET_REGEX.test(value))
   );
 }
 
-function parseFixtureResult(rawText: string): FixtureValidatorResult {
+function classifyFixtureIssueType(reason: string, advisorySignals: string[]): (typeof ISSUE_TYPES)[keyof typeof ISSUE_TYPES] {
+  const signals = buildNormalizedSignals(reason, advisorySignals);
+  const tokens = splitIssueTokens(reason, advisorySignals);
+  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
+
+  const hasHvacMutation = signals.some((value) => HVAC_TARGET_REGEX.test(value) && hasMutationSignal(value));
+  if (has("hvac_changed") || hasHvacMutation) {
+    return ISSUE_TYPES.HVAC_CHANGED;
+  }
+
+  const hasFixtureMutation = signals.some((value) => FIXTURE_TARGET_REGEX.test(value) && hasMutationSignal(value));
+  if (
+    has("fixture_changed") ||
+    hasFixtureMutation ||
+    has("ceiling") ||
+    has("light") ||
+    has("downlight")
+  ) {
+    return ISSUE_TYPES.FIXTURE_CHANGED;
+  }
+
+  return ISSUE_TYPES.FIXTURE_ANOMALY;
+}
+
+export function parseFixtureResult(rawText: string): FixtureValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
   let parsed: any;
@@ -44,16 +76,10 @@ function parseFixtureResult(rawText: string): FixtureValidatorResult {
     : parsed.ok ? "fixtures_preserved" : "fixtures_changed";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
   const advisorySignals = parsed.ok ? [] : [reason];
-  const tokens = splitIssueTokens(reason, advisorySignals);
-  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
   const hardFail = !parsed.ok &&
     confidence >= FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD &&
-    isPendantOrChandelierAdditionRemoval(reason, advisorySignals);
-  const issueType = parsed.ok
-    ? ISSUE_TYPES.NONE
-    : has("fixture_changed") || has("ceiling") || has("light") || has("downlight")
-      ? ISSUE_TYPES.FIXTURE_CHANGED
-      : ISSUE_TYPES.FIXTURE_ANOMALY;
+    isHardFailEligibleFixtureMutation(reason, advisorySignals);
+  const issueType = parsed.ok ? ISSUE_TYPES.NONE : classifyFixtureIssueType(reason, advisorySignals);
 
   console.log("[SPECIALIST_REVIEW][FIXTURE]", {
     ok: parsed.ok,
