@@ -223,6 +223,7 @@ function buildAdjudicatorPrompt(
   evidence?: ValidationEvidence,
   riskLevel?: RiskLevel,
   specialistAdvisoryObservations?: string[],
+  specialistSemanticContext?: string[],
   structuralClaimBlock?: string,
 ): string {
   const buildNeutralEvidenceBlock = (input?: ValidationEvidence): string => {
@@ -303,11 +304,12 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 
   // ── Determine if question-driven adjudication applies ──
   const hasAdvisoryQuestions = Array.isArray(specialistAdvisoryObservations) && specialistAdvisoryObservations.length > 0;
+  const hasSemanticContext = Array.isArray(specialistSemanticContext) && specialistSemanticContext.length > 0;
   const hasClaimBlock = !!structuralClaimBlock;
   const hasAnyQuestions = hasAdvisoryQuestions || hasClaimBlock;
 
   // ── No questions: original flow (base prompt + focus rules + evidence) ──
-  if (!hasAnyQuestions) {
+  if (!hasAnyQuestions && !hasSemanticContext) {
     if (!STRUCTURAL_SIGNALS_ACTIVE) {
       return `${basePrompt}${structuralFocusRules}`;
     }
@@ -318,7 +320,10 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
     const riskContext = riskLevel
       ? `\n\nRISK CONTEXT: ${riskLevel} — structural analysis has flagged potential issues.`
       : "";
-    return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${stage1ABlock}${riskContext}`;
+    const semanticContextSection = hasSemanticContext
+      ? `\n\nNON-BINDING SPECIALIST SEMANTIC CONTEXT:\n${specialistSemanticContext!.map((line) => `- ${line}`).join("\n")}`
+      : "";
+    return `${basePrompt}${structuralFocusRules}${neutralEvidenceBlock}${stage1ABlock}${riskContext}${semanticContextSection}`;
   }
 
   // ── Strict adjudicator protocol (question-driven) ──
@@ -338,6 +343,10 @@ NON-STRUCTURAL DIFFERENCE FILTER (MANDATORY):
 
   const advisorySection = advisoryQuestionLines.length > 0
     ? `\n\nAdvisory observation questions:\n${advisoryQuestionLines.join("\n")}\n\nFor each advisory question, include an entry in the "results" array:\n[{ "question": <number>, "answer": "CONFIRMED"|"NOT_PRESENT"|"UNCERTAIN", "reasoning": "<brief>" }]`
+    : "";
+
+  const semanticContextSection = hasSemanticContext
+    ? `\n\nNon-binding specialist semantic context:\n${specialistSemanticContext!.map((line) => `- ${line}`).join("\n")}`
     : "";
 
   const claimSection = structuralClaimBlock ? `\n${structuralClaimBlock}` : "";
@@ -375,7 +384,7 @@ Do NOT assume a change exists — verify independently.
 If a structural element is not clearly visible and intact, do NOT answer NOT_PRESENT.
 If a region is partially hidden, only conclude occlusion if you can see clear visual evidence
 the structure is still present behind the obstruction. "Plausible occlusion" without visible
-evidence is not sufficient to dismiss a concern.${advisorySection}${claimSection}
+evidence is not sufficient to dismiss a concern.${advisorySection}${semanticContextSection}${claimSection}
 
 STEP 3 — DECISION RULES
 Apply strictly:
@@ -383,6 +392,7 @@ Apply strictly:
 - ANY answer is UNCERTAIN (none CONFIRMED) → finalDecision = "FAIL"
 - ALL answers are NOT_PRESENT → finalDecision = "PASS"
 - If you independently detect a Tier 1/2 violation not covered by the questions → finalDecision = "FAIL"
+- Treat specialist semantic context as non-binding corroboration, not as proof.
 hardFail must equal (finalDecision === "FAIL").
 
 STEP 4 — RESPONSE FORMAT (overrides any earlier output instruction)
@@ -2936,6 +2946,7 @@ export async function runGeminiSemanticValidator(opts: {
   evidence?: ValidationEvidence;
   riskLevel?: RiskLevel;
   specialistAdvisoryObservations?: string[];
+  specialistSemanticContext?: string[];
   structuralSignals?: import("./structuralSignal").StructuralSignal[];
   deterministicStructureJson?: boolean;
 }): Promise<GeminiSemanticVerdict> {
@@ -2966,6 +2977,9 @@ export async function runGeminiSemanticValidator(opts: {
   const riskForGemini = STRUCTURAL_SIGNALS_ACTIVE ? opts.riskLevel : undefined;
   const specialistAdvisoryObservations = Array.isArray(opts.specialistAdvisoryObservations)
     ? opts.specialistAdvisoryObservations.map((item) => String(item || "").trim()).filter(Boolean)
+    : [];
+  const specialistSemanticContext = Array.isArray(opts.specialistSemanticContext)
+    ? opts.specialistSemanticContext.map((item) => String(item || "").trim()).filter(Boolean)
     : [];
   if (!STRUCTURAL_SIGNALS_ACTIVE) {
     debugInfo("[STRUCTURAL_SIGNALS_LOG_ONLY] Gemini prompt evidence injection disabled", {
@@ -3001,6 +3015,7 @@ export async function runGeminiSemanticValidator(opts: {
     evidenceForGemini,
     riskForGemini,
     specialistAdvisoryObservations,
+    specialistSemanticContext,
     structuralClaimBlockText || undefined,
   );
   if (opts.stage === "2") {
@@ -3009,11 +3024,19 @@ export async function runGeminiSemanticValidator(opts: {
         .map((item) => `- ${item}`)
         .join("\n")}`
       : "";
+    const promptSemanticContextSection = specialistSemanticContext.length > 0
+      ? `Specialist Semantic Context:\n${specialistSemanticContext
+        .map((item) => `- ${item}`)
+        .join("\n")}`
+      : "";
     debugInfo("[STAGE2_ADVISORY_INJECTION]", {
       advisoryCount: specialistAdvisoryObservations.length,
+      semanticContextCount: specialistSemanticContext.length,
       advisories: specialistAdvisoryObservations,
+      semanticContext: specialistSemanticContext,
       promptSectionIncluded: specialistAdvisoryObservations.length > 0,
       promptAdvisorySection,
+      promptSemanticContextSection,
     });
   }
   const prompt = sanitizePromptForIouLeak(rawPrompt);

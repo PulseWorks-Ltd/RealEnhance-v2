@@ -191,6 +191,7 @@ import {
   CRITICAL_ISSUES,
   ISSUE_TYPES,
   normalizeReason,
+  type StructuredIssue,
   type ValidationIssueTier,
   type ValidationIssueType,
 } from "./validators/issueTypes";
@@ -10515,6 +10516,10 @@ All openings must remain identical in position and size to the original image.`;
         confidence: number;
         issueType: ValidationIssueType;
         issueTier: ValidationIssueTier;
+        semanticIssueType?: ValidationIssueType;
+        semanticIssueTier?: ValidationIssueTier;
+        primaryStructuredIssue?: StructuredIssue;
+        structuredIssues?: StructuredIssue[];
         severity?: "low" | "medium" | "high";
       };
 
@@ -10529,10 +10534,16 @@ All openings must remain identical in position and size to the original image.`;
         advisorySignals?: string[];
         issueType?: ValidationIssueType;
         issueTier?: ValidationIssueTier;
+        primaryStructuredIssue?: StructuredIssue;
+        structuredIssues?: StructuredIssue[];
       }): SpecialistDecisionResult => {
         // SINGLE-AUTHORITY: Only explicit hardFail determines specialist failure.
         // status="fail" with hardFail=false is advisory — passed to Unified for adjudication.
         const pass = params.hardFail !== true;
+        const preserveOpeningSemantics =
+          params.validator === "opening" &&
+          !!params.issueType &&
+          params.issueType !== ISSUE_TYPES.NONE;
         const rawConfidence = Number(params.confidence);
         const confidence = Number.isFinite(rawConfidence)
           ? clamp01(rawConfidence)
@@ -10541,12 +10552,16 @@ All openings must remain identical in position and size to the original image.`;
             : params.hardFail === true
               ? 0.9
               : 0.6;
-        const issueType: ValidationIssueType = pass
-          ? ISSUE_TYPES.NONE
-          : (params.issueType || ISSUE_TYPES.UNIFIED_FAILURE);
-        const issueTier: ValidationIssueTier = pass
-          ? "none"
-          : (params.issueTier || classifyIssueTier(issueType));
+        const issueType: ValidationIssueType = preserveOpeningSemantics
+          ? (params.issueType || ISSUE_TYPES.UNIFIED_FAILURE)
+          : pass
+            ? ISSUE_TYPES.NONE
+            : (params.issueType || ISSUE_TYPES.UNIFIED_FAILURE);
+        const issueTier: ValidationIssueTier = preserveOpeningSemantics
+          ? (params.issueTier || classifyIssueTier(issueType))
+          : pass
+            ? "none"
+            : (params.issueTier || classifyIssueTier(issueType));
         const severity: "low" | "medium" | "high" | undefined = pass
           ? undefined
           : confidence >= HIGH_CONFIDENCE_THRESHOLD
@@ -10561,6 +10576,12 @@ All openings must remain identical in position and size to the original image.`;
           confidence,
           issueType,
           issueTier,
+          semanticIssueType: preserveOpeningSemantics ? issueType : undefined,
+          semanticIssueTier: preserveOpeningSemantics ? issueTier : undefined,
+          primaryStructuredIssue: preserveOpeningSemantics ? params.primaryStructuredIssue : undefined,
+          structuredIssues: preserveOpeningSemantics && Array.isArray(params.structuredIssues)
+            ? params.structuredIssues
+            : undefined,
           severity,
         };
       };
@@ -10746,6 +10767,7 @@ All openings must remain identical in position and size to the original image.`;
       const specialistAdvisorySignals: string[] = [];
       const collectedStructuralSignals: StructuralSignal[] = [];
       const specialistAdvisoryObservations: AdvisoryObservation[] = [];
+      const specialistStructuredIssues: StructuredIssue[] = [];
       let openingAdvisoryObservations: AdvisoryObservation[] = [];
       let openingSignatureSignalDetected = false;
       let openingStructuralSignal: OpeningStructuralSignal | undefined;
@@ -10787,11 +10809,15 @@ All openings must remain identical in position and size to the original image.`;
       type SpecialistIssueSignal = {
         validator: Stage2SignalValidator;
         issueType?: string;
+        semanticIssueType?: string;
+        semanticIssueTier?: string;
         hardFail?: boolean;
         reason?: string;
         confidence?: number;
         subtype?: string;
         advisorySignals?: string[];
+        primaryStructuredIssue?: StructuredIssue;
+        structuredIssues?: StructuredIssue[];
       };
 
       type StructuralClass =
@@ -10861,16 +10887,22 @@ All openings must remain identical in position and size to the original image.`;
           confidence?: number;
           advisorySignals?: string[];
           subtype?: string;
+          primaryStructuredIssue?: StructuredIssue;
+          structuredIssues?: StructuredIssue[];
         }
       ) => {
         specialistIssueSignals.push({
           validator,
           issueType: result.issueType,
+          semanticIssueType: result.semanticIssueType,
+          semanticIssueTier: result.semanticIssueTier,
           hardFail: result.hardFail,
           reason: raw.reason,
           confidence: Number.isFinite(Number(raw.confidence)) ? Number(raw.confidence) : undefined,
           subtype: raw.subtype,
           advisorySignals: Array.isArray(raw.advisorySignals) ? raw.advisorySignals : undefined,
+          primaryStructuredIssue: raw.primaryStructuredIssue,
+          structuredIssues: Array.isArray(raw.structuredIssues) ? raw.structuredIssues : undefined,
         });
       };
 
@@ -10898,6 +10930,8 @@ All openings must remain identical in position and size to the original image.`;
           advisorySignals: opRes.advisorySignals,
           issueType: opRes.issueType,
           issueTier: opRes.issueTier,
+          primaryStructuredIssue: opRes.primaryStructuredIssue,
+          structuredIssues: opRes.structuredIssues,
         });
         nLog("[SPECIALIST_CLASSIFICATION]", {
           jobId: payload.jobId,
@@ -10914,7 +10948,12 @@ All openings must remain identical in position and size to the original image.`;
           confidence: opRes.confidence,
           advisorySignals: opRes.advisorySignals,
           subtype: (opRes as any).subtype,
+          primaryStructuredIssue: opRes.primaryStructuredIssue,
+          structuredIssues: opRes.structuredIssues,
         });
+        if (Array.isArray(specialistResults.opening.structuredIssues) && specialistResults.opening.structuredIssues.length > 0) {
+          specialistStructuredIssues.push(...specialistResults.opening.structuredIssues);
+        }
         appendAdvisories("openings", opRes.advisorySignals || []);
         openingAdvisoryObservations = Array.isArray(opRes.advisoryObservations)
           ? opRes.advisoryObservations
@@ -10954,7 +10993,12 @@ All openings must remain identical in position and size to the original image.`;
           });
         } else {
           openingPass = true;
-          specialistSignals.openings = { pass: true, reason: "none" };
+          specialistSignals.openings = {
+            pass: true,
+            reason: specialistResults.opening.issueType !== ISSUE_TYPES.NONE
+              ? (opRes.reason || specialistResults.opening.issueType)
+              : "none",
+          };
           if (opRes.status === "fail") {
             nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] openings reported fail without hardFail", {
               jobId: payload.jobId,
@@ -10964,6 +11008,18 @@ All openings must remain identical in position and size to the original image.`;
               reason: opRes.reason || "opening_status_fail_non_blocking",
               confidence: opRes.confidence,
               action: "continue_to_unified",
+            });
+          }
+          if (specialistResults.opening.issueType !== ISSUE_TYPES.NONE) {
+            nLog("[OPENING_SEMANTIC_AUTHORITY_PRESERVED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              hardFail: specialistResults.opening.hardFail,
+              issueType: specialistResults.opening.issueType,
+              issueTier: specialistResults.opening.issueTier,
+              structuredIssueCount: specialistResults.opening.structuredIssues?.length ?? 0,
+              action: "preserve_semantic_authority_continue_unified",
             });
           }
         }
@@ -11488,6 +11544,23 @@ All openings must remain identical in position and size to the original image.`;
         }
 
         specialistAdvisoryObservations.push(...specialistAdvisoryObservationsBatch);
+
+        if (specialistStructuredIssues.length > 0) {
+          nLog("[OPENING_STRUCTURED_ISSUES_PROPAGATED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            count: specialistStructuredIssues.length,
+            issues: specialistStructuredIssues.map((issue) => ({
+              type: issue.type,
+              object: issue.object,
+              action: issue.action,
+              severity: issue.severity,
+              confidence: issue.confidence,
+              evidence: issue.evidence,
+            })),
+          });
+        }
 
         if (specialistAdvisoryObservations.length > 0) {
           nLog("[STAGE2_SPATIAL_OBSERVATIONS]", {
@@ -12014,6 +12087,7 @@ All openings must remain identical in position and size to the original image.`;
         geminiPolicy: stage2GeminiPolicy,
         specialistAdvisorySignals,
         specialistAdvisoryObservations,
+        specialistStructuredIssues,
         structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
       });
 

@@ -31,7 +31,7 @@ import { buildValidationBuffers, type ValidationBuffers } from "./validationBuff
 import { runAnchorRegionValidators } from "./anchorRegionValidators";
 import { createEmptyEvidence, classifyRisk, type ValidationEvidence, type RiskLevel, type RiskClassification } from "./validationEvidence";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
-import { classifyIssueTier, ISSUE_TYPES, normalizeReason, splitIssueTokens, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
+import { classifyIssueTier, ISSUE_TYPES, normalizeReason, splitIssueTokens, type StructuredIssue, type ValidationIssueTier, type ValidationIssueType } from "./issueTypes";
 import {
   LOCAL_VALIDATOR_TIER,
   LocalValidatorTier,
@@ -358,6 +358,8 @@ export interface UnifiedValidationParams {
   specialistAdvisorySignals?: string[];
   /** Structured spatial observations from specialists for Investigation Task prompting */
   specialistAdvisoryObservations?: AdvisoryObservation[];
+  /** Structured semantic issues preserved from specialists for non-binding Stage 2 context. */
+  specialistStructuredIssues?: StructuredIssue[];
   /** Deduplicated structural signals for per-claim Gemini adjudication (Step 2). */
   structuralSignals?: import("./structuralSignal").StructuralSignal[];
 }
@@ -450,6 +452,28 @@ function buildSpecialistObservationHints(signals?: string[]): string[] {
   return Array.from(hints).slice(0, 6);
 }
 
+function buildStructuredIssueContext(issues?: StructuredIssue[]): string[] {
+  if (!Array.isArray(issues) || issues.length === 0) return [];
+
+  const hints = new Set<string>();
+
+  for (const issue of issues) {
+    if (!issue || issue.type !== "opening_change") continue;
+    const evidence = Array.isArray(issue.evidence) ? issue.evidence.filter(Boolean).slice(0, 5) : [];
+    const confidenceText = Number.isFinite(issue.confidence)
+      ? ` Confidence: ${Number(issue.confidence).toFixed(3)}.`
+      : "";
+    const evidenceText = evidence.length > 0
+      ? ` Evidence: ${evidence.join(", ")}.`
+      : "";
+    hints.add(
+      `Possible ${issue.object} ${issue.action} detected by opening specialist. Severity=${issue.severity}.${confidenceText}${evidenceText} This context is non-binding and must be visually verified.`
+    );
+  }
+
+  return Array.from(hints).slice(0, 3);
+}
+
 /**
  * Soft Geometry Detection Helper
  *
@@ -521,6 +545,7 @@ export async function runUnifiedValidation(
     geminiPolicy = "always",
     specialistAdvisorySignals,
     specialistAdvisoryObservations,
+    specialistStructuredIssues,
     structuralSignals,
   } = params;
 
@@ -1491,7 +1516,10 @@ export async function runUnifiedValidation(
         : stage2SpecialistAdvisoriesEnabled
           ? buildSpecialistObservationHints(specialistAdvisorySignals)
           : [];
-      const consensusDerivedWarnings = specialistObservationHints.length;
+      const specialistSemanticContext = stage2SpecialistAdvisoriesEnabled
+        ? buildStructuredIssueContext(specialistStructuredIssues)
+        : [];
+      const consensusDerivedWarnings = specialistObservationHints.length + specialistSemanticContext.length;
       if (!STRUCTURAL_SIGNALS_ACTIVE) {
         nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
           mode: STRUCTURAL_SIGNALS_MODE,
@@ -1506,10 +1534,12 @@ export async function runUnifiedValidation(
         nLog("[STAGE2_ADVISORY_INJECTION]", {
           enabled: stage2SpecialistAdvisoriesEnabled,
           advisoryCount: specialistObservationHints.length,
+          semanticContextCount: specialistSemanticContext.length,
           sourceSpecialistSignals: Array.isArray(specialistAdvisorySignals)
             ? specialistAdvisorySignals
             : [],
           advisories: specialistObservationHints,
+          semanticContext: specialistSemanticContext,
         });
       }
       // IMPORTANT:
@@ -1529,6 +1559,7 @@ export async function runUnifiedValidation(
         validationMode,
         stage1BValidationMode,
         specialistAdvisoryObservations: specialistObservationHints,
+        specialistSemanticContext,
         structuralSignals: structuralSignals as import("./structuralSignal").StructuralSignal[] | undefined,
       }, consensusDerivedWarnings);
       const geminiResult = geminiConsensus.verdict;

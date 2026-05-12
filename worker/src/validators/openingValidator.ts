@@ -55,10 +55,117 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
+type OpeningSignalCoherenceAnalysis = {
+  coherent: boolean;
+  primaryDestructiveStates: string[];
+  supportiveModifiers: string[];
+  contextualUncertainty: string[];
+  contradictions: string[];
+};
+
+function uniqueTokens(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}
+
+function hasAnyToken(tokens: string[], candidates: string[]): boolean {
+  return candidates.some((candidate) => tokens.includes(candidate));
+}
+
+export function analyzeOpeningSignalCoherence(params: {
+  issueType: string;
+  allIssueTypes: string[];
+  hasResize: boolean;
+  hasOcclusion: boolean;
+  hasBandMismatch: boolean;
+}): OpeningSignalCoherenceAnalysis {
+  const tokens = uniqueTokens(params.allIssueTypes.map((token) => String(token || "").trim().toLowerCase()));
+  const primaryDestructiveStates = uniqueTokens(tokens.filter((token) =>
+    token === "opening_removed" ||
+    token === "opening_infilled" ||
+    token === "opening_sealed" ||
+    token === "opening_type_changed" ||
+    token === "opening_class_mismatch" ||
+    token === "light_anchor_opening_removed" ||
+    token === "light_anchor_opening_infilled"
+  ));
+
+  if (params.issueType && params.issueType !== ISSUE_TYPES.NONE) {
+    if (
+      params.issueType === ISSUE_TYPES.OPENING_REMOVED ||
+      params.issueType === ISSUE_TYPES.OPENING_INFILLED ||
+      params.issueType === ISSUE_TYPES.OPENING_SEALED ||
+      params.issueType === ISSUE_TYPES.OPENING_ANOMALY
+    ) {
+      primaryDestructiveStates.push(params.issueType);
+    }
+  }
+
+  const supportiveModifiers = uniqueTokens([
+    ...(params.hasResize ? ["opening_resized"] : []),
+    ...(params.hasBandMismatch ? ["opening_band_mismatch"] : []),
+    ...tokens.filter((token) =>
+      token === "opening_resized" ||
+      token === "opening_resized_major" ||
+      token.startsWith("opening_size_reduction_ge_") ||
+      token.startsWith("opening_resize_ge_") ||
+      token.startsWith("opening_resized_minor") ||
+      token === "opening_band_mismatch" ||
+      token === "opening_signature_mismatch" ||
+      token === "light_anchor_opening_removed" ||
+      token === "light_anchor_opening_infilled"
+    ),
+  ]);
+
+  const contextualUncertainty = uniqueTokens([
+    ...(params.hasOcclusion ? ["opening_occlusion_review"] : []),
+    ...tokens.filter((token) =>
+      token === "opening_relocated_review" ||
+      token === "light_anchor_opening_relocated_review" ||
+      token === "door_or_closet_occluded_review" ||
+      token === "window_occlusion_review" ||
+      token.includes("occlusion")
+    ),
+  ]);
+
+  const contradictions: string[] = [];
+
+  if (primaryDestructiveStates.length === 0) {
+    contradictions.push("missing_primary_destructive_state");
+  }
+
+  if (hasAnyToken(tokens, ["openings_preserved", "opening_preserved", "opening_unchanged", "opening_present"])) {
+    contradictions.push("preserved_state_conflicts_with_destructive_state");
+  }
+
+  const hasRelocationExplanation = hasAnyToken(tokens, ["opening_relocated_review", "light_anchor_opening_relocated_review"]);
+  if (tokens.includes("opening_added") && primaryDestructiveStates.length > 0 && !hasRelocationExplanation) {
+    contradictions.push("opening_added_without_relocation_explanation");
+  }
+
+  if (
+    params.hasOcclusion &&
+    primaryDestructiveStates.length > 0 &&
+    supportiveModifiers.length === 0 &&
+    !tokens.includes("opening_removed") &&
+    !tokens.includes("opening_infilled") &&
+    !tokens.includes("opening_sealed")
+  ) {
+    contradictions.push("occlusion_only_conflicts_with_destructive_state");
+  }
+
+  return {
+    coherent: primaryDestructiveStates.length > 0 && contradictions.length === 0,
+    primaryDestructiveStates: uniqueTokens(primaryDestructiveStates),
+    supportiveModifiers,
+    contextualUncertainty,
+    contradictions: uniqueTokens(contradictions),
+  };
+}
+
 /**
- * Signal coherence gate: only allow hard-fail when the opening signal is
- * internally consistent — a clear structural removal/infill without
- * contradictory resize, occlusion, or addition signals that indicate noise.
+ * Signal coherence gate: destructive opening states remain coherent when
+ * paired with supportive geometry modifiers. Only true semantic contradictions
+ * should suppress hard-fail intent.
  */
 function isOpeningSignalCoherent(params: {
   issueType: string;
@@ -67,18 +174,7 @@ function isOpeningSignalCoherent(params: {
   hasOcclusion: boolean;
   hasBandMismatch: boolean;
 }): boolean {
-  const structuralTypes = ["opening_removed", "opening_infilled", "opening_sealed"];
-
-  const hasPrimaryStructural = structuralTypes.includes(params.issueType);
-
-  const hasConflictingSignals =
-    params.hasResize ||
-    params.hasOcclusion ||
-    params.hasBandMismatch ||
-    params.allIssueTypes.includes("opening_added") ||
-    params.allIssueTypes.includes("opening_resized_major");
-
-  return hasPrimaryStructural && !hasConflictingSignals;
+  return analyzeOpeningSignalCoherence(params).coherent;
 }
 
 function evaluateDoorFunctionalBlockage(
@@ -759,17 +855,32 @@ export async function runOpeningValidator(
           ? "opening_sealed"
           : "none";
 
-    const signalCoherent = isOpeningSignalCoherent({
+    const coherenceAnalysis = analyzeOpeningSignalCoherence({
       issueType: primaryIssueType,
       allIssueTypes: reasonParts,
       hasResize: openingSizeReductionDetected || !!deterministic.summary.openingResized,
       hasOcclusion: strictDoorOcclusionFail || strictWindowOcclusionFail,
       hasBandMismatch: !!deterministic.summary.openingBandMismatch,
     });
+    const signalCoherent = coherenceAnalysis.coherent;
 
     hardFail = (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal) &&
       hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD &&
       signalCoherent;
+
+    if (
+      signalCoherent &&
+      coherenceAnalysis.primaryDestructiveStates.length > 0 &&
+      coherenceAnalysis.supportiveModifiers.length > 0
+    ) {
+      console.log("[OPENING_COHERENCE_REINFORCED]", {
+        primaryIssueType,
+        destructiveStates: coherenceAnalysis.primaryDestructiveStates,
+        supportiveModifiers: coherenceAnalysis.supportiveModifiers,
+        contextualUncertainty: coherenceAnalysis.contextualUncertainty,
+        action: "accept_destructive_bundle",
+      });
+    }
 
     if (!signalCoherent && (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal) && hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD) {
       advisorySignals.push("opening_signal_incoherent_downgraded");
@@ -779,6 +890,8 @@ export async function runOpeningValidator(
         hasResize: openingSizeReductionDetected || !!deterministic.summary.openingResized,
         hasOcclusion: strictDoorOcclusionFail || strictWindowOcclusionFail,
         hasBandMismatch: !!deterministic.summary.openingBandMismatch,
+        contradictions: coherenceAnalysis.contradictions,
+        contextualUncertainty: coherenceAnalysis.contextualUncertainty,
         action: "downgrade_to_advisory",
       });
     }
