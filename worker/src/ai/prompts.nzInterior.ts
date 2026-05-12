@@ -87,6 +87,8 @@ If detail is not clearly visible in the input, it must remain non-informative.
 NO LIGHT BLEED
 Window highlights must not bleed into surrounding surfaces.
 Architectural boundaries must remain crisp.
+Maintain natural luminance transition gradients around windows and bright openings.
+Avoid artificial edge glow or abrupt tonal transitions.
 
 
 IV. PHOTOMETRIC BALANCING (CORE LIGHTING)
@@ -98,21 +100,27 @@ You may adjust:
 - contrast
 - white balance
 - tonal distribution
+- improve tonal separation between surfaces while preserving natural realism
 
 All adjustments must operate ONLY on existing pixel information.
 
 WHITE BALANCE
 Target neutral daylight ("Gallery White" ~5500K).
 Remove color casts while maintaining natural material tones.
+Preserve natural warmth and realistic ambient color relationships where appropriate.
+Avoid sterile or overly neutral rendering.
 
 HIGHLIGHTS & SHADOWS
 Reduce harsh highlight clipping ONLY where recoverable from existing pixel data.
 Gently lift shadows ONLY where real detail exists.
 
 Do NOT reconstruct missing information.
+Maintain balanced interior luminosity with soft highlight rolloff and natural shadow depth.
+Avoid flat HDR-style rendering.
 
 DEPTH PRESERVATION
 Maintain natural light fall-off and directional shadow structure to preserve 3D depth.
+Preserve natural spatial layering and dimensional separation between foreground, midground, and background elements.
 
 BLACK POINT
 Maintain rich, natural blacks.
@@ -123,6 +131,7 @@ Preserve all real material detail, including:
 - timber grain
 - tile patterns
 - fabric textures
+Maintain realistic material response for reflective, matte, timber, stone, painted, and metallic surfaces.
 
 Do NOT:
 - smooth surfaces excessively
@@ -137,6 +146,7 @@ You may perform subtle optical corrections to improve clarity, using ONLY existi
 PERMITTED:
 - mild noise reduction (must preserve texture)
 - subtle sharpening using existing edge information only
+- subtle local edge-definition enhancement on high-confidence existing edges only (fine radius, no global sharpening)
 - gentle haze / glare reduction if present
 
 STRICT CONSTRAINTS:
@@ -144,6 +154,8 @@ STRICT CONSTRAINTS:
 - Do NOT invent fine detail
 - Do NOT reconstruct missing regions
 - Do NOT alter edges or structure
+- Do NOT apply global or uniform sharpening across flat walls, ceilings, or noise-prone regions
+- Preserve natural material transitions and avoid artificial edge halos
 
 CIRCUIT BREAKER (EDGE PRESERVATION PRIORITY)
 
