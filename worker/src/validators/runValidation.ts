@@ -452,13 +452,13 @@ function buildSpecialistObservationHints(signals?: string[]): string[] {
   return Array.from(hints).slice(0, 6);
 }
 
-function buildStructuredIssueContext(issues?: StructuredIssue[]): string[] {
+export function buildStructuredIssueContext(issues?: StructuredIssue[]): string[] {
   if (!Array.isArray(issues) || issues.length === 0) return [];
 
   const hints = new Set<string>();
 
   for (const issue of issues) {
-    if (!issue || issue.type !== "opening_change") continue;
+    if (!issue) continue;
     const evidence = Array.isArray(issue.evidence) ? issue.evidence.filter(Boolean).slice(0, 5) : [];
     const confidenceText = Number.isFinite(issue.confidence)
       ? ` Confidence: ${Number(issue.confidence).toFixed(3)}.`
@@ -466,9 +466,17 @@ function buildStructuredIssueContext(issues?: StructuredIssue[]): string[] {
     const evidenceText = evidence.length > 0
       ? ` Evidence: ${evidence.join(", ")}.`
       : "";
-    hints.add(
-      `Possible ${issue.object} ${issue.action} detected by opening specialist. Severity=${issue.severity}.${confidenceText}${evidenceText} This context is non-binding and must be visually verified.`
-    );
+    if (issue.type === "opening_change") {
+      hints.add(
+        `Possible ${issue.object} ${issue.action} detected by opening specialist. Severity=${issue.severity}.${confidenceText}${evidenceText} This context is non-binding and must be visually verified.`
+      );
+      continue;
+    }
+    if (issue.type === "envelope_change") {
+      hints.add(
+        `Possible envelope structural change affecting ${issue.object} (${issue.action}) detected by envelope specialist. Severity=${issue.severity}.${confidenceText}${evidenceText} This context is non-binding and must be visually verified.`
+      );
+    }
   }
 
   return Array.from(hints).slice(0, 3);
@@ -1519,6 +1527,9 @@ export async function runUnifiedValidation(
       const specialistSemanticContext = stage2SpecialistAdvisoriesEnabled
         ? buildStructuredIssueContext(specialistStructuredIssues)
         : [];
+      const envelopeSemanticContext = specialistSemanticContext.filter((entry) =>
+        entry.includes("envelope specialist")
+      );
       const consensusDerivedWarnings = specialistObservationHints.length + specialistSemanticContext.length;
       if (!STRUCTURAL_SIGNALS_ACTIVE) {
         nLog("[STRUCTURAL_SIGNALS_LOG_ONLY]", {
@@ -1541,6 +1552,13 @@ export async function runUnifiedValidation(
           advisories: specialistObservationHints,
           semanticContext: specialistSemanticContext,
         });
+        if (envelopeSemanticContext.length > 0) {
+          nLog("[ENVELOPE_SEMANTIC_CONTEXT_PROPAGATED]", {
+            enabled: stage2SpecialistAdvisoriesEnabled,
+            semanticContextCount: envelopeSemanticContext.length,
+            semanticContext: envelopeSemanticContext,
+          });
+        }
       }
       // IMPORTANT:
       // "local" refers ONLY to heuristic validators (OpenCV/Sharp).

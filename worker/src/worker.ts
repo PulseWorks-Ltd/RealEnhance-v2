@@ -195,6 +195,7 @@ import {
   type ValidationIssueTier,
   type ValidationIssueType,
 } from "./validators/issueTypes";
+import { analyzeEnvelopeOpeningRelation } from "./validators/envelopeArbitration";
 import type { StructuralSignal } from "./validators/structuralSignal";
 import { deduplicateSignals } from "./validators/structuralSignal";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
@@ -10540,8 +10541,8 @@ All openings must remain identical in position and size to the original image.`;
         // SINGLE-AUTHORITY: Only explicit hardFail determines specialist failure.
         // status="fail" with hardFail=false is advisory — passed to Unified for adjudication.
         const pass = params.hardFail !== true;
-        const preserveOpeningSemantics =
-          params.validator === "opening" &&
+        const preserveSemanticAuthority =
+          (params.validator === "opening" || params.validator === "envelope") &&
           !!params.issueType &&
           params.issueType !== ISSUE_TYPES.NONE;
         const rawConfidence = Number(params.confidence);
@@ -10552,12 +10553,12 @@ All openings must remain identical in position and size to the original image.`;
             : params.hardFail === true
               ? 0.9
               : 0.6;
-        const issueType: ValidationIssueType = preserveOpeningSemantics
+        const issueType: ValidationIssueType = preserveSemanticAuthority
           ? (params.issueType || ISSUE_TYPES.UNIFIED_FAILURE)
           : pass
             ? ISSUE_TYPES.NONE
             : (params.issueType || ISSUE_TYPES.UNIFIED_FAILURE);
-        const issueTier: ValidationIssueTier = preserveOpeningSemantics
+        const issueTier: ValidationIssueTier = preserveSemanticAuthority
           ? (params.issueTier || classifyIssueTier(issueType))
           : pass
             ? "none"
@@ -10576,10 +10577,10 @@ All openings must remain identical in position and size to the original image.`;
           confidence,
           issueType,
           issueTier,
-          semanticIssueType: preserveOpeningSemantics ? issueType : undefined,
-          semanticIssueTier: preserveOpeningSemantics ? issueTier : undefined,
-          primaryStructuredIssue: preserveOpeningSemantics ? params.primaryStructuredIssue : undefined,
-          structuredIssues: preserveOpeningSemantics && Array.isArray(params.structuredIssues)
+          semanticIssueType: preserveSemanticAuthority ? issueType : undefined,
+          semanticIssueTier: preserveSemanticAuthority ? issueTier : undefined,
+          primaryStructuredIssue: preserveSemanticAuthority ? params.primaryStructuredIssue : undefined,
+          structuredIssues: preserveSemanticAuthority && Array.isArray(params.structuredIssues)
             ? params.structuredIssues
             : undefined,
           severity,
@@ -11318,6 +11319,8 @@ All openings must remain identical in position and size to the original image.`;
           advisorySignals: envRes.advisorySignals,
           issueType: envRes.issueType,
           issueTier: envRes.issueTier,
+          primaryStructuredIssue: envRes.primaryStructuredIssue,
+          structuredIssues: envRes.structuredIssues,
         });
         nLog("[SPECIALIST_CLASSIFICATION]", {
           jobId: payload.jobId,
@@ -11334,7 +11337,12 @@ All openings must remain identical in position and size to the original image.`;
           confidence: envRes.confidence,
           advisorySignals: envRes.advisorySignals,
           subtype: (envRes as any).subtype,
+          primaryStructuredIssue: envRes.primaryStructuredIssue,
+          structuredIssues: envRes.structuredIssues,
         });
+        if (Array.isArray(specialistResults.envelope.structuredIssues) && specialistResults.envelope.structuredIssues.length > 0) {
+          specialistStructuredIssues.push(...specialistResults.envelope.structuredIssues);
+        }
         appendAdvisories("envelope", envRes.advisorySignals || []);
         const envelopeHardFail = envRes.hardFail === true;
         envelopePass = !envelopeHardFail;
@@ -11360,7 +11368,10 @@ All openings must remain identical in position and size to the original image.`;
             reason: normalizeValidatorReason(specialistSignals.envelope.reason),
           });
         } else {
-          specialistSignals.envelope = { pass: true, reason: "none" };
+          specialistSignals.envelope = {
+            pass: true,
+            reason: envRes.reason || specialistResults.envelope.issueType || "none",
+          };
           if (envRes.status === "fail") {
             nLog("[VALIDATOR_ADVISORY_NON_BLOCKING] envelope reported fail without hardFail", {
               jobId: payload.jobId,
@@ -11370,6 +11381,34 @@ All openings must remain identical in position and size to the original image.`;
               reason: envRes.reason || "envelope_status_fail_non_blocking",
               confidence: envRes.confidence,
               action: "continue_to_unified",
+            });
+          }
+          if (specialistResults.envelope.issueType !== ISSUE_TYPES.NONE) {
+            nLog("[ENVELOPE_SEMANTIC_AUTHORITY_PRESERVED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              hardFail: specialistResults.envelope.hardFail,
+              issueType: specialistResults.envelope.issueType,
+              issueTier: specialistResults.envelope.issueTier,
+              structuredIssueCount: specialistResults.envelope.structuredIssues?.length ?? 0,
+              action: "preserve_semantic_authority_continue_unified",
+            });
+          }
+          if (Array.isArray(specialistResults.envelope.structuredIssues) && specialistResults.envelope.structuredIssues.length > 0) {
+            nLog("[ENVELOPE_STRUCTURED_ISSUES_PROPAGATED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              count: specialistResults.envelope.structuredIssues.length,
+              issues: specialistResults.envelope.structuredIssues.map((issue) => ({
+                type: issue.type,
+                object: issue.object,
+                action: issue.action,
+                severity: issue.severity,
+                confidence: issue.confidence,
+                evidence: issue.evidence,
+              })),
             });
           }
           nLog("[STAGE2_VALIDATION_B] envelope pass");
@@ -11726,11 +11765,19 @@ All openings must remain identical in position and size to the original image.`;
       // and forwarded to Unified for adjudication.
       const envelopeSignal = specialistIssueSignals.find(s => s.validator === "envelope");
       const envelopeReason = String(envelopeSignal?.reason || "");
+      const envelopeRelation = analyzeEnvelopeOpeningRelation({
+        reason: envelopeSignal?.reason,
+        advisorySignals: envelopeSignal?.advisorySignals,
+        issueType: specialistResults.envelope.issueType,
+        semanticIssueType: specialistResults.envelope.semanticIssueType,
+        primaryStructuredIssue: specialistResults.envelope.primaryStructuredIssue,
+        structuredIssues: specialistResults.envelope.structuredIssues,
+        pass: specialistResults.envelope.pass,
+        hardFail: specialistResults.envelope.hardFail,
+      });
       const envelopeConfirmsStructuralChange =
-        envelopeReason.includes("envelope_confirmed_structural_change");
-      const envelopeContradicts =
-        !envelopeConfirmsStructuralChange &&
-        specialistResults.envelope.pass === true;
+        envelopeRelation.envelopeConfirmsStructuralChange;
+      const envelopeContradicts = envelopeRelation.explicitContradiction;
 
       const isOpeningIssue = (issueType?: string): boolean =>
         issueType === ISSUE_TYPES.OPENING_REMOVED ||
@@ -11743,10 +11790,39 @@ All openings must remain identical in position and size to the original image.`;
           issueType,
           openingHardFail,
           envelopePass: specialistResults.envelope.pass,
+          envelopeHasSemanticAuthority: envelopeRelation.envelopeHasSemanticAuthority,
           envelopeConfirmsStructuralChange,
           envelopeContradicts,
+          explicitPreservationSignals: envelopeRelation.explicitPreservationSignals,
+          semanticSupportSignals: envelopeRelation.semanticSupportSignals,
         });
       };
+
+      if (envelopeRelation.explicitContradiction) {
+        nLog("[OPENING_ENVELOPE_EXPLICIT_CONTRADICTION]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          envelopePass: specialistResults.envelope.pass,
+          envelopeReason,
+          contradictionReason: envelopeRelation.contradictionReason,
+          explicitPreservationSignals: envelopeRelation.explicitPreservationSignals,
+          semanticSupportSignals: envelopeRelation.semanticSupportSignals,
+          action: "opening_downgrade_allowed_only_with_explicit_contradiction",
+        });
+      }
+
+      if (envelopeRelation.nonContradictoryAdvisory) {
+        nLog("[OPENING_ENVELOPE_NON_CONTRADICTORY_ADVISORY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          envelopePass: specialistResults.envelope.pass,
+          envelopeReason,
+          semanticSupportSignals: envelopeRelation.semanticSupportSignals,
+          action: "do_not_downgrade_opening_from_advisory_only_envelope",
+        });
+      }
 
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
         // SINGLE-AUTHORITY: Only specialist-acknowledged hardFail may trigger pre-Unified block.
@@ -11776,8 +11852,7 @@ All openings must remain identical in position and size to the original image.`;
         // Opening signals contradicted by envelope → downgrade to advisory for Unified
         if (
           isOpeningIssue(issueType) &&
-          envelopeContradicts &&
-          !envelopeConfirmsStructuralChange
+          envelopeContradicts
         ) {
           nLog("[OPENING_ENVELOPE_CONTRADICTION_DOWNGRADE]", {
             jobId: payload.jobId,
@@ -11788,6 +11863,8 @@ All openings must remain identical in position and size to the original image.`;
             confidence: signal.confidence,
             envelopePass: specialistResults.envelope.pass,
             envelopeReason,
+            contradictionReason: envelopeRelation.contradictionReason,
+            explicitPreservationSignals: envelopeRelation.explicitPreservationSignals,
             action: "downgrade_to_advisory_continue_unified",
           });
           return false;
@@ -11810,8 +11887,7 @@ All openings must remain identical in position and size to the original image.`;
         // Opening signals contradicted by envelope → downgrade to advisory for Unified
         if (
           isOpeningIssue(issueType) &&
-          envelopeContradicts &&
-          !envelopeConfirmsStructuralChange
+          envelopeContradicts
         ) return false;
         return true;
       };
