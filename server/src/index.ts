@@ -38,6 +38,7 @@ import { myImagesRouter } from "./routes/myImages.js";
 import billingRouter from "./routes/billing.js";
 import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
+import { startEnhancedImagePurgeScheduler } from "./services/enhancedImagesPurge.js";
 import { imageVersionsRouter } from "./routes/imageVersions.js";
 import adminResetRouter from "./routes/adminReset.js";
 import adminDashboardRouter from "./routes/admin.js";
@@ -176,6 +177,12 @@ async function initializeAsyncServices(): Promise<void> {
     console.log("[seed] ensured credits:", { a: seededA.email, credits: seededA.credits });
   } catch (e) {
     console.warn("[seed] failed to ensure credits:", e);
+  }
+
+  try {
+    startEnhancedImagePurgeScheduler();
+  } catch (e) {
+    console.warn("[purge] scheduler startup failed:", e);
   }
 
   console.log("[startup] background initialization complete");

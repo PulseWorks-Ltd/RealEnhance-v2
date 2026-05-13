@@ -13,6 +13,7 @@ import type {
 } from '@realenhance/shared/types';
 import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/audit.js';
 import { getS3SignedUrl, deleteS3Object } from '../utils/s3.js';
+import { getJob } from './jobs.js';
 
 // Best-effort signer with short TTL; falls back to null if signing fails or key missing
 async function safeSign(key?: string | null): Promise<string | null> {
@@ -111,7 +112,7 @@ export async function createEnhancedImage(
 }
 
 function scopedWhereClause(scope: Scope, startParam: number = 1): { sql: string; params: any[] } {
-  const clauses = [`ei.agency_id = $${startParam}`, 'ei.is_expired = FALSE'];
+  const clauses = [`ei.agency_id = $${startParam}`, 'ei.is_expired = FALSE', 'ei.deleted_at IS NULL'];
   const params: any[] = [scope.agencyId];
 
   if (scope.userId) {
@@ -163,6 +164,7 @@ export async function listEnhancedImages(
         FROM enhanced_images c
         WHERE c.parent_image_id = ei.id
           AND c.is_expired = FALSE
+          AND c.deleted_at IS NULL
           AND c.agency_id = ei.agency_id
           ${userId ? 'AND c.user_id = ei.user_id' : ''}
       ) AS version_count
@@ -253,9 +255,9 @@ export async function getEnhancedImage(
 
   const query = userId
     ? `SELECT * FROM enhanced_images
-       WHERE id = $1 AND agency_id = $2 AND user_id = $3 AND is_expired = FALSE`
+       WHERE id = $1 AND agency_id = $2 AND user_id = $3 AND is_expired = FALSE AND deleted_at IS NULL`
     : `SELECT * FROM enhanced_images
-       WHERE id = $1 AND agency_id = $2 AND is_expired = FALSE`;
+       WHERE id = $1 AND agency_id = $2 AND is_expired = FALSE AND deleted_at IS NULL`;
 
   const params = userId ? [imageId, agencyId, userId] : [imageId, agencyId];
   const result = await pool.query(query, params);
@@ -275,8 +277,8 @@ export async function getImageVersions(
   await enforceRetentionLimits(agencyId);
 
   const where = userId
-    ? `agency_id = $1 AND user_id = $2 AND is_expired = FALSE AND (id = $3 OR parent_image_id = $3)`
-    : `agency_id = $1 AND is_expired = FALSE AND (id = $2 OR parent_image_id = $2)`;
+    ? `agency_id = $1 AND user_id = $2 AND is_expired = FALSE AND deleted_at IS NULL AND (id = $3 OR parent_image_id = $3)`
+    : `agency_id = $1 AND is_expired = FALSE AND deleted_at IS NULL AND (id = $2 OR parent_image_id = $2)`;
 
   const params = userId ? [agencyId, userId, imageId] : [agencyId, imageId];
 
@@ -334,6 +336,7 @@ export async function findScopedEnhancedImageByUrl(params: {
        WHERE agency_id = $1
          AND user_id = $2
          AND is_expired = FALSE
+         AND deleted_at IS NULL
          AND (
            split_part(public_url, '?', 1) = split_part($3, '?', 1)
            OR split_part(thumbnail_url, '?', 1) = split_part($3, '?', 1)
@@ -344,6 +347,7 @@ export async function findScopedEnhancedImageByUrl(params: {
        FROM enhanced_images
        WHERE agency_id = $1
          AND is_expired = FALSE
+         AND deleted_at IS NULL
          AND (
            split_part(public_url, '?', 1) = split_part($2, '?', 1)
            OR split_part(thumbnail_url, '?', 1) = split_part($2, '?', 1)
@@ -387,7 +391,7 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
     }
 
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM enhanced_images WHERE agency_id = $1 AND is_expired = FALSE`,
+      `SELECT COUNT(*) FROM enhanced_images WHERE agency_id = $1 AND is_expired = FALSE AND deleted_at IS NULL`,
       [agencyId]
     );
 
@@ -404,7 +408,7 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
        SET is_expired = TRUE, updated_at = NOW()
        WHERE id IN (
          SELECT id FROM enhanced_images
-         WHERE agency_id = $1 AND is_expired = FALSE
+         WHERE agency_id = $1 AND is_expired = FALSE AND deleted_at IS NULL
          ORDER BY created_at ASC
          LIMIT $2
        )
@@ -427,6 +431,68 @@ async function enforceRetentionLimits(agencyId: string): Promise<void> {
   } catch (error) {
     console.error(`[retention] Failed to enforce retention for agency ${agencyId}:`, error);
   }
+}
+
+type DeleteEnhancedImageResult =
+  | { status: 'deleted'; id: string; auditRef: string | null; purgeStatus: string }
+  | { status: 'not_found' }
+  | { status: 'blocked'; jobStatus: string };
+
+const NON_DELETABLE_JOB_STATUSES = new Set(['queued', 'processing']);
+
+export async function softDeleteEnhancedImage(params: {
+  imageId: string;
+  agencyId: string;
+  deletedByUserId: string;
+  scopedUserId?: string;
+}): Promise<DeleteEnhancedImageResult> {
+  const where = params.scopedUserId
+    ? `id = $1 AND agency_id = $2 AND user_id = $3 AND is_expired = FALSE AND deleted_at IS NULL`
+    : `id = $1 AND agency_id = $2 AND is_expired = FALSE AND deleted_at IS NULL`;
+  const values = params.scopedUserId
+    ? [params.imageId, params.agencyId, params.scopedUserId]
+    : [params.imageId, params.agencyId];
+
+  const existing = await pool.query(
+    `SELECT id, job_id, audit_ref
+     FROM enhanced_images
+     WHERE ${where}
+     LIMIT 1`,
+    values
+  );
+
+  if (existing.rows.length === 0) {
+    return { status: 'not_found' };
+  }
+
+  const row = existing.rows[0];
+  const jobStatus = String((await getJob(String(row.job_id)))?.status || '').toLowerCase();
+  if (jobStatus && NON_DELETABLE_JOB_STATUSES.has(jobStatus)) {
+    return { status: 'blocked', jobStatus };
+  }
+
+  const deleted = await pool.query(
+    `UPDATE enhanced_images
+     SET deleted_at = NOW(),
+         deleted_by_user_id = $2,
+         purge_status = 'pending',
+         updated_at = NOW()
+     WHERE id = $1
+       AND deleted_at IS NULL
+     RETURNING id, audit_ref, purge_status`,
+    [row.id, params.deletedByUserId]
+  );
+
+  if (deleted.rows.length === 0) {
+    return { status: 'not_found' };
+  }
+
+  return {
+    status: 'deleted',
+    id: String(deleted.rows[0].id),
+    auditRef: deleted.rows[0].audit_ref ? String(deleted.rows[0].audit_ref) : null,
+    purgeStatus: String(deleted.rows[0].purge_status || 'pending'),
+  };
 }
 
 async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {

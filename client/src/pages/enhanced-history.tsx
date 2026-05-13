@@ -19,7 +19,7 @@ import { CompareSlider } from '@/components/CompareSlider';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { ImageOff, Loader2, Info, Download, Pencil, Folder } from 'lucide-react';
+import { ImageOff, Loader2, Info, Download, Pencil, Folder, X } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { RegionEditor } from '@/components/region-editor';
 import type { SourceStageLabel } from '@/lib/edit-source';
@@ -86,6 +86,8 @@ export default function EnhancedHistoryPage() {
   const [previewImage, setPreviewImage] = useState<EnhancedImageListItem | null>(null);
   const [editingImage, setEditingImage] = useState<EnhancedImageListItem | null>(null);
   const [editStatusByImageId, setEditStatusByImageId] = useState<Record<string, HistoryEditStatus>>({});
+  const [deleteCandidate, setDeleteCandidate] = useState<EnhancedImageListItem | null>(null);
+  const [deletingImageIds, setDeletingImageIds] = useState<Record<string, boolean>>({});
 
   const fetchImages = useCallback(async () => {
     try {
@@ -253,6 +255,86 @@ export default function EnhancedHistoryPage() {
     setPreviewImage(image);
   }, []);
 
+  const canDeleteImage = useCallback((image: EnhancedImageListItem): boolean => {
+    const id = String(image.id);
+    if (deletingImageIds[id]) return false;
+    if (editStatusByImageId[id] === 'processing') return false;
+    if (editingImage && String(editingImage.id) === id) return false;
+    return true;
+  }, [deletingImageIds, editStatusByImageId, editingImage]);
+
+  const requestDeleteImage = useCallback((image: EnhancedImageListItem) => {
+    if (!canDeleteImage(image)) return;
+    setDeleteCandidate(image);
+  }, [canDeleteImage]);
+
+  const handleDeleteImage = useCallback(async () => {
+    if (!deleteCandidate) return;
+    const imageId = String(deleteCandidate.id);
+    const candidateSnapshot = deleteCandidate;
+
+    // Close modal and mark in-flight immediately
+    setDeleteCandidate(null);
+    setDeletingImageIds((current) => ({ ...current, [imageId]: true }));
+
+    // Snapshot current gallery state for rollback
+    const propertiesSnapshot = properties;
+    const unassignedSnapshot = unassignedImages;
+    const totalSnapshot = total;
+    const previewSnapshot = previewImage;
+    const editingSnapshot = editingImage;
+
+    // Optimistic remove
+    const removeImageFromList = (list: EnhancedImageListItem[]) =>
+      list.filter((img) => String(img.id) !== imageId);
+    setProperties((current) =>
+      current.map((folder) => ({ ...folder, images: removeImageFromList(folder.images) }))
+    );
+    setUnassignedImages((current) => removeImageFromList(current));
+    setTotal((current) => Math.max(0, current - 1));
+    if (previewImage && String(previewImage.id) === imageId) setPreviewImage(null);
+    if (editingImage && String(editingImage.id) === imageId) setEditingImage(null);
+
+    try {
+      const response = await apiFetch(`/api/enhanced-images/${imageId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        const serverMessage = typeof payload?.message === 'string' ? payload.message : '';
+        throw new Error(serverMessage || 'Failed to delete image. Please try again.');
+      }
+
+      toast({
+        title: 'Image removed',
+        description: 'The image has been removed from your gallery.',
+      });
+    } catch (error) {
+      // Rollback: restore gallery state
+      setProperties(propertiesSnapshot);
+      setUnassignedImages(unassignedSnapshot);
+      setTotal(totalSnapshot);
+      if (previewSnapshot && String(previewSnapshot.id) === imageId) setPreviewImage(previewSnapshot);
+      if (editingSnapshot && String(editingSnapshot.id) === imageId) setEditingImage(editingSnapshot);
+      // Re-surface the confirm modal so the user can retry or dismiss
+      setDeleteCandidate(candidateSnapshot);
+
+      console.error('[enhanced-history] Delete failed:', error);
+      toast({
+        title: 'Delete failed',
+        description: error instanceof Error ? error.message : 'Unable to delete this image right now.',
+        variant: 'destructive',
+      });
+    } finally {
+      setDeletingImageIds((current) => {
+        const next = { ...current };
+        delete next[imageId];
+        return next;
+      });
+    }
+  }, [deleteCandidate, editingImage, previewImage, properties, total, unassignedImages, toast]);
+
   const handleEditFromPreview = useCallback(() => {
     if (!previewImage) return;
     setPreviewImage(null);
@@ -280,6 +362,7 @@ export default function EnhancedHistoryPage() {
     (() => {
       const statusBadge = resolveHistoryStatusBadge(editStatusByImageId[String(image.id)]);
       const editIndex = editIndexByImageId.get(String(image.id));
+      const isDeleteDisabled = !canDeleteImage(image);
 
       return (
         <div
@@ -305,7 +388,20 @@ export default function EnhancedHistoryPage() {
         </div>
       </button>
 
-      <div className="absolute top-2 right-2">
+      <button
+        type="button"
+        aria-label="Delete image"
+        className="absolute top-2 right-2 z-20 h-8 w-8 rounded-full bg-red-600/90 text-white shadow-sm transition-opacity hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-40 opacity-0 group-hover:opacity-100"
+        onClick={(e) => {
+          e.stopPropagation();
+          requestDeleteImage(image);
+        }}
+        disabled={isDeleteDisabled}
+      >
+        <X className="mx-auto h-4 w-4" />
+      </button>
+
+      <div className="absolute top-2 right-12">
         <StatusBadge status={statusBadge.status} label={statusBadge.label} />
       </div>
 
@@ -541,6 +637,33 @@ export default function EnhancedHistoryPage() {
               void fetchImages();
             }}
           />
+        </Modal>
+      )}
+
+      {deleteCandidate && (
+        <Modal
+          isOpen={!!deleteCandidate}
+          onClose={() => setDeleteCandidate(null)}
+          title="Delete image"
+          maxWidth="md"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              This will remove the image from gallery history. The file will be purged asynchronously.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteCandidate(null)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => void handleDeleteImage()}
+                disabled={deletingImageIds[String(deleteCandidate.id)]}
+              >
+                {deletingImageIds[String(deleteCandidate.id)] ? 'Deleting...' : 'Delete Image'}
+              </Button>
+            </div>
+          </div>
         </Modal>
       )}
     </div>

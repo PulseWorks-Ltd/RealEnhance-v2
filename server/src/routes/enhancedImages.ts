@@ -6,7 +6,7 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { listEnhancedImages, getEnhancedImage } from '../services/enhancedImages.js';
+import { listEnhancedImages, getEnhancedImage, softDeleteEnhancedImage } from '../services/enhancedImages.js';
 import { makeZip } from '../services/zipper.js';
 
 const ENHANCED_IMAGES_DEFAULT_LIMIT = Math.max(1, Number(process.env.ENHANCED_IMAGES_DEFAULT_LIMIT || 200));
@@ -406,6 +406,58 @@ export function enhancedImagesRouter() {
     } catch (error) {
       console.error('[enhanced-images] ZIP download error:', error);
       return res.status(500).json({ error: 'Failed to create ZIP file' });
+    }
+  });
+
+  /**
+   * DELETE /api/enhanced-images/:id
+   * Soft-delete one gallery image (physical object is purged asynchronously).
+   */
+  router.delete('/:id', async (req: Request, res: Response) => {
+    try {
+      const user = (req.session as any)?.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      if (!user.agencyId) {
+        return res.status(404).json({ error: 'Image not found' });
+      }
+
+      const imageId = String(req.params.id || '').trim();
+      if (!imageId) {
+        return res.status(400).json({ error: 'Invalid image id' });
+      }
+
+      const isAdminOrOwner = user.role === 'owner' || user.role === 'admin';
+      const result = await softDeleteEnhancedImage({
+        imageId,
+        agencyId: user.agencyId,
+        deletedByUserId: user.id,
+        scopedUserId: isAdminOrOwner ? undefined : user.id,
+      });
+
+      if (result.status === 'not_found') {
+        return res.status(404).json({ error: 'Image not found' });
+      }
+
+      if (result.status === 'blocked') {
+        return res.status(409).json({
+          error: 'IMAGE_DELETE_BLOCKED_JOB_ACTIVE',
+          message: `Image cannot be deleted while job status is ${result.jobStatus || 'active'}`,
+          jobStatus: result.jobStatus,
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        id: result.id,
+        auditRef: result.auditRef,
+        purgeStatus: result.purgeStatus,
+      });
+    } catch (error) {
+      console.error('[enhanced-images] Delete error:', error);
+      return res.status(500).json({ error: 'Failed to delete image' });
     }
   });
 
