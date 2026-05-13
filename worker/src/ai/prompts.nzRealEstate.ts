@@ -1515,6 +1515,25 @@ Return only the empty room image.`.trim();
     - permanent plaques
     - mounted fixtures
 
+    OUTDOOR WASHING INFRASTRUCTURE — FIXED STRUCTURES ONLY
+
+    Permanent fixed washing line poles and structures are essential outdoor property infrastructure and must be preserved.
+
+    NEVER REMOVE OR ALTER:
+    - fixed clothesline poles and permanent washing line structures
+    - wall-mounted clothesline brackets, anchors, and hardware
+    - integrated clothesline posts or frames attached to patios, decks, fences, or buildings
+    - rotary clotheslines and permanently installed outdoor drying systems
+
+    YOU MAY REMOVE AS CLUTTER:
+    - clothes and garments hanging on lines
+    - clothes pegs and hanging attachments
+    - portable drying racks and temporary drying stands
+    - loose laundry baskets and temporary washing accessories
+
+    Fixed washing lines and installed outdoor drying systems are part of the property infrastructure and must remain intact.
+    Loose laundry items and portable drying equipment may be cleaned or removed as personal clutter.
+
     STRUCTURE SAFETY — LIGHT MODE
 
     Do not alter walls, fences, decking, paths, driveways, plumbing fixtures, or fixed structures.
