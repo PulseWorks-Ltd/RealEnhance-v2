@@ -58,6 +58,7 @@ interface AgencyInfo {
   agencyId: string;
   name: string;
   planTier: "starter" | "pro" | "agency" | null;
+  processingMode?: "full" | "safe";
   isNew?: boolean;
   promoCreditsGranted?: boolean;
   upgradeBannerSeen?: boolean;
@@ -128,6 +129,7 @@ export default function AgencyPage() {
   const [profileCountry, setProfileCountry] = useState<"NZ" | "AU" | "ZA">("NZ");
   const [profileBillingEmail, setProfileBillingEmail] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingProcessingMode, setSavingProcessingMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [agencyName, setAgencyName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -216,6 +218,7 @@ export default function AgencyPage() {
         agencyId: infoData.agency.agencyId,
         name: infoData.agency.name,
         planTier: infoData.agency.planTier ?? null,
+        processingMode: infoData.agency.processingMode === "safe" ? "safe" : "full",
         isNew: infoData.agency.isNew === true,
         promoCreditsGranted: infoData.agency.promoCreditsGranted === true,
         upgradeBannerSeen: infoData.agency.upgradeBannerSeen === true,
@@ -392,6 +395,46 @@ export default function AgencyPage() {
       toast({ title: "Error", description: error.message || "Failed to update agency profile", variant: "destructive" });
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleToggleSafeMode = async (enabled: boolean) => {
+    if (!isAdminOrOwner || !agencyInfo) return;
+
+    const nextMode: "full" | "safe" = enabled ? "safe" : "full";
+    const previousMode = agencyInfo.processingMode === "safe" ? "safe" : "full";
+    if (nextMode === previousMode) return;
+
+    try {
+      setSavingProcessingMode(true);
+      setAgencyInfo((prev) => (prev ? { ...prev, processingMode: nextMode } : prev));
+
+      const res = await apiFetch("/api/agency/settings/processing-mode", {
+        method: "PATCH",
+        body: JSON.stringify({ processingMode: nextMode }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update processing mode");
+      }
+
+      toast({
+        title: "Saved",
+        description: nextMode === "safe"
+          ? "Safe Mode enabled. Stage 2 is now blocked for automated processing."
+          : "Safe Mode disabled. Full automated processing is restored.",
+      });
+      await loadAgencyData();
+    } catch (error: any) {
+      setAgencyInfo((prev) => (prev ? { ...prev, processingMode: previousMode } : prev));
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update processing mode",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingProcessingMode(false);
     }
   };
 
@@ -793,6 +836,30 @@ export default function AgencyPage() {
                     {savingProfile ? "Saving..." : "Save Agency Profile"}
                   </Button>
                 )}
+
+                <div className="rounded-lg border border-border p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">Safe Mode</p>
+                      <p className="text-xs text-muted-foreground">
+                        Blocks Stage 2 in automated enhancement pipelines. Edit mode remains fully available.
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={(agencyInfo.processingMode || "full") === "safe"}
+                        onChange={(e) => handleToggleSafeMode(e.target.checked)}
+                        disabled={!isAdmin || savingProcessingMode}
+                      />
+                      {(agencyInfo.processingMode || "full") === "safe" ? "ON" : "OFF"}
+                    </label>
+                  </div>
+                  {!isAdmin && (
+                    <p className="text-xs text-muted-foreground">Only agency owners/admins can change Safe Mode.</p>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">Plan</span>

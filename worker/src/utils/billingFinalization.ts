@@ -243,7 +243,7 @@ export async function finalizeImageChargeFromWorker(params: {
   stage1BSuccess: boolean;
   stage2Success: boolean;
   sceneType: string;
-  completionType?: "full_success" | "fallback_1b" | "fallback_1a";
+  completionType?: "full_success" | "fallback_1b" | "fallback_1a" | "intentional_1a_success" | "optimized_1a_success";
   finalDeliveredStage?: "1A" | "1B" | "2";
   requestedBeyond1A?: boolean;
   /** Whether the user explicitly selected declutter/Stage1B before submission */

@@ -2,9 +2,13 @@
 // Agency management (unlimited users per agency)
 
 import { getRedis } from "./redisClient.js";
-import type { Agency, PlanTier, SubscriptionStatus } from "./auth/types.js";
+import type { Agency, AgencyProcessingMode, PlanTier, SubscriptionStatus } from "./auth/types.js";
 import type { UserRecord } from "./types.js";
 import { v4 as uuidv4 } from "uuid";
+
+function normalizeAgencyProcessingMode(value: unknown): AgencyProcessingMode {
+  return String(value || "").trim().toLowerCase() === "safe" ? "safe" : "full";
+}
 
 /**
  * Create a new agency (with unlimited users)
@@ -23,6 +27,7 @@ export async function createAgency(params: {
     agencyId: params.agencyId || `agency_${uuidv4()}`,
     name: params.name,
     planTier,
+    processingMode: "full",
     subscriptionStatus,
     createdAt: new Date().toISOString(),
   };
@@ -35,6 +40,7 @@ export async function createAgency(params: {
       agencyId: agency.agencyId,
       name: agency.name,
       planTier: agency.planTier || "",
+      processingMode: agency.processingMode || "full",
       subscriptionStatus: agency.subscriptionStatus,
       createdAt: agency.createdAt,
     });
@@ -64,6 +70,7 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
       agencyId: data.agencyId,
       name: data.name,
       planTier: data.planTier ? (data.planTier as PlanTier) : null,
+      processingMode: normalizeAgencyProcessingMode(data.processingMode),
       subscriptionStatus: (data.subscriptionStatus as SubscriptionStatus) || "ACTIVE", // Default to ACTIVE for backwards compatibility
       // Stripe billing fields
       stripeCustomerId: data.stripeCustomerId,
@@ -104,6 +111,7 @@ export async function updateAgency(agency: Agency): Promise<void> {
       agencyId: agency.agencyId,
       name: agency.name,
       planTier: agency.planTier || "",
+      processingMode: normalizeAgencyProcessingMode(agency.processingMode),
       subscriptionStatus: agency.subscriptionStatus,
       createdAt: agency.createdAt,
       updatedAt: new Date().toISOString(),

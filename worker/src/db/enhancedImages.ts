@@ -15,7 +15,7 @@ interface CreateEnhancedImageParams {
   parentImageId?: string | null;
   source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a' | 'intentional_1a_success' | 'optimized_1a_success';
   publicUrl: string;
   thumbnailUrl?: string;
   originalUrl?: string | null;

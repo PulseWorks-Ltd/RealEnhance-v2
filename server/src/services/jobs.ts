@@ -11,6 +11,7 @@ import type {
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { saveJobMetadata } from "@realenhance/shared/imageStore";
 import { normalizeStageLabel, resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
+import { getAgency } from "@realenhance/shared/agencies.js";
 import type { JobOwnershipMetadata, RequestedStages } from "@realenhance/shared/types/jobMetadata";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
@@ -58,6 +59,72 @@ function normalizeDerivedSourceStage(value: string | null | undefined): "1A" | "
   if (lowered === "stage1b") return "1B";
   if (lowered === "stage1a") return "1A";
   return null;
+}
+
+type AgencyProcessingMode = "full" | "safe";
+
+function normalizeAgencyProcessingMode(value: unknown): AgencyProcessingMode {
+  return String(value || "").trim().toLowerCase() === "safe" ? "safe" : "full";
+}
+
+async function resolveAgencyProcessingMode(agencyId?: string | null): Promise<AgencyProcessingMode> {
+  const normalizedAgencyId = String(agencyId || "").trim();
+  if (!normalizedAgencyId) return "full";
+  try {
+    const agency = await getAgency(normalizedAgencyId);
+    return normalizeAgencyProcessingMode(agency?.processingMode);
+  } catch {
+    // Fail-open to preserve processing availability if settings read fails.
+    return "full";
+  }
+}
+
+function shouldBlockStage2ForSafeMode(mode: AgencyProcessingMode): boolean {
+  return mode === "safe";
+}
+
+async function enforceSafeModeOnEnhancePayload(payload: any): Promise<any> {
+  if (!payload || payload.type !== "enhance") return payload;
+
+  const mode = await resolveAgencyProcessingMode(payload.agencyId);
+  if (!shouldBlockStage2ForSafeMode(mode)) {
+    return payload;
+  }
+
+  const requestedStages = payload?.metadata?.requestedStages;
+  const retryRequestedStages = Array.isArray(payload?.retryRequestedStages)
+    ? payload.retryRequestedStages.filter((stage: string) => stage !== "2")
+    : payload?.retryRequestedStages;
+  const retryStagesToRun = Array.isArray(payload?.retryStagesToRun)
+    ? payload.retryStagesToRun.filter((stage: string) => stage !== "2")
+    : payload?.retryStagesToRun;
+
+  return {
+    ...payload,
+    options: {
+      ...(payload.options || {}),
+      virtualStage: false,
+      stage2Only: false,
+    },
+    executionPlan: payload.executionPlan
+      ? {
+          ...payload.executionPlan,
+          runStage2: false,
+        }
+      : payload.executionPlan,
+    stage2OnlyMode: undefined,
+    retryRequestedStages,
+    retryStagesToRun,
+    metadata: {
+      ...(payload.metadata || {}),
+      requestedStages: {
+        ...(requestedStages || {}),
+        stage2: false,
+        stage2Mode: undefined,
+        agencyProcessingMode: "safe",
+      },
+    },
+  };
 }
 
 function assertDerivedJobLineage(params: {
@@ -232,7 +299,7 @@ export async function getJob(jobId: string): Promise<JobRecord | undefined> {
   return undefined;
 }
 
-function buildEnhanceArtifacts(params: {
+async function buildEnhanceArtifacts(params: {
   userId: UserId;
   imageId: ImageId;
   agencyId?: string | null;
@@ -312,6 +379,30 @@ function buildEnhanceArtifacts(params: {
 }, jobIdOverride?: JobId) {
   const jobId: JobId = jobIdOverride ?? ("job_" + crypto.randomUUID());
   const now = new Date().toISOString();
+  const agencyProcessingMode = await resolveAgencyProcessingMode(params.agencyId);
+  const stage2BlockedBySafeMode = shouldBlockStage2ForSafeMode(agencyProcessingMode);
+  const normalizedOptions = {
+    ...params.options,
+    virtualStage: stage2BlockedBySafeMode ? false : params.options.virtualStage,
+    stage2Only: stage2BlockedBySafeMode ? false : params.options.stage2Only,
+  };
+  const normalizedExecutionPlan = params.executionPlan
+    ? {
+        ...params.executionPlan,
+        runStage2: stage2BlockedBySafeMode ? false : params.executionPlan.runStage2,
+      }
+    : params.executionPlan;
+  const normalizedStage2OnlyMode = stage2BlockedBySafeMode ? undefined : params.stage2OnlyMode;
+
+  if (stage2BlockedBySafeMode && (params.options.virtualStage || params.executionPlan?.runStage2)) {
+    console.warn("[SAFE_MODE] Stage 2 request blocked at enqueue", {
+      agencyId: params.agencyId || null,
+      userId: params.userId,
+      imageId: params.imageId,
+      jobId,
+    });
+  }
+
   const isDerivedEnhanceJob = params.retryInfo?.retryType === "manual_retry"
     || !!params.sourceStage
     || !!params.baselineStage;
@@ -325,15 +416,16 @@ function buildEnhanceArtifacts(params: {
 
   const requestedStages: RequestedStages = {
     stage1a: true,
-    stage1b: params.options.declutter ? (params.options.declutterMode === "light" ? "light" : "full") : undefined,
-    stage2: params.options.virtualStage,
-    stage2Mode: params.options.virtualStage
-      ? (params.options.stagingPreference === "refresh"
+    stage1b: normalizedOptions.declutter ? (normalizedOptions.declutterMode === "light" ? "light" : "full") : undefined,
+    stage2: normalizedOptions.virtualStage,
+    stage2Mode: normalizedOptions.virtualStage
+      ? (normalizedOptions.stagingPreference === "refresh"
         ? "refresh"
-        : params.options.stagingPreference === "full"
+        : normalizedOptions.stagingPreference === "full"
           ? "empty"
           : "auto")
       : undefined,
+    agencyProcessingMode,
   };
 
   const jobMeta: JobOwnershipMetadata = {
@@ -362,7 +454,7 @@ function buildEnhanceArtifacts(params: {
       : (params.remoteOriginalUrl || null),
     baselineStage: params.baselineStage,
     stageUrls: params.stageUrls,
-    options: params.options,
+    options: normalizedOptions,
     createdAt: now,
     remoteOriginalUrl: params.remoteOriginalUrl as any,
     remoteOriginalKey: params.remoteOriginalKey as any,
@@ -392,8 +484,8 @@ function buildEnhanceArtifacts(params: {
     galleryParentImageId: params.retryInfo?.galleryParentImageId,
     retryParentJobId: params.retryInfo?.parentJobId,
     retryClientBatchId: params.retryInfo?.clientBatchId,
-    stage2OnlyMode: params.stage2OnlyMode as any,
-    executionPlan: params.executionPlan as any,
+    stage2OnlyMode: normalizedStage2OnlyMode as any,
+    executionPlan: normalizedExecutionPlan as any,
   } as any;
 
   return { jobId, now, jobMeta, payload };
@@ -478,7 +570,7 @@ export async function enqueueEnhanceJob(params: {
     sourceStage?: string;
   };
 }, jobIdOverride?: JobId) {
-  const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
+  const { jobId, jobMeta, payload } = await buildEnhanceArtifacts(params, jobIdOverride);
 
   await Promise.all([
     queue().add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId)),
@@ -573,7 +665,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
     sourceStage?: string;
   };
 }, jobIdOverride?: JobId) {
-  const { jobId, jobMeta, payload } = buildEnhanceArtifacts(params, jobIdOverride);
+  const { jobId, jobMeta, payload } = await buildEnhanceArtifacts(params, jobIdOverride);
   const expiresAt = buildAwaitingPaymentExpiryIso(payload.createdAt);
 
   await Promise.all([
@@ -605,6 +697,22 @@ export async function enqueueStoredEnhanceJob(jobId: string): Promise<{ enqueued
   const payload = (rec as any)?.payload;
   if (!payload || payload.type !== "enhance") {
     return { enqueued: false };
+  }
+
+  const sanitizedPayload = await enforceSafeModeOnEnhancePayload(payload);
+  if (sanitizedPayload !== payload) {
+    await updateJob(jobId as any, {
+      payload: sanitizedPayload,
+      metadata: {
+        ...((rec as any)?.metadata || {}),
+        requestedStages: {
+          ...((rec as any)?.metadata?.requestedStages || {}),
+          stage2: false,
+          stage2Mode: undefined,
+          agencyProcessingMode: "safe",
+        },
+      },
+    });
   }
 
   return enqueueStoredJob(jobId);

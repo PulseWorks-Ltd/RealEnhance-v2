@@ -11,7 +11,7 @@ export interface StageFlags {
   stage2: boolean;
   sceneType: string; // "interior" | "exterior"
   /** Final output classification written to history metadata. */
-  completionType?: "full_success" | "fallback_1b" | "fallback_1a";
+  completionType?: "full_success" | "fallback_1b" | "fallback_1a" | "intentional_1a_success" | "optimized_1a_success";
   /** Final stage delivered to the user (1A | 1B | 2). */
   finalDeliveredStage?: "1A" | "1B" | "2";
   /** True when user requested enhancement beyond Stage 1A. */
@@ -50,10 +50,15 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
     return { amount: 1, reason: "flat_one_image_model" };
   }
 
-  // Interior fallback to Stage-1A is refundable only when user asked for >1A enhancement.
+  // Interior fallback to Stage-1A is refundable ONLY when user asked for >1A enhancement
+  // AND the terminal state is a true downstream failure (not intentional or detector-optimized).
+  // intentional_1a_success: user explicitly chose Enhance Only → billable
+  // optimized_1a_success:   detector confirmed empty room → billable (successful optimization)
   if (
     (completionType === "fallback_1a" || finalDeliveredStage === "1A") &&
-    requestedBeyond1A
+    requestedBeyond1A &&
+    completionType !== "intentional_1a_success" &&
+    completionType !== "optimized_1a_success"
   ) {
     return { amount: 0, reason: "interior_fallback_1a_refund" };
   }

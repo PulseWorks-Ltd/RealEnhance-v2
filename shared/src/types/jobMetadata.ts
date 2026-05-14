@@ -10,6 +10,7 @@ export type RequestedStages = {
   stage1b?: "light" | "full" | undefined;
   stage2?: boolean;
   stage2Mode?: "empty" | "refresh" | "auto";
+  agencyProcessingMode?: "full" | "safe";
 };
 
 export type JobOwnershipMetadata = {

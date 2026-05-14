@@ -3,6 +3,7 @@
 
 export type UserRole = "owner" | "admin" | "member";
 export type PlanTier = "starter" | "pro" | "agency";
+export type AgencyProcessingMode = "full" | "safe";
 
 // Subscription status (driven by Stripe webhooks in normal operation)
 export type SubscriptionStatus = "ACTIVE" | "PAST_DUE" | "CANCELLED" | "TRIAL";
@@ -11,6 +12,7 @@ export interface Agency {
   agencyId: string;
   name: string;
   planTier?: PlanTier | null;
+  processingMode?: AgencyProcessingMode;
 
   // Subscription status - automatically updated by Stripe webhooks
   subscriptionStatus: SubscriptionStatus;

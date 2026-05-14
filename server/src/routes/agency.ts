@@ -307,6 +307,7 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
     res.json({
       agency: {
         ...agency,
+        processingMode: agency.processingMode === "safe" ? "safe" : "full",
         isNew,
         promoCreditsGranted,
         upgradeBannerSeen: agency.upgradeBannerSeen === true,
@@ -357,6 +358,46 @@ router.post("/upgrade-banner-seen", requireAuth, requireAgencyAdmin, async (req:
   } catch (err) {
     console.error("[AGENCY] Failed to mark upgrade banner seen:", err);
     return res.status(500).json({ error: "Failed to update banner state" });
+  }
+});
+
+/**
+ * PATCH /api/agency/settings/processing-mode
+ * Update agency processing mode (owner/admin only)
+ */
+router.patch("/settings/processing-mode", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user as UserRecord;
+    if (!user.agencyId) {
+      return res.status(403).json({ error: "Agency membership required" });
+    }
+
+    const processingModeRaw = String((req.body as any)?.processingMode || "").trim().toLowerCase();
+    if (processingModeRaw !== "full" && processingModeRaw !== "safe") {
+      return res.status(400).json({ error: "processingMode must be 'full' or 'safe'" });
+    }
+
+    const agency = await getAgency(user.agencyId);
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    const processingMode = processingModeRaw as "full" | "safe";
+    await updateAgency({
+      ...agency,
+      processingMode,
+    });
+
+    console.log("[AGENCY_PROCESSING_MODE_UPDATED]", {
+      agencyId: user.agencyId,
+      updatedByUserId: user.id,
+      processingMode,
+    });
+
+    return res.json({ ok: true, processingMode });
+  } catch (err) {
+    console.error("[AGENCY] Failed to update processing mode:", err);
+    return res.status(500).json({ error: "Failed to update processing mode" });
   }
 });
 

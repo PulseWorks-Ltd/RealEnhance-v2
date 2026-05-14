@@ -70,125 +70,7 @@ import { resolveStageUrl, mergeStageUrls, normalizeStageUrls } from "@realenhanc
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
-import { getGeminiClient } from "./ai/gemini";
-import { checkCompliance } from "./ai/compliance";
-import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageTelemetry";
-import { toBase64, siblingOutPath } from "./utils/images";
-import { isCancelled } from "./utils/cancel";
-import { getStagingProfile } from "./utils/groups";
-import { publishImage } from "./utils/publish";
-import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
-import { downloadToTemp } from "./utils/remote";
-import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
-import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
-import { checkStageOutput } from "./utils/stageOutputGuard";
-import { runStructuralCheck } from "./validators/structureValidatorClient";
-import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
-import { validateStage1BStructure } from "./validators/geminiSemanticValidator";
 import {
-  runUnifiedValidation,
-  logUnifiedValidationCompact,
-  shouldInjectEvidence,
-  type UnifiedValidationResult,
-  type AdvisoryObservation,
-} from "./validators/runValidation";
-import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
-import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
-import { isEvidenceGatingEnabledForJob } from "./validators/evidenceGating";
-import { isJobFailedFinal } from "./validators/stageRetryManager";
-import {
-  STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD,
-  STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD,
-  hasStage1BStructuralSignal,
-  isStage1BMinorReconstructionSignal,
-} from "./validators/stageAwareConfig";
-import { computeOpeningGeometrySignal } from "./validators/signalMetrics";
-const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
-const POST_1B_TIMEOUT_MS = 3000;
-const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
-const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
-const SIGN_ALL_STAGE_OUTPUTS_ENABLED = isDebugImageUrlLoggingEnabled();
-const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
-  1,
-  Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
-);
-const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
-const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
-const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
-const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
-const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCALE_ENABLED ?? "true").toLowerCase() !== "false";
-const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHANCE_ENABLED ?? "true").toLowerCase() !== "false";
-const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
-const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
-const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.04)));
-const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
-const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
-// SINGLE-AUTHORITY: composite local validator always blocks
-const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
-const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
-const STAGE1B_BLANK_STDDEV_MAX = Math.max(
-  0.01,
-  Number(process.env.STAGE1B_BLANK_STDDEV_MAX || 0.35)
-);
-const STAGE1B_BLANK_RANGE_MAX = Math.max(
-  0,
-  Number(process.env.STAGE1B_BLANK_RANGE_MAX || 4)
-);
-const EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD = Math.max(
-  0,
-  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD || 0.75))
-);
-const EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN = Math.max(
-  0,
-  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN || 0.6))
-);
-const EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD = Math.max(
-  1,
-  Math.floor(Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD || 14))
-);
-const EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD = Math.max(
-  0,
-  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD || 0.58))
-);
-const EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD = Math.max(
-  0,
-  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD || 0.62))
-);
-const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = (() => {
-  const configured = Number(process.env.INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE || 1);
-  return Number.isFinite(configured) ? Math.max(0, Math.floor(configured)) : 1;
-})();
-const ALLOWED_EXTERIOR_DECLUTTER_TYPES = new Set([
-  "bicycle",
-  "scooter",
-  "ladder",
-  "tools",
-  "wheelbarrow",
-  "hose",
-  "sprinkler",
-  "extension_cord",
-  "bucket",
-  "bin",
-  "trash",
-  "loose_chair",
-  "loose_table",
-  "building_material",
-  "debris",
-]);
-import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
-import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
-import { runUnifiedValidator, type Stage2LocalSignals } from "./validators/unifiedValidator";
-import { detectCurtainRail } from "./validators/curtainRailDetector";
-import {
-  detectRelocation,
-  extractStructuralBaseline,
-  validateOpeningPreservation,
-  type StructuralBaseline,
-} from "./validators/openingPreservationValidator";
-import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
-import {
-  classifyIssueTier,
-  CRITICAL_ISSUES,
   ISSUE_TYPES,
   normalizeReason,
   type StructuredIssue,
@@ -7886,7 +7768,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog("[ROUTING_DECISION]", {
       jobId: payload.jobId,
       path: "1A",
-      reason: "enhance_only_hard_stop",
+      reason: "explicit_enhance_only",
+      terminalReason: "explicit_enhance_only",
+      completionType: "intentional_1a_success",
     });
 
     stage12Success = true;
@@ -7898,7 +7782,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       pub1AUrl = resultUrl;
     }
 
-    if (await checkStage2AlreadyFinal(payload.jobId, "enhance_only_hard_stop")) {
+    if (await checkStage2AlreadyFinal(payload.jobId, "explicit_enhance_only")) {
       return;
     }
 
@@ -7947,8 +7831,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage1BRequired: false,
         },
         stage2Skipped: true,
-        stage2SkipReason: "enhance_only_hard_stop",
+        stage2SkipReason: "explicit_enhance_only",
         stageCompleted: "1A",
+        terminalReason: "explicit_enhance_only",
+        completionType: "intentional_1a_success",
       },
     }, "enhance_only_complete");
 
@@ -7988,7 +7874,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage1BSuccess: false,
           stage2Success: false,
           sceneType: sceneLabel || "interior",
-          completionType: "full_success",
+          completionType: "intentional_1a_success",
           finalDeliveredStage: "1A",
           requestedBeyond1A: false,
           stage1BUserSelected: false,
@@ -8020,7 +7906,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         parentImageId: (payload as any).galleryParentImageId || null,
         source: 'stage2',
         stagesCompleted: ['1A'],
-        completionType: 'full_success',
+        completionType: 'intentional_1a_success',
         publicUrl: resultUrl,
         thumbnailUrl: resultUrl,
         originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
@@ -8127,7 +8013,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isInteriorScene = sceneLabel === "interior";
   const isExteriorScene = sceneLabel === "exterior";
   const isStage2Only = hasVirtualStage && (payload.options as any).stage2Only === true;
-  const shouldResolveFurnishedGate = hasVirtualStage && isInteriorScene;
+  // Extend gate to cover declutter-only interior: detector must run so optimized_1a_success
+  // can terminate early when the room is confirmed empty (high-confidence). Stage 2 requests
+  // continue through the gate unchanged — FROM_EMPTY routing is unaffected.
+  const shouldResolveFurnishedGate = (hasVirtualStage || !!payload.options.declutter) && isInteriorScene;
   const shouldResolveExteriorDeclutter = isExteriorScene;
   if (shouldResolveFurnishedGate || shouldResolveExteriorDeclutter) {
     let routingSnapshot = frozenRoutingSnapshot;
@@ -8404,6 +8293,173 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       frozenRoutingSnapshot = routingSnapshot;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // OPTIMIZED 1A: declutter-only (no Stage 2) + high-confidence empty room.
+    // ─────────────────────────────────────────────────────────────────────────
+    // Guard: Stage 2 requests MUST NOT enter this path — they proceed to
+    //        Stage 2 FROM_EMPTY via the normal routing dispatch below.
+    // Confidence gate: only fires when detector is definitively certain:
+    //   • localEmptyBypass authority  (fast pixel-level empty check)
+    //   • OR Gemini authority with geminiHasFurniture === false AND confidence ≥ 0.85
+    // Borderline / fallback / ambiguous results fall through to Stage 1B (safe default).
+    if (
+      !stage2Requested &&
+      stage1BRequestedByUser &&
+      isInteriorScene &&
+      routingSnapshot
+    ) {
+      const isHighConfidenceEmpty =
+        (routingSnapshot.authority === "localEmptyBypass" && routingSnapshot.localEmpty === true) ||
+        (routingSnapshot.authority === "gemini" &&
+          routingSnapshot.geminiHasFurniture === false &&
+          typeof routingSnapshot.geminiConfidence === "number" &&
+          routingSnapshot.geminiConfidence >= 0.85);
+
+      if (isHighConfidenceEmpty) {
+        nLog("[ROUTING_DECISION]", {
+          jobId: payload.jobId,
+          path: "1A",
+          reason: "detector_no_furniture",
+          terminalReason: "detector_no_furniture",
+          completionType: "optimized_1a_success",
+          authority: routingSnapshot.authority,
+          geminiConfidence: routingSnapshot.geminiConfidence,
+        });
+
+        stage12Success = true;
+
+        let opt1AResultUrl = pub1AUrl;
+        if (!opt1AResultUrl) {
+          const optPub = await publishWithOptionalBlackEdgeGuard(path1A, "optimized-1a-final");
+          opt1AResultUrl = optPub.url;
+          pub1AUrl = opt1AResultUrl;
+        }
+
+        if (await checkStage2AlreadyFinal(payload.jobId, "optimized_1a_no_furniture")) {
+          return;
+        }
+
+        const opt1AJob = await getJob(payload.jobId);
+        const opt1AGuard = canMarkJobComplete(opt1AJob as any, null, {
+          outputUrl: opt1AResultUrl,
+          finalStageRan: "1A",
+          expectedFinalStage: "1A",
+        });
+        logCompletionGuard(payload.jobId, opt1AGuard);
+        if (!opt1AGuard.ok) {
+          await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${opt1AGuard.reason}` }, "completion_guard_block");
+          return;
+        }
+
+        await safeWriteJobStatus(payload.jobId, {
+          status: "complete",
+          success: true,
+          completed: true,
+          currentStage: "finalizing",
+          finalStage: "1A",
+          resultStage: "1A",
+          stageCompleted: "1A",
+          originalUrl: publishedOriginal?.url,
+          finalOutputUrl: opt1AResultUrl,
+          resultUrl: opt1AResultUrl,
+          imageUrl: opt1AResultUrl,
+          stageUrls: {
+            "1A": opt1AResultUrl ?? null,
+            "1B": null,
+            "2": null,
+          },
+          stageOutputs: {
+            "1A": path1A,
+          },
+          meta: {
+            ...sceneMeta,
+            routingSnapshot,
+            stage2Skipped: true,
+            stage2SkipReason: "detector_no_furniture",
+            stageCompleted: "1A",
+            terminalReason: "detector_no_furniture",
+            completionType: "optimized_1a_success",
+          },
+        }, "optimized_1a_success_complete");
+
+        const isEnhancementJobOpt = (payload as any).type === "enhance";
+        const isFreeManualRetryOpt = (payload as any).retryType === "manual_retry";
+        try {
+          const agencyId = (payload as any).agencyId || null;
+          const imagesUsed = !isFreeManualRetryOpt && isEnhancementJobOpt ? 1 : 0;
+          await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
+        } catch (usageErr) {
+          nLog("[USAGE] Failed to record usage for optimized-1a completion (non-blocking):", (usageErr as any)?.message || usageErr);
+        }
+
+        try {
+          await finalizeReservationFromWorker({
+            jobId: payload.jobId,
+            stage12Success: true,
+            stage2Success: false,
+            actualCharge: !isFreeManualRetryOpt && isEnhancementJobOpt ? 1 : 0,
+          });
+        } catch (billingErr) {
+          nLog("[BILLING] Failed to finalize reservation for optimized-1a completion (non-blocking):", (billingErr as any)?.message || billingErr);
+        }
+
+        if (!isFreeManualRetryOpt && isEnhancementJobOpt) {
+          try {
+            await finalizeImageChargeFromWorker({
+              jobId: payload.jobId,
+              stage1ASuccess: true,
+              stage1BSuccess: false,
+              stage2Success: false,
+              sceneType: sceneLabel || "interior",
+              completionType: "optimized_1a_success",
+              finalDeliveredStage: "1A",
+              requestedBeyond1A: true,
+              stage1BUserSelected: true,
+              geminiHasFurniture: routingSnapshot.geminiHasFurniture ?? undefined,
+            });
+          } catch (chargeErr) {
+            nLog("[BILLING] Failed to finalize charge for optimized-1a completion (non-blocking):", (chargeErr as any)?.message || chargeErr);
+          }
+        }
+
+        if (payload.agencyId && opt1AResultUrl) {
+          const auditRefOpt = generateAuditRef();
+          const traceIdOpt = generateTraceId(payload.jobId);
+          const extractKeyOpt = (url?: string | null) => {
+            if (!url) return null;
+            try {
+              const u = new URL(url);
+              return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+            } catch {
+              return null;
+            }
+          };
+          recordEnhancedImageHistory({
+            agencyId: payload.agencyId,
+            userId: payload.userId,
+            jobId: payload.jobId,
+            propertyId: (payload as any).propertyId || null,
+            parentImageId: (payload as any).galleryParentImageId || null,
+            source: 'stage2',
+            stagesCompleted: ['1A'],
+            completionType: 'optimized_1a_success',
+            publicUrl: opt1AResultUrl,
+            thumbnailUrl: opt1AResultUrl,
+            originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
+            originalS3Key: extractKeyOpt((payload as any).remoteOriginalUrl || publishedOriginal?.url || null),
+            enhancedS3Key: extractKeyOpt(opt1AResultUrl),
+            thumbS3Key: extractKeyOpt(opt1AResultUrl),
+            auditRef: auditRefOpt,
+            traceId: traceIdOpt,
+          }).catch((err) => {
+            nLog(`[enhanced-images] Failed to record optimized-1a image: ${err}`);
+          });
+        }
+
+        return;
+      }
     }
 
     if (isExteriorScene) {

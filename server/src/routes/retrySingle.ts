@@ -14,6 +14,7 @@ import { getJobMetadata, saveJobMetadata } from "@realenhance/shared/imageStore"
 import { findByPublicUrlRedis } from "@realenhance/shared";
 import { resolveStageUrl, normalizeStageLabel, mergeStageUrls, normalizeStageUrls } from "@realenhance/shared/stageUrlResolver";
 import { getRedis } from "@realenhance/shared/redisClient.js";
+import { getAgency } from "@realenhance/shared/agencies.js";
 import { getFreeRetryCount } from "../services/usageLedger.js";
 import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
@@ -333,6 +334,11 @@ export function retrySingleRouter() {
       const incomingRetryParentJobId = String(body.retryParentJobId || "").trim() || null;
       let parentJobId = String(body.parentJobId || body.retryParentJobId || "").trim() || null;
       let parentImageId = String(body.retryParentImageId || body.imageId || "").trim() || null;
+      const userAgencyId = String(sessUser?.agencyId || "").trim() || null;
+      const agencyProcessingMode = userAgencyId
+        ? String((await getAgency(userAgencyId))?.processingMode || "full").toLowerCase()
+        : "full";
+      const safeModeEnabled = agencyProcessingMode === "safe";
       const clientBatchId = body.clientBatchId || body.batchId || null;
       const stagesToRun = parseStageList(body.stagesToRun);
       const requestedStagesList = parseStageList(body.requestedStages);
@@ -830,16 +836,40 @@ export function retrySingleRouter() {
 
       // Ensure worker receives an explicit execution plan.
       // Without this, manual retries can be interpreted as Stage-2-only by default.
-      const effectiveStagesToRun: Array<"1A" | "1B" | "2"> = stagesToRun.length > 0
+      let effectiveStagesToRun: Array<"1A" | "1B" | "2"> = stagesToRun.length > 0
         ? stagesToRun
         : (requestedStage === "2"
           ? ((stage2OnlyDisabled)
                 ? ["1A", "1B", "2"]
                 : ["2"])
             : []);
+      if (safeModeEnabled) {
+        const stage2Requested = effectiveStagesToRun.includes("2") || requestedStagesList.includes("2") || requestedStage === "2";
+        effectiveStagesToRun = effectiveStagesToRun.filter((stage) => stage !== "2");
+        if (stage2Requested) {
+          console.warn("[SAFE_MODE] Retry Stage 2 blocked", {
+            userId: sessUser.id,
+            agencyId: userAgencyId,
+            requestedStage,
+            stagesToRun,
+            requestedStagesList,
+          });
+        }
+      }
       const effectiveRequestedStages: Array<"1A" | "1B" | "2"> = requestedStagesList.length > 0
         ? requestedStagesList
         : effectiveStagesToRun;
+      const normalizedRequestedStages: Array<"1A" | "1B" | "2"> = safeModeEnabled
+        ? effectiveRequestedStages.filter((stage) => stage !== "2")
+        : effectiveRequestedStages;
+
+      if (effectiveStagesToRun.length === 0) {
+        return res.status(409).json({
+          success: false,
+          error: "safe_mode_stage2_prohibited",
+          message: "Safe Mode is enabled for your agency. Stage 2 retries are disabled.",
+        });
+      }
 
       if (effectiveStagesToRun.includes("1B")) {
         stage1BWasRequested = true;
@@ -969,7 +999,7 @@ export function retrySingleRouter() {
           retryType: "manual_retry",
           requestedStage,
           stagesToRun: effectiveStagesToRun,
-          requestedStages: effectiveRequestedStages,
+          requestedStages: normalizedRequestedStages,
           uiSourceStage,
           executionSourceStage,
           selectedSourceUrl: selectedSourceUrl?.substring(0, 120),
@@ -1111,7 +1141,7 @@ export function retrySingleRouter() {
           stage1BWasRequested,
           baselineStage: executionSourceStage,
           baselineUrl: selectedSourceUrl,
-          requestedStages: effectiveRequestedStages,
+          requestedStages: normalizedRequestedStages,
           stagesToRun: effectiveStagesToRun,
           parentImageId,
           galleryParentImageId: retrySourceEnhanced?.id || null,

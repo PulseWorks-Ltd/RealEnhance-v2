@@ -280,6 +280,7 @@ export interface EnhancedImage {
     parentImageId?: string | null;
     source?: 'stage2' | 'region-edit';
     stagesCompleted: string[];
+    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
     storageKey: string;
     publicUrl: string;
     thumbnailUrl?: string;
@@ -309,6 +310,7 @@ export interface EnhancedImageListItem {
     publicUrl: string;
     originalUrl?: string | null;
     stagesCompleted: string[];
+    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
     createdAt: string;
     auditRef: string;
     propertyId?: string | null;

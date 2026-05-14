@@ -1619,8 +1619,41 @@ export default function BatchProcessor({
 
   const { ensureLoggedInAndCredits } = useAuthGuard();
   const currentUserId = user?.id || null;
+  const [agencySafeMode, setAgencySafeMode] = useState(false);
 
   const prevUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadAgencyProcessingMode = async () => {
+      if (!user?.agencyId) {
+        if (!cancelled) setAgencySafeMode(false);
+        return;
+      }
+
+      try {
+        const res = await apiFetch("/api/agency/info");
+        if (!res.ok) return;
+        const data = await res.json().catch(() => ({}));
+        const safe = data?.agency?.processingMode === "safe";
+        if (!cancelled) {
+          setAgencySafeMode(safe);
+          if (safe) setAllowStaging(false);
+        }
+      } catch {
+        // Non-blocking: keep default behavior if agency settings lookup fails.
+      }
+    };
+
+    void loadAgencyProcessingMode();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.agencyId]);
+
+  const effectiveAllowStaging = allowStaging && !agencySafeMode;
 
   const handleAuthFailure = useCallback(() => {
     clearBatchJobState(currentUserId, { resetUI: true });
@@ -2040,7 +2073,7 @@ export default function BatchProcessor({
         : !!declutter;
       const userSelectedStage2 = perImageMeta.virtualStage !== undefined
         ? !!perImageMeta.virtualStage
-        : !!allowStaging;
+        : !!effectiveAllowStaging;
 
       return {
         sceneType: scene,
@@ -2048,7 +2081,7 @@ export default function BatchProcessor({
         userSelectedStage2,
       };
     }),
-    [allowStaging, declutter, files, finalSceneForIndex, metaByIndex]
+    [declutter, effectiveAllowStaging, files, finalSceneForIndex, metaByIndex]
   );
 
   const requiredBatchCredits = useMemo(
@@ -2328,7 +2361,7 @@ export default function BatchProcessor({
       }
       if (manualSceneOverrideById[imageId]) metaItem.manualSceneOverride = true;
       // Room type (only for interiors)
-      if (allowStaging && (sceneType !== "exterior")) {
+      if (effectiveAllowStaging && (sceneType !== "exterior")) {
         const roomType = imageRoomTypesById[imageId];
         if (roomType) metaItem.roomType = roomType;
       }
@@ -2348,7 +2381,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, allowStaging, samplingUiEnabled, scenePredictionsById]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -4798,13 +4831,13 @@ export default function BatchProcessor({
     
     // Use shared industry mapping from component scope
     const goalToSend = globalGoal.trim() || "General, realistic enhancement for the selected industry.";
-    const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
+    const declutterMode = declutter && effectiveAllowStaging ? "stage-ready" : "light";
     if (declutter) {
       console.log("[upload] UI sending options:", { declutter, declutterMode, allowStaging });
     }
-    const stage2Only = allowStaging && !declutter;
+    const stage2Only = effectiveAllowStaging && !declutter;
     const stage2Variant: "2A" | "2B" | undefined = (() => {
-      if (!allowStaging) return undefined;
+      if (!effectiveAllowStaging) return undefined;
       if (declutter) return "2A";
       return "2B";
     })();
@@ -4819,7 +4852,7 @@ export default function BatchProcessor({
       clientBatchId: activeClientBatchId,
       batchId: "pending",
       stage2Only,
-      allowStaging,
+      allowStaging: effectiveAllowStaging,
       declutter,
       files: files.length,
     });
@@ -4830,8 +4863,8 @@ export default function BatchProcessor({
       goal: goalToSend,
       industry: industryMap[presetKey] || "Real Estate",
       preserveStructure: true,
-      allowStaging,
-      stagingStyle: allowStaging ? stagingStyle : "",
+      allowStaging: effectiveAllowStaging,
+      stagingStyle: effectiveAllowStaging ? stagingStyle : "",
       allowRetouch: true,
       furnitureReplacement,
       declutter,
@@ -4856,7 +4889,7 @@ export default function BatchProcessor({
       setProgressText("Compressing images...");
       console.info("[ENHANCE_REQUEST] sending", {
         files: files.length,
-        allowStaging,
+        allowStaging: effectiveAllowStaging,
         declutter,
         declutterMode,
         stage2Variant,
@@ -4866,7 +4899,7 @@ export default function BatchProcessor({
         stage2Variant,
         declutterMode,
         stage2Only,
-        stagesSelected: { stage1A: true, stage1B: declutter, stage2: allowStaging },
+        stagesSelected: { stage1A: true, stage1B: declutter, stage2: effectiveAllowStaging },
       });
       const uploadedKeys = await handleUpload(files, {
         signal: controller.signal,
@@ -4989,7 +5022,7 @@ export default function BatchProcessor({
       console.log("[BATCH] start", {
         clientBatchId: activeClientBatchId,
         batchId: ids[0] || "unknown",
-        allowStaging,
+        allowStaging: effectiveAllowStaging,
         declutter,
         stage2Only,
       });
@@ -5242,10 +5275,10 @@ export default function BatchProcessor({
   }, [files, toast]);
 
   const handleStartEnhance = () => {
-    const declutterMode = declutter && allowStaging ? "stage-ready" : "light";
+    const declutterMode = declutter && effectiveAllowStaging ? "stage-ready" : "light";
     console.info("[ENHANCE_CLICK] start", {
       count: files.length,
-      allowStaging,
+      allowStaging: effectiveAllowStaging,
       declutter,
       declutterMode,
       clientBatchId,
@@ -5393,7 +5426,17 @@ export default function BatchProcessor({
         retry: ["2"],
         edit: ["2"],
       };
-      const effectiveStagesToRun = stagePlanBySource[sourceStage];
+      const effectiveStagesToRun = agencySafeMode
+        ? stagePlanBySource[sourceStage].filter((stage) => stage !== "2")
+        : stagePlanBySource[sourceStage];
+      if (!effectiveStagesToRun.length) {
+        toast({
+          title: "Retry unavailable",
+          description: "Safe Mode is enabled for your agency. Stage 2 retries are disabled.",
+          variant: "destructive",
+        });
+        return;
+      }
       const effectiveAllowStaging = effectiveStagesToRun.includes("2");
       const baselineStage: "original" | "1A" | "1B" | "latest" =
         sourceStage === "original"
@@ -7417,11 +7460,20 @@ export default function BatchProcessor({
 
                     <button
                       type="button"
-                      onClick={() => setAllowStaging(!allowStaging)}
-                      className={`w-full rounded-lg border p-3 text-left text-sm space-y-1 transition-all ${allowStaging ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}`}
+                      onClick={() => {
+                        if (!agencySafeMode) {
+                          setAllowStaging(!allowStaging);
+                        }
+                      }}
+                      className={`w-full rounded-lg border p-3 text-left text-sm space-y-1 transition-all ${effectiveAllowStaging ? "border-action-500 bg-action-50 text-action-800" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"} ${agencySafeMode ? "opacity-70 cursor-not-allowed" : ""}`}
+                      disabled={agencySafeMode}
                     >
                       <p className="font-semibold">Virtual Staging Mode</p>
-                      <p className="text-xs">Adds staging to supported interior scenes.</p>
+                      <p className="text-xs">
+                        {agencySafeMode
+                          ? "Disabled by agency Safe Mode. Stage 2 is blocked for automated processing."
+                          : "Adds staging to supported interior scenes."}
+                      </p>
                     </button>
 
                     <div className="space-y-3 text-sm">
