@@ -70,13 +70,131 @@ import { resolveStageUrl, mergeStageUrls, normalizeStageUrls } from "@realenhanc
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
+import { getGeminiClient } from "./ai/gemini";
+import { checkCompliance } from "./ai/compliance";
+import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageTelemetry";
+import { toBase64, siblingOutPath } from "./utils/images";
+import { isCancelled } from "./utils/cancel";
+import { getStagingProfile } from "./utils/groups";
+import { publishImage } from "./utils/publish";
+import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
+import { downloadToTemp } from "./utils/remote";
+import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
+import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
+import { checkStageOutput } from "./utils/stageOutputGuard";
+import { runStructuralCheck } from "./validators/structureValidatorClient";
+import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
+import { validateStage1BStructure } from "./validators/geminiSemanticValidator";
 import {
+  runUnifiedValidation,
+  logUnifiedValidationCompact,
+  shouldInjectEvidence,
+  type UnifiedValidationResult,
+  type AdvisoryObservation,
+} from "./validators/runValidation";
+import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
+import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
+import { isEvidenceGatingEnabledForJob } from "./validators/evidenceGating";
+import { isJobFailedFinal } from "./validators/stageRetryManager";
+import {
+  STAGE1B_OPENING_DELTA_STRUCTURAL_THRESHOLD,
+  STAGE1B_NEW_WALL_RATIO_STRUCTURAL_THRESHOLD,
+  hasStage1BStructuralSignal,
+  isStage1BMinorReconstructionSignal,
+} from "./validators/stageAwareConfig";
+import { computeOpeningGeometrySignal } from "./validators/signalMetrics";
+import { runSemanticStructureValidator } from "./validators/semanticStructureValidator";
+import { runMaskedEdgeValidator } from "./validators/maskedEdgeValidator";
+import { runUnifiedValidator, type Stage2LocalSignals } from "./validators/unifiedValidator";
+import { detectCurtainRail } from "./validators/curtainRailDetector";
+import {
+  detectRelocation,
+  extractStructuralBaseline,
+  validateOpeningPreservation,
+  type StructuralBaseline,
+} from "./validators/openingPreservationValidator";
+import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
+import {
+  classifyIssueTier,
+  CRITICAL_ISSUES,
   ISSUE_TYPES,
   normalizeReason,
   type StructuredIssue,
   type ValidationIssueTier,
   type ValidationIssueType,
 } from "./validators/issueTypes";
+const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
+const POST_1B_TIMEOUT_MS = 3000;
+const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
+const MAX_STAGE_RUNTIME_MS = Number(process.env.MAX_STAGE_RUNTIME_MS || 300000);
+const SIGN_ALL_STAGE_OUTPUTS_ENABLED = isDebugImageUrlLoggingEnabled();
+const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
+  1,
+  Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
+);
+const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
+const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
+const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
+const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
+const DELIVERY_EXPORT_UPSCALE_ENABLED = String(process.env.DELIVERY_EXPORT_UPSCALE_ENABLED ?? "true").toLowerCase() !== "false";
+const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHANCE_ENABLED ?? "true").toLowerCase() !== "false";
+const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
+const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
+const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.04)));
+const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
+const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
+// SINGLE-AUTHORITY: composite local validator always blocks
+const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
+const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
+const STAGE1B_BLANK_STDDEV_MAX = Math.max(
+  0.01,
+  Number(process.env.STAGE1B_BLANK_STDDEV_MAX || 0.35)
+);
+const STAGE1B_BLANK_RANGE_MAX = Math.max(
+  0,
+  Number(process.env.STAGE1B_BLANK_RANGE_MAX || 4)
+);
+const EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_CONFIDENCE_THRESHOLD || 0.75))
+);
+const EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_ITEM_CONFIDENCE_MIN || 0.6))
+);
+const EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD = Math.max(
+  1,
+  Math.floor(Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_OBJECT_COUNT_THRESHOLD || 14))
+);
+const EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_EDGE_DENSITY_THRESHOLD || 0.58))
+);
+const EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.EXTERIOR_DECLUTTER_FALLBACK_COLOR_VARIANCE_THRESHOLD || 0.62))
+);
+const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = (() => {
+  const configured = Number(process.env.INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE || 1);
+  return Number.isFinite(configured) ? Math.max(0, Math.floor(configured)) : 1;
+})();
+const ALLOWED_EXTERIOR_DECLUTTER_TYPES = new Set([
+  "bicycle",
+  "scooter",
+  "ladder",
+  "tools",
+  "wheelbarrow",
+  "hose",
+  "sprinkler",
+  "extension_cord",
+  "bucket",
+  "bin",
+  "trash",
+  "loose_chair",
+  "loose_table",
+  "building_material",
+  "debris",
+]);
 import { analyzeEnvelopeOpeningRelation } from "./validators/envelopeArbitration";
 import type { StructuralSignal } from "./validators/structuralSignal";
 import { deduplicateSignals } from "./validators/structuralSignal";
