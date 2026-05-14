@@ -5592,12 +5592,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // ═══════════ STAGE-2-ONLY RETRY MODE ═══════════
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
-  const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+  const stage2Requested =
+    requestedStages?.stage2 === true
+    || requestedStages?.stage2 === "true"
+    || payload.options?.virtualStage === true;
   const stage1BRequestedByUser =
     requestedStages?.stage1b === true
     || requestedStages?.stage1b === "true"
     || requestedStages?.stage1b === "light"
-    || requestedStages?.stage1b === "full";
+    || requestedStages?.stage1b === "full"
+    || requestedStages?.declutter === true
+    || payload.options?.declutter === true;
   const enhanceOnlyRequested = !stage2Requested && !stage1BRequestedByUser;
   let stage2AttemptId: string | undefined;
   const stage2SupersededActions = new Set<string>();
