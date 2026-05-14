@@ -7,6 +7,14 @@ import { getAgency } from "@realenhance/shared/agencies.js";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { PlanTier } from "@realenhance/shared/auth/types.js";
 import { getUserById } from "./users.js";
+import {
+  getActiveRedemptionForUpdate,
+  consumePilotPromoCreditsInTx,
+  refundPilotPromoCreditsInTx,
+  getPilotPromoSummary,
+  type PilotPromoRedemptionRow,
+} from "./pilotPromos.js";
+import type { PilotPromoInfo } from "@realenhance/shared/pilotPromos.js";
 
 export type ReservationStatus = "reserved" | "committed" | "consumed" | "released" | "partially_released";
 
@@ -19,6 +27,8 @@ export interface UsageSnapshot {
   addonUsed: number;
   remaining: number; // total remaining (includedRemaining + addonRemaining)
   monthKey: string;
+  /** Active pilot promo details, or null when none is active. */
+  pilotPromo: PilotPromoInfo | null;
 }
 
 export interface ReservationResult extends UsageSnapshot {
@@ -194,6 +204,7 @@ function buildSnapshot(row: any, addonRemaining: number, monthKey: string): Usag
     addonUsed: row.addon_used,
     remaining: includedRemaining + safeAddon,
     monthKey,
+    pilotPromo: null,
   };
 }
 
@@ -218,7 +229,17 @@ export async function reserveAllowance(params: {
     const includedRemaining = Math.max(0, usage.included_limit - usage.included_used);
     const addonRemaining = await getTotalBundleRemaining(params.agencyId, monthKey);
     const listingPackCredits = Math.max(0, Number(acct.listing_pack_credits || 0));
-    const totalRemaining = includedRemaining + addonRemaining + listingPackCredits;
+
+    // Pilot promo credits are spent FIRST (highest priority, lowest cost to the agency).
+    // Lock the redemption row inside the transaction to prevent concurrent double-spend.
+    const pilotRedemption: PilotPromoRedemptionRow | null = isSystemUser
+      ? null
+      : await getActiveRedemptionForUpdate(client, params.agencyId, params.userId);
+    const pilotPromoCredits = isSystemUser
+      ? 0
+      : Math.max(0, pilotRedemption ? pilotRedemption.credits_granted - pilotRedemption.credits_used : 0);
+
+    const totalRemaining = includedRemaining + addonRemaining + listingPackCredits + pilotPromoCredits;
     if (!isSystemUser && params.requiredImages > totalRemaining) {
       const snap = buildSnapshot(usage, addonRemaining, monthKey);
       const err: any = new Error("QUOTA_EXCEEDED");
@@ -228,9 +249,16 @@ export async function reserveAllowance(params: {
     }
 
     // Allocate sequentially: Stage12 first (if requested), then Stage2.
-    // Priority: included → add-on → listing pack (cheapest first, listing pack last).
-    const allocations: { stage: "1" | "2"; fromIncluded: number; fromAddon: number; fromListingPack: number }[] = [];
+    // Priority: pilot promo → included → add-on → listing pack.
+    const allocations: {
+      stage: "1" | "2";
+      fromPilotPromo: number;
+      fromIncluded: number;
+      fromAddon: number;
+      fromListingPack: number;
+    }[] = [];
     let remainingNeed = isSystemUser ? 0 : params.requiredImages;
+    let remainingPilot = pilotPromoCredits;
     let remainingIncluded = includedRemaining;
     let remainingAddon = addonRemaining;
     let remainingListingPack = listingPackCredits;
@@ -242,6 +270,9 @@ export async function reserveAllowance(params: {
 
     for (const s of stages) {
       if (!s.requested || remainingNeed <= 0) continue;
+      const takePilot = Math.min(remainingNeed, remainingPilot);
+      remainingPilot -= takePilot;
+      remainingNeed -= takePilot;
       const takeIncluded = Math.min(remainingNeed, remainingIncluded);
       remainingIncluded -= takeIncluded;
       remainingNeed -= takeIncluded;
@@ -251,19 +282,43 @@ export async function reserveAllowance(params: {
       const takeListingPack = Math.min(remainingNeed, remainingListingPack);
       remainingListingPack -= takeListingPack;
       remainingNeed -= takeListingPack;
-      allocations.push({ stage: s.key, fromIncluded: takeIncluded, fromAddon: takeAddon, fromListingPack: takeListingPack });
+      allocations.push({
+        stage: s.key,
+        fromPilotPromo: takePilot,
+        fromIncluded: takeIncluded,
+        fromAddon: takeAddon,
+        fromListingPack: takeListingPack,
+      });
     }
 
+    const reservedFromPilotPromo = allocations.reduce((sum, a) => sum + a.fromPilotPromo, 0);
     const reservedFromIncluded = allocations.reduce((sum, a) => sum + a.fromIncluded, 0);
     const reservedFromAddon = allocations.reduce((sum, a) => sum + a.fromAddon, 0);
     const reservedFromListingPack = allocations.reduce((sum, a) => sum + a.fromListingPack, 0);
 
-    const stage1Alloc = allocations.find((a) => a.stage === "1") || { fromIncluded: 0, fromAddon: 0, fromListingPack: 0 };
-    const stage2Alloc = allocations.find((a) => a.stage === "2") || { fromIncluded: 0, fromAddon: 0, fromListingPack: 0 };
+    const stage1Alloc = allocations.find((a) => a.stage === "1") || {
+      fromPilotPromo: 0,
+      fromIncluded: 0,
+      fromAddon: 0,
+      fromListingPack: 0,
+    };
+    const stage2Alloc = allocations.find((a) => a.stage === "2") || {
+      fromPilotPromo: 0,
+      fromIncluded: 0,
+      fromAddon: 0,
+      fromListingPack: 0,
+    };
 
     if (reservedFromListingPack > 0) {
       console.log(
         `[USAGE] Listing pack credits used: ${reservedFromListingPack} for job ${params.jobId} (agency ${params.agencyId})`
+      );
+    }
+
+    if (reservedFromPilotPromo > 0) {
+      console.log(
+        `[PILOT_PROMO] Reserved ${reservedFromPilotPromo} pilot credits for job ${params.jobId} ` +
+          `(agency ${params.agencyId}, redemption ${pilotRedemption?.id})`
       );
     }
 
@@ -277,11 +332,12 @@ export async function reserveAllowance(params: {
          requested_stage12, requested_stage2,
          reserved_images, reservation_status,
          reserved_stage12, reserved_stage2,
+         reserved_from_pilot_promo, pilot_promo_redemption_id,
          reserved_from_included, reserved_from_addon, reserved_from_listing_pack,
-         stage12_from_included, stage12_from_addon, stage12_from_listing_pack,
-         stage2_from_included, stage2_from_addon, stage2_from_listing_pack,
+         stage12_from_pilot_promo, stage12_from_included, stage12_from_addon, stage12_from_listing_pack,
+         stage2_from_pilot_promo,  stage2_from_included,  stage2_from_addon,  stage2_from_listing_pack,
          created_at, updated_at
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,NOW(),NOW())
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,'reserved',$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,NOW(),NOW())
        ON CONFLICT (job_id) DO NOTHING;`,
       [
         params.jobId,
@@ -293,12 +349,16 @@ export async function reserveAllowance(params: {
         params.requiredImages,
         params.requestedStage12,
         params.requestedStage2,
+        reservedFromPilotPromo,
+        pilotRedemption?.id ?? null,
         reservedFromIncluded,
         reservedFromAddon,
         reservedFromListingPack,
+        stage1Alloc.fromPilotPromo,
         stage1Alloc.fromIncluded,
         stage1Alloc.fromAddon,
         stage1Alloc.fromListingPack,
+        stage2Alloc.fromPilotPromo,
         stage2Alloc.fromIncluded,
         stage2Alloc.fromAddon,
         stage2Alloc.fromListingPack,
@@ -339,6 +399,16 @@ export async function commitReservation(params: { jobId: string }): Promise<void
     const reserveIncluded = Math.max(0, Number(jr.reserved_from_included || 0));
     const reserveAddon = Math.max(0, Number(jr.reserved_from_addon || 0));
     const reserveListingPack = Math.max(0, Number(jr.reserved_from_listing_pack || 0));
+    const reservePilotPromo = Math.max(0, Number(jr.reserved_from_pilot_promo || 0));
+
+    // Deduct pilot promo credits first.
+    if (reservePilotPromo > 0 && jr.pilot_promo_redemption_id) {
+      await consumePilotPromoCreditsInTx(client, jr.pilot_promo_redemption_id, reservePilotPromo);
+      console.log(
+        `[PILOT_PROMO] Committed ${reservePilotPromo} pilot credits for job ${params.jobId} ` +
+          `(redemption ${jr.pilot_promo_redemption_id})`
+      );
+    }
 
     if (reserveIncluded > 0 || reserveAddon > 0) {
       await client.query(
@@ -459,6 +529,7 @@ export async function finalizeReservation(params: {
     let refundIncluded = 0;
     let refundAddon = 0;
     let refundListingPack = 0;
+    let refundPilotPromo = 0;
     let consumeStage12 = false;
     let consumeStage2 = false;
 
@@ -466,6 +537,7 @@ export async function finalizeReservation(params: {
       if (params.stage12Success) {
         consumeStage12 = true;
       } else {
+        refundPilotPromo += Math.max(0, Number(jr.stage12_from_pilot_promo || 0));
         refundIncluded += jr.stage12_from_included;
         refundAddon += jr.stage12_from_addon;
         refundListingPack += Math.max(0, Number(jr.stage12_from_listing_pack || 0));
@@ -476,10 +548,20 @@ export async function finalizeReservation(params: {
       if (params.stage2Success) {
         consumeStage2 = true;
       } else {
+        refundPilotPromo += Math.max(0, Number(jr.stage2_from_pilot_promo || 0));
         refundIncluded += jr.stage2_from_included;
         refundAddon += jr.stage2_from_addon;
         refundListingPack += Math.max(0, Number(jr.stage2_from_listing_pack || 0));
       }
+    }
+
+    // Refund pilot promo credits on failed stages.
+    if (refundPilotPromo > 0 && jr.pilot_promo_redemption_id) {
+      await refundPilotPromoCreditsInTx(client, jr.pilot_promo_redemption_id, refundPilotPromo);
+      console.log(
+        `[PILOT_PROMO] Refunded ${refundPilotPromo} pilot credits for job ${params.jobId} ` +
+          `(redemption ${jr.pilot_promo_redemption_id})`
+      );
     }
 
     // Apply refunds
@@ -620,7 +702,7 @@ export async function incrementEdit(jobId: string): Promise<{ locked: boolean; e
   return { locked: row.amendments_locked, editCount: row.edit_count };
 }
 
-export async function getUsageSnapshot(agencyId: string): Promise<UsageSnapshot> {
+export async function getUsageSnapshot(agencyId: string, userId?: string): Promise<UsageSnapshot> {
   const monthKey = await getBillingCycleKey(agencyId);
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(agencyId);
@@ -628,7 +710,11 @@ export async function getUsageSnapshot(agencyId: string): Promise<UsageSnapshot>
     await upsertAgencyAccount(client, agencyId, includedLimit, agency?.planTier ?? undefined);
     const usage = await ensureMonthUsage(client, agencyId, monthKey, includedLimit);
     const addonRemaining = await getTotalBundleRemaining(agencyId, monthKey);
-    return buildSnapshot(usage, addonRemaining, monthKey);
+    const snap = buildSnapshot(usage, addonRemaining, monthKey);
+    if (userId) {
+      snap.pilotPromo = await getPilotPromoSummary(agencyId, userId);
+    }
+    return snap;
   });
 }
 

@@ -1,5 +1,5 @@
 import crypto from "node:crypto";
-import { createImageBundle, getBundleHistory, type AgencyImageBundle } from "@realenhance/shared/usage/imageBundles.js";
+import { createImageBundle, getBundleHistory, getTotalBundleRemaining, type AgencyImageBundle } from "@realenhance/shared/usage/imageBundles.js";
 import { pool, withTransaction } from "../db/index.js";
 import { getUserByEmail } from "./users.js";
 import type { PoolClient } from "pg";
@@ -10,6 +10,7 @@ import {
   LAUNCH_TRIAL_MAX_AGENCIES,
 } from "../config.js";
 import { detachTrialUsageFromIncludedAllowanceInTransaction } from "./usageLedger.js";
+import { getCurrentMonthKey } from "@realenhance/shared/usage/monthlyUsage.js";
 
 export type TrialStatus = "none" | "pending" | "active" | "expired" | "converted";
 
@@ -32,11 +33,14 @@ export interface PromoCodeRow {
   redemptions_count: number;
   trial_days: number;
   credits_granted: number;
+  max_redemptions_per_agency: number | null;
+  topup_target: number | null;
 }
 
 const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "giveme100",
   "newuser10",
+  "adminusermonthlytopup200",
 ]);
 
 const NEW_AGENCY_ONLY_PROMO_CODES = new Set<string>([
@@ -412,48 +416,109 @@ export async function redeemCreditPromoForExistingAgency(params: {
       `${PROMO_CREDIT_GRANT_SOURCE}:${params.agencyId}:${promo.code_normalized}`,
     ]);
 
-    const existingGrant = await client.query<{
-      quantity: number;
-      metadata: Record<string, any> | null;
-    }>(
-      `SELECT quantity, metadata
+    // Count how many times this agency has already redeemed this promo.
+    const agencyRedemptionRes = await client.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
          FROM addon_purchases
         WHERE agency_id = $1
           AND source = $2
-          AND metadata ->> 'promoCodeNormalized' = $3
-        LIMIT 1`,
+          AND metadata ->> 'promoCodeNormalized' = $3`,
       [params.agencyId, PROMO_CREDIT_GRANT_SOURCE, promo.code_normalized]
     );
+    const agencyRedemptionCount = Number(agencyRedemptionRes.rows[0]?.count || 0);
 
-    if (existingGrant.rowCount && existingGrant.rows[0]?.metadata) {
-      const existingMetadata = existingGrant.rows[0].metadata || {};
-      return {
-        promo,
-        duplicated: true,
-        bundle: {
-          id: String(existingMetadata.bundleId || `promo_credit_${promo.id}_${params.agencyId}`),
-          agencyId: params.agencyId,
-          monthKey: String(existingMetadata.monthKey || ""),
-          bundleType: "promo",
-          bundleCode: String(existingMetadata.bundleCode || `PROMO_${promo.code_normalized.toUpperCase()}`),
-          imagesPurchased: Number(existingGrant.rows[0].quantity || promo.credits_granted || 0),
-          imagesUsed: 0,
-          stripePaymentIntentId: String(existingMetadata.paymentIntentId || `${PROMO_CREDIT_GRANT_SOURCE}:${promo.id}:${params.agencyId}`),
-          stripeSessionId: String(existingMetadata.sessionId || `${PROMO_CREDIT_GRANT_SOURCE}:${promo.code_normalized}`),
-          purchasedAt: String(existingMetadata.grantedAt || now.toISOString()),
-          expiresAt: String(existingMetadata.expiresAt || now.toISOString()),
-        },
-      };
+    // Enforce per-agency cap (e.g. 2 for the monthly top-up promo).
+    if (
+      promo.max_redemptions_per_agency !== null &&
+      agencyRedemptionCount >= promo.max_redemptions_per_agency
+    ) {
+      const err: any = new Error("PROMO_MAXED_FOR_AGENCY");
+      err.code = "PROMO_MAXED_FOR_AGENCY";
+      throw err;
     }
 
+    // For promos with no per-agency cap, preserve legacy single-redemption dedup behaviour.
+    if (promo.max_redemptions_per_agency === null && agencyRedemptionCount > 0) {
+      const existingGrant = await client.query<{
+        quantity: number;
+        metadata: Record<string, any> | null;
+      }>(
+        `SELECT quantity, metadata
+           FROM addon_purchases
+          WHERE agency_id = $1
+            AND source = $2
+            AND metadata ->> 'promoCodeNormalized' = $3
+          LIMIT 1`,
+        [params.agencyId, PROMO_CREDIT_GRANT_SOURCE, promo.code_normalized]
+      );
+
+      if (existingGrant.rowCount && existingGrant.rows[0]?.metadata) {
+        const existingMetadata = existingGrant.rows[0].metadata || {};
+        return {
+          promo,
+          duplicated: true,
+          bundle: {
+            id: String(existingMetadata.bundleId || `promo_credit_${promo.id}_${params.agencyId}`),
+            agencyId: params.agencyId,
+            monthKey: String(existingMetadata.monthKey || ""),
+            bundleType: "promo",
+            bundleCode: String(existingMetadata.bundleCode || `PROMO_${promo.code_normalized.toUpperCase()}`),
+            imagesPurchased: Number(existingGrant.rows[0].quantity || promo.credits_granted || 0),
+            imagesUsed: 0,
+            stripePaymentIntentId: String(existingMetadata.paymentIntentId || `${PROMO_CREDIT_GRANT_SOURCE}:${promo.id}:${params.agencyId}`),
+            stripeSessionId: String(existingMetadata.sessionId || `${PROMO_CREDIT_GRANT_SOURCE}:${promo.code_normalized}`),
+            purchasedAt: String(existingMetadata.grantedAt || now.toISOString()),
+            expiresAt: String(existingMetadata.expiresAt || now.toISOString()),
+          },
+        };
+      }
+    }
+
+    // Determine how many credits to grant.
+    // For top-up promos, calculate the deficit to the target rather than granting a flat amount.
+    let creditsToGrant = promo.credits_granted;
+    if (promo.topup_target !== null) {
+      const monthKey = getCurrentMonthKey();
+      const monthUsageRes = await client.query<{
+        included_limit: string;
+        included_used: string;
+      }>(
+        `SELECT included_limit, included_used
+           FROM agency_month_usage
+          WHERE agency_id = $1 AND yyyymm = $2`,
+        [params.agencyId, monthKey]
+      );
+      const includedRemaining = monthUsageRes.rowCount
+        ? Math.max(
+            0,
+            Number(monthUsageRes.rows[0].included_limit || 0) -
+              Number(monthUsageRes.rows[0].included_used || 0)
+          )
+        : 0;
+      const addonRemaining = await getTotalBundleRemaining(params.agencyId, monthKey);
+      const currentTotal = includedRemaining + addonRemaining;
+      creditsToGrant = Math.max(0, promo.topup_target - currentTotal);
+
+      if (creditsToGrant === 0) {
+        // User is already at or above the target; return a zero-grant result.
+        const err: any = new Error("PROMO_TOPUP_NOT_NEEDED");
+        err.code = "PROMO_TOPUP_NOT_NEEDED";
+        err.currentTotal = currentTotal;
+        err.topupTarget = promo.topup_target;
+        throw err;
+      }
+    }
+
+    // Use a per-redemption suffix so that repeated redemptions get unique identifiers.
+    const redemptionIndex = agencyRedemptionCount + 1;
     const bundleCode = `PROMO_${promo.code_normalized.toUpperCase()}`;
-    const paymentIntentId = `${PROMO_CREDIT_GRANT_SOURCE}:${promo.id}:${params.agencyId}`;
-    const sessionId = `${PROMO_CREDIT_GRANT_SOURCE}:${promo.code_normalized}`;
+    const paymentIntentId = `${PROMO_CREDIT_GRANT_SOURCE}:${promo.id}:${params.agencyId}:${redemptionIndex}`;
+    const sessionId = `${PROMO_CREDIT_GRANT_SOURCE}:${promo.code_normalized}:${redemptionIndex}`;
     const bundleResult = await createImageBundle({
       agencyId: params.agencyId,
       bundleType: "promo",
       bundleCode,
-      imagesPurchased: promo.credits_granted,
+      imagesPurchased: creditsToGrant,
       stripePaymentIntentId: paymentIntentId,
       stripeSessionId: sessionId,
       expiresInDays: promo.trial_days,
@@ -469,7 +534,7 @@ export async function redeemCreditPromoForExistingAgency(params: {
        ON CONFLICT (agency_id) DO UPDATE
          SET addon_images_balance = agency_accounts.addon_images_balance + EXCLUDED.addon_images_balance,
              updated_at = NOW()`,
-      [params.agencyId, 0, "starter", promo.credits_granted]
+      [params.agencyId, 0, "starter", creditsToGrant]
     );
 
     await client.query(
@@ -477,7 +542,7 @@ export async function redeemCreditPromoForExistingAgency(params: {
        VALUES ($1, $2, $3, $4)`,
       [
         params.agencyId,
-        promo.credits_granted,
+        creditsToGrant,
         PROMO_CREDIT_GRANT_SOURCE,
         JSON.stringify({
           type: "promo_code_credit_grant",
@@ -491,6 +556,8 @@ export async function redeemCreditPromoForExistingAgency(params: {
           expiresAt: bundleResult.bundle.expiresAt,
           grantedAt: now.toISOString(),
           monthKey: bundleResult.bundle.monthKey,
+          redemptionIndex,
+          ...(promo.topup_target !== null ? { topupTarget: promo.topup_target, creditsGranted: creditsToGrant } : {}),
         }),
       ]
     );

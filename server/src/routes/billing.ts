@@ -26,6 +26,11 @@ import {
   redeemCreditPromoForExistingAgency,
   redeemPromoForExistingAgency,
 } from "../services/trials.js";
+import {
+  redeemPilotPromo,
+  getPilotPromoSummary,
+} from "../services/pilotPromos.js";
+import { PILOT_PROMOS } from "@realenhance/shared/pilotPromos.js";
 import { pool } from "../db/index.js";
 
 const router = Router();
@@ -41,6 +46,7 @@ const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "giveme100",
   "newuser10",
+  "adminusermonthlytopup200",
 ]);
 
 async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
@@ -624,12 +630,21 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "PROMO_INACTIVE" ||
       code === "PROMO_EXPIRED" ||
       code === "PROMO_MAXED" ||
+      code === "PROMO_MAXED_FOR_AGENCY" ||
       code === "TRIAL_ALREADY_CLAIMED" ||
       code === "AGENCY_ALREADY_USED_TRIAL" ||
       code === "AGENCY_PREVIOUSLY_SUBSCRIBED" ||
       code === "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF"
     ) {
       return res.status(400).json({ error: code });
+    }
+
+    if (code === "PROMO_TOPUP_NOT_NEEDED") {
+      return res.status(400).json({
+        error: code,
+        currentTotal: error.currentTotal,
+        topupTarget: error.topupTarget,
+      });
     }
 
     console.error("[BILLING] redeem-promo error", error);
@@ -1185,6 +1200,53 @@ router.post("/hero-pack/checkout", requireAuth, async (req: Request, res: Respon
       error: "Checkout failed",
       message: error.message || "Failed to create hero pack checkout session",
     });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────
+//  POST /api/billing/redeem-pilot-promo
+//  Redeem a pilot promo code (PILOT_50 / PILOT_30) for the
+//  authenticated user.  Promo credits are added to the user's
+//  account and spent before any other credit source.
+// ─────────────────────────────────────────────────────────────
+router.post("/redeem-pilot-promo", requireAuth, async (req: Request, res: Response) => {
+  const userId = (req as any).user?.id as string | undefined;
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
+
+  const rawCode = req.body?.promoCode;
+  if (!rawCode || typeof rawCode !== "string") {
+    return res.status(400).json({ error: "MISSING_PROMO_CODE", message: "promoCode is required" });
+  }
+
+  const promoCode = rawCode.trim().toUpperCase();
+  if (!(promoCode in PILOT_PROMOS)) {
+    return res.status(400).json({ error: "PILOT_PROMO_NOT_FOUND", message: "Unknown pilot promo code" });
+  }
+
+  // Resolve agency for the authenticated user.
+  const user = await getUserById(userId);
+  if (!user?.agencyId) {
+    return res.status(400).json({ error: "NO_AGENCY", message: "User is not associated with an agency" });
+  }
+  const agencyId = user.agencyId;
+
+  try {
+    const result = await redeemPilotPromo({ promoCode, userId, agencyId });
+    const usage = await getUsageSnapshot(agencyId, userId);
+    return res.json({ success: true, redemptionId: result.redemption.id, promoInfo: result.promoInfo, allowance: usage });
+  } catch (err: any) {
+    const PILOT_PROMO_400_CODES = [
+      "PILOT_PROMO_NOT_FOUND",
+      "PILOT_PROMO_INACTIVE",
+      "PILOT_PROMO_GLOBAL_CAP_REACHED",
+      "PILOT_PROMO_ALREADY_REDEEMED_BY_USER",
+      "PILOT_PROMO_ALREADY_REDEEMED_BY_AGENCY",
+    ];
+    if (PILOT_PROMO_400_CODES.includes(err.code || err.message)) {
+      return res.status(400).json({ error: err.code || err.message, message: err.message });
+    }
+    console.error("[billing] /redeem-pilot-promo error:", err);
+    return res.status(500).json({ error: "INTERNAL_ERROR", message: "Failed to redeem pilot promo code" });
   }
 });
 

@@ -116,6 +116,10 @@
       "./types/jobMetadata": {
         "types": "./dist/types/jobMetadata.d.ts",
         "default": "./dist/types/jobMetadata.js"
+      },
+      "./pilotPromos.js": {
+        "types": "./dist/pilotPromos.d.ts",
+        "default": "./dist/pilotPromos.js"
       }
   },
   "scripts": {
