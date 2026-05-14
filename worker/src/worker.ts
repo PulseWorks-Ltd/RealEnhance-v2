@@ -5593,6 +5593,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ═══════════ STAGE-2-ONLY RETRY MODE ═══════════
   // ✅ Smart retry: Skip 1A/1B, run only Stage-2 from validated 1B output
   const stage2Requested = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
+  const stage1BRequestedByUser =
+    requestedStages?.stage1b === true
+    || requestedStages?.stage1b === "true"
+    || requestedStages?.stage1b === "light"
+    || requestedStages?.stage1b === "full";
+  const enhanceOnlyRequested = !stage2Requested && !stage1BRequestedByUser;
   let stage2AttemptId: string | undefined;
   const stage2SupersededActions = new Set<string>();
   const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
@@ -7786,6 +7792,158 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
   if (await isCancelled(payload.jobId)) {
     await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
+    return;
+  }
+
+  if (enhanceOnlyRequested) {
+    nLog("Enhance Only selected - terminating pipeline after Stage 1A");
+    nLog("[ROUTING_DECISION]", {
+      jobId: payload.jobId,
+      path: "1A",
+      reason: "enhance_only_hard_stop",
+    });
+
+    stage12Success = true;
+
+    let resultUrl = pub1AUrl;
+    if (!resultUrl) {
+      const pub = await publishWithOptionalBlackEdgeGuard(path1A, "enhance-only-1A-final");
+      resultUrl = pub.url;
+      pub1AUrl = resultUrl;
+    }
+
+    if (await checkStage2AlreadyFinal(payload.jobId, "enhance_only_hard_stop")) {
+      return;
+    }
+
+    const currentJob = await getJob(payload.jobId);
+    const guard = canMarkJobComplete(currentJob as any, null, {
+      outputUrl: resultUrl,
+      finalStageRan: "1A",
+      expectedFinalStage: "1A",
+    });
+    logCompletionGuard(payload.jobId, guard);
+    if (!guard.ok) {
+      await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${guard.reason}` }, "completion_guard_block");
+      return;
+    }
+
+    await safeWriteJobStatus(payload.jobId, {
+      status: "complete",
+      success: true,
+      completed: true,
+      currentStage: "finalizing",
+      finalStage: "1A",
+      resultStage: "1A",
+      stageCompleted: "1A",
+      originalUrl: publishedOriginal?.url,
+      finalOutputUrl: resultUrl,
+      resultUrl,
+      imageUrl: resultUrl,
+      stageUrls: {
+        "1A": resultUrl ?? null,
+        "1B": null,
+        "2": null,
+      },
+      stageOutputs: {
+        "1A": path1A,
+      },
+      meta: {
+        ...sceneMeta,
+        routingSnapshot: {
+          authority: "localEmptyBypass",
+          localEmpty: false,
+          geminiHasFurniture: null,
+          geminiConfidence: null,
+          hasClutter: null,
+          skipStage1B: false,
+          declutterMode: null,
+          stage1BRequired: false,
+        },
+        stage2Skipped: true,
+        stage2SkipReason: "enhance_only_hard_stop",
+        stageCompleted: "1A",
+      },
+    }, "enhance_only_complete");
+
+    const finalizedJob = await getJob(payload.jobId);
+    const finalizedStatus = String((finalizedJob as any)?.status || "").toLowerCase();
+    const isTerminalComplete = finalizedStatus === "complete" || finalizedStatus === "completed";
+    const hasUsableFinalOutput = typeof resultUrl === "string" && resultUrl.length > 0;
+    const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
+    const isEnhancementJob = (payload as any).type === "enhance";
+    const isFreeManualRetry = (payload as any).retryType === "manual_retry";
+    const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+
+    try {
+      const agencyId = (payload as any).agencyId || null;
+      const imagesUsed = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+      await recordEnhanceBundleUsage(payload, imagesUsed, agencyId);
+    } catch (usageErr) {
+      nLog("[USAGE] Failed to record usage for enhance-only completion (non-blocking):", (usageErr as any)?.message || usageErr);
+    }
+
+    try {
+      await finalizeReservationFromWorker({
+        jobId: payload.jobId,
+        stage12Success: true,
+        stage2Success: false,
+        actualCharge,
+      });
+    } catch (billingErr) {
+      nLog("[BILLING] Failed to finalize reservation for enhance-only completion (non-blocking):", (billingErr as any)?.message || billingErr);
+    }
+
+    if (!isFreeManualRetry && isEnhancementJob) {
+      try {
+        await finalizeImageChargeFromWorker({
+          jobId: payload.jobId,
+          stage1ASuccess: true,
+          stage1BSuccess: false,
+          stage2Success: false,
+          sceneType: sceneLabel || "interior",
+          stage1BUserSelected: false,
+          geminiHasFurniture: undefined,
+        });
+      } catch (chargeErr) {
+        nLog("[BILLING] Failed to finalize charge for enhance-only completion (non-blocking):", (chargeErr as any)?.message || chargeErr);
+      }
+    }
+
+    if (payload.agencyId && resultUrl) {
+      const auditRef = generateAuditRef();
+      const traceId = generateTraceId(payload.jobId);
+      const extractKey = (url?: string | null) => {
+        if (!url) return null;
+        try {
+          const u = new URL(url);
+          return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+        } catch {
+          return null;
+        }
+      };
+
+      recordEnhancedImageHistory({
+        agencyId: payload.agencyId,
+        userId: payload.userId,
+        jobId: payload.jobId,
+        propertyId: (payload as any).propertyId || null,
+        parentImageId: (payload as any).galleryParentImageId || null,
+        source: 'stage2',
+        stagesCompleted: ['1A'],
+        publicUrl: resultUrl,
+        thumbnailUrl: resultUrl,
+        originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
+        originalS3Key: extractKey((payload as any).remoteOriginalUrl || publishedOriginal?.url || null),
+        enhancedS3Key: extractKey(resultUrl),
+        thumbS3Key: extractKey(resultUrl),
+        auditRef,
+        traceId,
+      }).catch((err) => {
+        nLog(`[enhanced-images] Failed to record enhance-only image: ${err}`);
+      });
+    }
+
     return;
   }
 
