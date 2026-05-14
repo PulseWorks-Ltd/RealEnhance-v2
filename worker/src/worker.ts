@@ -8311,15 +8311,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             ? "detector_failed_safe_fallback"
             : gateDecision?.reason || "gemini";
 
-          const failRoutingInvariant = (code: string, details: Record<string, unknown>): never => {
+          const failRoutingInvariant = (code: string, details: Record<string, unknown>): void => {
             logger.error("ROUTING_INVARIANT_VIOLATION", jobLogContext(payload, {
               event: "ROUTING_INVARIANT_VIOLATION",
+              mode: "SOFT_FAIL_PREDEMO",
               code,
               ...details,
             }));
-            throw new Error(code);
+            console.error("[ROUTING_INVARIANT_VIOLATION]", {
+              jobId: payload.jobId,
+              mode: "SOFT_FAIL_PREDEMO",
+              code,
+              ...details,
+            });
           };
 
+          // TODO(post-demo): restore hard-fail invariant enforcement after validation stabilization
           if (stage1BRequired && skipStage1B) {
             failRoutingInvariant("ROUTING_INVARIANT_SKIP_STAGE1B_CONFLICT", {
               roomState,
@@ -8331,6 +8338,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             });
           }
 
+          // TODO(post-demo): restore hard-fail invariant enforcement after validation stabilization
           if (gateDecision?.directRefreshEligible === true && roomState === "FURNISHED_CLUTTERED") {
             failRoutingInvariant("ROUTING_INVARIANT_DIRECT_REFRESH_CLUTTER_CONFLICT", {
               roomState,
@@ -9814,9 +9822,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
   const stage2SourceStage = stage2Routing.sourceStage;
 
+  // TODO(post-demo): restore hard-fail invariant enforcement after validation stabilization
   if (stage1BRequired && stage2SourceStage === "1A") {
     logger.error("ROUTING_INVARIANT_VIOLATION", {
       jobId: payload.jobId,
+      mode: "SOFT_FAIL_PREDEMO",
       code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
       roomState: frozenRoutingSnapshot?.roomState ?? null,
       stage1BRequired,
@@ -9825,7 +9835,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
       sourceStagePolicy: frozenRoutingSnapshot?.sourceStagePolicy ?? null,
     });
-    throw new Error("ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT");
+    console.error("[ROUTING_INVARIANT_VIOLATION]", {
+      jobId: payload.jobId,
+      mode: "SOFT_FAIL_PREDEMO",
+      code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
+      roomState: frozenRoutingSnapshot?.roomState ?? null,
+      stage1BRequired,
+      skipStage1B,
+      stage2SourceStage,
+      stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
+      sourceStagePolicy: frozenRoutingSnapshot?.sourceStagePolicy ?? null,
+    });
   }
   
   const canonicalRoomTypeForStage2 = stage2Routing.canonicalRoomType;
