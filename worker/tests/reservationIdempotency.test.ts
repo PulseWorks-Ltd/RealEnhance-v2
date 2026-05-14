@@ -168,6 +168,42 @@ describe("finalizeReservationFromWorker — idempotency guard", () => {
     expect(updates.length).toBeGreaterThan(0);
   });
 
+  it("uses actualCharge as authoritative and avoids double-refund when stage2 is unsuccessful", async () => {
+    __mockClient = {
+      query: buildMockClient({
+        reservationRow: {
+          reservation_status: "committed",
+          agency_id: "agency_1",
+          yyyymm: "202602",
+          reserved_images: 2,
+          reserved_from_included: 2,
+          reserved_from_addon: 0,
+          requested_stage12: true,
+          requested_stage2: true,
+          stage12_from_included: 1,
+          stage12_from_addon: 0,
+          stage2_from_included: 1,
+          stage2_from_addon: 0,
+        },
+      }),
+    };
+
+    await finalizeReservationFromWorker({
+      jobId: "job_actual_charge_authoritative",
+      stage12Success: true,
+      stage2Success: false,
+      actualCharge: 1,
+    });
+
+    const queries: string[] = __mockClient.query.mock.calls.map((c) => c[0] as string);
+    const refundMutations = queries.filter((q) =>
+      q.includes("SET included_used = included_used - $1") && q.includes("addon_used = addon_used - $2")
+    );
+
+    // Only one refund mutation should occur (delta 2 -> 1), no extra stage2 failure refund.
+    expect(refundMutations).toHaveLength(1);
+  });
+
   // ── Test 4 ─  Explicit crash-recovery simulation ─────────────────────────
   it("simulates: normal completion then crash-recovery — second call sees 'consumed' and no pool mutation", async () => {
     // Simulate first pass: reservation is in initial state → will be marked 'consumed'

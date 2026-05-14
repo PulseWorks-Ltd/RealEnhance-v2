@@ -10,6 +10,12 @@ export interface StageFlags {
   stage1B: boolean;
   stage2: boolean;
   sceneType: string; // "interior" | "exterior"
+  /** Final output classification written to history metadata. */
+  completionType?: "full_success" | "fallback_1b" | "fallback_1a";
+  /** Final stage delivered to the user (1A | 1B | 2). */
+  finalDeliveredStage?: "1A" | "1B" | "2";
+  /** True when user requested enhancement beyond Stage 1A. */
+  requestedBeyond1A?: boolean;
   /** Whether the user explicitly selected declutter/Stage1B before submission.
    * Optional for backward compatibility — existing callers that omit it retain prior behaviour.
    */
@@ -32,6 +38,24 @@ export interface StageFlags {
 export function computeCharge(flags: StageFlags): { amount: number; reason: string } {
   if (!flags.stage1A) {
     return { amount: 0, reason: "stage1A_failed" };
+  }
+
+  const sceneType = String(flags.sceneType || "").toLowerCase();
+  const completionType = flags.completionType;
+  const finalDeliveredStage = flags.finalDeliveredStage;
+  const requestedBeyond1A = flags.requestedBeyond1A === true;
+
+  // Exterior is intentionally Stage-1A-only today; successful output remains billable.
+  if (sceneType === "exterior") {
+    return { amount: 1, reason: "flat_one_image_model" };
+  }
+
+  // Interior fallback to Stage-1A is refundable only when user asked for >1A enhancement.
+  if (
+    (completionType === "fallback_1a" || finalDeliveredStage === "1A") &&
+    requestedBeyond1A
+  ) {
+    return { amount: 0, reason: "interior_fallback_1a_refund" };
   }
 
   return { amount: 1, reason: "flat_one_image_model" };

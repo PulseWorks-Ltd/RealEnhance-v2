@@ -243,6 +243,9 @@ export async function finalizeImageChargeFromWorker(params: {
   stage1BSuccess: boolean;
   stage2Success: boolean;
   sceneType: string;
+  completionType?: "full_success" | "fallback_1b" | "fallback_1a";
+  finalDeliveredStage?: "1A" | "1B" | "2";
+  requestedBeyond1A?: boolean;
   /** Whether the user explicitly selected declutter/Stage1B before submission */
   stage1BUserSelected?: boolean;
   /** Whether Gemini confirmed hasFurniture=true during the routing gate */
@@ -258,6 +261,9 @@ export async function finalizeImageChargeFromWorker(params: {
     stage1B: params.stage1BSuccess,
     stage2: params.stage2Success,
     sceneType: params.sceneType,
+    completionType: params.completionType,
+    finalDeliveredStage: params.finalDeliveredStage,
+    requestedBeyond1A: params.requestedBeyond1A,
     stage1BUserSelected: params.stage1BUserSelected,
     geminiHasFurniture: params.geminiHasFurniture,
   };

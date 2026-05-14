@@ -157,11 +157,12 @@ export async function finalizeReservationFromWorker(params: {
     let refundAddon = 0;
     let consumeStage12 = false;
     let consumeStage2 = false;
+    const hasAuthoritativeActualCharge = typeof params.actualCharge === "number" && Number.isFinite(params.actualCharge);
 
     if (jr.requested_stage12) {
       if (params.stage12Success) {
         consumeStage12 = true;
-      } else {
+      } else if (!hasAuthoritativeActualCharge) {
         refundIncluded += jr.stage12_from_included;
         refundAddon += jr.stage12_from_addon;
       }
@@ -170,7 +171,7 @@ export async function finalizeReservationFromWorker(params: {
     if (jr.requested_stage2) {
       if (params.stage2Success) {
         consumeStage2 = true;
-      } else {
+      } else if (!hasAuthoritativeActualCharge) {
         refundIncluded += jr.stage2_from_included;
         refundAddon += jr.stage2_from_addon;
       }

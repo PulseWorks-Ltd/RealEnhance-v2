@@ -4014,13 +4014,37 @@ async function completePartialJob(params: {
   const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
   const isEnhancementJob = (billingContext?.payload as any)?.type === "enhance";
   const isFreeManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry";
+  const completionType: "fallback_1b" | "fallback_1a" = finalStage === "1B" ? "fallback_1b" : "fallback_1a";
+  const finalDeliveredStage: "1A" | "1B" = finalStage;
+  const requestedBeyond1A = !!(
+    (billingContext?.payload as any)?.options?.declutter ||
+    (billingContext?.payload as any)?.options?.virtualStage
+  );
+  const effectiveSceneType = String(
+    billingContext?.sceneType || (billingContext?.payload as any)?.options?.sceneType || "interior"
+  ).toLowerCase();
+  const isExterior = effectiveSceneType === "exterior";
   const billingStage1ASuccess = !!(pub1AUrl || pub1BUrl || resultUrl);
   const billingStage1BSuccess = finalStage === "1B" ? !!(pub1BUrl || resultUrl) : false;
   const billingStage2Success = false;
   const billingEffectiveStage1B =
     billingStage1BSuccess &&
     ((billingContext?.stage1BUserSelected === true) || (billingContext?.geminiHasFurniture === true));
-  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+  const shouldChargeDeliveredFallback =
+    isExterior ||
+    completionType === "fallback_1b" ||
+    (completionType === "fallback_1a" && !requestedBeyond1A);
+  const actualCharge =
+    billableFinalSuccess &&
+    !isFreeManualRetry &&
+    isEnhancementJob &&
+    shouldChargeDeliveredFallback
+      ? 1
+      : 0;
+  const reservationStage12Success =
+    completionType === "fallback_1b" ||
+    (completionType === "fallback_1a" && !requestedBeyond1A) ||
+    isExterior;
 
   try {
     const agencyId = (billingContext?.payload as any)?.agencyId || null;
@@ -4052,11 +4076,13 @@ async function completePartialJob(params: {
   try {
     await finalizeReservationFromWorker({
       jobId,
-      stage12Success: true,
+      stage12Success: reservationStage12Success,
       stage2Success: false,
       actualCharge,
     });
-    nLog(`[BILLING] Finalized reservation for partial completion ${jobId}: stage12=true, stage2=false`);
+    nLog(
+      `[BILLING] Finalized reservation for partial completion ${jobId}: stage12=${reservationStage12Success}, stage2=false, completionType=${completionType}, requestedBeyond1A=${requestedBeyond1A}`
+    );
   } catch (billingErr) {
     nLog("[BILLING] Failed to finalize reservation for partial completion (non-blocking):", (billingErr as any)?.message || billingErr);
   }
@@ -4069,6 +4095,9 @@ async function completePartialJob(params: {
         stage1BSuccess: billingStage1BSuccess,
         stage2Success: billingStage2Success,
         sceneType: billingContext?.sceneType || "interior",
+        completionType,
+        finalDeliveredStage,
+        requestedBeyond1A,
         stage1BUserSelected: billingContext?.stage1BUserSelected === true,
         geminiHasFurniture: billingContext?.geminiHasFurniture ?? undefined,
       });
@@ -7116,6 +7145,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stage1BSuccess: billingStage1BSuccess,
             stage2Success: billingStage2Success,
             sceneType: sceneLabel || "interior",
+            completionType: "full_success",
+            finalDeliveredStage: "2",
+            requestedBeyond1A: true,
           });
         } catch (chargeErr) {
           nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
@@ -7956,6 +7988,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           stage1BSuccess: false,
           stage2Success: false,
           sceneType: sceneLabel || "interior",
+          completionType: "full_success",
+          finalDeliveredStage: "1A",
+          requestedBeyond1A: false,
           stage1BUserSelected: false,
           geminiHasFurniture: undefined,
         });
@@ -13830,6 +13865,17 @@ All openings must remain identical in position and size to the original image.`;
         stage1BSuccess: billingStage1BSuccess,
         stage2Success: billingStage2Success,
         sceneType: sceneLabel || "interior",
+        completionType: billingStage2Success
+          ? "full_success"
+          : billingStage1BSuccess
+            ? "fallback_1b"
+            : "full_success",
+        finalDeliveredStage: billingStage2Success
+          ? "2"
+          : billingStage1BSuccess
+            ? "1B"
+            : "1A",
+        requestedBeyond1A: !!(payload.options?.declutter || payload.options?.virtualStage),
         stage1BUserSelected: originalUserDeclutter,
         geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? undefined,
       });
