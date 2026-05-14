@@ -3959,6 +3959,54 @@ async function completePartialJob(params: {
     }
   }
 
+  // Persist partial fallback output in gallery history as well.
+  // This keeps enhanced history aligned with the image actually shown to users.
+  if ((billingContext?.payload as any)?.agencyId && resultUrl) {
+    const extractKey = (url?: string | null) => {
+      if (!url) return null;
+      try {
+        const u = new URL(url);
+        return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+      } catch {
+        return null;
+      }
+    };
+
+    const payloadAny = (billingContext?.payload as any) || {};
+    const historyUserId = String(payloadAny.userId || "").trim();
+    if (!historyUserId) {
+      nLog(`[enhanced-images] Skipping partial fallback history record due to missing userId for job=${jobId}`);
+    } else {
+      const auditRef = generateAuditRef();
+    const traceId = generateTraceId(jobId);
+    const stagesCompleted: string[] = finalStage === "1B" ? ["1A", "1B"] : ["1A"];
+    const historyOriginalUrl = payloadAny.remoteOriginalUrl || pub1AUrl || null;
+    const originalKey = payloadAny.remoteOriginalKey || extractKey(historyOriginalUrl);
+    const enhancedKey = extractKey(resultUrl);
+
+      recordEnhancedImageHistory({
+        agencyId: payloadAny.agencyId,
+        userId: historyUserId,
+        jobId,
+        propertyId: payloadAny.propertyId || null,
+        parentImageId: payloadAny.galleryParentImageId || null,
+        source: "stage2",
+        stagesCompleted,
+        completionType: finalStage === "1B" ? "fallback_1b" : "fallback_1a",
+        publicUrl: resultUrl,
+        thumbnailUrl: resultUrl,
+        originalUrl: historyOriginalUrl,
+        originalS3Key: originalKey,
+        enhancedS3Key: enhancedKey,
+        thumbS3Key: enhancedKey,
+        auditRef,
+        traceId,
+      }).catch((err) => {
+        nLog(`[enhanced-images] Failed to record partial fallback image: ${err}`);
+      });
+    }
+  }
+
   const finalizedJob = await getJob(jobId);
   const finalizedStatus = String((finalizedJob as any)?.status || "").toLowerCase();
   const isTerminalComplete = finalizedStatus === "complete" || finalizedStatus === "completed";
@@ -7119,6 +7167,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               parentImageId: (payload as any).galleryParentImageId || null,
               source: "stage2",
               stagesCompleted: stage1BUrl ? ["1A", "1B", "2"] : ["1A", "2"],
+              completionType: "full_success",
               publicUrl: pub2Url,
               thumbnailUrl: pub2Url,
               originalUrl: stage1AUrl,
@@ -7936,6 +7985,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         parentImageId: (payload as any).galleryParentImageId || null,
         source: 'stage2',
         stagesCompleted: ['1A'],
+        completionType: 'full_success',
         publicUrl: resultUrl,
         thumbnailUrl: resultUrl,
         originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
@@ -13892,6 +13942,7 @@ All openings must remain identical in position and size to the original image.`;
       parentImageId: (payload as any).galleryParentImageId || null,
       source: 'stage2',
       stagesCompleted,
+      completionType: 'full_success',
       publicUrl: pubFinalUrl,
       thumbnailUrl: pubFinalUrl, // Use same URL for thumbnail (can be optimized later)
       originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
@@ -14014,6 +14065,7 @@ async function handleEditJob(payload: any) {
       parentImageId: (payload as any).sourceImageId || null,
       source: 'region-edit',
       stagesCompleted: ["edit"],
+      completionType: 'full_success',
       publicUrl: pub.url,
       thumbnailUrl: pub.url,
       originalUrl: baseImageUrl || null,
@@ -14805,6 +14857,7 @@ const worker = new Worker(
               parentImageId: (regionPayload as any).galleryParentImageId || null,
               source: 'region-edit',
               stagesCompleted: ["edit"],
+              completionType: 'full_success',
               publicUrl: pub.url,
               thumbnailUrl: pub.url,
               originalUrl: baseImageUrl || null,

@@ -35,6 +35,63 @@ Maintain exact camera geometry:
 Do NOT introduce camera shift, re-angle, zoom, or recrop.
 `;
 
+export const STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK = `
+────────────────────────────────
+FIXED-FINISH IMMUTABILITY — ABSOLUTE
+────────────────────────────────
+All permanent room finishes must remain visually identical to the source image.
+
+The following elements must retain their exact:
+- color
+- tone
+- material identity
+- texture
+- reflectivity
+- finish appearance
+- surface patterning
+- visual age/wear characteristics
+
+APPLIES TO:
+- Flooring (all types: tile, wood, stone, carpet, linoleum)
+- Cabinetry and built-in joinery
+- Benchtops / countertops
+- Splashbacks / backsplashes
+- Vanities and fixed surfaces
+- Built-in shelving and storage
+- Fireplaces and mantels
+- Wall paint, wallpaper, and surface finishes
+- Ceiling finishes and textures
+- Tile finishes (kitchen, bathroom, laundry)
+- Appliance exterior finishes
+- Any permanently attached or built-in materials
+
+🚫 STRICTLY PROHIBITED — ZERO TOLERANCE:
+- Recoloring finishes
+- Brightening or darkening materials
+- Warming or cooling tones
+- Repainting or resurfacing
+- Restaining or refinishing
+- Retiling or replacing surface materials
+- Restyle or modernizing finishes
+- Luxury-upgrading appearance
+- Visually reinterpreting materials
+- Material tone drift or color shift
+- Texture alteration or surface refinement
+- Visual "refreshing" or "enhancement"
+- Aesthetic harmonization of fixed finishes
+- Altering material appearance through grading or relighting
+
+CRITICAL PRINCIPLE
+Staging style must ALWAYS adapt to existing finishes.
+Existing finishes must NEVER be altered to match staging style.
+If style conflicts with existing finishes, choose different furniture/décor — never modify the room.
+
+EXPOSURE NORMALIZATION ONLY
+Lighting correction may improve overall image exposure and realism only.
+This must NOT result in any visual change to fixed room materials or finishes.
+Pixel-perfect color matching required for all permanent room elements.
+`;
+
 export const STAGE2_OUTPUT_FORMAT_BLOCK = `
 ────────────────────────────────
 OUTPUT

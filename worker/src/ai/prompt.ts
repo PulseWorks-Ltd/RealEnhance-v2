@@ -1041,8 +1041,9 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     "The floor must remain the same material and visual style as in the original image",
     "(e.g., tile stays tile, timber stays timber, carpet stays carpet, linoleum stays linoleum).",
     "",
-    "You may clean or subtly enhance the appearance of the same flooring,",
-    "but do not substitute it with a different material or style.",
+    "Flooring appearance must remain PIXEL-IDENTICAL to the source image.",
+    "No tone shifts, color adjustments, brightness changes, or texture refinement are permitted.",
+    "Only realism preservation (exact preservation) is allowed — zero appearance modification.",
     "",
     "BUILT-IN FEATURES (FIXED - DO NOT MODIFY):",
     "• Cabinetry (kitchen, bathroom, storage) - DO NOT remove or alter",
@@ -1129,6 +1130,25 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
     "Only use floor-standing furniture for added staging items.",
     "",
     "GENERAL RULE: ANY permanently wired, plumbed, or structurally attached element is IMMOVABLE.",
+    "",
+    "⛔ MATERIAL MODERNIZATION PROHIBITION — ABSOLUTE",
+    "",
+    "Do NOT attempt to 'modernize', 'refresh', 'upgrade', 'brighten', 'warm', or 'enhance' the perceived",
+    "luxury/quality/appearance of ANY built-in finishes or fixed materials under ANY circumstances.",
+    "",
+    "This includes:",
+    "• Kitchen cabinetry (do NOT lighten/darken/refine finish)",
+    "• Bathroom vanities (do NOT modernize appearance)",
+    "• Flooring (do NOT brighten/adjust tone/visually refine)",
+    "• Tiling (do NOT enhance grout, refine texture, or modernize appearance)",
+    "• Countertops (do NOT reinterpret material, enhance surface, or adjust color)",
+    "• Wall finishes (do NOT shift tone, brighten, or create premium appearance)",
+    "• Fireplace materials (do NOT recolor or refine finish)",
+    "• Appliance exteriors (do NOT enhance sheen or modernize look)",
+    "• Any other permanent property materials",
+    "",
+    "Material identity and finish appearance preservation overrides ALL aesthetic optimization objectives.",
+    "Staging style MUST adapt to existing finishes. Finishes MUST NEVER adapt to staging style.",
     ""
   ];
 
@@ -1349,17 +1369,20 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
         ? "Kitchen: clear counters; tasteful small appliances/fruit/flowers allowed; keep it minimal."
         : roomType.toLowerCase() === "bedroom"
         ? [
-            "Bedroom: quality bedding, nightstands/lamps, minimal clutter; soft cohesive palette.",
+            "Bedroom: quality bedding, nightstands/lamps, minimal clutter. Achieved through furniture and décor, NOT by modifying room finishes.",
             ...bedroomHeadboardRule,
           ].join("\n")
         : (roomType.toLowerCase() === "living room" || roomType.toLowerCase() === "lounge")
-        ? "Living: conversational seating, coffee table, plant/books; balanced layout."
+        ? "Living room: conversational seating, coffee table, plant/books. Furniture placement creates layout flow; DO NOT adjust wall/ceiling/flooring appearance for balance."
         : roomType.toLowerCase() === "dining room"
-        ? "Dining: table with appropriate number of chairs; simple centerpiece; correct spacing."
+        ? "Dining room: table with appropriate chairs; simple centerpiece. Wall finishes, flooring, and cabinetry are immutable. Stage furniture around existing finishes, never alter them."
         : roomType.toLowerCase() === "bathroom"
-        ? "Bathroom: no staging; return image as-is (quality was already enhanced in Stage 1)."
+        ? [
+            "Bathroom: MICRO-STAGING ONLY. Allowed: towels, soap, candles, trays, small plants, folded linens, minimal countertop styling.",
+            "NOT allowed: furniture, benches, cabinetry, fixture changes. All tile, vanities, fixtures, flooring remain LOCKED."
+          ].join(" ")
         : (roomType.toLowerCase() === "office" || roomType.toLowerCase() === "study")
-        ? "Office: professional desk setup, tidy accessories, minimal decor."
+        ? "Office: desk setup, work chair, tidy accessories. Professional appearance achieved through furniture placement, NOT by modernizing or upgrading room finishes. All cabinetry, shelving, and existing finishes remain unchanged."
         : (roomType.toLowerCase().includes("outdoor") || roomType.toLowerCase().includes("patio") || roomType.toLowerCase().includes("deck"))
         ? "Outdoor: follow exterior staging rules; only on hard surfaces; enhance natural elements."
         : `${roomType}: apply sensible staging for intended function.`,
@@ -1372,11 +1395,11 @@ export function buildStagingOnlyPrompt(opts: PromptOptions): string {
       "[INTERIOR STAGING – PRACTICAL & MODERN]",
       "Follow all ABSOLUTE STRUCTURAL rules above.",
       ["multiple-living-areas", "multiple_living", "multi-living", "multi_living"].includes(String(roomType || "").toLowerCase())
-        ? "Multi-zone staging: This image contains multiple functional zones (e.g., open-plan living/dining, lounge/office combo). Stage EACH distinct area appropriately with cohesive style across zones."
+        ? "Multi-zone staging: This image contains multiple functional zones (e.g., open-plan living/dining, lounge/office combo). Stage EACH zone appropriately with coordinated furniture style and consistent décor. Finish preservation applies independently to each zone—do NOT harmonize or adjust zone finishes to unify appearance."
         : "Identify the SINGLE most practical use for this room based on its layout, features, and size. Stage it accordingly as one unified space (bedroom/living/dining/office/kitchen).",
       "Place large furniture on the floor plane with correct scale, contact shadows, and perspective. Prefer floor-standing pieces; avoid wall-mounted or floating desks, side tables, and shelves.",
       "⚠️ DOORWAY CLEARANCE: Keep ALL doorways, door paths, and walk paths completely clear and unobstructed. DO NOT place furniture across, in front of, or blocking ANY doorway (including sliding doors). Furniture may sit before windows only if frames and operation remain visible.",
-      "Use a cohesive color palette; add tasteful decor on counters/shelves/tables.",
+      "Use coordinated furniture styles and décor; DO NOT adjust wall/ceiling/floor/built-in finishes to create visual unity.",
       ""
     );
 

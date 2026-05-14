@@ -2,6 +2,7 @@ import {
   STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK,
   STAGE2_CAMERA_IMMUTABILITY_BLOCK,
   STAGE2_OUTPUT_FORMAT_BLOCK,
+  STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK,
 } from "./sharedArchitecturalLock";
 
 const STRUCTURAL_IDENTITY_LOCK_REFRESH = `
@@ -50,20 +51,51 @@ Do NOT:
 If furniture does not fit, adjust or remove the furniture — never modify architecture.
 `.trim();
 
-const BUILT_IN_MATERIAL_IDENTITY_LOCK_BLOCK = `
-BUILT-IN MATERIAL IDENTITY LOCK (ABSOLUTE)
 
-All built-in elements must retain their exact material and finish, including:
-- kitchen countertops / benchtops
-- cabinetry finishes
-- vanities and fixed surfaces
+const KITCHEN_FIXED_FINISH_FREEZE_BLOCK = `
+KITCHEN FIXED-FINISH FREEZE — ABSOLUTE
 
-Do NOT:
-- change stone type, color, veining, or texture
-- repaint or resurface built-ins
-- replace or restyle fixed materials
+Kitchen built-in finishes are permanent property materials and must remain visually identical to the source image.
 
-Only lighting and color balance may affect their appearance.
+The following elements must retain their exact:
+- color
+- tone
+- material identity
+- texture
+- reflectivity
+- finish appearance
+- surface patterning
+- visual age/wear characteristics
+
+INCLUDING:
+- cabinetry
+- benchtops / countertops
+- splashbacks / backsplashes
+- flooring
+- islands
+- fixed shelving
+- wall paint colors
+- tile finishes
+- appliance finishes
+
+DO NOT:
+- recolor
+- brighten
+- warm
+- modernize
+- repaint
+- resurface
+- restyle
+- replace
+- visually reinterpret
+- enhance perceived luxury/material quality
+- alter material appearance through grading or relighting
+
+Lighting correction may improve overall image exposure only, but must NOT visually change fixed kitchen materials or finishes in any way.
+
+If staging style conflicts with existing kitchen finishes, adapt the décor and accessories to the existing finishes — never alter the finishes to match the staging style.
+
+Do NOT visually “refresh”, “modernize”, “brighten”, or “luxury-upgrade” kitchen finishes.
 `.trim();
 
 const CONSTRAINT_PRIORITY_ORDER_BLOCK = `
@@ -160,7 +192,9 @@ ${STRUCTURAL_IDENTITY_LOCK_REFRESH}
 
 ${VISIBLE_EXTENT_LOCK_BLOCK}
 
-${BUILT_IN_MATERIAL_IDENTITY_LOCK_BLOCK}
+${STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK}
+
+${KITCHEN_FIXED_FINISH_FREEZE_BLOCK}
 
 ${CONSTRAINT_PRIORITY_ORDER_BLOCK}
 

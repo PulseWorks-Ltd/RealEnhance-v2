@@ -34,6 +34,7 @@ interface CreateEnhancedImageParams {
   parentImageId?: string | null;
   source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
+  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
   publicUrl: string;
   thumbnailUrl?: string;
   originalUrl?: string | null;
@@ -68,6 +69,7 @@ export async function createEnhancedImage(
   const result = await pool.query(
     `INSERT INTO enhanced_images (
       agency_id, user_id, job_id, stages_completed,
+      completion_type,
       property_id, parent_image_id, source,
       storage_key, public_url, thumbnail_url,
       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url,
@@ -75,7 +77,7 @@ export async function createEnhancedImage(
       audit_ref, trace_id,
       stage12_attempt_id, stage2_attempt_id,
       is_expired
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, FALSE)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, FALSE)
     ON CONFLICT (job_id) DO UPDATE SET
       updated_at = NOW()
     RETURNING *`,
@@ -84,6 +86,7 @@ export async function createEnhancedImage(
       params.userId,
       params.jobId,
       params.stagesCompleted,
+      params.completionType || null,
       params.propertyId || null,
       params.parentImageId || null,
       params.source || 'stage2',
@@ -147,6 +150,7 @@ export async function listEnhancedImages(
       ei.public_url,
       ei.thumbnail_url,
       ei.stages_completed,
+      ei.completion_type,
       ei.created_at,
       ei.audit_ref,
       ei.original_s3_key,
@@ -207,6 +211,7 @@ export async function listEnhancedImages(
       publicUrl: signedEnhanced || row.public_url,
       originalUrl: signedOriginal,
       stagesCompleted: row.stages_completed,
+      completionType: row.completion_type,
       createdAt: row.created_at,
       auditRef: row.audit_ref,
       propertyId: row.property_id,
@@ -283,7 +288,7 @@ export async function getImageVersions(
   const params = userId ? [agencyId, userId, imageId] : [agencyId, imageId];
 
   const result = await pool.query(
-    `SELECT id, job_id, public_url, thumbnail_url, stages_completed, created_at, audit_ref,
+    `SELECT id, job_id, public_url, thumbnail_url, stages_completed, completion_type, created_at, audit_ref,
             original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key,
             property_id, parent_image_id, source
      FROM enhanced_images
@@ -309,6 +314,7 @@ export async function getImageVersions(
       publicUrl: signedEnhanced || row.public_url,
       originalUrl: signedOriginal,
       stagesCompleted: row.stages_completed,
+      completionType: row.completion_type,
       createdAt: row.created_at,
       auditRef: row.audit_ref,
       propertyId: row.property_id,
@@ -513,6 +519,7 @@ async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {
     parentImageId: row.parent_image_id,
     source: row.source,
     stagesCompleted: row.stages_completed,
+    completionType: row.completion_type,
     storageKey: row.storage_key,
     publicUrl,
     thumbnailUrl,

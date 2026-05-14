@@ -649,7 +649,7 @@ export default function EnhancedHistoryPage() {
         >
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              This will remove the image from gallery history. The file will be purged asynchronously.
+              This will remove the image from gallery history.
             </p>
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setDeleteCandidate(null)}>
