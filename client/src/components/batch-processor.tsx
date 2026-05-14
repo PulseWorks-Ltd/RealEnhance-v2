@@ -387,6 +387,38 @@ function isExteriorSceneLabel(sceneLabel: string): boolean {
   return sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
 }
 
+function getPerImageSceneLabel(item: any): string {
+  return String(
+    item?.meta?.scene?.label ||
+      item?.result?.meta?.scene?.label ||
+      item?.meta?.sceneLabel ||
+      item?.result?.meta?.sceneLabel ||
+      item?.meta?.scene_type ||
+      item?.result?.meta?.scene_type ||
+      item?.meta?.sceneType ||
+      item?.result?.meta?.sceneType ||
+      ""
+  ).toLowerCase();
+}
+
+function isStage2SkippedByDesign(item: any, sceneLabel: string): boolean {
+  const routingSnapshot = getRoutingSnapshot(item);
+  const stage2SkipReason = String(
+    item?.meta?.stage2SkipReason ||
+      item?.result?.meta?.stage2SkipReason ||
+      routingSnapshot?.stage2SkipReason ||
+      ""
+  ).toLowerCase();
+
+  return (
+    item?.meta?.stage2Skipped === true ||
+    item?.result?.meta?.stage2Skipped === true ||
+    routingSnapshot?.stage2SkippedByDesign === true ||
+    stage2SkipReason === "exterior_scene" ||
+    isExteriorSceneLabel(sceneLabel)
+  );
+}
+
 function shouldExpectStage1B(params: {
   item: any;
   stage1BRequired: boolean;
@@ -439,6 +471,9 @@ function deriveUnifiedCompletionState(params: {
   const hasStage1A = !!stage1AUrl;
   const hasStage1B = !!stage1BUrl;
   const hasStage2 = !!stage2Url;
+  const sceneLabel = getPerImageSceneLabel(item);
+  const stage2SkippedByDesign = isStage2SkippedByDesign(item, sceneLabel);
+  const stage2NotExpectedByDesign = requestedFinalStage === "2" && stage2SkippedByDesign;
   const routingSnapshot = getRoutingSnapshot(item);
   const stage1BSkippedByDesign =
     item?.meta?.stage1BSkippedByDesign === true ||
@@ -448,7 +483,7 @@ function deriveUnifiedCompletionState(params: {
 
   const isFallback =
     requestedFinalStage === "2"
-      ? !hasStage2 && hasStage1B
+      ? !stage2NotExpectedByDesign && !hasStage2 && hasStage1B
       : requestedFinalStage === "1B"
       ? !stage1BCompletedWithoutOutput && !hasStage1B && hasStage1A
       : false;
@@ -477,7 +512,7 @@ function deriveUnifiedCompletionState(params: {
 
   const targetUrlPresent =
     requestedFinalStage === "2"
-      ? hasStage2
+      ? (stage2NotExpectedByDesign ? (hasStage1B || hasStage1A) : hasStage2)
       : requestedFinalStage === "1B"
       ? (hasStage1B || stage1BCompletedWithoutOutput)
       : hasStage1A;
@@ -3438,9 +3473,10 @@ export default function BatchProcessor({
           const isRegionEdit = trackedRegionEditJob || editInFlightForIdx ||
             String(it?.meta?.type || "").toLowerCase() === "region-edit" ||
             String(it?.meta?.jobType || "").toLowerCase() === "region_edit";
-          const sceneLabel = String(it?.meta?.scene?.label || it?.meta?.sceneLabel || it?.meta?.scene_type || it?.meta?.sceneType || "").toLowerCase();
+          const sceneLabel = getPerImageSceneLabel(it);
           const stagingAllowed = getPerImageStagingAllowed(it);
-          const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+          const stage2SkippedByDesign = isStage2SkippedByDesign(it, sceneLabel);
+          const stage2Expected = requestedStage2 && !stage2SkippedByDesign && stagingAllowed;
           const resultStage = it?.resultStage || it?.finalStage || it?.result_stage || (it?.meta && (it.meta.resultStage || it.meta.result_stage)) || null;
           const extraResult = it?.result || {};
           const finalOutputUrl =
@@ -4501,11 +4537,12 @@ export default function BatchProcessor({
           if (!isTerminal) return false;
 
           const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
-          const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
+          const sceneLabel = getPerImageSceneLabel(r);
           const stagingAllowed = getPerImageStagingAllowed(r);
           const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
           const stage1BRequired = getPerImageEffectiveStage1BRequired(r);
-          const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+          const stage2SkippedByDesign = isStage2SkippedByDesign(r, sceneLabel);
+          const stage2Expected = requestedStage2 && !stage2SkippedByDesign && stagingAllowed;
           const requestedFinalStage: StageKey = resolveRequestedFinalStage({
             item: r,
             stage2Expected,
@@ -4567,10 +4604,11 @@ export default function BatchProcessor({
                 
                 // Check if item is legitimately in multi-stage pipeline
                 const requestedStages = existing?.requestedStages || existing?.result?.requestedStages || {};
-                const sceneLabel = String(existing?.meta?.scene?.label || existing?.result?.meta?.scene?.label || "").toLowerCase();
+                const sceneLabel = getPerImageSceneLabel(existing);
                 const stagingAllowed = getPerImageStagingAllowed(existing);
                 const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
-                const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+                const stage2SkippedByDesign = isStage2SkippedByDesign(existing, sceneLabel);
+                const stage2Expected = requestedStage2 && !stage2SkippedByDesign && stagingAllowed;
                 const isMultiStageItem = stage2Expected || requestedStages?.stage1b;
                 
                 // Only mark as stuck if: no outputs AND not a multi-stage item, OR has been waiting too long
@@ -7910,11 +7948,12 @@ export default function BatchProcessor({
                             
                             // Calculate target stage for this image
                             const requestedStages = r?.requestedStages || r?.result?.requestedStages || {};
-                            const sceneLabel = String(r?.meta?.scene?.label || r?.result?.meta?.scene?.label || "").toLowerCase();
+                            const sceneLabel = getPerImageSceneLabel(r);
                             const stagingAllowed = getPerImageStagingAllowed(r);
                             const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
                             const stage1BRequired = getPerImageEffectiveStage1BRequired(r);
-                            const stage2Expected = requestedStage2 && sceneLabel !== "exterior" && stagingAllowed;
+                            const stage2SkippedByDesign = isStage2SkippedByDesign(r, sceneLabel);
+                            const stage2Expected = requestedStage2 && !stage2SkippedByDesign && stagingAllowed;
                             const requestedFinalStage: StageKey = resolveRequestedFinalStage({
                               item: r,
                               stage2Expected,
@@ -8059,19 +8098,13 @@ export default function BatchProcessor({
                         const result = results[i];
                         const status = String(result?.status || result?.result?.status || "").toLowerCase();
                         const uiStatus = String(result?.uiStatus || result?.result?.uiStatus || "ok").toLowerCase();
-                        const sceneLabel = String(
-                          result?.meta?.scene?.label ||
-                          result?.result?.meta?.scene?.label ||
-                          result?.meta?.sceneType ||
-                          result?.result?.meta?.sceneType ||
-                          ""
-                        ).toLowerCase();
-                        const isExteriorScene = sceneLabel === "exterior" || sceneLabel.startsWith("exterior_");
+                        const sceneLabel = getPerImageSceneLabel(result);
+                        const isExteriorScene = isExteriorSceneLabel(sceneLabel);
                         const requestedStages = result?.requestedStages || result?.result?.requestedStages || {};
                         const requestedStage2 = requestedStages?.stage2 === true || requestedStages?.stage2 === "true";
                         const stage1BRequired = getPerImageEffectiveStage1BRequired(result);
                         const stagingAllowed = getPerImageStagingAllowed(result);
-                        const stage2SkippedByDesign = result?.meta?.stage2Skipped === true || result?.result?.meta?.stage2Skipped === true;
+                        const stage2SkippedByDesign = isStage2SkippedByDesign(result, sceneLabel);
                         const stage2Expected = requestedStage2 && !isExteriorScene && stagingAllowed && !stage2SkippedByDesign;
                         const resultStage = (result?.resultStage || result?.result?.resultStage || result?.finalStage || result?.result?.finalStage || null) as StageKey | null;
                         const isRetrying = retryingImages.has(i) || retryLoadingImages.has(i);
@@ -8293,7 +8326,7 @@ export default function BatchProcessor({
                           ? baseProcessingMessage
                           : aiSteps[i] || "Waiting in queue...";
                         const fallbackMessage = isUiComplete
-                          ? (result?.fallbackMessage || result?.result?.fallbackMessage || unifiedCompletion.fallbackMessage)
+                          ? unifiedCompletion.fallbackMessage
                           : null;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
                         const requestedStage = (displayStageByIndex[i] as DisplayOutputKey | undefined) || null;
