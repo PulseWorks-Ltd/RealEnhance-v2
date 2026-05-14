@@ -69,16 +69,23 @@ export type RoomStateDetectionResult =
 /** @deprecated Use deriveRoomState instead. */
 export type FurnishedGateDecisionType = "furnished_refresh" | "empty_full_stage" | "needs_declutter_light";
 
-/** @deprecated Use deriveRoomState instead. */
+/** @deprecated Use the explicit routing fields instead of this legacy gate-only shape. */
 export interface FurnishedGateDecision {
   decision: FurnishedGateDecisionType;
   reason: string;
   confidence: number;
   anchors: string[];
+  roomState: "EMPTY" | "FURNISHED_TIDY" | "FURNISHED_CLUTTERED";
+  hasClutter: boolean;
+  directRefreshEligible: boolean;
+  requiresStage1B: boolean;
+  stage2ModeCandidate: "FROM_EMPTY" | "REFRESH" | null;
 }
 
 /** Canonical room state output from the furniture detector. Routing decisions are made in worker.ts. */
 export type RoomState = "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED";
+
+export type RoutingRoomState = "EMPTY" | "FURNISHED_TIDY" | "FURNISHED_CLUTTERED";
 
 export const CORE_ANCHOR_CLASSES = [
   "bed",
@@ -545,22 +552,34 @@ export function resolveFurnishedGateDecision(params: {
   const livingRoomLike = isLivingRoomType(normalizedRoomType);
   const isKitchenLike = normalizedRoomType === "kitchen" || normalizedRoomType.startsWith("kitchen_");
 
+  const buildDecision = (input: FurnishedGateDecision): FurnishedGateDecision => input;
+
   if (params.localEmpty) {
-    return {
+    return buildDecision({
       decision: "empty_full_stage",
       reason: "local_empty_prefilter",
       confidence: 1,
       anchors: [],
-    };
+      roomState: "EMPTY",
+      hasClutter: false,
+      directRefreshEligible: false,
+      requiresStage1B: false,
+      stage2ModeCandidate: "FROM_EMPTY",
+    });
   }
 
   if (!params.analysis || params.analysis.status === "failed") {
-    return {
+    return buildDecision({
       decision: "empty_full_stage",
       reason: params.analysis?.status === "failed" ? "detector_failed_conservative" : "detector_missing_conservative",
       confidence: 0,
       anchors: [],
-    };
+      roomState: "FURNISHED_CLUTTERED",
+      hasClutter: true,
+      directRefreshEligible: false,
+      requiresStage1B: true,
+      stage2ModeCandidate: "REFRESH",
+    });
   }
 
   const analysis = params.analysis;
@@ -590,24 +609,6 @@ export function resolveFurnishedGateDecision(params: {
   const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
   const detectedItems = Array.isArray(analysis.detectedItems) ? analysis.detectedItems : [];
 
-  if (confidence < minConfidence) {
-    return {
-      decision: "needs_declutter_light",
-      reason: "low_confidence_fail_safe",
-      confidence,
-      anchors,
-    };
-  }
-
-  if (hasEligibleAnchor || hasEligibleFurnitureSignal) {
-    return {
-      decision: "furnished_refresh",
-      reason: "anchor_or_furniture_detected",
-      confidence,
-      anchors,
-    };
-  }
-
   const minorPortableClutterOnly =
     !hasCounterClutter
     && !hasSurfaceClutter
@@ -615,39 +616,95 @@ export function resolveFurnishedGateDecision(params: {
     && detectedItems.length > 0
     && detectedItems.length <= 2;
 
-  if (minorPortableClutterOnly) {
-    return {
-      decision: "furnished_refresh",
-      reason: "minor_portable_clutter_refresh",
+  const roomState: RoutingRoomState = (() => {
+    if (!analysis.hasFurniture && !hasClutterSignals) {
+      return "EMPTY";
+    }
+
+    if (hasClutterSignals || minorPortableClutterOnly || (isKitchenLike && hasKitchenDeclutterSignals)) {
+      return "FURNISHED_CLUTTERED";
+    }
+
+    if (hasEligibleAnchor || hasEligibleFurnitureSignal || analysis.isStageReady === true) {
+      return "FURNISHED_TIDY";
+    }
+
+    return "FURNISHED_CLUTTERED";
+  })();
+
+  const requiresStage1B = roomState === "FURNISHED_CLUTTERED";
+  const directRefreshEligible = roomState === "FURNISHED_TIDY";
+  const stage2ModeCandidate: "FROM_EMPTY" | "REFRESH" | null = roomState === "EMPTY" ? "FROM_EMPTY" : "REFRESH";
+
+  if (confidence < minConfidence) {
+    return buildDecision({
+      decision: "needs_declutter_light",
+      reason: "low_confidence_fail_safe",
       confidence,
       anchors,
-    };
+      roomState: "FURNISHED_CLUTTERED",
+      hasClutter: true,
+      directRefreshEligible: false,
+      requiresStage1B: true,
+      stage2ModeCandidate: "REFRESH",
+    });
   }
 
-  if ((isKitchenLike && hasKitchenDeclutterSignals) || hasClutterSignals) {
-    return {
-      decision: "needs_declutter_light",
-      reason: isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter",
+  if (roomState === "FURNISHED_TIDY") {
+    return buildDecision({
+      decision: "furnished_refresh",
+      reason: hasEligibleAnchor || hasEligibleFurnitureSignal ? "anchor_or_furniture_detected" : "stage_ready_no_signals",
       confidence,
       anchors,
-    };
+      roomState,
+      hasClutter: false,
+      directRefreshEligible,
+      requiresStage1B: false,
+      stage2ModeCandidate: "REFRESH",
+    });
+  }
+
+  if ((isKitchenLike && hasKitchenDeclutterSignals) || hasClutterSignals || minorPortableClutterOnly) {
+    return buildDecision({
+      decision: "needs_declutter_light",
+      reason: minorPortableClutterOnly
+        ? "minor_portable_clutter_requires_declutter"
+        : (isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter"),
+      confidence,
+      anchors,
+      roomState: "FURNISHED_CLUTTERED",
+      hasClutter: true,
+      directRefreshEligible: false,
+      requiresStage1B: true,
+      stage2ModeCandidate: "REFRESH",
+    });
   }
 
   if (analysis.isStageReady === true) {
-    return {
+    return buildDecision({
       decision: "empty_full_stage",
       reason: "stage_ready_no_signals",
       confidence,
       anchors,
-    };
+      roomState: "EMPTY",
+      hasClutter: false,
+      directRefreshEligible: false,
+      requiresStage1B: false,
+      stage2ModeCandidate: "FROM_EMPTY",
+    });
   }
 
-  return {
+  return buildDecision({
     decision: "empty_full_stage",
     reason: "default_empty_no_signals",
     confidence,
     anchors,
-  };
+    roomState: roomState === "EMPTY" ? "EMPTY" : roomState,
+    hasClutter: roomState === "FURNISHED_CLUTTERED",
+    directRefreshEligible,
+    requiresStage1B,
+    stage2ModeCandidate,
+  });
 }
 
 export function getAnchorClassSet(analysis: FurnitureAnalysis | FurnitureDetectionResult | null | undefined): Set<string> {

@@ -4749,8 +4749,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     localEmpty: boolean;
     geminiHasFurniture: boolean | null;
     geminiConfidence: number | null;
-    roomState?: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
+    roomState?: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | "FURNISHED_TIDY" | "FURNISHED_CLUTTERED" | null;
     hasClutter: boolean | null;
+    directRefreshEligible?: boolean | null;
     exteriorDetectionStatus?: "success" | "failed" | null;
     exteriorFallbackUsed?: boolean;
     excessFurnitureCount?: number | null;
@@ -4758,6 +4759,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BSkippedByDesign?: boolean;
     declutterMode: "light" | "stage-ready" | null;
     stage1BRequired: boolean;
+    stage1BMode?: "light" | "stage-ready" | null;
+    stage2Mode?: "FROM_EMPTY" | "REFRESH" | null;
+    sourceStagePolicy?: "1A" | "1B-light" | "1B-stage-ready" | null;
+    allowStage1AFallback?: boolean | null;
   };
 
   let frozenRoutingSnapshot: RoutingSnapshot | null = null;
@@ -8065,16 +8070,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const snapshotImpliesResolvedFurnishedGate = (snapshot: any): boolean => {
     if (!snapshot || typeof snapshot !== "object") return false;
     const policyMode = String(snapshot?.policyMode || "");
-    const mode = String(snapshot?.mode || snapshot?.gateDecision || "");
-    const stageReady = snapshot?.stageReady === true;
-    const declutterMode = String(snapshot?.declutterMode || "");
+    const roomState = String(snapshot?.roomState || "");
+    const stage2Mode = String(snapshot?.stage2Mode || "");
+    const stage1BMode = String(snapshot?.stage1BMode || "");
+    const directRefreshEligible = snapshot?.directRefreshEligible === true;
     const stage1BRequired = snapshot?.stage1BRequired === true;
 
     return (
       policyMode === "FULL_FURNITURE_REMOVAL" ||
-      mode === "furnished_refresh" ||
-      stageReady ||
-      declutterMode === "stage-ready" ||
+      roomState === "FURNISHED_TIDY" ||
+      roomState === "FURNISHED_CLUTTERED" ||
+      stage2Mode === "REFRESH" ||
+      stage1BMode === "stage-ready" ||
+      directRefreshEligible ||
       stage1BRequired
     );
   };
@@ -8091,9 +8099,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       : {};
     if (currentMeta?.furnishedGateResolved === true) return true;
 
-    const inferredGateDecision = snapshot?.declutterMode === "stage-ready"
+    const inferredGateDecision = snapshot?.roomState === "FURNISHED_TIDY"
       ? "furnished_refresh"
-      : snapshot?.declutterMode === "light"
+      : snapshot?.roomState === "FURNISHED_CLUTTERED"
         ? "needs_declutter_light"
         : "empty_full_stage";
 
@@ -8115,8 +8123,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       jobId: payload.jobId,
       source,
       policyMode: snapshot?.policyMode || null,
-      mode: snapshot?.mode || snapshot?.gateDecision || null,
-      stageReady: snapshot?.stageReady === true,
+      mode: snapshot?.roomState || snapshot?.gateDecision || null,
+      stageReady: snapshot?.directRefreshEligible === true,
       declutterMode: snapshot?.declutterMode || null,
       stage1BRequired: snapshot?.stage1BRequired === true,
     });
@@ -8262,7 +8270,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             },
           });
           const analysis = isFurnitureDetectionSuccess(geminiAnalysis) ? geminiAnalysis : null;
-          const roomState = analysis ? deriveRoomState(analysis) : null;
+          const legacyRoomState = analysis ? deriveRoomState(analysis) : null;
           const gateDecision = analysis
             ? resolveFurnishedGateDecision({
                 analysis: geminiAnalysis,
@@ -8272,7 +8280,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               })
             : null;
 
-          const hasClutter = roomState === "CLUTTERED";
+          const roomState = gateDecision?.roomState ?? legacyRoomState;
+          const hasClutter = gateDecision?.hasClutter === true || roomState === "CLUTTERED" || roomState === "FURNISHED_CLUTTERED";
           const detectedAnchors = Array.isArray(analysis?.detectedAnchors)
             ? analysis.detectedAnchors
             : [];
@@ -8282,19 +8291,65 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const excessFurnitureCount = totalFurniture === null ? null : Math.max(0, totalFurniture - anchorCount);
           const anchorDetected = analysis ? analysis.hasFurniture === true : false;
           const detectorFallback = !analysis;
+          const wantsStage2 = payload.options.virtualStage === true || isStage2Only === true;
+          const stage1BRequired = detectorFallback
+            ? true
+            : gateDecision?.requiresStage1B === true;
+          const skipStage1B = !stage1BRequired;
           const resolvedDeclutterMode: "light" | "stage-ready" | null = detectorFallback
             ? "light"
-            : gateDecision?.decision === "needs_declutter_light"
-              ? "light"
-              : gateDecision?.decision === "furnished_refresh"
-                ? "stage-ready"
-                : null;
-          const skipStage1B = detectorFallback
-            ? false
-            : gateDecision?.decision === "furnished_refresh";
+            : stage1BRequired
+              ? (wantsStage2 ? "stage-ready" : "light")
+              : null;
+          const resolvedStage2Mode: "FROM_EMPTY" | "REFRESH" | null = detectorFallback
+            ? "REFRESH"
+            : gateDecision?.stage2ModeCandidate ?? (roomState === "EMPTY" ? "FROM_EMPTY" : roomState ? "REFRESH" : null);
+          const sourceStagePolicy: "1A" | "1B-light" | "1B-stage-ready" | null = stage1BRequired
+            ? (resolvedDeclutterMode === "light" ? "1B-light" : "1B-stage-ready")
+            : (resolvedStage2Mode === "FROM_EMPTY" ? "1A" : "1A");
           const routingDecisionSource = detectorFallback
             ? "detector_failed_safe_fallback"
             : gateDecision?.reason || "gemini";
+
+          const failRoutingInvariant = (code: string, details: Record<string, unknown>): never => {
+            logger.error("ROUTING_INVARIANT_VIOLATION", jobLogContext(payload, {
+              event: "ROUTING_INVARIANT_VIOLATION",
+              code,
+              ...details,
+            }));
+            throw new Error(code);
+          };
+
+          if (stage1BRequired && skipStage1B) {
+            failRoutingInvariant("ROUTING_INVARIANT_SKIP_STAGE1B_CONFLICT", {
+              roomState,
+              hasClutter,
+              stage1BRequired,
+              skipStage1B,
+              directRefreshEligible: gateDecision?.directRefreshEligible === true,
+              stage2ModeCandidate: gateDecision?.stage2ModeCandidate ?? null,
+            });
+          }
+
+          if (gateDecision?.directRefreshEligible === true && roomState === "FURNISHED_CLUTTERED") {
+            failRoutingInvariant("ROUTING_INVARIANT_DIRECT_REFRESH_CLUTTER_CONFLICT", {
+              roomState,
+              hasClutter,
+              stage1BRequired,
+              skipStage1B,
+              directRefreshEligible: gateDecision.directRefreshEligible,
+              stage2ModeCandidate: gateDecision.stage2ModeCandidate,
+            });
+          }
+
+          (payload.options as any).declutter = stage1BRequired;
+          (payload.options as any).declutterMode = resolvedDeclutterMode;
+          (payload.options as any).virtualStage = wantsStage2;
+          (payload.options as any).stage2Mode = resolvedStage2Mode;
+          (payload.options as any).stage2Variant = resolvedStage2Mode === "FROM_EMPTY" ? "2B" : (stage1BRequired ? "2A" : (wantsStage2 ? "2A" : null));
+          (payload.options as any).stagingPreference = resolvedStage2Mode === "FROM_EMPTY" ? "full" : (resolvedStage2Mode === "REFRESH" ? "refresh" : null);
+          (payload.options as any).furnishedState = roomState === "EMPTY" ? "empty" : "furnished";
+          declutterMode = resolvedDeclutterMode;
 
           if (analysis) {
             logger.info("DETECTOR_SUCCESS", jobLogContext(payload, {
@@ -8338,7 +8393,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             source: routingDecisionSource,
             confidence: analysis?.confidence ?? null,
             finalSkipStage1B: skipStage1B,
-            stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
+            stage1BRequired,
           }));
 
           logger.info("INTERIOR_FURNITURE_ANALYSIS", jobLogContext(payload, {
@@ -8361,11 +8416,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             geminiConfidence: analysis && typeof analysis.confidence === "number" ? analysis.confidence : null,
             roomState: detectorFallback ? null : roomState,
             hasClutter: detectorFallback ? null : hasClutter,
+            directRefreshEligible: detectorFallback ? null : gateDecision?.directRefreshEligible === true,
             excessFurnitureCount,
             skipStage1B,
             stage1BSkippedByDesign: skipStage1B,
             declutterMode: resolvedDeclutterMode,
-            stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
+            stage1BRequired,
+            stage1BMode: resolvedDeclutterMode,
+            stage2Mode: resolvedStage2Mode,
+            sourceStagePolicy,
+            allowStage1AFallback: !stage1BRequired,
           };
 
           nLog(
@@ -8394,9 +8454,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 stage1BSkippedByDesign: routingSnapshot.stage1BSkippedByDesign === true,
                 hasVirtualStage,
                 isStage2Only,
-                gateDecision: routingSnapshot.declutterMode === "stage-ready"
+                gateDecision: routingSnapshot.roomState === "FURNISHED_TIDY"
                   ? "furnished_refresh"
-                  : routingSnapshot.declutterMode === "light"
+                  : routingSnapshot.roomState === "FURNISHED_CLUTTERED"
                     ? "needs_declutter_light"
                     : "empty_full_stage",
                 gateReason: routingSnapshot.authority,
@@ -8600,7 +8660,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path: hasClutter ? "1A->1B(exterior_declutter)" : "1A",
         reason: `${routingSnapshot.authority}+exterior_clutter_only`,
       });
-    } else if (routingSnapshot.declutterMode === "stage-ready") {
+    } else if (routingSnapshot.stage1BMode === "stage-ready") {
       const anchorDetected = routingSnapshot.geminiHasFurniture === true;
       const hasClutter = routingSnapshot.hasClutter === true;
       const excessFurnitureCount = typeof routingSnapshot.excessFurnitureCount === "number"
@@ -8609,15 +8669,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const skipStage1BByDesign = routingSnapshot.skipStage1B === true || routingSnapshot.stage1BRequired !== true;
 
       if (skipStage1BByDesign) {
-        // Explicit refresh override from 1A when the furnished gate resolves directly to refresh.
-        payload.options.declutter = false;
-        (payload.options as any).declutterMode = null;
-        declutterMode = null;
-        (payload.options as any).furnishedState = anchorDetected ? "furnished" : "needs_declutter";
-        (payload.options as any).stagingPreference = "refresh";
-        (payload.options as any).stage2Mode = "REFRESH";
-        (payload.options as any).stage2Variant = "2A";
-        nLog("[ROUTING_OVERRIDE] Furnished gate resolved to refresh — skipping Stage1B and forcing Stage2 refresh", {
+        nLog("[ROUTING_OVERRIDE] Furnished gate resolved to refresh — skipping Stage1B and using the precomputed Stage 2 refresh contract", {
           jobId: payload.jobId,
           originalUserDeclutter,
           skipStage1BByDesign,
@@ -8625,6 +8677,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           hasClutter,
           excessFurnitureCount,
           hasFurniture: routingSnapshot.geminiHasFurniture,
+          stage2Mode: routingSnapshot.stage2Mode,
+          sourceStagePolicy: routingSnapshot.sourceStagePolicy,
         });
         nLog("[ROUTING_DECISION]", {
           jobId: payload.jobId,
@@ -8632,49 +8686,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           reason: `${routingSnapshot.authority}+stage_ready_refresh_override`,
         });
       } else {
-        nLog("[ROUTING_OVERRIDE] Furniture detected — auto-enabling Stage1B regardless of user declutter selection", {
+        nLog("[ROUTING_OVERRIDE] Furniture detected — Stage1B is required before Stage2 refresh", {
           jobId: payload.jobId,
           originalUserDeclutter,
           hasFurniture: routingSnapshot.geminiHasFurniture,
           hasClutter,
           excessFurnitureCount,
+          stage1BMode: routingSnapshot.stage1BMode,
         });
-        payload.options.declutter = true;
-        (payload.options as any).declutterMode = "stage-ready";
-        declutterMode = "stage-ready";
-        (payload.options as any).furnishedState = "furnished";
-        (payload.options as any).stagingPreference = "refresh";
-        (payload.options as any).stage2Mode = "REFRESH";
-        (payload.options as any).stage2Variant = "2A";
         nLog("[ROUTING_DECISION]", {
           jobId: payload.jobId,
           path: "1A->1B->2(refresh)",
           reason: routingSnapshot.authority,
         });
       }
-    } else if (routingSnapshot.declutterMode === "light") {
-      // CLUTTERED state without anchor furniture — always run Stage 1B for declutter.
-      payload.options.declutter = true;
-      (payload.options as any).declutterMode = "light";
-      declutterMode = "light";
-      const postDeclutterHasFurniture = routingSnapshot.geminiHasFurniture === true;
-      (payload.options as any).furnishedState = postDeclutterHasFurniture ? "needs_declutter" : "empty";
-      (payload.options as any).stagingPreference = postDeclutterHasFurniture ? "refresh" : "full";
-      (payload.options as any).stage2Mode = postDeclutterHasFurniture ? "REFRESH" : "FROM_EMPTY";
-      (payload.options as any).stage2Variant = postDeclutterHasFurniture ? "2A" : "2B";
+    } else if (routingSnapshot.stage1BMode === "light") {
       nLog("[ROUTING_DECISION]", {
         jobId: payload.jobId,
-        path: postDeclutterHasFurniture ? "1A->1B(light)->2(refresh)" : "1A->1B(light)->2(full)",
+        path: routingSnapshot.stage2Mode === "FROM_EMPTY" ? "1A->1B(light)->2(full)" : "1A->1B(light)->2(refresh)",
         reason: routingSnapshot.authority,
       });
     } else {
-      payload.options.declutter = false;
-      (payload.options as any).declutterMode = null;
-      declutterMode = null;
-      (payload.options as any).furnishedState = "empty";
-      (payload.options as any).stagingPreference = "full";
-      (payload.options as any).stage2Mode = "FROM_EMPTY";
-      (payload.options as any).stage2Variant = "2B";
       nLog("[ROUTING_DECISION]", {
         jobId: payload.jobId,
         path: "1A->2(full)",
@@ -8723,21 +8755,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     declutterMode === "light" || declutterMode === "stage-ready"
       ? declutterMode
       : null;
-  const resolvedRoutingState = {
-    declutter: payload.options.declutter === true,
-    declutterMode: resolvedDeclutterMode,
-    skipStage1B: frozenRoutingSnapshot.skipStage1B === true,
-    stage1BRequired:
-      payload.options.declutter === true
-      && resolvedDeclutterMode !== null
-      && frozenRoutingSnapshot.skipStage1B !== true,
-  };
-
-  frozenRoutingSnapshot.declutterMode = resolvedRoutingState.declutterMode;
-  frozenRoutingSnapshot.stage1BRequired = resolvedRoutingState.stage1BRequired;
-
-  const stage1BRequired = resolvedRoutingState.stage1BRequired;
-  const skipStage1B = resolvedRoutingState.skipStage1B;
+  const stage1BRequired = frozenRoutingSnapshot.stage1BRequired === true;
+  const skipStage1B = frozenRoutingSnapshot.skipStage1B === true;
 
   nLog(`[WORKER] Checking Stage 1B: payload.options.declutter=${payload.options.declutter}`);
   nLog(`[WORKER] Stage 1B virtualStage: ${payload.options.virtualStage}`);
@@ -9480,8 +9499,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   if (path1B && path1B !== path1A && sceneLabel === "interior") {
-    const initialState = frozenRoutingSnapshot?.roomState
-      ?? (frozenRoutingSnapshot?.hasClutter === true ? "CLUTTERED" : null);
+    const initialState = frozenRoutingSnapshot?.roomState === "FURNISHED_CLUTTERED"
+      ? "CLUTTERED"
+      : frozenRoutingSnapshot?.roomState === "FURNISHED_TIDY"
+        ? "ANCHOR_CLEAN"
+        : frozenRoutingSnapshot?.roomState === "EMPTY"
+          ? "EMPTY"
+          : (frozenRoutingSnapshot?.hasClutter === true ? "CLUTTERED" : null);
     await runPostStage1BAnchorValidator({
       payload,
       imagePath: path1B,
@@ -9621,8 +9645,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       furnishedGateResolved,
       hasRoutingSnapshot: !!routingSnapshot,
       policyMode: routingSnapshot?.policyMode ?? null,
-      mode: routingSnapshot?.mode ?? routingSnapshot?.gateDecision ?? null,
-      stageReady: routingSnapshot?.stageReady ?? (routingSnapshot?.declutterMode === "stage-ready"),
+      mode: routingSnapshot?.roomState ?? routingSnapshot?.gateDecision ?? null,
+      stageReady: routingSnapshot?.directRefreshEligible === true || routingSnapshot?.stage1BMode === "stage-ready",
       declutterMode: routingSnapshot?.declutterMode ?? null,
       stage1BRequired: routingSnapshot?.stage1BRequired ?? null,
     });
@@ -9751,8 +9775,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (payload.options.virtualStage && !isExteriorScene && stage2InputPath) {
     const resolvedRefreshGate =
       (payload.options as any).stage2Mode === "REFRESH"
-      || (frozenRoutingSnapshot?.declutterMode === "stage-ready"
-        && (frozenRoutingSnapshot?.skipStage1B === true || frozenRoutingSnapshot?.stage1BRequired === false));
+      || (frozenRoutingSnapshot?.stage2Mode === "REFRESH"
+        && frozenRoutingSnapshot?.skipStage1B === true);
 
     if (resolvedRefreshGate) {
       (payload.options as any).stage2Mode = "REFRESH";
@@ -9789,6 +9813,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BMode: stage2BaseStage === "1B" ? effectiveStage1BMode : undefined,
   });
   const stage2SourceStage = stage2Routing.sourceStage;
+
+  if (stage1BRequired && stage2SourceStage === "1A") {
+    logger.error("ROUTING_INVARIANT_VIOLATION", {
+      jobId: payload.jobId,
+      code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
+      roomState: frozenRoutingSnapshot?.roomState ?? null,
+      stage1BRequired,
+      skipStage1B,
+      stage2SourceStage,
+      stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
+      sourceStagePolicy: frozenRoutingSnapshot?.sourceStagePolicy ?? null,
+    });
+    throw new Error("ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT");
+  }
   
   const canonicalRoomTypeForStage2 = stage2Routing.canonicalRoomType;
   const forceRefreshPromptMode = stage2Routing.forceRefresh;
