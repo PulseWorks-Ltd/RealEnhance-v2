@@ -81,6 +81,24 @@ Do not redesign or reinterpret the wider image outside the requested patch.
 Keep architectural perspective and environmental continuity consistent with the surrounding scene.
 `.trim();
 
+const STRUCTURE_LOCK = `
+Preserve EXACTLY:
+- walls
+- windows
+- doors
+- ceilings
+- floors
+- roofline
+- perspective
+- camera viewpoint
+- architectural openings
+- built-in fixtures
+
+Do not alter architectural structure.
+Do not add or remove openings.
+Do not change room geometry.
+`.trim();
+
 function formatReinstateTargetLabel(targetType: "window" | "doorway" | "opening" | "auto"): string {
   if (targetType === "doorway") return "doorway";
   if (targetType === "window") return "window";
@@ -110,6 +128,8 @@ function buildRemovePrompt(userIntent?: string, sceneHint?: string): string {
   return `
 Remove the specified content from this region and reconstruct the area as if the removed content never existed.
 
+${STRUCTURE_LOCK}
+
 ${buildModeSceneHint(sceneHint)}
 
 Removal requirements:
@@ -133,6 +153,8 @@ function buildReplacePrompt(userIntent?: string, sceneHint?: string): string {
   return `
 Replace the entire content of this region with the requested new content.
 
+${STRUCTURE_LOCK}
+
 ${buildModeSceneHint(sceneHint)}
 
 Replacement requirements:
@@ -155,6 +177,8 @@ Requested replacement: ${userIntent?.trim() || "Replace the current content with
 function buildAddPrompt(userIntent?: string, sceneHint?: string): string {
   return `
 Add the requested content into this region as a complete, photorealistic insertion.
+
+${STRUCTURE_LOCK}
 
 ${buildModeSceneHint(sceneHint)}
 

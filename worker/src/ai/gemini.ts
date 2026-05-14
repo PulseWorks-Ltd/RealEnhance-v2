@@ -16,7 +16,7 @@ export interface RegionEditArgs {
 }
 
 const EDIT_GENERATION_CONFIG = {
-  temperature: 0.60,
+  temperature: 0.25,
   topP: 0.9,
   topK: 40,
   maxOutputTokens: 4096,
@@ -47,7 +47,7 @@ ${(userPrompt || prompt).trim()}`.trim()
     : prompt;
 
   const normalizedMode = normalizeEditMode(editMode || "Replace");
-  const includeBaselineReferences = normalizedMode !== "remove";
+  const includeBaselineReferences = true;
   const usesReferenceImage = includeBaselineReferences && !!referenceImageBuffer;
   const hasFullSceneReference = includeBaselineReferences && !!fullSceneReferenceBuffer;
 
