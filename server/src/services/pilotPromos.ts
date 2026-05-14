@@ -65,7 +65,13 @@ export interface RedeemPilotPromoResult {
 export async function redeemPilotPromo(
   params: RedeemPilotPromoParams
 ): Promise<RedeemPilotPromoResult> {
-  const normalizedCode = params.promoCode.trim().toUpperCase();
+  const compactCode = params.promoCode.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const normalizedCode =
+    compactCode === "pilot50"
+      ? "PILOT_50"
+      : compactCode === "pilot30"
+        ? "PILOT_30"
+        : params.promoCode.trim().toUpperCase();
 
   return withTransaction(async (client) => {
     // Lock the promo row to serialise concurrent redemption attempts.

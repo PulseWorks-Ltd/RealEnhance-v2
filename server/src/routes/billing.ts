@@ -28,7 +28,6 @@ import {
 } from "../services/trials.js";
 import {
   redeemPilotPromo,
-  getPilotPromoSummary,
 } from "../services/pilotPromos.js";
 import { PILOT_PROMOS } from "@realenhance/shared/pilotPromos.js";
 import { pool } from "../db/index.js";
@@ -48,6 +47,34 @@ const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "newuser10",
   "adminusermonthlytopup200",
 ]);
+
+const PILOT_PROMO_CODE_BY_NORMALIZED = new Map<string, keyof typeof PILOT_PROMOS>([
+  ["pilot50", "PILOT_50"],
+  ["pilot30", "PILOT_30"],
+]);
+
+function normalizePromoCodeInput(raw: string): string {
+  return String(raw || "").trim().toLowerCase();
+}
+
+function normalizePromoCodeCompact(raw: string): string {
+  return normalizePromoCodeInput(raw).replace(/[^a-z0-9]/g, "");
+}
+
+function resolvePilotPromoCode(raw: string): keyof typeof PILOT_PROMOS | null {
+  return PILOT_PROMO_CODE_BY_NORMALIZED.get(normalizePromoCodeCompact(raw)) ?? null;
+}
+
+function resolveCreditGrantPromoCode(raw: string): string | null {
+  const direct = normalizePromoCodeInput(raw);
+  if (CREDIT_GRANT_PROMO_CODES.has(direct)) return direct;
+
+  const compact = normalizePromoCodeCompact(raw);
+  for (const code of CREDIT_GRANT_PROMO_CODES) {
+    if (normalizePromoCodeCompact(code) === compact) return code;
+  }
+  return null;
+}
 
 async function upsertAgencyAllowance(agencyId: string, planTier: PlanTier) {
   const plan = getStripePlan(planTier);
@@ -550,17 +577,43 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       return res.status(403).json({ error: "Admin access required" });
     }
 
-    const promoCode = typeof req.body?.promoCode === "string" ? req.body.promoCode.trim() : "";
-    if (!promoCode) {
+    const promoCodeInput = typeof req.body?.promoCode === "string" ? req.body.promoCode.trim() : "";
+    if (!promoCodeInput) {
       return res.status(400).json({ error: "Promo code is required" });
     }
 
-    const normalizedPromoCode = promoCode.toLowerCase();
+    // Pilot promo support in the same endpoint as other promo types.
+    // Accepts both PILOT_50 and PILOT50 (and casing variations).
+    const pilotPromoCode = resolvePilotPromoCode(promoCodeInput);
+    if (pilotPromoCode) {
+      const result = await redeemPilotPromo({
+        promoCode: pilotPromoCode,
+        userId: user.id,
+        agencyId: agency.agencyId,
+      });
+      const usage = await getUsageSnapshot(agency.agencyId, user.id);
+      return res.json({
+        success: true,
+        code: result.redemption.promo_code,
+        promoType: "pilot",
+        promoInfo: result.promoInfo,
+        allowance: {
+          monthlyIncluded: usage.includedLimit,
+          monthlyRemaining: usage.includedRemaining,
+          addonBalance: usage.addonBalance,
+          addonRemaining: usage.addonRemaining,
+          totalRemaining: usage.remaining,
+          monthKey: usage.monthKey,
+          pilotPromo: usage.pilotPromo,
+        },
+      });
+    }
 
-    if (CREDIT_GRANT_PROMO_CODES.has(normalizedPromoCode)) {
+    const creditGrantPromoCode = resolveCreditGrantPromoCode(promoCodeInput);
+    if (creditGrantPromoCode) {
       const { bundle, promo, duplicated } = await redeemCreditPromoForExistingAgency({
         agencyId: agency.agencyId,
-        promoCode,
+        promoCode: creditGrantPromoCode,
       });
 
       const usage = await getUsageSnapshot(agency.agencyId);
@@ -593,7 +646,7 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
     const { trial, promo } = await redeemPromoForExistingAgency({
       agencyId: agency.agencyId,
       email: user.email,
-      promoCode,
+      promoCode: promoCodeInput,
     });
 
     if (agency.subscriptionStatus !== "TRIAL") {
@@ -634,7 +687,12 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "TRIAL_ALREADY_CLAIMED" ||
       code === "AGENCY_ALREADY_USED_TRIAL" ||
       code === "AGENCY_PREVIOUSLY_SUBSCRIBED" ||
-      code === "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF"
+      code === "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF" ||
+      code === "PILOT_PROMO_NOT_FOUND" ||
+      code === "PILOT_PROMO_INACTIVE" ||
+      code === "PILOT_PROMO_GLOBAL_CAP_REACHED" ||
+      code === "PILOT_PROMO_ALREADY_REDEEMED_BY_USER" ||
+      code === "PILOT_PROMO_ALREADY_REDEEMED_BY_AGENCY"
     ) {
       return res.status(400).json({ error: code });
     }
@@ -1218,8 +1276,8 @@ router.post("/redeem-pilot-promo", requireAuth, async (req: Request, res: Respon
     return res.status(400).json({ error: "MISSING_PROMO_CODE", message: "promoCode is required" });
   }
 
-  const promoCode = rawCode.trim().toUpperCase();
-  if (!(promoCode in PILOT_PROMOS)) {
+  const promoCode = resolvePilotPromoCode(rawCode);
+  if (!promoCode || !(promoCode in PILOT_PROMOS)) {
     return res.status(400).json({ error: "PILOT_PROMO_NOT_FOUND", message: "Unknown pilot promo code" });
   }
 
