@@ -44,12 +44,13 @@ export function useUsage() {
       setError(null);
       const response = await apiFetch("/api/usage/summary");
       const data = (await response.json()) as UsageSummary;
+      const pilotCredits = (data as any)?.pilotPromo?.promoCreditsRemaining || 0;
       const normalized: UsageSummary = {
         ...data,
         remaining:
           Number(data?.remaining) >= 0
             ? Number(data.remaining)
-            : Math.max(0, Number(data?.mainRemaining ?? 0)) + Math.max(0, Number(data?.addonRemaining ?? 0)),
+            : Math.max(0, Number(data?.mainRemaining ?? 0)) + Math.max(0, Number(data?.addonRemaining ?? 0)) + pilotCredits,
       };
       setUsage(normalized);
     } catch (err) {
