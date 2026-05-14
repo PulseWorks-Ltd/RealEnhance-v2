@@ -8291,10 +8291,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 : null;
           const skipStage1B = detectorFallback
             ? false
-            : gateDecision?.decision === "furnished_refresh"
-              && anchorDetected
-              && !hasClutter
-              && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE);
+            : gateDecision?.decision === "furnished_refresh";
           const routingDecisionSource = detectorFallback
             ? "detector_failed_safe_fallback"
             : gateDecision?.reason || "gemini";
@@ -8366,6 +8363,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             hasClutter: detectorFallback ? null : hasClutter,
             excessFurnitureCount,
             skipStage1B,
+            stage1BSkippedByDesign: skipStage1B,
             declutterMode: resolvedDeclutterMode,
             stage1BRequired: resolvedDeclutterMode !== null && !skipStage1B,
           };
@@ -8608,19 +8606,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const excessFurnitureCount = typeof routingSnapshot.excessFurnitureCount === "number"
         ? Math.max(0, routingSnapshot.excessFurnitureCount)
         : null;
+      const skipStage1BByDesign = routingSnapshot.skipStage1B === true || routingSnapshot.stage1BRequired !== true;
 
-      if (anchorDetected && !hasClutter && (excessFurnitureCount === null || excessFurnitureCount <= INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE)) {
-        // Explicit refresh override from 1A when anchors exist but no clutter requires Stage 1B.
+      if (skipStage1BByDesign) {
+        // Explicit refresh override from 1A when the furnished gate resolves directly to refresh.
         payload.options.declutter = false;
         (payload.options as any).declutterMode = null;
         declutterMode = null;
-        (payload.options as any).furnishedState = "furnished";
+        (payload.options as any).furnishedState = anchorDetected ? "furnished" : "needs_declutter";
         (payload.options as any).stagingPreference = "refresh";
         (payload.options as any).stage2Mode = "REFRESH";
         (payload.options as any).stage2Variant = "2A";
-        nLog("[ROUTING_OVERRIDE] Anchor detected without clutter — skipping Stage1B and forcing Stage2 refresh", {
+        nLog("[ROUTING_OVERRIDE] Furnished gate resolved to refresh — skipping Stage1B and forcing Stage2 refresh", {
           jobId: payload.jobId,
           originalUserDeclutter,
+          skipStage1BByDesign,
           anchorDetected,
           hasClutter,
           excessFurnitureCount,
@@ -8629,7 +8629,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog("[ROUTING_DECISION]", {
           jobId: payload.jobId,
           path: "1A->2(refresh)",
-          reason: `${routingSnapshot.authority}+anchor_no_clutter_refresh_override`,
+          reason: `${routingSnapshot.authority}+stage_ready_refresh_override`,
         });
       } else {
         nLog("[ROUTING_OVERRIDE] Furniture detected — auto-enabling Stage1B regardless of user declutter selection", {
@@ -9749,7 +9749,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   });
 
   if (payload.options.virtualStage && !isExteriorScene && stage2InputPath) {
-    if (frozenRoutingSnapshot?.geminiHasFurniture === false) {
+    const resolvedRefreshGate =
+      (payload.options as any).stage2Mode === "REFRESH"
+      || (frozenRoutingSnapshot?.declutterMode === "stage-ready"
+        && (frozenRoutingSnapshot?.skipStage1B === true || frozenRoutingSnapshot?.stage1BRequired === false));
+
+    if (resolvedRefreshGate) {
+      (payload.options as any).stage2Mode = "REFRESH";
+      nLog("[ANCHOR_DETECTION_BYPASS]", {
+        reason: "resolved_refresh_gate",
+        anchorDetectionUsed: false,
+      });
+    } else if (frozenRoutingSnapshot?.geminiHasFurniture === false) {
       (payload.options as any).stage2Mode = "FROM_EMPTY";
       nLog("[ANCHOR_DETECTION_BYPASS]", {
         reason: "no_furniture_post_1a",

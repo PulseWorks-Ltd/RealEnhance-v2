@@ -246,6 +246,12 @@ function bboxToApproximateLocation(
 function inferFindingIssueType(finding: OpeningDiagnosticFinding): string {
   if (finding.status === "infilled") return ISSUE_TYPES.OPENING_INFILLED;
   if (finding.status === "missing") return ISSUE_TYPES.OPENING_REMOVED;
+  if (
+    finding.machineReasons.includes("staging_occlusion_advisory") ||
+    finding.machineReasons.includes("frame_boundary_truncation_advisory")
+  ) {
+    return ISSUE_TYPES.OPENING_OCCLUSION;
+  }
   if (finding.machineReasons.includes("opening_type_changed")) return ISSUE_TYPES.OPENING_ANOMALY;
   if (finding.machineReasons.includes("wall_index_changed")) return ISSUE_TYPES.OPENING_RELOCATED;
   if (
@@ -284,6 +290,15 @@ function buildFindingContext(finding: OpeningDiagnosticFinding): string {
   }
   if (finding.machineReasons.includes("opening_type_changed")) {
     return "Local opening-preservation analysis flagged a possible change in the type of opening at this location.";
+  }
+  if (finding.machineReasons.includes("frame_boundary_truncation_advisory")) {
+    return "Local opening-preservation analysis detected likely frame-boundary truncation near the image edge while preserving perceptual opening continuity.";
+  }
+  if (finding.machineReasons.includes("staging_occlusion_advisory")) {
+    return "Local opening-preservation analysis detected partial staging occlusion with preserved opening geometry and location.";
+  }
+  if (finding.machineReasons.includes("semantic_anchor_erosion_advisory")) {
+    return "Local opening-preservation analysis detected semantic anchor erosion (for example seam/handle cues) without decisive wall-replacement evidence.";
   }
   return "Local opening-preservation analysis flagged a possible structural difference for this baseline opening.";
 }
@@ -799,6 +814,15 @@ export async function runOpeningValidator(
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
     if ((deterministic.summary as any).openingSignatureMismatch === true) {
       advisorySignals.push("opening_signature_mismatch");
+    }
+    if ((deterministic.summary as any).stagingOcclusionAdvisory === true) {
+      advisorySignals.push("staging_occlusion_advisory");
+    }
+    if ((deterministic.summary as any).frameBoundaryTruncationAdvisory === true) {
+      advisorySignals.push("frame_boundary_truncation_advisory");
+    }
+    if ((deterministic.summary as any).semanticAnchorErosionAdvisory === true) {
+      advisorySignals.push("semantic_anchor_erosion_advisory");
     }
     if (strictDoorOcclusionFail) advisorySignals.push("door_or_closet_occluded_review");
     if (strictWindowOcclusionFail) advisorySignals.push("window_occlusion_review");

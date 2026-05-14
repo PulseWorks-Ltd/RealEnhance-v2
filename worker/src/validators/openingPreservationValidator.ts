@@ -84,6 +84,9 @@ export type OpeningValidationResult = {
     openingStateChanged?: boolean;
     openingApertureExpanded?: boolean;
     openingSignatureMismatch?: boolean;
+    stagingOcclusionAdvisory?: boolean;
+    frameBoundaryTruncationAdvisory?: boolean;
+    semanticAnchorErosionAdvisory?: boolean;
     outOfFrameOpenings: string[];
     openingCount?: {
       before: number;
@@ -460,8 +463,8 @@ function joinFragments(fragments: string[]): string {
 }
 
 function buildAlteredOpeningNarrative(
-  opening: Pick<StructuralOpening, "type" | "wallIndex" | "horizontalBand">,
-  invariantReasons: string[]
+  opening: Pick<StructuralOpening, "type" | "wallIndex" | "horizontalBand">
+, invariantReasons: string[]
 ): { explanation: string; question: string } {
   const location = describeOpeningLocation(opening);
   const movedWall = invariantReasons.includes("wall_index_changed");
@@ -533,6 +536,125 @@ export function deriveStructuralClass(opening: Pick<StructuralOpening, "type" | 
 
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
+}
+
+function bboxArea(bbox: [number, number, number, number]): number {
+  const width = Math.max(0, bbox[2] - bbox[0]);
+  const height = Math.max(0, bbox[3] - bbox[1]);
+  return width * height;
+}
+
+function bboxIntersectionArea(
+  a: [number, number, number, number],
+  b: [number, number, number, number]
+): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  if (x2 <= x1 || y2 <= y1) return 0;
+  return (x2 - x1) * (y2 - y1);
+}
+
+export function classifyNonWindowOpeningAreaLoss(params: {
+  baseOpening: StructuralOpening;
+  detectedOpening: StructuralOpening;
+  areaDelta: number;
+  invariantReasons: string[];
+}): {
+  classifyAsInfilled: boolean;
+  occlusionLikely: boolean;
+  frameBoundaryTruncationLikely: boolean;
+  semanticAnchorErosionLikely: boolean;
+  continuityCollapseLikely: boolean;
+  anchorsLikelyPresent: boolean;
+  retention: number;
+  overlapToBaseline: number;
+} {
+  const { baseOpening, detectedOpening, areaDelta, invariantReasons } = params;
+  const baseArea = Math.max(0.0001, bboxArea(baseOpening.bbox));
+  const detectedArea = Math.max(0.0001, bboxArea(detectedOpening.bbox));
+  const retention = clamp01(detectedArea / baseArea);
+  const overlap = bboxIntersectionArea(baseOpening.bbox, detectedOpening.bbox);
+  const overlapToBaseline = clamp01(overlap / baseArea);
+
+  const hasMajorLocationShift =
+    invariantReasons.includes("wall_index_changed") ||
+    invariantReasons.includes("horizontal_band_changed") ||
+    invariantReasons.includes("vertical_band_changed");
+  const hasTypeOrGeometryMutation =
+    invariantReasons.includes("opening_type_changed") ||
+    invariantReasons.includes("pane_structure_changed") ||
+    invariantReasons.includes("orientation_changed");
+  const hasCoverageBandJump = invariantReasons.includes("wall_coverage_band_changed_gt_one");
+  const baseNearFrame = isEdgeOfFrameOpening(baseOpening, 0.03);
+  const detectedNearFrame = isEdgeOfFrameOpening(detectedOpening, 0.03);
+  const frameBoundaryTruncationLikely =
+    (baseNearFrame || detectedNearFrame) &&
+    overlapToBaseline >= 0.3 &&
+    !hasMajorLocationShift &&
+    !hasTypeOrGeometryMutation;
+
+  const paneAnchorConsistent =
+    baseOpening.paneStructure === "unknown" ||
+    detectedOpening.paneStructure === "unknown" ||
+    baseOpening.paneStructure === detectedOpening.paneStructure;
+  const doorStateAnchorConsistent =
+    baseOpening.doorLeafState === "unknown" ||
+    detectedOpening.doorLeafState === "unknown" ||
+    baseOpening.doorLeafState === detectedOpening.doorLeafState;
+  const orientationAnchorConsistent =
+    !invariantReasons.includes("orientation_changed") ||
+    baseOpening.orientation === detectedOpening.orientation;
+
+  const anchorsLikelyPresent =
+    paneAnchorConsistent ||
+    doorStateAnchorConsistent ||
+    frameBoundaryTruncationLikely;
+
+  // "Perceptual existence" rule: if the opening remains in the same region with
+  // meaningful retained aperture, treat this as likely staging occlusion unless
+  // other strong structural mutation evidence exists.
+  const stillPerceptuallyPresent =
+    retention >= 0.42 &&
+    overlapToBaseline >= 0.35 &&
+    !hasMajorLocationShift &&
+    !hasTypeOrGeometryMutation;
+
+  const semanticAnchorErosionLikely =
+    stillPerceptuallyPresent &&
+    !frameBoundaryTruncationLikely &&
+    !paneAnchorConsistent &&
+    !doorStateAnchorConsistent &&
+    orientationAnchorConsistent &&
+    areaDelta >= 0.25;
+
+  const severeLoss = retention < 0.3 || areaDelta >= 0.7;
+  const moderateLossWithWeakPresence = areaDelta >= 0.35 && (retention < 0.42 || overlapToBaseline < 0.35);
+  const continuityCollapseLikely = retention < 0.25 || overlapToBaseline < 0.2;
+
+  const occlusionLikely =
+    stillPerceptuallyPresent &&
+    anchorsLikelyPresent &&
+    !severeLoss &&
+    (hasCoverageBandJump || areaDelta < 0.5);
+
+  const classifyAsInfilled =
+    severeLoss ||
+    (semanticAnchorErosionLikely && continuityCollapseLikely) ||
+    (areaDelta >= 0.5 && !stillPerceptuallyPresent) ||
+    (moderateLossWithWeakPresence && !occlusionLikely);
+
+  return {
+    classifyAsInfilled,
+    occlusionLikely,
+    frameBoundaryTruncationLikely,
+    semanticAnchorErosionLikely,
+    continuityCollapseLikely,
+    anchorsLikelyPresent,
+    retention,
+    overlapToBaseline,
+  };
 }
 
 function isEdgeOfFrameOpening(opening: StructuralOpening, margin = 0.01): boolean {
@@ -961,6 +1083,15 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   if (input.summary.openingApertureExpanded !== undefined && typeof input.summary.openingApertureExpanded !== "boolean") {
     throw new Error("openingApertureExpanded must be boolean in summary when present");
   }
+  if (input.summary.stagingOcclusionAdvisory !== undefined && typeof input.summary.stagingOcclusionAdvisory !== "boolean") {
+    throw new Error("stagingOcclusionAdvisory must be boolean in summary when present");
+  }
+  if (input.summary.frameBoundaryTruncationAdvisory !== undefined && typeof input.summary.frameBoundaryTruncationAdvisory !== "boolean") {
+    throw new Error("frameBoundaryTruncationAdvisory must be boolean in summary when present");
+  }
+  if (input.summary.semanticAnchorErosionAdvisory !== undefined && typeof input.summary.semanticAnchorErosionAdvisory !== "boolean") {
+    throw new Error("semanticAnchorErosionAdvisory must be boolean in summary when present");
+  }
   if (!Array.isArray(input.summary.outOfFrameOpenings)) {
     throw new Error("outOfFrameOpenings must be an array in summary");
   }
@@ -981,6 +1112,9 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     openingBandMismatch: input.summary.openingBandMismatch === true,
     openingStateChanged: input.summary.openingStateChanged === true,
     openingApertureExpanded: input.summary.openingApertureExpanded === true,
+    stagingOcclusionAdvisory: input.summary.stagingOcclusionAdvisory === true,
+    frameBoundaryTruncationAdvisory: input.summary.frameBoundaryTruncationAdvisory === true,
+    semanticAnchorErosionAdvisory: input.summary.semanticAnchorErosionAdvisory === true,
     outOfFrameOpenings: input.summary.outOfFrameOpenings.filter((openingId: any) => typeof openingId === "string"),
     openingCount:
       input.summary.openingCount &&
@@ -1108,6 +1242,9 @@ export async function validateOpeningPreservation(
   let openingBandMismatch = false;
   let openingStateChanged = false;
   let openingApertureExpanded = false;
+  let stagingOcclusionAdvisory = false;
+  let frameBoundaryTruncationAdvisory = false;
+  let semanticAnchorErosionAdvisory = false;
   let maxAreaDelta = 0;
   let maxAspectDelta = 0;
   let maxWindowSillShift = 0;
@@ -1126,8 +1263,10 @@ export async function validateOpeningPreservation(
 
     if (!match) {
       const edgeOfFrame = isEdgeOfFrameOpening(baseOpening);
+
       if (edgeOfFrame) {
         outOfFrameOpenings.push(baseOpening.id);
+        frameBoundaryTruncationAdvisory = true;
         analysisNotes.push(
           `Baseline opening ${baseOpening.id} (${baseOpening.type}) was near frame edge and is not detectable in AFTER; marked out_of_frame (preserved under uncertainty bias).`
         );
@@ -1299,11 +1438,34 @@ export async function validateOpeningPreservation(
       }
     }
 
+    let areaLossAssessment: ReturnType<typeof classifyNonWindowOpeningAreaLoss> | null = null;
     if (baseOpening.type !== "window" && areaDelta >= 0.35) {
-      openingInfilled = true;
-      analysisNotes.push(
-        `Opening ${baseOpening.id} (${baseOpening.type}) lost substantial visible area (delta=${areaDelta.toFixed(3)}), indicating possible wall-flush infill rather than valid occlusion.`
-      );
+      areaLossAssessment = classifyNonWindowOpeningAreaLoss({
+        baseOpening,
+        detectedOpening: match,
+        areaDelta,
+        invariantReasons,
+      });
+      if (areaLossAssessment.classifyAsInfilled) {
+        openingInfilled = true;
+        analysisNotes.push(
+          `Opening ${baseOpening.id} (${baseOpening.type}) lost substantial visible area (delta=${areaDelta.toFixed(3)}, retention=${areaLossAssessment.retention.toFixed(3)}, overlap=${areaLossAssessment.overlapToBaseline.toFixed(3)}), indicating likely structural infill/sealing.`
+        );
+      } else if (areaLossAssessment.occlusionLikely) {
+        stagingOcclusionAdvisory = true;
+        invariantReasons.push("staging_occlusion_advisory");
+        analysisNotes.push(
+          `Opening ${baseOpening.id} (${baseOpening.type}) shows moderate visible-area loss (delta=${areaDelta.toFixed(3)}, retention=${areaLossAssessment.retention.toFixed(3)}, overlap=${areaLossAssessment.overlapToBaseline.toFixed(3)}), but remains perceptually present in-place; treated as staging occlusion advisory.`
+        );
+      }
+      if (areaLossAssessment.frameBoundaryTruncationLikely) {
+        frameBoundaryTruncationAdvisory = true;
+        invariantReasons.push("frame_boundary_truncation_advisory");
+      }
+      if (areaLossAssessment.semanticAnchorErosionLikely && !areaLossAssessment.classifyAsInfilled) {
+        semanticAnchorErosionAdvisory = true;
+        invariantReasons.push("semantic_anchor_erosion_advisory");
+      }
     }
 
     // Emit opening_resized_major: only when delta ≥ 25%, opening still visible
@@ -1332,16 +1494,31 @@ export async function validateOpeningPreservation(
     const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
     maxAspectDelta = Math.max(maxAspectDelta, aspectDelta);
 
-    const altered = invariantReasons.length > 0;
+    const advisoryOnlyReasons = new Set([
+      "staging_occlusion_advisory",
+      "frame_boundary_truncation_advisory",
+      "semantic_anchor_erosion_advisory",
+    ]);
+    const effectiveInvariantReasons = invariantReasons.filter((reason) => {
+      if (
+        reason === "wall_coverage_band_changed_gt_one" &&
+        areaLossAssessment?.occlusionLikely === true &&
+        areaLossAssessment.classifyAsInfilled !== true
+      ) {
+        return false;
+      }
+      return true;
+    });
+    const altered = effectiveInvariantReasons.some((reason) => !advisoryOnlyReasons.has(reason));
     console.log(
       `[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${altered ? "ALTERED" : "PRESERVED"} reason=${
-        altered ? invariantReasons.join("|") : "none"
+        effectiveInvariantReasons.length > 0 ? effectiveInvariantReasons.join("|") : "none"
       }`
     );
 
-    if (altered) {
+    if (effectiveInvariantReasons.length > 0) {
       const location = describeOpeningLocation(baseOpening);
-      const narrative = buildAlteredOpeningNarrative(baseOpening, invariantReasons);
+      const narrative = buildAlteredOpeningNarrative(baseOpening, effectiveInvariantReasons);
       findings.push({
         id: baseOpening.id,
         openingType: baseOpening.type,
@@ -1349,7 +1526,7 @@ export async function validateOpeningPreservation(
         location,
         wallIndex: baseOpening.wallIndex,
         bbox: baseOpening.bbox,
-        machineReasons: invariantReasons,
+        machineReasons: effectiveInvariantReasons,
         explanation: narrative.explanation,
         question: narrative.question,
         confidence: Math.min(baseOpening.confidence, match.confidence),
@@ -1358,8 +1535,8 @@ export async function validateOpeningPreservation(
 
     openingResults.push({
       id: baseOpening.id,
-      present: !altered,
-      sealed: altered,
+      present: true,
+      sealed: false,
       relocated: match.wallIndex !== baseOpening.wallIndex,
       outOfFrame: false,
       confidence: Math.min(baseOpening.confidence, match.confidence),
@@ -1463,6 +1640,9 @@ export async function validateOpeningPreservation(
     openingStateChanged,
     openingApertureExpanded,
     openingSignatureMismatch: analysisNotes.some((note) => note.includes("opening signature advisory (L->R)")),
+    stagingOcclusionAdvisory,
+    frameBoundaryTruncationAdvisory,
+    semanticAnchorErosionAdvisory,
     outOfFrameOpenings,
     openingCount: {
       before: baseline.openings.length,

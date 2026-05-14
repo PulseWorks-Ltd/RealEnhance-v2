@@ -12,6 +12,7 @@
     "test": "jest --config jest.config.cjs --no-coverage",
     "test:guard:multizone": "tsx src/scripts/assert-multizone-full-mode.ts",
     "test:furnished-gate": "tsx src/scripts/test-furnished-gate.ts",
+    "test:opening-occlusion-gate": "tsx src/scripts/test-opening-occlusion-gate.ts",
     "test:publish": "tsx src/scripts/test-publish.ts"
   },
   "dependencies": {

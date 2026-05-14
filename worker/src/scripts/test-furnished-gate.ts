@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { deriveRoomState, type FurnitureAnalysis, type FurnitureItem } from "../ai/furnitureDetector";
+import {
+  deriveRoomState,
+  resolveFurnishedGateDecision,
+  type FurnitureAnalysis,
+  type FurnitureItem,
+} from "../ai/furnitureDetector";
 
 function baseAnalysis(overrides: Partial<FurnitureAnalysis> = {}): FurnitureAnalysis {
   return {
@@ -102,6 +107,39 @@ function run() {
     deriveRoomState(baseAnalysis({ hasFurniture: false, isStageReady: true })),
     "EMPTY",
     "No furniture and no clutter must be EMPTY"
+  );
+
+  assert.equal(
+    resolveFurnishedGateDecision({
+      analysis: baseAnalysis({
+        roomType: "kitchen",
+        hasCounterClutter: true,
+        isStageReady: false,
+      }),
+      localEmpty: false,
+      roomType: "kitchen",
+      userSelectedDeclutter: false,
+    }).decision,
+    "needs_declutter_light",
+    "Counter clutter must trigger Stage 1B even when the user did not explicitly request declutter"
+  );
+
+  assert.equal(
+    resolveFurnishedGateDecision({
+      analysis: baseAnalysis({
+        hasFurniture: false,
+        hasLoosePortableItems: true,
+        detectedItems: [
+          { type: "bag", confidence: 0.91 },
+          { type: "box", confidence: 0.88 },
+        ],
+        isStageReady: false,
+      }),
+      localEmpty: false,
+      roomType: "other",
+    }).decision,
+    "furnished_refresh",
+    "One or two minor portable clutter items should skip Stage 1B and route to refresh"
   );
 
   // Surface clutter, no furniture → CLUTTERED
