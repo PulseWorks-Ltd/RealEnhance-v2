@@ -83,6 +83,7 @@ interface AgencyInfo {
       monthlyUsed: number;
       monthlyRemaining: number;
       addonBalance: number;
+      pilotRemaining?: number;
       totalRemaining: number;
       monthKey: string;
     };
@@ -696,10 +697,18 @@ export default function AgencyPage() {
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">Add-on credits</p>
                   <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance} remaining</p>
+                  {(agencyInfo.subscription.allowance.pilotRemaining || 0) > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      + {agencyInfo.subscription.allowance.pilotRemaining} pilot promo credits
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">Used after your monthly allowance is exhausted</p>
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">Billing</p>
+                  <p className="text-lg font-semibold">
+                    {agencyInfo.subscription.allowance.totalRemaining} total remaining
+                  </p>
                   <p className="text-lg font-semibold">
                     {agencyInfo.subscription.billingCurrency?.toUpperCase() || agencyInfo.billingCurrency?.toUpperCase() || ""}
                   </p>

@@ -275,7 +275,7 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
 
     const activeUsers = await countActiveAgencyUsers(user.agencyId);
     const trial = await getTrialSummary(user.agencyId);
-    const usage = await getUsageSnapshot(user.agencyId);
+    const usage = await getUsageSnapshot(user.agencyId, user.id);
     const derivedPromoCreditsGranted = await hasSignupPromoCredits(user.agencyId);
     const promoCreditsGranted = agency.promoCreditsGranted === true || derivedPromoCreditsGranted;
     // Opportunistically backfill explicit metadata for older agencies.
@@ -296,7 +296,8 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
 
     const effectiveIncluded = trialActive ? Math.max(Number(usage.includedLimit || 0), trialIncluded) : Number(usage.includedLimit || 0);
     const effectiveUsed = trialActive ? Math.max(Number(usage.includedUsed || 0), trialUsed) : Number(usage.includedUsed || 0);
-    const effectiveRemaining = Math.max(0, Number(usage.remaining || 0)) + trialRemaining;
+    const pilotRemaining = Math.max(0, Number(usage.pilotPromo?.promoCreditsRemaining || 0));
+    const effectiveRemaining = Math.max(0, Number(usage.remaining || 0)) + pilotRemaining + trialRemaining;
 
     const planName = plan
       ? plan.displayName
@@ -327,6 +328,7 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
           monthlyRemaining: effectiveRemaining,
           totalRemaining: effectiveRemaining,
           addonBalance: usage.addonBalance,
+          pilotRemaining,
           monthKey: usage.monthKey,
         },
       },
