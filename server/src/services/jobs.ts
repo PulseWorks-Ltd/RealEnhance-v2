@@ -359,6 +359,50 @@ async function buildEnhanceArtifacts(params: {
     stage2Variant?: "2A" | "2B";
     furnishedState?: "furnished" | "empty";
     stagingPreference?: "refresh" | "full";
+    roomConsistencyV1?: {
+      enabled: boolean;
+      roomId: string;
+      clientBatchId?: string;
+      viewRole: "primary" | "reference";
+      primaryImageId?: string | null;
+      groupSize?: number;
+      primarySelection?: {
+        method: "auto" | "manual";
+        score: number;
+        reasons: string[];
+      };
+      roomState?: {
+        roomId: string;
+        primaryImageId?: string | null;
+        styleProfile: {
+          stagingStyle: string;
+          roomType?: string;
+          sceneType?: string;
+        };
+        lightingProfile: {
+          brightnessProfile?: "low" | "balanced" | "bright";
+          warmthProfile?: "cool" | "neutral" | "warm";
+          weatherMood?: "neutral" | "sunny" | "overcast";
+          directionHint?: "left" | "right" | "center" | "unknown";
+          shadowSoftness?: "soft" | "medium" | "hard";
+        };
+        furnitureMemory: {
+          persistentIdentityGoal: string;
+          materialPalette: string[];
+          colorContinuity: "strict" | "balanced";
+        };
+        relationalSummary: {
+          placementDirective: string;
+          anchorVisibility: "low" | "medium" | "high";
+        };
+        consistencySettings: {
+          enforceFurnitureIdentity: boolean;
+          enforceStyleContinuity: boolean;
+          enforceLightingContinuity: boolean;
+          enforceRelationalContinuity: boolean;
+        };
+      };
+    };
   };
   stage2OnlyMode?: {
     enabled: boolean;
@@ -552,6 +596,50 @@ export async function enqueueEnhanceJob(params: {
     stage2Variant?: "2A" | "2B";
     furnishedState?: "furnished" | "empty";
     stagingPreference?: "refresh" | "full";
+    roomConsistencyV1?: {
+      enabled: boolean;
+      roomId: string;
+      clientBatchId?: string;
+      viewRole: "primary" | "reference";
+      primaryImageId?: string | null;
+      groupSize?: number;
+      primarySelection?: {
+        method: "auto" | "manual";
+        score: number;
+        reasons: string[];
+      };
+      roomState?: {
+        roomId: string;
+        primaryImageId?: string | null;
+        styleProfile: {
+          stagingStyle: string;
+          roomType?: string;
+          sceneType?: string;
+        };
+        lightingProfile: {
+          brightnessProfile?: "low" | "balanced" | "bright";
+          warmthProfile?: "cool" | "neutral" | "warm";
+          weatherMood?: "neutral" | "sunny" | "overcast";
+          directionHint?: "left" | "right" | "center" | "unknown";
+          shadowSoftness?: "soft" | "medium" | "hard";
+        };
+        furnitureMemory: {
+          persistentIdentityGoal: string;
+          materialPalette: string[];
+          colorContinuity: "strict" | "balanced";
+        };
+        relationalSummary: {
+          placementDirective: string;
+          anchorVisibility: "low" | "medium" | "high";
+        };
+        consistencySettings: {
+          enforceFurnitureIdentity: boolean;
+          enforceStyleContinuity: boolean;
+          enforceLightingContinuity: boolean;
+          enforceRelationalContinuity: boolean;
+        };
+      };
+    };
   };
   stage2OnlyMode?: {
     enabled: boolean;
@@ -647,6 +735,50 @@ export async function createAwaitingPaymentEnhanceJob(params: {
     stage2Variant?: "2A" | "2B";
     furnishedState?: "furnished" | "empty";
     stagingPreference?: "refresh" | "full";
+    roomConsistencyV1?: {
+      enabled: boolean;
+      roomId: string;
+      clientBatchId?: string;
+      viewRole: "primary" | "reference";
+      primaryImageId?: string | null;
+      groupSize?: number;
+      primarySelection?: {
+        method: "auto" | "manual";
+        score: number;
+        reasons: string[];
+      };
+      roomState?: {
+        roomId: string;
+        primaryImageId?: string | null;
+        styleProfile: {
+          stagingStyle: string;
+          roomType?: string;
+          sceneType?: string;
+        };
+        lightingProfile: {
+          brightnessProfile?: "low" | "balanced" | "bright";
+          warmthProfile?: "cool" | "neutral" | "warm";
+          weatherMood?: "neutral" | "sunny" | "overcast";
+          directionHint?: "left" | "right" | "center" | "unknown";
+          shadowSoftness?: "soft" | "medium" | "hard";
+        };
+        furnitureMemory: {
+          persistentIdentityGoal: string;
+          materialPalette: string[];
+          colorContinuity: "strict" | "balanced";
+        };
+        relationalSummary: {
+          placementDirective: string;
+          anchorVisibility: "low" | "medium" | "high";
+        };
+        consistencySettings: {
+          enforceFurnitureIdentity: boolean;
+          enforceStyleContinuity: boolean;
+          enforceLightingContinuity: boolean;
+          enforceRelationalContinuity: boolean;
+        };
+      };
+    };
   };
   stage2OnlyMode?: {
     enabled: boolean;

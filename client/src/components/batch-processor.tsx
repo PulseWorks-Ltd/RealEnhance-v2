@@ -1518,6 +1518,7 @@ export default function BatchProcessor({
   type LocalItemMeta = {
     roomKey?: string;     // user label e.g. "Lounge-A"
     angleOrder?: number;  // 1,2,3... (1 = primary)
+    manualPrimary?: boolean;
   };
   
   const [selection, setSelection] = useState<Set<number>>(new Set()); // indexes user has selected
@@ -1538,6 +1539,8 @@ export default function BatchProcessor({
   // Track manual scene overrides per-image (when user changes scene dropdown)
   const [manualSceneOverrideById, setManualSceneOverrideById] = useState<Record<string, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
+  const roomConsistencyModeEnabled =
+    String(import.meta.env.VITE_EXPERIMENT_ROOM_CONSISTENCY_V1 || "").toLowerCase() === "true";
   // Studio view: current image being configured (by stable imageId)
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
@@ -2369,6 +2372,41 @@ export default function BatchProcessor({
     setSelection(new Set());
   }
 
+  function setPrimaryView() {
+    const selectedIndexes = Array.from(selection.values());
+    if (!selectedIndexes.length) return;
+
+    const targetIndex = Math.min(...selectedIndexes);
+    const targetRoomKey = String(metaByIndex[targetIndex]?.roomKey || "").trim();
+    if (!targetRoomKey) {
+      window.alert("Assign a room label first, then set a primary view.");
+      return;
+    }
+
+    setMetaByIndex((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((rawIndex) => {
+        const idx = Number(rawIndex);
+        if (!Number.isFinite(idx)) return;
+        const sameRoom = String(next[idx]?.roomKey || "").trim() === targetRoomKey;
+        if (!sameRoom) return;
+        next[idx] = {
+          ...(next[idx] || {}),
+          manualPrimary: idx === targetIndex,
+          angleOrder: idx === targetIndex ? 1 : next[idx]?.angleOrder,
+        };
+      });
+
+      if (!next[targetIndex]) {
+        next[targetIndex] = { roomKey: targetRoomKey, manualPrimary: true, angleOrder: 1 };
+      }
+
+      return next;
+    });
+
+    setSelection(new Set([targetIndex]));
+  }
+
   // Build metaJson to send with the batch request
   const metaJson = useMemo(() => {
     // Build array of metadata for each image
@@ -2376,9 +2414,12 @@ export default function BatchProcessor({
     files.forEach((file, i) => {
       const imageId = getFileId(file);
       const metaItem: any = { index: i };
-      // Room linking
-      if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
-      if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
+      if (roomConsistencyModeEnabled) {
+        // Experimental room consistency metadata
+        if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
+        if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
+        if (metaByIndex[i]?.manualPrimary === true) metaItem.manualPrimary = true;
+      }
       // Scene type
       const sceneType = finalSceneForIndex(i) || "auto";
       if (sceneType !== "auto") metaItem.sceneType = sceneType;
@@ -2416,7 +2457,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, roomConsistencyModeEnabled]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -4921,6 +4962,9 @@ export default function BatchProcessor({
     if (propertyAddress.trim()) {
       uploadRequestBody.propertyAddress = propertyAddress.trim();
     }
+    if (roomConsistencyModeEnabled) {
+      uploadRequestBody.roomConsistencyMode = true;
+    }
     
     try {
       setIsUploading(true);
@@ -7340,30 +7384,42 @@ export default function BatchProcessor({
                     Selected Images ({files.length})
                   </h3>
 
-                  {/* Room Linking Controls */}
+                  {/* Experimental Room Consistency Controls */}
                   <div className="flex gap-2 mb-4 justify-center flex-wrap">
-                    <button
-                      className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                      onClick={assignRoomKey}
-                      disabled={selection.size === 0}
-                      data-testid="button-assign-room"
-                    >
-                      📋 Link as same room…
-                    </button>
-                    <button
-                      className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                      onClick={setAngleOrder}
-                      disabled={selection.size === 0}
-                      data-testid="button-set-angle-order"
-                    >
-                      🔢 Set angle order…
-                    </button>
+                    {roomConsistencyModeEnabled && (
+                      <>
+                        <button
+                          className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
+                          onClick={assignRoomKey}
+                          disabled={selection.size === 0}
+                          data-testid="button-assign-room"
+                        >
+                          Link as same room
+                        </button>
+                        <button
+                          className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
+                          onClick={setPrimaryView}
+                          disabled={selection.size === 0}
+                          data-testid="button-set-primary-view"
+                        >
+                          Set as Primary View
+                        </button>
+                        <button
+                          className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
+                          onClick={setAngleOrder}
+                          disabled={selection.size === 0}
+                          data-testid="button-set-angle-order"
+                        >
+                          Set view order
+                        </button>
+                      </>
+                    )}
                     <button
                       className="rounded-md border border-slate-600 px-3 py-1 text-sm text-white bg-slate-800 hover:bg-slate-700 transition"
                       onClick={clearAllFiles}
                       data-testid="button-clear-all"
                     >
-                      🗑️ Clear All
+                      Clear All
                     </button>
                     {selection.size > 0 && (
                       <span className="text-xs text-gray-400 flex items-center">
@@ -7414,14 +7470,16 @@ export default function BatchProcessor({
 
                         {/* Room and angle badges */}
                         <div className="absolute bottom-1 left-1 flex flex-col gap-1">
-                          {metaByIndex[i]?.roomKey && (
+                          {roomConsistencyModeEnabled && metaByIndex[i]?.roomKey && (
                             <span className="inline-block rounded-full bg-brand-accent text-white px-2 py-0.5 text-[10px] font-medium">
                               Room: {metaByIndex[i]?.roomKey}
                             </span>
                           )}
-                          {metaByIndex[i]?.angleOrder && (
+                          {roomConsistencyModeEnabled && metaByIndex[i]?.roomKey && (
                             <span className="inline-block rounded-full bg-slate-600 text-white px-2 py-0.5 text-[10px] font-medium">
-                              Angle {metaByIndex[i]?.angleOrder}
+                              {metaByIndex[i]?.manualPrimary === true || metaByIndex[i]?.angleOrder === 1
+                                ? "Primary View"
+                                : "Reference View"}
                             </span>
                           )}
                         </div>

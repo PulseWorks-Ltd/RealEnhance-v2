@@ -31,6 +31,53 @@ const logger = console;
 type Stage2RetryReason = "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown";
 type Stage2ModeOverride = "REFRESH" | "FROM_EMPTY";
 
+type RoomConsistencyStateV1 = {
+  roomId: string;
+  primaryImageId?: string | null;
+  styleProfile?: {
+    stagingStyle?: string;
+    roomType?: string;
+    sceneType?: string;
+  };
+  lightingProfile?: {
+    brightnessProfile?: "low" | "balanced" | "bright";
+    warmthProfile?: "cool" | "neutral" | "warm";
+    weatherMood?: "neutral" | "sunny" | "overcast";
+    directionHint?: "left" | "right" | "center" | "unknown";
+    shadowSoftness?: "soft" | "medium" | "hard";
+  };
+  furnitureMemory?: {
+    persistentIdentityGoal?: string;
+    materialPalette?: string[];
+    colorContinuity?: "strict" | "balanced";
+  };
+  relationalSummary?: {
+    placementDirective?: string;
+    anchorVisibility?: "low" | "medium" | "high";
+  };
+  consistencySettings?: {
+    enforceFurnitureIdentity?: boolean;
+    enforceStyleContinuity?: boolean;
+    enforceLightingContinuity?: boolean;
+    enforceRelationalContinuity?: boolean;
+  };
+};
+
+type RoomConsistencyContextV1 = {
+  enabled: boolean;
+  roomId: string;
+  clientBatchId?: string;
+  viewRole: "primary" | "reference";
+  primaryImageId?: string | null;
+  groupSize?: number;
+  primarySelection?: {
+    method: "auto" | "manual";
+    score: number;
+    reasons: string[];
+  };
+  roomState?: RoomConsistencyStateV1;
+};
+
 type Stage2GenerationPlan = {
   model: string;
   temperature: number;
@@ -619,6 +666,7 @@ export async function runStage2GenerationAttempt(
       attemptNumber: number;
     };
     structuralConstraintBlock?: string;
+    roomConsistencyV1?: RoomConsistencyContextV1;
   }
 ): Promise<string> {
   const attemptNumber = Math.max(1, opts.attempt ?? 1);
@@ -841,6 +889,44 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
   const styleModifier = selectedStyle === "nz_standard" ? undefined : STYLE_PROMPT_MODIFIERS[selectedStyle];
   if (styleModifier) {
     textPrompt += "\n\nSTYLE CONTEXT:\n" + styleModifier;
+  }
+
+  const roomConsistency = opts.roomConsistencyV1;
+  const roomConsistencyFeatureEnabled =
+    roomConsistency?.enabled === true &&
+    (String(process.env.EXPERIMENT_ROOM_CONSISTENCY_V1 || "").toLowerCase() === "true" ||
+      String(process.env.EXPERIMENT_ROOM_CONSISTENCY_V1 || "") === "1");
+  if (roomConsistencyFeatureEnabled) {
+    const roomState = roomConsistency.roomState;
+    const roleLabel = roomConsistency.viewRole === "primary" ? "Primary View" : "Reference View";
+    const styleHint = roomState?.styleProfile?.stagingStyle || selectedStyle;
+    const lightingHint = roomState?.lightingProfile || {};
+    const furnitureHint = roomState?.furnitureMemory || {};
+    const relationalHint = roomState?.relationalSummary || {};
+
+    textPrompt += `\n\nROOM CONSISTENCY LAYER (EXPERIMENTAL V1)
+View role: ${roleLabel}
+Room ID: ${roomConsistency.roomId}
+Primary image id: ${roomConsistency.primaryImageId || roomState?.primaryImageId || "unknown"}
+Group size: ${roomConsistency.groupSize ?? "unknown"}
+Primary selection method: ${roomConsistency.primarySelection?.method || "auto"}
+
+Consistency objective:
+- Keep furniture identity persistent across room angles (same couch remains same couch, same rug remains same rug).
+- Keep style continuity strict (materials, palette, and furnishing language remain coherent).
+- Keep lighting continuity aligned (brightness=${lightingHint.brightnessProfile || "balanced"}, warmth=${lightingHint.warmthProfile || "neutral"}, weather=${lightingHint.weatherMood || "neutral"}, direction=${lightingHint.directionHint || "unknown"}, shadow_softness=${lightingHint.shadowSoftness || "soft"}).
+- Keep relational continuity approximate (do not force exact geometry, preserve the same design logic from this viewpoint).
+
+Style profile to preserve: ${styleHint}
+Furniture identity goal: ${furnitureHint.persistentIdentityGoal || "Preserve anchor identity, color continuity, and materials."}
+Material palette hint: ${(furnitureHint.materialPalette || []).join(", ") || "neutral, wood, textile"}
+Relational placement directive: ${relationalHint.placementDirective || "Render the established room design from this viewpoint while preserving spatial plausibility."}
+Anchor visibility expectation: ${relationalHint.anchorVisibility || "medium"}
+
+Execution mode:
+- If View role is Primary View: establish the canonical room design for downstream reference views.
+- If View role is Reference View: render the already established room design from this camera angle, not a fresh redesign.
+`;
   }
 
   if (opts.tightenLevel && opts.tightenLevel > 0) {
@@ -1094,6 +1180,7 @@ export async function runStage2(
     /** Validation configuration (local-mode driven) */
     validationConfig?: { localMode?: Mode };
     layoutPlan?: Stage2LayoutPlan | null;
+    roomConsistencyV1?: RoomConsistencyContextV1;
   }
 ): Promise<Stage2Result> {
   const validationBaseline = opts.stage1APath || basePath;
@@ -1163,6 +1250,7 @@ export async function runStage2(
       layoutPlan: opts.layoutPlan,
       modelReason: attempt === 1 ? "stage2_initial_generation" : `stage2_retry_generation_attempt_${attempt}`,
       structuralRetryContext,
+      roomConsistencyV1: opts.roomConsistencyV1,
     });
 
     if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {

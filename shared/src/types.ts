@@ -97,6 +97,53 @@ export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete
  */
 export type DeclutterMode = "light" | "stage-ready";
 
+export interface RoomConsistencyStateV1 {
+  roomId: string;
+  primaryImageId?: string | null;
+  styleProfile: {
+    stagingStyle: string;
+    roomType?: string;
+    sceneType?: string;
+  };
+  lightingProfile: {
+    brightnessProfile?: "low" | "balanced" | "bright";
+    warmthProfile?: "cool" | "neutral" | "warm";
+    weatherMood?: "neutral" | "sunny" | "overcast";
+    directionHint?: "left" | "right" | "center" | "unknown";
+    shadowSoftness?: "soft" | "medium" | "hard";
+  };
+  furnitureMemory: {
+    persistentIdentityGoal: string;
+    materialPalette: string[];
+    colorContinuity: "strict" | "balanced";
+  };
+  relationalSummary: {
+    placementDirective: string;
+    anchorVisibility: "low" | "medium" | "high";
+  };
+  consistencySettings: {
+    enforceFurnitureIdentity: boolean;
+    enforceStyleContinuity: boolean;
+    enforceLightingContinuity: boolean;
+    enforceRelationalContinuity: boolean;
+  };
+}
+
+export interface RoomConsistencyContextV1 {
+  enabled: boolean;
+  roomId: string;
+  clientBatchId?: string;
+  viewRole: "primary" | "reference";
+  primaryImageId?: string | null;
+  groupSize?: number;
+  primarySelection?: {
+    method: "auto" | "manual";
+    score: number;
+    reasons: string[];
+  };
+  roomState?: RoomConsistencyStateV1;
+}
+
 export type RoomType =
   | "bedroom"
   | "living_room"
@@ -184,6 +231,7 @@ export interface EnhanceJobPayload {
       features?: Record<string, number>;
       source?: string;
     };
+    roomConsistencyV1?: RoomConsistencyContextV1;
   };
   // ✅ Smart Stage-2-only retry mode
   stage2OnlyMode?: {

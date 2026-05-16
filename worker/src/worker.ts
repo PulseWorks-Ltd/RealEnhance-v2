@@ -6547,6 +6547,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         imageId: payload.imageId,
         layoutPlan: stage2OnlyLayoutPlan,
+        roomConsistencyV1: (payload.options as any)?.roomConsistencyV1,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
           stage2AttemptId = nextAttemptId;
@@ -10033,6 +10034,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             imageId: payload.imageId,
             layoutPlan: stage2LayoutPlan,
+            roomConsistencyV1: (payload.options as any)?.roomConsistencyV1,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -10313,6 +10315,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           imageId: payload.imageId,
           layoutPlan: stage2LayoutPlan,
+          roomConsistencyV1: (payload.options as any)?.roomConsistencyV1,
           validationConfig: { localMode: localValidatorMode },
           stage1APath: stage2ValidationBaseline,
           curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -10748,6 +10751,7 @@ All openings must remain identical in position and size to the original image.`;
                 attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
               },
             layoutPlan: stage2LayoutPlan,
+            roomConsistencyV1: (payload.options as any)?.roomConsistencyV1,
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
           });

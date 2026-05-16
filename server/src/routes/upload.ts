@@ -171,6 +171,137 @@ function normalizeStagingStyle(style?: string): string {
   return s;
 }
 
+function isTrueFlag(value: unknown): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+type RoomConsistencySelectionPlan = {
+  roomId: string;
+  primaryIndex: number;
+  method: "auto" | "manual";
+  groupSize: number;
+  scoreByIndex: Record<number, { score: number; reasons: string[] }>;
+};
+
+function buildRoomConsistencySelectionPlan(metaByIndex: Record<number, any>, uploadCount: number): Record<string, RoomConsistencySelectionPlan> {
+  const groups = new Map<string, Array<{ index: number; score: number; reasons: string[]; explicitPrimary: boolean; angleOrder: number | null }>>();
+
+  const getFeature = (meta: any, keys: string[]): number | null => {
+    const features = meta?.scenePrediction?.features;
+    if (!features || typeof features !== "object") return null;
+    for (const key of keys) {
+      const v = Number((features as any)[key]);
+      if (Number.isFinite(v)) return v;
+    }
+    return null;
+  };
+
+  for (let i = 0; i < uploadCount; i++) {
+    const meta = metaByIndex[i] || {};
+    const roomKey = String(meta.roomKey || "").trim();
+    if (!roomKey) continue;
+
+    const reasons: string[] = [];
+    let score = 0;
+
+    const angleOrderRaw = Number(meta.angleOrder);
+    const angleOrder = Number.isFinite(angleOrderRaw) && angleOrderRaw > 0 ? Math.floor(angleOrderRaw) : null;
+    const explicitPrimary = meta.manualPrimary === true || angleOrder === 1;
+    if (explicitPrimary) {
+      score += 500;
+      reasons.push("manual_primary_override");
+    } else if (angleOrder) {
+      const angleScore = Math.max(0, 60 - angleOrder * 8);
+      score += angleScore;
+      reasons.push(`angle_order_hint:${angleOrder}`);
+    }
+
+    const sceneConfidence = Number(meta?.scenePrediction?.confidence);
+    if (Number.isFinite(sceneConfidence)) {
+      score += Math.max(0, Math.min(1, sceneConfidence)) * 40;
+      reasons.push(`scene_confidence:${Math.max(0, Math.min(1, sceneConfidence)).toFixed(3)}`);
+    }
+
+    const edgeDensity = getFeature(meta, ["edgeDensity", "edge_density", "edges"]);
+    if (edgeDensity !== null) {
+      score += Math.max(0, Math.min(1, edgeDensity)) * 20;
+      reasons.push(`edge_density:${Math.max(0, Math.min(1, edgeDensity)).toFixed(3)}`);
+    }
+
+    const luminance = getFeature(meta, ["luminance", "brightness", "meanLuminance", "luma"]);
+    if (luminance !== null) {
+      score += Math.max(0, Math.min(1, luminance)) * 20;
+      reasons.push(`luminance:${Math.max(0, Math.min(1, luminance)).toFixed(3)}`);
+    }
+
+    const darkness = getFeature(meta, ["darknessFactor", "darkness", "dark_ratio"]);
+    if (darkness !== null) {
+      score += (1 - Math.max(0, Math.min(1, darkness))) * 10;
+      reasons.push(`darkness_factor:${Math.max(0, Math.min(1, darkness)).toFixed(3)}`);
+    }
+
+    const structuralClarity = getFeature(meta, ["structuralClarity", "clarity", "anchorVisibility"]);
+    if (structuralClarity !== null) {
+      score += Math.max(0, Math.min(1, structuralClarity)) * 15;
+      reasons.push(`structural_clarity:${Math.max(0, Math.min(1, structuralClarity)).toFixed(3)}`);
+    }
+
+    const sceneType = String(meta.sceneType || "").trim().toLowerCase();
+    if (sceneType === "interior") {
+      score += 5;
+      reasons.push("interior_scene_bonus");
+    }
+
+    const roomType = String(meta.roomType || "").trim().toLowerCase();
+    if (roomType && roomType !== "unknown" && roomType !== "auto") {
+      score += 4;
+      reasons.push("room_type_present");
+    }
+
+    const group = groups.get(roomKey) || [];
+    group.push({ index: i, score, reasons, explicitPrimary, angleOrder });
+    groups.set(roomKey, group);
+  }
+
+  const plans: Record<string, RoomConsistencySelectionPlan> = {};
+  for (const [roomId, candidates] of groups.entries()) {
+    if (!candidates.length) continue;
+
+    const explicitCandidates = candidates.filter((c) => c.explicitPrimary);
+    const selected = explicitCandidates.length
+      ? explicitCandidates.slice().sort((a, b) => {
+          const angleA = a.angleOrder ?? Number.MAX_SAFE_INTEGER;
+          const angleB = b.angleOrder ?? Number.MAX_SAFE_INTEGER;
+          if (angleA !== angleB) return angleA - angleB;
+          if (b.score !== a.score) return b.score - a.score;
+          return a.index - b.index;
+        })[0]
+      : candidates.slice().sort((a, b) => {
+          if (b.score !== a.score) return b.score - a.score;
+          return a.index - b.index;
+        })[0];
+
+    plans[roomId] = {
+      roomId,
+      primaryIndex: selected.index,
+      method: explicitCandidates.length ? "manual" : "auto",
+      groupSize: candidates.length,
+      scoreByIndex: Object.fromEntries(
+        candidates.map((candidate) => [
+          candidate.index,
+          {
+            score: Number(candidate.score.toFixed(3)),
+            reasons: candidate.reasons,
+          },
+        ])
+      ),
+    };
+  }
+
+  return plans;
+}
+
 export function uploadRouter() {
   const r = Router();
 
@@ -299,6 +430,9 @@ export function uploadRouter() {
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
     const propertyAddressRaw = String((req.body as any)?.propertyAddress || '').trim();
     const clientBatchId = String((req.body as any)?.clientBatchId || '').trim() || undefined;
+    const roomConsistencyModeRequested = isTrueFlag((req.body as any)?.roomConsistencyMode);
+    const roomConsistencyModeEnabled =
+      isTrueFlag(process.env.EXPERIMENT_ROOM_CONSISTENCY_V1) && roomConsistencyModeRequested;
     try {
       console.log('[upload] FORM raw allowStaging=%s declutter=%s declutterMode=%s stage2Variant=%s furnishedState=%s', (req.body as any)?.allowStaging, (req.body as any)?.declutter, (req.body as any)?.declutterMode, (req.body as any)?.stage2Variant, (req.body as any)?.furnishedState);
       console.log('[upload] FORM parsed allowStagingForm=%s declutterForm=%s declutterModeForm=%s stage2VariantForm=%s furnishedStateForm=%s', String(allowStagingForm), String(declutterForm), String(declutterModeForm), stage2VariantForm || 'unset', furnishedStateForm || 'unset');
@@ -321,6 +455,10 @@ export function uploadRouter() {
     } catch (e) {
       console.warn('[upload] Failed to parse metaJson:', e);
     }
+
+    const roomConsistencySelectionPlan = roomConsistencyModeEnabled
+      ? buildRoomConsistencySelectionPlan(metaByIndex, uploadCount)
+      : {};
 
     // ===== SUBSCRIPTION STATUS GATING: Check if agency subscription is active =====
     // FAIL-CLOSED: block uploads if we can't verify subscription status
@@ -417,7 +555,7 @@ export function uploadRouter() {
     await fs.mkdir(userDir, { recursive: true });
 
     const jobs: Array<{ jobId: string; imageId: string }> = [];
-    const stagedJobs: Array<{ jobId: string; imageId: string; jobPayload: any }> = [];
+    const stagedJobs: Array<{ jobId: string; imageId: string; index: number; jobPayload: any }> = [];
     const reservedJobs: string[] = [];
     const trialReservedJobs: string[] = [];
 
@@ -967,7 +1105,89 @@ export function uploadRouter() {
         },
       };
 
-      stagedJobs.push({ jobId, imageId, jobPayload });
+      stagedJobs.push({ jobId, imageId, index: i, jobPayload });
+    }
+
+    if (roomConsistencyModeEnabled && stagedJobs.length > 0) {
+      const imageIdByIndex = new Map<number, string>(stagedJobs.map((entry) => [entry.index, entry.imageId]));
+
+      for (const staged of stagedJobs) {
+        const meta = metaByIndex[staged.index] || {};
+        const roomId = String(meta.roomKey || "").trim();
+        if (!roomId) continue;
+
+        const plan = roomConsistencySelectionPlan[roomId];
+        if (!plan) continue;
+
+        const primaryImageId = imageIdByIndex.get(plan.primaryIndex) || null;
+        const viewRole: "primary" | "reference" = staged.index === plan.primaryIndex ? "primary" : "reference";
+        const primaryMeta = metaByIndex[plan.primaryIndex] || {};
+        const selectedStyle = normalizeStagingStyle(
+          staged.jobPayload?.options?.stagingStyle || primaryMeta.stagingStyle || stagingStyleForm
+        );
+        const scoreInfo = plan.scoreByIndex[staged.index] || { score: 0, reasons: [] };
+
+        const primaryLuminance = Number(primaryMeta?.scenePrediction?.features?.luminance);
+        const primaryDarkness = Number(primaryMeta?.scenePrediction?.features?.darknessFactor);
+        const primaryEdgeDensity = Number(primaryMeta?.scenePrediction?.features?.edgeDensity);
+
+        const brightnessProfile = Number.isFinite(primaryLuminance)
+          ? (primaryLuminance < 0.33 ? "low" : primaryLuminance > 0.66 ? "bright" : "balanced")
+          : "balanced";
+        const warmthProfile = Number.isFinite(primaryDarkness)
+          ? (primaryDarkness > 0.55 ? "warm" : "neutral")
+          : "neutral";
+        const anchorVisibility = Number.isFinite(primaryEdgeDensity)
+          ? (primaryEdgeDensity < 0.2 ? "low" : primaryEdgeDensity > 0.5 ? "high" : "medium")
+          : "medium";
+
+        const roomState = {
+          roomId,
+          primaryImageId,
+          styleProfile: {
+            stagingStyle: selectedStyle,
+            roomType: String(primaryMeta.roomType || staged.jobPayload?.options?.roomType || "").trim() || undefined,
+            sceneType: String(primaryMeta.sceneType || staged.jobPayload?.options?.sceneType || "").trim() || undefined,
+          },
+          lightingProfile: {
+            brightnessProfile,
+            warmthProfile,
+            weatherMood: "neutral",
+            directionHint: "unknown",
+            shadowSoftness: "soft",
+          },
+          furnitureMemory: {
+            persistentIdentityGoal: "Preserve furniture identity, materials, and color continuity across room angles.",
+            materialPalette: ["wood", "textile", "neutral"],
+            colorContinuity: "strict",
+          },
+          relationalSummary: {
+            placementDirective: "Keep anchor relationships and circulation feel consistent from new viewpoints.",
+            anchorVisibility,
+          },
+          consistencySettings: {
+            enforceFurnitureIdentity: true,
+            enforceStyleContinuity: true,
+            enforceLightingContinuity: true,
+            enforceRelationalContinuity: true,
+          },
+        };
+
+        staged.jobPayload.options.roomConsistencyV1 = {
+          enabled: true,
+          roomId,
+          clientBatchId,
+          viewRole,
+          primaryImageId,
+          groupSize: plan.groupSize,
+          primarySelection: {
+            method: plan.method,
+            score: scoreInfo.score,
+            reasons: scoreInfo.reasons,
+          },
+          roomState,
+        };
+      }
     }
 
     // Batch-wide finalization: only enqueue/commit after every image has passed pre-processing.
