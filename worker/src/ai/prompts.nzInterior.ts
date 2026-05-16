@@ -87,51 +87,47 @@ If detail is not clearly visible in the input, it must remain non-informative.
 NO LIGHT BLEED
 Window highlights must not bleed into surrounding surfaces.
 Architectural boundaries must remain crisp.
-Maintain natural luminance transition gradients around windows and bright openings.
-Avoid artificial edge glow or abrupt tonal transitions.
 
 
-IV. PHOTOMETRIC BALANCING (CORE LIGHTING)
+IV. PHOTOMETRIC BALANCING & ADAPTIVE EXPOSURE (CORE LIGHTING)
+
+ADAPTIVE EXPOSURE PRINCIPLE (CONDITION-BASED)
+Before making any lighting adjustments, evaluate the baseline exposure of the input image. Your exposure response must be highly adaptive:
+- FOR UNDER-EXPOSED / DARK ROOMS: Actively and significantly lift the exposure and midtones to bring the room up to a bright, inviting, professionally lit standard. Reveal naturally recoverable detail present within darker regions while preserving realistic shadow structure and material integrity.
+- FOR WELL-LIT / BRIGHT ROOMS: Maintain the baseline exposure. Do NOT apply a global brightness boost. Focus purely on normalization, color balance, and micro-contrast.
+
+SPATIAL REALISM GUARD
+Avoid uniform global exposure equalization across the entire room. Brightness adjustments must remain spatially natural and consistent with realistic ambient light behavior. Maintain the natural interplay of light and dark rather than introducing a flat, artificial ambient glow.
 
 PERMITTED ADJUSTMENTS
 You may adjust:
-- exposure
-- brightness
-- contrast
+- exposure (content-adaptive)
+- brightness (midtone-targeted)
+- contrast & tonal distribution
 - white balance
-- tonal distribution
-- improve tonal separation between surfaces while preserving natural realism
 
 All adjustments must operate ONLY on existing pixel information.
 
 WHITE BALANCE
 Target neutral daylight ("Gallery White" ~5500K).
 Remove color casts while maintaining natural material tones.
-Preserve natural warmth and realistic ambient color relationships where appropriate.
-Avoid sterile or overly neutral rendering.
 
-HIGHLIGHTS & SHADOWS
-Reduce harsh highlight clipping ONLY where recoverable from existing pixel data.
-Gently lift shadows ONLY where real detail exists.
-
-Do NOT reconstruct missing information.
-Maintain balanced interior luminosity with soft highlight rolloff and natural shadow depth.
-Avoid flat HDR-style rendering.
+HIGHLIGHTS, MIDTONES & SHADOW RECOVERY
+- Midtones Lift (Dark Images): When correcting dark rooms, focus the exposure boost heavily on the midtones and low-midtones. This elevates the overall ambiance of the room without overexposing the highlights.
+- Highlight Clipping Protection: Strictly anchor the brightest highlights (e.g., light fixtures, windows). An exposure lift must never push bright regions into unrecoverable clipping or blowout.
+- Shadow Lifting: Safely lift deep shadows where real detail exists to remove dinginess, but do not eliminate native directional shadows completely.
 
 DEPTH PRESERVATION
-Maintain natural light fall-off and directional shadow structure to preserve 3D depth.
-Preserve natural spatial layering and dimensional separation between foreground, midground, and background elements.
+Maintain natural light fall-off and directional shadow structure to preserve 3D depth. Even when significantly brightening a dark room, keep subtle graduation to ensure the space feels real and dimensional.
 
 BLACK POINT
-Maintain rich, natural blacks.
-Do not over-lift shadows or flatten contrast.
+Maintain rich, natural blacks. Do not over-lift shadows to the point of creating a washed-out, muddy, or flat gray appearance.
 
 TEXTURE PRESERVATION
 Preserve all real material detail, including:
 - timber grain
 - tile patterns
 - fabric textures
-Maintain realistic material response for reflective, matte, timber, stone, painted, and metallic surfaces.
 
 Do NOT:
 - smooth surfaces excessively
@@ -154,8 +150,7 @@ STRICT CONSTRAINTS:
 - Do NOT invent fine detail
 - Do NOT reconstruct missing regions
 - Do NOT alter edges or structure
-- Do NOT apply global or uniform sharpening across flat walls, ceilings, or noise-prone regions
-- Preserve natural material transitions and avoid artificial edge halos
+- Do NOT apply global or uniform sharpening across flat walls/ceilings/noise-prone regions
 
 CIRCUIT BREAKER (EDGE PRESERVATION PRIORITY)
 
