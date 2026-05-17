@@ -86,6 +86,61 @@ export interface ImageRecord {
     createdAt: string;
     updatedAt: string;
 }
+export interface EnhancedImage {
+    id: string;
+    agencyId: string;
+    userId: string;
+    jobId: string;
+    propertyId?: string | null;
+    parentImageId?: string | null;
+    source?: "stage2" | "region-edit" | null;
+    stagesCompleted: string[];
+    completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+    storageKey?: string | null;
+    publicUrl: string;
+    thumbnailUrl?: string | null;
+    originalUrl?: string | null;
+    originalS3Key?: string | null;
+    enhancedS3Key?: string | null;
+    thumbS3Key?: string | null;
+    sizeBytes?: number | null;
+    contentType?: string | null;
+    isExpired?: boolean;
+    expiresAt?: string | null;
+    auditRef?: string | null;
+    traceId?: string | null;
+    stage12AttemptId?: string | null;
+    stage2AttemptId?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+export interface EnhancedImageListItem {
+    id: string;
+    jobId: string;
+    thumbnailUrl: string;
+    publicUrl: string;
+    originalUrl?: string | null;
+    stagesCompleted: string[];
+    completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+    createdAt: string;
+    auditRef?: string | null;
+    propertyId?: string | null;
+    parentImageId?: string | null;
+    source?: "stage2" | "region-edit" | null;
+    versionCount: number;
+}
+export interface EnhancedImageGalleryProperty {
+    id: string;
+    address: string;
+    normalizedAddress: string;
+    images: EnhancedImageListItem[];
+}
+export interface EnhancedImageGalleryResponse {
+    properties: EnhancedImageGalleryProperty[];
+    unassignedImages: EnhancedImageListItem[];
+    total: number;
+    images: EnhancedImageListItem[];
+}
 export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete" | "cancelled" | "error" | "failed";
 /**
  * Declutter mode controls Stage 1B behavior:
@@ -93,6 +148,55 @@ export type JobStatus = "queued" | "awaiting_payment" | "processing" | "complete
  * - "stage-ready": Structured retain declutter (preserve anchors, remove secondary items)
  */
 export type DeclutterMode = "light" | "stage-ready";
+export interface RoomConsistencyStateV1 {
+    roomId: string;
+    primaryImageId?: string | null;
+    styleProfile?: {
+        stagingStyle?: string;
+        roomType?: string;
+        sceneType?: string;
+    };
+    lightingProfile?: {
+        brightnessProfile?: "low" | "balanced" | "bright";
+        warmthProfile?: "cool" | "neutral" | "warm";
+        weatherMood?: "neutral" | "sunny" | "overcast";
+        directionHint?: "left" | "right" | "center" | "unknown";
+        shadowSoftness?: "soft" | "medium" | "hard";
+    };
+    furnitureMemory?: {
+        persistentIdentityGoal?: string;
+        materialPalette?: string[];
+        colorContinuity?: "strict" | "balanced";
+    };
+    relationalSummary?: {
+        placementDirective?: string;
+        anchorVisibility?: "low" | "medium" | "high";
+    };
+    consistencySettings?: {
+        enforceFurnitureIdentity?: boolean;
+        enforceStyleContinuity?: boolean;
+        enforceLightingContinuity?: boolean;
+        enforceRelationalContinuity?: boolean;
+    };
+    consistencyModeEnabled?: boolean;
+    masterApproved?: boolean;
+    masterStagedImageUrl?: string;
+    furnitureContinuityHints?: string;
+}
+export interface RoomConsistencyContextV1 {
+    enabled: boolean;
+    roomId: string;
+    clientBatchId?: string;
+    viewRole: "primary" | "reference";
+    primaryImageId?: string | null;
+    groupSize?: number;
+    primarySelection?: {
+        method: "auto" | "manual";
+        score: number;
+        reasons: string[];
+    };
+    roomState?: RoomConsistencyStateV1;
+}
 export type RoomType = "bedroom" | "living_room" | "dining_room" | "kitchen" | "kitchen_dining" | "kitchen_living" | "living_dining" | "multiple_living" | "study" | "office" | "bathroom" | "bathroom_1" | "bathroom_2" | "laundry" | "garage" | "basement" | "attic" | "hallway" | "sunroom" | "staircase" | "entryway" | "closet" | "pantry" | "outdoor" | "other" | "unknown" | "auto";
 export type SceneLabel = "exterior" | "living_room" | "kitchen" | "bathroom" | "bedroom" | "dining" | "twilight" | "floorplan" | "hallway" | "garage" | "balcony" | "other";
 export interface RetryExecutionPlan {
@@ -137,6 +241,7 @@ export interface EnhanceJobPayload {
             features?: Record<string, number>;
             source?: string;
         };
+        roomConsistencyV1?: RoomConsistencyContextV1;
     };
     stage2OnlyMode?: {
         enabled: boolean;
@@ -248,85 +353,4 @@ export interface JobRecord {
     };
     createdAt: string;
     updatedAt: string;
-}
-/**
- * Enhancement attempt audit record (INTERNAL USE ONLY)
- * Provides full traceability from stored images back to validator decisions.
- * NEVER expose validator details to users.
- */
-export interface EnhancementAttempt {
-    attemptId: string;
-    jobId: JobId;
-    stage: 'stage12' | 'stage2' | 'edit' | 'region_edit';
-    attemptNumber: number;
-    modelUsed?: string;
-    promptVersion?: string;
-    validatorPassed?: boolean;
-    validatorSummaryInternal?: Record<string, any>;
-    traceId: string;
-    createdAt: string;
-}
-/**
- * Enhanced image record with quota-bound retention
- * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
- * Oldest images expire first (FIFO)
- */
-export interface EnhancedImage {
-    id: string;
-    agencyId: string;
-    userId: UserId;
-    jobId: JobId;
-    propertyId?: string | null;
-    parentImageId?: string | null;
-    source?: 'stage2' | 'region-edit';
-    stagesCompleted: string[];
-    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-    storageKey: string;
-    publicUrl: string;
-    thumbnailUrl?: string;
-    originalUrl?: string | null;
-    originalS3Key?: string | null;
-    enhancedS3Key?: string | null;
-    thumbS3Key?: string | null;
-    sizeBytes?: number;
-    contentType?: string;
-    isExpired: boolean;
-    expiresAt?: string;
-    auditRef: string;
-    traceId: string;
-    stage12AttemptId?: string;
-    stage2AttemptId?: string;
-    createdAt: string;
-    updatedAt: string;
-}
-/**
- * Enhanced image list item (for API responses)
- * Excludes sensitive audit data
- */
-export interface EnhancedImageListItem {
-    id: string;
-    jobId: string;
-    thumbnailUrl: string;
-    publicUrl: string;
-    originalUrl?: string | null;
-    stagesCompleted: string[];
-    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-    createdAt: string;
-    auditRef: string;
-    propertyId?: string | null;
-    parentImageId?: string | null;
-    source?: 'stage2' | 'region-edit';
-    versionCount?: number;
-}
-export interface PropertyFolder {
-    id: string;
-    address: string;
-    normalizedAddress: string;
-    images: EnhancedImageListItem[];
-}
-export interface EnhancedImageGalleryResponse {
-    properties: PropertyFolder[];
-    unassignedImages: EnhancedImageListItem[];
-    total: number;
-    images?: EnhancedImageListItem[];
 }

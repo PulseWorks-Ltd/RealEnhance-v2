@@ -100,6 +100,65 @@ export interface ImageRecord {
   updatedAt: string; // ISO
 }
 
+export interface EnhancedImage {
+  id: string;
+  agencyId: string;
+  userId: string;
+  jobId: string;
+  propertyId?: string | null;
+  parentImageId?: string | null;
+  source?: "stage2" | "region-edit" | null;
+  stagesCompleted: string[];
+  completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+  storageKey?: string | null;
+  publicUrl: string;
+  thumbnailUrl?: string | null;
+  originalUrl?: string | null;
+  originalS3Key?: string | null;
+  enhancedS3Key?: string | null;
+  thumbS3Key?: string | null;
+  sizeBytes?: number | null;
+  contentType?: string | null;
+  isExpired?: boolean;
+  expiresAt?: string | null;
+  auditRef?: string | null;
+  traceId?: string | null;
+  stage12AttemptId?: string | null;
+  stage2AttemptId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EnhancedImageListItem {
+  id: string;
+  jobId: string;
+  thumbnailUrl: string;
+  publicUrl: string;
+  originalUrl?: string | null;
+  stagesCompleted: string[];
+  completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+  createdAt: string;
+  auditRef?: string | null;
+  propertyId?: string | null;
+  parentImageId?: string | null;
+  source?: "stage2" | "region-edit" | null;
+  versionCount: number;
+}
+
+export interface EnhancedImageGalleryProperty {
+  id: string;
+  address: string;
+  normalizedAddress: string;
+  images: EnhancedImageListItem[];
+}
+
+export interface EnhancedImageGalleryResponse {
+  properties: EnhancedImageGalleryProperty[];
+  unassignedImages: EnhancedImageListItem[];
+  total: number;
+  images: EnhancedImageListItem[];
+}
+
 /* ---------- Jobs / Processing ---------- */
 
 export type JobStatus =
