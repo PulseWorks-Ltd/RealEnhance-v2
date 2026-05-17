@@ -6,9 +6,6 @@ import { validateStage2Structural } from "../validators/stage2StructuralValidato
 import { runOpenCVStructuralValidator } from "../validators/index";
 import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { normalizeStagingStyle, STYLE_PROMPT_MODIFIERS } from "../ai/stagingStyles";
-import sharp from "sharp";
-import path from "path";
-import fs from "fs/promises";
 import type { StagingRegion } from "../ai/region-detector";
 import { safeToBuffer, safeMetadata } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrappers
 import { loadStageAwareConfig } from "../validators/stageAwareConfig";
@@ -25,66 +22,22 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
+import { RoomConsistencyContextV1 } from "../../../shared/src/types";
+import sharp from "sharp";
+import path from "path";
+import fs from "fs/promises";
 
-const logger = console;
+type Stage2RetryReason =
+  | "opening_authoritative_fail"
+  | "opening_preservation"
+  | "other_reason"
+  | "structural_violation"
+  | "opening_removed"
+  | "unknown"
+  | "initial"
+  | "cosmetic";
 
-type Stage2RetryReason = "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown";
 type Stage2ModeOverride = "REFRESH" | "FROM_EMPTY";
-
-type RoomConsistencyStateV1 = {
-  roomId: string;
-  primaryImageId?: string | null;
-  styleProfile?: {
-    stagingStyle?: string;
-    roomType?: string;
-    sceneType?: string;
-  };
-  lightingProfile?: {
-    brightnessProfile?: "low" | "balanced" | "bright";
-    warmthProfile?: "cool" | "neutral" | "warm";
-    weatherMood?: "neutral" | "sunny" | "overcast";
-    directionHint?: "left" | "right" | "center" | "unknown";
-    shadowSoftness?: "soft" | "medium" | "hard";
-  };
-  furnitureMemory?: {
-    persistentIdentityGoal?: string;
-    materialPalette?: string[];
-    colorContinuity?: "strict" | "balanced";
-  };
-  relationalSummary?: {
-    placementDirective?: string;
-    anchorVisibility?: "low" | "medium" | "high";
-  };
-  consistencySettings?: {
-    enforceFurnitureIdentity?: boolean;
-    enforceStyleContinuity?: boolean;
-    enforceLightingContinuity?: boolean;
-    enforceRelationalContinuity?: boolean;
-  };
-};
-
-type RoomConsistencyContextV1 = {
-  enabled: boolean;
-  roomId: string;
-  clientBatchId?: string;
-  viewRole: "primary" | "reference";
-  primaryImageId?: string | null;
-  groupSize?: number;
-  primarySelection?: {
-    method: "auto" | "manual";
-    score: number;
-    reasons: string[];
-  };
-  roomState?: RoomConsistencyStateV1;
-};
-
-type Stage2GenerationPlan = {
-  model: string;
-  temperature: number;
-  topP: number;
-  topK: number;
-  escalated: boolean;
-};
 
 export type StructuralReviewProResult = {
   result: "PASS" | "FAIL";
@@ -349,6 +302,16 @@ function resolveStage2Temperature(attempt: number, reason: Stage2RetryReason, pr
   return 0.30;
 }
 
+type Stage2GenerationPlan = {
+  model: string;
+  temperature: number;
+  retryReason: Stage2RetryReason;
+  previousPlan?: Stage2GenerationPlan | null;
+  topP: number;
+  topK: number;
+  escalated: boolean;
+};
+
 function resolveStage2GenerationPlan(opts: {
   attempt: number;
   retryReason: Stage2RetryReason;
@@ -363,6 +326,7 @@ function resolveStage2GenerationPlan(opts: {
     topP: 0.90,
     topK: 40,
     escalated,
+    retryReason: "initial",
   };
 }
 
@@ -1048,8 +1012,8 @@ Do not add blinds, rods, tracks, or new window coverings.
     }
   }
 
-  logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
-  logger.info(`[STAGE2_MODEL] attempt=${attemptNumber} model=${generationPlan.model}`);
+  nLog(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
+  nLog(`[STAGE2_MODEL] attempt=${attemptNumber} model=${generationPlan.model}`);
   const generationConfig: any = {
     temperature: generationPlan.temperature,
     topP: generationPlan.topP,
@@ -1149,7 +1113,7 @@ Do not add blinds, rods, tracks, or new window coverings.
     localPath: opts.outputPath,
   });
   emitStage2AttemptComplete(true);
-  logger.info(`[STAGE2_OUTPUT_PATH] job_id=${opts.jobId} attempt=${attemptNumber} path=${opts.outputPath}`);
+  nLog(`[STAGE2_OUTPUT_PATH] job_id=${opts.jobId} attempt=${attemptNumber} path=${opts.outputPath}`);
   return opts.outputPath;
 }
 
@@ -1308,3 +1272,4 @@ export async function runStage2(
     }
   }
 }
+

@@ -161,6 +161,21 @@ export interface RoomConsistencyContextV1 {
   roomState?: RoomConsistencyStateV1;
 }
 
+export interface RoomStateV1 {
+  roomId: string;
+  roomType?: string;
+  masterImageId?: string;
+  masterStagedImageUrl?: string;
+  masterApproved?: boolean;
+  stagingStyle?: string;
+  styleProfile?: string;
+  lightingProfile?: string;
+  furnitureContinuityHints?: string;
+  consistencyModeEnabled?: boolean;
+  primaryGenerationMetadata?: Record<string, any>;
+  approvalTimestamp?: string;
+}
+
 export type RoomType =
   | "bedroom"
   | "living_room"

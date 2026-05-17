@@ -100,33 +100,37 @@ export type DeclutterMode = "light" | "stage-ready";
 export interface RoomConsistencyStateV1 {
   roomId: string;
   primaryImageId?: string | null;
-  styleProfile: {
-    stagingStyle: string;
+  styleProfile?: {
+    stagingStyle?: string;
     roomType?: string;
     sceneType?: string;
   };
-  lightingProfile: {
+  lightingProfile?: {
     brightnessProfile?: "low" | "balanced" | "bright";
     warmthProfile?: "cool" | "neutral" | "warm";
     weatherMood?: "neutral" | "sunny" | "overcast";
     directionHint?: "left" | "right" | "center" | "unknown";
     shadowSoftness?: "soft" | "medium" | "hard";
   };
-  furnitureMemory: {
-    persistentIdentityGoal: string;
-    materialPalette: string[];
-    colorContinuity: "strict" | "balanced";
+  furnitureMemory?: {
+    persistentIdentityGoal?: string;
+    materialPalette?: string[];
+    colorContinuity?: "strict" | "balanced";
   };
-  relationalSummary: {
-    placementDirective: string;
-    anchorVisibility: "low" | "medium" | "high";
+  relationalSummary?: {
+    placementDirective?: string;
+    anchorVisibility?: "low" | "medium" | "high";
   };
-  consistencySettings: {
-    enforceFurnitureIdentity: boolean;
-    enforceStyleContinuity: boolean;
-    enforceLightingContinuity: boolean;
-    enforceRelationalContinuity: boolean;
+  consistencySettings?: {
+    enforceFurnitureIdentity?: boolean;
+    enforceStyleContinuity?: boolean;
+    enforceLightingContinuity?: boolean;
+    enforceRelationalContinuity?: boolean;
   };
+  consistencyModeEnabled?: boolean;
+  masterApproved?: boolean;
+  masterStagedImageUrl?: string;
+  furnitureContinuityHints?: string;
 }
 
 export interface RoomConsistencyContextV1 {
@@ -358,109 +362,3 @@ export interface JobRecord {
 // ============================================================================
 // ENHANCED IMAGES HISTORY - Quota-Bound Retention
 // ============================================================================
-
-/**
- * Enhancement attempt audit record (INTERNAL USE ONLY)
- * Provides full traceability from stored images back to validator decisions.
- * NEVER expose validator details to users.
- */
-export interface EnhancementAttempt {
-  attemptId: string; // UUID
-  jobId: JobId;
-  stage: 'stage12' | 'stage2' | 'edit' | 'region_edit';
-  attemptNumber: number;
-
-  // Model & prompt tracking
-  modelUsed?: string; // e.g., "gemini-2.5-flash"
-  promptVersion?: string; // e.g., "v2.1" or hash
-
-  // Validator results (INTERNAL ONLY)
-  validatorPassed?: boolean;
-  validatorSummaryInternal?: Record<string, any>; // scores, warnings, structural checks
-
-  // Traceability
-  traceId: string; // correlates with worker logs
-
-  createdAt: string;
-}
-
-/**
- * Enhanced image record with quota-bound retention
- * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
- * Oldest images expire first (FIFO)
- */
-export interface EnhancedImage {
-  id: string; // UUID
-
-  // Ownership & scoping
-  agencyId: string;
-  userId: UserId;
-  jobId: JobId;
-  propertyId?: string | null;
-  parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
-
-  // Stage completion tracking
-  stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-
-  // Storage
-  storageKey: string; // S3 key
-  publicUrl: string; // Full public URL
-  thumbnailUrl?: string; // Optional thumbnail
-  originalUrl?: string | null; // Signed original URL (nullable)
-  originalS3Key?: string | null; // S3 key for original
-  enhancedS3Key?: string | null; // S3 key for enhanced (final)
-  thumbS3Key?: string | null; // S3 key for thumbnail
-
-  // File metadata
-  sizeBytes?: number;
-  contentType?: string;
-
-  // Retention & expiry
-  isExpired: boolean;
-  expiresAt?: string; // Computed based on retention policy
-
-  // Audit & traceability (NEVER expose validator details to users)
-  auditRef: string; // Short human-friendly reference (e.g., "RE-7F3K9Q")
-  traceId: string; // Correlates with worker logs
-  stage12AttemptId?: string; // UUID reference
-  stage2AttemptId?: string; // UUID reference
-
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
- * Enhanced image list item (for API responses)
- * Excludes sensitive audit data
- */
-export interface EnhancedImageListItem {
-  id: string;
-  jobId: string;
-  thumbnailUrl: string;
-  publicUrl: string;
-  originalUrl?: string | null;
-  stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-  createdAt: string;
-  auditRef: string; // May be shown to users as generic "Support reference"
-  propertyId?: string | null;
-  parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
-  versionCount?: number;
-}
-
-export interface PropertyFolder {
-  id: string;
-  address: string;
-  normalizedAddress: string;
-  images: EnhancedImageListItem[];
-}
-
-export interface EnhancedImageGalleryResponse {
-  properties: PropertyFolder[];
-  unassignedImages: EnhancedImageListItem[];
-  total: number;
-  images?: EnhancedImageListItem[];
-}
