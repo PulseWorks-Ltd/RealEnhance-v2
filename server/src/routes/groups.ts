@@ -30,6 +30,7 @@ async function enqueueRoomConsistencyFollowupFromParent(params: {
 }) {
   const parentJob = await getJob(params.parentJobId);
   if (!parentJob) return null;
+  if (!parentJob.imageId) return null;
 
   const roomConsistency =
     parentJob?.roomConsistency ||
@@ -73,7 +74,7 @@ async function enqueueRoomConsistencyFollowupFromParent(params: {
     imageId: parentJob.imageId,
     agencyId: parentJob.agencyId || parentJob.payload?.agencyId || null,
     propertyId: parentJob.propertyId || parentJob.payload?.propertyId || null,
-    clientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId || undefined,
+    clientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId || null,
     sourceStage: baselineStage,
     baselineStage,
     stageUrls,
@@ -91,7 +92,7 @@ async function enqueueRoomConsistencyFollowupFromParent(params: {
       parentImageId: parentJob.imageId,
       galleryParentImageId: parentJob.payload?.galleryParentImageId || parentJob.imageId,
       parentJobId: params.parentJobId,
-      clientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId || undefined,
+      clientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId || null,
     },
     options: {
       ...payloadOptions,

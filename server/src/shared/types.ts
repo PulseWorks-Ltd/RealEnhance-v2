@@ -487,6 +487,9 @@ export interface JobRecord {
   agencyId?: string | null;
   propertyId?: string | null;
   roomConsistency?: (RoomConsistencyContextV1 & Record<string, any>) | null;
+  stageUrls?: Record<string, string | null> | null;
+  finalOutputUrl?: string | null;
+  resultUrl?: string | null;
 
   result?: ImageJobResult;
   error?: string;
