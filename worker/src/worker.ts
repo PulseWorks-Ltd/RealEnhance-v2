@@ -188,6 +188,53 @@ async function syncRoomConsistencyParentCompletion(params: {
   }).catch(() => {});
 }
 
+async function syncRoomConsistencyParentFallbackCompletion(params: {
+  parentJobId: string;
+  childJobId: string;
+  resultUrl: string;
+  finalStage: "1A" | "1B";
+  reason: string;
+  roomConsistency: any;
+}) {
+  const parentJob = await getJob(params.parentJobId);
+  if (!parentJob) return;
+
+  const mergedStageUrls = normalizeStageUrls({
+    ...resolveRoomConsistencyStageUrlsFromJob(parentJob),
+    stage2: null,
+  });
+  const nextRoomConsistency = buildRoomConsistencyStatusPayload(
+    parentJob?.roomConsistency || parentJob?.meta?.roomConsistency || parentJob?.payload?.options?.roomConsistencyV1 || {},
+    params.roomConsistency,
+  );
+
+  await updateJob(params.parentJobId, {
+    status: "complete",
+    success: true,
+    completed: true,
+    currentStage: "finalizing",
+    finalStage: params.finalStage,
+    resultStage: params.finalStage,
+    stageCompleted: params.finalStage,
+    finalOutputUrl: params.resultUrl,
+    resultUrl: params.resultUrl,
+    imageUrl: params.resultUrl,
+    latestRetryUrl: params.resultUrl,
+    retryLatestUrl: params.resultUrl,
+    retryLatestJobId: params.childJobId,
+    blockedStage: null,
+    fallbackStage: params.finalStage,
+    validationNote: params.reason,
+    stageUrls: mergedStageUrls,
+    roomConsistency: nextRoomConsistency,
+    meta: {
+      ...(parentJob?.meta || {}),
+      roomConsistency: nextRoomConsistency,
+      fallbackReason: params.reason,
+    },
+  }).catch(() => {});
+}
+
 async function enqueueRoomConsistencyFollowupJob(params: {
   parentJobId: string;
   approvedMasterImageUrl: string;
@@ -4146,6 +4193,8 @@ async function completePartialJob(params: {
   }
 
   const isManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry";
+  const roomConsistencyPayload = ((billingContext?.payload as any)?.options?.roomConsistencyV1 || null) as any;
+  const isRoomConsistencyInternalFollowup = roomConsistencyPayload?.internalFollowup === true;
   const existingRetryOutputs = Array.isArray((currentJob as any)?.retryOutputs)
     ? ((currentJob as any).retryOutputs as any[]).filter((v) => typeof v === "string" && v.trim().length > 0)
     : [];
@@ -4189,9 +4238,31 @@ async function completePartialJob(params: {
   nLog(`[PARTIAL_COMPLETE] finalStage=${finalStage} resultUrl=${resultUrl}`);
 
   // Stamp parent job with latestRetryUrl so client can display retry output on the original card
-  if (isManualRetry && resultUrl) {
-    const retryParentJobIdForStamp = String((billingContext?.payload as any)?.retryParentJobId || "").trim();
-    if (retryParentJobIdForStamp) {
+  if (resultUrl) {
+    const retryParentJobIdForStamp = String(
+      roomConsistencyPayload?.followupParentJobId || (billingContext?.payload as any)?.retryParentJobId || ""
+    ).trim();
+    if (isRoomConsistencyInternalFollowup && retryParentJobIdForStamp) {
+      const fallbackRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyPayload, {
+        approvedMasterImageUrl: String(roomConsistencyPayload?.approvedMasterImageUrl || "").trim() || null,
+        currentStatus: "stage2_fallback_complete",
+        stage2BlockedUntilMasterApproval: false,
+        roomState: {
+          roomId: roomConsistencyPayload?.roomId,
+          masterApproved: true,
+          masterApprovalStatus: "approved",
+          masterStagedImageUrl: String(roomConsistencyPayload?.approvedMasterImageUrl || "").trim() || undefined,
+        },
+      });
+      await syncRoomConsistencyParentFallbackCompletion({
+        parentJobId: retryParentJobIdForStamp,
+        childJobId: jobId,
+        resultUrl,
+        finalStage,
+        reason,
+        roomConsistency: fallbackRoomConsistency,
+      });
+    } else if (isManualRetry && retryParentJobIdForStamp) {
       await updateJob(retryParentJobIdForStamp, {
         latestRetryUrl: resultUrl,
         retryLatestUrl: resultUrl,
@@ -6671,15 +6742,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[worker] 🚀 ═══════════ STAGE-2-ONLY RETRY MODE ACTIVATED ═══════════`);
     nLog(`[worker] Reusing validated Stage-${stage2OnlyBaseStage} output: ${stage2OnlyBaseSourceUrl}`);
 
+    const stage2OnlyFailureTimings: Record<string, number> = {};
+    const stage2OnlyRoomConsistencyV1 = (payload.options as any)?.roomConsistencyV1 as any;
+    let stage2OnlyFailureBasePath: string | null = null;
+
     try {
       await ensureStage2AttemptId();
       if (await stopIfCancelled("stage2_only_start")) return;
-      const timings: Record<string, number> = {};
+      const timings = stage2OnlyFailureTimings;
       const t0 = Date.now();
       const t2 = Date.now();
 
       // Download deterministic Stage-1A or Stage-1B base image
       const basePath = await downloadToTemp(stage2OnlyBaseSourceUrl, `${payload.jobId}-stage${stage2OnlyBaseStage}`);
+      stage2OnlyFailureBasePath = basePath;
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[worker] Downloaded Stage-${stage2OnlyBaseStage} base to: ${basePath}`);
       }
@@ -6786,7 +6862,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       // Option A: download approved master image for room-consistency reference views so
       // it can be passed as image conditioning into the Stage 2 generation call.
-      const stage2OnlyRoomConsistencyV1 = (payload.options as any)?.roomConsistencyV1 as any;
       const stage2OnlyApprovedMasterUrl = String(stage2OnlyRoomConsistencyV1?.approvedMasterImageUrl || "").trim() || null;
       const stage2OnlyIsReferenceView = stage2OnlyRoomConsistencyV1?.enabled === true && stage2OnlyRoomConsistencyV1?.viewRole === "reference";
       let stage2OnlyReferencePath: string | undefined;
@@ -7383,22 +7458,45 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
       }, "stage2_only_complete");
 
-      // Stamp parent job with latestRetryUrl so client can display retry output on the original card
-      const stage2OnlyParentJobId = String((payload as any).retryParentJobId || "").trim();
+      // Stamp the parent grouped job into a terminal state so the original card stops spinning.
+      const stage2OnlyParentJobId = String(
+        stage2OnlyRoomConsistencyV1?.followupParentJobId || (payload as any).retryParentJobId || ""
+      ).trim();
       if (stage2OnlyParentJobId && pub2Url) {
-        await updateJob(stage2OnlyParentJobId, {
-          latestRetryUrl: pub2Url,
-          retryLatestUrl: pub2Url,
-          retryLatestJobId: payload.jobId,
-          stageUrls: {
-            "1A": stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
-            "1B": stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
-            "2": pub2Url,
-            stage1A: stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
-            stage1B: stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
-            stage2: pub2Url,
-          },
-        }).catch(() => {});
+        if (stage2OnlyRoomConsistencyV1?.internalFollowup === true) {
+          const successRoomConsistency = buildRoomConsistencyStatusPayload(stage2OnlyRoomConsistencyV1, {
+            approvedMasterImageUrl: stage2OnlyApprovedMasterUrl,
+            currentStatus: "stage2_complete",
+            stage2BlockedUntilMasterApproval: false,
+            roomState: {
+              roomId: stage2OnlyRoomConsistencyV1?.roomId,
+              masterApproved: true,
+              masterApprovalStatus: "approved",
+              masterStagedImageUrl: stage2OnlyApprovedMasterUrl || undefined,
+            },
+          });
+          await syncRoomConsistencyParentCompletion({
+            parentJobId: stage2OnlyParentJobId,
+            childJobId: payload.jobId,
+            resultUrl: pub2Url,
+            stage2Url: pub2Url,
+            roomConsistency: successRoomConsistency,
+          });
+        } else {
+          await updateJob(stage2OnlyParentJobId, {
+            latestRetryUrl: pub2Url,
+            retryLatestUrl: pub2Url,
+            retryLatestJobId: payload.jobId,
+            stageUrls: {
+              "1A": stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
+              "1B": stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
+              "2": pub2Url,
+              stage1A: stage2OnlyBaseStage === "1A" ? stage2OnlyBase1AUrl : null,
+              stage1B: stage2OnlyBaseStage === "1B" ? stage2OnlyBase1BUrl : null,
+              stage2: pub2Url,
+            },
+          }).catch(() => {});
+        }
       }
 
       flushEnhanceForensicSnapshot({
@@ -7553,6 +7651,43 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
     } catch (err: any) {
       nLog(`[worker] ❌ Stage-2-only retry failed: ${err?.message || err}`);
+      if (stage2OnlyRoomConsistencyV1?.internalFollowup === true) {
+        const fallbackPath = stage2OnlyFailureBasePath || await downloadToTemp(
+          stage2OnlyBaseSourceUrl,
+          `${payload.jobId}-stage${stage2OnlyBaseStage}-fallback`
+        ).catch(() => null);
+        if (fallbackPath) {
+          await clearStage2RetryPending("stage2_only_exception_fallback_clear_pending");
+          await completePartialJobWithSummary({
+            jobId: payload.jobId,
+            triggerStage: "2",
+            finalStage: stage2OnlyBaseStage,
+            finalPath: fallbackPath,
+            pub1AUrl: (payload.stage2OnlyMode as any)?.base1AUrl || undefined,
+            pub1BUrl: payload.stage2OnlyMode?.base1BUrl || undefined,
+            sceneMeta: {
+              timings: stage2OnlyFailureTimings,
+              scene: { label: ((payload.options.sceneType === "exterior" ? "exterior" : "interior") as any), confidence: scenePrimary?.confidence ?? null },
+              stage2OnlyRetry: true,
+            },
+            userMessage: stage2OnlyBaseStage === "1B"
+              ? "We preserved your Stage 1B result because secondary Stage 2 failed before a safe publish could complete."
+              : "We preserved your Stage 1A result because secondary Stage 2 failed before a safe publish could complete.",
+            reason: `stage2_generation_failed:${String(err?.message || "unknown_error")}`,
+            stageOutputs: {
+              "1A": ((payload.stage2OnlyMode as any)?.base1APath || stageLineage.stage1A.output || fallbackPath),
+              ...(stage2OnlyBaseStage === "1B" ? { "1B": fallbackPath } : {}),
+            },
+            billingContext: {
+              payload,
+              sceneType: payload.options.sceneType === "exterior" ? "exterior" : "interior",
+              stage1BUserSelected: !!(payload.options as any)?.declutter,
+              geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+            },
+          });
+          return;
+        }
+      }
       await safeWriteJobStatus(
         payload.jobId,
         { status: "failed", errorMessage: `stage2_retry_failed: ${err?.message || "unknown_error"}` },
