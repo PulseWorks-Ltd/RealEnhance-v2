@@ -803,16 +803,12 @@ function formatStructuredAnchorMapForPrompt(anchorMap: StructuredFurnishingAncho
     : "";
 
   return `
-STRUCTURED FURNISHING ANCHOR MAP (APPROVED MASTER REFERENCE)
+REFERENCE ANCHORS
 Primary anchor: ${anchorMap.primaryAnchor}
-${anchorMap.roomSummary ? `Room summary: ${anchorMap.roomSummary}\n` : ""}${viewpointNotes}Maintain these room-relative furnishing anchors:
+${anchorMap.roomSummary ? `Room summary: ${anchorMap.roomSummary}\n` : ""}${viewpointNotes}Keep these room-relative furnishing anchors:
 ${objectLines.join("\n")}
 
-Large movable objects must preserve their room-relative placement.
-Do NOT reposition objects for compositional balance.
-Do NOT preserve left/right placement relative only to other furniture.
-Preserve placement relative to room geometry and current camera viewpoint.
-If the target angle is reversed, visual left/right may invert while physical room placement remains the same.
+Keep large movable items in the same room-relative positions. Do not rebalance them for composition alone.
 `;
 }
 
@@ -875,17 +871,76 @@ function buildOperationalAnchorMap(
     : `- Item: Bed -> Anchor: Center Wall -> Framing: Dominant Focal Point\n- Item: Bedside Table -> Anchor: Window-Side of Bed -> Framing: ${isReverseAngle ? "Foreground (Closer to Camera)" : "Background (Further from Camera)"}\n- Item: Floor Lamp -> Anchor: Doorway-Side of Bed -> Framing: ${isReverseAngle ? "Background (Further from Camera)" : "Foreground (Closer to Camera)"}\n- Item: Accent Rug -> Anchor: Under Foot of Bed -> Framing: Lower Center Floor`;
 
   return `
-════════════════════════════════════════════════════════════════
-CRITICAL REFERENCE: STRUCTURED OBJECT ANCHOR MAP
-════════════════════════════════════════════════════════════════
-[PRIMARY ROOM ANCHOR]: ${primaryAnchorLabel} Placement
-[PERSPECTIVE STATE]: ${isReverseAngle ? "REVERSE ANGLE (180-Degree Flip Active)" : "STANDARD ANGLE"}
-
-[FURNITURE PERSPECTIVE MAPPING MAP]:
+ANCHOR MAP
+Primary anchor: ${primaryAnchorLabel}
+View relation: ${isReverseAngle ? "reverse angle" : "standard angle"}
 ${objectLines}
 
-Execute placement strictly according to this anchor map. Do not allow items to drift from their assigned physical room anchors.
+Keep each item anchored to the same physical room location. Visual left/right may flip when the camera angle changes.
 `;
+}
+
+function estimatePromptTokens(text: string): number {
+  return Math.max(0, Math.ceil(String(text || "").length / 4));
+}
+
+function countInlineImages(parts: any[]): number {
+  return (parts || []).filter((part) => !!part?.inlineData?.data).length;
+}
+
+function safeTruncateForLog(value: unknown, maxLength = 1200): string | undefined {
+  if (value == null) return undefined;
+
+  let text: string;
+  if (typeof value === "string") {
+    text = value;
+  } else {
+    try {
+      text = JSON.stringify(value, Object.getOwnPropertyNames(value as object));
+    } catch {
+      text = String(value);
+    }
+  }
+
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}...<truncated>`;
+}
+
+function estimateResponseSize(resp: any): number {
+  try {
+    return JSON.stringify(resp).length;
+  } catch {
+    return 0;
+  }
+}
+
+function buildSecondaryReferencePrompt(params: {
+  canonicalRoomType: string;
+  roomId: string;
+  operationalAnchorMap: string;
+  supplementalAnchorMapBlock: string;
+}): string {
+  const anchorBlocks = [params.operationalAnchorMap.trim(), params.supplementalAnchorMapBlock.trim()]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return `SECONDARY VIEW CONSISTENCY OVERRIDE
+Stage the TARGET room image.
+
+Preserve the exact architecture, openings, framing, perspective, and room proportions of the TARGET image.
+Do not alter geometry, reinterpret the room structure, change openings, improve composition, or recreate the REFERENCE room.
+
+The REFERENCE image defines furnishing identity, decor style, material palette, and furnishing continuity only.
+Discard the REFERENCE room layout, framing, perspective, and composition.
+
+Keep furnishings anchored to the same real room locations relative to permanent features such as walls, windows, openings, hallway transitions, balcony edges, and other fixed architectural features.
+When seen from another angle, furnishings may appear on opposite sides of the image while remaining anchored to the same room locations.
+Do not reposition furnishings for visual balancing.
+
+Preserve major furnishing identities first. Preserve architecture first. Omit secondary decor or minor items when space, visibility, or geometry conflicts occur.
+Keep major furnishing identities and materials consistent with the approved master whenever they are naturally visible in this view. Partial visibility and occlusion are acceptable.
+
+${anchorBlocks ? `${anchorBlocks}\n\n` : ""}Room ID: ${params.roomId}`;
 }
 
 async function rejectReferenceEchoIfNeeded(params: {
@@ -1235,9 +1290,6 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
     const furnitureHint = roomState?.furnitureMemory || {};
     const relationalHint = roomState?.relationalSummary || {};
 
-    // Option F: for reference views with an approved master, prepend a consistency-first
-    // override BEFORE the standard staging prompt so that identity-replication is the
-    // primary objective rather than creative synthesis from scratch.
     if (isReferenceViewWithMaster) {
       const isReverseAngle = detectReverseAngle({
         roomConsistency,
@@ -1248,195 +1300,25 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
         isReverseAngle,
         opts.referenceAnchorMap || null,
       );
-      const mandatoryPerspectiveFlipRule = `════════════════════════════════════════════════════════════════
-MANDATORY PERSPECTIVE FLIP & PHYSICAL ANCHORING RULE
-════════════════════════════════════════════════════════════════
-You must position furniture based on its absolute, physical position in the room, NOT its 2D position relative to the camera lens in the reference image.
-
-If the room is viewed from the opposite side (reverse angle):
-- Objects previously seen near the camera may now appear further away.
-- Objects previously seen further away may now appear near the camera.
-
-Maintain their true physical room positions relative to the primary anchor (${canonicalRoomType === "bedroom" ? "the Bed" : "the primary anchor object"}) and the permanent walls. For example, if a bedside table is pinned next to the window-side of the bed in the master view, it must remain pinned next to the window-side of the bed in this view, even if that completely swaps its left/right position relative to the camera lens. 
-
-Do not preserve the 2D layout of the reference image; map the true physical space of the target image.`;
-  const primaryRuleset = `════════════════════════════════════════════════════════════════
-PRIMARY RULESET
-════════════════════════════════════════════════════════════════
-TARGET IMAGE IS A LOCKED ARCHITECTURAL PLATE.
-
-The room envelope must remain pixel-aligned to the target image.
-
-DO NOT:
-* reinterpret geometry
-* rebalance composition
-* widen walls
-* deepen corners
-* add recesses
-* remove recesses
-* modify openings
-* alter room depth
-* normalize composition
-* improve layout
-* reinterpret empty space
-* alter perspective
-* rotate camera
-* modify framing
-
-Only insert furnishings into the existing target architecture.`;
-  const targetRoleBlock = `════════════════════════════════════════════════════════════════
-IMAGE ROLE: TARGET IMAGE TO STAGE
-════════════════════════════════════════════════════════════════
-This image is the ONLY authority for:
-
-* architecture
-* walls
-* openings
-* room geometry
-* corners
-* recesses
-* ceiling geometry
-* floor geometry
-* room proportions
-* perspective
-* framing
-* camera position
-* camera angle
-* focal length
-* room depth
-* composition
-
-The target image must remain geometrically immutable.`;
-  const masterRoleBlock = `════════════════════════════════════════════════════════════════
-IMAGE ROLE: MASTER STAGING REFERENCE
-════════════════════════════════════════════════════════════════
-This image is ONLY a furnishing/style swatch reference.
-
-It may influence ONLY:
-
-* furniture category
-* furnishing identity
-* decor language
-* material palette
-* staging aesthetic
-* furnishing family
-
-It MUST NEVER influence:
-
-* architecture
-* room geometry
-* openings
-* room proportions
-* perspective
-* composition
-* framing
-* room layout
-* room depth`;
-  const aggressiveNegativeSuppression = `════════════════════════════════════════════════════════════════
-REFERENCE REJECTION RULES
-════════════════════════════════════════════════════════════════
-DO NOT recreate the reference room.
-
-DO NOT copy:
-
-* room layout
-* wall placement
-* room composition
-* room framing
-* room geometry
-* room proportions
-* room depth
-* perspective
-* camera angle
-* openings
-* architectural features
-
-DO NOT reconstruct the reference image.
-
-The 2D composition of the reference image is irrelevant.
-
-Only furnishing identity and real-world furnishing relationships are transferable.`;
-      const zeroLeakageLock = `════════════════════════════════════════════════════════════════
-ABSOLUTE ROOM ENVELOPE & ZERO FEATURE LEAKAGE LOCK
-════════════════════════════════════════════════════════════════
-- PIXEL-ALIGNED ENVELOPE: The room envelope must remain completely pixel-aligned to INPUT_IMAGE_TO_STAGE. Walls, corners, ceiling boundaries, floor boundaries, and architectural openings must remain absolutely fixed.
-- NO SPATIAL COMPLETION: Do not reinterpret empty space. Do not invent alcoves, recesses, widened corners, deeper walls, or expanded floor areas. Treat the structural layout as an immutable architectural blueprint.
-- ZERO FEATURE LEAKAGE: The APPROVED_MASTER_STAGED_REFERENCE is strictly a style, material, and furniture identity swatch. It is completely blind to architecture. If a window, door, archway, wardrobe opening, or wall plane exists in the reference image but is ABSENT in INPUT_IMAGE_TO_STAGE, you are strictly forbidden from rendering it.`;
       const supplementalAnchorMapBlock = formatStructuredAnchorMapForPrompt(opts.referenceAnchorMap || null);
-      const consistencyOverride = `CONSISTENCY OVERRIDE — PRIMARY OBJECTIVE (read this before all other instructions)
-════════════════════════════════════════════════════════════════
-This image is a SECONDARY VIEW of a room that has already been staged and approved.
-The APPROVED_MASTER_STAGED_REFERENCE image provided below the input image IS the approved staging.
-
-${primaryRuleset}
-
-${targetRoleBlock}
-
-${masterRoleBlock}
-
-${aggressiveNegativeSuppression}
-
-${mandatoryPerspectiveFlipRule}
-
-${zeroLeakageLock}
-${operationalAnchorMap}${supplementalAnchorMapBlock ? `\n${supplementalAnchorMapBlock}` : ""}
-
-Your PRIMARY objective is NOT to stage this room from scratch.
-Your PRIMARY objective is to stage INPUT_IMAGE_TO_STAGE so it matches the approved furniture/decor design from the master reference while keeping the target image's own architecture and viewpoint.
-
-MANDATORY CONTINUITY RULES:
-1. Furniture identity: Every furniture piece visible in the approved master MUST appear in your output if it is plausible from this camera angle. Same category, same colour family, same material finish.
-2. Decor identity: Artwork, rugs, cushions, throws, lamps, and decorative objects must match the master. Do not swap them for different items.
-3. Material fidelity: Upholstery fabric, timber tone, metal finish, and textile textures must match the master staging. Do not substitute.
-4. Palette continuity: The overall colour palette of all staged items must be the same as the master. No new dominant colours.
-5. Style continuity: The design language (e.g., contemporary, Scandi, coastal) must remain identical to the master.
-
-WHAT IS ALLOWED TO CHANGE:
-- Camera angle and viewpoint (expected — this is a different photo angle)
-- Furniture scale and apparent depth presentation caused by viewpoint (acceptable — perspective varies by angle)
-- Partial visibility of items (acceptable — some items may be off-frame or occluded)
-- Visual left/right inversion caused by viewpoint while world-space placement remains fixed
-
-WHAT MUST NOT CHANGE:
-- The architectural envelope, openings, wall planes, and camera geometry from INPUT_IMAGE_TO_STAGE
-- The identity of the sofa/sectional family
-- The identity and colour of the rug
-- The identity and finish of the coffee table, dining table, bed frame, and key anchor pieces
-- The colour/texture of cushions and throws
-- The artwork palette and style
-- The lamp and lighting fixture style
-- The world-space side of key anchor pieces relative to walls, windows, openings, corners, and bed orientation
-
-Room ID: ${roomConsistency.roomId}
-════════════════════════════════════════════════════════════════
-
-`;
+      const consistencyOverride = buildSecondaryReferencePrompt({
+        canonicalRoomType,
+        roomId: roomConsistency.roomId,
+        operationalAnchorMap,
+        supplementalAnchorMapBlock,
+      });
       textPrompt = consistencyOverride + textPrompt;
     }
 
-    textPrompt += `\n\nROOM CONSISTENCY LAYER (EXPERIMENTAL V1)
+    textPrompt += `\n\nROOM CONSISTENCY
 View role: ${roleLabel}
 Room ID: ${roomConsistency.roomId}
-Primary image id: ${roomConsistency.primaryImageId || roomState?.primaryImageId || "unknown"}
-Group size: ${roomConsistency.groupSize ?? "unknown"}
-Primary selection method: ${roomConsistency.primarySelection?.method || "auto"}
-
-Consistency objective:
-  - Keep furnishing identity persistent across room angles without copying image-space composition.
-- Keep style continuity strict (materials, palette, and furnishing language remain coherent).
-- Keep lighting continuity aligned (brightness=${lightingHint.brightnessProfile || "balanced"}, warmth=${lightingHint.warmthProfile || "neutral"}, weather=${lightingHint.weatherMood || "neutral"}, direction=${lightingHint.directionHint || "unknown"}, shadow_softness=${lightingHint.shadowSoftness || "soft"}).
-- Keep room-relative furnishing continuity approximate (preserve world-space anchors from this viewpoint; do not copy image-space composition).
-
-Style profile to preserve: ${styleHint}
-Furniture identity goal: ${furnitureHint.persistentIdentityGoal || "Preserve anchor identity, color continuity, and materials."}
-Material palette hint: ${(furnitureHint.materialPalette || []).join(", ") || "neutral, wood, textile"}
-Relational placement directive: ${relationalHint.placementDirective || "Preserve room-relative furnishing anchors while maintaining spatial plausibility in this viewpoint."}
-Anchor visibility expectation: ${relationalHint.anchorVisibility || "medium"}
-
-Execution mode:
-- If View role is Primary View: establish the canonical room design for downstream reference views.
-- If View role is Reference View: transfer the approved furnishing identity and decor language into this camera angle while preserving target architecture and world-space furnishing anchors.
-`;
+Style: ${styleHint}
+Furniture continuity: ${furnitureHint.persistentIdentityGoal || "Preserve anchor identity, color continuity, and materials."}
+Material palette: ${(furnitureHint.materialPalette || []).join(", ") || "neutral, wood, textile"}
+Placement directive: ${relationalHint.placementDirective || "Preserve room-relative furnishing anchors while maintaining spatial plausibility in this viewpoint."}
+Lighting continuity: brightness=${lightingHint.brightnessProfile || "balanced"}, warmth=${lightingHint.warmthProfile || "neutral"}, weather=${lightingHint.weatherMood || "neutral"}, direction=${lightingHint.directionHint || "unknown"}, shadow_softness=${lightingHint.shadowSoftness || "soft"}
+Anchor visibility: ${relationalHint.anchorVisibility || "medium"}`;
   }
 
   if (opts.tightenLevel && opts.tightenLevel > 0) {
@@ -1548,30 +1430,17 @@ Do not add blinds, rods, tracks, or new window coverings.
   }
 
   const requestParts: any[] = [];
-  const reanchorTargetAtEnd = isReferenceViewWithMaster;
   if (isReferenceViewWithMaster && opts.referenceImagePath) {
-    const referenceRejectionRules = `REFERENCE REJECTION RULES:
-DO NOT recreate the reference room.
-DO NOT copy room layout, wall placement, room composition, room framing, room geometry, room proportions, room depth, perspective, camera angle, openings, or architectural features.
-Only transfer furnishing identity, furnishing family, decor language, material palette, and room-relative furnishing anchors.`;
-    const finalPixelAlignmentRules = `FINAL STRUCTURAL REQUIREMENT:
-Walls, openings, corners, room boundaries, framing, and camera perspective must remain pixel-aligned to the target image.
+    const finalSecondaryReminder = `Final requirement:
+Preserve the TARGET room architecture and perspective exactly.
 Only furnishings may change.
-If any conflict exists between target image geometry and reference image composition, the target image ALWAYS wins.`;
-    requestParts.push({ text: "TARGET_STRUCTURE_INPUT" });
-    requestParts.push({ inlineData: { mimeType: mime, data } });
+
+If any conflict exists between TARGET geometry and REFERENCE composition, TARGET geometry always wins.`;
     requestParts.push({ text: textPrompt });
+    requestParts.push({ inlineData: { mimeType: mime, data } });
     const ref = toBase64(opts.referenceImagePath);
-    requestParts.push({ text: "STYLE_AND_MATERIAL_SWATCH_ONLY" });
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
-    requestParts.push({ text: referenceRejectionRules });
-    if (reanchorTargetAtEnd) {
-      requestParts.push({ text: "TARGET_STRUCTURE_INPUT_REANCHOR" });
-      requestParts.push({ inlineData: { mimeType: mime, data } });
-      requestParts.push({
-        text: finalPixelAlignmentRules,
-      });
-    }
+    requestParts.push({ text: finalSecondaryReminder });
   } else {
     // Preferred ordering for non-room-consistency paths: prompt first, then base image(s), then explicit mask.
     requestParts.push({ text: textPrompt });
@@ -1591,6 +1460,21 @@ If any conflict exists between target image geometry and reference image composi
     } catch (e) {
       focusLog("STAGE2_MASK", "[stage2] Failed to attach mask to requestParts", { error: String(e), jobId: opts.jobId });
     }
+  }
+
+  if (isReferenceViewWithMaster) {
+    nLog("[ROOM_CONSISTENCY_PROVIDER_DEBUG]", {
+      phase: "request",
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      attempt: attemptNumber,
+      promptChars: textPrompt.length,
+      promptEstimatedTokens: estimatePromptTokens(textPrompt),
+      requestPartCount: requestParts.length,
+      imageCount: countInlineImages(requestParts),
+      hasStructuredAnchorMap: !!opts.referenceAnchorMap,
+      hasMask: !!stagingMaskBuffer,
+    });
   }
 
   nLog(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
@@ -1618,7 +1502,7 @@ If any conflict exists between target image geometry and reference image composi
       temperature: generationConfig.temperature,
       topP: generationConfig.topP,
       topK: generationConfig.topK,
-      reanchorTargetAtEnd,
+      requestPartCount: requestParts.length,
       hasStructuredAnchorMap: !!opts.referenceAnchorMap,
     });
   }
@@ -1661,6 +1545,18 @@ If any conflict exists between target image geometry and reference image composi
     modelUsed = run.modelUsed;
   } catch (error: any) {
     const message = String(error?.message || error || "unknown_error");
+    if (isReferenceViewWithMaster) {
+      nLog("[ROOM_CONSISTENCY_PROVIDER_DEBUG]", {
+        phase: "error",
+        jobId: opts.jobId,
+        imageId: opts.imageId,
+        attempt: attemptNumber,
+        model: generationPlan.model,
+        message,
+        status: Number(error?.status ?? error?.statusCode) || undefined,
+        rawErrorBody: safeTruncateForLog(error?.response || error?.error || error?.cause || error),
+      });
+    }
     if (/no inline image data|no image data in gemini response/i.test(message)) {
       emitStage2AttemptComplete(false, message);
       throw new Stage2GenerationNoImageError(message);
@@ -1671,6 +1567,19 @@ If any conflict exists between target image geometry and reference image composi
 
   const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
   const img = responseParts.find((p) => p.inlineData);
+  if (isReferenceViewWithMaster) {
+    nLog("[ROOM_CONSISTENCY_PROVIDER_DEBUG]", {
+      phase: "response",
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      attempt: attemptNumber,
+      model: modelUsed,
+      responsePartCount: responseParts.length,
+      responseSizeChars: estimateResponseSize(resp),
+      hasInlineImage: !!img?.inlineData?.data,
+      inlineImageBytes: img?.inlineData?.data?.length || 0,
+    });
+  }
   if (!img?.inlineData?.data) {
     const inlineDataPresent = responseParts.some((part: any) => !!part?.inlineData?.data);
     console.warn(

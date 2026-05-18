@@ -1,0 +1,1100 @@
+  console.log
+    {"jobId":"job-test-no-image","imageId":"img-test-no-image","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":null,"sourceStage":null,"ts":"2026-05-18T09:40:19.975Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'legacy', mode: 'refresh', variant: 'legacy' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-no-image
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-no-image attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.warn
+    [stage2_generation_no_image] model=gemini-2.5-flash-image attempt=1 response_parts=text inlineData_present=false
+
+      1590 |   if (!img?.inlineData?.data) {
+      1591 |     const inlineDataPresent = responseParts.some((part: any) => !!part?.inlineData?.data);
+    > 1592 |     console.warn(
+           |             ^
+      1593 |       `[stage2_generation_no_image] model=${modelUsed} attempt=${attemptNumber} response_parts=${summarizeResponsePartTypes(
+      1594 |         responseParts
+      1595 |       )} inlineData_present=${inlineDataPresent}`
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1592:13)
+      at Object.<anonymous> (tests/stage2GenerationReliability.test.ts:81:5)
+
+  console.log
+    {"jobId":"job-test-no-image","imageId":"img-test-no-image","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":false,"error":"no_inline_image_data","ts":"2026-05-18T09:40:20.032Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    {"jobId":"job-test-retry-1","imageId":"img-test-retry-1","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":null,"sourceStage":null,"ts":"2026-05-18T09:40:20.034Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'legacy', mode: 'refresh', variant: 'legacy' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-retry-1
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-retry-1 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.warn
+    [stage2_generation_no_image] model=gemini-2.5-flash-image attempt=1 response_parts=text inlineData_present=false
+
+      1590 |   if (!img?.inlineData?.data) {
+      1591 |     const inlineDataPresent = responseParts.some((part: any) => !!part?.inlineData?.data);
+    > 1592 |     console.warn(
+           |             ^
+      1593 |       `[stage2_generation_no_image] model=${modelUsed} attempt=${attemptNumber} response_parts=${summarizeResponsePartTypes(
+      1594 |         responseParts
+      1595 |       )} inlineData_present=${inlineDataPresent}`
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1592:13)
+      at Object.<anonymous> (tests/stage2GenerationReliability.test.ts:112:5)
+
+  console.log
+    {"jobId":"job-test-retry-1","imageId":"img-test-retry-1","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":false,"error":"no_inline_image_data","ts":"2026-05-18T09:40:20.041Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    {"jobId":"job-test-retry-2","imageId":"img-test-retry-2","stage":"2","attempt":2,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":null,"sourceStage":null,"ts":"2026-05-18T09:40:20.041Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'legacy', mode: 'refresh', variant: 'legacy' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-retry-2
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-retry-2 attempt=2 model=gemini-2.5-flash-image temperature=0.4 retry_reason=unknown
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=2 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-retry-2',
+      imageId: 'img-test-retry-2',
+      attempt: 2,
+      model: 'gemini-2.5-pro-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    {"jobId":"job-test-retry-2","imageId":"img-test-retry-2","stage":"2","attempt":2,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.045Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-retry-2 attempt=2 path=/tmp/stage2-retry-dtHxMQ/out-retry.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-collapse","imageId":"img-test-collapse","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":null,"sourceStage":null,"ts":"2026-05-18T09:40:20.047Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'legacy', mode: 'refresh', variant: 'legacy' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-collapse
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-collapse attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-collapse',
+      imageId: 'img-test-collapse',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    {"jobId":"job-test-collapse","imageId":"img-test-collapse","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":false,"error":"stage2_candidate_collapse: candidate_path_equals_baseline","ts":"2026-05-18T09:40:20.052Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    {"jobId":"job-test-secondary-reference","imageId":"img-test-secondary-reference","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.053Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-reference
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-reference',
+      imageId: 'img-test-secondary-reference',
+      attempt: 1,
+      promptChars: 10096,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-reference attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-reference',
+      imageId: 'img-test-secondary-reference',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-reference',
+      imageId: 'img-test-secondary-reference',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-reference',
+      imageId: 'img-test-secondary-reference',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-reference',
+      imageId: 'img-test-secondary-reference',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-reference","imageId":"img-test-secondary-reference","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.071Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-reference attempt=1 path=/tmp/stage2-secondary-reference-aTe73R/out.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-0","imageId":"img-test-secondary-stress-0","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.074Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-0
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-0',
+      imageId: 'img-test-secondary-stress-0',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-0 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-0',
+      imageId: 'img-test-secondary-stress-0',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-0',
+      imageId: 'img-test-secondary-stress-0',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-0',
+      imageId: 'img-test-secondary-stress-0',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-0',
+      imageId: 'img-test-secondary-stress-0',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-0","imageId":"img-test-secondary-stress-0","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.082Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-0 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-0.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-1","imageId":"img-test-secondary-stress-1","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.084Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-1
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-1',
+      imageId: 'img-test-secondary-stress-1',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-1 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-1',
+      imageId: 'img-test-secondary-stress-1',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-1',
+      imageId: 'img-test-secondary-stress-1',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-1',
+      imageId: 'img-test-secondary-stress-1',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-1',
+      imageId: 'img-test-secondary-stress-1',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-1","imageId":"img-test-secondary-stress-1","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.091Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-1 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-1.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-2","imageId":"img-test-secondary-stress-2","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.092Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-2
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-2',
+      imageId: 'img-test-secondary-stress-2',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-2 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-2',
+      imageId: 'img-test-secondary-stress-2',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-2',
+      imageId: 'img-test-secondary-stress-2',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-2',
+      imageId: 'img-test-secondary-stress-2',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-2',
+      imageId: 'img-test-secondary-stress-2',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-2","imageId":"img-test-secondary-stress-2","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.108Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-2 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-2.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-3","imageId":"img-test-secondary-stress-3","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.109Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-3
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-3',
+      imageId: 'img-test-secondary-stress-3',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-3 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-3',
+      imageId: 'img-test-secondary-stress-3',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-3',
+      imageId: 'img-test-secondary-stress-3',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-3',
+      imageId: 'img-test-secondary-stress-3',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-3',
+      imageId: 'img-test-secondary-stress-3',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-3","imageId":"img-test-secondary-stress-3","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.121Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-3 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-3.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-4","imageId":"img-test-secondary-stress-4","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.123Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-4
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-4',
+      imageId: 'img-test-secondary-stress-4',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-4 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-4',
+      imageId: 'img-test-secondary-stress-4',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-4',
+      imageId: 'img-test-secondary-stress-4',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-4',
+      imageId: 'img-test-secondary-stress-4',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-4',
+      imageId: 'img-test-secondary-stress-4',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-4","imageId":"img-test-secondary-stress-4","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.140Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-4 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-4.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-5","imageId":"img-test-secondary-stress-5","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.144Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-5
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-5',
+      imageId: 'img-test-secondary-stress-5',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-5 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-5',
+      imageId: 'img-test-secondary-stress-5',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-5',
+      imageId: 'img-test-secondary-stress-5',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-5',
+      imageId: 'img-test-secondary-stress-5',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-5',
+      imageId: 'img-test-secondary-stress-5',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-5","imageId":"img-test-secondary-stress-5","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.152Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-5 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-5.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-6","imageId":"img-test-secondary-stress-6","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.154Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-6
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-6',
+      imageId: 'img-test-secondary-stress-6',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-6 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-6',
+      imageId: 'img-test-secondary-stress-6',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-6',
+      imageId: 'img-test-secondary-stress-6',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-6',
+      imageId: 'img-test-secondary-stress-6',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-6',
+      imageId: 'img-test-secondary-stress-6',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-6","imageId":"img-test-secondary-stress-6","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.160Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-6 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-6.webp
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-7","imageId":"img-test-secondary-stress-7","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_start","promptMode":"full","sourceStage":null,"ts":"2026-05-18T09:40:20.162Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_PROMPT_VARIANT] { requested: 'nano', mode: 'full', variant: 'nano_banana' }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job-test-secondary-stress-7
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1335:11)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'request',
+      jobId: 'job-test-secondary-stress-7',
+      imageId: 'img-test-secondary-stress-7',
+      attempt: 1,
+      promptChars: 10094,
+      promptEstimatedTokens: 2524,
+      requestPartCount: 6,
+      imageCount: 2,
+      hasStructuredAnchorMap: false,
+      hasMask: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL_ESCALATION] job_id=job-test-secondary-stress-7 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_MODEL] attempt=1 model=gemini-2.5-flash-image
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PRECISION_MODE] {
+      jobId: 'job-test-secondary-stress-7',
+      imageId: 'img-test-secondary-stress-7',
+      attempt: 1,
+      temperature: 0.18,
+      topP: 0.35,
+      topK: 8,
+      requestPartCount: 6,
+      hasStructuredAnchorMap: false
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [ROOM_CONSISTENCY_PROVIDER_DEBUG] {
+      phase: 'response',
+      jobId: 'job-test-secondary-stress-7',
+      imageId: 'img-test-secondary-stress-7',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      responsePartCount: 1,
+      responseSizeChars: 75,
+      hasInlineImage: true,
+      inlineImageBytes: 8
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    [STAGE2_OUTPUT] {
+      jobId: 'job-test-secondary-stress-7',
+      imageId: 'img-test-secondary-stress-7',
+      attempt: 1,
+      model: 'gemini-2.5-flash-image',
+      hasImage: true,
+      imageSize: 8
+    }
+
+      at runStage2GenerationAttempt (src/pipeline/stage2.ts:1601:11)
+
+  console.log
+    [ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN] {
+      jobId: 'job-test-secondary-stress-7',
+      imageId: 'img-test-secondary-stress-7',
+      error: 'Input file contains unsupported image format'
+    }
+
+      at nLog (src/logger.ts:57:13)
+
+  console.log
+    {"jobId":"job-test-secondary-stress-7","imageId":"img-test-secondary-stress-7","stage":"2","attempt":1,"event":"PIPELINE_STEP","step":"stage2_attempt_complete","success":true,"ts":"2026-05-18T09:40:20.169Z"}
+
+      at logEvent (src/ai/usageTelemetry.ts:28:11)
+
+  console.log
+    [STAGE2_OUTPUT_PATH] job_id=job-test-secondary-stress-7 attempt=1 path=/tmp/stage2-secondary-stress-ecIPIL/out-7.webp
+
+      at nLog (src/logger.ts:57:13)
+
+PASS worker/tests/stage2GenerationReliability.test.ts
+  Stage-2 generation reliability
+    ✓ resolves only image-capable Stage-2 models (3 ms)
+    ✓ raises Stage2GenerationNoImageError when inline image is missing (60 ms)
+    ✓ retries with fresh candidate path and never collapses to baseline (13 ms)
+    ✓ fails fast when candidate path collapses to baseline path (5 ms)
+    ✓ uses compressed secondary reference payload ordering without target duplication (20 ms)
+    ✓ keeps grouped secondary payload shape stable across repeated runs (97 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        4.908 s, estimated 5 s
+Ran all test suites matching worker/tests/stage2GenerationReliability.test.ts.

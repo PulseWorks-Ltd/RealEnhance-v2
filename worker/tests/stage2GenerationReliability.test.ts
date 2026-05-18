@@ -12,7 +12,7 @@ jest.mock("../src/ai/gemini", () => ({
   getGeminiClient: jest.fn(() => ({ models: { generateContent: jest.fn() } })),
 }));
 
-const runWithPrimaryThenFallbackMock = jest.fn();
+const mockRunWithPrimaryThenFallback = jest.fn();
 
 jest.mock("../src/ai/runWithImageModelFallback", () => ({
   MODEL_CONFIG: {
@@ -21,17 +21,19 @@ jest.mock("../src/ai/runWithImageModelFallback", () => ({
       fallback: "gemini-3.1-flash-image",
     },
   },
-  runWithSelectedImageModel: (...args: any[]) => runWithPrimaryThenFallbackMock(...args),
+  runWithSelectedImageModel: (...args) => mockRunWithPrimaryThenFallback(...args),
 }));
 
 jest.mock("../src/utils/images", () => ({
-  siblingOutPath: (basePath: string, suffix: string, ext: string) => {
-    const parsed = path.parse(basePath);
-    return path.join(parsed.dir, `${parsed.name}${suffix}${ext}`);
+  siblingOutPath: (basePath, suffix, ext) => {
+    const mockPath = require("path");
+    const parsed = mockPath.parse(basePath);
+    return mockPath.join(parsed.dir, `${parsed.name}${suffix}${ext}`);
   },
   toBase64: () => ({ mime: "image/webp", data: "ZmFrZQ==" }),
-  writeImageDataUrl: (outputPath: string) => {
-    fs.writeFileSync(outputPath, "ok");
+  writeImageDataUrl: (outputPath) => {
+    const mockFs = require("fs");
+    mockFs.writeFileSync(outputPath, "ok");
   },
 }));
 
@@ -64,7 +66,7 @@ describe("Stage-2 generation reliability", () => {
   });
 
   it("raises Stage2GenerationNoImageError when inline image is missing", async () => {
-    runWithPrimaryThenFallbackMock.mockResolvedValue({
+    mockRunWithPrimaryThenFallback.mockResolvedValue({
       resp: {
         candidates: [{ content: { parts: [{ text: "no image" }] } }],
       },
@@ -80,6 +82,7 @@ describe("Stage-2 generation reliability", () => {
       runStage2GenerationAttempt(basePath, {
         roomType: "living_room",
         jobId: "job-test-no-image",
+        imageId: "img-test-no-image",
         outputPath,
         attempt: 1,
       })
@@ -87,7 +90,7 @@ describe("Stage-2 generation reliability", () => {
   });
 
   it("retries with fresh candidate path and never collapses to baseline", async () => {
-    runWithPrimaryThenFallbackMock
+    mockRunWithPrimaryThenFallback
       .mockResolvedValueOnce({
         resp: {
           candidates: [{ content: { parts: [{ text: "no image" }] } }],
@@ -110,6 +113,7 @@ describe("Stage-2 generation reliability", () => {
       runStage2GenerationAttempt(basePath, {
         roomType: "living_room",
         jobId: "job-test-retry-1",
+        imageId: "img-test-retry-1",
         outputPath: path.join(tempDir, "out-initial.webp"),
         attempt: 1,
       })
@@ -118,6 +122,7 @@ describe("Stage-2 generation reliability", () => {
     const generatedPath = await runStage2GenerationAttempt(basePath, {
       roomType: "living_room",
       jobId: "job-test-retry-2",
+      imageId: "img-test-retry-2",
       outputPath: retryOutputPath,
       attempt: 2,
     });
@@ -128,7 +133,7 @@ describe("Stage-2 generation reliability", () => {
   });
 
   it("fails fast when candidate path collapses to baseline path", async () => {
-    runWithPrimaryThenFallbackMock.mockResolvedValue({
+    mockRunWithPrimaryThenFallback.mockResolvedValue({
       resp: {
         candidates: [{ content: { parts: [{ inlineData: { data: "ZmFrZQ==" } }] } }],
       },
@@ -143,9 +148,107 @@ describe("Stage-2 generation reliability", () => {
       runStage2GenerationAttempt(basePath, {
         roomType: "living_room",
         jobId: "job-test-collapse",
+        imageId: "img-test-collapse",
         outputPath: basePath,
         attempt: 1,
       })
     ).rejects.toBeInstanceOf(Stage2GenerationFailure);
+  });
+
+  it("uses compressed secondary reference payload ordering without target duplication", async () => {
+    process.env.EXPERIMENT_ROOM_CONSISTENCY_V1 = "1";
+    process.env.STAGE2_PROMPT_VARIANT = "nano";
+
+    mockRunWithPrimaryThenFallback.mockResolvedValue({
+      resp: {
+        candidates: [{ content: { parts: [{ inlineData: { data: "ZmFrZQ==" } }] } }],
+      },
+      modelUsed: "gemini-2.5-flash-image",
+    });
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stage2-secondary-reference-"));
+    const basePath = path.join(tempDir, "base.webp");
+    const outputPath = path.join(tempDir, "out.webp");
+    const referencePath = path.join(tempDir, "reference.webp");
+    fs.writeFileSync(basePath, "base");
+    fs.writeFileSync(referencePath, "reference");
+
+    await runStage2GenerationAttempt(basePath, {
+      roomType: "bedroom",
+      jobId: "job-test-secondary-reference",
+      imageId: "img-test-secondary-reference",
+      outputPath,
+      attempt: 1,
+      promptMode: "full",
+      referenceImagePath: referencePath,
+      roomConsistencyV1: {
+        enabled: true,
+        viewRole: "reference",
+        roomId: "room-test-secondary-reference",
+        approvedMasterImageUrl: "https://example.com/master.webp",
+      },
+    });
+
+    const request = mockRunWithPrimaryThenFallback.mock.calls[0][0].baseRequest;
+    const contents = request.contents;
+
+    expect(contents).toHaveLength(4);
+    expect(contents[0].text).toContain("Stage the TARGET room image");
+    expect(contents[0].text).toContain("Discard the REFERENCE room layout");
+    expect(contents[0].text).toContain("Preserve major furnishing identities first");
+    expect(contents[0].text).not.toContain("pixel-aligned");
+    expect(contents[0].text).not.toContain("immutable architectural plate");
+    expect(contents[0].text).not.toContain("style swatch only");
+    expect(contents[1].inlineData).toBeDefined();
+    expect(contents[2].inlineData).toBeDefined();
+    expect(contents[3].text).toContain("Final requirement:");
+    expect(contents.filter((part) => part.text === "TARGET_STRUCTURE_INPUT_REANCHOR")).toHaveLength(0);
+  });
+
+  it("keeps grouped secondary payload shape stable across repeated runs", async () => {
+    process.env.EXPERIMENT_ROOM_CONSISTENCY_V1 = "1";
+    process.env.STAGE2_PROMPT_VARIANT = "nano";
+
+    mockRunWithPrimaryThenFallback.mockResolvedValue({
+      resp: {
+        candidates: [{ content: { parts: [{ inlineData: { data: "ZmFrZQ==" } }] } }],
+      },
+      modelUsed: "gemini-2.5-flash-image",
+    });
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stage2-secondary-stress-"));
+    const basePath = path.join(tempDir, "base.webp");
+    const referencePath = path.join(tempDir, "reference.webp");
+    fs.writeFileSync(basePath, "base");
+    fs.writeFileSync(referencePath, "reference");
+
+    for (let index = 0; index < 8; index += 1) {
+      const outputPath = path.join(tempDir, `out-${index}.webp`);
+      await runStage2GenerationAttempt(basePath, {
+        roomType: "bedroom",
+        jobId: `job-test-secondary-stress-${index}`,
+        imageId: `img-test-secondary-stress-${index}`,
+        outputPath,
+        attempt: 1,
+        promptMode: "full",
+        referenceImagePath: referencePath,
+        roomConsistencyV1: {
+          enabled: true,
+          viewRole: "reference",
+          roomId: `room-test-secondary-stress-${index}`,
+          approvedMasterImageUrl: "https://example.com/master.webp",
+        },
+      });
+
+      const request = mockRunWithPrimaryThenFallback.mock.calls[index][0].baseRequest;
+      const contents = request.contents;
+
+      expect(contents).toHaveLength(4);
+      expect(contents.filter((part) => part.inlineData)).toHaveLength(2);
+      expect(contents[0].text).toContain("Keep furnishings anchored to the same real room locations");
+      expect(contents[0].text).toContain("Preserve major furnishing identities first");
+      expect(contents[0].text).not.toContain("TARGET_STRUCTURE_INPUT_REANCHOR");
+      expect(contents[0].text).not.toContain("zero feature leakage");
+    }
   });
 });
