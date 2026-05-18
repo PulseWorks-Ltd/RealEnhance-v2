@@ -19,20 +19,51 @@ Do NOT:
 Do NOT modify wall returns, wall angles, corner geometry, window side margins, or window height for aesthetic balance.
 Do NOT adjust sill height or window proportions to accommodate furniture.
 If furniture conflicts with architecture, reposition or resize the furniture instead.
-Furniture must adapt to the room. The room must never adapt to furniture.
+Furniture must adapt to the room. The room must never adapt to the furniture.
+
+PERSPECTIVE / VANISHING-POINT LOCK
+
+The perspective lines and vanishing points of the TARGET image are absolutely locked.
+
+You must warp, skew, scale, and adapt the furnishings to fit the native 3D geometry and perspective of the TARGET room.
+
+Contact points between furniture and architectural surfaces must respect the TARGET room's geometry.
+Furniture must visually conform to the existing floor plane and wall angles.
+Architectural surfaces must not deform at furniture contact points.
+
+NEVER warp, skew, rotate, widen, narrow, stretch, bend, or reinterpret the walls, corners, ceiling lines, floor plane, openings, or architectural geometry to accommodate furniture placement.
+
+Furniture must adapt to the room.
+The room must never adapt to the furniture.
 `;
 
 export const STAGE2_CAMERA_IMMUTABILITY_BLOCK = `
 ────────────────────────────────
 CAMERA IMMUTABILITY — HARD LOCK
 ────────────────────────────────
+The TARGET image camera position, focal geometry, framing, crop, horizon alignment, perspective depth, and field-of-view are immutable.
+
 Maintain exact camera geometry:
 - same viewpoint
 - same perspective
 - same focal length / field-of-view
 - same framing and crop
 
-Do NOT introduce camera shift, re-angle, zoom, or recrop.
+Do NOT:
+- recrop
+- rotate
+- widen
+- narrow
+- normalize
+- rebalance
+- reinterpret
+- center
+- improve composition
+- alter viewing angle
+- adjust perspective
+- introduce camera shift, re-angle, zoom, or recrop
+
+All staging must conform to the exact existing camera geometry of the TARGET image.
 `;
 
 export const STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK = `

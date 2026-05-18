@@ -102,16 +102,38 @@ const CONSTRAINT_PRIORITY_ORDER_BLOCK = `
 CONSTRAINT PRIORITY ORDER
 
 1. Architecture & openings (highest priority)
-2. Built-ins & fixed fixtures
-3. Anchor furniture scale, position, and footprint
-4. Layout optimization (lowest priority)
+2. Camera geometry & framing
+3. Built-ins & fixed fixtures
+4. Anchor furniture scale, position, and footprint
+5. Layout optimization (lowest priority)
 
 If any rule conflicts:
 - Lower priority rules must yield
-- Never modify architecture or built-ins to satisfy layout or anchor placement
+- Never modify architecture, camera geometry, or built-ins to satisfy layout or anchor placement
 - Never modify anchor scale or footprint to satisfy layout optimization
 - Specifically: do NOT shrink or compress anchor furniture (e.g. beds, sofas) to create space for additional items
 - If additional furniture cannot fit around the anchor at original scale → OMIT the additional furniture
+`.trim();
+
+const CONTINUITY_WEIGHTING_BLOCK = `
+CONTINUITY WEIGHTING
+
+Prioritize continuity of:
+- major furniture placement
+- furnishing category
+- spatial layout
+- side relationships
+- room function
+- overall style palette
+
+Minor decorative objects may vary naturally provided the room remains clearly the same staged space.
+
+Do NOT force exact replication of:
+- artwork
+- lamp shape
+- rug pattern
+- pillow count
+- minor decor accessories
 `.trim();
 
 const REFRESH_COMPLETENESS_ENFORCEMENT_BLOCK = `
@@ -202,7 +224,7 @@ ${REFRESH_TRANSFORMATION_FREEDOM_BLOCK}
 
 REFRESH LOGIC — FLEXIBLE STAGING MODE
 - Optimize the room for the requested room type, realism, and listing quality.
-- Improve layout, scale, and composition when needed, while preserving the same room architecture.
+- Adapt furnishings to the existing room geometry and camera framing.
 - Preserve room density balance and circulation.
 - Keep staging physically coherent: grounded on the floor, aligned to perspective, and believable in scale.
 - Never modify structural relationships, openings, built-ins, or fixed fixtures.
@@ -223,6 +245,8 @@ The final image must read as a fully staged, listing-ready room, not a partially
 - Ensure the room feels intentionally designed, balanced, and complete.
 
 ${REFRESH_COMPLETENESS_ENFORCEMENT_BLOCK}
+
+${CONTINUITY_WEIGHTING_BLOCK}
 
 Avoid:
 

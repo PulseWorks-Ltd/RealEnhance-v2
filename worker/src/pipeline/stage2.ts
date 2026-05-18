@@ -927,17 +927,42 @@ function buildSecondaryReferencePrompt(params: {
   return `SECONDARY VIEW CONSISTENCY OVERRIDE
 Stage the TARGET room image.
 
-Preserve the exact architecture, openings, framing, perspective, and room proportions of the TARGET image.
-Do not alter geometry, reinterpret the room structure, change openings, improve composition, or recreate the REFERENCE room.
+AUTHORITATIVE HIERARCHY
+1. TARGET architecture is authoritative.
+2. TARGET camera geometry is authoritative.
+3. REFERENCE image is furnishing continuity guidance only.
+4. Furnishings must adapt to TARGET scene geometry.
 
-The REFERENCE image defines furnishing identity, decor style, material palette, and furnishing continuity only.
-Discard the REFERENCE room layout, framing, perspective, and composition.
+Preserve the exact architecture, openings, framing, perspective, vanishing points, and room proportions of the TARGET image.
+The TARGET image camera position, focal geometry, framing, crop, horizon alignment, perspective depth, and field-of-view are immutable.
+Do not alter geometry, reinterpret the room structure, change openings, improve composition, or recreate the REFERENCE room.
+Do not recrop, rotate, widen, narrow, normalize, rebalance, center, or adjust perspective.
+
+The REFERENCE image is NOT a compositional template.
+It is ONLY a furnishing continuity reference.
+The REFERENCE image defines furnishing identity, major layout continuity, decor style, material palette, and furnishing continuity only.
+Discard the REFERENCE room layout, framing, wall geometry, room proportions, perspective, and composition.
+Do NOT reconstruct the REFERENCE room layout, framing, wall geometry, room proportions, or perspective.
+You are staging the TARGET room ONLY.
+
+The perspective lines and vanishing points of the TARGET image are absolutely locked.
+You must warp, skew, scale, and adapt the REFERENCE furnishings to fit the native 3D geometry and perspective of the TARGET room.
+Contact points between furniture and architectural surfaces must respect the TARGET room's geometry.
+Furniture must visually conform to the existing floor plane and wall angles.
+Architectural surfaces must not deform at furniture contact points.
+NEVER warp, skew, rotate, widen, narrow, stretch, bend, or reinterpret the walls, corners, ceiling lines, floor plane, openings, or architectural geometry to accommodate furniture placement.
+Furniture must adapt to the room. The room must never adapt to the furniture.
 
 Keep furnishings anchored to the same real room locations relative to permanent features such as walls, windows, openings, hallway transitions, balcony edges, and other fixed architectural features.
 When seen from another angle, furnishings may appear on opposite sides of the image while remaining anchored to the same room locations.
-Do not reposition furnishings for visual balancing.
+Do not reposition furnishings for visual balancing or composition cleanup.
 
-Preserve major furnishing identities first. Preserve architecture first. Omit secondary decor or minor items when space, visibility, or geometry conflicts occur.
+Prioritize continuity of major furniture placement, furnishing category, spatial layout, side relationships, room function, and overall style palette.
+Minor decorative objects may vary naturally provided the room remains clearly the same staged space.
+Do not force exact replication of artwork, lamp shape, rug pattern, pillow count, or minor decor accessories.
+
+Preserve architecture first. Preserve camera geometry second. Preserve major furnishing identities next.
+Omit secondary decor or minor items when space, visibility, camera framing, or geometry conflicts occur.
 Keep major furnishing identities and materials consistent with the approved master whenever they are naturally visible in this view. Partial visibility and occlusion are acceptable.
 
 ${anchorBlocks ? `${anchorBlocks}\n\n` : ""}Room ID: ${params.roomId}`;
@@ -1432,10 +1457,11 @@ Do not add blinds, rods, tracks, or new window coverings.
   const requestParts: any[] = [];
   if (isReferenceViewWithMaster && opts.referenceImagePath) {
     const finalSecondaryReminder = `Final requirement:
-Preserve the TARGET room architecture and perspective exactly.
-Only furnishings may change.
+Preserve the TARGET room architecture, camera geometry, framing, and perspective exactly.
+Only furnishings may change, and they must adapt to the TARGET room.
 
-If any conflict exists between TARGET geometry and REFERENCE composition, TARGET geometry always wins.`;
+If any conflict exists between TARGET geometry and REFERENCE composition, TARGET geometry always wins.
+The REFERENCE image is furnishing continuity guidance only, never a compositional template.`;
     requestParts.push({ text: textPrompt });
     requestParts.push({ inlineData: { mimeType: mime, data } });
     const ref = toBase64(opts.referenceImagePath);
@@ -1448,7 +1474,7 @@ If any conflict exists between TARGET geometry and REFERENCE composition, TARGET
     if (opts.referenceImagePath) {
       const ref = toBase64(opts.referenceImagePath);
       requestParts.push({
-        text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this room photographed from a different camera angle. This image is REFERENCE ONLY. Do NOT copy its architecture, wall layout, openings, windows, doors, ceiling shape, or camera framing. Use it only to match furniture identity, decor identity, colour palette, material finishes, and styling decisions while keeping the geometry of INPUT_IMAGE_TO_STAGE unchanged.",
+        text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this room photographed from a different camera angle. This image is REFERENCE ONLY and is NOT a compositional template. Do NOT copy its architecture, wall layout, room proportions, perspective, vanishing points, openings, windows, doors, ceiling shape, or camera framing. Use it only to match major furniture identity, furnishing category, room-relative layout continuity, decor identity, colour palette, material finishes, and styling decisions while keeping the architecture and camera geometry of INPUT_IMAGE_TO_STAGE unchanged. Furniture must adapt to the TARGET room geometry; the room must never adapt to the reference furniture.",
       });
       requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
     }
