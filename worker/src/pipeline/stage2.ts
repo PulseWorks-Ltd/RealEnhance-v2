@@ -22,6 +22,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
+import { runPerceptualDiff } from "../validators/perceptualDiff";
 import { RoomConsistencyContextV1 } from "../../../shared/src/types";
 import sharp from "sharp";
 import path from "path";
@@ -583,6 +584,60 @@ function summarizeResponsePartTypes(parts: any[]): string {
     .join(",");
 }
 
+async function rejectReferenceEchoIfNeeded(params: {
+  basePath: string;
+  candidatePath: string;
+  referenceImagePath?: string;
+  jobId?: string;
+  imageId?: string;
+}) {
+  if (!params.referenceImagePath) return;
+
+  try {
+    const [baseSimilarity, referenceSimilarity] = await Promise.all([
+      runPerceptualDiff({
+        originalPath: params.basePath,
+        enhancedPath: params.candidatePath,
+        stage: "2",
+      }),
+      runPerceptualDiff({
+        originalPath: params.referenceImagePath,
+        enhancedPath: params.candidatePath,
+        stage: "2",
+      }),
+    ]);
+
+    const suspiciousReferenceEcho =
+      referenceSimilarity.score >= 0.985 &&
+      referenceSimilarity.score >= baseSimilarity.score + 0.05;
+
+    nLog("[ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK]", {
+      jobId: params.jobId,
+      imageId: params.imageId,
+      suspiciousReferenceEcho,
+      baseSimilarity: Number(baseSimilarity.score.toFixed(4)),
+      referenceSimilarity: Number(referenceSimilarity.score.toFixed(4)),
+    });
+
+    if (suspiciousReferenceEcho) {
+      throw new Stage2GenerationFailure(
+        "stage2_reference_echo_suspected: generated output appears to match the approved master reference instead of the target input view",
+        "stage2_reference_echo",
+        true
+      );
+    }
+  } catch (error) {
+    if (error instanceof Stage2GenerationFailure) {
+      throw error;
+    }
+    nLog("[ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK_WARN]", {
+      jobId: params.jobId,
+      imageId: params.imageId,
+      error: String((error as any)?.message || error),
+    });
+  }
+}
+
 function getStage2ConfiguredMaxAttempts(): number {
   const stageAwareConfig = loadStageAwareConfig();
   const geminiMaxRetriesRaw = Number(process.env.GEMINI_MAX_RETRIES);
@@ -881,8 +936,15 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
 This image is a SECONDARY VIEW of a room that has already been staged and approved.
 The APPROVED_MASTER_STAGED_REFERENCE image provided below the input image IS the approved staging.
 
+IMAGE ROLE LOCK:
+- INPUT_IMAGE_TO_STAGE = the FIRST image part after this prompt. This is the only image you are allowed to edit.
+- APPROVED_MASTER_STAGED_REFERENCE = the later reference image part. This image is style/furniture guidance only.
+- You must return a staged version of INPUT_IMAGE_TO_STAGE, not a copy, crop, redraw, or geometric transfer of APPROVED_MASTER_STAGED_REFERENCE.
+- Preserve the walls, openings, windows, doors, closet openings, ceiling shape, and room envelope from INPUT_IMAGE_TO_STAGE only.
+- Borrow furniture identity, decor identity, colour palette, and material choices from APPROVED_MASTER_STAGED_REFERENCE only.
+
 Your PRIMARY objective is NOT to stage this room from scratch.
-Your PRIMARY objective is to REPLICATE the approved master staging design from this new camera angle.
+Your PRIMARY objective is to stage INPUT_IMAGE_TO_STAGE so it matches the approved furniture/decor design from the master reference while keeping the target image's own architecture and viewpoint.
 
 MANDATORY REPLICATION RULES:
 1. Furniture identity: Every furniture piece visible in the approved master MUST appear in your output if it is plausible from this camera angle. Same category, same colour family, same material finish.
@@ -898,6 +960,7 @@ WHAT IS ALLOWED TO CHANGE:
 - Minor spatial re-arrangement where this angle cannot physically show the same layout
 
 WHAT MUST NOT CHANGE:
+- The architectural envelope, openings, wall planes, and camera geometry from INPUT_IMAGE_TO_STAGE
 - The identity of the sofa/sectional family
 - The identity and colour of the rug
 - The identity and finish of the coffee table, dining table, bed frame, and key anchor pieces
@@ -1048,7 +1111,7 @@ Do not add blinds, rods, tracks, or new window coverings.
     const ref = toBase64(opts.referenceImagePath);
     // Option B: label the reference image so Gemini knows its semantic role.
     requestParts.push({
-      text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this room photographed from a different camera angle. You MUST replicate the same furniture pieces, fabric colours, material finishes, and decor objects shown here. Do not invent new furniture families. Only the viewpoint and camera angle change between this reference and the output you are generating.",
+      text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this room photographed from a different camera angle. This image is REFERENCE ONLY. Do NOT copy its architecture, wall layout, openings, windows, doors, ceiling shape, or camera framing. Use it only to match furniture identity, decor identity, colour palette, material finishes, and styling decisions while keeping the geometry of INPUT_IMAGE_TO_STAGE unchanged.",
     });
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
   }
@@ -1151,6 +1214,14 @@ Do not add blinds, rods, tracks, or new window coverings.
     emitStage2AttemptComplete(false, "stage2_candidate_collapse: candidate_file_missing");
     throw new Stage2GenerationFailure("stage2_candidate_collapse: candidate_file_missing", "stage2_candidate_collapse");
   }
+
+  await rejectReferenceEchoIfNeeded({
+    basePath,
+    candidatePath: opts.outputPath,
+    referenceImagePath: opts.referenceImagePath,
+    jobId: opts.jobId,
+    imageId: opts.imageId,
+  });
 
   await logImageAttemptUrl({
     ctx: {
