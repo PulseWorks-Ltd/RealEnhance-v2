@@ -570,6 +570,24 @@ export function isStage2RetryableGenerationError(error: unknown): boolean {
   return error instanceof Stage2GenerationFailure && error.retryable;
 }
 
+type FurnishingAnchorDepth = "foreground" | "midground" | "background" | "unknown";
+
+type StructuredFurnishingAnchor = {
+  type: string;
+  roomAnchor: string;
+  depth: FurnishingAnchorDepth;
+  lateralBias?: string;
+  relationToPrimaryAnchor?: string;
+  notes?: string;
+};
+
+type StructuredFurnishingAnchorMap = {
+  primaryAnchor: string;
+  roomSummary?: string;
+  viewpointNotes?: string[];
+  objects: StructuredFurnishingAnchor[];
+};
+
 function summarizeResponsePartTypes(parts: any[]): string {
   if (!Array.isArray(parts) || parts.length === 0) return "none";
   return parts
@@ -582,6 +600,220 @@ function summarizeResponsePartTypes(parts: any[]): string {
       return Object.keys(part)[0] || "unknown";
     })
     .join(",");
+}
+
+function normalizeAnchorDepth(value: unknown): FurnishingAnchorDepth {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "foreground" || normalized === "midground" || normalized === "background") {
+    return normalized;
+  }
+  return "unknown";
+}
+
+function sanitizeStructuredAnchorMap(raw: any): StructuredFurnishingAnchorMap | null {
+  if (!raw || typeof raw !== "object") return null;
+
+  const objects = Array.isArray(raw.objects)
+    ? raw.objects
+        .slice(0, 8)
+        .map((entry: any) => {
+          const type = String(entry?.type || "").trim().toLowerCase().replace(/\s+/g, "_");
+          const roomAnchor = String(entry?.roomAnchor || "").trim();
+          if (!type || !roomAnchor) return null;
+          return {
+            type,
+            roomAnchor,
+            depth: normalizeAnchorDepth(entry?.depth),
+            ...(String(entry?.lateralBias || "").trim() ? { lateralBias: String(entry.lateralBias).trim() } : {}),
+            ...(String(entry?.relationToPrimaryAnchor || "").trim()
+              ? { relationToPrimaryAnchor: String(entry.relationToPrimaryAnchor).trim() }
+              : {}),
+            ...(String(entry?.notes || "").trim() ? { notes: String(entry.notes).trim() } : {}),
+          };
+        })
+        .filter(Boolean) as StructuredFurnishingAnchor[]
+    : [];
+
+  if (objects.length === 0) return null;
+
+  return {
+    primaryAnchor: String(raw.primaryAnchor || "room_anchor").trim() || "room_anchor",
+    ...(String(raw.roomSummary || "").trim() ? { roomSummary: String(raw.roomSummary).trim() } : {}),
+    ...(Array.isArray(raw.viewpointNotes)
+      ? {
+          viewpointNotes: raw.viewpointNotes
+            .map((note: any) => String(note || "").trim())
+            .filter(Boolean)
+            .slice(0, 4),
+        }
+      : {}),
+    objects,
+  };
+}
+
+function parseJsonCandidate(text: string): any | null {
+  const cleaned = String(text || "").replace(/```json|```/gi, "").trim();
+  const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] || cleaned;
+  try {
+    return JSON.parse(jsonCandidate);
+  } catch {
+    return null;
+  }
+}
+
+async function extractStructuredFurnishingAnchorMap(params: {
+  referenceImagePath: string;
+  roomType: string;
+  stagingStyle?: string;
+  jobId: string;
+  imageId: string;
+}): Promise<StructuredFurnishingAnchorMap | null> {
+  const enabled = String(process.env.ROOM_CONSISTENCY_STRUCTURED_ANCHORS || "1") !== "0";
+  if (!enabled) return null;
+
+  try {
+    const ai = getGeminiClient();
+    const master = toBase64(params.referenceImagePath);
+    const model = String(process.env.REALENHANCE_MODEL_ROOM_CONSISTENCY_ANCHOR || "gemini-2.5-flash").trim();
+    const prompt = `You are extracting a lightweight furnishing anchor map from a single approved virtual staging image.
+
+Return JSON only.
+
+Goal:
+- Identify the primary staged anchor object.
+- Identify the most important movable staged objects.
+- Describe each object relative to ROOM GEOMETRY, not relative only to other furniture.
+- Use coarse relational anchors only. Do not infer 3D coordinates.
+
+Room type: ${params.roomType}
+Staging style: ${params.stagingStyle || "standard_listing"}
+
+Allowed roomAnchor phrases:
+- near wall
+- far wall
+- window side
+- doorway wall
+- left wall
+- right wall
+- center floor
+- left corner
+- right corner
+- foot of bed zone
+- headboard wall
+
+Allowed depth values:
+- foreground
+- midground
+- background
+- unknown
+
+Output schema:
+{
+  "primaryAnchor": "bed",
+  "roomSummary": "short summary",
+  "viewpointNotes": ["short note"],
+  "objects": [
+    {
+      "type": "floor_lamp",
+      "roomAnchor": "near wall",
+      "depth": "foreground",
+      "lateralBias": "left side of frame",
+      "relationToPrimaryAnchor": "near foot of bed",
+      "notes": "optional"
+    }
+  ]
+}
+
+Rules:
+- Include 3 to 8 objects.
+- Prioritize large movable objects and visually important decor.
+- Describe stable room-relative placement that can be preserved from another angle.
+- Do not describe architecture changes.
+- Do not output markdown.`;
+
+    const requestStartedAt = Date.now();
+    const response = await (ai as any).models.generateContent({
+      model,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { inlineData: { mimeType: master.mime, data: master.data } },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        topP: 0.1,
+        maxOutputTokens: 700,
+        responseMimeType: "application/json",
+      },
+    });
+    logGeminiUsage({
+      ctx: {
+        jobId: params.jobId,
+        imageId: params.imageId,
+        stage: "2",
+        attempt: 1,
+      },
+      model,
+      callType: "text_generation",
+      response,
+      latencyMs: Date.now() - requestStartedAt,
+    });
+
+    const text = String(response?.candidates?.[0]?.content?.parts?.map((part: any) => part?.text || "").join(" ") || "").trim();
+    const parsed = parseJsonCandidate(text);
+    const anchorMap = sanitizeStructuredAnchorMap(parsed);
+    nLog("[ROOM_CONSISTENCY_ANCHOR_MAP]", {
+      jobId: params.jobId,
+      imageId: params.imageId,
+      extracted: !!anchorMap,
+      primaryAnchor: anchorMap?.primaryAnchor || null,
+      objectCount: anchorMap?.objects.length || 0,
+    });
+    return anchorMap;
+  } catch (error) {
+    nLog("[ROOM_CONSISTENCY_ANCHOR_MAP_WARN]", {
+      jobId: params.jobId,
+      imageId: params.imageId,
+      error: String((error as any)?.message || error),
+    });
+    return null;
+  }
+}
+
+function formatStructuredAnchorMapForPrompt(anchorMap: StructuredFurnishingAnchorMap | null): string {
+  if (!anchorMap || anchorMap.objects.length === 0) return "";
+
+  const objectLines = anchorMap.objects.map((object) => {
+    const details = [
+      `roomAnchor=${object.roomAnchor}`,
+      `depth=${object.depth}`,
+      ...(object.lateralBias ? [`lateralBias=${object.lateralBias}`] : []),
+      ...(object.relationToPrimaryAnchor ? [`relationToPrimaryAnchor=${object.relationToPrimaryAnchor}`] : []),
+      ...(object.notes ? [`notes=${object.notes}`] : []),
+    ];
+    return `- ${object.type}: ${details.join(" | ")}`;
+  });
+
+  const viewpointNotes = Array.isArray(anchorMap.viewpointNotes) && anchorMap.viewpointNotes.length > 0
+    ? `Viewpoint notes:\n${anchorMap.viewpointNotes.map((note) => `- ${note}`).join("\n")}\n`
+    : "";
+
+  return `
+STRUCTURED FURNISHING ANCHOR MAP (APPROVED MASTER REFERENCE)
+Primary anchor: ${anchorMap.primaryAnchor}
+${anchorMap.roomSummary ? `Room summary: ${anchorMap.roomSummary}\n` : ""}${viewpointNotes}Maintain these room-relative furnishing anchors:
+${objectLines.join("\n")}
+
+Large movable objects must preserve their room-relative placement.
+Do NOT reposition objects for compositional balance.
+Do NOT preserve left/right placement relative only to other furniture.
+Preserve placement relative to room geometry and current camera viewpoint.
+If the target angle is reversed, visual left/right may invert while physical room placement remains the same.
+`;
 }
 
 async function rejectReferenceEchoIfNeeded(params: {
@@ -608,8 +840,11 @@ async function rejectReferenceEchoIfNeeded(params: {
     ]);
 
     const suspiciousReferenceEcho =
-      referenceSimilarity.score >= 0.985 &&
-      referenceSimilarity.score >= baseSimilarity.score + 0.05;
+      (referenceSimilarity.score >= 0.985 &&
+        referenceSimilarity.score >= baseSimilarity.score + 0.05)
+      || (referenceSimilarity.score >= 0.975 &&
+        baseSimilarity.score <= 0.94 &&
+        referenceSimilarity.score >= baseSimilarity.score + 0.03);
 
     nLog("[ROOM_CONSISTENCY_REFERENCE_ECHO_CHECK]", {
       jobId: params.jobId,
@@ -686,6 +921,7 @@ export async function runStage2GenerationAttempt(
     };
     structuralConstraintBlock?: string;
     roomConsistencyV1?: RoomConsistencyContextV1;
+    referenceAnchorMap?: StructuredFurnishingAnchorMap | null;
   }
 ): Promise<string> {
   const attemptNumber = Math.max(1, opts.attempt ?? 1);
@@ -931,10 +1167,84 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
       !!String(roomConsistency.approvedMasterImageUrl || "").trim();
 
     if (isReferenceViewWithMaster) {
+      const primaryRuleset = `PRIMARY RULESET — HIGHEST AUTHORITY
+    TARGET IMAGE IS THE SOLE SOURCE OF TRUTH FOR:
+    * architecture
+    * room geometry
+    * wall positions
+    * corners
+    * recesses
+    * ceiling geometry
+    * floor geometry
+    * openings
+    * room depth
+    * camera position
+    * camera height
+    * camera angle
+    * perspective
+    * framing
+    * focal length
+
+    DO NOT:
+    * rotate camera
+    * reinterpret perspective
+    * rebalance composition
+    * widen walls
+    * deepen corners
+    * add recesses
+    * remove recesses
+    * alter room proportions
+    * alter room envelope
+    * modify openings
+    * modify ceiling shape
+    * modify room depth
+
+    Treat the target image as a LOCKED ARCHITECTURAL PLATE.
+    Only insert furnishings into the existing geometry.
+
+    Do NOT improve composition.
+    Do NOT rebalance furniture layout.
+    Do NOT reinterpret empty space.
+    Do NOT invent alcoves, recesses, widened corners, or expanded floor area.
+
+    The room envelope must remain pixel-aligned to the target image.
+
+    REFERENCE ROLE SEPARATION
+    TARGET IMAGE:
+    - authoritative for architecture and perspective
+
+    MASTER REFERENCE IMAGE:
+    - authoritative ONLY for furnishing identity, decor language, palette, and staging style
+    - must NEVER override target architecture
+
+    VIEWPOINT-AWARE FURNISHING TRANSFER
+    Furniture positions must remain anchored to the PHYSICAL ROOM — not relative to the ${canonicalRoomType === "bedroom" ? "bed" : "primary furniture"} itself.
+
+    If the room is viewed from the opposite side:
+    * objects previously near the camera may now appear further away
+    * objects previously further away may now appear nearer
+    * objects may appear on opposite visual sides of the image due to viewpoint inversion
+
+    Maintain TRUE PHYSICAL ROOM POSITIONS.
+
+    Do NOT preserve left/right placement relative to furniture.
+    Preserve placement relative to room geometry and camera viewpoint.
+
+    COMPOSITION SUPPRESSION
+    Do NOT optimize the room layout.
+    Do NOT improve staging composition.
+    Do NOT redistribute furnishings for visual balance.
+    Do NOT reposition accent furniture for aesthetics.
+    Preserve the exact framing and spatial relationships of the target image.
+    `;
+
+      const anchorMapBlock = formatStructuredAnchorMapForPrompt(opts.referenceAnchorMap || null);
       const consistencyOverride = `CONSISTENCY OVERRIDE — PRIMARY OBJECTIVE (read this before all other instructions)
 ════════════════════════════════════════════════════════════════
 This image is a SECONDARY VIEW of a room that has already been staged and approved.
 The APPROVED_MASTER_STAGED_REFERENCE image provided below the input image IS the approved staging.
+
+    ${primaryRuleset}
 
 IMAGE ROLE LOCK:
 - INPUT_IMAGE_TO_STAGE = the FIRST image part after this prompt. This is the only image you are allowed to edit.
@@ -968,6 +1278,8 @@ WHAT MUST NOT CHANGE:
 - The artwork palette and style
 - The lamp and lighting fixture style
 - The general arrangement intent (same conversation grouping, same sleeping area, etc.)
+
+${anchorMapBlock}
 
 Room ID: ${roomConsistency.roomId}
 ════════════════════════════════════════════════════════════════
@@ -1104,6 +1416,11 @@ Do not add blinds, rods, tracks, or new window coverings.
   }
 
   const requestParts: any[] = [];
+  const reanchorTargetAtEnd =
+    roomConsistencyFeatureEnabled
+    && roomConsistency?.viewRole === "reference"
+    && !!String(roomConsistency?.approvedMasterImageUrl || "").trim()
+    && String(process.env.ROOM_CONSISTENCY_REANCHOR_TARGET_LAST || "1") !== "0";
   // Preferred ordering: text prompt first, then base image(s), then explicit mask (if available)
   requestParts.push({ text: textPrompt });
   requestParts.push({ inlineData: { mimeType: mime, data } });
@@ -1114,6 +1431,12 @@ Do not add blinds, rods, tracks, or new window coverings.
       text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this room photographed from a different camera angle. This image is REFERENCE ONLY. Do NOT copy its architecture, wall layout, openings, windows, doors, ceiling shape, or camera framing. Use it only to match furniture identity, decor identity, colour palette, material finishes, and styling decisions while keeping the geometry of INPUT_IMAGE_TO_STAGE unchanged.",
     });
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
+  }
+  if (reanchorTargetAtEnd) {
+    requestParts.push({
+      text: "TARGET_IMAGE_TO_STAGE_REANCHOR — Re-anchor on this target image again before generating. This repeated target image is the final authority for architecture, room envelope, openings, camera framing, and perspective. Generate the output from this target architecture only.",
+    });
+    requestParts.push({ inlineData: { mimeType: mime, data } });
   }
   if (stagingMaskBuffer) {
     try {
@@ -1133,6 +1456,26 @@ Do not add blinds, rods, tracks, or new window coverings.
     ...(opts.maxOutputTokens !== undefined ? { maxOutputTokens: opts.maxOutputTokens } : {}),
     ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
   };
+
+  if (
+    roomConsistencyFeatureEnabled
+    && roomConsistency?.viewRole === "reference"
+    && !!String(roomConsistency?.approvedMasterImageUrl || "").trim()
+  ) {
+    generationConfig.temperature = attemptNumber > 1 ? 0.12 : 0.18;
+    generationConfig.topP = 0.35;
+    generationConfig.topK = 8;
+    nLog("[ROOM_CONSISTENCY_PRECISION_MODE]", {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      attempt: attemptNumber,
+      temperature: generationConfig.temperature,
+      topP: generationConfig.topP,
+      topK: generationConfig.topK,
+      reanchorTargetAtEnd,
+      hasStructuredAnchorMap: !!opts.referenceAnchorMap,
+    });
+  }
 
   // Fail early — before spending any API budget — if logging context is incomplete.
   // Without both jobId and imageId, assertContext() in usageTelemetry throws AFTER the
@@ -1309,6 +1652,20 @@ export async function runStage2(
   const outputPath = siblingOutPath(basePath, "-2", ".webp");
   const maxAttempts = resolveStage2MaxAttempts();
   const localReasons: string[] = [];
+  const isSecondaryRoomConsistencyStage2 =
+    opts.roomConsistencyV1?.enabled === true
+    && opts.roomConsistencyV1?.viewRole === "reference"
+    && !!String(opts.roomConsistencyV1?.approvedMasterImageUrl || "").trim()
+    && !!opts.referenceImagePath;
+  const referenceAnchorMap = isSecondaryRoomConsistencyStage2 && opts.referenceImagePath
+    ? await extractStructuredFurnishingAnchorMap({
+        referenceImagePath: opts.referenceImagePath,
+        roomType: opts.roomType,
+        stagingStyle: opts.stagingStyle,
+        jobId: opts.jobId,
+        imageId: opts.imageId,
+      })
+    : null;
 
   const runAttempt = async (attempt: number, structuralRetryContext?: {
     compositeFail: boolean;
@@ -1335,6 +1692,7 @@ export async function runStage2(
       modelReason: attempt === 1 ? "stage2_initial_generation" : `stage2_retry_generation_attempt_${attempt}`,
       structuralRetryContext,
       roomConsistencyV1: opts.roomConsistencyV1,
+      referenceAnchorMap,
     });
 
     if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {
