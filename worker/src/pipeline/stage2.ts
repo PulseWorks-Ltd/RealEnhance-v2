@@ -1046,27 +1046,38 @@ Returning the original TARGET room with little or no furniture insertion is inco
 AUTHORITATIVE HIERARCHY
 1. TARGET architecture is authoritative.
 2. TARGET camera geometry is authoritative.
-3. REFERENCE image is same-room furnishing and layout continuity guidance.
+3. REFERENCE image is furnishing and layout continuity guidance only.
 4. Furnishings must adapt to TARGET scene geometry.
 
+ARCHITECTURAL IMMUTABILITY
 Preserve the exact architecture, openings, framing, perspective, vanishing points, and room proportions of the TARGET image.
-Keep the TARGET image camera viewpoint, framing, and field-of-view visually consistent.
 Do not alter geometry, reinterpret the room structure, or change openings.
-Do not recrop, rotate, widen, narrow, or adjust perspective to imitate the REFERENCE camera.
+
+PERSPECTIVE / VANISHING-POINT LOCK
+The perspective lines and vanishing points of the TARGET image are absolutely locked.
+You must warp, skew, scale, and adapt the REFERENCE furnishings to fit the native 3D geometry and perspective of the TARGET room.
+NEVER warp, skew, rotate, widen, narrow, stretch, bend, or reinterpret the walls, corners, ceiling lines, floor plane, openings, or architectural geometry to accommodate furniture placement.
+Furniture must adapt to the room.
+The room must never adapt to the furniture.
+
+CAMERA IMMUTABILITY
+The TARGET image camera position, focal geometry, framing, crop, horizon alignment, perspective depth, and field-of-view are immutable.
+Do NOT recrop, rotate, widen, narrow, normalize, rebalance, reinterpret, center, improve composition, alter viewing angle, or adjust perspective.
+All staging must conform to the exact existing camera geometry of the TARGET image.
 
 The REFERENCE image shows the same staged room from another angle.
-Use it to preserve furnishing identity, furnishing family, major layout continuity, decor style, material palette, and room-state continuity.
+Use it to preserve furnishing identity, furnishing family, major layout continuity, overall style palette, and room-state continuity.
+The REFERENCE image is NOT a compositional template.
+It is ONLY a furnishing continuity reference.
+Do NOT reconstruct the REFERENCE room layout, framing, wall geometry, room proportions, or perspective.
 Do not copy the REFERENCE camera framing or architectural shell verbatim.
 Transfer the same furnishing logic and room-relative placements into the TARGET view.
 You are staging the TARGET room ONLY.
 
-Keep the TARGET image perspective and vanishing-point logic consistent.
 Adapt the REFERENCE furnishings so they fit the native 3D geometry and perspective of the TARGET room.
 Contact points between furniture and architectural surfaces must respect the TARGET room's geometry.
 Furniture must visually conform to the existing floor plane and wall angles.
 Architectural surfaces must not deform at furniture contact points.
-NEVER warp, skew, rotate, widen, narrow, stretch, bend, or reinterpret the walls, corners, ceiling lines, floor plane, openings, or architectural geometry to accommodate furniture placement.
-Furniture must adapt to the room. The room must never adapt to the furniture.
 
 Keep furnishings anchored to the same real room locations relative to permanent features such as walls, windows, openings, hallway transitions, balcony edges, and other fixed architectural features.
 When seen from another angle, furnishings may appear on opposite sides of the image while remaining anchored to the same room locations.
@@ -1589,6 +1600,10 @@ Mandatory: transfer the established furniture family and relational layout logic
 Returning the TARGET image unchanged or nearly unchanged is incorrect.
 
 If any conflict exists between TARGET geometry and REFERENCE composition, TARGET geometry always wins.
+The REFERENCE image is furnishing continuity guidance only, not a compositional template.
+Do not reconstruct the REFERENCE room framing, wall geometry, layout shell, or perspective.
+Keep TARGET vanishing points, camera framing, crop, horizon alignment, and field-of-view locked.
+Major furniture continuity matters most; minor decorative objects may vary naturally.
 Use the REFERENCE image to preserve the same staged room state, furniture family, and object relationships from this new angle.`;
     requestParts.push({ text: textPrompt });
     requestParts.push({ inlineData: { mimeType: mime, data } });
@@ -1602,7 +1617,7 @@ Use the REFERENCE image to preserve the same staged room state, furniture family
     if (opts.referenceImagePath) {
       const ref = toBase64(opts.referenceImagePath);
       requestParts.push({
-        text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this same room photographed from a different camera angle. Use it as same-room continuity guidance: preserve major furniture identity, furnishing family, room-relative layout continuity, decor identity, colour palette, material finishes, and styling decisions whenever they can naturally appear from this angle. Furnishing transfer is mandatory for naturally visible pieces. The TARGET image must become a staged continuation of this approved room state, not an unchanged copy of the input. Do NOT copy the reference camera framing, and do NOT alter the TARGET architecture, openings, or perspective to imitate the reference. Furniture must adapt to the TARGET room geometry; the room must never adapt to the reference furniture.",
+        text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this same room photographed from a different camera angle. Use it as same-room furnishing continuity guidance only: preserve major furniture identity, furnishing family, room-relative layout continuity, overall style palette, material finishes, and styling decisions whenever they can naturally appear from this angle. Furnishing transfer is mandatory for naturally visible pieces. The TARGET image must become a staged continuation of this approved room state, not an unchanged copy of the input. The REFERENCE image is NOT a compositional template. Do NOT reconstruct the reference room framing, wall geometry, room proportions, or perspective. Do NOT copy the reference camera framing, and do NOT alter the TARGET architecture, openings, vanishing points, camera geometry, or perspective to imitate the reference. Furniture must adapt to the TARGET room geometry; the room must never adapt to the reference furniture. Major furniture continuity matters most; minor decorative objects may vary naturally.",
       });
       requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
     }
