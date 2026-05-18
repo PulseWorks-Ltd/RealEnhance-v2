@@ -220,6 +220,15 @@ async function ensureInternalApiUserReady(): Promise<void> {
   });
 }
 
+function isNonRetryableInternalApiConfigError(message: string): boolean {
+  return (
+    message.includes("INTERNAL_API_USER_ID and INTERNAL_API_KEY must both be set") ||
+    message.includes("internal API user not found") ||
+    message.includes("internal API user must have isSystemUser=true") ||
+    message.includes("internal API user must have an agencyId")
+  );
+}
+
 async function ensureInternalApiUserReadyWithRetry(): Promise<void> {
   const internalUserId = String(process.env.INTERNAL_API_USER_ID || "").trim();
   const internalApiKey = String(process.env.INTERNAL_API_KEY || "").trim();
@@ -245,6 +254,13 @@ async function ensureInternalApiUserReadyWithRetry(): Promise<void> {
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      if (isNonRetryableInternalApiConfigError(message)) {
+        startupState.internalApiReady = true;
+        startupState.internalApiError = message;
+        console.warn(`[startup] internal API startup check disabled: ${message}`);
+        return;
+      }
+
       startupState.internalApiError = message;
       console.error(`[startup] internal API configuration check failed (attempt ${attempt})`, err);
       await new Promise<void>((resolve) => setTimeout(resolve, retryDelayMs));

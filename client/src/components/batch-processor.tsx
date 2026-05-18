@@ -119,6 +119,52 @@ const INTERIOR_ROOM_TYPES: Array<{ value: string; label: string }> = [
   { value: "sunroom", label: "Sunroom" },
 ];
 
+const ROOM_TYPE_LABEL_BY_VALUE = new Map(INTERIOR_ROOM_TYPES.map((room) => [room.value, room.label]));
+
+type RoomGroupSummary = {
+  id: string;
+  label: string;
+  roomType: string;
+  imageIds: string[];
+  masterImageId: string | null;
+  isRoomConsistencyEnabled: boolean;
+};
+
+function formatRoomGroupBaseLabel(roomType: string): string {
+  const explicit = ROOM_TYPE_LABEL_BY_VALUE.get(roomType);
+  if (explicit) return explicit;
+  return String(roomType || "Room")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim() || "Room";
+}
+
+function formatAlphabeticalSuffix(index: number): string {
+  let current = Math.max(0, Math.floor(index));
+  let result = "";
+
+  do {
+    result = String.fromCharCode(65 + (current % 26)) + result;
+    current = Math.floor(current / 26) - 1;
+  } while (current >= 0);
+
+  return result;
+}
+
+function buildNextRoomGroupLabel(roomType: string, existingGroups: RoomGroupSummary[]): string {
+  const baseLabel = formatRoomGroupBaseLabel(roomType);
+  const existingLabels = new Set(existingGroups.map((group) => group.label.trim().toLowerCase()));
+
+  for (let index = 0; index < 200; index += 1) {
+    const candidate = `${baseLabel} ${formatAlphabeticalSuffix(index)}`;
+    if (!existingLabels.has(candidate.toLowerCase())) {
+      return candidate;
+    }
+  }
+
+  return `${baseLabel} ${crypto.randomUUID().slice(0, 4).toUpperCase()}`;
+}
+
 const DOWNLOAD_MIME_EXTENSION_MAP: Record<string, string> = {
   "image/jpeg": ".jpg",
   "image/jpg": ".jpg",
@@ -1516,8 +1562,12 @@ export default function BatchProcessor({
 
   // Manual room linking state
   type LocalItemMeta = {
-    roomKey?: string;     // user label e.g. "Lounge-A"
-    angleOrder?: number;  // 1,2,3... (1 = primary)
+    roomGroupId?: string;
+    roomGroupLabel?: string;
+    roomGroupRoomType?: string;
+    isRoomConsistencyEnabled?: boolean;
+    roomKey?: string;
+    angleOrder?: number;
     manualPrimary?: boolean;
   };
   
@@ -1539,8 +1589,6 @@ export default function BatchProcessor({
   // Track manual scene overrides per-image (when user changes scene dropdown)
   const [manualSceneOverrideById, setManualSceneOverrideById] = useState<Record<string, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
-  const roomConsistencyModeEnabled =
-    String(import.meta.env.VITE_EXPERIMENT_ROOM_CONSISTENCY_V1 || "").toLowerCase() === "true";
   // Studio view: current image being configured (by stable imageId)
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
 
@@ -2122,6 +2170,137 @@ export default function BatchProcessor({
     [declutter, effectiveAllowStaging, files, finalSceneForIndex, metaByIndex]
   );
 
+  const roomGroups = useMemo<RoomGroupSummary[]>(() => {
+    const grouped = new Map<string, RoomGroupSummary & { primaryRank: number; firstIndex: number }>();
+
+    files.forEach((file, index) => {
+      const imageId = getFileId(file);
+      const meta = metaByIndex[index];
+      const roomGroupId = String(meta?.roomGroupId || "").trim();
+      const roomGroupLabel = String(meta?.roomGroupLabel || meta?.roomKey || "").trim();
+      if (!roomGroupId || !roomGroupLabel) return;
+
+      const roomType = String(imageRoomTypesById[imageId] || meta?.roomGroupRoomType || "").trim();
+      const isPrimary = meta?.manualPrimary === true || meta?.angleOrder === 1;
+      const angleOrder = Number(meta?.angleOrder);
+      const primaryRank = isPrimary ? 0 : Number.isFinite(angleOrder) && angleOrder > 0 ? angleOrder : Number.MAX_SAFE_INTEGER;
+
+      const existing = grouped.get(roomGroupId);
+      if (!existing) {
+        grouped.set(roomGroupId, {
+          id: roomGroupId,
+          label: roomGroupLabel,
+          roomType,
+          imageIds: [imageId],
+          masterImageId: imageId,
+          isRoomConsistencyEnabled: meta?.isRoomConsistencyEnabled !== false,
+          primaryRank,
+          firstIndex: index,
+        });
+        return;
+      }
+
+      existing.imageIds.push(imageId);
+      if ((!existing.roomType || existing.roomType === "unknown") && roomType) {
+        existing.roomType = roomType;
+      }
+      if (primaryRank < existing.primaryRank || (primaryRank === existing.primaryRank && index < existing.firstIndex)) {
+        existing.masterImageId = imageId;
+        existing.primaryRank = primaryRank;
+        existing.firstIndex = index;
+      }
+    });
+
+    return Array.from(grouped.values())
+      .map(({ primaryRank: _primaryRank, firstIndex: _firstIndex, ...group }) => group)
+      .sort((left, right) => left.label.localeCompare(right.label));
+  }, [files, imageRoomTypesById, metaByIndex]);
+
+  const clearRoomGroupAssignment = useCallback((index: number) => {
+    setMetaByIndex((prev) => {
+      const existing = prev[index];
+      if (!existing) return prev;
+
+      const next = { ...prev };
+      const updated: LocalItemMeta = { ...existing };
+      delete updated.roomGroupId;
+      delete updated.roomGroupLabel;
+      delete updated.roomGroupRoomType;
+      delete updated.isRoomConsistencyEnabled;
+      delete updated.roomKey;
+      delete updated.angleOrder;
+      delete updated.manualPrimary;
+
+      if (Object.keys(updated).length === 0) {
+        delete next[index];
+      } else {
+        next[index] = updated;
+      }
+
+      return next;
+    });
+  }, []);
+
+  const assignImageToRoomGroup = useCallback((index: number, targetGroupId: string) => {
+    const imageId = getImageIdForIndex(index);
+    if (!imageId) return;
+
+    const sceneType = finalSceneForIndex(index);
+    const roomType = String(imageRoomTypesById[imageId] || "").trim();
+    if (sceneType === "exterior" || !effectiveAllowStaging || !roomType) {
+      clearRoomGroupAssignment(index);
+      return;
+    }
+
+    if (!targetGroupId) {
+      clearRoomGroupAssignment(index);
+      return;
+    }
+
+    const existingMeta = metaByIndex[index];
+    const existingGroupsForRoomType = roomGroups.filter((group) => group.roomType === roomType);
+    const selectedGroup = targetGroupId === "__new"
+      ? {
+          id: `room-group-${roomType}-${crypto.randomUUID()}`,
+          label: buildNextRoomGroupLabel(roomType, existingGroupsForRoomType),
+          roomType,
+          imageIds: [],
+          masterImageId: null,
+          isRoomConsistencyEnabled: true,
+        }
+      : roomGroups.find((group) => group.id === targetGroupId) || null;
+
+    if (!selectedGroup) {
+      clearRoomGroupAssignment(index);
+      return;
+    }
+
+    const alreadyAssignedToGroup = existingMeta?.roomGroupId === selectedGroup.id;
+    const groupSize = selectedGroup.imageIds.length;
+    const shouldBePrimary = alreadyAssignedToGroup
+      ? existingMeta?.manualPrimary === true || existingMeta?.angleOrder === 1
+      : groupSize === 0;
+    const angleOrder = shouldBePrimary
+      ? 1
+      : alreadyAssignedToGroup && Number.isFinite(Number(existingMeta?.angleOrder))
+        ? Number(existingMeta?.angleOrder)
+        : Math.max(2, groupSize + 1);
+
+    setMetaByIndex((prev) => ({
+      ...prev,
+      [index]: {
+        ...(prev[index] || {}),
+        roomGroupId: selectedGroup.id,
+        roomGroupLabel: selectedGroup.label,
+        roomGroupRoomType: roomType,
+        isRoomConsistencyEnabled: true,
+        roomKey: selectedGroup.label,
+        angleOrder,
+        manualPrimary: shouldBePrimary,
+      },
+    }));
+  }, [clearRoomGroupAssignment, effectiveAllowStaging, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById, metaByIndex, roomGroups]);
+
   const requiredBatchCredits = useMemo(
     () => estimateBatchCredits(batchCreditEstimateInputs),
     [batchCreditEstimateInputs]
@@ -2341,72 +2520,6 @@ export default function BatchProcessor({
     });
   }
 
-  // Assign a roomKey to all selected items
-  function assignRoomKey() {
-    const roomKey = prompt("Enter room group label (e.g., Lounge-A):")?.trim();
-    if (!roomKey) return;
-    setMetaByIndex(prev => {
-      const next = { ...prev };
-      selection.forEach(i => {
-        next[i] = { ...(next[i] || {}), roomKey };
-      });
-      return next;
-    });
-    // Clear selection after assignment
-    setSelection(new Set());
-  }
-
-  // Set angle order for selected items (e.g., "2" means follow-up; "1" = primary)
-  function setAngleOrder() {
-    const v = prompt("Angle order number (1 = primary, 2 = second angle, etc.):")?.trim();
-    const n = v ? parseInt(v, 10) : NaN;
-    if (!n || n < 1) return;
-    setMetaByIndex(prev => {
-      const next = { ...prev };
-      selection.forEach(i => {
-        next[i] = { ...(next[i] || {}), angleOrder: n };
-      });
-      return next;
-    });
-    // Clear selection after assignment
-    setSelection(new Set());
-  }
-
-  function setPrimaryView() {
-    const selectedIndexes = Array.from(selection.values());
-    if (!selectedIndexes.length) return;
-
-    const targetIndex = Math.min(...selectedIndexes);
-    const targetRoomKey = String(metaByIndex[targetIndex]?.roomKey || "").trim();
-    if (!targetRoomKey) {
-      window.alert("Assign a room label first, then set a primary view.");
-      return;
-    }
-
-    setMetaByIndex((prev) => {
-      const next = { ...prev };
-      Object.keys(next).forEach((rawIndex) => {
-        const idx = Number(rawIndex);
-        if (!Number.isFinite(idx)) return;
-        const sameRoom = String(next[idx]?.roomKey || "").trim() === targetRoomKey;
-        if (!sameRoom) return;
-        next[idx] = {
-          ...(next[idx] || {}),
-          manualPrimary: idx === targetIndex,
-          angleOrder: idx === targetIndex ? 1 : next[idx]?.angleOrder,
-        };
-      });
-
-      if (!next[targetIndex]) {
-        next[targetIndex] = { roomKey: targetRoomKey, manualPrimary: true, angleOrder: 1 };
-      }
-
-      return next;
-    });
-
-    setSelection(new Set([targetIndex]));
-  }
-
   // Build metaJson to send with the batch request
   const metaJson = useMemo(() => {
     // Build array of metadata for each image
@@ -2414,9 +2527,11 @@ export default function BatchProcessor({
     files.forEach((file, i) => {
       const imageId = getFileId(file);
       const metaItem: any = { index: i };
-      if (roomConsistencyModeEnabled) {
-        // Experimental room consistency metadata
-        if (metaByIndex[i]?.roomKey) metaItem.roomKey = metaByIndex[i].roomKey;
+      if (metaByIndex[i]?.roomGroupId && metaByIndex[i]?.roomGroupLabel) {
+        metaItem.roomGroupId = metaByIndex[i].roomGroupId;
+        metaItem.roomGroupLabel = metaByIndex[i].roomGroupLabel;
+        metaItem.isRoomConsistencyEnabled = metaByIndex[i].isRoomConsistencyEnabled !== false;
+        metaItem.roomKey = metaByIndex[i].roomGroupLabel;
         if (metaByIndex[i]?.angleOrder) metaItem.angleOrder = metaByIndex[i].angleOrder;
         if (metaByIndex[i]?.manualPrimary === true) metaItem.manualPrimary = true;
       }
@@ -2457,7 +2572,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, roomConsistencyModeEnabled]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -4962,8 +5077,9 @@ export default function BatchProcessor({
     if (propertyAddress.trim()) {
       uploadRequestBody.propertyAddress = propertyAddress.trim();
     }
-    if (roomConsistencyModeEnabled) {
+    if (roomGroups.length > 0) {
       uploadRequestBody.roomConsistencyMode = true;
+      uploadRequestBody.roomGroups = roomGroups;
     }
     
     try {
@@ -7386,34 +7502,6 @@ export default function BatchProcessor({
 
                   {/* Experimental Room Consistency Controls */}
                   <div className="flex gap-2 mb-4 justify-center flex-wrap">
-                    {roomConsistencyModeEnabled && (
-                      <>
-                        <button
-                          className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                          onClick={assignRoomKey}
-                          disabled={selection.size === 0}
-                          data-testid="button-assign-room"
-                        >
-                          Link as same room
-                        </button>
-                        <button
-                          className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                          onClick={setPrimaryView}
-                          disabled={selection.size === 0}
-                          data-testid="button-set-primary-view"
-                        >
-                          Set as Primary View
-                        </button>
-                        <button
-                          className="rounded-md border border-gray-600 px-3 py-1 text-sm text-white bg-gray-800 hover:bg-gray-700 disabled:opacity-50"
-                          onClick={setAngleOrder}
-                          disabled={selection.size === 0}
-                          data-testid="button-set-angle-order"
-                        >
-                          Set view order
-                        </button>
-                      </>
-                    )}
                     <button
                       className="rounded-md border border-slate-600 px-3 py-1 text-sm text-white bg-slate-800 hover:bg-slate-700 transition"
                       onClick={clearAllFiles}
@@ -7424,6 +7512,11 @@ export default function BatchProcessor({
                     {selection.size > 0 && (
                       <span className="text-xs text-gray-400 flex items-center">
                         {selection.size} selected
+                      </span>
+                    )}
+                    {roomGroups.length > 0 && (
+                      <span className="text-xs text-slate-500 flex items-center">
+                        {roomGroups.length} room group{roomGroups.length === 1 ? "" : "s"} configured
                       </span>
                     )}
                   </div>
@@ -7470,16 +7563,16 @@ export default function BatchProcessor({
 
                         {/* Room and angle badges */}
                         <div className="absolute bottom-1 left-1 flex flex-col gap-1">
-                          {roomConsistencyModeEnabled && metaByIndex[i]?.roomKey && (
+                          {metaByIndex[i]?.roomGroupLabel && (
                             <span className="inline-block rounded-full bg-brand-accent text-white px-2 py-0.5 text-[10px] font-medium">
-                              Room: {metaByIndex[i]?.roomKey}
+                              {metaByIndex[i]?.roomGroupLabel}
                             </span>
                           )}
-                          {roomConsistencyModeEnabled && metaByIndex[i]?.roomKey && (
+                          {metaByIndex[i]?.roomGroupLabel && (
                             <span className="inline-block rounded-full bg-slate-600 text-white px-2 py-0.5 text-[10px] font-medium">
                               {metaByIndex[i]?.manualPrimary === true || metaByIndex[i]?.angleOrder === 1
-                                ? "Primary View"
-                                : "Reference View"}
+                                ? "Master Placeholder"
+                                : "Grouped View"}
                             </span>
                           )}
                         </div>
@@ -7774,6 +7867,8 @@ export default function BatchProcessor({
                   {(() => {
                     const sceneType = currentImageId ? imageSceneTypesById[currentImageId] : undefined;
                     const currentRoomType = currentImageId ? imageRoomTypesById[currentImageId] || "" : "";
+                    const currentRoomGroupId = String(metaByIndex[currentImageIndex]?.roomGroupId || "");
+                    const availableRoomGroups = roomGroups.filter((group) => group.roomType === currentRoomType);
                     const currentValidation = currentImageId ? validationMap[currentImageId] : undefined;
                     const currentImageValid = !!currentValidation?.isValid;
                     const allImagesConfigured = files.length > 0 && files.every((file) => {
@@ -7842,6 +7937,7 @@ export default function BatchProcessor({
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
                                   setImageSkyReplacementById((prev) => ({ ...prev, [currentImageId]: true }));
                                   setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: "" }));
+                                  clearRoomGroupAssignment(currentImageIndex);
                                 }}
                                 className={`rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${sceneType === "exterior" ? "border-indigo-500 bg-indigo-50 text-indigo-700" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
                               >
@@ -7862,6 +7958,10 @@ export default function BatchProcessor({
                                 if (!currentImageId) return;
                                 const value = e.target.value;
                                 setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: value }));
+                                const assignedGroup = roomGroups.find((group) => group.id === metaByIndex[currentImageIndex]?.roomGroupId);
+                                if (!value || (assignedGroup && assignedGroup.roomType !== value)) {
+                                  clearRoomGroupAssignment(currentImageIndex);
+                                }
                                 if (value) {
                                   setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
@@ -7879,6 +7979,34 @@ export default function BatchProcessor({
                                 </option>
                               ))}
                             </select>
+                          </div>
+                          )}
+
+                          {effectiveAllowStaging && sceneType !== "exterior" && currentRoomType && (
+                          <div>
+                            <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="right-pane-room-group-select">
+                              Room Group
+                            </label>
+                            <select
+                              id="right-pane-room-group-select"
+                              value={currentRoomGroupId}
+                              onChange={(e) => {
+                                assignImageToRoomGroup(currentImageIndex, e.target.value);
+                                flashAssignedThumbnail(currentImageIndex);
+                              }}
+                              className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+                            >
+                              <option value="">Leave ungrouped</option>
+                              <option value="__new">Create New Room Group</option>
+                              {availableRoomGroups.map((group) => (
+                                <option key={group.id} value={group.id}>
+                                  {group.label}
+                                </option>
+                              ))}
+                            </select>
+                            <p className="mt-2 text-xs text-slate-500">
+                              Group interior staging views of the same physical room to preserve future consistency.
+                            </p>
                           </div>
                           )}
 
