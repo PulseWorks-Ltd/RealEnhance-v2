@@ -143,70 +143,61 @@ function buildRoomConsistencyStatusPayload(base: any, overrides: Record<string, 
   };
 }
 
-async function syncRoomConsistencyParentCompletion(params: {
-  parentJobId: string;
-  childJobId: string;
-  resultUrl: string;
-  stage2Url: string;
-  roomConsistency: any;
-}) {
-  const parentJob = await getJob(params.parentJobId);
-  if (!parentJob) return;
-
-  const mergedStageUrls = normalizeStageUrls({
-    ...resolveRoomConsistencyStageUrlsFromJob(parentJob),
-    stage2: params.stage2Url,
-  });
-  const nextRoomConsistency = buildRoomConsistencyStatusPayload(
-    parentJob?.roomConsistency || parentJob?.meta?.roomConsistency || parentJob?.payload?.options?.roomConsistencyV1 || {},
-    params.roomConsistency,
-  );
-
-  await updateJob(params.parentJobId, {
-    status: "complete",
-    success: true,
-    completed: true,
-    currentStage: "finalizing",
-    finalStage: "2",
-    resultStage: "2",
-    stageCompleted: "2",
-    finalOutputUrl: params.resultUrl,
-    resultUrl: params.resultUrl,
-    imageUrl: params.resultUrl,
-    latestRetryUrl: params.resultUrl,
-    retryLatestUrl: params.resultUrl,
-    retryLatestJobId: params.childJobId,
-    blockedStage: null,
-    fallbackStage: null,
-    validationNote: null,
-    stageUrls: mergedStageUrls,
-    roomConsistency: nextRoomConsistency,
-    meta: {
-      ...(parentJob?.meta || {}),
-      roomConsistency: nextRoomConsistency,
-    },
-  }).catch(() => {});
+function buildSecondaryResultIdentity(roomConsistency: any, fallbackRoomId?: string | null) {
+  const roomGroupId = String(
+    roomConsistency?.roomGroupId ||
+    roomConsistency?.continuityGroupId ||
+    roomConsistency?.roomId ||
+    fallbackRoomId ||
+    ""
+  ).trim() || null;
+  return {
+    roomGroupId,
+    continuityGroupId: roomGroupId,
+  };
 }
 
-async function syncRoomConsistencyParentFallbackCompletion(params: {
+async function syncRoomConsistencyParentFinalization(params: {
   parentJobId: string;
   childJobId: string;
   resultUrl: string;
-  finalStage: "1A" | "1B";
-  reason: string;
+  finalStage: "2" | "1A" | "1B";
+  stage2Url?: string | null;
+  reason?: string | null;
+  imageId: string;
   roomConsistency: any;
 }) {
   const parentJob = await getJob(params.parentJobId);
   if (!parentJob) return;
 
+  const finalizedAt = new Date().toISOString();
+  const identity = buildSecondaryResultIdentity(
+    params.roomConsistency,
+    parentJob?.roomConsistency?.roomId || parentJob?.meta?.roomConsistency?.roomId || null,
+  );
   const mergedStageUrls = normalizeStageUrls({
     ...resolveRoomConsistencyStageUrlsFromJob(parentJob),
-    stage2: null,
+    stage2: params.finalStage === "2" ? (params.stage2Url || params.resultUrl) : null,
   });
   const nextRoomConsistency = buildRoomConsistencyStatusPayload(
     parentJob?.roomConsistency || parentJob?.meta?.roomConsistency || parentJob?.payload?.options?.roomConsistencyV1 || {},
     params.roomConsistency,
   );
+
+  console.log("[SECONDARY_RESULT_FINALIZED]", {
+    imageId: params.imageId,
+    childJobId: params.childJobId,
+    parentJobId: params.parentJobId,
+    roomGroupId: identity.roomGroupId,
+    continuityGroupId: identity.continuityGroupId,
+    outputType: params.finalStage === "2" ? "stage2" : "fallback",
+    finalStatus: "completed",
+    emittedToFrontend: false,
+    finalStage: params.finalStage,
+    resultUrl: params.resultUrl,
+    fallbackReason: params.reason || null,
+    completedAt: finalizedAt,
+  });
 
   await updateJob(params.parentJobId, {
     status: "complete",
@@ -223,16 +214,155 @@ async function syncRoomConsistencyParentFallbackCompletion(params: {
     retryLatestUrl: params.resultUrl,
     retryLatestJobId: params.childJobId,
     blockedStage: null,
-    fallbackStage: params.finalStage,
-    validationNote: params.reason,
+    fallbackStage: params.finalStage === "2" ? null : params.finalStage,
+    validationNote: params.reason || null,
     stageUrls: mergedStageUrls,
+    completedAt: finalizedAt,
     roomConsistency: nextRoomConsistency,
     meta: {
       ...(parentJob?.meta || {}),
       roomConsistency: nextRoomConsistency,
-      fallbackReason: params.reason,
+      secondaryResult: {
+        imageId: params.imageId,
+        roomGroupId: identity.roomGroupId,
+        continuityGroupId: identity.continuityGroupId,
+        outputType: params.finalStage === "2" ? "stage2" : "fallback",
+        finalStatus: "completed",
+        finalStage: params.finalStage,
+        displayEligible: true,
+        completedAt: finalizedAt,
+      },
+      ...(params.reason ? { fallbackReason: params.reason } : {}),
     },
   }).catch(() => {});
+
+  console.log("[SECONDARY_RESULT_EMITTED]", {
+    imageId: params.imageId,
+    childJobId: params.childJobId,
+    parentJobId: params.parentJobId,
+    roomGroupId: identity.roomGroupId,
+    continuityGroupId: identity.continuityGroupId,
+    outputType: params.finalStage === "2" ? "stage2" : "fallback",
+    finalStatus: "completed",
+    emittedToFrontend: true,
+    finalStage: params.finalStage,
+  });
+}
+
+async function finalizeSecondaryImageResult(params: {
+  roomId: string;
+  imageId: string;
+  parentJobId: string;
+  childJobId: string;
+  resultUrl: string;
+    finalStage: "2" | "1A" | "1B";
+  stage2Url?: string | null;
+  reason?: string | null;
+  approvedMasterImageUrl?: string | null;
+  roomConsistency: any;
+}) {
+  const finalizedAt = new Date().toISOString();
+  const identity = buildSecondaryResultIdentity(params.roomConsistency, params.roomId);
+  const outputType = params.finalStage === "2" ? "stage2" : "fallback";
+
+  console.log("[SECONDARY_RESULT_STATE_TRANSITION]", {
+    imageId: params.imageId,
+    parentJobId: params.parentJobId,
+    childJobId: params.childJobId,
+      roomGroupId: identity.roomGroupId,
+    continuityGroupId: identity.continuityGroupId,
+    from: "processing_stage2",
+    to: params.finalStage === "2" ? "stage2_complete" : "stage2_fallback_complete",
+    outputType,
+    finalStatus: "completed",
+  });
+  console.log("[SECONDARY_RESULT_GROUP_KEY]", {
+    imageId: params.imageId,
+    roomGroupId: identity.roomGroupId,
+    continuityGroupId: identity.continuityGroupId,
+  });
+  if (params.finalStage !== "2") {
+    console.log("[SECONDARY_RESULT_FALLBACK_SELECTED]", {
+      imageId: params.imageId,
+      parentJobId: params.parentJobId,
+      childJobId: params.childJobId,
+        roomGroupId: identity.roomGroupId,
+      continuityGroupId: identity.continuityGroupId,
+      outputType,
+      finalStatus: "completed",
+      fallbackStage: params.finalStage,
+      reason: params.reason || null,
+    });
+  }
+
+  const completedGroup = await completeRoomConsistencySecondary({
+    roomId: params.roomId,
+    imageId: params.imageId,
+  }).catch(() => null);
+
+  const finalizedRoomConsistency = buildRoomConsistencyStatusPayload(params.roomConsistency, {
+    approvedMasterImageUrl: params.approvedMasterImageUrl || params.roomConsistency?.approvedMasterImageUrl || null,
+    roomGroupId: identity.roomGroupId,
+    continuityGroupId: identity.continuityGroupId,
+    currentStatus: params.finalStage === "2" ? "stage2_complete" : "stage2_fallback_complete",
+    stage2BlockedUntilMasterApproval: false,
+    outputType,
+    finalStatus: "completed",
+    displayEligible: true,
+    finalizedAt,
+    roomState: {
+      roomId: params.roomId,
+      masterApproved: true,
+      masterApprovalStatus: "approved",
+      masterStagedImageUrl:
+        params.approvedMasterImageUrl ||
+        String(params.roomConsistency?.approvedMasterImageUrl || "").trim() ||
+        undefined,
+      secondaryCompletedAt: finalizedAt,
+    },
+  });
+
+  await syncRoomConsistencyParentFinalization({
+    parentJobId: params.parentJobId,
+    childJobId: params.childJobId,
+    imageId: params.imageId,
+    resultUrl: params.resultUrl,
+    finalStage: params.finalStage,
+    stage2Url: params.stage2Url,
+    reason: params.reason || null,
+    roomConsistency: finalizedRoomConsistency,
+  });
+
+  const nextSecondary = completedGroup?.images
+    ?.filter((image) => image.viewRole === "reference" && !image.stage2Completed)
+    .sort((left, right) => left.sequenceIndex - right.sequenceIndex)
+    .find((image) => image.sequenceIndex === completedGroup.nextSecondarySequenceIndex);
+  if (nextSecondary?.initialJobId && params.approvedMasterImageUrl) {
+    const followup = await enqueueRoomConsistencyFollowupJob({
+      parentJobId: nextSecondary.initialJobId,
+      approvedMasterImageUrl: params.approvedMasterImageUrl,
+    }).catch(() => null);
+    if (followup) {
+      await claimRoomConsistencySecondary({
+        roomId: params.roomId,
+        imageId: nextSecondary.imageId,
+        stage2JobId: followup.jobId,
+      }).catch(() => {});
+      console.log("[SECONDARY_RESULT_STATE_TRANSITION]", {
+        imageId: nextSecondary.imageId,
+        parentJobId: nextSecondary.initialJobId,
+        childJobId: followup.jobId,
+        roomGroupId: identity.roomGroupId,
+        continuityGroupId: identity.continuityGroupId,
+        from: "waiting_stage2",
+        to: "processing_stage2",
+        outputType: "stage2",
+        finalStatus: "processing",
+      });
+    }
+  }
+
+  return completedGroup;
 }
 
 async function enqueueRoomConsistencyFollowupJob(params: {
@@ -4242,25 +4372,17 @@ async function completePartialJob(params: {
     const retryParentJobIdForStamp = String(
       roomConsistencyPayload?.followupParentJobId || (billingContext?.payload as any)?.retryParentJobId || ""
     ).trim();
-    if (isRoomConsistencyInternalFollowup && retryParentJobIdForStamp) {
-      const fallbackRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyPayload, {
-        approvedMasterImageUrl: String(roomConsistencyPayload?.approvedMasterImageUrl || "").trim() || null,
-        currentStatus: "stage2_fallback_complete",
-        stage2BlockedUntilMasterApproval: false,
-        roomState: {
-          roomId: roomConsistencyPayload?.roomId,
-          masterApproved: true,
-          masterApprovalStatus: "approved",
-          masterStagedImageUrl: String(roomConsistencyPayload?.approvedMasterImageUrl || "").trim() || undefined,
-        },
-      });
-      await syncRoomConsistencyParentFallbackCompletion({
+    if (isRoomConsistencyInternalFollowup && retryParentJobIdForStamp && roomConsistencyPayload?.roomId) {
+      await finalizeSecondaryImageResult({
+        roomId: roomConsistencyPayload.roomId,
+        imageId: String((billingContext?.payload as any)?.imageId || currentJob?.imageId || ""),
         parentJobId: retryParentJobIdForStamp,
         childJobId: jobId,
         resultUrl,
         finalStage,
         reason,
-        roomConsistency: fallbackRoomConsistency,
+        approvedMasterImageUrl: String(roomConsistencyPayload?.approvedMasterImageUrl || "").trim() || null,
+        roomConsistency: roomConsistencyPayload,
       });
     } else if (isManualRetry && retryParentJobIdForStamp) {
       await updateJob(retryParentJobIdForStamp, {
@@ -7463,24 +7585,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stage2OnlyRoomConsistencyV1?.followupParentJobId || (payload as any).retryParentJobId || ""
       ).trim();
       if (stage2OnlyParentJobId && pub2Url) {
-        if (stage2OnlyRoomConsistencyV1?.internalFollowup === true) {
-          const successRoomConsistency = buildRoomConsistencyStatusPayload(stage2OnlyRoomConsistencyV1, {
-            approvedMasterImageUrl: stage2OnlyApprovedMasterUrl,
-            currentStatus: "stage2_complete",
-            stage2BlockedUntilMasterApproval: false,
-            roomState: {
-              roomId: stage2OnlyRoomConsistencyV1?.roomId,
-              masterApproved: true,
-              masterApprovalStatus: "approved",
-              masterStagedImageUrl: stage2OnlyApprovedMasterUrl || undefined,
-            },
-          });
-          await syncRoomConsistencyParentCompletion({
+        if (stage2OnlyRoomConsistencyV1?.internalFollowup === true && stage2OnlyRoomConsistencyV1?.roomId) {
+          await finalizeSecondaryImageResult({
+            roomId: stage2OnlyRoomConsistencyV1.roomId,
+            imageId: payload.imageId,
             parentJobId: stage2OnlyParentJobId,
             childJobId: payload.jobId,
             resultUrl: pub2Url,
+            finalStage: "2",
             stage2Url: pub2Url,
-            roomConsistency: successRoomConsistency,
+            approvedMasterImageUrl: stage2OnlyApprovedMasterUrl,
+            roomConsistency: stage2OnlyRoomConsistencyV1,
           });
         } else {
           await updateJob(stage2OnlyParentJobId, {
@@ -10426,13 +10541,24 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           imageId: payload.imageId,
         }).catch(() => {});
 
+        if (gate.reason === "awaiting_master_approval") {
+          nLog("[ROOM_CONSISTENCY_WAITING_FOR_APPROVAL]", {
+            roomId: roomConsistencyContext.roomId,
+            imageId: payload.imageId,
+            jobId: payload.jobId,
+            masterApprovalStatus: gate.group?.masterApprovalStatus || null,
+          });
+        }
+
         const currentJobState = await getJob(payload.jobId);
         const waitingRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyContext, {
           approvedMasterImageUrl: gate.group?.approvedMasterImageUrl || roomConsistencyApprovedMasterImageUrl,
           currentStatus: "waiting_stage2",
           stage2BlockedUntilMasterApproval: true,
+          processingState: "WAITING_FOR_MASTER_APPROVAL",
           roomState: {
             roomId: roomConsistencyContext.roomId,
+            processingState: "WAITING_FOR_MASTER_APPROVAL",
             masterApproved: gate.group?.masterApprovalStatus === "approved",
             masterApprovalStatus: gate.group?.masterApprovalStatus || roomConsistencyContext?.roomState?.masterApprovalStatus || "pending",
             masterStagedImageUrl: gate.group?.approvedMasterImageUrl || undefined,
@@ -10483,6 +10609,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     } else {
       roomConsistencyApprovedMasterImageUrl = gate.group?.approvedMasterImageUrl || roomConsistencyApprovedMasterImageUrl;
+      if (isRoomConsistencyReference && roomConsistencyContext?.roomId) {
+        nLog("[ROOM_CONSISTENCY_APPROVAL_RESUMED]", {
+          roomId: roomConsistencyContext.roomId,
+          imageId: payload.imageId,
+          jobId: payload.jobId,
+          approvedMasterJobId: gate.group?.approvedMasterAttempt || gate.group?.masterJobId || null,
+        });
+      }
       if (isRoomConsistencyReference && isRoomConsistencyInternalFollowup) {
         await claimRoomConsistencySecondary({
           roomId: roomConsistencyContext.roomId,
@@ -14587,9 +14721,11 @@ All openings must remain identical in position and size to the original image.`;
     const readyRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyContext, {
       approvedMasterImageUrl: committedStage2Url,
       stage2BlockedUntilMasterApproval: false,
+      processingState: "MASTER_READY",
       currentStatus: "master_ready",
       roomState: {
         roomId: roomConsistencyContext.roomId,
+        processingState: "MASTER_READY",
         masterApproved: false,
         masterApprovalStatus: readyGroup?.masterApprovalStatus || "ready",
         masterStagedImageUrl: committedStage2Url,
@@ -14612,46 +14748,17 @@ All openings must remain identical in position and size to the original image.`;
     committedStage2Url &&
     committedResultUrl
   ) {
-    const completedGroup = await completeRoomConsistencySecondary({
+    await finalizeSecondaryImageResult({
       roomId: roomConsistencyContext.roomId,
       imageId: payload.imageId,
-    }).catch(() => null);
-    const completedRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyContext, {
-      approvedMasterImageUrl: roomConsistencyApprovedMasterImageUrl,
-      currentStatus: "stage2_complete",
-      stage2BlockedUntilMasterApproval: false,
-      roomState: {
-        roomId: roomConsistencyContext.roomId,
-        masterApproved: true,
-        masterApprovalStatus: "approved",
-        masterStagedImageUrl: roomConsistencyApprovedMasterImageUrl || undefined,
-      },
-    });
-    await syncRoomConsistencyParentCompletion({
       parentJobId: roomConsistencyParentJobId,
       childJobId: payload.jobId,
       resultUrl: committedResultUrl,
+      finalStage: "2",
       stage2Url: committedStage2Url,
-      roomConsistency: completedRoomConsistency,
+      approvedMasterImageUrl: roomConsistencyApprovedMasterImageUrl,
+      roomConsistency: roomConsistencyContext,
     });
-
-    const nextSecondary = completedGroup?.images
-      ?.filter((image) => image.viewRole === "reference" && !image.stage2Completed)
-      .sort((left, right) => left.sequenceIndex - right.sequenceIndex)
-      .find((image) => image.sequenceIndex === completedGroup.nextSecondarySequenceIndex);
-    if (nextSecondary?.initialJobId && roomConsistencyApprovedMasterImageUrl) {
-      const followup = await enqueueRoomConsistencyFollowupJob({
-        parentJobId: nextSecondary.initialJobId,
-        approvedMasterImageUrl: roomConsistencyApprovedMasterImageUrl,
-      }).catch(() => null);
-      if (followup) {
-        await claimRoomConsistencySecondary({
-          roomId: roomConsistencyContext.roomId,
-          imageId: nextSecondary.imageId,
-          stage2JobId: followup.jobId,
-        }).catch(() => {});
-      }
-    }
   }
   if (stage2Skipped) {
     nLog("[PIPELINE] Job completed at Stage-1A", {

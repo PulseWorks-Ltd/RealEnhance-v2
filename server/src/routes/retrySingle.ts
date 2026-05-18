@@ -993,6 +993,42 @@ export function retrySingleRouter() {
       // Generate job ID early so plan logging and billing records share the same identifier.
       const jobId = "job_" + crypto.randomUUID();
 
+      const parentRoomConsistency =
+        (parentJob as any)?.roomConsistency ||
+        (parentJob as any)?.meta?.roomConsistency ||
+        (parentJob as any)?.payload?.options?.roomConsistencyV1 ||
+        null;
+      const retryRoomConsistency = parentRoomConsistency?.enabled === true
+        ? {
+            ...parentRoomConsistency,
+            primaryJobId: parentRoomConsistency?.primaryJobId || (parentRoomConsistency?.viewRole === "primary" ? jobId : parentRoomConsistency?.primaryJobId) || null,
+            stage2BlockedUntilMasterApproval: parentRoomConsistency?.viewRole === "reference",
+            processingState: parentRoomConsistency?.viewRole === "reference"
+              ? "WAITING_FOR_MASTER_APPROVAL"
+              : "PROCESSING_STAGE2",
+            roomState: {
+              ...(parentRoomConsistency?.roomState || {}),
+              roomId: parentRoomConsistency?.roomId,
+              primaryImageId: parentRoomConsistency?.primaryImageId || parentImageId || null,
+              primaryJobId: parentRoomConsistency?.primaryJobId || (parentRoomConsistency?.viewRole === "primary" ? jobId : null) || null,
+              processingState: parentRoomConsistency?.viewRole === "reference"
+                ? "WAITING_FOR_MASTER_APPROVAL"
+                : "PROCESSING_STAGE2",
+            },
+          }
+        : null;
+      if (retryRoomConsistency) {
+        options.roomConsistencyV1 = retryRoomConsistency;
+      }
+      if (retryRoomConsistency?.viewRole === "primary") {
+        console.log("[ROOM_CONSISTENCY_MASTER_RETRY_CREATED]", {
+          roomId: retryRoomConsistency.roomId,
+          retryJobId: jobId,
+          parentJobId,
+          parentImageId,
+        });
+      }
+
       console.log("[RETRY_EXECUTION_PLAN]", {
         jobId,
         retryIntent: {

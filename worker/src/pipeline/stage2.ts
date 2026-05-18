@@ -320,10 +320,10 @@ function resolveSecondaryViewContinuityTemperature(
   reason: Stage2RetryReason,
   previousTemperature?: number
 ): number {
-  if (attempt <= 1) return 0.32;
-  if (!isStructuralRetryReason(reason)) return previousTemperature ?? 0.32;
-  if (attempt === 2) return 0.30;
-  return 0.28;
+  if (attempt <= 1) return 0.26;
+  if (!isStructuralRetryReason(reason)) return previousTemperature ?? 0.26;
+  if (attempt === 2) return 0.24;
+  return 0.22;
 }
 
 function resolveStage2GenerationProfile(opts: {
@@ -340,8 +340,8 @@ function resolveStage2GenerationProfile(opts: {
         opts.retryReason,
         opts.previousPlan?.temperature
       ),
-      topP: 0.82,
-      topK: 32,
+      topP: 0.68,
+      topK: 20,
       candidateCount: 2,
     };
   }
@@ -409,6 +409,18 @@ function resolveStage2GenerationPlanForAttempt(
     });
   }
   return plan as Stage2GenerationPlan;
+}
+
+function resolveContinuityGroupId(roomConsistency?: RoomConsistencyContextV1): string | null {
+  const identity = roomConsistency as
+    | (RoomConsistencyContextV1 & { continuityGroupId?: string | null; roomGroupId?: string | null })
+    | undefined;
+  return String(
+    identity?.roomGroupId ||
+    identity?.continuityGroupId ||
+    roomConsistency?.roomId ||
+    ""
+  ).trim() || null;
 }
 
 function collectSecondaryViewPromptWeighting(textPrompt: string): {
@@ -1528,6 +1540,7 @@ ${formatStage2LayoutPlanForPrompt(opts.layoutPlan)}
     retryReason,
     isReferenceViewWithMaster
   );
+  const continuityGroupId = resolveContinuityGroupId(roomConsistency);
 
   if (attemptNumber >= 3) {
     textPrompt += `
@@ -1631,16 +1644,31 @@ Use the REFERENCE image to preserve the same staged room state, furniture family
     ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
   };
 
+  if (generationPlan.profileName === "SECONDARY_VIEW_CONTINUITY_PROFILE") {
+    nLog("[SECONDARY_VIEW_CONTINUITY_PROFILE]", {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      continuityGroupId,
+      attempt: attemptNumber,
+      temperature: generationConfig.temperature,
+      topP: generationConfig.topP,
+      topK: generationConfig.topK,
+      candidateCount: generationConfig.candidateCount,
+      continuityMode: isReferenceViewWithMaster,
+    });
+  }
+
   nLog("[STAGE2_GENERATION_PROFILE]", {
     jobId: opts.jobId,
     imageId: opts.imageId,
+    continuityGroupId,
     attempt: attemptNumber,
     profileName: generationPlan.profileName,
     temperature: generationConfig.temperature,
     topP: generationConfig.topP,
     topK: generationConfig.topK,
     candidateCount: generationConfig.candidateCount,
-    continuityModeActive: isReferenceViewWithMaster,
+    continuityMode: isReferenceViewWithMaster,
     requestPartCount: requestParts.length,
     hasStructuredAnchorMap: !!opts.referenceAnchorMap,
   });

@@ -75,6 +75,12 @@ type StatusItem = {
     parentJobId?: string;
     clientBatchId?: string;
   };
+  roomGroupId?: string | null;
+  continuityGroupId?: string | null;
+  outputType?: "stage2" | "fallback" | null;
+  finalStatus?: "completed" | null;
+  displayEligible?: boolean;
+  completedAt?: string | null;
   roomConsistency?: any;
   meta: any;
   mode?: string;
@@ -105,6 +111,9 @@ function resolveRoomConsistencyPausedState(params: {
   if (!stage2Expected) return state;
 
   const viewRole = String(roomConsistency?.viewRole || "").trim().toLowerCase();
+  const processingState = String(
+    roomConsistency?.processingState || roomConsistency?.roomState?.processingState || ""
+  ).trim().toUpperCase();
   const currentStatus = String(roomConsistency?.currentStatus || "").trim().toLowerCase();
   const masterApprovalStatus = String(
     roomConsistency?.roomState?.masterApprovalStatus || roomConsistency?.masterApprovalStatus || ""
@@ -115,6 +124,7 @@ function resolveRoomConsistencyPausedState(params: {
     viewRole === "reference" &&
     blockedStage === "2" &&
     (
+      processingState === "WAITING_FOR_MASTER_APPROVAL" ||
       currentStatus === "waiting_stage2" ||
       roomConsistency?.stage2BlockedUntilMasterApproval === true ||
       masterApprovalStatus === "pending" ||
@@ -449,6 +459,17 @@ export function statusRouter() {
           effectiveStage1BRequired,
         });
         const roomConsistency = extractRoomConsistencyStatus(local, payload);
+        const roomGroupId = String(
+          roomConsistency?.roomGroupId ||
+          roomConsistency?.continuityGroupId ||
+          roomConsistency?.roomId ||
+          ""
+        ).trim() || null;
+        const continuityGroupId = String(
+          roomConsistency?.continuityGroupId || roomGroupId || ""
+        ).trim() || null;
+        const isSecondaryRoomConsistency =
+          String(roomConsistency?.viewRole || "").trim().toLowerCase() === "reference";
         
         // ✅ FIX 1: Stage-based completion detection
         const stage1BPresent = !!(stageUrls.stage1B || stageUrls['1B']);
@@ -609,6 +630,13 @@ export function statusRouter() {
         // If Stage 2 is not expected (exterior or staging disabled), allow best-available (1B/1A) to define resultUrl/finalStage
         const resolvedResultUrl = resultUrl || (!stage2Expected ? (bestAvailableStage.url || null) : null);
         const resolvedFinalStage = finalStageRaw || (!stage2Expected ? (bestAvailableStage.stage || null) : null);
+        const outputType = isSecondaryRoomConsistency && resolvedResultUrl
+          ? (resolvedFinalStage === "2" ? "stage2" : "fallback")
+          : null;
+        const finalStatus = isSecondaryRoomConsistency && pipelineStatus === "completed" && resolvedResultUrl
+          ? "completed"
+          : null;
+        const displayEligible = !!(resolvedResultUrl && pipelineStatus === "completed");
 
         if (pipelineStatus === "completed" && !resolvedResultUrl) {
           console.warn("[INVALID_STATUS_COMPLETED_NO_IMAGE]", { jobId: id });
@@ -697,6 +725,12 @@ export function statusRouter() {
           parentJobId: parentJobId || null,
           requestedStages: requestedStages || null,
           retryInfo: retryInfo || undefined,
+          roomGroupId,
+          continuityGroupId,
+          outputType,
+          finalStatus,
+          displayEligible,
+          completedAt: terminalMeta.terminalAt || updatedAtRaw || null,
           roomConsistency: roomConsistency || undefined,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
@@ -718,6 +752,19 @@ export function statusRouter() {
         // Reduce log verbosity: Only log failed jobs or every 50th request
         if (item.state === 'failed' || Math.floor(Math.random() * 50) === 0) {
           console.log('[status/batch] Merged job status for', id, JSON.stringify(item, null, 2));
+        }
+        if (finalStatus === "completed") {
+          console.log("[SECONDARY_RESULT_EMITTED]", {
+            imageId,
+            jobId: id,
+            roomGroupId,
+            continuityGroupId,
+            outputType,
+            finalStatus,
+            emittedToFrontend: true,
+            displayEligible,
+            completedAt: item.completedAt,
+          });
         }
 
         // Always log the final response shape for debugging

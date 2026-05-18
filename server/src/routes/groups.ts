@@ -55,6 +55,7 @@ async function enqueueRoomConsistencyFollowupFromParent(params: {
     primaryImageId: roomConsistency.primaryImageId || parentJob?.imageId || null,
     approvedMasterImageUrl: params.approvedMasterImageUrl,
     stage2BlockedUntilMasterApproval: false,
+    processingState: "PROCESSING_STAGE2",
     internalFollowup: true,
     followupParentJobId: params.parentJobId,
     roomState: {
@@ -62,6 +63,7 @@ async function enqueueRoomConsistencyFollowupFromParent(params: {
       roomId: params.roomId,
       primaryImageId: roomConsistency.primaryImageId || parentJob?.imageId || null,
       primaryJobId: roomConsistency.primaryJobId || null,
+      processingState: "PROCESSING_STAGE2",
       masterApproved: true,
       masterApprovalStatus: "approved",
       masterStagedImageUrl: params.approvedMasterImageUrl,
@@ -229,6 +231,13 @@ export function groupsRouter() {
 
       const masterJobId = String(req.body?.masterJobId || existingGroup.masterJobId || "").trim();
       const masterJob = masterJobId ? await getJob(masterJobId) : null;
+      const resolvedMasterImageId = String(
+        req.body?.masterImageId ||
+        masterJob?.imageId ||
+        existingGroup.approvedMasterImageId ||
+        existingGroup.masterImageId ||
+        ""
+      ).trim();
       const approvedMasterImageUrl = String(
         req.body?.approvedMasterImageUrl ||
         masterJob?.retryLatestUrl ||
@@ -248,7 +257,7 @@ export function groupsRouter() {
       const approvedGroup = await approveRoomConsistencyMaster({
         roomId,
         approvedMasterImageUrl,
-        masterImageId: existingGroup.masterImageId,
+        masterImageId: resolvedMasterImageId || existingGroup.masterImageId,
         masterJobId: masterJobId || existingGroup.masterJobId || null,
       });
 
@@ -257,13 +266,20 @@ export function groupsRouter() {
       }
 
       if (masterJobId && masterJob) {
+        console.log("[ROOM_CONSISTENCY_MASTER_RETRY_APPROVED]", {
+          roomId,
+          masterJobId,
+          masterImageId: resolvedMasterImageId || existingGroup.masterImageId,
+        });
         const masterRoomConsistency = {
           ...(masterJob?.roomConsistency || masterJob?.meta?.roomConsistency || masterJob?.payload?.options?.roomConsistencyV1 || {}),
           approvedMasterImageUrl,
           stage2BlockedUntilMasterApproval: false,
+          processingState: "MASTER_APPROVED",
           roomState: {
             ...((masterJob?.roomConsistency || masterJob?.meta?.roomConsistency || masterJob?.payload?.options?.roomConsistencyV1 || {})?.roomState || {}),
             roomId,
+            processingState: "MASTER_APPROVED",
             masterApproved: true,
             masterApprovalStatus: "approved",
             masterStagedImageUrl: approvedMasterImageUrl,
@@ -294,15 +310,25 @@ export function groupsRouter() {
 
       console.log("[room-consistency] approve request processed", {
         roomGroupId: roomId,
-        masterImageId: existingGroup.masterImageId,
+        masterImageId: resolvedMasterImageId || existingGroup.masterImageId,
         releasedSecondaryJobs: started ? 1 : 0,
       });
+
+      if (started) {
+        console.log("[ROOM_CONSISTENCY_SECONDARY_RESUMED]", {
+          roomId,
+          parentJobId: started.parentJobId,
+          followupJobId: started.followupJobId,
+          imageId: started.imageId,
+        });
+      }
 
       return res.json({
         ok: true,
         roomId,
         approvedMasterImageUrl,
         started,
+        group: approvedGroup,
       });
     } catch (e:any) {
       return res.status(400).json({ ok: false, error: e?.message || "invalid" });

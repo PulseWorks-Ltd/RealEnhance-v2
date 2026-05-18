@@ -40,6 +40,7 @@ import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-gua
 import { getCardArtifactView, type DisplayOutputKey } from "@/lib/card-artifacts";
 import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
+import { getRoomConsistencyWaitingCopy } from "@/lib/room-consistency";
 
 type RunState = "idle" | "running" | "done";
 type StageKey = "1A" | "1B" | "2";
@@ -3567,6 +3568,8 @@ export default function BatchProcessor({
 
           const resolvedJobKey = polledId || parentJobId || (typeof idx === 'number' ? jobIds[idx] : null) || imageId || null;
           const key = resolvedJobKey || 'unknown';
+          let roomGroupId: string | null = null;
+          let continuityGroupId: string | null = null;
 
           if (typeof idx === 'number') {
             if ((mappedViaParent || mappedViaImage) && !retryChildMappingLoggedRef.current.has(String(polledId || `${parentJobId || ''}:${imageId || ''}:${idx}`))) {
@@ -3661,6 +3664,36 @@ export default function BatchProcessor({
             null;
           const originalUrl = toDisplayUrl(it?.originalImageUrl) || toDisplayUrl(it?.originalUrl) || toDisplayUrl(it?.original) || null;
           const validation = it?.validation || it?.meta?.unifiedValidation || it?.meta?.unified_validation || {};
+          const roomConsistency =
+            it?.roomConsistency ||
+            it?.meta?.roomConsistency ||
+            extraResult?.roomConsistency ||
+            null;
+          roomGroupId = String(
+            it?.roomGroupId ||
+            it?.continuityGroupId ||
+            roomConsistency?.roomGroupId ||
+            roomConsistency?.continuityGroupId ||
+            roomConsistency?.roomId ||
+            ""
+          ).trim() || null;
+          continuityGroupId = String(
+            it?.continuityGroupId ||
+            roomConsistency?.continuityGroupId ||
+            roomGroupId ||
+            ""
+          ).trim() || null;
+          if (typeof idx === 'number' && roomGroupId && !retryChildMappingLoggedRef.current.has(`secondary-group:${polledId || parentJobId || imageId || idx}:${roomGroupId}`)) {
+            retryChildMappingLoggedRef.current.add(`secondary-group:${polledId || parentJobId || imageId || idx}:${roomGroupId}`);
+            console.log('[SECONDARY_RESULT_GROUP_KEY]', {
+              imageId,
+              roomGroupId,
+              continuityGroupId,
+              parentJobId,
+              childJobId: polledId || null,
+              idx,
+            });
+          }
           const blockedStage = (validation as any)?.blockedStage || it?.blockedStage || it?.meta?.blockedStage || null;
           const fallbackStage = (validation as any)?.fallbackStage || it?.fallbackStage || it?.meta?.fallbackStage || null;
           const validationNote = (validation as any)?.note || it?.validationNote || it?.meta?.validationNote || null;
@@ -4412,6 +4445,12 @@ export default function BatchProcessor({
                 requestedFinalStage,
                 requestedStages: mergedRequestedStages,
                 retryInfo: retryInfo || existing.retryInfo || existing.result?.retryInfo || undefined,
+                roomGroupId: roomGroupId || existing.roomGroupId || existing.result?.roomGroupId || null,
+                continuityGroupId: continuityGroupId || existing.continuityGroupId || existing.result?.continuityGroupId || null,
+                outputType: it?.outputType || (resultStageNorm === '2' ? 'stage2' : (unifiedCompletion.isFallback ? 'fallback' : null)) || existing.outputType || existing.result?.outputType || null,
+                finalStatus: (status === 'completed' && completedFinal ? 'completed' : existing.finalStatus || existing.result?.finalStatus || null),
+                displayEligible: completedFinal || existing.displayEligible || existing.result?.displayEligible || false,
+                completedAt: it?.completedAt || it?.terminalAt || existing.completedAt || existing.result?.completedAt || null,
                 meta: mergedMeta,
                 // Preserve prior result object but refresh URLs and status fields
                 result: {
@@ -4448,6 +4487,12 @@ export default function BatchProcessor({
                   editLatestJobId: mergedEditLatestJobId,
                   parentJobId: parentJobId || existing.result?.parentJobId || existing.parentJobId || null,
                   retryInfo: retryInfo || existing.result?.retryInfo || existing.retryInfo || undefined,
+                  roomGroupId: roomGroupId || existing.result?.roomGroupId || existing.roomGroupId || null,
+                  continuityGroupId: continuityGroupId || existing.result?.continuityGroupId || existing.continuityGroupId || null,
+                  outputType: it?.outputType || (resultStageNorm === '2' ? 'stage2' : (unifiedCompletion.isFallback ? 'fallback' : null)) || existing.result?.outputType || existing.outputType || null,
+                  finalStatus: (status === 'completed' && completedFinal ? 'completed' : existing.result?.finalStatus || existing.finalStatus || null),
+                  displayEligible: completedFinal || existing.result?.displayEligible || existing.displayEligible || false,
+                  completedAt: it?.completedAt || it?.terminalAt || existing.result?.completedAt || existing.completedAt || null,
                   previewUrl: chosenPreview || existing.result?.previewUrl || existing.previewUrl || null,
                 },
                 // Preview URL used while processing
@@ -4594,6 +4639,18 @@ export default function BatchProcessor({
             }
 
             if (completedFinal && !processedSetRef.current.has(idx)) {
+              if (roomGroupId) {
+                console.log('[SECONDARY_RESULT_UI_VISIBLE]', {
+                  imageId,
+                  jobId: key,
+                  roomGroupId,
+                  continuityGroupId,
+                  outputType: it?.outputType || (resultStageNorm === '2' ? 'stage2' : (unifiedCompletion.isFallback ? 'fallback' : null)),
+                  finalStatus: 'completed',
+                  emittedToFrontend: true,
+                  displayEligible: true,
+                });
+              }
               processedSetRef.current.add(idx);
               const queueStageUrls = (stageUrls as Record<string, any> | null) || null;
               const queueRequestedStages = requestedStages || null;
@@ -8445,22 +8502,34 @@ export default function BatchProcessor({
                         const roomConsistencyApprovalStatus = String(
                           roomConsistency?.roomState?.masterApprovalStatus || roomConsistency?.masterApprovalStatus || ""
                         ).trim().toLowerCase();
-                        const isAwaitingMasterApproval =
-                          roomConsistencyViewRole === "reference" &&
-                          blockedStage === "2" &&
-                          (!!roomConsistencyRoomId || !!roomConsistency) &&
-                          (roomConsistencyApprovalStatus === "pending" || roomConsistencyApprovalStatus === "ready" || String(result?.validationNote || "").toLowerCase().includes("awaiting approved master"));
+                        const waitingRoomConsistencyUi = getRoomConsistencyWaitingCopy({
+                          roomConsistency,
+                          blockedStage,
+                          validationNote: result?.validationNote,
+                          status,
+                        });
+                        const isAwaitingMasterApproval = waitingRoomConsistencyUi.isWaitingForApproval;
+                        const roomConsistencyResultUrl =
+                          toDisplayUrl(result?.retryLatestUrl) ||
+                          toDisplayUrl(result?.result?.retryLatestUrl) ||
+                          toDisplayUrl(result?.latestRetryUrl) ||
+                          toDisplayUrl(result?.result?.latestRetryUrl) ||
+                          toDisplayUrl(result?.finalOutputUrl) ||
+                          toDisplayUrl(result?.result?.finalOutputUrl) ||
+                          toDisplayUrl(result?.resultUrl) ||
+                          toDisplayUrl(result?.result?.resultUrl) ||
+                          null;
                         const canApproveMaster =
                           roomConsistencyViewRole === "primary" &&
                           !!roomConsistencyRoomId &&
-                          !!stage2Url &&
+                          !!(stage2Url || roomConsistencyResultUrl) &&
                           roomConsistencyApprovalLoading !== roomConsistencyRoomId &&
                           (roomConsistencyApprovalStatus === "ready" || roomConsistencyApprovalStatus === "pending" || !roomConsistencyApprovalStatus);
                         const isApprovingMaster = roomConsistencyApprovalLoading === roomConsistencyRoomId;
                         const isWaitingRoomConsistency = status === "waiting" || isAwaitingMasterApproval;
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
-                        const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact;
+                        const isUiComplete = (!isError && isSuccessStatus && (targetUrlPresent || unifiedCompletion.isFallback)) || hasCompletedEditArtifact;
                         const isIntermediateProcessing = false;
                         const intermediateStageMessage: string | null = null;
                         
@@ -8482,7 +8551,12 @@ export default function BatchProcessor({
                         }
                         const hasEditedOutput = hasEditedArtifact(result);
                         const canRetryThisImage = !isRetryStatusActive && !hasEditedOutput;
-                        const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
+                        const isProcessing = !isAwaitingMasterApproval && (
+                          isEditing ||
+                          isRetryActive ||
+                          (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) ||
+                          (status === "queued" && hasPreviewOutputs)
+                        );
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = stage2Expected
@@ -8582,8 +8656,10 @@ export default function BatchProcessor({
                         });
                         const displayStatus = isError
                           ? "Enhancement Failed"
+                          : isAwaitingMasterApproval
+                          ? "Waiting on Approval"
                           : isWaitingRoomConsistency
-                          ? "Awaiting Master Approval"
+                          ? "Waiting in Queue"
                           : result?.retryInFlight
                           ? getRetryStatusText(result?.retryStage)  // ✅ Show retry-specific message immediately
                           : isEditing
@@ -8869,7 +8945,7 @@ export default function BatchProcessor({
                                        </div>
                                     ) : isWaitingRoomConsistency ? (
                                       <div className="flex items-center gap-2">
-                                        <StatusBadge status="queued" label="Waiting" />
+                                        <StatusBadge status="queued" label={waitingRoomConsistencyUi.badgeLabel} />
                                       </div>
                                     ) : (
                                       <StatusBadge status="queued" />
@@ -8878,9 +8954,9 @@ export default function BatchProcessor({
                                   <p className="text-xs text-slate-500">
                                     {displayStatus}
                                   </p>
-                                  {isAwaitingMasterApproval && (
+                                  {waitingRoomConsistencyUi.subtitle && (
                                     <p className="text-xs font-medium text-amber-700">
-                                      Waiting for the approved master room view before this angle enters Stage 2.
+                                      {waitingRoomConsistencyUi.subtitle}
                                     </p>
                                   )}
                                   {fallbackMessage && (

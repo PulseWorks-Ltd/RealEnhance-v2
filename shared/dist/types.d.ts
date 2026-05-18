@@ -180,6 +180,7 @@ export interface RoomConsistencyStateV1 {
         enforceRelationalContinuity?: boolean;
     };
     consistencyModeEnabled?: boolean;
+    processingState?: "WAITING_FOR_MASTER_APPROVAL" | "PROCESSING_STAGE2" | "MASTER_READY" | "MASTER_APPROVED";
     masterApproved?: boolean;
     masterApprovalStatus?: "pending" | "ready" | "approved";
     masterStagedImageUrl?: string;
@@ -197,6 +198,7 @@ export interface RoomConsistencyContextV1 {
     groupSize?: number;
     sequenceIndex?: number;
     stage2BlockedUntilMasterApproval?: boolean;
+    processingState?: "WAITING_FOR_MASTER_APPROVAL" | "PROCESSING_STAGE2" | "MASTER_READY" | "MASTER_APPROVED";
     approvedMasterImageUrl?: string | null;
     internalFollowup?: boolean;
     followupParentJobId?: string | null;
@@ -218,6 +220,7 @@ export interface RoomConsistencyImageEntryV1 {
     stage2Completed?: boolean;
     waitingForApproval?: boolean;
     latestStage2JobId?: string | null;
+    latestApprovedMasterJobId?: string | null;
 }
 export interface RoomConsistencyGroupStateV1 {
     roomId: string;
@@ -227,9 +230,13 @@ export interface RoomConsistencyGroupStateV1 {
     masterImageId: string;
     masterJobId?: string | null;
     masterApprovalStatus: "pending" | "ready" | "approved";
+    pendingMasterApproval?: boolean;
     masterReadyAt?: string | null;
     masterApprovedAt?: string | null;
     approvedMasterImageUrl?: string | null;
+    approvedMasterImageId?: string | null;
+    approvedMasterAttempt?: string | null;
+    continuityGroupStatus?: "pending_master" | "master_ready" | "master_approved" | "processing_secondaries" | "completed";
     images: RoomConsistencyImageEntryV1[];
     nextSecondarySequenceIndex: number;
     activeSecondaryImageId?: string | null;

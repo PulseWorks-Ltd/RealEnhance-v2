@@ -20,6 +20,19 @@ function imageKey(imageId: string): string {
   return `${IMAGE_KEY_PREFIX}${imageId}`;
 }
 
+function resolveContinuityGroupStatus(group: RoomConsistencyGroupStateV1): RoomConsistencyGroupStateV1["continuityGroupStatus"] {
+  const incompleteSecondaryExists = group.images.some(
+    (image) => image.viewRole === "reference" && image.stage2Completed !== true,
+  );
+  if (group.masterApprovalStatus === "approved") {
+    return incompleteSecondaryExists ? "processing_secondaries" : "completed";
+  }
+  if (group.masterApprovalStatus === "ready") {
+    return "master_ready";
+  }
+  return "pending_master";
+}
+
 export async function getRoomConsistencyGroup(roomId: string): Promise<RoomConsistencyGroupStateV1 | null> {
   const normalizedRoomId = String(roomId || "").trim();
   if (!normalizedRoomId) return null;
@@ -85,9 +98,12 @@ export async function upsertRoomConsistencyGroup(input: {
     masterImageId: input.masterImageId || existing?.masterImageId || "",
     masterJobId: input.masterJobId ?? existing?.masterJobId ?? null,
     masterApprovalStatus: existing?.masterApprovalStatus || "pending",
+    pendingMasterApproval: existing?.pendingMasterApproval ?? true,
     masterReadyAt: existing?.masterReadyAt ?? null,
     masterApprovedAt: existing?.masterApprovedAt ?? null,
     approvedMasterImageUrl: existing?.approvedMasterImageUrl ?? null,
+    approvedMasterImageId: existing?.approvedMasterImageId ?? null,
+    approvedMasterAttempt: existing?.approvedMasterAttempt ?? null,
     images: [
       ...Array.from(mergedImages.values()).sort((left, right) => left.sequenceIndex - right.sequenceIndex),
     ],
@@ -95,7 +111,10 @@ export async function upsertRoomConsistencyGroup(input: {
       existing?.nextSecondarySequenceIndex ??
       (secondaries[0]?.sequenceIndex ?? 1),
     activeSecondaryImageId: existing?.activeSecondaryImageId ?? null,
+    continuityGroupStatus: existing?.continuityGroupStatus ?? "pending_master",
   };
+
+  group.continuityGroupStatus = resolveContinuityGroupStatus(group);
 
   await persistRoomGroup(group);
   return group;
@@ -112,9 +131,13 @@ export async function markRoomConsistencyMasterReady(input: {
   group.masterImageId = input.masterImageId;
   group.masterJobId = input.masterJobId ?? group.masterJobId ?? null;
   group.masterApprovalStatus = "ready";
+  group.pendingMasterApproval = true;
   group.masterReadyAt = new Date().toISOString();
   group.approvedMasterImageUrl = input.stagedImageUrl;
+  group.approvedMasterImageId = input.masterImageId;
+  group.approvedMasterAttempt = input.masterJobId ?? group.masterJobId ?? null;
   group.updatedAt = group.masterReadyAt;
+  group.continuityGroupStatus = resolveContinuityGroupStatus(group);
   await persistRoomGroup(group);
   return group;
 }
@@ -131,14 +154,19 @@ export async function approveRoomConsistencyMaster(input: {
   if (input.masterImageId) group.masterImageId = input.masterImageId;
   if (input.masterJobId) group.masterJobId = input.masterJobId;
   group.masterApprovalStatus = "approved";
+  group.pendingMasterApproval = false;
   group.masterApprovedAt = approvedAt;
   group.approvedMasterImageUrl = input.approvedMasterImageUrl;
+  group.approvedMasterImageId = input.masterImageId ?? group.masterImageId;
+  group.approvedMasterAttempt = input.masterJobId ?? group.masterJobId ?? null;
   group.updatedAt = approvedAt;
   for (const image of group.images) {
     if (image.viewRole === "reference") {
       image.waitingForApproval = false;
+      image.latestApprovedMasterJobId = input.masterJobId ?? group.masterJobId ?? null;
     }
   }
+  group.continuityGroupStatus = resolveContinuityGroupStatus(group);
   await persistRoomGroup(group);
   return group;
 }
@@ -152,7 +180,9 @@ export async function markRoomConsistencyImageWaiting(input: {
   const entry = group.images.find((image) => image.imageId === input.imageId);
   if (!entry) return group;
   entry.waitingForApproval = true;
+  group.pendingMasterApproval = true;
   group.updatedAt = new Date().toISOString();
+  group.continuityGroupStatus = resolveContinuityGroupStatus(group);
   await persistRoomGroup(group);
   return group;
 }
@@ -203,8 +233,10 @@ export async function claimRoomConsistencySecondary(input: {
   if (!entry) return group;
   entry.stage2Released = true;
   entry.latestStage2JobId = input.stage2JobId;
+  entry.waitingForApproval = false;
   group.activeSecondaryImageId = input.imageId;
   group.updatedAt = new Date().toISOString();
+  group.continuityGroupStatus = resolveContinuityGroupStatus(group);
   await persistRoomGroup(group);
   return group;
 }
@@ -225,6 +257,7 @@ export async function completeRoomConsistencySecondary(input: {
     .sort((left, right) => left.sequenceIndex - right.sequenceIndex);
   group.nextSecondarySequenceIndex = remaining[0]?.sequenceIndex ?? Number.MAX_SAFE_INTEGER;
   group.updatedAt = new Date().toISOString();
+  group.continuityGroupStatus = resolveContinuityGroupStatus(group);
   await persistRoomGroup(group);
   return group;
 }
@@ -254,6 +287,7 @@ export function buildRoomConsistencyContext(params: {
     groupSize: params.groupSize,
     sequenceIndex: params.sequenceIndex,
     stage2BlockedUntilMasterApproval: params.viewRole === "reference",
+    processingState: params.viewRole === "reference" ? "WAITING_FOR_MASTER_APPROVAL" : undefined,
     primarySelection: params.primarySelection,
     roomState: params.roomState,
   };

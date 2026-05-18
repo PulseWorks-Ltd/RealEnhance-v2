@@ -1,6 +1,7 @@
 import fs from "fs";
 import os from "os";
 import path from "path";
+import { nLog } from "../src/logger";
 import {
   resolveStage2Model,
   runStage2GenerationAttempt,
@@ -39,6 +40,10 @@ jest.mock("../src/utils/images", () => ({
 
 jest.mock("../src/utils/debugImageUrls", () => ({
   logImageAttemptUrl: jest.fn(async () => undefined),
+}));
+
+jest.mock("../src/logger", () => ({
+  nLog: jest.fn(),
 }));
 
 describe("Stage-2 generation reliability", () => {
@@ -194,15 +199,84 @@ describe("Stage-2 generation reliability", () => {
 
     expect(contents).toHaveLength(4);
     expect(contents[0].text).toContain("Stage the TARGET room image");
-    expect(contents[0].text).toContain("Discard the REFERENCE room layout");
-    expect(contents[0].text).toContain("Preserve major furnishing identities first");
+    expect(contents[0].text).toContain("Keep furnishings anchored to the same real room locations");
     expect(contents[0].text).not.toContain("pixel-aligned");
     expect(contents[0].text).not.toContain("immutable architectural plate");
     expect(contents[0].text).not.toContain("style swatch only");
     expect(contents[1].inlineData).toBeDefined();
     expect(contents[2].inlineData).toBeDefined();
     expect(contents[3].text).toContain("Final requirement:");
+    expect(contents[3].text).toContain("Preserve the TARGET room architecture, camera geometry, framing, and perspective exactly.");
     expect(contents.filter((part) => part.text === "TARGET_STRUCTURE_INPUT_REANCHOR")).toHaveLength(0);
+  });
+
+  it("applies the tuned secondary continuity generation profile and logs continuity identity", async () => {
+    process.env.EXPERIMENT_ROOM_CONSISTENCY_V1 = "1";
+    process.env.STAGE2_PROMPT_VARIANT = "nano";
+
+    mockRunWithPrimaryThenFallback.mockResolvedValue({
+      resp: {
+        candidates: [{ content: { parts: [{ inlineData: { data: "ZmFrZQ==" } }] } }],
+      },
+      modelUsed: "gemini-2.5-flash-image",
+    });
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stage2-secondary-profile-"));
+    const basePath = path.join(tempDir, "base.webp");
+    const outputPath = path.join(tempDir, "out.webp");
+    const referencePath = path.join(tempDir, "reference.webp");
+    fs.writeFileSync(basePath, "base");
+    fs.writeFileSync(referencePath, "reference");
+
+    await runStage2GenerationAttempt(basePath, {
+      roomType: "living_room",
+      jobId: "job-test-secondary-profile",
+      imageId: "img-test-secondary-profile",
+      outputPath,
+      attempt: 1,
+      promptMode: "full",
+      referenceImagePath: referencePath,
+      roomConsistencyV1: {
+        enabled: true,
+        viewRole: "reference",
+        roomId: "room-test-secondary-profile",
+        approvedMasterImageUrl: "https://example.com/master.webp",
+      },
+    });
+
+    const request = mockRunWithPrimaryThenFallback.mock.calls[0][0].baseRequest;
+    expect(request.generationConfig).toMatchObject({
+      temperature: 0.26,
+      topP: 0.68,
+      topK: 20,
+      candidateCount: 2,
+    });
+
+    const loggerMock = jest.mocked(nLog);
+    expect(loggerMock).toHaveBeenCalledWith(
+      "[SECONDARY_VIEW_CONTINUITY_PROFILE]",
+      expect.objectContaining({
+        imageId: "img-test-secondary-profile",
+        continuityGroupId: "room-test-secondary-profile",
+        temperature: 0.26,
+        topP: 0.68,
+        topK: 20,
+        candidateCount: 2,
+        continuityMode: true,
+      })
+    );
+    expect(loggerMock).toHaveBeenCalledWith(
+      "[STAGE2_GENERATION_PROFILE]",
+      expect.objectContaining({
+        imageId: "img-test-secondary-profile",
+        continuityGroupId: "room-test-secondary-profile",
+        temperature: 0.26,
+        topP: 0.68,
+        topK: 20,
+        candidateCount: 2,
+        continuityMode: true,
+      })
+    );
   });
 
   it("keeps grouped secondary payload shape stable across repeated runs", async () => {
@@ -246,7 +320,7 @@ describe("Stage-2 generation reliability", () => {
       expect(contents).toHaveLength(4);
       expect(contents.filter((part) => part.inlineData)).toHaveLength(2);
       expect(contents[0].text).toContain("Keep furnishings anchored to the same real room locations");
-      expect(contents[0].text).toContain("Preserve major furnishing identities first");
+      expect(contents[0].text).toContain("Stage the TARGET room image");
       expect(contents[0].text).not.toContain("TARGET_STRUCTURE_INPUT_REANCHOR");
       expect(contents[0].text).not.toContain("zero feature leakage");
     }
