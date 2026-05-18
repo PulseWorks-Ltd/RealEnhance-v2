@@ -6,6 +6,7 @@
  */
 
 import { pool } from '../db/index.js';
+import { normalizeDbUuid, type DbUuidNormalizationResult } from '@realenhance/shared/idNormalization';
 import type {
   EnhancedImage,
   EnhancedImageGalleryResponse,
@@ -53,6 +54,33 @@ interface Scope {
   userId?: string;
 }
 
+function logUuidBoundaryEvent(params: {
+  level: 'warn' | 'error';
+  field: string;
+  result: DbUuidNormalizationResult;
+  jobId: string;
+  source?: string;
+  required: boolean;
+}) {
+  const payload = {
+    codePath: 'server.services.enhancedImages.createEnhancedImage',
+    field: params.field,
+    required: params.required,
+    jobId: params.jobId,
+    source: params.source || 'stage2',
+    original: params.result.original,
+    normalized: params.result.normalized,
+    kind: params.result.kind,
+    prefix: params.result.prefix,
+  };
+
+  if (params.level === 'error') {
+    console.error('[ENHANCED_IMAGE_UUID_BOUNDARY]', payload);
+  } else {
+    console.warn('[ENHANCED_IMAGE_UUID_BOUNDARY]', payload);
+  }
+}
+
 /**
  * Create a new enhanced image record.
  */
@@ -65,6 +93,65 @@ export async function createEnhancedImage(
   const enhancedKey = params.enhancedS3Key || storageKey;
   const thumbKey = params.thumbS3Key || (params.thumbnailUrl ? extractStorageKey(params.thumbnailUrl) : enhancedKey);
   const originalKey = params.originalS3Key || (params.originalUrl ? extractStorageKey(params.originalUrl) : null);
+  const agencyIdResult = normalizeDbUuid(params.agencyId);
+  const userIdResult = normalizeDbUuid(params.userId);
+  const propertyIdResult = normalizeDbUuid(params.propertyId);
+  const parentImageIdResult = normalizeDbUuid(params.parentImageId, { allowedPrefixes: ['img'] });
+
+  if (agencyIdResult.kind !== 'raw_uuid') {
+    logUuidBoundaryEvent({
+      level: 'error',
+      field: 'agencyId',
+      result: agencyIdResult,
+      jobId: params.jobId,
+      source: params.source,
+      required: true,
+    });
+    throw new Error('invalid_agency_uuid_for_enhanced_image');
+  }
+
+  if (userIdResult.kind !== 'raw_uuid') {
+    logUuidBoundaryEvent({
+      level: 'error',
+      field: 'userId',
+      result: userIdResult,
+      jobId: params.jobId,
+      source: params.source,
+      required: true,
+    });
+    throw new Error('invalid_user_uuid_for_enhanced_image');
+  }
+
+  if (propertyIdResult.kind === 'invalid') {
+    logUuidBoundaryEvent({
+      level: 'error',
+      field: 'propertyId',
+      result: propertyIdResult,
+      jobId: params.jobId,
+      source: params.source,
+      required: false,
+    });
+  }
+
+  if (parentImageIdResult.kind === 'invalid') {
+    logUuidBoundaryEvent({
+      level: 'error',
+      field: 'parentImageId',
+      result: parentImageIdResult,
+      jobId: params.jobId,
+      source: params.source,
+      required: false,
+    });
+  } else if (parentImageIdResult.kind === 'prefixed_public_id') {
+    logUuidBoundaryEvent({
+      level: 'warn',
+      field: 'parentImageId',
+      result: parentImageIdResult,
+      jobId: params.jobId,
+      source: params.source,
+      required: false,
+    });
+  }
 
   const result = await pool.query(
     `INSERT INTO enhanced_images (
@@ -82,13 +169,13 @@ export async function createEnhancedImage(
       updated_at = NOW()
     RETURNING *`,
     [
-      params.agencyId,
-      params.userId,
+      agencyIdResult.normalized,
+      userIdResult.normalized,
       params.jobId,
       params.stagesCompleted,
       params.completionType || null,
-      params.propertyId || null,
-      params.parentImageId || null,
+      propertyIdResult.normalized,
+      parentImageIdResult.normalized,
       params.source || 'stage2',
       storageKey,
       params.publicUrl,

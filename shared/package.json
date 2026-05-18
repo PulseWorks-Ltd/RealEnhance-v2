@@ -21,6 +21,14 @@
       "types": "./dist/imageStore.d.ts",
       "default": "./dist/imageStore.js"
     },
+    "./idNormalization": {
+      "types": "./dist/idNormalization.d.ts",
+      "default": "./dist/idNormalization.js"
+    },
+    "./idNormalization.js": {
+      "types": "./dist/idNormalization.d.ts",
+      "default": "./dist/idNormalization.js"
+    },
     "./stageUrlResolver": {
       "types": "./dist/stageUrlResolver.d.ts",
       "default": "./dist/stageUrlResolver.js"

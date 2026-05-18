@@ -13,6 +13,7 @@ export * from "./auth/types";
 export * from "./plans";
 export * from "./agencies";
 export * from "./invites";
+export * from "./idNormalization";
 // Keep old agencyStore for backward compatibility with usage tracking
 export { saveAgency, listAgencies } from "./agencyStore";
 // New usage tracking modules

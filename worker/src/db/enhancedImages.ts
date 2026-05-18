@@ -6,6 +6,7 @@
  */
 
 import { pool } from './index.js';
+import { normalizeDbUuid, type DbUuidNormalizationResult } from '@realenhance/shared/idNormalization';
 
 interface CreateEnhancedImageParams {
   agencyId: string;
@@ -26,6 +27,33 @@ interface CreateEnhancedImageParams {
   traceId: string;
 }
 
+function logUuidBoundaryEvent(params: {
+  level: 'warn' | 'error';
+  field: string;
+  result: DbUuidNormalizationResult;
+  jobId: string;
+  source?: string;
+  required: boolean;
+}) {
+  const payload = {
+    codePath: 'worker.db.enhancedImages.recordEnhancedImage',
+    field: params.field,
+    required: params.required,
+    jobId: params.jobId,
+    source: params.source || 'stage2',
+    original: params.result.original,
+    normalized: params.result.normalized,
+    kind: params.result.kind,
+    prefix: params.result.prefix,
+  };
+
+  if (params.level === 'error') {
+    console.error('[ENHANCED_IMAGE_UUID_BOUNDARY]', payload);
+  } else {
+    console.warn('[ENHANCED_IMAGE_UUID_BOUNDARY]', payload);
+  }
+}
+
 /**
  * Create enhanced_images record after successful job completion
  * This is called from the worker after publishing the final image.
@@ -37,6 +65,65 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
   try {
     // Extract storage key from URL (remove protocol and domain)
     const storageKey = extractStorageKey(params.publicUrl);
+    const agencyIdResult = normalizeDbUuid(params.agencyId);
+    const userIdResult = normalizeDbUuid(params.userId);
+    const propertyIdResult = normalizeDbUuid(params.propertyId);
+    const parentImageIdResult = normalizeDbUuid(params.parentImageId, { allowedPrefixes: ['img'] });
+
+    if (agencyIdResult.kind !== 'raw_uuid') {
+      logUuidBoundaryEvent({
+        level: 'error',
+        field: 'agencyId',
+        result: agencyIdResult,
+        jobId: params.jobId,
+        source: params.source,
+        required: true,
+      });
+      return;
+    }
+
+    if (userIdResult.kind !== 'raw_uuid') {
+      logUuidBoundaryEvent({
+        level: 'error',
+        field: 'userId',
+        result: userIdResult,
+        jobId: params.jobId,
+        source: params.source,
+        required: true,
+      });
+      return;
+    }
+
+    if (propertyIdResult.kind === 'invalid') {
+      logUuidBoundaryEvent({
+        level: 'error',
+        field: 'propertyId',
+        result: propertyIdResult,
+        jobId: params.jobId,
+        source: params.source,
+        required: false,
+      });
+    }
+
+    if (parentImageIdResult.kind === 'invalid') {
+      logUuidBoundaryEvent({
+        level: 'error',
+        field: 'parentImageId',
+        result: parentImageIdResult,
+        jobId: params.jobId,
+        source: params.source,
+        required: false,
+      });
+    } else if (parentImageIdResult.kind === 'prefixed_public_id') {
+      logUuidBoundaryEvent({
+        level: 'warn',
+        field: 'parentImageId',
+        result: parentImageIdResult,
+        jobId: params.jobId,
+        source: params.source,
+        required: false,
+      });
+    }
 
     await pool.query(
       `INSERT INTO enhanced_images (
@@ -50,13 +137,13 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, FALSE)
       ON CONFLICT (job_id) DO NOTHING`,
       [
-        params.agencyId,
-        params.userId,
+        agencyIdResult.normalized,
+        userIdResult.normalized,
         params.jobId,
         params.stagesCompleted,
         params.completionType || null,
-        params.propertyId || null,
-        params.parentImageId || null,
+        propertyIdResult.normalized,
+        parentImageIdResult.normalized,
         params.source || 'stage2',
         storageKey,
         params.publicUrl,
