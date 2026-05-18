@@ -97,6 +97,8 @@ export type OpeningValidationResult = {
     semanticOpeningAspectRatioDelta?: number;
     windowSillDeltaPct?: number;
     confidence: number;
+    extractionConfidence?: number;
+    structuralDestructionConfidence?: number;
   };
   detectedOpenings: StructuralOpening[];
 };
@@ -563,13 +565,16 @@ export function classifyNonWindowOpeningAreaLoss(params: {
   invariantReasons: string[];
 }): {
   classifyAsInfilled: boolean;
+  corroboratedStructuralLoss: boolean;
   occlusionLikely: boolean;
   frameBoundaryTruncationLikely: boolean;
   semanticAnchorErosionLikely: boolean;
   continuityCollapseLikely: boolean;
+  strongStructuralCorroboration: boolean;
   anchorsLikelyPresent: boolean;
   retention: number;
   overlapToBaseline: number;
+  structuralDestructionConfidence: number;
 } {
   const { baseOpening, detectedOpening, areaDelta, invariantReasons } = params;
   const baseArea = Math.max(0.0001, bboxArea(baseOpening.bbox));
@@ -645,15 +650,33 @@ export function classifyNonWindowOpeningAreaLoss(params: {
     (areaDelta >= 0.5 && !stillPerceptuallyPresent) ||
     (moderateLossWithWeakPresence && !occlusionLikely);
 
+  const strongStructuralCorroboration =
+    continuityCollapseLikely ||
+    (severeLoss && (hasMajorLocationShift || hasTypeOrGeometryMutation || hasCoverageBandJump || !anchorsLikelyPresent)) ||
+    (moderateLossWithWeakPresence && hasTypeOrGeometryMutation && !anchorsLikelyPresent);
+
+  const corroboratedStructuralLoss = classifyAsInfilled && strongStructuralCorroboration;
+
+  const structuralDestructionConfidence = corroboratedStructuralLoss
+    ? continuityCollapseLikely
+      ? 0.97
+      : severeLoss
+        ? 0.94
+        : 0.91
+    : 0;
+
   return {
     classifyAsInfilled,
+    corroboratedStructuralLoss,
     occlusionLikely,
     frameBoundaryTruncationLikely,
     semanticAnchorErosionLikely,
     continuityCollapseLikely,
+    strongStructuralCorroboration,
     anchorsLikelyPresent,
     retention,
     overlapToBaseline,
+    structuralDestructionConfidence,
   };
 }
 
@@ -1139,6 +1162,14 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
         ? Math.abs(input.summary.windowSillDeltaPct)
         : undefined,
     confidence: Math.max(0, Math.min(1, input.summary.confidence)),
+    extractionConfidence:
+      typeof input.summary.extractionConfidence === "number" && Number.isFinite(input.summary.extractionConfidence)
+        ? Math.max(0, Math.min(1, input.summary.extractionConfidence))
+        : Math.max(0, Math.min(1, input.summary.confidence)),
+    structuralDestructionConfidence:
+      typeof input.summary.structuralDestructionConfidence === "number" && Number.isFinite(input.summary.structuralDestructionConfidence)
+        ? Math.max(0, Math.min(1, input.summary.structuralDestructionConfidence))
+        : 0,
   };
 
   return { results, findings: [], summary, detectedOpenings: [], structuralSignals: [] };
@@ -1248,6 +1279,7 @@ export async function validateOpeningPreservation(
   let maxAreaDelta = 0;
   let maxAspectDelta = 0;
   let maxWindowSillShift = 0;
+  let maxStructuralDestructionConfidence = 0;
   const analysisNotes: string[] = [];
 
   for (const baseOpening of baseline.openings) {
@@ -1284,6 +1316,7 @@ export async function validateOpeningPreservation(
       openingRemoved = true;
       const likelyInfilled = baseOpening.type !== "window";
       if (likelyInfilled) openingInfilled = true;
+      maxStructuralDestructionConfidence = Math.max(maxStructuralDestructionConfidence, 0.99);
 
       const status = likelyInfilled ? "INFILLED" : "MISSING";
       const reason = likelyInfilled ? "opening_replaced_by_wall_continuity" : "missing_opening";
@@ -1447,10 +1480,32 @@ export async function validateOpeningPreservation(
         invariantReasons,
       });
       if (areaLossAssessment.classifyAsInfilled) {
-        openingInfilled = true;
-        analysisNotes.push(
-          `Opening ${baseOpening.id} (${baseOpening.type}) lost substantial visible area (delta=${areaDelta.toFixed(3)}, retention=${areaLossAssessment.retention.toFixed(3)}, overlap=${areaLossAssessment.overlapToBaseline.toFixed(3)}), indicating likely structural infill/sealing.`
-        );
+        if (areaLossAssessment.corroboratedStructuralLoss) {
+          openingInfilled = true;
+          maxStructuralDestructionConfidence = Math.max(
+            maxStructuralDestructionConfidence,
+            areaLossAssessment.structuralDestructionConfidence,
+          );
+          analysisNotes.push(
+            `Opening ${baseOpening.id} (${baseOpening.type}) lost substantial visible area (delta=${areaDelta.toFixed(3)}, retention=${areaLossAssessment.retention.toFixed(3)}, overlap=${areaLossAssessment.overlapToBaseline.toFixed(3)}) with corroborated continuity collapse, indicating likely structural infill/sealing.`
+          );
+          const [ix1, iy1, ix2, iy2] = baseOpening.bbox || [0, 0, 0, 0];
+          structuralSignals.push({
+            claim: "opening_resized_major",
+            region: { x1: ix1, y1: iy1, x2: ix2, y2: iy2 },
+            confidence: areaLossAssessment.structuralDestructionConfidence,
+            source: "openingPreservation",
+            openingId: baseOpening.id,
+            openingType: baseOpening.type,
+            wallIndex: baseOpening.wallIndex,
+          });
+        } else {
+          semanticAnchorErosionAdvisory = true;
+          invariantReasons.push("semantic_anchor_erosion_advisory");
+          analysisNotes.push(
+            `Opening ${baseOpening.id} (${baseOpening.type}) showed destructive-looking aperture loss (delta=${areaDelta.toFixed(3)}, retention=${areaLossAssessment.retention.toFixed(3)}, overlap=${areaLossAssessment.overlapToBaseline.toFixed(3)}), but corroborated structural collapse was insufficient; downgraded to advisory review.`
+          );
+        }
       } else if (areaLossAssessment.occlusionLikely) {
         stagingOcclusionAdvisory = true;
         invariantReasons.push("staging_occlusion_advisory");
@@ -1655,6 +1710,10 @@ export async function validateOpeningPreservation(
     confidence: openingResults.length
       ? Number((openingResults.reduce((sum, row) => sum + row.confidence, 0) / openingResults.length).toFixed(3))
       : 1,
+    extractionConfidence: openingResults.length
+      ? Number((openingResults.reduce((sum, row) => sum + row.confidence, 0) / openingResults.length).toFixed(3))
+      : 1,
+    structuralDestructionConfidence: Number(maxStructuralDestructionConfidence.toFixed(3)),
   };
 
   return {

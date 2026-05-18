@@ -11,7 +11,7 @@ import { getJob } from "../services/jobs.js";
  */
 type UiStatus = "ok" | "warning" | "error";
 type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "unknown";
-type NormalizedState = "queued" | "awaiting_payment" | "processing" | "completed" | "failed" | "cancelled" | "unknown";
+type NormalizedState = "queued" | "waiting" | "awaiting_payment" | "processing" | "completed" | "failed" | "cancelled" | "unknown";
 
 const STUCK_PROCESSING_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -92,6 +92,38 @@ function extractRoomConsistencyStatus(local: any, payload: any) {
 
 function isTerminalState(state: NormalizedState): boolean {
   return state === "completed" || state === "failed" || state === "cancelled";
+}
+
+function resolveRoomConsistencyPausedState(params: {
+  state: NormalizedState;
+  roomConsistency: any;
+  blockedStage: string | null;
+  validationNote: string | null;
+  stage2Expected: boolean;
+}): NormalizedState {
+  const { state, roomConsistency, blockedStage, validationNote, stage2Expected } = params;
+  if (!stage2Expected) return state;
+
+  const viewRole = String(roomConsistency?.viewRole || "").trim().toLowerCase();
+  const currentStatus = String(roomConsistency?.currentStatus || "").trim().toLowerCase();
+  const masterApprovalStatus = String(
+    roomConsistency?.roomState?.masterApprovalStatus || roomConsistency?.masterApprovalStatus || ""
+  ).trim().toLowerCase();
+  const note = String(validationNote || "").trim().toLowerCase();
+
+  const pausedForRoomConsistency =
+    viewRole === "reference" &&
+    blockedStage === "2" &&
+    (
+      currentStatus === "waiting_stage2" ||
+      roomConsistency?.stage2BlockedUntilMasterApproval === true ||
+      masterApprovalStatus === "pending" ||
+      masterApprovalStatus === "ready" ||
+      note.includes("awaiting approved master view") ||
+      note.includes("waiting for the previous room angle")
+    );
+
+  return pausedForRoomConsistency ? "waiting" : state;
 }
 
 function pickAuthoritativeState(
@@ -221,12 +253,14 @@ function normalizeQueueState(state: string | null): NormalizedState {
 
 function normalizePipelineState(raw: string | null | undefined): NormalizedState {
   const s = (raw || "").toLowerCase();
+  if (s === "waiting_stage2" || s === "paused") return "waiting";
   if (s === "awaiting_payment") return "awaiting_payment";
   if (s === "processing" || s === "active") return "processing";
   if (s === "complete" || s === "completed" || s === "done") return "completed";
   if (s === "cancelled" || s === "canceled" || s === "aborted" || s === "terminated") return "cancelled";
   if (s === "failed" || s === "error" || s === "failed_detection") return "failed";
-  if (s === "queued" || s === "waiting" || s === "waiting-children" || s === "delayed") return "queued";
+  if (s === "waiting") return "waiting";
+  if (s === "queued" || s === "waiting-children" || s === "delayed") return "queued";
   return "unknown";
 }
 
@@ -414,6 +448,7 @@ export function statusRouter() {
           stage2Expected,
           effectiveStage1BRequired,
         });
+        const roomConsistency = extractRoomConsistencyStatus(local, payload);
         
         // ✅ FIX 1: Stage-based completion detection
         const stage1BPresent = !!(stageUrls.stage1B || stageUrls['1B']);
@@ -496,6 +531,13 @@ export function statusRouter() {
         const blockedStage = (validationRaw as any)?.blockedStage || local.blockedStage || null;
         const fallbackStageMeta = (validationRaw as any)?.fallbackStage ?? local.fallbackStage ?? null;
         const validationNote = (validationRaw as any)?.note || local.validationNote || local?.meta?.validationNote || null;
+        pipelineStatus = resolveRoomConsistencyPausedState({
+          state: pipelineStatus,
+          roomConsistency,
+          blockedStage,
+          validationNote,
+          stage2Expected,
+        });
         const stage2Exhausted = hasStage2ExhaustedSignal([
           validationNote,
           local.errorMessage,
@@ -605,7 +647,6 @@ export function statusRouter() {
           local.retryLatestJobId ||
           local?.meta?.retryLatestJobId ||
           null;
-        const roomConsistency = extractRoomConsistencyStatus(local, payload);
         const payloadRetryInfo = extractPayloadRetryInfo(payload);
         const payloadParentJobId = extractPayloadParentJobId(payload);
         const parentJobId = local.parentJobId || local.meta?.parentJobId || (rv && rv.parentJobId) || payloadParentJobId || payloadRetryInfo?.parentJobId || null;
@@ -875,6 +916,7 @@ export function statusRouter() {
         stage2Expected,
         effectiveStage1BRequired,
       });
+      const roomConsistency = extractRoomConsistencyStatus(local, payload);
       
       // ✅ FIX 1: Stage-based completion detection (single-job endpoint)
       const allRequestedStagesPresent = (() => {
@@ -904,6 +946,13 @@ export function statusRouter() {
         (rv && (rv.finalStage || rv.resultStage)) ||
         (!stage2Expected ? (bestAvailableStage.stage || null) : null);
       const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl || bestAvailableStage.url);
+      stateOut = resolveRoomConsistencyPausedState({
+        state: stateOut,
+        roomConsistency,
+        blockedStage,
+        validationNote,
+        stage2Expected,
+      });
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
       }
@@ -976,7 +1025,9 @@ export function statusRouter() {
         fallbackStage: fallbackStageMeta || null,
         validationNote: validationNote || null,
         parentJobId: local.parentJobId || local.meta?.parentJobId || payloadParentJobId || payloadRetryInfo?.parentJobId || null,
+        requestedStages: requestedStages || null,
         retryInfo: local.retryInfo || payloadRetryInfo || undefined,
+        roomConsistency: roomConsistency || undefined,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
         error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,

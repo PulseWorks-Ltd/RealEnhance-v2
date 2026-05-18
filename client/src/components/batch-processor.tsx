@@ -529,7 +529,7 @@ function deriveUnifiedCompletionState(params: {
 
   const isFallback =
     requestedFinalStage === "2"
-      ? !stage2NotExpectedByDesign && !hasStage2 && (hasStage1B || hasStage1A)
+      ? !stage2NotExpectedByDesign && !hasStage2 && hasStage1B
       : requestedFinalStage === "1B"
       ? !stage1BCompletedWithoutOutput && !hasStage1B && hasStage1A
       : false;
@@ -540,9 +540,7 @@ function deriveUnifiedCompletionState(params: {
   } else if (isFallback) {
     if (requestedFinalStage === "2") {
       fallbackMessage =
-        hasStage1B
-          ? "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again."
-          : "We couldn’t safely finish staging for this image. The best enhanced version is shown.";
+        "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again.";
     } else if (requestedFinalStage === "1B") {
       fallbackMessage =
         "We couldn’t provide the decluttered image, but here is an enhanced copy of the original. Use Edit to declutter or Retry to try again.";
@@ -876,40 +874,36 @@ const randomFromPool = (pool: string[], previous?: string): string => {
 
 const STAGE_MESSAGES: Record<ProcessingMessageStage, string[]> = {
   stage1a: [
-    "Balancing lighting",
+    "Balancing interior lighting",
     "Recovering window highlights",
     "Optimising exposure levels",
-    "Reducing shadows",
+    "Reducing interior shadows",
     "Improving natural light balance",
-    "Enhancing brightness",
+    "Enhancing room brightness",
     "Adjusting tonal contrast",
     "Refining lighting realism",
   ],
   stage1b: [
     "Detecting clutter",
     "Removing visual distractions",
-    "Cleaning surfaces",
-    "Clearing clutter",
+    "Cleaning room surfaces",
+    "Clearing floor areas",
     "Simplifying scene layout",
-    "Improving overall presentation",
+    "Preparing room for staging",
   ],
   stage2: [
     "Designing staging layout",
-    "Positioning furniture",
+    "Positioning virtual furniture",
     "Balancing room composition",
     "Styling interior elements",
     "Refining staging realism",
-    "Reviewing additional staging elements",
     "Adjusting staging scale",
-    "Adding additional staging elements",
     "Rendering staged scene",
   ],
   validator: [
     "Running quality validation",
     "Checking structural consistency",
-    "Reviewing safety rules",
-    "Verifying scale",
-    "Checking realism",
+    "Reviewing edit safety rules",
     "Verifying output compliance",
   ],
   retry: [
@@ -7319,7 +7313,7 @@ export default function BatchProcessor({
 
   const hasInFlightResults = results.some(r => {
     const st = String(r?.status || r?.result?.status || "").toLowerCase();
-    return !r?.uiOverrideFailed && (st === "processing" || st === "queued" || st === "active");
+    return !r?.uiOverrideFailed && (st === "processing" || st === "queued" || st === "active" || st === "waiting");
   });
 
   const batchQueueFeedback = useMemo(() => {
@@ -8463,9 +8457,10 @@ export default function BatchProcessor({
                           roomConsistencyApprovalLoading !== roomConsistencyRoomId &&
                           (roomConsistencyApprovalStatus === "ready" || roomConsistencyApprovalStatus === "pending" || !roomConsistencyApprovalStatus);
                         const isApprovingMaster = roomConsistencyApprovalLoading === roomConsistencyRoomId;
+                        const isWaitingRoomConsistency = status === "waiting" || isAwaitingMasterApproval;
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
-                        const isUiComplete = (!isError && isSuccessStatus && (targetUrlPresent || unifiedCompletion.isFallback)) || hasCompletedEditArtifact;
+                        const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact;
                         const isIntermediateProcessing = false;
                         const intermediateStageMessage: string | null = null;
                         
@@ -8587,6 +8582,8 @@ export default function BatchProcessor({
                         });
                         const displayStatus = isError
                           ? "Enhancement Failed"
+                          : isWaitingRoomConsistency
+                          ? "Awaiting Master Approval"
                           : result?.retryInFlight
                           ? getRetryStatusText(result?.retryStage)  // ✅ Show retry-specific message immediately
                           : isEditing
@@ -8870,6 +8867,10 @@ export default function BatchProcessor({
                                        <div className="flex items-center gap-2">
                                          <StatusBadge status="completed" label={isEditComplete ? "Edit Complete" : "Enhancement Complete"} />
                                        </div>
+                                    ) : isWaitingRoomConsistency ? (
+                                      <div className="flex items-center gap-2">
+                                        <StatusBadge status="queued" label="Waiting" />
+                                      </div>
                                     ) : (
                                       <StatusBadge status="queued" />
                                     )}

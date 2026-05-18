@@ -63,6 +63,29 @@ type OpeningSignalCoherenceAnalysis = {
   contradictions: string[];
 };
 
+export function resolveOpeningConfidenceSemantics(summary: {
+  confidence?: number;
+  extractionConfidence?: number;
+  structuralDestructionConfidence?: number;
+}): {
+  extractionConfidence: number;
+  structuralDestructionConfidence: number;
+} {
+  const extractionConfidenceRaw = typeof summary?.extractionConfidence === "number"
+    ? summary.extractionConfidence
+    : typeof summary?.confidence === "number"
+      ? summary.confidence
+      : 0;
+  const structuralDestructionConfidenceRaw = typeof summary?.structuralDestructionConfidence === "number"
+    ? summary.structuralDestructionConfidence
+    : 0;
+
+  return {
+    extractionConfidence: clamp01(extractionConfidenceRaw),
+    structuralDestructionConfidence: clamp01(structuralDestructionConfidenceRaw),
+  };
+}
+
 function uniqueTokens(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
@@ -833,8 +856,8 @@ export async function runOpeningValidator(
         areaDelta >= 0.25
       );
 
-    const baseConfidence = Number(deterministic.summary.confidence || 0);
-    let hardFailConfidence = baseConfidence;
+    const { extractionConfidence, structuralDestructionConfidence } = resolveOpeningConfidenceSemantics(deterministic.summary);
+    let hardFailConfidence = structuralDestructionConfidence;
     let hardFail = deterministicHardFailIssue && hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD;
 
     if (microCheckRisk) {
@@ -941,8 +964,10 @@ export async function runOpeningValidator(
       pass: !hardFail,
       issueType,
       confidence: relocationOnly
-        ? Math.min(baseConfidence, 0.6)
-        : hardFailConfidence,
+        ? Math.min(extractionConfidence, 0.6)
+        : hardFail
+          ? hardFailConfidence
+          : extractionConfidence,
       reason,
       details: baselineOpenings.openings.map((opening) => ({
         id: opening.id,
