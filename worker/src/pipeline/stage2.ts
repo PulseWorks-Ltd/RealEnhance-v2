@@ -1065,6 +1065,16 @@ The TARGET image camera position, focal geometry, framing, crop, horizon alignme
 Do NOT recrop, rotate, widen, narrow, normalize, rebalance, reinterpret, center, improve composition, alter viewing angle, or adjust perspective.
 All staging must conform to the exact existing camera geometry of the TARGET image.
 
+WALL TOPOLOGY LOCK
+Preserve all wall intersection geometry exactly as seen in the TARGET image.
+Corners, wall junctions, ceiling junctions, floor junctions, wall angles, and wall-to-wall relationships are immutable.
+Do NOT shift wall endpoints, bend corners, alter perpendicularity, create angled wall transitions, widen or narrow corner geometry, reshape wall junctions, taper walls, create non-parallel wall drift, deform room-edge topology, or modify local architectural junction geometry.
+Localized architectural deformation is prohibited even when the overall room geometry appears preserved.
+If furniture placement conflicts with room geometry, reposition the furniture, reduce furniture scale slightly, tighten spacing naturally, or simplify placement.
+NEVER modify wall geometry to improve furniture composition or placement.
+Tighter furniture placement is preferable to architectural deformation.
+Furniture compromise is acceptable. Architectural deformation is not.
+
 The REFERENCE image shows the same staged room from another angle.
 Use it to preserve furnishing identity, furnishing family, major layout continuity, overall style palette, and room-state continuity.
 The REFERENCE image is NOT a compositional template.
