@@ -868,6 +868,51 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
     const furnitureHint = roomState?.furnitureMemory || {};
     const relationalHint = roomState?.relationalSummary || {};
 
+    // Option F: for reference views with an approved master, prepend a consistency-first
+    // override BEFORE the standard staging prompt so that identity-replication is the
+    // primary objective rather than creative synthesis from scratch.
+    const isReferenceViewWithMaster =
+      roomConsistency.viewRole === "reference" &&
+      !!String(roomConsistency.approvedMasterImageUrl || "").trim();
+
+    if (isReferenceViewWithMaster) {
+      const consistencyOverride = `CONSISTENCY OVERRIDE — PRIMARY OBJECTIVE (read this before all other instructions)
+════════════════════════════════════════════════════════════════
+This image is a SECONDARY VIEW of a room that has already been staged and approved.
+The APPROVED_MASTER_STAGED_REFERENCE image provided below the input image IS the approved staging.
+
+Your PRIMARY objective is NOT to stage this room from scratch.
+Your PRIMARY objective is to REPLICATE the approved master staging design from this new camera angle.
+
+MANDATORY REPLICATION RULES:
+1. Furniture identity: Every furniture piece visible in the approved master MUST appear in your output if it is plausible from this camera angle. Same category, same colour family, same material finish.
+2. Decor identity: Artwork, rugs, cushions, throws, lamps, and decorative objects must match the master. Do not swap them for different items.
+3. Material fidelity: Upholstery fabric, timber tone, metal finish, and textile textures must match the master staging. Do not substitute.
+4. Palette continuity: The overall colour palette of all staged items must be the same as the master. No new dominant colours.
+5. Style continuity: The design language (e.g., contemporary, Scandi, coastal) must remain identical to the master.
+
+WHAT IS ALLOWED TO CHANGE:
+- Camera angle and viewpoint (expected — this is a different photo angle)
+- Furniture scale and apparent position (acceptable — perspective varies by angle)
+- Partial visibility of items (acceptable — some items may be off-frame or occluded)
+- Minor spatial re-arrangement where this angle cannot physically show the same layout
+
+WHAT MUST NOT CHANGE:
+- The identity of the sofa/sectional family
+- The identity and colour of the rug
+- The identity and finish of the coffee table, dining table, bed frame, and key anchor pieces
+- The colour/texture of cushions and throws
+- The artwork palette and style
+- The lamp and lighting fixture style
+- The general arrangement intent (same conversation grouping, same sleeping area, etc.)
+
+Room ID: ${roomConsistency.roomId}
+════════════════════════════════════════════════════════════════
+
+`;
+      textPrompt = consistencyOverride + textPrompt;
+    }
+
     textPrompt += `\n\nROOM CONSISTENCY LAYER (EXPERIMENTAL V1)
 View role: ${roleLabel}
 Room ID: ${roomConsistency.roomId}
@@ -1001,6 +1046,10 @@ Do not add blinds, rods, tracks, or new window coverings.
   requestParts.push({ inlineData: { mimeType: mime, data } });
   if (opts.referenceImagePath) {
     const ref = toBase64(opts.referenceImagePath);
+    // Option B: label the reference image so Gemini knows its semantic role.
+    requestParts.push({
+      text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this room photographed from a different camera angle. You MUST replicate the same furniture pieces, fabric colours, material finishes, and decor objects shown here. Do not invent new furniture families. Only the viewpoint and camera angle change between this reference and the output you are generating.",
+    });
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
   }
   if (stagingMaskBuffer) {

@@ -6783,57 +6783,96 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: stage2OnlyRouting.sourceStage,
         isExteriorScene: payload.options.sceneType === "exterior",
       });
-      const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
-        stagingStyle: payload.options.stagingStyle || "standard_listing",
-        roomType: payload.options.roomType,
-        sceneType: payload.options.sceneType as any,
-        angleHint: undefined,
-        profile: undefined,
-        stagingRegion: undefined,
-        sourceStage: stage2OnlyRouting.sourceStage,
-        promptMode: stage2OnlyPromptMode,
-        stage2Mode: explicitStage2ModeStage2Only,
-        jobId: payload.jobId,
-        imageId: payload.imageId,
-        layoutPlan: stage2OnlyLayoutPlan,
-        roomConsistencyV1: (payload.options as any)?.roomConsistencyV1,
-        curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
-        onAttemptSuperseded: (nextAttemptId) => {
-          stage2AttemptId = nextAttemptId;
-        },
-      });
-      await consumeManualRetryAttemptIfNeeded("stage2_only", Number((stage2Result as any)?.attempts || 0) > 0);
-      const path2 = stage2Result.outputPath;
-      if (await stopIfCancelled("stage2_only_post_stage2")) return;
-      recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
-      const stage2OnlyAttemptsUsed = Math.max(1, Number(stage2Result.attempts || 1));
-      for (let attemptIndex = 0; attemptIndex < stage2OnlyAttemptsUsed; attemptIndex++) {
-        const attemptNo = attemptIndex + 1;
-        const attemptPath = attemptIndex === stage2OnlyAttemptsUsed - 1
-          ? path2
-          : siblingOutPath(basePath, attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`, ".webp");
-        try {
-          const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
-          annotateAttemptSignedUrl("2", attemptNo, signed);
-        } catch (signErr) {
-          nLog("[STAGE_OUTPUT_SIGNED] stage=2 stage2-only sign failed", {
+
+      // Option A: download approved master image for room-consistency reference views so
+      // it can be passed as image conditioning into the Stage 2 generation call.
+      const stage2OnlyRoomConsistencyV1 = (payload.options as any)?.roomConsistencyV1 as any;
+      const stage2OnlyApprovedMasterUrl = String(stage2OnlyRoomConsistencyV1?.approvedMasterImageUrl || "").trim() || null;
+      const stage2OnlyIsReferenceView = stage2OnlyRoomConsistencyV1?.enabled === true && stage2OnlyRoomConsistencyV1?.viewRole === "reference";
+      let stage2OnlyReferencePath: string | undefined;
+      if (stage2OnlyIsReferenceView && stage2OnlyApprovedMasterUrl) {
+        stage2OnlyReferencePath = await downloadToTemp(
+          stage2OnlyApprovedMasterUrl,
+          `${payload.jobId}-room-master-reference`
+        ).catch((err) => {
+          nLog("[ROOM_CONSISTENCY] failed to download master reference image", {
             jobId: payload.jobId,
-            attempt: attemptNo,
-            error: (signErr as any)?.message || String(signErr),
+            url: stage2OnlyApprovedMasterUrl,
+            error: String(err?.message || err),
           });
-        }
+          return undefined;
+        });
+        nLog("[ROOM_CONSISTENCY] master reference image downloaded for stage2-only path", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          roomId: stage2OnlyRoomConsistencyV1?.roomId,
+          hasPath: !!stage2OnlyReferencePath,
+        });
       }
-      let stage2ValidationPassed = stage2Result.validationRisk !== true;
+
+      const stage2OnlyMaxValidationAttempts = resolveStage2MaxAttempts();
+      const sceneLabel = payload.options.sceneType === "exterior" ? "exterior" : "interior";
+      let stage2Result: Awaited<ReturnType<typeof runStage2>> | null = null;
+      let path2 = "";
+      let stage2ValidationPassed = false;
       let stage2OnlyBlockedReason: string | null = null;
       let stage2OnlyFallbackStage: "1A" | "1B" = stage2OnlyBaseStage;
-      const stage2OnlyAttemptNo = stage2OnlyAttemptsUsed;
+      let stage2OnlyAttemptNo = 1;
+      let unifiedRetryValidation: UnifiedValidationResult | undefined;
 
-      timings.stage2Ms = Date.now() - t2;
-      nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
+      for (stage2OnlyAttemptNo = 1; stage2OnlyAttemptNo <= stage2OnlyMaxValidationAttempts; stage2OnlyAttemptNo++) {
+        stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
+          stagingStyle: payload.options.stagingStyle || "standard_listing",
+          roomType: payload.options.roomType,
+          sceneType: payload.options.sceneType as any,
+          angleHint: undefined,
+          profile: undefined,
+          stagingRegion: undefined,
+          sourceStage: stage2OnlyRouting.sourceStage,
+          promptMode: stage2OnlyPromptMode,
+          stage2Mode: explicitStage2ModeStage2Only,
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          layoutPlan: stage2OnlyLayoutPlan,
+          roomConsistencyV1: stage2OnlyRoomConsistencyV1
+            ? { ...stage2OnlyRoomConsistencyV1, approvedMasterImageUrl: stage2OnlyApprovedMasterUrl }
+            : undefined,
+          referenceImagePath: stage2OnlyReferencePath,
+          curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
+          onAttemptSuperseded: (nextAttemptId) => {
+            stage2AttemptId = nextAttemptId;
+          },
+        });
+        await consumeManualRetryAttemptIfNeeded("stage2_only", Number((stage2Result as any)?.attempts || 0) > 0);
+        path2 = stage2Result.outputPath;
+        if (await stopIfCancelled("stage2_only_post_stage2")) return;
+        recordStage2AttemptsFromResult(basePath, stage2Result.attempts);
+        const stage2OnlyAttemptsUsed = Math.max(1, Number(stage2Result.attempts || 1));
+        for (let attemptIndex = 0; attemptIndex < stage2OnlyAttemptsUsed; attemptIndex++) {
+          const attemptNo = attemptIndex + 1;
+          const attemptPath = attemptIndex === stage2OnlyAttemptsUsed - 1
+            ? path2
+            : siblingOutPath(basePath, attemptIndex === 0 ? "-2" : `-2-retry${attemptIndex}`, ".webp");
+          try {
+            const signed = await captureSignedStageOutput("2", attemptNo, attemptPath);
+            annotateAttemptSignedUrl("2", attemptNo, signed);
+          } catch (signErr) {
+            nLog("[STAGE_OUTPUT_SIGNED] stage=2 stage2-only sign failed", {
+              jobId: payload.jobId,
+              attempt: attemptNo,
+              error: (signErr as any)?.message || String(signErr),
+            });
+          }
+        }
+        stage2ValidationPassed = stage2Result.validationRisk !== true;
+        stage2OnlyBlockedReason = null;
+        stage2OnlyFallbackStage = stage2OnlyBaseStage;
 
-      // Run validators on Stage-2 output
-      // Baseline: use Stage 1A when available to match normal pipeline validation behavior
-      const sceneLabel = payload.options.sceneType === "exterior" ? "exterior" : "interior";
+        timings.stage2Ms = Date.now() - t2;
+        nLog(`[worker] Stage-2-only completed in ${timings.stage2Ms}ms`);
+
+        // Run validators on Stage-2 output
+        // Baseline: use Stage 1A when available to match normal pipeline validation behavior
       const validationBaselineCandidate = stage2OnlyValidationBaseline;
       if (typeof validationBaselineCandidate !== "string" || !validationBaselineCandidate.trim() || !String(path2 || "").trim()) {
         throw new Error("VALIDATION_INPUT_MISSING");
@@ -6841,7 +6880,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const validationBaseline = validationBaselineCandidate;
 
       // ═══ Unified Validation (primary validator) ═══
-      let unifiedRetryValidation: UnifiedValidationResult | undefined;
+        unifiedRetryValidation = undefined;
 
       // ═══ Phase H: Stage output consistency check ═══
       const stageOutputCheck = checkStageOutput(path2, "2", payload.jobId);
@@ -7150,16 +7189,44 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ═══ Structural Geometry Check — only if published URLs exist ═══
       // (Don't introduce new publish steps; use URLs available post-publish below)
 
-      if (!stage2ValidationPassed) {
+        if (!stage2ValidationPassed && stage2OnlyAttemptNo < stage2OnlyMaxValidationAttempts) {
+          const retryReason = stage2OnlyBlockedReason || `stage2_validation_failed_attempt_${stage2OnlyAttemptNo}`;
+          mergeAttemptValidation("2", stage2OnlyAttemptNo, {
+            final: {
+              result: "FAILED",
+              finalHard: true,
+              finalCategory: "structure",
+              retryTriggered: true,
+              retriesExhausted: false,
+              retryStrategy: "NORMAL",
+              reason: retryReason,
+            },
+          });
+          nLog("[STAGE2_ONLY_RETRY_SCHEDULED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt: stage2OnlyAttemptNo,
+            retry: stage2OnlyAttemptNo + 1,
+            retriesRemaining: Math.max(0, stage2OnlyMaxValidationAttempts - stage2OnlyAttemptNo),
+            reason: retryReason,
+          });
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: stage2OnlyAttemptNo + 1,
+            retriesRemaining: Math.max(0, stage2OnlyMaxValidationAttempts - stage2OnlyAttemptNo),
+            reason: retryReason,
+          });
+          continue;
+        }
+
+        if (!stage2ValidationPassed) {
         if (!stage2OnlyBlockedReason) {
           const usedAttempts = Number.isFinite((stage2Result as any)?.attempts)
             ? Math.max(1, Math.floor((stage2Result as any).attempts))
             : 1;
-          const maxAttempts = Number.isFinite((stage2Result as any)?.maxAttempts)
-            ? Math.max(1, Math.floor((stage2Result as any).maxAttempts))
-            : usedAttempts;
-          stage2OnlyBlockedReason = `stage2_structural_exhausted after ${usedAttempts}/${maxAttempts} attempts`;
-          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${usedAttempts} fallback=${stage2OnlyFallbackStage}`);
+          stage2OnlyBlockedReason = `stage2_structural_exhausted after ${stage2OnlyAttemptNo}/${stage2OnlyMaxValidationAttempts} attempts`;
+          nLog(`[STAGE2_STRUCTURE_EXHAUSTED] attempts=${usedAttempts} validationRetries=${stage2OnlyAttemptNo}/${stage2OnlyMaxValidationAttempts} fallback=${stage2OnlyFallbackStage}`);
         } else {
           nLog("[STAGE2_VALIDATION_BLOCKED]", {
             jobId: payload.jobId,
@@ -7178,6 +7245,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             reason: stage2OnlyBlockedReason,
           },
         });
+        }
+
+        break;
+      }
+
+      if (!stage2Result) {
+        throw new Error("STAGE2_ONLY_RESULT_MISSING");
       }
 
       if (stage2OnlyBlockedReason) {

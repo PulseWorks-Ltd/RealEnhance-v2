@@ -529,7 +529,7 @@ function deriveUnifiedCompletionState(params: {
 
   const isFallback =
     requestedFinalStage === "2"
-      ? !stage2NotExpectedByDesign && !hasStage2 && hasStage1B
+      ? !stage2NotExpectedByDesign && !hasStage2 && (hasStage1B || hasStage1A)
       : requestedFinalStage === "1B"
       ? !stage1BCompletedWithoutOutput && !hasStage1B && hasStage1A
       : false;
@@ -540,7 +540,9 @@ function deriveUnifiedCompletionState(params: {
   } else if (isFallback) {
     if (requestedFinalStage === "2") {
       fallbackMessage =
-        "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again.";
+        hasStage1B
+          ? "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again."
+          : "We couldn’t safely finish staging for this image. The best enhanced version is shown.";
     } else if (requestedFinalStage === "1B") {
       fallbackMessage =
         "We couldn’t provide the decluttered image, but here is an enhanced copy of the original. Use Edit to declutter or Retry to try again.";
@@ -8463,7 +8465,7 @@ export default function BatchProcessor({
                         const isApprovingMaster = roomConsistencyApprovalLoading === roomConsistencyRoomId;
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
-                        const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact;
+                        const isUiComplete = (!isError && isSuccessStatus && (targetUrlPresent || unifiedCompletion.isFallback)) || hasCompletedEditArtifact;
                         const isIntermediateProcessing = false;
                         const intermediateStageMessage: string | null = null;
                         
