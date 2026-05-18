@@ -23,9 +23,9 @@ Furniture must adapt to the room. The room must never adapt to the furniture.
 
 PERSPECTIVE / VANISHING-POINT LOCK
 
-The perspective lines and vanishing points of the TARGET image are absolutely locked.
+Keep the TARGET image perspective, vanishing-point logic, and room geometry consistent.
 
-You must warp, skew, scale, and adapt the furnishings to fit the native 3D geometry and perspective of the TARGET room.
+Adapt furnishing placement, scale, and orientation so the staged result sits naturally within the TARGET room's native 3D geometry and perspective.
 
 Contact points between furniture and architectural surfaces must respect the TARGET room's geometry.
 Furniture must visually conform to the existing floor plane and wall angles.
@@ -41,7 +41,7 @@ export const STAGE2_CAMERA_IMMUTABILITY_BLOCK = `
 ────────────────────────────────
 CAMERA IMMUTABILITY — HARD LOCK
 ────────────────────────────────
-The TARGET image camera position, focal geometry, framing, crop, horizon alignment, perspective depth, and field-of-view are immutable.
+Keep the TARGET image viewpoint, framing, horizon alignment, and field-of-view visually consistent.
 
 Maintain exact camera geometry:
 - same viewpoint
@@ -54,16 +54,11 @@ Do NOT:
 - rotate
 - widen
 - narrow
-- normalize
-- rebalance
-- reinterpret
-- center
-- improve composition
 - alter viewing angle
 - adjust perspective
 - introduce camera shift, re-angle, zoom, or recrop
 
-All staging must conform to the exact existing camera geometry of the TARGET image.
+All staging must stay within the existing TARGET view rather than re-framing the room.
 `;
 
 export const STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK = `

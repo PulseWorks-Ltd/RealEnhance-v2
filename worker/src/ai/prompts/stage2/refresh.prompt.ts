@@ -119,16 +119,19 @@ const CONTINUITY_WEIGHTING_BLOCK = `
 CONTINUITY WEIGHTING
 
 Prioritize continuity of:
+- same major furniture identity or family
 - major furniture placement
 - furnishing category
 - spatial layout
-- side relationships
+- object-to-object relationships
+- room-relative anchor relationships
 - room function
 - overall style palette
 
-Minor decorative objects may vary naturally provided the room remains clearly the same staged space.
+Treat the approved room state as the baseline to continue from, not a reason to redesign the layout.
+Minor decorative objects may vary only when they are not clearly established or not naturally visible from this angle.
 
-Do NOT force exact replication of:
+Do NOT force exact pixel-for-pixel replication of:
 - artwork
 - lamp shape
 - rug pattern
@@ -224,7 +227,7 @@ ${REFRESH_TRANSFORMATION_FREEDOM_BLOCK}
 
 REFRESH LOGIC — FLEXIBLE STAGING MODE
 - Optimize the room for the requested room type, realism, and listing quality.
-- Adapt furnishings to the existing room geometry and camera framing.
+- Preserve the established room state while adapting furnishings to the existing room geometry and current view.
 - Preserve room density balance and circulation.
 - Keep staging physically coherent: grounded on the floor, aligned to perspective, and believable in scale.
 - Never modify structural relationships, openings, built-ins, or fixed fixtures.
