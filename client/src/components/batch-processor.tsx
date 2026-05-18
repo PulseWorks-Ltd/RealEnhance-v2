@@ -1454,6 +1454,7 @@ export default function BatchProcessor({
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
+  const [roomConsistencyApprovalLoading, setRoomConsistencyApprovalLoading] = useState<string | null>(null);
 
   const clientBatchIdRef = useRef<string | null>(null);
   const activePollingBatchIdRef = useRef<string | null>(null);
@@ -6060,6 +6061,80 @@ export default function BatchProcessor({
     setRegionEditorOpen(true);
   };
 
+  const handleApproveRoomConsistencyMaster = async (imageIndex: number) => {
+    const item = results[imageIndex];
+    const roomConsistency = item?.roomConsistency || item?.result?.roomConsistency || item?.meta?.roomConsistency || null;
+    const roomId = String(roomConsistency?.roomId || "").trim();
+    const stageMap = item?.stageUrls || item?.result?.stageUrls || item?.stageOutputs || item?.result?.stageOutputs || {};
+    const stage2Url =
+      toDisplayUrl(stageMap?.['2']) ||
+      toDisplayUrl(stageMap?.stage2) ||
+      toDisplayUrl(item?.stage2Url) ||
+      toDisplayUrl(item?.result?.stage2Url) ||
+      toDisplayUrl(item?.retryLatestUrl) ||
+      toDisplayUrl(item?.result?.retryLatestUrl) ||
+      null;
+
+    if (!roomId || !stage2Url) {
+      toast({
+        title: "Approval unavailable",
+        description: "The approved master view is not ready yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setRoomConsistencyApprovalLoading(roomId);
+    try {
+      await apiJson("/api/groups/room-consistency/approve-master", {
+        method: "POST",
+        body: JSON.stringify({
+          roomId,
+          masterJobId: item?.jobId || item?.result?.jobId || null,
+          approvedMasterImageUrl: stage2Url,
+        }),
+      });
+
+      setResults((prev) => prev.map((entry, idx) => {
+        if (idx !== imageIndex) return entry;
+        const currentRoomConsistency = entry?.roomConsistency || entry?.result?.roomConsistency || entry?.meta?.roomConsistency || {};
+        return {
+          ...entry,
+          roomConsistency: {
+            ...currentRoomConsistency,
+            approvedMasterImageUrl: stage2Url,
+            roomState: {
+              ...(currentRoomConsistency?.roomState || {}),
+              masterApproved: true,
+              masterApprovalStatus: "approved",
+              masterStagedImageUrl: stage2Url,
+            },
+          },
+        };
+      }));
+
+      setRunState("running");
+      setProgressText("Queued remaining room angles for staged consistency.");
+      const idsToPoll = jobIds.length ? jobIds : (jobId ? [jobId] : []);
+      if (idsToPoll.length) {
+        void startPollingExistingBatch(idsToPoll);
+      }
+
+      toast({
+        title: "Master approved",
+        description: "Secondary room angles are now queued for Stage 2 in sequence.",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Approval failed",
+        description: error?.message || "Unable to approve the master room view.",
+        variant: "destructive",
+      });
+    } finally {
+      setRoomConsistencyApprovalLoading(null);
+    }
+  };
+
   const handleRetryImage = async (imageIndex: number, customInstructions?: string, sceneType?: "auto" | "interior" | "exterior", allowStagingOverride?: boolean, furnitureReplacementOverride?: boolean, roomType?: string, windowCount?: number, referenceImage?: File, retryStage?: StageKey, baselineUrl?: string | null, sourceStageLabel?: SourceStageLabel, stage1BWasRequested?: boolean, stagesToRun?: StageKey[], requestedStagesList?: StageKey[], baselineStage?: "original" | "1A" | "1B" | "latest") => {
     // ✅ Prevent double retry on same image (sync ref avoids rapid double-click races)
     if (!files || imageIndex >= files.length || retryInFlightRef.current.has(imageIndex) || retryingImages.has(imageIndex)) return;
@@ -8364,6 +8439,24 @@ export default function BatchProcessor({
                         const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
                         const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
+                        const roomConsistency = result?.roomConsistency || result?.result?.roomConsistency || result?.meta?.roomConsistency || null;
+                        const roomConsistencyRoomId = String(roomConsistency?.roomId || "").trim();
+                        const roomConsistencyViewRole = String(roomConsistency?.viewRole || "").trim();
+                        const roomConsistencyApprovalStatus = String(
+                          roomConsistency?.roomState?.masterApprovalStatus || roomConsistency?.masterApprovalStatus || ""
+                        ).trim().toLowerCase();
+                        const isAwaitingMasterApproval =
+                          roomConsistencyViewRole === "reference" &&
+                          blockedStage === "2" &&
+                          (!!roomConsistencyRoomId || !!roomConsistency) &&
+                          (roomConsistencyApprovalStatus === "pending" || roomConsistencyApprovalStatus === "ready" || String(result?.validationNote || "").toLowerCase().includes("awaiting approved master"));
+                        const canApproveMaster =
+                          roomConsistencyViewRole === "primary" &&
+                          !!roomConsistencyRoomId &&
+                          !!stage2Url &&
+                          roomConsistencyApprovalLoading !== roomConsistencyRoomId &&
+                          (roomConsistencyApprovalStatus === "ready" || roomConsistencyApprovalStatus === "pending" || !roomConsistencyApprovalStatus);
+                        const isApprovingMaster = roomConsistencyApprovalLoading === roomConsistencyRoomId;
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
                         const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact;
@@ -8778,6 +8871,11 @@ export default function BatchProcessor({
                                   <p className="text-xs text-slate-500">
                                     {displayStatus}
                                   </p>
+                                  {isAwaitingMasterApproval && (
+                                    <p className="text-xs font-medium text-amber-700">
+                                      Waiting for the approved master room view before this angle enters Stage 2.
+                                    </p>
+                                  )}
                                   {fallbackMessage && (
                                     <p className="mt-1 text-xs text-amber-700">
                                       {fallbackMessage}
@@ -8863,6 +8961,16 @@ export default function BatchProcessor({
                                       className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition"
                                     >
                                       Download
+                                    </button>
+                                  )}
+                                  {canApproveMaster && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleApproveRoomConsistencyMaster(i)}
+                                      disabled={isApprovingMaster}
+                                      className="rounded-full px-4 py-2 text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 transition disabled:opacity-60 disabled:cursor-not-allowed"
+                                    >
+                                      {isApprovingMaster ? "Approving..." : "Approve Master"}
                                     </button>
                                   )}
                                   <button

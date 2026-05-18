@@ -123,6 +123,240 @@ import {
   type ValidationIssueTier,
   type ValidationIssueType,
 } from "./validators/issueTypes";
+
+function resolveRoomConsistencyStageUrlsFromJob(job: any) {
+  return normalizeStageUrls({
+    ...((job?.meta?.stageUrls || {}) as Record<string, string | null | undefined>),
+    ...((job?.stageUrls || {}) as Record<string, string | null | undefined>),
+    ...((job?.payload?.stageUrls || {}) as Record<string, string | null | undefined>),
+  });
+}
+
+function buildRoomConsistencyStatusPayload(base: any, overrides: Record<string, any> = {}) {
+  return {
+    ...(base || {}),
+    ...overrides,
+    roomState: {
+      ...((base || {})?.roomState || {}),
+      ...(overrides.roomState || {}),
+    },
+  };
+}
+
+async function syncRoomConsistencyParentCompletion(params: {
+  parentJobId: string;
+  childJobId: string;
+  resultUrl: string;
+  stage2Url: string;
+  roomConsistency: any;
+}) {
+  const parentJob = await getJob(params.parentJobId);
+  if (!parentJob) return;
+
+  const mergedStageUrls = normalizeStageUrls({
+    ...resolveRoomConsistencyStageUrlsFromJob(parentJob),
+    stage2: params.stage2Url,
+  });
+  const nextRoomConsistency = buildRoomConsistencyStatusPayload(
+    parentJob?.roomConsistency || parentJob?.meta?.roomConsistency || parentJob?.payload?.options?.roomConsistencyV1 || {},
+    params.roomConsistency,
+  );
+
+  await updateJob(params.parentJobId, {
+    status: "complete",
+    success: true,
+    completed: true,
+    currentStage: "finalizing",
+    finalStage: "2",
+    resultStage: "2",
+    stageCompleted: "2",
+    finalOutputUrl: params.resultUrl,
+    resultUrl: params.resultUrl,
+    imageUrl: params.resultUrl,
+    latestRetryUrl: params.resultUrl,
+    retryLatestUrl: params.resultUrl,
+    retryLatestJobId: params.childJobId,
+    blockedStage: null,
+    fallbackStage: null,
+    validationNote: null,
+    stageUrls: mergedStageUrls,
+    roomConsistency: nextRoomConsistency,
+    meta: {
+      ...(parentJob?.meta || {}),
+      roomConsistency: nextRoomConsistency,
+    },
+  }).catch(() => {});
+}
+
+async function enqueueRoomConsistencyFollowupJob(params: {
+  parentJobId: string;
+  approvedMasterImageUrl: string;
+}) {
+  const parentJob = await getJob(params.parentJobId);
+  if (!parentJob) return null;
+
+  const roomConsistency =
+    parentJob?.roomConsistency ||
+    parentJob?.meta?.roomConsistency ||
+    parentJob?.payload?.options?.roomConsistencyV1 ||
+    null;
+  if (!roomConsistency?.enabled || roomConsistency?.viewRole !== "reference") {
+    return null;
+  }
+
+  const stageUrls = resolveRoomConsistencyStageUrlsFromJob(parentJob);
+  const baselineStage = stageUrls.stage1B ? "1B" : stageUrls.stage1A ? "1A" : null;
+  const baselineUrl = baselineStage === "1B" ? stageUrls.stage1B : baselineStage === "1A" ? stageUrls.stage1A : null;
+  if (!baselineStage || !baselineUrl) {
+    return null;
+  }
+
+  const payloadOptions = parentJob?.payload?.options || {};
+  const approvedAt = new Date().toISOString();
+  const jobId = `job_${randomUUID()}`;
+  const createdAt = new Date().toISOString();
+  const nextRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistency, {
+    approvedMasterImageUrl: params.approvedMasterImageUrl,
+    stage2BlockedUntilMasterApproval: false,
+    internalFollowup: true,
+    followupParentJobId: params.parentJobId,
+    roomState: {
+      roomId: roomConsistency.roomId,
+      primaryImageId: roomConsistency.primaryImageId || parentJob?.imageId || null,
+      primaryJobId: roomConsistency.primaryJobId || null,
+      masterApproved: true,
+      masterApprovalStatus: "approved",
+      masterStagedImageUrl: params.approvedMasterImageUrl,
+      masterApprovedAt: approvedAt,
+    },
+  });
+
+  const payload: AnyJobPayload = {
+    jobId,
+    userId: parentJob.userId,
+    imageId: parentJob.imageId,
+    type: "enhance",
+    jobType: "retry",
+    agencyId: parentJob.agencyId || parentJob.payload?.agencyId,
+    propertyId: parentJob.propertyId || parentJob.payload?.propertyId,
+    clientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId,
+    sourceStage: baselineStage,
+    sourceUrl: baselineUrl,
+    baselineStage,
+    stageUrls,
+    options: {
+      ...payloadOptions,
+      virtualStage: true,
+      stage2Only: true,
+      roomConsistencyV1: nextRoomConsistency,
+    },
+    createdAt,
+    remoteOriginalUrl: parentJob.payload?.remoteOriginalUrl,
+    remoteOriginalKey: parentJob.payload?.remoteOriginalKey,
+    retryType: "manual_retry",
+    retrySourceStage: baselineStage,
+    retrySourceUrl: baselineUrl,
+    retryBaselineStage: baselineStage,
+    retryBaselineUrl: baselineUrl,
+    retryRequestedStages: ["2"],
+    retryStagesToRun: ["2"],
+    retryParentImageId: parentJob.imageId,
+    galleryParentImageId: parentJob.payload?.galleryParentImageId || parentJob.imageId,
+    retryParentJobId: params.parentJobId,
+    retryClientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId,
+    stage2OnlyMode: {
+      enabled: true,
+      baseStage: baselineStage,
+      ...(baselineStage === "1B"
+        ? {
+            base1BUrl: baselineUrl,
+            sourceStage: "1B-stage-ready",
+            stage1BMode: "stage-ready",
+          }
+        : {
+            base1AUrl: baselineUrl,
+            sourceStage: "1A",
+          }),
+    },
+    executionPlan: {
+      runStage1A: false,
+      runStage1B: false,
+      runStage2: true,
+      stage2Baseline: baselineStage,
+      baselineUrl,
+      sourceStage: baselineStage,
+    },
+  } as any;
+
+  const queue = new Queue(JOB_QUEUE_NAME, { connection: { url: REDIS_URL } });
+  try {
+    await Promise.all([
+      queue.add(JOB_QUEUE_NAME, payload, {
+        jobId,
+        attempts: Math.max(1, Number(process.env.JOB_ATTEMPTS || 3)),
+        backoff: {
+          type: "exponential",
+          delay: Math.max(100, Number(process.env.JOB_BACKOFF_DELAY_MS || 1000)),
+        },
+      }),
+      saveJobMetadata({
+        userId: parentJob.userId,
+        imageId: parentJob.imageId,
+        jobId,
+        createdAt,
+        requestedStages: {
+          stage1a: true,
+          stage1b: baselineStage === "1B" ? "full" : undefined,
+          stage2: true,
+          stage2Mode: payloadOptions?.stagingPreference === "refresh" ? "refresh" : payloadOptions?.stagingPreference === "full" ? "empty" : "auto",
+        },
+      } as any, JOB_META_TTL_PROCESSING_SECONDS),
+      updateJob(jobId, {
+        id: jobId,
+        jobId,
+        type: "enhance",
+        userId: parentJob.userId,
+        imageId: parentJob.imageId,
+        status: "queued",
+        payload,
+        clientBatchId: parentJob.clientBatchId || parentJob.payload?.clientBatchId || undefined,
+        sourceStage: baselineStage,
+        baselineStage,
+        stageUrls,
+        roomConsistency: nextRoomConsistency,
+        meta: {
+          roomConsistency: nextRoomConsistency,
+        },
+        createdAt,
+      }),
+    ]);
+  } finally {
+    await queue.close().catch(() => {});
+  }
+
+  await updateJob(params.parentJobId, {
+    status: "processing",
+    currentStage: "STAGE_2",
+    blockedStage: null,
+    fallbackStage: null,
+    validationNote: null,
+    retryLatestJobId: jobId,
+    roomConsistency: buildRoomConsistencyStatusPayload(nextRoomConsistency, {
+      latestStage2JobId: jobId,
+      currentStatus: "processing_stage2",
+    }),
+    meta: {
+      ...(parentJob?.meta || {}),
+      roomConsistency: buildRoomConsistencyStatusPayload(nextRoomConsistency, {
+        latestStage2JobId: jobId,
+        currentStatus: "processing_stage2",
+      }),
+    },
+  }).catch(() => {});
+
+  return { jobId, imageId: parentJob.imageId };
+}
+
 const STAGE1B_MAX_ATTEMPTS = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS || 2));
 const POST_1B_TIMEOUT_MS = 3000;
 const GEMINI_CONFIRM_MAX_RETRIES = Math.max(0, Number(process.env.GEMINI_CONFIRM_MAX_RETRIES || 2));
@@ -222,6 +456,13 @@ import { finalizeImageChargeFromWorker, startBillingFinalizationRetryLoop } from
 import { applyFinalBlackEdgeGuard, assertNoDarkBorder, detectBlackCornerArtifact } from "./utils/finalBlackEdgeGuard";
 import { buildStructuralConstraintBlock } from "./utils/structuralConstraintBuilder";
 import { normalizeMaskBase64, normalizeMaskBufferToPng } from "./utils/mask";
+import {
+  canReleaseRoomConsistencyStage2,
+  claimRoomConsistencySecondary,
+  completeRoomConsistencySecondary,
+  markRoomConsistencyImageWaiting,
+  markRoomConsistencyMasterReady,
+} from "../../shared/src/roomConsistencyStore";
 
 type CachedFurnitureDetectionResult = FurnitureDetectionResult | null;
 
@@ -4013,7 +4254,8 @@ async function completePartialJob(params: {
   const hasUsableFinalOutput = typeof resultUrl === "string" && resultUrl.length > 0;
   const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
   const isEnhancementJob = (billingContext?.payload as any)?.type === "enhance";
-  const isFreeManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry";
+  const isFreeManualRetry = (billingContext?.payload as any)?.retryType === "manual_retry"
+    || (billingContext?.payload as any)?.options?.roomConsistencyV1?.internalFollowup === true;
   const completionType: "fallback_1b" | "fallback_1a" = finalStage === "1B" ? "fallback_1b" : "fallback_1a";
   const finalDeliveredStage: "1A" | "1B" = finalStage;
   const requestedBeyond1A = !!(
@@ -5585,6 +5827,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       : normalizedJobType === "initial"
         ? "initial"
         : (isDerivedEnhanceJob ? "retry" : "initial");
+  const roomConsistencyContext = ((payload.options as any)?.roomConsistencyV1 || null) as any;
+  const isRoomConsistencyPrimary = roomConsistencyContext?.enabled === true && roomConsistencyContext?.viewRole === "primary";
+  const isRoomConsistencyReference = roomConsistencyContext?.enabled === true && roomConsistencyContext?.viewRole === "reference";
+  const isRoomConsistencyInternalFollowup = roomConsistencyContext?.internalFollowup === true;
+  const roomConsistencyParentJobId = String(roomConsistencyContext?.followupParentJobId || (payload as any).retryParentJobId || "").trim();
+  let roomConsistencyApprovedMasterImageUrl = String(roomConsistencyContext?.approvedMasterImageUrl || "").trim() || null;
+  let roomConsistencyReferencePath: string | undefined;
 
   // Check if we have a remote original URL (multi-service deployment)
   const remoteUrl: string | undefined = (payload as any).remoteOriginalUrl;
@@ -7093,7 +7342,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // Finalize reservation with bundled pricing: Stage1 already done, Stage2 succeeded here
       try {
         const isEnhancementJob = (payload as any).type === "enhance";
-        const isFreeManualRetry = (payload as any).retryType === "manual_retry";
+        const isFreeManualRetry = (payload as any).retryType === "manual_retry"
+          || (payload as any)?.options?.roomConsistencyV1?.internalFollowup === true;
         const billingStage1BUrl = stage2OnlyBaseStage === "1B" ? (payload.stage2OnlyMode?.base1BUrl || null) : null;
         const billingStage2Url = pub2Url || null;
         const billingStage1AUrl = stage2OnlyBaseStage === "1A"
@@ -7968,7 +8218,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const hasUsableFinalOutput = typeof resultUrl === "string" && resultUrl.length > 0;
     const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
     const isEnhancementJob = (payload as any).type === "enhance";
-    const isFreeManualRetry = (payload as any).retryType === "manual_retry";
+    const isFreeManualRetry = (payload as any).retryType === "manual_retry"
+      || (payload as any)?.options?.roomConsistencyV1?.internalFollowup === true;
     const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
 
     try {
@@ -9948,6 +10199,97 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let path2: string = stage2InputResolved;
   let stage2LayoutPlan: Stage2LayoutPlan | null = null;
   let stage2TimedOut = false; // FIX 4: Track timeout status
+
+  if (payload.options.virtualStage && !stage2Blocked && roomConsistencyContext?.enabled && roomConsistencyContext?.roomId) {
+    const gate = await canReleaseRoomConsistencyStage2({
+      roomId: roomConsistencyContext.roomId,
+      imageId: payload.imageId,
+    });
+
+    if (!gate.allowed) {
+      const waitReason = gate.reason === "awaiting_master_approval"
+        ? "Awaiting approved master view before Stage 2."
+        : "Waiting for the previous room angle to finish Stage 2.";
+
+      if (isRoomConsistencyReference && !isRoomConsistencyInternalFollowup && ["awaiting_master_approval", "awaiting_turn", "secondary_in_progress"].includes(String(gate.reason || ""))) {
+        await markRoomConsistencyImageWaiting({
+          roomId: roomConsistencyContext.roomId,
+          imageId: payload.imageId,
+        }).catch(() => {});
+
+        const currentJobState = await getJob(payload.jobId);
+        const waitingRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyContext, {
+          approvedMasterImageUrl: gate.group?.approvedMasterImageUrl || roomConsistencyApprovedMasterImageUrl,
+          currentStatus: "waiting_stage2",
+          stage2BlockedUntilMasterApproval: true,
+          roomState: {
+            roomId: roomConsistencyContext.roomId,
+            masterApproved: gate.group?.masterApprovalStatus === "approved",
+            masterApprovalStatus: gate.group?.masterApprovalStatus || roomConsistencyContext?.roomState?.masterApprovalStatus || "pending",
+            masterStagedImageUrl: gate.group?.approvedMasterImageUrl || undefined,
+          },
+        });
+
+        await updateJob(payload.jobId, {
+          blockedStage: "2",
+          fallbackStage: stage2BaseStage,
+          validationNote: waitReason,
+          roomConsistency: waitingRoomConsistency,
+          meta: {
+            ...(currentJobState?.meta || {}),
+            roomConsistency: waitingRoomConsistency,
+          },
+        }).catch(() => {});
+
+        const fallbackStage: "1A" | "1B" = (payload.options.declutter && !!path1B) ? "1B" : "1A";
+        const fallbackPath = fallbackStage === "1B" ? path1B! : path1A;
+        await completePartialJobWithSummary({
+          jobId: payload.jobId,
+          triggerStage: "2",
+          finalStage: fallbackStage,
+          finalPath: fallbackPath,
+          pub1AUrl,
+          pub1BUrl,
+          sceneMeta: { ...sceneMeta },
+          userMessage: waitReason,
+          reason: String(gate.reason || "awaiting_master_approval"),
+          stageOutputs: { "1A": path1A, ...(path1B ? { "1B": path1B } : {}) },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: originalUserDeclutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
+        });
+        return;
+      }
+
+      if (isRoomConsistencyInternalFollowup) {
+        await safeWriteJobStatus(
+          payload.jobId,
+          { status: "failed", errorMessage: `room_consistency_gate_failed:${gate.reason || "unknown"}` },
+          "room_consistency_gate_failed"
+        );
+        return;
+      }
+    } else {
+      roomConsistencyApprovedMasterImageUrl = gate.group?.approvedMasterImageUrl || roomConsistencyApprovedMasterImageUrl;
+      if (isRoomConsistencyReference && isRoomConsistencyInternalFollowup) {
+        await claimRoomConsistencySecondary({
+          roomId: roomConsistencyContext.roomId,
+          imageId: payload.imageId,
+          stage2JobId: payload.jobId,
+        }).catch(() => {});
+      }
+    }
+
+    if (isRoomConsistencyReference && roomConsistencyApprovedMasterImageUrl) {
+      roomConsistencyReferencePath = await downloadToTemp(
+        roomConsistencyApprovedMasterImageUrl,
+        `${payload.jobId}-room-master-reference`
+      ).catch(() => undefined);
+    }
+  }
   
   try {
     if (payload.options.virtualStage && !stage2Blocked) {
@@ -10034,7 +10376,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             imageId: payload.imageId,
             layoutPlan: stage2LayoutPlan,
-            roomConsistencyV1: (payload.options as any)?.roomConsistencyV1,
+            roomConsistencyV1: buildRoomConsistencyStatusPayload((payload.options as any)?.roomConsistencyV1, {
+              approvedMasterImageUrl: roomConsistencyApprovedMasterImageUrl,
+            }),
+            referenceImagePath: roomConsistencyReferencePath,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -14023,6 +14368,82 @@ All openings must remain identical in position and size to the original image.`;
       }).catch(() => {});
     }
   }
+  if (isRoomConsistencyPrimary && roomConsistencyContext?.roomId && committedStage2Url) {
+    const readyGroup = await markRoomConsistencyMasterReady({
+      roomId: roomConsistencyContext.roomId,
+      masterImageId: payload.imageId,
+      masterJobId: payload.jobId,
+      stagedImageUrl: committedStage2Url,
+    }).catch(() => null);
+    const readyRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyContext, {
+      approvedMasterImageUrl: committedStage2Url,
+      stage2BlockedUntilMasterApproval: false,
+      currentStatus: "master_ready",
+      roomState: {
+        roomId: roomConsistencyContext.roomId,
+        masterApproved: false,
+        masterApprovalStatus: readyGroup?.masterApprovalStatus || "ready",
+        masterStagedImageUrl: committedStage2Url,
+        masterReadyAt: readyGroup?.masterReadyAt || new Date().toISOString(),
+      },
+    });
+    await updateJob(payload.jobId, {
+      roomConsistency: readyRoomConsistency,
+      meta: {
+        ...((await getJob(payload.jobId))?.meta || {}),
+        roomConsistency: readyRoomConsistency,
+      },
+    }).catch(() => {});
+  }
+  if (
+    isRoomConsistencyReference &&
+    isRoomConsistencyInternalFollowup &&
+    roomConsistencyContext?.roomId &&
+    roomConsistencyParentJobId &&
+    committedStage2Url &&
+    committedResultUrl
+  ) {
+    const completedGroup = await completeRoomConsistencySecondary({
+      roomId: roomConsistencyContext.roomId,
+      imageId: payload.imageId,
+    }).catch(() => null);
+    const completedRoomConsistency = buildRoomConsistencyStatusPayload(roomConsistencyContext, {
+      approvedMasterImageUrl: roomConsistencyApprovedMasterImageUrl,
+      currentStatus: "stage2_complete",
+      stage2BlockedUntilMasterApproval: false,
+      roomState: {
+        roomId: roomConsistencyContext.roomId,
+        masterApproved: true,
+        masterApprovalStatus: "approved",
+        masterStagedImageUrl: roomConsistencyApprovedMasterImageUrl || undefined,
+      },
+    });
+    await syncRoomConsistencyParentCompletion({
+      parentJobId: roomConsistencyParentJobId,
+      childJobId: payload.jobId,
+      resultUrl: committedResultUrl,
+      stage2Url: committedStage2Url,
+      roomConsistency: completedRoomConsistency,
+    });
+
+    const nextSecondary = completedGroup?.images
+      ?.filter((image) => image.viewRole === "reference" && !image.stage2Completed)
+      .sort((left, right) => left.sequenceIndex - right.sequenceIndex)
+      .find((image) => image.sequenceIndex === completedGroup.nextSecondarySequenceIndex);
+    if (nextSecondary?.initialJobId && roomConsistencyApprovedMasterImageUrl) {
+      const followup = await enqueueRoomConsistencyFollowupJob({
+        parentJobId: nextSecondary.initialJobId,
+        approvedMasterImageUrl: roomConsistencyApprovedMasterImageUrl,
+      }).catch(() => null);
+      if (followup) {
+        await claimRoomConsistencySecondary({
+          roomId: roomConsistencyContext.roomId,
+          imageId: nextSecondary.imageId,
+          stage2JobId: followup.jobId,
+        }).catch(() => {});
+      }
+    }
+  }
   if (stage2Skipped) {
     nLog("[PIPELINE] Job completed at Stage-1A", {
       jobId: payload.jobId,
@@ -14053,7 +14474,8 @@ All openings must remain identical in position and size to the original image.`;
   const hasUsableFinalOutput = typeof committedResultUrl === "string" && committedResultUrl.length > 0;
   const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
   const isEnhancementJob = (payload as any).type === "enhance";
-  const isFreeManualRetry = (payload as any).retryType === "manual_retry";
+  const isFreeManualRetry = (payload as any).retryType === "manual_retry"
+    || (payload as any)?.options?.roomConsistencyV1?.internalFollowup === true;
 
   try {
     const agencyId = (payload as any).agencyId || null;

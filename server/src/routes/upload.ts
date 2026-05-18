@@ -18,6 +18,10 @@ import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
 import { RoomStateV1 } from "../shared/types.js";
 import * as crypto from "node:crypto";
+import {
+  buildRoomConsistencyContext,
+  upsertRoomConsistencyGroup,
+} from "../services/roomConsistencyStore.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
   try {
@@ -200,7 +204,7 @@ function buildRoomConsistencySelectionPlan(metaByIndex: Record<number, any>, upl
 
   for (let i = 0; i < uploadCount; i++) {
     const meta = metaByIndex[i] || {};
-    const roomKey = String(meta.roomKey || "").trim();
+    const roomKey = String(meta.roomGroupId || meta.roomKey || "").trim();
     if (!roomKey) continue;
 
     const reasons: string[] = [];
@@ -419,6 +423,7 @@ export function uploadRouter() {
     if (!uploadCount) return res.status(400).json({ error: "no_files" });
 
     const optionsList = safeParseOptions((req.body as any)?.options);
+    const roomConsistencyMode = isTrueFlag((req.body as any)?.roomConsistencyMode);
     const allowStagingForm = String((req.body as any)?.allowStaging ?? "").toLowerCase() === "true";
     const declutterForm = String((req.body as any)?.declutter ?? "").toLowerCase() === "true";
     const declutterModeForm = String((req.body as any)?.declutterMode || "").trim();
@@ -451,6 +456,24 @@ export function uploadRouter() {
     } catch (e) {
       console.warn('[upload] Failed to parse metaJson:', e);
     }
+
+    const roomConsistencySelectionPlans = roomConsistencyMode
+      ? buildRoomConsistencySelectionPlan(metaByIndex, uploadCount)
+      : {};
+    const roomConsistencyRuntime = new Map<string, {
+      masterIndex: number;
+      masterImageId?: string;
+      masterJobId?: string;
+      groupSize: number;
+      selection: RoomConsistencySelectionPlan;
+      images: Array<{
+        imageId: string;
+        initialJobId: string;
+        userId: string;
+        viewRole: "primary" | "reference";
+        sequenceIndex: number;
+      }>;
+    }>();
 
     let trialSummary: Awaited<ReturnType<typeof getTrialSummary>> | null = null;
     const now = new Date();
@@ -728,6 +751,8 @@ export function uploadRouter() {
         opts.stagingStyle = normalizeStagingStyle((optionsList[i] as any).stagingStyle);
       }
       const meta = metaByIndex[i] || {};
+      const roomId = String(meta.roomGroupId || meta.roomKey || "").trim();
+      const roomPlan = roomId ? roomConsistencySelectionPlans[roomId] : undefined;
       if (meta.sceneType) opts.sceneType = meta.sceneType;
       if (meta.roomType) opts.roomType = normalizeRoomType(meta.roomType);
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
@@ -981,6 +1006,37 @@ export function uploadRouter() {
       const imageId = (rec as any).imageId ?? (rec as any).id;
       await addImageToUser(sessUser.id, imageId);
 
+      if (roomPlan && roomPlan.groupSize > 1) {
+        const existing = roomConsistencyRuntime.get(roomId) || {
+          masterIndex: roomPlan.primaryIndex,
+          groupSize: roomPlan.groupSize,
+          selection: roomPlan,
+          images: [],
+        };
+        const isPrimaryView = roomPlan.primaryIndex === i;
+        const metaAngleOrder = Number(meta.angleOrder);
+        const sequenceIndex = isPrimaryView
+          ? 0
+          : (Number.isFinite(metaAngleOrder) && metaAngleOrder > 1
+            ? Math.floor(metaAngleOrder)
+            : i + 1);
+
+        existing.images.push({
+          imageId,
+          initialJobId: jobId,
+          userId: sessUser.id,
+          viewRole: isPrimaryView ? "primary" : "reference",
+          sequenceIndex,
+        });
+
+        if (isPrimaryView) {
+          existing.masterImageId = imageId;
+          existing.masterJobId = jobId;
+        }
+
+        roomConsistencyRuntime.set(roomId, existing);
+      }
+
       if (!directUpload && finalPath) {
         try {
           const up = await uploadOriginalToS3(finalPath);
@@ -1036,10 +1092,91 @@ export function uploadRouter() {
           stagingStyle: opts.stagingStyle,
           stage2Variant: opts.stage2Variant,
           furnishedState: opts.furnishedState,
+          ...(roomPlan && roomPlan.groupSize > 1
+            ? {
+                roomConsistencyV1: buildRoomConsistencyContext({
+                  roomId,
+                  clientBatchId: clientBatchId || null,
+                  viewRole: roomPlan.primaryIndex === i ? "primary" : "reference",
+                  groupSize: roomPlan.groupSize,
+                  sequenceIndex: roomPlan.primaryIndex === i
+                    ? 0
+                    : (Number.isFinite(Number(meta.angleOrder)) && Number(meta.angleOrder) > 1
+                      ? Math.floor(Number(meta.angleOrder))
+                      : i + 1),
+                  primarySelection: {
+                    method: roomPlan.method,
+                    score: roomPlan.scoreByIndex[roomPlan.primaryIndex]?.score || 0,
+                    reasons: roomPlan.scoreByIndex[roomPlan.primaryIndex]?.reasons || [],
+                  },
+                  roomState: {
+                    roomId,
+                    consistencyModeEnabled: true,
+                    masterApproved: false,
+                    masterApprovalStatus: "pending",
+                    styleProfile: {
+                      stagingStyle: opts.stagingStyle,
+                      roomType: opts.roomType,
+                      sceneType: opts.sceneType,
+                    },
+                    lightingProfile: {},
+                    furnitureMemory: {
+                      persistentIdentityGoal: "Preserve approved master furniture identity.",
+                      materialPalette: [],
+                      colorContinuity: "balanced",
+                    },
+                    relationalSummary: {
+                      placementDirective: "Reuse the approved room design from the master view.",
+                      anchorVisibility: "medium",
+                    },
+                    consistencySettings: {
+                      enforceFurnitureIdentity: true,
+                      enforceStyleContinuity: true,
+                      enforceLightingContinuity: true,
+                      enforceRelationalContinuity: true,
+                    },
+                  },
+                }),
+              }
+            : {}),
         },
       };
 
       stagedJobs.push({ jobId, imageId, jobPayload });
+    }
+
+    for (const [roomId, runtime] of roomConsistencyRuntime.entries()) {
+      if (!runtime.masterImageId) continue;
+
+      await upsertRoomConsistencyGroup({
+        roomId,
+        clientBatchId: clientBatchId || null,
+        masterImageId: runtime.masterImageId,
+        masterJobId: runtime.masterJobId || null,
+        images: runtime.images,
+      });
+    }
+
+    for (const staged of stagedJobs) {
+      const roomConsistency = staged.jobPayload.options?.roomConsistencyV1;
+      if (!roomConsistency?.roomId) continue;
+      const runtime = roomConsistencyRuntime.get(roomConsistency.roomId);
+      if (!runtime?.masterImageId) continue;
+
+      staged.jobPayload.options.roomConsistencyV1 = {
+        ...roomConsistency,
+        primaryImageId: runtime.masterImageId,
+        primaryJobId: runtime.masterJobId || null,
+        roomState: {
+          ...(roomConsistency.roomState || {}),
+          roomId: roomConsistency.roomId,
+          primaryImageId: runtime.masterImageId,
+          primaryJobId: runtime.masterJobId || null,
+          consistencyModeEnabled: true,
+          masterApproved: false,
+          masterApprovalStatus: "pending",
+        },
+      };
     }
 
     if (requiresPayment) {

@@ -159,6 +159,7 @@ export type DeclutterMode = "light" | "stage-ready";
 export interface RoomConsistencyStateV1 {
   roomId: string;
   primaryImageId?: string | null;
+  primaryJobId?: string | null;
   styleProfile?: {
     stagingStyle?: string;
     roomType?: string;
@@ -188,7 +189,10 @@ export interface RoomConsistencyStateV1 {
   };
   consistencyModeEnabled?: boolean;
   masterApproved?: boolean;
+  masterApprovalStatus?: "pending" | "ready" | "approved";
   masterStagedImageUrl?: string;
+  masterReadyAt?: string;
+  masterApprovedAt?: string;
   furnitureContinuityHints?: string;
 }
 
@@ -198,13 +202,48 @@ export interface RoomConsistencyContextV1 {
   clientBatchId?: string;
   viewRole: "primary" | "reference";
   primaryImageId?: string | null;
+  primaryJobId?: string | null;
   groupSize?: number;
+  sequenceIndex?: number;
+  stage2BlockedUntilMasterApproval?: boolean;
+  approvedMasterImageUrl?: string | null;
+  internalFollowup?: boolean;
+  followupParentJobId?: string | null;
   primarySelection?: {
     method: "auto" | "manual";
     score: number;
     reasons: string[];
   };
   roomState?: RoomConsistencyStateV1;
+}
+
+export interface RoomConsistencyImageEntryV1 {
+  imageId: string;
+  initialJobId?: string | null;
+  userId?: string | null;
+  clientBatchId?: string | null;
+  viewRole: "primary" | "reference";
+  sequenceIndex: number;
+  stage2Released?: boolean;
+  stage2Completed?: boolean;
+  waitingForApproval?: boolean;
+  latestStage2JobId?: string | null;
+}
+
+export interface RoomConsistencyGroupStateV1 {
+  roomId: string;
+  clientBatchId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  masterImageId: string;
+  masterJobId?: string | null;
+  masterApprovalStatus: "pending" | "ready" | "approved";
+  masterReadyAt?: string | null;
+  masterApprovedAt?: string | null;
+  approvedMasterImageUrl?: string | null;
+  images: RoomConsistencyImageEntryV1[];
+  nextSecondarySequenceIndex: number;
+  activeSecondaryImageId?: string | null;
 }
 
 export type RoomType =
@@ -348,11 +387,17 @@ export interface EditJobPayload {
 export type AnyJobPayload = EnhanceJobPayload | EditJobPayload | RegionEditJobPayload;
 
 export interface JobRecord {
+  id?: JobId;
   jobId: JobId;
   userId: UserId;
   imageId: ImageId;
-  type: "enhance" | "edit";
+  type: "enhance" | "edit" | "region-edit";
   status: JobStatus;
+  payload?: (AnyJobPayload & Record<string, any>) | null;
+  clientBatchId?: string | null;
+  agencyId?: string | null;
+  propertyId?: string | null;
+  roomConsistency?: (RoomConsistencyContextV1 & Record<string, any>) | null;
   errorMessage?: string;
 
   // Canonical pipeline tracking

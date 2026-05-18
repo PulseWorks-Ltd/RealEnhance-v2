@@ -176,6 +176,7 @@ export type DeclutterMode = "light" | "stage-ready";
 export interface RoomConsistencyStateV1 {
   roomId: string;
   primaryImageId?: string | null;
+  primaryJobId?: string | null;
   styleProfile: {
     stagingStyle: string;
     roomType?: string;
@@ -203,6 +204,12 @@ export interface RoomConsistencyStateV1 {
     enforceLightingContinuity: boolean;
     enforceRelationalContinuity: boolean;
   };
+  consistencyModeEnabled?: boolean;
+  masterApproved?: boolean;
+  masterApprovalStatus?: "pending" | "ready" | "approved";
+  masterStagedImageUrl?: string;
+  masterReadyAt?: string;
+  masterApprovedAt?: string;
 }
 
 export interface RoomConsistencyContextV1 {
@@ -211,7 +218,13 @@ export interface RoomConsistencyContextV1 {
   clientBatchId?: string;
   viewRole: "primary" | "reference";
   primaryImageId?: string | null;
+  primaryJobId?: string | null;
   groupSize?: number;
+  sequenceIndex?: number;
+  stage2BlockedUntilMasterApproval?: boolean;
+  approvedMasterImageUrl?: string | null;
+  internalFollowup?: boolean;
+  followupParentJobId?: string | null;
   primarySelection?: {
     method: "auto" | "manual";
     score: number;
@@ -224,15 +237,47 @@ export interface RoomStateV1 {
   roomId: string;
   roomType?: string;
   masterImageId?: string;
+  masterJobId?: string;
   masterStagedImageUrl?: string;
   masterApproved?: boolean;
+  masterApprovalStatus?: "pending" | "ready" | "approved";
   stagingStyle?: string;
   styleProfile?: string;
   lightingProfile?: string;
   furnitureContinuityHints?: string;
   consistencyModeEnabled?: boolean;
   primaryGenerationMetadata?: Record<string, any>;
+  masterReadyAt?: string;
   approvalTimestamp?: string;
+}
+
+export interface RoomConsistencyImageEntryV1 {
+  imageId: string;
+  initialJobId?: string | null;
+  userId?: string | null;
+  clientBatchId?: string | null;
+  viewRole: "primary" | "reference";
+  sequenceIndex: number;
+  stage2Released?: boolean;
+  stage2Completed?: boolean;
+  waitingForApproval?: boolean;
+  latestStage2JobId?: string | null;
+}
+
+export interface RoomConsistencyGroupStateV1 {
+  roomId: string;
+  clientBatchId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  masterImageId: string;
+  masterJobId?: string | null;
+  masterApprovalStatus: "pending" | "ready" | "approved";
+  masterReadyAt?: string | null;
+  masterApprovedAt?: string | null;
+  approvedMasterImageUrl?: string | null;
+  images: RoomConsistencyImageEntryV1[];
+  nextSecondarySequenceIndex: number;
+  activeSecondaryImageId?: string | null;
 }
 
 export type RoomType =
@@ -437,7 +482,11 @@ export interface JobRecord {
   status: JobStatus;
 
   /** what you enqueued */
-  payload: AnyJobPayload;
+  payload: AnyJobPayload & Record<string, any>;
+  clientBatchId?: string | null;
+  agencyId?: string | null;
+  propertyId?: string | null;
+  roomConsistency?: (RoomConsistencyContextV1 & Record<string, any>) | null;
 
   result?: ImageJobResult;
   error?: string;

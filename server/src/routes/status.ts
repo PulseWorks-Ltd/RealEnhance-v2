@@ -75,10 +75,20 @@ type StatusItem = {
     parentJobId?: string;
     clientBatchId?: string;
   };
+  roomConsistency?: any;
   meta: any;
   mode?: string;
   error?: string | null;
 };
+
+function extractRoomConsistencyStatus(local: any, payload: any) {
+  return (
+    local?.roomConsistency ||
+    local?.meta?.roomConsistency ||
+    payload?.options?.roomConsistencyV1 ||
+    null
+  );
+}
 
 function isTerminalState(state: NormalizedState): boolean {
   return state === "completed" || state === "failed" || state === "cancelled";
@@ -595,6 +605,7 @@ export function statusRouter() {
           local.retryLatestJobId ||
           local?.meta?.retryLatestJobId ||
           null;
+        const roomConsistency = extractRoomConsistencyStatus(local, payload);
         const payloadRetryInfo = extractPayloadRetryInfo(payload);
         const payloadParentJobId = extractPayloadParentJobId(payload);
         const parentJobId = local.parentJobId || local.meta?.parentJobId || (rv && rv.parentJobId) || payloadParentJobId || payloadRetryInfo?.parentJobId || null;
@@ -645,6 +656,7 @@ export function statusRouter() {
           parentJobId: parentJobId || null,
           requestedStages: requestedStages || null,
           retryInfo: retryInfo || undefined,
+          roomConsistency: roomConsistency || undefined,
           // ensure stageUrls is either an object map or null
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           mode: mode || undefined,
