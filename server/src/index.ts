@@ -475,6 +475,7 @@ async function main() {
   app.use("/api", regionEditRouter);
   app.use(cancelRouter());
   app.use("/api", groupsRouter());
+  app.use("/api/groups", groupsRouter());
   app.use("/api", healthRouter());
   app.use("/api", undoRouter());
   app.use("/api/profile", profileRouter());

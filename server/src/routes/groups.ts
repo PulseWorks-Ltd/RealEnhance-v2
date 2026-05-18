@@ -215,6 +215,9 @@ export function groupsRouter() {
 
     try {
       const roomId = String(req.body?.roomId || "").trim();
+      console.log("[room-consistency] approve request received", {
+        roomGroupId: roomId || null,
+      });
       if (!roomId) {
         return res.status(400).json({ ok: false, error: "room_id_required" });
       }
@@ -288,6 +291,12 @@ export function groupsRouter() {
             approvedMasterImageUrl,
           })
         : null;
+
+      console.log("[room-consistency] approve request processed", {
+        roomGroupId: roomId,
+        masterImageId: existingGroup.masterImageId,
+        releasedSecondaryJobs: started ? 1 : 0,
+      });
 
       return res.json({
         ok: true,
