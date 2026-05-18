@@ -303,45 +303,144 @@ function resolveStage2Temperature(attempt: number, reason: Stage2RetryReason, pr
   return 0.30;
 }
 
+type Stage2GenerationProfileName =
+  | "PRIMARY_STAGING_PROFILE"
+  | "SECONDARY_VIEW_CONTINUITY_PROFILE";
+
+type Stage2GenerationProfile = {
+  profileName: Stage2GenerationProfileName;
+  temperature: number;
+  topP: number;
+  topK: number;
+  candidateCount: number;
+};
+
+function resolveSecondaryViewContinuityTemperature(
+  attempt: number,
+  reason: Stage2RetryReason,
+  previousTemperature?: number
+): number {
+  if (attempt <= 1) return 0.32;
+  if (!isStructuralRetryReason(reason)) return previousTemperature ?? 0.32;
+  if (attempt === 2) return 0.30;
+  return 0.28;
+}
+
+function resolveStage2GenerationProfile(opts: {
+  attempt: number;
+  retryReason: Stage2RetryReason;
+  isSecondaryViewContinuityMode: boolean;
+  previousPlan?: Stage2GenerationPlan | null;
+}): Stage2GenerationProfile {
+  if (opts.isSecondaryViewContinuityMode) {
+    return {
+      profileName: "SECONDARY_VIEW_CONTINUITY_PROFILE",
+      temperature: resolveSecondaryViewContinuityTemperature(
+        opts.attempt,
+        opts.retryReason,
+        opts.previousPlan?.temperature
+      ),
+      topP: 0.82,
+      topK: 32,
+      candidateCount: 2,
+    };
+  }
+
+  return {
+    profileName: "PRIMARY_STAGING_PROFILE",
+    temperature: resolveStage2Temperature(opts.attempt, opts.retryReason, opts.previousPlan?.temperature),
+    topP: 0.90,
+    topK: 40,
+    candidateCount: 1,
+  };
+}
+
 type Stage2GenerationPlan = {
+  profileName: Stage2GenerationProfileName;
   model: string;
   temperature: number;
   retryReason: Stage2RetryReason;
   previousPlan?: Stage2GenerationPlan | null;
   topP: number;
   topK: number;
+  candidateCount: number;
   escalated: boolean;
 };
 
 function resolveStage2GenerationPlan(opts: {
   attempt: number;
   retryReason: Stage2RetryReason;
+  isSecondaryViewContinuityMode: boolean;
   previousPlan?: Stage2GenerationPlan | null;
 }): Stage2GenerationPlan {
   const model = resolveStage2Model(opts.attempt, opts.retryReason, opts.previousPlan?.model);
-  const temperature = resolveStage2Temperature(opts.attempt, opts.retryReason, opts.previousPlan?.temperature);
+  const profile = resolveStage2GenerationProfile({
+    attempt: opts.attempt,
+    retryReason: opts.retryReason,
+    isSecondaryViewContinuityMode: opts.isSecondaryViewContinuityMode,
+    previousPlan: opts.previousPlan,
+  });
   const escalated = !!opts.previousPlan && model !== opts.previousPlan.model;
   return {
+    profileName: profile.profileName,
     model,
-    temperature,
-    topP: 0.90,
-    topK: 40,
+    temperature: profile.temperature,
+    topP: profile.topP,
+    topK: profile.topK,
+    candidateCount: profile.candidateCount,
     escalated,
     retryReason: "initial",
   };
 }
 
-function resolveStage2GenerationPlanForAttempt(attempt: number, retryReason: Stage2RetryReason): Stage2GenerationPlan {
+function resolveStage2GenerationPlanForAttempt(
+  attempt: number,
+  retryReason: Stage2RetryReason,
+  isSecondaryViewContinuityMode: boolean
+): Stage2GenerationPlan {
   let plan: Stage2GenerationPlan | null = null;
   const normalizedAttempt = Math.max(1, Math.floor(attempt));
   for (let idx = 1; idx <= normalizedAttempt; idx += 1) {
     plan = resolveStage2GenerationPlan({
       attempt: idx,
       retryReason: idx === 1 ? "initial" : retryReason,
+      isSecondaryViewContinuityMode,
       previousPlan: plan,
     });
   }
   return plan as Stage2GenerationPlan;
+}
+
+function collectSecondaryViewPromptWeighting(textPrompt: string): {
+  preserveCount: number;
+  doNotCount: number;
+  maintainCount: number;
+  unchangedCount: number;
+  stageCount: number;
+  mandatoryCount: number;
+  transferCount: number;
+  suppressionBiasScore: number;
+} {
+  const count = (pattern: RegExp): number => (textPrompt.match(pattern) || []).length;
+  const preserveCount = count(/\bpreserve\b/gi);
+  const doNotCount = count(/\bdo not\b/gi);
+  const maintainCount = count(/\bmaintain\b/gi);
+  const unchangedCount = count(/\bunchanged\b/gi);
+  const stageCount = count(/\bstage\b/gi);
+  const mandatoryCount = count(/\bmandatory\b|must become|must transfer|returning the target image unchanged is incorrect/gi);
+  const transferCount = count(/\btransfer\b|continuity guidance|same staged room|room-state continuity/gi);
+  const suppressionBiasScore = preserveCount + doNotCount + maintainCount + unchangedCount - stageCount - mandatoryCount - transferCount;
+
+  return {
+    preserveCount,
+    doNotCount,
+    maintainCount,
+    unchangedCount,
+    stageCount,
+    mandatoryCount,
+    transferCount,
+    suppressionBiasScore,
+  };
 }
 
 function mapStructuralFailureTypeToRetryReason(failureType: StructuralFailureType | null): Stage2RetryReason {
@@ -927,6 +1026,11 @@ function buildSecondaryReferencePrompt(params: {
   return `SECONDARY VIEW CONSISTENCY OVERRIDE
 Stage the TARGET room image.
 
+MANDATORY STAGING OUTCOME
+The TARGET image must become a staged version of this same room, not remain an unstaged or nearly unchanged copy of the input.
+Furnishing transfer from the REFERENCE image is mandatory whenever the referenced pieces or their equivalents can naturally appear in this angle.
+Returning the original TARGET room with little or no furniture insertion is incorrect.
+
 AUTHORITATIVE HIERARCHY
 1. TARGET architecture is authoritative.
 2. TARGET camera geometry is authoritative.
@@ -955,6 +1059,11 @@ Furniture must adapt to the room. The room must never adapt to the furniture.
 Keep furnishings anchored to the same real room locations relative to permanent features such as walls, windows, openings, hallway transitions, balcony edges, and other fixed architectural features.
 When seen from another angle, furnishings may appear on opposite sides of the image while remaining anchored to the same room locations.
 Do not arbitrarily reposition furnishings for visual balancing or composition cleanup when the REFERENCE establishes a stable room-state relationship.
+
+Affirmative staging rule:
+- Actively insert the transferred staging furniture into the TARGET image.
+- Reconstruct the established staged room state for this new viewpoint.
+- If a referenced furniture piece is naturally visible from this angle, include it unless geometry, occlusion, or crop truly prevents visibility.
 
 Prioritize continuity of major furniture placement, furnishing category, spatial layout, side relationships, room function, and overall style palette.
 Minor decorative objects may vary naturally provided the room remains clearly the same staged space.
@@ -1414,7 +1523,11 @@ ${formatStage2LayoutPlanForPrompt(opts.layoutPlan)}
         : "unknown")
     : "initial";
 
-  const generationPlan = resolveStage2GenerationPlanForAttempt(attemptNumber, retryReason);
+  const generationPlan = resolveStage2GenerationPlanForAttempt(
+    attemptNumber,
+    retryReason,
+    isReferenceViewWithMaster
+  );
 
   if (attemptNumber >= 3) {
     textPrompt += `
@@ -1458,6 +1571,9 @@ Do not add blinds, rods, tracks, or new window coverings.
     const finalSecondaryReminder = `Final requirement:
 Preserve the TARGET room architecture, camera geometry, framing, and perspective exactly.
 Only furnishings may change, and they must adapt to the TARGET room.
+The TARGET image must become a properly staged continuation of the approved room state.
+Mandatory: transfer the established furniture family and relational layout logic from the REFERENCE image.
+Returning the TARGET image unchanged or nearly unchanged is incorrect.
 
 If any conflict exists between TARGET geometry and REFERENCE composition, TARGET geometry always wins.
 Use the REFERENCE image to preserve the same staged room state, furniture family, and object relationships from this new angle.`;
@@ -1473,7 +1589,7 @@ Use the REFERENCE image to preserve the same staged room state, furniture family
     if (opts.referenceImagePath) {
       const ref = toBase64(opts.referenceImagePath);
       requestParts.push({
-        text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this same room photographed from a different camera angle. Use it as same-room continuity guidance: preserve major furniture identity, furnishing family, room-relative layout continuity, decor identity, colour palette, material finishes, and styling decisions whenever they can naturally appear from this angle. Do NOT copy the reference camera framing, and do NOT alter the TARGET architecture, openings, or perspective to imitate the reference. Furniture must adapt to the TARGET room geometry; the room must never adapt to the reference furniture.",
+        text: "APPROVED_MASTER_STAGED_REFERENCE — This is the approved virtual staging output for this same room photographed from a different camera angle. Use it as same-room continuity guidance: preserve major furniture identity, furnishing family, room-relative layout continuity, decor identity, colour palette, material finishes, and styling decisions whenever they can naturally appear from this angle. Furnishing transfer is mandatory for naturally visible pieces. The TARGET image must become a staged continuation of this approved room state, not an unchanged copy of the input. Do NOT copy the reference camera framing, and do NOT alter the TARGET architecture, openings, or perspective to imitate the reference. Furniture must adapt to the TARGET room geometry; the room must never adapt to the reference furniture.",
       });
       requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
     }
@@ -1488,6 +1604,7 @@ Use the REFERENCE image to preserve the same staged room state, furniture family
   }
 
   if (isReferenceViewWithMaster) {
+    const promptWeighting = collectSecondaryViewPromptWeighting(textPrompt);
     nLog("[ROOM_CONSISTENCY_PROVIDER_DEBUG]", {
       phase: "request",
       jobId: opts.jobId,
@@ -1499,38 +1616,34 @@ Use the REFERENCE image to preserve the same staged room state, furniture family
       imageCount: countInlineImages(requestParts),
       hasStructuredAnchorMap: !!opts.referenceAnchorMap,
       hasMask: !!stagingMaskBuffer,
+      promptWeighting,
     });
   }
 
-  nLog(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
-  nLog(`[STAGE2_MODEL] attempt=${attemptNumber} model=${generationPlan.model}`);
+  nLog(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} profile=${generationPlan.profileName} temperature=${generationPlan.temperature} topP=${generationPlan.topP} topK=${generationPlan.topK} candidateCount=${generationPlan.candidateCount} retry_reason=${retryReason} continuity_mode=${isReferenceViewWithMaster}`);
+  nLog(`[STAGE2_MODEL] attempt=${attemptNumber} model=${generationPlan.model} profile=${generationPlan.profileName}`);
   const generationConfig: any = {
     temperature: generationPlan.temperature,
     topP: generationPlan.topP,
     topK: generationPlan.topK,
+    candidateCount: generationPlan.candidateCount,
     ...(opts.maxOutputTokens !== undefined ? { maxOutputTokens: opts.maxOutputTokens } : {}),
     ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
   };
 
-  if (
-    roomConsistencyFeatureEnabled
-    && roomConsistency?.viewRole === "reference"
-    && !!String(roomConsistency?.approvedMasterImageUrl || "").trim()
-  ) {
-    generationConfig.temperature = attemptNumber > 1 ? 0.12 : 0.18;
-    generationConfig.topP = 0.35;
-    generationConfig.topK = 8;
-    nLog("[ROOM_CONSISTENCY_PRECISION_MODE]", {
-      jobId: opts.jobId,
-      imageId: opts.imageId,
-      attempt: attemptNumber,
-      temperature: generationConfig.temperature,
-      topP: generationConfig.topP,
-      topK: generationConfig.topK,
-      requestPartCount: requestParts.length,
-      hasStructuredAnchorMap: !!opts.referenceAnchorMap,
-    });
-  }
+  nLog("[STAGE2_GENERATION_PROFILE]", {
+    jobId: opts.jobId,
+    imageId: opts.imageId,
+    attempt: attemptNumber,
+    profileName: generationPlan.profileName,
+    temperature: generationConfig.temperature,
+    topP: generationConfig.topP,
+    topK: generationConfig.topK,
+    candidateCount: generationConfig.candidateCount,
+    continuityModeActive: isReferenceViewWithMaster,
+    requestPartCount: requestParts.length,
+    hasStructuredAnchorMap: !!opts.referenceAnchorMap,
+  });
 
   // Fail early — before spending any API budget — if logging context is incomplete.
   // Without both jobId and imageId, assertContext() in usageTelemetry throws AFTER the
