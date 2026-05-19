@@ -7,6 +7,7 @@ export interface RegionEditArgs {
   baseImageBuffer: Buffer;
   fullSceneReferenceBuffer?: Buffer;
   referenceImageBuffer?: Buffer;
+  secondaryContinuityReferenceBuffer?: Buffer;
   maskPngBuffer?: Buffer;
   maskMode?: "binary" | "guidance";
   roomType?: string;
@@ -32,6 +33,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     baseImageBuffer,
     fullSceneReferenceBuffer,
     referenceImageBuffer,
+    secondaryContinuityReferenceBuffer,
     maskPngBuffer,
     maskMode = "binary",
     roomType,
@@ -49,6 +51,7 @@ ${(userPrompt || prompt).trim()}`.trim()
   const normalizedMode = normalizeEditMode(editMode || "Replace");
   const includeBaselineReferences = true;
   const usesReferenceImage = includeBaselineReferences && !!referenceImageBuffer;
+  const usesSecondaryContinuityReference = includeBaselineReferences && !!secondaryContinuityReferenceBuffer;
   const hasFullSceneReference = includeBaselineReferences && !!fullSceneReferenceBuffer;
 
   if (!baseImageBuffer.length) {
@@ -62,6 +65,7 @@ ${(userPrompt || prompt).trim()}`.trim()
     mode: normalizedMode,
     includeBaseline: includeBaselineReferences,
     hasReferenceImage: usesReferenceImage,
+    hasSecondaryContinuityReference: usesSecondaryContinuityReference,
     hasFullSceneReference,
   });
 
@@ -70,6 +74,7 @@ ${(userPrompt || prompt).trim()}`.trim()
     hasMask: !!maskPngBuffer,
     maskMode,
     hasReferenceImage: usesReferenceImage,
+    hasSecondaryContinuityReference: usesSecondaryContinuityReference,
     hasFullSceneReference,
     hasRequestImage: baseImageBuffer.length > 0,
     baseSize: baseImageBuffer.length,
@@ -105,6 +110,17 @@ ${(userPrompt || prompt).trim()}`.trim()
       inlineData: {
         mimeType: "image/webp",
         data: referenceImageBuffer!.toString("base64"),
+      },
+    });
+  }
+  if (usesSecondaryContinuityReference) {
+    parts.push({
+      text: "APPROVED_MASTER_STAGED_REFERENCE (approved staged master for this same room from a different angle — furnishing identity authority ONLY. Use it to infer the exact furnishing to repair, adapt it to the TARGET secondary viewpoint, and do not copy the master framing, geometry, or composition):",
+    });
+    parts.push({
+      inlineData: {
+        mimeType: "image/webp",
+        data: secondaryContinuityReferenceBuffer!.toString("base64"),
       },
     });
   }

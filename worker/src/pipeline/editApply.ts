@@ -8,6 +8,7 @@ import {
   type FurnitureDetectionSceneType,
 } from "../ai/runFurnitureDetectionSafe";
 import {
+  buildSecondaryContinuityEditPrompt,
   buildEditPrompt,
   buildSceneHint,
   normalizeEditMode,
@@ -924,20 +925,33 @@ function buildRegionScopedPrompt(params: {
     regionIndex,
   } = params;
 
-  const basePrompt = buildEditPrompt({
-    mode: normalizeEditMode(editMode),
-    userIntent: userInstruction,
-    sceneHint: buildStructuredSceneHint({
-      sceneType,
-      roomType,
-      editContext,
-    }),
-  });
+  const normalizedMode = normalizeEditMode(editMode);
+  const useSecondaryContinuityEditMode = editContext?.secondaryContinuity?.enabled === true && normalizedMode !== "reinstate";
 
-  const reinstateTargetNote = normalizeEditMode(editMode) === "reinstate" && reinstateConfig?.targetType
+  const basePrompt = useSecondaryContinuityEditMode
+    ? buildSecondaryContinuityEditPrompt({
+        userIntent: userInstruction,
+        sceneHint: buildStructuredSceneHint({
+          sceneType,
+          roomType,
+          editContext,
+        }),
+        editContext,
+      })
+    : buildEditPrompt({
+        mode: normalizedMode,
+        userIntent: userInstruction,
+        sceneHint: buildStructuredSceneHint({
+          sceneType,
+          roomType,
+          editContext,
+        }),
+      });
+
+  const reinstateTargetNote = normalizedMode === "reinstate" && reinstateConfig?.targetType
     ? `\n\nReinstate target: ${String(reinstateConfig.targetType).trim().toLowerCase()}.`
     : "";
-  const baselineNote = hasStage1ABaseline
+  const baselineNote = hasStage1ABaseline && !useSecondaryContinuityEditMode
     ? "\n\nReference note: Use any provided Stage 1A reference only to infer original region content or structural surfaces. Do not copy unrelated furniture or redesign the scene."
     : "";
 
@@ -979,6 +993,7 @@ async function runRegionEditWithRetry(params: {
   imageId?: string;
   croppedEditableImageBuffer: Buffer;
   stage1AReferenceBuffer?: Buffer;
+  approvedMasterReferenceBuffer?: Buffer;
   guidanceMaskPngBuffer: Buffer;
   roomType?: string;
   sceneType: "interior" | "exterior";
@@ -995,6 +1010,7 @@ async function runRegionEditWithRetry(params: {
     imageId,
     croppedEditableImageBuffer,
     stage1AReferenceBuffer,
+    approvedMasterReferenceBuffer,
     guidanceMaskPngBuffer,
     roomType,
     sceneType,
@@ -1042,6 +1058,7 @@ RETRY INSTRUCTION:
         imageId,
         baseImageBuffer: croppedEditableImageBuffer,
         referenceImageBuffer: stage1AReferenceBuffer,
+        secondaryContinuityReferenceBuffer: approvedMasterReferenceBuffer,
         maskPngBuffer: guidanceMaskPngBuffer,
         maskMode: "guidance",
         roomType,
@@ -2205,6 +2222,7 @@ export interface ApplyEditArgs {
   instruction: string;        // user’s natural-language instruction
   restoreFromPath?: string;   // optional path to original/enhanced image for restore mode
   stage1AReferencePath?: string; // optional Stage-1A enhanced reference image (remove mode)
+  approvedMasterReferencePath?: string;
   reinstateConfig?: ReinstateConfig;
   onAnchorValidation?: (result: { passed: boolean; overlapPct: number }) => void;
   roomType?: string;
@@ -2225,6 +2243,7 @@ export async function applyEdit({
   instruction,
   restoreFromPath,
   stage1AReferencePath,
+  approvedMasterReferencePath,
   reinstateConfig,
   onAnchorValidation,
   roomType,
@@ -2430,6 +2449,7 @@ export async function applyEdit({
 
     let baselineCompositeBuffer: Buffer | undefined;
     let stage1AReferenceBuffer: Buffer | undefined;
+    let approvedMasterReferenceBuffer: Buffer | undefined;
     const useBaselineCompositeMode = normalizedMode === "reinstate" && !!stage1AReferencePath;
     if (normalizedMode === "reinstate" && stage1AReferencePath) {
       try {
@@ -2454,6 +2474,25 @@ export async function applyEdit({
       }
     }
 
+    const useSecondaryContinuityEditMode = editContext?.secondaryContinuity?.enabled === true && normalizedMode !== "reinstate";
+    if (useSecondaryContinuityEditMode && approvedMasterReferencePath) {
+      try {
+        const approvedMasterMeta = await sharp(approvedMasterReferencePath).metadata().catch(() => null);
+        approvedMasterReferenceBuffer = await sharp(approvedMasterReferencePath).webp().toBuffer();
+        console.log("[editApply] SECONDARY_CONTINUITY_EDIT_MODE", {
+          jobId,
+          imageId,
+          mode,
+          approvedMasterReferencePath,
+          referenceWidth: approvedMasterMeta?.width,
+          referenceHeight: approvedMasterMeta?.height,
+          continuityGroupId: editContext?.secondaryContinuity?.continuityGroupId || editContext?.secondaryContinuity?.roomId || null,
+        });
+      } catch (err) {
+        console.warn("[editApply] Could not load approved master reference, continuing with prompt-only continuity mode", err);
+      }
+    }
+
     // 🔹 For Add/Remove/Replace modes (or if Restore failed), use Gemini unless baseline-driven restore is available
     if (!useBaselineCompositeMode || !baselineCompositeBuffer) {
       console.log("[editApply] Using Gemini for mode:", mode);
@@ -2464,20 +2503,32 @@ export async function applyEdit({
     const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
 
-    const fallbackPrompt = buildEditPrompt({
-      mode: normalizedMode,
-      userIntent: instruction,
-      sceneHint: buildStructuredSceneHint({
-        sceneType: sceneType || "interior",
-        roomType,
-        editContext,
-      }),
-    });
-    const fallbackUserPrompt = `${fallbackPrompt.user.trim()}${normalizedMode === "reinstate" && reinstateConfig?.targetType
-      ? `\n\nReinstate target: ${String(reinstateConfig.targetType).trim().toLowerCase()}.`
-      : ""}${(mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer
-      ? "\n\nReference note: Use any provided Stage 1A reference only to infer original region content or structural surfaces. Do not copy unrelated furniture or redesign the scene."
-      : ""}`.trim();
+    const fallbackPrompt = useSecondaryContinuityEditMode
+      ? buildSecondaryContinuityEditPrompt({
+          userIntent: instruction,
+          sceneHint: buildStructuredSceneHint({
+            sceneType: sceneType || "interior",
+            roomType,
+            editContext,
+          }),
+          editContext,
+        })
+      : buildEditPrompt({
+          mode: normalizedMode,
+          userIntent: instruction,
+          sceneHint: buildStructuredSceneHint({
+            sceneType: sceneType || "interior",
+            roomType,
+            editContext,
+          }),
+        });
+    const fallbackUserPrompt = useSecondaryContinuityEditMode
+      ? fallbackPrompt.user.trim()
+      : `${fallbackPrompt.user.trim()}${normalizedMode === "reinstate" && reinstateConfig?.targetType
+          ? `\n\nReinstate target: ${String(reinstateConfig.targetType).trim().toLowerCase()}.`
+          : ""}${(mode === "Remove" || mode === "Reinstate") && !!stage1AReferenceBuffer
+          ? "\n\nReference note: Use any provided Stage 1A reference only to infer original region content or structural surfaces. Do not copy unrelated furniture or redesign the scene."
+          : ""}`.trim();
     const fallbackPromptText = composePromptText(fallbackPrompt.system, fallbackUserPrompt);
 
     console.log("[editApply] EDIT_CONTEXT_LOG", {
@@ -2606,6 +2657,7 @@ export async function applyEdit({
               imageId,
               croppedEditableImageBuffer,
               stage1AReferenceBuffer,
+              approvedMasterReferenceBuffer,
               guidanceMaskPngBuffer,
               roomType,
               sceneType: sceneType || "interior",
@@ -2734,6 +2786,7 @@ export async function applyEdit({
       imageId,
       baseImageBuffer: fullSceneReferenceBuffer,
       referenceImageBuffer: stage1AReferenceBuffer,
+      secondaryContinuityReferenceBuffer: approvedMasterReferenceBuffer,
       maskPngBuffer,
       maskMode: "binary",
       roomType,

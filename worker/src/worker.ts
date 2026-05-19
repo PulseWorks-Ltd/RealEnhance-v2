@@ -1268,14 +1268,43 @@ function mapAnchorsToConstraints(
 function resolveRegionEditContext(params: {
   regionPayload: any;
   parentJob: any;
+  continuityJobs?: any[];
   fallbackRoomType?: string;
 }): EditContext {
-  const { regionPayload, parentJob, fallbackRoomType } = params;
+  const { regionPayload, parentJob, continuityJobs = [], fallbackRoomType } = params;
   const parentPayload = (parentJob?.payload || {}) as any;
   const parentOptions = (parentPayload?.options || {}) as any;
   const parentMeta = ((parentJob?.meta || parentJob?.metadata || {})) as any;
   const layoutPlan = pickRegionEditLayoutPlan(parentJob);
   const structuralBaseline = (parentJob?.structuralBaseline || parentMeta?.structuralBaseline || null) as StructuralBaseline | null;
+
+  const resolveRoomConsistencyContext = (jobState: any): any | null => {
+    const context =
+      jobState?.roomConsistency ||
+      jobState?.meta?.roomConsistency ||
+      jobState?.metadata?.roomConsistency ||
+      jobState?.payload?.options?.roomConsistencyV1 ||
+      null;
+    return context && typeof context === "object" ? context : null;
+  };
+
+  let secondaryContinuity: EditContext["secondaryContinuity"] | undefined;
+  for (const jobState of [parentJob, ...continuityJobs]) {
+    const roomConsistency = resolveRoomConsistencyContext(jobState);
+    const approvedMasterImageUrl = String(
+      roomConsistency?.approvedMasterImageUrl || roomConsistency?.roomState?.masterStagedImageUrl || "",
+    ).trim();
+    if (roomConsistency?.enabled === true && roomConsistency?.viewRole === "reference" && approvedMasterImageUrl) {
+      const continuityGroupId = String(roomConsistency?.continuityGroupId || roomConsistency?.roomId || "").trim() || undefined;
+      secondaryContinuity = {
+        enabled: true,
+        approvedMasterImageUrl,
+        roomId: String(roomConsistency?.roomId || "").trim() || undefined,
+        continuityGroupId,
+      };
+      break;
+    }
+  }
 
   const roomType = humanizeEditContextPhrase(
     regionPayload?.roomType ||
@@ -1302,6 +1331,7 @@ function resolveRegionEditContext(params: {
     stagingStyle,
     layoutHints: mapLayoutPlanToHints(layoutPlan),
     anchorConstraints: mapAnchorsToConstraints(layoutPlan, structuralBaseline),
+    secondaryContinuity,
   };
 }
 
@@ -15350,6 +15380,7 @@ const worker = new Worker(
           const editParentJobId = String(regionAny.parentJobId || "").trim() || undefined;
           let editParentJob: any = null;
           const editSourceJobId = String(regionAny.sourceJobId || "").trim() || undefined;
+          let editSourceJob: any = null;
           const editVisibleCardJobId = String(regionAny.currentCardJobId || "").trim() || undefined;
           const editPromotionTargetJobIds = Array.from(
             new Set(
@@ -15380,6 +15411,13 @@ const worker = new Worker(
               parentImageId = String((editParentJob as any)?.imageId || "").trim();
             } catch (err: any) {
               nLog("[worker-region-edit] parent image lookup failed (non-blocking):", err?.message || String(err));
+            }
+          }
+          if (editSourceJobId && editSourceJobId !== editParentJobId) {
+            try {
+              editSourceJob = await getJob(editSourceJobId);
+            } catch (err: any) {
+              nLog("[worker-region-edit] source job continuity lookup failed (non-blocking):", err?.message || String(err));
             }
           }
 
@@ -15559,7 +15597,25 @@ const worker = new Worker(
           const editContext = resolveRegionEditContext({
             regionPayload: regionAny,
             parentJob: editParentJob,
+            continuityJobs: [editSourceJob],
             fallbackRoomType: regionRoomType,
+          });
+
+          const shouldUseSecondaryContinuityEditMode =
+            editContext.secondaryContinuity?.enabled === true
+            && mode !== "Restore"
+            && mode !== "Reinstate";
+
+          nLog("[SECONDARY_CONTINUITY_EDIT_ROUTE]", {
+            jobId: regionPayload.jobId,
+            imageId: regionPayload.imageId,
+            mode,
+            secondaryContinuityEnabled: editContext.secondaryContinuity?.enabled === true,
+            usesSecondaryContinuityEditMode: shouldUseSecondaryContinuityEditMode,
+            approvedMasterAvailable: !!editContext.secondaryContinuity?.approvedMasterImageUrl,
+            continuityGroupId: editContext.secondaryContinuity?.continuityGroupId || editContext.secondaryContinuity?.roomId || null,
+            parentJobId: editParentJobId || null,
+            sourceJobId: editSourceJobId || null,
           });
 
           nLog("[EDIT_CONTEXT_LOG]", {
@@ -15568,6 +15624,12 @@ const worker = new Worker(
             stagingStyle: editContext.stagingStyle || null,
             layoutHints: (editContext.layoutHints || []).slice(0, 5),
             anchorConstraints: (editContext.anchorConstraints || []).slice(0, 5),
+            secondaryContinuity: shouldUseSecondaryContinuityEditMode
+              ? {
+                  continuityGroupId: editContext.secondaryContinuity?.continuityGroupId || editContext.secondaryContinuity?.roomId || null,
+                  approvedMasterAvailable: !!editContext.secondaryContinuity?.approvedMasterImageUrl,
+                }
+              : null,
           });
 
           const openingProtectedPromptSuffix =
@@ -15608,6 +15670,20 @@ const worker = new Worker(
             }
           }
 
+          let approvedMasterReferencePath: string | undefined;
+          if (shouldUseSecondaryContinuityEditMode && editContext.secondaryContinuity?.approvedMasterImageUrl) {
+            try {
+              nLog("[worker-region-edit] Downloading approved master continuity reference from:", editContext.secondaryContinuity.approvedMasterImageUrl);
+              approvedMasterReferencePath = await downloadToTemp(
+                editContext.secondaryContinuity.approvedMasterImageUrl,
+                regionPayload.jobId + "-approved-master-reference",
+              );
+              nLog("[worker-region-edit] Approved master continuity reference downloaded to:", approvedMasterReferencePath);
+            } catch (err) {
+              nLog("[worker-region-edit] Failed to download approved master continuity reference (non-blocking):", (err as any)?.message || err);
+            }
+          }
+
           const isDeterministicBaselineMode = !!stage1AReferencePath && (mode === "Remove" || mode === "Reinstate");
 
           let outPath: string;
@@ -15626,6 +15702,7 @@ const worker = new Worker(
               instruction: prompt,
               restoreFromPath: restoreFromPath || basePath,
               stage1AReferencePath,
+              approvedMasterReferencePath,
               reinstateConfig: regionAny.reinstateConfig,
               roomType: regionRoomType,
               editContext,
@@ -15665,6 +15742,7 @@ const worker = new Worker(
                 instruction: attemptInstruction,
                 restoreFromPath: restoreFromPath || basePath,
                 stage1AReferencePath,
+                approvedMasterReferencePath,
                 reinstateConfig: regionAny.reinstateConfig,
                 onAnchorValidation: (result) => {
                   if (!isStrictEditMode) {

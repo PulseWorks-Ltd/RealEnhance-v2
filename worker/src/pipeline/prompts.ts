@@ -36,6 +36,12 @@ export type EditContext = {
   stagingStyle?: string;
   layoutHints?: string[];
   anchorConstraints?: string[];
+  secondaryContinuity?: {
+    enabled: boolean;
+    approvedMasterImageUrl?: string;
+    roomId?: string;
+    continuityGroupId?: string;
+  };
 };
 
 export const BASE_SYSTEM_PROMPT = `
@@ -326,6 +332,85 @@ export function buildEditPrompt({ mode, userIntent, sceneHint }: BuildEditPrompt
   return {
     system: BASE_SYSTEM_PROMPT.trim(),
     user: `${intentPrompt.trim()}\n\n${modePrompt.trim()}`.trim(),
+  };
+}
+
+export function buildSecondaryContinuityEditPrompt(params: {
+  userIntent?: string;
+  sceneHint?: string;
+  editContext?: EditContext;
+}): { system: string; user: string } {
+  const normalizedUserIntent = String(params.userIntent || "").trim();
+  if (isStructuralEdit(normalizedUserIntent)) {
+    const error = new Error("Structural edits are not supported. Please try a non-structural edit.") as Error & { code?: string };
+    error.code = "STRUCTURAL_EDIT_NOT_ALLOWED";
+    throw error;
+  }
+
+  const roomLabel = humanizeContextLabel(params.editContext?.roomType);
+  const styleLabel = humanizeContextLabel(params.editContext?.stagingStyle);
+  const layoutHints = normalizeContextItems(params.editContext?.layoutHints, 4);
+  const anchorConstraints = normalizeContextItems(params.editContext?.anchorConstraints, 4);
+  const continuityGroupId = humanizeContextLabel(
+    params.editContext?.secondaryContinuity?.continuityGroupId || params.editContext?.secondaryContinuity?.roomId,
+  );
+
+  const contextLines: string[] = [];
+  if (roomLabel) contextLines.push(`- Room type context: ${roomLabel}`);
+  if (styleLabel) contextLines.push(`- Approved staging style context: ${styleLabel}`);
+  if (continuityGroupId) contextLines.push(`- Continuity group: ${continuityGroupId}`);
+  if (layoutHints.length > 0) contextLines.push(`- Layout cues: ${layoutHints.join("; ")}`);
+  if (anchorConstraints.length > 0) contextLines.push(`- Preserve anchor relationships: ${anchorConstraints.join("; ")}`);
+
+  const contextBlock = contextLines.length > 0
+    ? `\n\nKNOWN ROOM CONTEXT:\n${contextLines.join("\n")}`
+    : "";
+
+  return {
+    system: BASE_SYSTEM_PROMPT.trim(),
+    user: `SECONDARY_CONTINUITY_EDIT_MODE
+
+This is a constrained continuity repair for a SECONDARY image of the same room.
+
+${buildModeSceneHint(params.sceneHint)}
+
+AUTHORITATIVE HIERARCHY:
+1. TARGET secondary image geometry is authoritative.
+2. TARGET secondary image camera viewpoint and framing are authoritative.
+3. APPROVED_MASTER_STAGED_REFERENCE is furnishing identity authority.
+4. The user instruction defines the localized edit scope only.
+
+CORE TASK:
+- Perform surgical continuity repair, not broad scene regeneration.
+- Use APPROVED_MASTER_STAGED_REFERENCE as the furnishing truth source for any missing, incorrect, mirrored, or mismatched furnishing that the request refers to.
+- Infer the correct furnishing identity from the approved master.
+- Match furnishing category, shape family, material, finish, color palette, and realistic scale from the approved master.
+- Reproject that furnishing naturally into the TARGET secondary viewpoint.
+- Adapt rotation, perspective, and visibility to the TARGET camera angle.
+- Preserve spatial consistency relative to nearby anchor furniture already visible in the TARGET image.
+
+STRICT PRESERVATION LOCKS:
+- Preserve all existing geometry, architecture, openings, room topology, perspective, and camera framing.
+- Preserve all existing furniture already present unless the user instruction explicitly requires a localized modification to that exact item.
+- Preserve lighting direction, composition, room layout, and existing visual coherence.
+- Change only the minimum localized area necessary to satisfy the request.
+
+DO NOT:
+- Restage the room.
+- Reposition unrelated furniture.
+- Replace the furniture set broadly.
+- Alter wall geometry, openings, layout, composition, framing, or lighting direction.
+- Redesign decor unrelated to the request.
+- Regenerate the scene broadly.
+
+CONTINUITY REPAIR REQUIREMENTS:
+- Extract the requested furnishing identity from APPROVED_MASTER_STAGED_REFERENCE.
+- Reproduce only the requested furnishing repair so it reads as the same approved room state from this secondary angle.
+- Keep all unrelated furnishings, surfaces, and geometry unchanged.
+- If exact visibility is partial, infer only the minimum plausible continuation needed for this angle.
+
+LOCALIZED EDIT REQUEST:
+${normalizedUserIntent || "Perform the requested localized continuity repair only."}${contextBlock}`.trim(),
   };
 }
 
