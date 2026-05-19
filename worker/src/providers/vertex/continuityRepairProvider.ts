@@ -5,9 +5,17 @@ import { persistContinuityArtifacts } from "../../continuity/artifactStore";
 import { compileDeterministicMask } from "../../continuity/maskCompiler";
 import { validateCompiledMask } from "../../continuity/maskValidation";
 import { ensureLocalImagePath, persistMaskArtifact, persistRemoteImage } from "../imageTransport";
+import type { ImageReference } from "../types";
 import type { ContinuityRepairProvider, ContinuityRepairRequest, ContinuityRepairResponse } from "../types";
 import { VertexImageRendererProvider, buildImagenInsertionPrompt } from "./imageRendererProvider";
 import { VertexSpatialPlannerProvider } from "./spatialPlannerProvider";
+
+function withHydratedLocalPath(reference: ImageReference, localPath: string): ImageReference {
+  return {
+    ...reference,
+    localPath,
+  };
+}
 
 export class VertexContinuityRepairProvider implements ContinuityRepairProvider {
   constructor(
@@ -26,6 +34,15 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
       });
+      const hydratedSecondaryImage = withHydratedLocalPath(secondaryImage, secondaryWorkingPath);
+      const masterWorkingPath = await ensureLocalImagePath({
+        reference: masterImage,
+        sourceLabel: "secondary-continuity-master",
+        jobId: request.jobId,
+        imageId: request.imageId,
+        continuityGroupId: request.continuityGroupId,
+      });
+      const hydratedMasterImage = withHydratedLocalPath(masterImage, masterWorkingPath);
       const occupancyConstraintMaskPath = request.occupancyConstraintMask
         ? await ensureLocalImagePath({
             reference: request.occupancyConstraintMask,
@@ -51,7 +68,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           },
           masterImage: {
             resolvedInputType: masterImage.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
-            localPath: masterImage.localPath || null,
+            localPath: masterWorkingPath,
             requestPath: masterImage.localPath || null,
             uri: masterImage.uri || null,
           },
@@ -74,8 +91,8 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
       });
 
       const planner = await this.plannerProvider.plan({
-        secondaryImage,
-        masterImage,
+        secondaryImage: hydratedSecondaryImage,
+        masterImage: hydratedMasterImage,
         roomType: request.roomType,
         stagingStyle: request.stagingStyle,
         roomConsistency: request.roomConsistency,

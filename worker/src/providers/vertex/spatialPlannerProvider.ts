@@ -282,9 +282,14 @@ export class VertexSpatialPlannerProvider implements SpatialPlannerProvider {
   async plan(request: SpatialPlannerRequest): Promise<SpatialPlannerResponse> {
     const plannerFlag = String(process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro").trim().toLowerCase();
     const model = plannerFlag === "gemini25pro" ? "gemini-2.5-pro" : plannerFlag;
-    const metadata = request.secondaryImage.localPath
-      ? await sharp(request.secondaryImage.localPath).metadata()
-      : await sharp(request.masterImage.localPath || "").metadata().catch(() => ({ width: 0, height: 0 }));
+    const dimensionSourcePath = request.secondaryImage.localPath || request.masterImage.localPath;
+    if (!dimensionSourcePath) {
+      throw new VertexSecondaryContinuityError(
+        "Planner requires a hydrated local secondary or master image reference",
+        "planner_missing_local_image_reference"
+      );
+    }
+    const metadata = await sharp(dimensionSourcePath).metadata().catch(() => ({ width: 0, height: 0 }));
     const imageWidth = metadata.width || 0;
     const imageHeight = metadata.height || 0;
     if (!imageWidth || !imageHeight) {
