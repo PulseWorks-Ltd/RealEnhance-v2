@@ -10,6 +10,10 @@ const DEFAULT_DISPATCH_TIMEOUT_MS = Math.max(60_000, Number(process.env.VERTEX_E
 
 export async function runExperimentalSecondaryContinuity(params: ExperimentalSecondaryContinuityInput): Promise<string> {
   const queueName = params.queueName || getVertexExperimentalQueueName();
+  const workerIdentity = process.env.WORKER_ROLE || "worker";
+  const dispatchTarget = "worker-vertex-experimental";
+  const provider = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
+  const stage2Mode = params.intent?.promptScope || null;
   const queue = new Queue(queueName, {
     connection: { url: REDIS_URL },
   });
@@ -19,6 +23,32 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
 
   try {
     await queueEvents.waitUntilReady();
+
+    nLog("[CONTINUITY_JOB_PRODUCER]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity,
+      executionMode: "queue-producer",
+      dispatchTarget,
+      provider,
+      stage2Mode,
+    });
+
+    nLog("[CONTINUITY_QUEUE_NAME]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity,
+      executionMode: "queue-producer",
+      dispatchTarget,
+      provider,
+      stage2Mode,
+    });
 
     nLog("[SECONDARY_CONTINUITY_DISPATCH]", {
       continuityGroupId: params.continuityGroupId || null,
@@ -44,6 +74,20 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       removeOnFail: 50,
     });
 
+    nLog("[CONTINUITY_QUEUE_ADD]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity,
+      executionMode: "queue-producer",
+      dispatchTarget,
+      provider,
+      stage2Mode,
+      queueJobId: String(dispatchedJob.id || ""),
+    });
+
     nLog("[SECONDARY_CONTINUITY_QUEUE]", {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
@@ -57,6 +101,21 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
 
     const result = await dispatchedJob.waitUntilFinished(queueEvents, DEFAULT_DISPATCH_TIMEOUT_MS) as Record<string, unknown>;
     const outputPath = String(result?.outputPath || "").trim() || params.outputPath;
+
+    nLog("[CONTINUITY_RESULT_RETURNED]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity,
+      executionMode: "orchestrator-await",
+      dispatchTarget,
+      provider,
+      stage2Mode,
+      resultWorkerIdentity: String(result?.workerIdentity || dispatchTarget),
+      outputPath,
+    });
 
     nLog("[VERTEX_CONTINUITY_RESULT]", {
       continuityGroupId: params.continuityGroupId || null,
@@ -76,6 +135,20 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
     const fallbackReason = error instanceof VertexSecondaryContinuityError
       ? error.fallbackReason
       : "vertex_secondary_continuity_error";
+    nLog("[CONTINUITY_DISPATCH_FAILURE]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity,
+      executionMode: "queue-producer",
+      dispatchTarget,
+      provider,
+      stage2Mode,
+      error: String(error?.message || error),
+      fallbackReason,
+    });
     nLog("[VERTEX_CONTINUITY_FAILURE]", {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,

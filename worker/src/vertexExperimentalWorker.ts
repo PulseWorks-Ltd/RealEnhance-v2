@@ -37,18 +37,50 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     throw new Error("unsupported_vertex_experimental_payload");
   }
 
+  const queueName = job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE || null;
+  const providerName = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
+  const stage2Mode = job.data.intent?.promptScope || null;
+
   nLog("[SECONDARY_CONTINUITY_QUEUE]", {
     continuityGroupId: job.data.continuityGroupId || null,
     imageId: job.data.imageId,
     jobId: job.data.jobId,
     renderMode: job.data.renderMode,
-    queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE || null,
+    queueName,
     queueJobId: String(job.id || ""),
     workerIdentity: WORKER_IDENTITY,
     status: "processing",
   });
 
+  nLog("[VERTEX_QUEUE_JOB_RECEIVED]", {
+    continuityGroupId: job.data.continuityGroupId || null,
+    imageId: job.data.imageId,
+    jobId: job.data.jobId,
+    renderMode: job.data.renderMode,
+    queueName,
+    workerIdentity: WORKER_IDENTITY,
+    executionMode: "queue-consumer",
+    dispatchTarget: WORKER_IDENTITY,
+    provider: providerName,
+    stage2Mode,
+    queueJobId: String(job.id || ""),
+  });
+
   const provider = createContinuityRepairProvider();
+  nLog("[VERTEX_RENDER_EXECUTION_START]", {
+    continuityGroupId: job.data.continuityGroupId || null,
+    imageId: job.data.imageId,
+    jobId: job.data.jobId,
+    renderMode: job.data.renderMode,
+    queueName,
+    workerIdentity: WORKER_IDENTITY,
+    executionMode: "render-execution",
+    dispatchTarget: WORKER_IDENTITY,
+    provider: providerName,
+    stage2Mode,
+    queueJobId: String(job.id || ""),
+  });
+
   const result = await provider.repair({
     secondaryImagePath: job.data.secondaryImagePath,
     secondaryImageUri: job.data.secondaryImageUri,
@@ -67,6 +99,23 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     occupancyConstraintMaskPath: job.data.occupancyConstraintMaskPath,
     queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE,
     workerIdentity: WORKER_IDENTITY,
+  });
+
+  nLog("[VERTEX_RENDER_EXECUTION_COMPLETE]", {
+    continuityGroupId: job.data.continuityGroupId || null,
+    imageId: job.data.imageId,
+    jobId: job.data.jobId,
+    renderMode: job.data.renderMode,
+    queueName,
+    workerIdentity: WORKER_IDENTITY,
+    executionMode: "render-execution",
+    dispatchTarget: WORKER_IDENTITY,
+    provider: providerName,
+    stage2Mode,
+    queueJobId: String(job.id || ""),
+    outputPath: result.outputPath,
+    planner: result.planner.model,
+    renderer: result.render.model,
   });
 
   return {

@@ -15,6 +15,8 @@ import {
   type EditContext,
 } from "./prompts";
 import { runExperimentalSecondaryContinuity } from "../continuity/experimentalSecondaryContinuity";
+import { VertexSecondaryContinuityError } from "../continuity/types";
+import { nLog } from "../logger";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 import path from "path";
@@ -2365,19 +2367,65 @@ export async function applyEdit({
     const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
 
     const shouldRouteSecondaryContinuityEdit = editContext?.secondaryContinuity?.enabled === true && normalizedMode !== "reinstate";
-    if (shouldRouteSecondaryContinuityEdit && approvedMasterReferencePath && maskPngBuffer) {
-      const continuityGroupId = editContext?.secondaryContinuity?.continuityGroupId || editContext?.secondaryContinuity?.roomId || null;
-      const occupancyConstraintMaskPath = siblingOutPath(outPath, ".vertex-occupancy-constraint", ".png");
-      await sharp(maskPngBuffer).png().toFile(occupancyConstraintMaskPath);
-      const normalizedJobId = String(jobId || "unknown-job").trim() || "unknown-job";
-      const normalizedImageId = String(imageId || "unknown-image").trim() || "unknown-image";
+    const continuityGroupId = editContext?.secondaryContinuity?.continuityGroupId || editContext?.secondaryContinuity?.roomId || null;
+    const normalizedJobId = String(jobId || "unknown-job").trim() || "unknown-job";
+    const normalizedImageId = String(imageId || "unknown-image").trim() || "unknown-image";
+    const queueName = process.env.VERTEX_EXPERIMENTAL_QUEUE || "continuity-experimental";
+    const workerIdentity = process.env.WORKER_ROLE || "worker";
+    const renderMode = normalizedMode === "add" ? "missing_object_insert" : "localized_repair";
+    const provider = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
 
-      console.log("[SECONDARY_CONTINUITY_DISPATCH]", {
+    if (shouldRouteSecondaryContinuityEdit && (!approvedMasterReferencePath || !maskPngBuffer)) {
+      nLog("[CONTINUITY_DISPATCH_FAILURE]", {
         jobId: normalizedJobId,
         imageId: normalizedImageId,
-        mode,
-        renderMode: normalizedMode === "add" ? "missing_object_insert" : "localized_repair",
         continuityGroupId,
+        renderMode,
+        queueName,
+        workerIdentity,
+        executionMode: "orchestrator-preflight",
+        dispatchTarget: "worker-vertex-experimental",
+        provider,
+        stage2Mode: null,
+        hasApprovedMasterReferencePath: !!approvedMasterReferencePath,
+        hasMaskPngBuffer: !!maskPngBuffer,
+        error: "secondary_continuity_edit_missing_dispatch_inputs",
+      });
+      nLog("[CONTINUITY_INLINE_EXECUTION_DETECTED]", {
+        jobId: normalizedJobId,
+        imageId: normalizedImageId,
+        continuityGroupId,
+        renderMode,
+        queueName,
+        workerIdentity,
+        executionMode: "inline-blocked",
+        dispatchTarget: "legacy-edit-inline",
+        provider,
+        stage2Mode: null,
+        reason: "secondary_continuity_edit_missing_dispatch_inputs",
+      });
+      throw new VertexSecondaryContinuityError(
+        "Secondary continuity edits must dispatch through the experimental queue and cannot execute inline in the normal worker",
+        "secondary_continuity_edit_missing_dispatch_inputs"
+      );
+    }
+
+    if (shouldRouteSecondaryContinuityEdit && approvedMasterReferencePath && maskPngBuffer) {
+      const occupancyConstraintMaskPath = siblingOutPath(outPath, ".vertex-occupancy-constraint", ".png");
+      await sharp(maskPngBuffer).png().toFile(occupancyConstraintMaskPath);
+
+      nLog("[CONTINUITY_RENDER_REQUEST]", {
+        jobId: normalizedJobId,
+        imageId: normalizedImageId,
+        continuityGroupId,
+        renderMode,
+        queueName,
+        workerIdentity,
+        executionMode: "orchestrator-request",
+        dispatchTarget: "worker-vertex-experimental",
+        provider,
+        stage2Mode: null,
+        mode,
         approvedMasterReferencePath,
         occupancyConstraintMaskPath,
       });
@@ -2392,7 +2440,7 @@ export async function applyEdit({
         jobId: normalizedJobId,
         imageId: normalizedImageId,
         attempt: 1,
-        renderMode: normalizedMode === "add" ? "missing_object_insert" : "localized_repair",
+        renderMode,
         occupancyConstraintMaskPath,
         intent: {
           userInstruction: instruction,

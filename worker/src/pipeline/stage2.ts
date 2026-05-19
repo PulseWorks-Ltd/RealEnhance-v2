@@ -16,7 +16,6 @@ import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { nLog } from "../logger";
 import {
-  ENABLE_VERTEX_SECONDARY_CONTINUITY,
   SECONDARY_CONTINUITY_PROVIDER,
   SECONDARY_CONTINUITY_PLANNER,
   SECONDARY_CONTINUITY_RENDERER,
@@ -1906,15 +1905,21 @@ export async function runStage2(
   const outputPath = siblingOutPath(basePath, "-2", ".webp");
   const maxAttempts = resolveStage2MaxAttempts();
   const localReasons: string[] = [];
-  const isSecondaryRoomConsistencyStage2 =
+  const workerIdentity = process.env.WORKER_ROLE || "worker";
+  const queueName = process.env.VERTEX_EXPERIMENTAL_QUEUE || "continuity-experimental";
+  const dispatchTarget = "worker-vertex-experimental";
+  const provider = SECONDARY_CONTINUITY_PROVIDER.toLowerCase();
+  const stage2Mode = opts.stage2Mode || null;
+  const continuityGroupId = resolveContinuityGroupId(opts.roomConsistencyV1);
+  const isReferenceContinuityJob =
     opts.roomConsistencyV1?.enabled === true
-    && opts.roomConsistencyV1?.viewRole === "reference"
+    && opts.roomConsistencyV1?.viewRole === "reference";
+  const isSecondaryRoomConsistencyStage2 =
+    isReferenceContinuityJob
     && !!String(opts.roomConsistencyV1?.approvedMasterImageUrl || "").trim()
     && !!opts.referenceImagePath;
-  const shouldUseExperimentalVertexSecondaryContinuity =
-    ENABLE_VERTEX_SECONDARY_CONTINUITY
-    && isSecondaryRoomConsistencyStage2
-    && SECONDARY_CONTINUITY_PROVIDER.toLowerCase() === "vertex"
+  const hasSupportedExperimentalRouting =
+    provider === "vertex"
     && SECONDARY_CONTINUITY_RENDERER.toLowerCase() === "imagen3"
     && SECONDARY_CONTINUITY_PLANNER.toLowerCase() === "gemini25pro";
   const referenceAnchorMap = isSecondaryRoomConsistencyStage2 && opts.referenceImagePath
@@ -1932,7 +1937,92 @@ export async function runStage2(
     failureType: StructuralFailureType | null;
     attemptNumber: number;
   }): Promise<string> => {
-    if (shouldUseExperimentalVertexSecondaryContinuity && opts.referenceImagePath) {
+    const renderMode = resolvedPromptMode === "full" ? "full_secondary_continuity" : "continuity_refresh";
+
+    if (isReferenceContinuityJob && !isSecondaryRoomConsistencyStage2) {
+      nLog("[CONTINUITY_DISPATCH_FAILURE]", {
+        continuityGroupId,
+        imageId: opts.imageId,
+        jobId: opts.jobId,
+        renderMode,
+        queueName,
+        workerIdentity,
+        executionMode: "orchestrator-preflight",
+        dispatchTarget,
+        provider,
+        stage2Mode,
+        error: "missing_approved_master_reference",
+      });
+      nLog("[CONTINUITY_INLINE_EXECUTION_DETECTED]", {
+        continuityGroupId,
+        imageId: opts.imageId,
+        jobId: opts.jobId,
+        renderMode,
+        queueName,
+        workerIdentity,
+        executionMode: "inline-blocked",
+        dispatchTarget: "legacy-stage2-inline",
+        provider,
+        stage2Mode,
+        reason: "secondary_continuity_missing_master_reference",
+      });
+      throw new VertexSecondaryContinuityError(
+        "Secondary continuity requires an approved master reference and must dispatch through the experimental queue",
+        "secondary_continuity_missing_master_reference"
+      );
+    }
+
+    if (isSecondaryRoomConsistencyStage2 && opts.referenceImagePath) {
+      if (!hasSupportedExperimentalRouting) {
+        nLog("[CONTINUITY_DISPATCH_FAILURE]", {
+          continuityGroupId,
+          imageId: opts.imageId,
+          jobId: opts.jobId,
+          renderMode,
+          queueName,
+          workerIdentity,
+          executionMode: "orchestrator-preflight",
+          dispatchTarget,
+          provider,
+          stage2Mode,
+          error: "secondary_continuity_routing_misconfigured",
+          planner: SECONDARY_CONTINUITY_PLANNER,
+          renderer: SECONDARY_CONTINUITY_RENDERER,
+        });
+        nLog("[CONTINUITY_INLINE_EXECUTION_DETECTED]", {
+          continuityGroupId,
+          imageId: opts.imageId,
+          jobId: opts.jobId,
+          renderMode,
+          queueName,
+          workerIdentity,
+          executionMode: "inline-blocked",
+          dispatchTarget: "legacy-stage2-inline",
+          provider,
+          stage2Mode,
+          reason: "secondary_continuity_routing_misconfigured",
+        });
+        throw new VertexSecondaryContinuityError(
+          "Secondary continuity routing is misconfigured; the normal worker is not allowed to render continuity inline",
+          "secondary_continuity_routing_misconfigured"
+        );
+      }
+
+      nLog("[CONTINUITY_RENDER_REQUEST]", {
+        continuityGroupId,
+        imageId: opts.imageId,
+        jobId: opts.jobId,
+        renderMode,
+        queueName,
+        workerIdentity,
+        executionMode: "orchestrator-request",
+        dispatchTarget,
+        provider,
+        stage2Mode,
+        sourceStage: opts.sourceStage,
+        attempt,
+      });
+
       try {
         localReasons.push(`vertex_secondary_continuity_attempt:${attempt}`);
         return await runExperimentalSecondaryContinuity({
@@ -1943,11 +2033,11 @@ export async function runStage2(
           roomType: opts.roomType,
           stagingStyle: opts.stagingStyle,
           roomConsistency: opts.roomConsistencyV1,
-          continuityGroupId: resolveContinuityGroupId(opts.roomConsistencyV1),
+          continuityGroupId,
           jobId: opts.jobId,
           imageId: opts.imageId,
           attempt,
-          renderMode: resolvedPromptMode === "full" ? "full_secondary_continuity" : "continuity_refresh",
+          renderMode,
           intent: {
             operationLabel: "secondary_room_continuity_render",
             promptScope: resolvedPromptMode,
@@ -1959,14 +2049,21 @@ export async function runStage2(
         const fallbackReason = error instanceof VertexSecondaryContinuityError
           ? error.fallbackReason
           : "vertex_secondary_continuity_error";
-        localReasons.push(`vertex_secondary_continuity_fallback:${fallbackReason}`);
-        nLog("[VERTEX_CONTINUITY_VALIDATION]", {
-          continuityGroupId: resolveContinuityGroupId(opts.roomConsistencyV1),
+        nLog("[CONTINUITY_DISPATCH_FAILURE]", {
+          continuityGroupId,
           imageId: opts.imageId,
           jobId: opts.jobId,
-          validatorFlow: "existing_stage2_pipeline",
+          renderMode,
+          queueName,
+          workerIdentity,
+          executionMode: "orchestrator-dispatch",
+          dispatchTarget,
+          provider,
+          stage2Mode,
+          error: String(error?.message || error),
           fallbackReason,
         });
+        throw error;
       }
     }
 
