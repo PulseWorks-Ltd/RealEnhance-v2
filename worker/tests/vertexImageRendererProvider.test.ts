@@ -1,0 +1,149 @@
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import sharp from "sharp";
+
+const mockRequest = jest.fn();
+
+jest.mock("../src/providers/vertex/adc", () => ({
+  getVertexGenAiClient: jest.fn(() => ({
+    apiClient: {
+      request: mockRequest,
+    },
+  })),
+  getVertexProjectConfig: jest.fn(() => ({
+    project: "test-project",
+    location: "us-central1",
+  })),
+}));
+
+jest.mock("../src/logger", () => ({
+  nLog: jest.fn(),
+}));
+
+import { VertexImageRendererProvider } from "../src/providers/vertex/imageRendererProvider";
+
+async function makeImageFile(name: string): Promise<{ filePath: string; cleanup: () => Promise<void> }> {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `vertex-renderer-${name}-`));
+  const filePath = path.join(tempDir, `${name}.png`);
+  await sharp({
+    create: {
+      width: 8,
+      height: 8,
+      channels: 3,
+      background: { r: 100, g: 120, b: 140 },
+    },
+  }).png().toFile(filePath);
+
+  return {
+    filePath,
+    cleanup: async () => {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+async function makePngBuffer(): Promise<Buffer> {
+  return sharp({
+    create: {
+      width: 4,
+      height: 4,
+      channels: 3,
+      background: { r: 40, g: 80, b: 120 },
+    },
+  }).png().toBuffer();
+}
+
+describe("vertex image renderer preflight", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it("fails before Vertex request when the source image file is empty", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vertex-renderer-empty-"));
+    const emptySourcePath = path.join(tempDir, "source.png");
+    await fs.writeFile(emptySourcePath, Buffer.alloc(0));
+    const mask = await makeImageFile("mask");
+
+    const provider = new VertexImageRendererProvider();
+
+    await expect(provider.render({
+      sourceImage: {
+        kind: "local",
+        localPath: emptySourcePath,
+        mimeType: "image/png",
+        sourceLabel: "secondary-continuity-source",
+      },
+      maskImage: {
+        kind: "local",
+        localPath: mask.filePath,
+        mimeType: "image/png",
+        sourceLabel: "continuity-mask",
+      },
+      outputPath: path.join(tempDir, "out.webp"),
+      prompt: "test prompt",
+      jobId: "job-render-preflight",
+      imageId: "img-render-preflight",
+      renderMode: "full_secondary_continuity",
+    })).rejects.toMatchObject({
+      name: "VertexSecondaryContinuityError",
+      code: "imagen_source_image_empty_local_file",
+    });
+
+    expect(mockRequest).not.toHaveBeenCalled();
+
+    await mask.cleanup();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("serializes local payloads with decoder-verified mime instead of file extension", async () => {
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vertex-renderer-mime-"));
+    const sourcePath = path.join(tempDir, "source-misleading.jpg");
+    await fs.writeFile(sourcePath, await makePngBuffer());
+    const mask = await makeImageFile("mask-mime");
+    const generated = await makePngBuffer();
+
+    mockRequest.mockImplementation(async (request: { body: string }) => ({
+      json: async () => ({
+        predictions: [
+          {
+            bytesBase64Encoded: generated.toString("base64"),
+            mimeType: "image/png",
+          },
+        ],
+      }),
+    }));
+
+    const provider = new VertexImageRendererProvider();
+    const outputPath = path.join(tempDir, "out.webp");
+
+    await provider.render({
+      sourceImage: {
+        kind: "local",
+        localPath: sourcePath,
+        mimeType: "image/jpeg",
+        sourceLabel: "secondary-continuity-source",
+      },
+      maskImage: {
+        kind: "local",
+        localPath: mask.filePath,
+        mimeType: "image/png",
+        sourceLabel: "continuity-mask",
+      },
+      outputPath,
+      prompt: "test prompt",
+      jobId: "job-render-mime",
+      imageId: "img-render-mime",
+      renderMode: "full_secondary_continuity",
+    });
+
+    expect(mockRequest).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(mockRequest.mock.calls[0][0].body);
+    expect(body.instances[0].image.mimeType).toBe("image/png");
+    expect(typeof body.instances[0].image.bytesBase64Encoded).toBe("string");
+    expect(body.instances[0].image.bytesBase64Encoded.length).toBeGreaterThan(0);
+
+    await mask.cleanup();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+});

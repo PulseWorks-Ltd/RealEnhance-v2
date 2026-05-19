@@ -1,4 +1,5 @@
 import fs from "fs/promises";
+import path from "path";
 import sharp from "sharp";
 import { nLog } from "../../logger";
 import type { ContinuityRenderMode, PlacementPlan } from "../../continuity/types";
@@ -86,6 +87,164 @@ function extractGeneratedImage(response: any): { imageBytes: string; mimeType: s
   return { imageBytes, mimeType };
 }
 
+async function inspectRenderArtifact(
+  reference: ImageRenderRequest["sourceImage"],
+  role: "source" | "mask"
+): Promise<Record<string, unknown>> {
+  const summary: Record<string, unknown> = {
+    role,
+    kind: reference.kind,
+    sourceLabel: reference.sourceLabel,
+    uri: reference.uri || null,
+    localPath: reference.localPath || null,
+    mimeType: reference.mimeType || null,
+  };
+
+  if (!reference.localPath) {
+    return {
+      ...summary,
+      exists: null,
+      sizeBytes: null,
+      width: null,
+      height: null,
+    };
+  }
+
+  let stats;
+  try {
+    stats = await fs.stat(reference.localPath);
+  } catch {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image local artifact is missing: ${reference.localPath}`,
+      `imagen_${role}_image_missing_local_file`
+    );
+  }
+
+  if (stats.size <= 0) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image local artifact is empty: ${reference.localPath}`,
+      `imagen_${role}_image_empty_local_file`
+    );
+  }
+
+  const metadata = await sharp(reference.localPath).metadata().catch(() => ({ width: 0, height: 0, format: null }));
+  const normalizedFormat = String(metadata.format || "").trim().toLowerCase();
+  const decodedMimeType = normalizedFormat === "png"
+    ? "image/png"
+    : normalizedFormat === "webp"
+      ? "image/webp"
+      : normalizedFormat === "jpeg" || normalizedFormat === "jpg"
+        ? "image/jpeg"
+        : null;
+  if (!decodedMimeType) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image local artifact decoded to unsupported format: ${metadata.format || "unknown"}`,
+      `imagen_${role}_image_invalid_format`
+    );
+  }
+  if (!metadata.width || !metadata.height) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image local artifact has invalid dimensions: ${reference.localPath}`,
+      `imagen_${role}_image_invalid_dimensions`
+    );
+  }
+
+  return {
+    ...summary,
+    exists: true,
+    sizeBytes: stats.size,
+    mtimeMs: stats.mtimeMs,
+    width: metadata.width || null,
+    height: metadata.height || null,
+    format: metadata.format || null,
+    decodedMimeType,
+  };
+}
+
+async function snapshotLocalRenderReference(params: {
+  reference: ImageRenderRequest["sourceImage"];
+  role: "source" | "mask";
+  outputPath: string;
+}): Promise<{ reference: ImageRenderRequest["sourceImage"]; snapshotPath: string | null }> {
+  if (params.reference.kind !== "local" || !params.reference.localPath) {
+    return {
+      reference: params.reference,
+      snapshotPath: null,
+    };
+  }
+
+  const sourceExt = path.extname(params.reference.localPath) || ".img";
+  const snapshotPath = path.join(
+    path.dirname(params.outputPath),
+    `${path.basename(params.outputPath, path.extname(params.outputPath))}-vertex-${params.role}-snapshot${sourceExt}`
+  );
+  await fs.copyFile(params.reference.localPath, snapshotPath);
+
+  return {
+    reference: {
+      ...params.reference,
+      localPath: snapshotPath,
+    },
+    snapshotPath,
+  };
+}
+
+function summarizeVertexImagePayload(payload: Record<string, unknown>): Record<string, unknown> {
+  const bytesBase64Encoded = typeof payload.bytesBase64Encoded === "string"
+    ? payload.bytesBase64Encoded
+    : "";
+  const gcsUri = typeof payload.gcsUri === "string"
+    ? payload.gcsUri
+    : null;
+
+  return {
+    hasInlineBytes: bytesBase64Encoded.length > 0,
+    inlineBytesLength: bytesBase64Encoded.length,
+    hasGcsUri: Boolean(gcsUri),
+    gcsUri,
+    mimeType: typeof payload.mimeType === "string" ? payload.mimeType : null,
+    keys: Object.keys(payload),
+    payloadImageMode: gcsUri ? "gcsUri" : bytesBase64Encoded.length > 0 ? "inline_bytes" : "missing",
+  };
+}
+
+async function buildVerifiedVertexImagePayload(
+  reference: ImageRenderRequest["sourceImage"],
+  role: "source" | "mask"
+): Promise<{ payload: Record<string, unknown>; artifact: Record<string, unknown> }> {
+  const artifact = await inspectRenderArtifact(reference, role);
+
+  if (reference.kind === "gcs" && reference.uri) {
+    return {
+      payload: toVertexImagePayload(reference),
+      artifact,
+    };
+  }
+
+  if (!reference.localPath) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image payload is missing local artifact data`,
+      `imagen_${role}_image_missing_local_file`
+    );
+  }
+
+  const fileBuffer = await fs.readFile(reference.localPath);
+  if (fileBuffer.length <= 0) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image local artifact serialized to empty bytes: ${reference.localPath}`,
+      `imagen_${role}_image_empty_serialized_bytes`
+    );
+  }
+
+  return {
+    payload: {
+      bytesBase64Encoded: fileBuffer.toString("base64"),
+      mimeType: (artifact.decodedMimeType as string) || reference.mimeType,
+    },
+    artifact,
+  };
+}
+
 export class VertexImageRendererProvider implements ImageRendererProvider {
   async render(request: ImageRenderRequest): Promise<ImageRenderResponse> {
     const rendererFlag = String(process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3").trim().toLowerCase();
@@ -98,13 +257,62 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       basePrompt: request.prompt,
       intentInstruction: request.intent?.userInstruction,
     });
+    const sourceSnapshot = await snapshotLocalRenderReference({
+      reference: request.sourceImage,
+      role: "source",
+      outputPath: request.outputPath,
+    });
+    const maskSnapshot = await snapshotLocalRenderReference({
+      reference: request.maskImage,
+      role: "mask",
+      outputPath: request.outputPath,
+    });
+    const sourceReference = sourceSnapshot.reference;
+    const maskReference = maskSnapshot.reference;
+
+    const sourcePrepared = await buildVerifiedVertexImagePayload(sourceReference, "source");
+    const maskPrepared = await buildVerifiedVertexImagePayload(maskReference, "mask");
+    const sourceArtifact = sourcePrepared.artifact;
+    const maskArtifact = maskPrepared.artifact;
+    const sourcePayload = sourcePrepared.payload;
+    const maskPayload = maskPrepared.payload;
+    const sourcePayloadSummary = summarizeVertexImagePayload(sourcePayload);
+    const maskPayloadSummary = summarizeVertexImagePayload(maskPayload);
+
+    if (!sourcePayloadSummary.hasInlineBytes && !sourcePayloadSummary.hasGcsUri) {
+      throw new VertexSecondaryContinuityError(
+        "Vertex continuity source image payload resolved without raw bytes or gs:// URI",
+        "imagen_source_image_payload_missing"
+      );
+    }
+    if (!maskPayloadSummary.hasInlineBytes && !maskPayloadSummary.hasGcsUri) {
+      throw new VertexSecondaryContinuityError(
+        "Vertex continuity mask image payload resolved without raw bytes or gs:// URI",
+        "imagen_mask_image_payload_missing"
+      );
+    }
+
+    nLog("[VERTEX_CONTINUITY_RENDER_SOURCE_PREFLIGHT]", {
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      model,
+      sourceArtifact,
+      maskArtifact,
+      sourceSnapshotPath: sourceSnapshot.snapshotPath,
+      maskSnapshotPath: maskSnapshot.snapshotPath,
+      sourcePayloadSummary,
+      maskPayloadSummary,
+    });
+
     const payload = {
       instances: [
         {
           prompt,
-          image: toVertexImagePayload(request.sourceImage),
+          image: sourcePayload,
           mask: {
-            image: toVertexImagePayload(request.maskImage),
+            image: maskPayload,
           },
         },
       ],
@@ -128,15 +336,21 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       renderMode: request.renderMode,
       model,
       sourceImage: {
-        kind: request.sourceImage.kind,
-        localPath: request.sourceImage.localPath || null,
-        uri: request.sourceImage.uri || null,
+        kind: sourceReference.kind,
+        localPath: sourceReference.localPath || null,
+        uri: sourceReference.uri || null,
       },
       maskImage: {
-        kind: request.maskImage.kind,
-        localPath: request.maskImage.localPath || null,
-        uri: request.maskImage.uri || null,
+        kind: maskReference.kind,
+        localPath: maskReference.localPath || null,
+        uri: maskReference.uri || null,
       },
+      sourceArtifact,
+      maskArtifact,
+      sourceSnapshotPath: sourceSnapshot.snapshotPath,
+      maskSnapshotPath: maskSnapshot.snapshotPath,
+      sourcePayloadSummary,
+      maskPayloadSummary,
       promptLength: prompt.length,
       guidanceScale,
       outputPath: request.outputPath,
