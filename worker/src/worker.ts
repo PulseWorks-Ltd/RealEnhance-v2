@@ -82,7 +82,7 @@ import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
 import { checkStageOutput } from "./utils/stageOutputGuard";
-import { runStructuralCheck } from "./validators/structureValidatorClient";
+import { runStructuralCheck, validateStructureValidatorStartupConfig } from "./validators/structureValidatorClient";
 import { getLocalValidatorMode, getGeminiValidatorMode, isGeminiBlockingEnabled, logValidationModes } from "./validators/validationModes";
 import { validateStage1BStructure } from "./validators/geminiSemanticValidator";
 import {
@@ -15287,6 +15287,11 @@ if (process.env.DEBUG_INVARIANT_REPLAY === "true") {
 
 // Log validator configuration on startup
 logValidationModes();
+const structureValidatorStartup = validateStructureValidatorStartupConfig();
+nLog(`[worker] STRUCTURE_VALIDATOR_URL: ${structureValidatorStartup.configured ? (structureValidatorStartup.valid ? `${structureValidatorStartup.url} (valid)` : "INVALID") : "NOT SET"}`);
+if (structureValidatorStartup.configured && !structureValidatorStartup.valid) {
+  nLog(`[worker] Structure validator disabled due to invalid STRUCTURE_VALIDATOR_URL (${structureValidatorStartup.reason})`);
+}
 nLog('\n'); // Force flush
 
 // Keep billing eventually consistent via non-blocking ledger retries.

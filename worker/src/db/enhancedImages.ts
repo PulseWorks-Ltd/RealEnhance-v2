@@ -65,12 +65,23 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
   try {
     // Extract storage key from URL (remove protocol and domain)
     const storageKey = extractStorageKey(params.publicUrl);
-    const agencyIdResult = normalizeDbUuid(params.agencyId);
+    const agencyIdResult = normalizeDbUuid(params.agencyId, { allowedPrefixes: ['agency'] });
     const userIdResult = normalizeDbUuid(params.userId);
     const propertyIdResult = normalizeDbUuid(params.propertyId);
     const parentImageIdResult = normalizeDbUuid(params.parentImageId, { allowedPrefixes: ['img'] });
 
-    if (agencyIdResult.kind !== 'raw_uuid') {
+    if (agencyIdResult.kind === 'prefixed_public_id') {
+      logUuidBoundaryEvent({
+        level: 'warn',
+        field: 'agencyId',
+        result: agencyIdResult,
+        jobId: params.jobId,
+        source: params.source,
+        required: true,
+      });
+    }
+
+    if (agencyIdResult.kind !== 'raw_uuid' && agencyIdResult.kind !== 'prefixed_public_id') {
       logUuidBoundaryEvent({
         level: 'error',
         field: 'agencyId',

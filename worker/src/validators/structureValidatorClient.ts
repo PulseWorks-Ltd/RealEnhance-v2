@@ -47,11 +47,40 @@ export interface StructureValidationResult {
  * Validator configuration from environment variables
  */
 function getValidatorConfig() {
-  const url = process.env.STRUCTURE_VALIDATOR_URL;
+  const rawUrl = String(process.env.STRUCTURE_VALIDATOR_URL || "").trim();
   const mode = getLocalValidatorMode();
   const sensitivity = parseFloat(process.env.STRUCTURE_VALIDATOR_SENSITIVITY ?? "5.0");
 
-  return { url, mode, sensitivity };
+  if (!rawUrl) {
+    return { url: null, mode, sensitivity, valid: true, reason: "missing" };
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { url: null, mode, sensitivity, valid: false, reason: "unsupported_protocol" };
+    }
+    return { url: parsed.toString().replace(/\/$/, ""), mode, sensitivity, valid: true, reason: "configured" };
+  } catch {
+    return { url: null, mode, sensitivity, valid: false, reason: "invalid_url" };
+  }
+}
+
+export function validateStructureValidatorStartupConfig(): {
+  configured: boolean;
+  valid: boolean;
+  url: string | null;
+  reason: string;
+} {
+  const rawUrl = String(process.env.STRUCTURE_VALIDATOR_URL || "").trim();
+  const { url, valid, reason } = getValidatorConfig();
+
+  return {
+    configured: rawUrl.length > 0,
+    valid,
+    url,
+    reason,
+  };
 }
 
 /**
@@ -103,10 +132,14 @@ export async function validateStructure(
   originalUrl: string,
   enhancedUrl: string
 ): Promise<StructureValidationResult> {
-  const { url, mode, sensitivity } = getValidatorConfig();
+  const { url, mode, sensitivity, valid, reason } = getValidatorConfig();
 
   // Check if validator is disabled
   if (!url) {
+    if (!valid) {
+      console.error(`[structureValidator] Validator disabled due to invalid STRUCTURE_VALIDATOR_URL (${reason})`);
+      return createDisabledResult("Validator disabled (invalid URL)");
+    }
     console.log("[structureValidator] Validator disabled (no URL configured)");
     return createDisabledResult("Validator disabled");
   }

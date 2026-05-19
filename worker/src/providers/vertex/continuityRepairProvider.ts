@@ -17,6 +17,15 @@ function withHydratedLocalPath(reference: ImageReference, localPath: string): Im
   };
 }
 
+function asLocalRenderReference(reference: ImageReference, localPath: string): ImageReference {
+  return {
+    ...reference,
+    kind: "local",
+    localPath,
+    uri: undefined,
+  };
+}
+
 export class VertexContinuityRepairProvider implements ContinuityRepairProvider {
   constructor(
     private readonly plannerProvider = new VertexSpatialPlannerProvider(),
@@ -139,6 +148,8 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
       });
+      const renderSourceImage = asLocalRenderReference(secondaryImage, secondaryWorkingPath);
+      const renderMaskImage = asLocalRenderReference(maskImage, compiledMask.finalMaskPath);
 
       const materialPalette = request.roomConsistency?.roomState?.furnitureMemory?.materialPalette || [];
       const lightingProfile = request.roomConsistency?.roomState?.lightingProfile;
@@ -153,8 +164,8 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
       });
 
       const render = await this.rendererProvider.render({
-        sourceImage: secondaryImage,
-        maskImage,
+        sourceImage: renderSourceImage,
+        maskImage: renderMaskImage,
         outputPath: request.outputPath,
         prompt,
         continuityGroupId: request.continuityGroupId,

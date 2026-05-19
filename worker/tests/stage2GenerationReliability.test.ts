@@ -7,6 +7,8 @@ import {
   runStage2GenerationAttempt,
   Stage2GenerationFailure,
   Stage2GenerationNoImageError,
+  isStage2RetryableGenerationError,
+  wrapRetryableSecondaryContinuityError,
 } from "../src/pipeline/stage2";
 
 jest.mock("../src/ai/gemini", () => ({
@@ -158,6 +160,16 @@ describe("Stage-2 generation reliability", () => {
         attempt: 1,
       })
     ).rejects.toBeInstanceOf(Stage2GenerationFailure);
+  });
+
+  it("marks Vertex FAILED_PRECONDITION continuity failures as retryable", () => {
+    const wrapped = wrapRetryableSecondaryContinuityError(
+      new Error("got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Service agents are being provisioned.\",\"status\":\"FAILED_PRECONDITION\"}}")
+    );
+
+    expect(wrapped).toBeInstanceOf(Stage2GenerationFailure);
+    expect(isStage2RetryableGenerationError(wrapped)).toBe(true);
+    expect((wrapped as Stage2GenerationFailure).code).toBe("vertex_continuity_failed_precondition");
   });
 
   it("uses compressed secondary reference payload ordering without target duplication", async () => {

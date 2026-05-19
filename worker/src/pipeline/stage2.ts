@@ -689,6 +689,21 @@ export function isStage2RetryableGenerationError(error: unknown): boolean {
   return error instanceof Stage2GenerationFailure && error.retryable;
 }
 
+export function wrapRetryableSecondaryContinuityError(error: unknown): unknown {
+  const message = String((error as any)?.message || error || "");
+  const normalized = message.toLowerCase();
+  const isFailedPrecondition = normalized.includes("failed_precondition");
+  if (!isFailedPrecondition) {
+    return error;
+  }
+
+  return new Stage2GenerationFailure(
+    message,
+    "vertex_continuity_failed_precondition",
+    true,
+  );
+}
+
 type FurnishingAnchorDepth = "foreground" | "midground" | "background" | "unknown";
 
 type StructuredFurnishingAnchor = {
@@ -2073,7 +2088,7 @@ export async function runStage2(
           error: String(error?.message || error),
           fallbackReason,
         });
-        throw error;
+        throw wrapRetryableSecondaryContinuityError(error);
       }
     }
 
