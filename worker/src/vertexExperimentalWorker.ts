@@ -69,6 +69,27 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     queueJobId: String(job.id || ""),
   });
 
+  nLog("[CONTINUITY_INPUT_MANIFEST]", {
+    continuityGroupId: job.data.continuityGroupId || null,
+    imageId: job.data.imageId,
+    jobId: job.data.jobId,
+    renderMode: job.data.renderMode,
+    stage: "worker-start",
+    inputs: {
+      baseImage: {
+        requestPath: job.data.secondaryImagePath,
+        requestUri: job.data.secondaryImageUri || null,
+      },
+      masterImage: {
+        requestPath: job.data.masterImagePath,
+        requestUri: job.data.masterImageUri || null,
+      },
+      occupancyConstraintMask: {
+        requestPath: job.data.occupancyConstraintMaskPath || null,
+      },
+    },
+  });
+
   const provider = createContinuityRepairProvider();
   nLog("[VERTEX_RENDER_EXECUTION_START]", {
     continuityGroupId: job.data.continuityGroupId || null,

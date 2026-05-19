@@ -3,6 +3,7 @@ import path from "path";
 import { Storage } from "@google-cloud/storage";
 import { nLog } from "../logger";
 import { toBase64 } from "../utils/images";
+import { downloadToTemp } from "../utils/remote";
 import type { ImageReference, ResolveImageSourceInput } from "./types";
 import { VertexSecondaryContinuityError } from "../continuity/types";
 
@@ -298,4 +299,63 @@ export async function ensureLocalFileExists(reference: ImageReference): Promise<
     return;
   }
   await fs.access(reference.localPath);
+}
+
+export async function ensureLocalImagePath(params: {
+  reference: ImageReference;
+  sourceLabel: string;
+  jobId: string;
+  imageId: string;
+  continuityGroupId?: string | null;
+}): Promise<string> {
+  if (params.reference.localPath) {
+    try {
+      await fs.access(params.reference.localPath);
+      nLog("[CONTINUITY_INPUT_FILE_CHECK]", {
+        sourceLabel: params.sourceLabel,
+        continuityGroupId: params.continuityGroupId || null,
+        jobId: params.jobId,
+        imageId: params.imageId,
+        stage: "consumer-local-check",
+        resolvedInputType: params.reference.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
+        path: params.reference.localPath,
+        exists: true,
+        uri: params.reference.uri || null,
+      });
+      return params.reference.localPath;
+    } catch {
+      nLog("[CONTINUITY_INPUT_FILE_CHECK]", {
+        sourceLabel: params.sourceLabel,
+        continuityGroupId: params.continuityGroupId || null,
+        jobId: params.jobId,
+        imageId: params.imageId,
+        stage: "consumer-local-check",
+        resolvedInputType: params.reference.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
+        path: params.reference.localPath,
+        exists: false,
+        uri: params.reference.uri || null,
+      });
+    }
+  }
+
+  if (params.reference.uri) {
+    const hydratedPath = await downloadToTemp(params.reference.uri, `${params.jobId}-${params.sourceLabel}`);
+    nLog("[CONTINUITY_INPUT_FILE_CHECK]", {
+      sourceLabel: params.sourceLabel,
+      continuityGroupId: params.continuityGroupId || null,
+      jobId: params.jobId,
+      imageId: params.imageId,
+      stage: "consumer-hydrate",
+      resolvedInputType: params.reference.kind === "gcs" ? "REMOTE_GCS" : "REMOTE_URI",
+      path: hydratedPath,
+      exists: true,
+      uri: params.reference.uri,
+    });
+    return hydratedPath;
+  }
+
+  throw new VertexSecondaryContinuityError(
+    `${params.sourceLabel} is missing a consumer-accessible local file and remote URI`,
+    "image_reference_missing_local_path"
+  );
 }

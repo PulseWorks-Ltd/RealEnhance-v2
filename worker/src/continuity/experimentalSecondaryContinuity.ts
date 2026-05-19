@@ -24,6 +24,20 @@ function buildContinuityQueueJobId(params: ExperimentalSecondaryContinuityInput)
     .join("__");
 }
 
+function classifyInput(value?: string | null): "LOCAL_TMP" | "REMOTE_GCS" | "REMOTE_URI" | null {
+  const normalized = String(value || "").trim();
+  if (!normalized) {
+    return null;
+  }
+  if (normalized.startsWith("gs://")) {
+    return "REMOTE_GCS";
+  }
+  if (normalized.startsWith("http://") || normalized.startsWith("https://")) {
+    return "REMOTE_URI";
+  }
+  return "LOCAL_TMP";
+}
+
 async function ensureRemoteQueueImage(params: {
   sourceLabel: string;
   localPath: string;
@@ -175,6 +189,31 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       queueName,
       workerIdentity,
     };
+    nLog("[CONTINUITY_INPUT_MANIFEST]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      stage: "producer-pre-enqueue",
+      inputs: {
+        baseImage: {
+          resolvedInputType: classifyInput(secondaryImageUri),
+          requestPath: params.secondaryImagePath,
+          requestUri: params.secondaryImageUri || null,
+          dispatchedUri: secondaryImageUri,
+        },
+        masterImage: {
+          resolvedInputType: classifyInput(masterImageUri),
+          requestPath: params.masterImagePath,
+          requestUri: params.masterImageUri || null,
+          dispatchedUri: masterImageUri,
+        },
+        occupancyConstraintMask: {
+          resolvedInputType: classifyInput(params.occupancyConstraintMaskPath),
+          requestPath: params.occupancyConstraintMaskPath || null,
+        },
+      },
+    });
     const dispatchedJob = await queue.add("vertex-continuity-experimental", payload, {
       jobId: buildContinuityQueueJobId(params),
       removeOnComplete: 50,

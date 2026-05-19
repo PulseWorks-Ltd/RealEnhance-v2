@@ -4,7 +4,7 @@ import { nLog } from "../../logger";
 import { persistContinuityArtifacts } from "../../continuity/artifactStore";
 import { compileDeterministicMask } from "../../continuity/maskCompiler";
 import { validateCompiledMask } from "../../continuity/maskValidation";
-import { loadImageReference, persistMaskArtifact } from "../imageTransport";
+import { ensureLocalImagePath, loadImageReference, persistMaskArtifact } from "../imageTransport";
 import type { ContinuityRepairProvider, ContinuityRepairRequest, ContinuityRepairResponse } from "../types";
 import { VertexImageRendererProvider, buildImagenInsertionPrompt } from "./imageRendererProvider";
 import { VertexSpatialPlannerProvider } from "./spatialPlannerProvider";
@@ -37,6 +37,39 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
       });
+      const secondaryWorkingPath = await ensureLocalImagePath({
+        reference: secondaryImage,
+        sourceLabel: "secondary-continuity-source",
+        jobId: request.jobId,
+        imageId: request.imageId,
+        continuityGroupId: request.continuityGroupId,
+      });
+
+      nLog("[CONTINUITY_INPUT_MANIFEST]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        stage: "consumer-pre-mask",
+        inputs: {
+          baseImage: {
+            resolvedInputType: secondaryImage.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
+            localPath: secondaryWorkingPath,
+            requestPath: request.secondaryImagePath,
+            uri: secondaryImage.uri || request.secondaryImageUri || null,
+          },
+          masterImage: {
+            resolvedInputType: masterImage.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
+            localPath: masterImage.localPath || null,
+            requestPath: request.masterImagePath,
+            uri: masterImage.uri || request.masterImageUri || null,
+          },
+          occupancyConstraintMask: {
+            resolvedInputType: request.occupancyConstraintMaskPath ? "LOCAL_TMP" : null,
+            localPath: request.occupancyConstraintMaskPath || null,
+          },
+        },
+      });
 
       nLog("[VERTEX_CONTINUITY_MASTER_INPUT]", {
         continuityGroupId: request.continuityGroupId || null,
@@ -66,7 +99,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
       const finalMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-final-mask", ".png");
       const compiledMask = await compileDeterministicMask({
         plan: planner.plan,
-        secondaryImagePath: request.secondaryImagePath,
+        secondaryImagePath: secondaryWorkingPath,
         occupancyMaskPath,
         exclusionMaskPath,
         finalMaskPath,
@@ -85,7 +118,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         localPath: compiledMask.finalMaskPath,
       });
       const validation = await validateCompiledMask({
-        sourceImagePath: request.secondaryImagePath,
+        sourceImagePath: secondaryWorkingPath,
         compiledMask,
         continuityGroupId: request.continuityGroupId,
         jobId: request.jobId,
@@ -137,7 +170,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         jobId: request.jobId,
         attempt: request.attempt,
-        sourceImagePath: request.secondaryImagePath,
+        sourceImagePath: secondaryWorkingPath,
         renderMode: request.renderMode,
         intent: request.intent,
         queueName: request.queueName,
