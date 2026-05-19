@@ -91,6 +91,7 @@ export async function compileDeterministicMask(params: {
   occupancyMaskPath: string;
   exclusionMaskPath: string;
   finalMaskPath: string;
+  occupancyConstraintMaskPath?: string;
   continuityGroupId?: string | null;
   jobId: string;
   imageId: string;
@@ -131,12 +132,37 @@ export async function compileDeterministicMask(params: {
     </svg>
   `;
 
-  const occupancyMaskBuffer = await sharp(Buffer.from(svg))
-    .png()
-    .toBuffer();
+  const occupancyRaster = await sharp(Buffer.from(svg))
+    .removeAlpha()
+    .grayscale()
+    .threshold(1, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  let occupancyRaw = Buffer.from(occupancyRaster.data);
+
+  let occupancyConstraintApplied = false;
+  let occupancyConstraintPixelCount = 0;
+  if (params.occupancyConstraintMaskPath) {
+    occupancyConstraintApplied = true;
+    const constraintRaw = await sharp(params.occupancyConstraintMaskPath)
+      .removeAlpha()
+      .grayscale()
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+      .threshold(127, { grayscale: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+
+    occupancyConstraintPixelCount = countWhitePixels(constraintRaw.data);
+    for (let index = 0; index < occupancyRaw.length; index += 1) {
+      occupancyRaw[index] = occupancyRaw[index] > 0 && (constraintRaw.data[index] ?? 0) > 0 ? 255 : 0;
+    }
+  }
+
+  const occupancyMaskBuffer = await sharp(occupancyRaw, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
   await sharp(occupancyMaskBuffer).toFile(params.occupancyMaskPath);
 
-  const occupancyRaw = await sharp(occupancyMaskBuffer).raw().toBuffer();
   const occupancyPixelCount = countWhitePixels(occupancyRaw);
 
   const exclusionMask = await buildArchitecturalExclusionMask({
@@ -178,6 +204,24 @@ export async function compileDeterministicMask(params: {
     height,
     zoneCount: params.plan.furnitureZones.length,
     occupancyMaskPath: params.occupancyMaskPath,
+  });
+
+  nLog("[VERTEX_CONTINUITY_MASKS]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    width,
+    height,
+    zoneCount: params.plan.furnitureZones.length,
+    occupancyPixelCount,
+    exclusionPixelCount: exclusionMask.protectedPixelCount,
+    finalPixelCount,
+    occupancyAreaRatio: Number(occupancyAreaRatio.toFixed(4)),
+    exclusionAreaRatio: Number(exclusionAreaRatio.toFixed(4)),
+    finalAreaRatio: Number(finalAreaRatio.toFixed(4)),
+    occupancyConstraintApplied,
+    occupancyConstraintPixelCount,
+    protectedEdgeStats: exclusionMask.protectedEdgeStats,
   });
 
   nLog("[CONTINUITY_FINAL_MASK]", {

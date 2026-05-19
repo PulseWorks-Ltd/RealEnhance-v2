@@ -1,26 +1,10 @@
 import { QueueEvents, Worker, type Job } from "bullmq";
-import type { RoomConsistencyContextV1 } from "../../shared/src/types";
 import { nLog } from "./logger";
 import { bootstrapGoogleCredentialsFromEnv } from "./bootstrap/googleCredentials";
 import { validateVertexExperimentalEnv } from "./bootstrap/envValidation";
 import { runGcsHealthcheck, runVertexConnectivityTest } from "./bootstrap/healthChecks";
 import { createContinuityRepairProvider } from "./providers";
-
-type VertexExperimentalContinuityJobPayload = {
-  type: "vertex-continuity-experimental";
-  jobId: string;
-  imageId: string;
-  attempt: number;
-  secondaryImagePath: string;
-  secondaryImageUri?: string | null;
-  masterImagePath: string;
-  masterImageUri?: string | null;
-  outputPath: string;
-  roomType: string;
-  stagingStyle?: string;
-  roomConsistency?: RoomConsistencyContextV1;
-  continuityGroupId?: string | null;
-};
+import type { VertexExperimentalContinuityJobPayload } from "./continuity/types";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const WORKER_IDENTITY = "worker-vertex-experimental";
@@ -53,6 +37,17 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     throw new Error("unsupported_vertex_experimental_payload");
   }
 
+  nLog("[SECONDARY_CONTINUITY_QUEUE]", {
+    continuityGroupId: job.data.continuityGroupId || null,
+    imageId: job.data.imageId,
+    jobId: job.data.jobId,
+    renderMode: job.data.renderMode,
+    queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE || null,
+    queueJobId: String(job.id || ""),
+    workerIdentity: WORKER_IDENTITY,
+    status: "processing",
+  });
+
   const provider = createContinuityRepairProvider();
   const result = await provider.repair({
     secondaryImagePath: job.data.secondaryImagePath,
@@ -67,15 +62,23 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     jobId: job.data.jobId,
     imageId: job.data.imageId,
     attempt: Number(job.data.attempt),
+    renderMode: job.data.renderMode,
+    intent: job.data.intent,
+    occupancyConstraintMaskPath: job.data.occupancyConstraintMaskPath,
+    queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE,
+    workerIdentity: WORKER_IDENTITY,
   });
 
   return {
     ok: true,
     jobId: job.data.jobId,
     imageId: job.data.imageId,
+    renderMode: job.data.renderMode,
     outputPath: result.outputPath,
     planner: result.planner.model,
     renderer: result.render.model,
+    queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE || null,
+    workerIdentity: WORKER_IDENTITY,
   };
 }
 
@@ -126,6 +129,16 @@ async function main(): Promise<void> {
       queue: env.vertexExperimentalQueue,
       workerIdentity: WORKER_IDENTITY,
       jobId: String(job?.id || ""),
+      renderMode: (job?.data as any)?.renderMode || null,
+      error: error?.message || String(error),
+    });
+    nLog("[VERTEX_CONTINUITY_FAILURE]", {
+      continuityGroupId: (job?.data as any)?.continuityGroupId || null,
+      imageId: (job?.data as any)?.imageId || null,
+      jobId: (job?.data as any)?.jobId || null,
+      renderMode: (job?.data as any)?.renderMode || null,
+      queueName: env.vertexExperimentalQueue,
+      workerIdentity: WORKER_IDENTITY,
       error: error?.message || String(error),
     });
   });
@@ -135,6 +148,7 @@ async function main(): Promise<void> {
       queue: env.vertexExperimentalQueue,
       workerIdentity: WORKER_IDENTITY,
       jobId: String(job?.id || ""),
+      renderMode: (job?.data as any)?.renderMode || null,
       result,
     });
   });

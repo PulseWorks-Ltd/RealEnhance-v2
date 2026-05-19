@@ -1,43 +1,88 @@
+import { randomUUID } from "crypto";
+import { Queue, QueueEvents } from "bullmq";
+import { getVertexExperimentalQueueName } from "../bootstrap/envValidation";
 import { nLog } from "../logger";
-import type { ExperimentalSecondaryContinuityInput } from "./types";
+import type { ExperimentalSecondaryContinuityInput, VertexExperimentalContinuityJobPayload } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
-import { createContinuityRepairProvider } from "../providers";
+
+const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
+const DEFAULT_DISPATCH_TIMEOUT_MS = Math.max(60_000, Number(process.env.VERTEX_EXPERIMENTAL_DISPATCH_TIMEOUT_MS || 10 * 60 * 1000));
 
 export async function runExperimentalSecondaryContinuity(params: ExperimentalSecondaryContinuityInput): Promise<string> {
-  try {
-    const provider = createContinuityRepairProvider();
-    const repairResult = await provider.repair({
-      secondaryImagePath: params.secondaryImagePath,
-      secondaryImageUri: params.secondaryImageUri,
-      masterImagePath: params.masterImagePath,
-      masterImageUri: params.masterImageUri,
-      outputPath: params.outputPath,
-      roomType: params.roomType,
-      stagingStyle: params.stagingStyle,
-      roomConsistency: params.roomConsistency,
-      continuityGroupId: params.continuityGroupId,
-      jobId: params.jobId,
-      imageId: params.imageId,
-      attempt: params.attempt,
-    });
+  const queueName = params.queueName || getVertexExperimentalQueueName();
+  const queue = new Queue(queueName, {
+    connection: { url: REDIS_URL },
+  });
+  const queueEvents = new QueueEvents(queueName, {
+    connection: { url: REDIS_URL },
+  });
 
-    nLog("[VERTEX_CONTINUITY_VALIDATION]", {
+  try {
+    await queueEvents.waitUntilReady();
+
+    nLog("[SECONDARY_CONTINUITY_DISPATCH]", {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
       jobId: params.jobId,
-      validatorFlow: "existing_stage2_pipeline",
-      delegated: true,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+      operationLabel: params.intent?.operationLabel || null,
+      promptScope: params.intent?.promptScope || null,
     });
-    return repairResult.outputPath;
-  } catch (error: any) {
-    const fallbackReason = error instanceof VertexSecondaryContinuityError
-      ? error.fallbackReason
-      : "vertex_secondary_continuity_error";
+
+    const payload: VertexExperimentalContinuityJobPayload = {
+      type: "vertex-continuity-experimental",
+      requestedAt: new Date().toISOString(),
+      ...params,
+      queueName,
+      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+    };
+    const dispatchedJob = await queue.add("vertex-continuity-experimental", payload, {
+      jobId: `${params.jobId}:${params.imageId}:${params.renderMode}:${params.attempt}:${randomUUID()}`,
+      removeOnComplete: 50,
+      removeOnFail: 50,
+    });
+
+    nLog("[SECONDARY_CONTINUITY_QUEUE]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      queueJobId: String(dispatchedJob.id || ""),
+      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+      status: "enqueued",
+    });
+
+    const result = await dispatchedJob.waitUntilFinished(queueEvents, DEFAULT_DISPATCH_TIMEOUT_MS) as Record<string, unknown>;
+    const outputPath = String(result?.outputPath || "").trim() || params.outputPath;
+
     nLog("[VERTEX_CONTINUITY_RESULT]", {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
       jobId: params.jobId,
-      result: "fallback",
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity: String(result?.workerIdentity || params.workerIdentity || "worker-vertex-experimental"),
+      outputPath,
+      result: result?.ok === true ? "success" : "unknown",
+      plannerVersion: result?.planner || null,
+      rendererVersion: result?.renderer || null,
+    });
+
+    return outputPath;
+  } catch (error: any) {
+    const fallbackReason = error instanceof VertexSecondaryContinuityError
+      ? error.fallbackReason
+      : "vertex_secondary_continuity_error";
+    nLog("[VERTEX_CONTINUITY_FAILURE]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      renderMode: params.renderMode,
+      queueName,
+      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
       fallbackReason,
       error: String(error?.message || error),
     });
@@ -48,5 +93,8 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       String(error?.message || error || "vertex secondary continuity failed"),
       fallbackReason
     );
+  } finally {
+    await queue.close().catch(() => {});
+    await queueEvents.close().catch(() => {});
   }
 }

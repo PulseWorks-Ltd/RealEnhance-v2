@@ -14,6 +14,7 @@ import {
   normalizeEditMode,
   type EditContext,
 } from "./prompts";
+import { runExperimentalSecondaryContinuity } from "../continuity/experimentalSecondaryContinuity";
 import { siblingOutPath, writeImageDataUrl } from "../utils/images";
 import { detectOpeningsFromStage1A, type OpeningRegion } from "../utils/openingGeometry";
 import path from "path";
@@ -2362,6 +2363,49 @@ export async function applyEdit({
     const dir = require("path").dirname(baseImagePath);
     const baseName = require("path").basename(baseImagePath, require("path").extname(baseImagePath));
     const outPath = require("path").join(dir, `${baseName}-region-edit.webp`);
+
+    const shouldRouteSecondaryContinuityEdit = editContext?.secondaryContinuity?.enabled === true && normalizedMode !== "reinstate";
+    if (shouldRouteSecondaryContinuityEdit && approvedMasterReferencePath && maskPngBuffer) {
+      const continuityGroupId = editContext?.secondaryContinuity?.continuityGroupId || editContext?.secondaryContinuity?.roomId || null;
+      const occupancyConstraintMaskPath = siblingOutPath(outPath, ".vertex-occupancy-constraint", ".png");
+      await sharp(maskPngBuffer).png().toFile(occupancyConstraintMaskPath);
+      const normalizedJobId = String(jobId || "unknown-job").trim() || "unknown-job";
+      const normalizedImageId = String(imageId || "unknown-image").trim() || "unknown-image";
+
+      console.log("[SECONDARY_CONTINUITY_DISPATCH]", {
+        jobId: normalizedJobId,
+        imageId: normalizedImageId,
+        mode,
+        renderMode: normalizedMode === "add" ? "missing_object_insert" : "localized_repair",
+        continuityGroupId,
+        approvedMasterReferencePath,
+        occupancyConstraintMaskPath,
+      });
+
+      return await runExperimentalSecondaryContinuity({
+        secondaryImagePath: baseImagePath,
+        masterImagePath: approvedMasterReferencePath,
+        outputPath: outPath,
+        roomType: roomType || editContext?.roomType || "unknown",
+        stagingStyle: editContext?.stagingStyle,
+        continuityGroupId,
+        jobId: normalizedJobId,
+        imageId: normalizedImageId,
+        attempt: 1,
+        renderMode: normalizedMode === "add" ? "missing_object_insert" : "localized_repair",
+        occupancyConstraintMaskPath,
+        intent: {
+          userInstruction: instruction,
+          editMode: mode,
+          promptScope: "localized_edit",
+          operationLabel: "secondary_continuity_edit",
+          layoutHints: editContext?.layoutHints,
+          anchorConstraints: editContext?.anchorConstraints,
+          plannerVersion: process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro",
+          rendererVersion: process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3",
+        },
+      });
+    }
 
     // 🔹 Handle "Restore" mode with pixel-level copying (NEVER use Gemini)
     if (mode === "Restore") {

@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { nLog } from "../../logger";
-import type { NormalizedPoint, PlacementPlan } from "../../continuity/types";
+import type { ContinuityIntentMetadata, ContinuityRenderMode, NormalizedPoint, PlacementPlan } from "../../continuity/types";
 import { VertexSecondaryContinuityError } from "../../continuity/types";
 import { toGenAiPart } from "../imageTransport";
 import type { SpatialPlannerProvider, SpatialPlannerRequest, SpatialPlannerResponse } from "../types";
@@ -164,7 +164,48 @@ function normalizePlan(raw: any, imageWidth: number, imageHeight: number, roomTy
   };
 }
 
-function buildPlannerPrompt(params: { roomType: string; stagingStyle?: string; roomConsistencySummary: string }): string {
+function buildPlannerModeGuidance(renderMode: ContinuityRenderMode, intent?: ContinuityIntentMetadata): string {
+  const normalizedInstruction = String(intent?.userInstruction || "").trim();
+  if (renderMode === "full_secondary_continuity") {
+    return [
+      "Plan furniture occupancy for full secondary-view continuity staging.",
+      "Cover visible furnishing volumes that should persist from the approved master without granting full-scene rewrite authority.",
+    ].join(" ");
+  }
+  if (renderMode === "continuity_refresh") {
+    return [
+      "Plan only localized continuity refresh regions where existing secondary-view furnishing drifts from the approved master.",
+      "Prefer small, corrective occupancy regions over broad restaging.",
+    ].join(" ");
+  }
+  if (renderMode === "missing_object_insert") {
+    return [
+      "Plan only the localized occupancy needed for missing approved furnishing insertion.",
+      normalizedInstruction ? `User-constrained insertion request: ${normalizedInstruction}` : "Focus on missing-object insertion only.",
+    ].join(" ");
+  }
+  return [
+    "Plan only the localized occupancy needed for constrained continuity repair.",
+    normalizedInstruction ? `User-constrained repair request: ${normalizedInstruction}` : "Focus on localized repair only.",
+  ].join(" ");
+}
+
+function buildPlannerPrompt(params: {
+  roomType: string;
+  stagingStyle?: string;
+  roomConsistencySummary: string;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
+}): string {
+  const intentLines = [
+    params.intent?.operationLabel ? `Operation label: ${params.intent.operationLabel}` : null,
+    params.intent?.promptScope ? `Prompt scope: ${params.intent.promptScope}` : null,
+    params.intent?.userInstruction ? `User intent: ${params.intent.userInstruction}` : null,
+    params.intent?.layoutHints?.length ? `Layout hints: ${params.intent.layoutHints.join("; ")}` : null,
+    params.intent?.anchorConstraints?.length ? `Anchor constraints: ${params.intent.anchorConstraints.join("; ")}` : null,
+    params.intent?.roomAnchors?.length ? `Room anchors: ${params.intent.roomAnchors.join("; ")}` : null,
+  ].filter((value): value is string => !!value);
+  const intentBlock = intentLines.length > 0 ? `\nIntent context:\n- ${intentLines.join("\n- ")}` : "";
   return `You are a spatial continuity planner for secondary-image staging.
 
 You must analyze two images:
@@ -226,10 +267,13 @@ Planner requirements:
 - Prefer omission over hallucination.
 - If a furnishing is not naturally visible in the secondary image, omit it.
 - Preserve the target image topology and camera perspective.
+- Render mode: ${params.renderMode}
+- ${buildPlannerModeGuidance(params.renderMode, params.intent)}
 
 Room type: ${params.roomType || "unknown"}
 Staging style: ${params.stagingStyle || "unspecified"}
 Continuity context: ${params.roomConsistencySummary}
+${intentBlock}
 
 Return JSON only.`;
 }
@@ -260,6 +304,8 @@ export class VertexSpatialPlannerProvider implements SpatialPlannerProvider {
       roomType: request.roomType,
       stagingStyle: request.stagingStyle,
       roomConsistencySummary,
+      renderMode: request.renderMode,
+      intent: request.intent,
     });
 
     nLog("[VERTEX_CONTINUITY_PLANNER]", {
@@ -267,6 +313,7 @@ export class VertexSpatialPlannerProvider implements SpatialPlannerProvider {
       continuityGroupId: request.continuityGroupId || null,
       imageId: request.imageId,
       jobId: request.jobId,
+      renderMode: request.renderMode,
       model,
       sourceTransport: request.secondaryImage.kind,
       masterTransport: request.masterImage.kind,
@@ -308,6 +355,7 @@ export class VertexSpatialPlannerProvider implements SpatialPlannerProvider {
       continuityGroupId: request.continuityGroupId || null,
       imageId: request.imageId,
       jobId: request.jobId,
+      renderMode: request.renderMode,
       latencyMs,
       zoneCount: plan.furnitureZones.length,
       model,

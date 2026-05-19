@@ -1947,6 +1947,13 @@ export async function runStage2(
           jobId: opts.jobId,
           imageId: opts.imageId,
           attempt,
+          renderMode: resolvedPromptMode === "full" ? "full_secondary_continuity" : "continuity_refresh",
+          intent: {
+            operationLabel: "secondary_room_continuity_render",
+            promptScope: resolvedPromptMode,
+            plannerVersion: SECONDARY_CONTINUITY_PLANNER,
+            rendererVersion: SECONDARY_CONTINUITY_RENDERER,
+          },
         });
       } catch (error: any) {
         const fallbackReason = error instanceof VertexSecondaryContinuityError

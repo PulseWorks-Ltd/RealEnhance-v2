@@ -1,5 +1,23 @@
 import type { RoomConsistencyContextV1 } from "../../../shared/src/types";
 
+export type ContinuityRenderMode =
+  | "full_secondary_continuity"
+  | "continuity_refresh"
+  | "localized_repair"
+  | "missing_object_insert";
+
+export type ContinuityIntentMetadata = {
+  userInstruction?: string;
+  editMode?: string;
+  promptScope?: string;
+  operationLabel?: string;
+  layoutHints?: string[];
+  anchorConstraints?: string[];
+  roomAnchors?: string[];
+  plannerVersion?: string;
+  rendererVersion?: string;
+};
+
 export type NormalizedPoint = {
   x: number;
   y: number;
@@ -191,6 +209,16 @@ export type ExperimentalSecondaryContinuityInput = {
   jobId: string;
   imageId: string;
   attempt: number;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
+  occupancyConstraintMaskPath?: string;
+  queueName?: string;
+  workerIdentity?: string;
+};
+
+export type VertexExperimentalContinuityJobPayload = ExperimentalSecondaryContinuityInput & {
+  type: "vertex-continuity-experimental";
+  requestedAt: string;
 };
 
 export class VertexSecondaryContinuityError extends Error {

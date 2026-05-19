@@ -3,7 +3,13 @@ import path from "path";
 import sharp from "sharp";
 import { nLog } from "../logger";
 import { generateContinuityDebugArtifacts } from "./debug/visualizations";
-import type { CompiledMaskResult, MaskValidationResult, PlacementPlan } from "./types";
+import type {
+  CompiledMaskResult,
+  ContinuityIntentMetadata,
+  ContinuityRenderMode,
+  MaskValidationResult,
+  PlacementPlan,
+} from "./types";
 
 function safeSegment(value: string | null | undefined, fallback: string): string {
   const normalized = String(value || "").trim().replace(/[^a-zA-Z0-9._-]+/g, "-");
@@ -36,6 +42,10 @@ export async function persistContinuityArtifacts(params: {
   jobId: string;
   attempt: number;
   sourceImagePath: string;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
+  queueName?: string;
+  workerIdentity?: string;
   planner: {
     plan: PlacementPlan;
     prompt: string;
@@ -64,6 +74,7 @@ export async function persistContinuityArtifacts(params: {
   const plannerRawPath = path.join(artifactDir, "planner-raw.txt");
   const validatorOutputPath = path.join(artifactDir, "validator-output.json");
   const imagenPayloadPath = path.join(artifactDir, "imagen-request.json");
+  const metadataPath = path.join(artifactDir, "continuity-request.json");
   const occupancyMaskTarget = path.join(artifactDir, "occupancy-mask.png");
   const exclusionMaskTarget = path.join(artifactDir, "exclusion-mask.png");
   const finalMaskTarget = path.join(artifactDir, "final-mask.png");
@@ -72,6 +83,18 @@ export async function persistContinuityArtifacts(params: {
   await fs.writeFile(plannerJsonPath, JSON.stringify(params.planner.plan, null, 2));
   await fs.writeFile(plannerRawPath, params.planner.rawText || "");
   await fs.writeFile(imagenPayloadPath, JSON.stringify(params.render.payload, null, 2));
+  await fs.writeFile(
+    metadataPath,
+    JSON.stringify({
+      renderMode: params.renderMode,
+      intent: params.intent || null,
+      queueName: params.queueName || null,
+      workerIdentity: params.workerIdentity || null,
+      sourceImagePath: params.sourceImagePath,
+      plannerModel: params.planner.model,
+      rendererModel: params.render.model,
+    }, null, 2)
+  );
   await fs.writeFile(
     validatorOutputPath,
     JSON.stringify({
@@ -97,6 +120,7 @@ export async function persistContinuityArtifacts(params: {
   });
 
   const artifactPaths = [
+    metadataPath,
     plannerJsonPath,
     plannerRawPath,
     imagenPayloadPath,

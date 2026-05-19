@@ -1,5 +1,11 @@
 import type { RoomConsistencyContextV1 } from "../../../shared/src/types";
-import type { CompiledMaskResult, MaskValidationResult, PlacementPlan } from "../continuity/types";
+import type {
+  CompiledMaskResult,
+  ContinuityIntentMetadata,
+  ContinuityRenderMode,
+  MaskValidationResult,
+  PlacementPlan,
+} from "../continuity/types";
 
 export type ImageReference = {
   kind: "local" | "gcs";
@@ -30,6 +36,8 @@ export type SpatialPlannerRequest = {
   continuityGroupId?: string | null;
   jobId: string;
   imageId: string;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
 };
 
 export type SpatialPlannerResponse = {
@@ -48,6 +56,10 @@ export type ImageRenderRequest = {
   continuityGroupId?: string | null;
   jobId: string;
   imageId: string;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
+  guidanceScale?: number;
+  workerIdentity?: string;
 };
 
 export type ImageRenderResponse = {
@@ -55,6 +67,7 @@ export type ImageRenderResponse = {
   model: string;
   latencyMs: number;
   mimeType: string;
+  guidanceScale: number;
   payload: Record<string, unknown>;
 };
 
@@ -71,6 +84,11 @@ export type ContinuityRepairRequest = {
   jobId: string;
   imageId: string;
   attempt: number;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
+  occupancyConstraintMaskPath?: string;
+  queueName?: string;
+  workerIdentity?: string;
 };
 
 export type ContinuityRepairResponse = {
@@ -83,6 +101,7 @@ export type ContinuityRepairResponse = {
   planner: SpatialPlannerResponse;
   render: ImageRenderResponse;
   artifactDir: string;
+  renderMode: ContinuityRenderMode;
 };
 
 export interface SpatialPlannerProvider {

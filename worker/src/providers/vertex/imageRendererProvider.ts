@@ -1,7 +1,7 @@
 import fs from "fs/promises";
 import sharp from "sharp";
 import { nLog } from "../../logger";
-import type { PlacementPlan } from "../../continuity/types";
+import type { ContinuityRenderMode, PlacementPlan } from "../../continuity/types";
 import { VertexSecondaryContinuityError } from "../../continuity/types";
 import { toVertexImagePayload } from "../imageTransport";
 import type { ImageRendererProvider, ImageRenderRequest, ImageRenderResponse } from "../types";
@@ -35,6 +35,42 @@ export function buildImagenInsertionPrompt(params: {
   ].filter(Boolean).join(", ");
 }
 
+function buildModeScopedPrompt(params: {
+  renderMode: ContinuityRenderMode;
+  basePrompt: string;
+  intentInstruction?: string;
+}): string {
+  const normalizedIntent = String(params.intentInstruction || "").trim();
+  if (params.renderMode === "full_secondary_continuity") {
+    return [
+      "Use the approved master as the furnishing identity source for visible secondary-view staging.",
+      "Preserve architecture, openings, perspective, framing, and all content outside the compiled mask.",
+      params.basePrompt,
+    ].join(", ");
+  }
+  if (params.renderMode === "continuity_refresh") {
+    return [
+      "Refresh only mismatched or incomplete continuity details visible from this secondary angle.",
+      "Do not restage the room broadly or rewrite protected architecture.",
+      params.basePrompt,
+    ].join(", ");
+  }
+  if (params.renderMode === "missing_object_insert") {
+    return [
+      normalizedIntent || "Insert only the missing approved furnishing implied by continuity.",
+      "Keep the change localized to the compiled continuity mask.",
+      "Do not reposition unrelated furniture or redesign the room.",
+      params.basePrompt,
+    ].join(", ");
+  }
+  return [
+    normalizedIntent || "Perform only the localized secondary continuity repair requested.",
+    "Keep the change surgical and restricted to the compiled continuity mask.",
+    "Preserve unrelated furnishings, architecture, and composition.",
+    params.basePrompt,
+  ].join(", ");
+}
+
 function resolveModelResource(model: string): string {
   const { project, location } = getVertexProjectConfig();
   return `projects/${project}/locations/${location}/publishers/google/models/${model}`;
@@ -54,12 +90,18 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
   async render(request: ImageRenderRequest): Promise<ImageRenderResponse> {
     const rendererFlag = String(process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3").trim().toLowerCase();
     const model = rendererFlag === "imagen3" ? "imagen-3.0-capability-001" : rendererFlag;
+    const guidanceScale = request.guidanceScale ?? Number(process.env.VERTEX_CONTINUITY_GUIDANCE_SCALE || 12);
     const ai = getVertexGenAiClient();
     const startedAt = Date.now();
+    const prompt = buildModeScopedPrompt({
+      renderMode: request.renderMode,
+      basePrompt: request.prompt,
+      intentInstruction: request.intent?.userInstruction,
+    });
     const payload = {
       instances: [
         {
-          prompt: request.prompt,
+          prompt,
           image: toVertexImagePayload(request.sourceImage),
           mask: {
             image: toVertexImagePayload(request.maskImage),
@@ -68,7 +110,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       ],
       parameters: {
         sampleCount: 1,
-        guidanceScale: 12,
+        guidanceScale,
         addWatermark: false,
         editMode: "EDIT_MODE_INPAINT_INSERTION",
         maskMode: "MASK_MODE_USER_PROVIDED",
@@ -83,10 +125,22 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       continuityGroupId: request.continuityGroupId || null,
       imageId: request.imageId,
       jobId: request.jobId,
+      renderMode: request.renderMode,
       model,
-      prompt: request.prompt,
+      prompt,
       sourceTransport: request.sourceImage.kind,
       maskTransport: request.maskImage.kind,
+    });
+
+    nLog("[VERTEX_CONTINUITY_RENDER]", {
+      phase: "start",
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      workerIdentity: request.workerIdentity || null,
+      model,
+      guidanceScale,
     });
 
     const apiClient = (ai as any).apiClient;
@@ -110,10 +164,24 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       continuityGroupId: request.continuityGroupId || null,
       imageId: request.imageId,
       jobId: request.jobId,
+      renderMode: request.renderMode,
       model,
       latencyMs,
       outputPath: request.outputPath,
       mimeType: generated.mimeType,
+    });
+
+    nLog("[VERTEX_CONTINUITY_RENDER]", {
+      phase: "complete",
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      workerIdentity: request.workerIdentity || null,
+      model,
+      guidanceScale,
+      latencyMs,
+      outputPath: request.outputPath,
     });
 
     return {
@@ -121,6 +189,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       model,
       latencyMs,
       mimeType: generated.mimeType,
+      guidanceScale,
       payload,
     };
   }
