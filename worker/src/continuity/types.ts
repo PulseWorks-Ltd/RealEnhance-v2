@@ -196,6 +196,13 @@ export type ImagenRenderResult = {
   payload: Record<string, unknown>;
 };
 
+export type ContinuityArtifactManifest = {
+  sourceLabel: string;
+  uri: string;
+  mimeType: string;
+  artifactName: string;
+};
+
 export type ExperimentalSecondaryContinuityInput = {
   secondaryImagePath: string;
   secondaryImageUri?: string | null;
@@ -216,9 +223,23 @@ export type ExperimentalSecondaryContinuityInput = {
   workerIdentity?: string;
 };
 
-export type VertexExperimentalContinuityJobPayload = ExperimentalSecondaryContinuityInput & {
+export type VertexExperimentalContinuityJobPayload = {
   type: "vertex-continuity-experimental";
   requestedAt: string;
+  secondaryImage: ContinuityArtifactManifest;
+  masterImage: ContinuityArtifactManifest;
+  occupancyConstraintMask?: ContinuityArtifactManifest | null;
+  roomType: string;
+  stagingStyle?: string;
+  roomConsistency?: RoomConsistencyContextV1;
+  continuityGroupId?: string | null;
+  jobId: string;
+  imageId: string;
+  attempt: number;
+  renderMode: ContinuityRenderMode;
+  intent?: ContinuityIntentMetadata;
+  queueName?: string;
+  workerIdentity?: string;
 };
 
 export class VertexSecondaryContinuityError extends Error {

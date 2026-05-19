@@ -13,6 +13,7 @@ export type ImageReference = {
   localPath?: string;
   uri?: string;
   sourceLabel: string;
+  artifactName?: string;
 };
 
 export type ResolveImageSourceInput = {
@@ -72,10 +73,9 @@ export type ImageRenderResponse = {
 };
 
 export type ContinuityRepairRequest = {
-  secondaryImagePath: string;
-  secondaryImageUri?: string | null;
-  masterImagePath: string;
-  masterImageUri?: string | null;
+  secondaryImage: ImageReference;
+  masterImage: ImageReference;
+  occupancyConstraintMask?: ImageReference | null;
   outputPath: string;
   roomType: string;
   stagingStyle?: string;
@@ -86,13 +86,13 @@ export type ContinuityRepairRequest = {
   attempt: number;
   renderMode: ContinuityRenderMode;
   intent?: ContinuityIntentMetadata;
-  occupancyConstraintMaskPath?: string;
   queueName?: string;
   workerIdentity?: string;
 };
 
 export type ContinuityRepairResponse = {
   outputPath: string;
+  renderedImage: ImageReference;
   secondaryImage: ImageReference;
   masterImage: ImageReference;
   maskImage: ImageReference;

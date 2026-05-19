@@ -1,10 +1,9 @@
 import { randomUUID } from "crypto";
-import { existsSync } from "fs";
 import { Queue, QueueEvents } from "bullmq";
 import { bootstrapGoogleCredentialsFromEnv } from "../bootstrap/googleCredentials";
 import { getVertexExperimentalQueueName } from "../bootstrap/envValidation";
 import { nLog } from "../logger";
-import { resolveGcsUri, resolveImageSource } from "../providers/imageTransport";
+import { persistRemoteImage, resolveGcsUri } from "../providers/imageTransport";
 import { downloadToTemp } from "../utils/remote";
 import type { ExperimentalSecondaryContinuityInput, VertexExperimentalContinuityJobPayload } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
@@ -38,7 +37,7 @@ function classifyInput(value?: string | null): "LOCAL_TMP" | "REMOTE_GCS" | "REM
   return "LOCAL_TMP";
 }
 
-async function ensureRemoteQueueImage(params: {
+async function buildRemoteQueueArtifact(params: {
   sourceLabel: string;
   localPath: string;
   uri?: string | null;
@@ -46,46 +45,31 @@ async function ensureRemoteQueueImage(params: {
   jobId: string;
   imageId: string;
   continuityGroupId?: string | null;
-}): Promise<string> {
-  let localPath = params.localPath;
-  if ((!localPath || !existsSync(localPath)) && params.uri && !resolveGcsUri(params.uri)) {
-    localPath = await downloadToTemp(params.uri, `${params.jobId}-${params.sourceLabel}`);
-    nLog("[CONTINUITY_MISSING_LOCAL_RECOVERED]", {
-      continuityGroupId: params.continuityGroupId || null,
-      imageId: params.imageId,
-      jobId: params.jobId,
-      sourceLabel: params.sourceLabel,
-      recoveredFromUri: params.uri,
-      recoveredLocalPath: localPath,
-    });
-  }
-
-  const resolved = await resolveImageSource({
+}): Promise<VertexExperimentalContinuityJobPayload["secondaryImage"]> {
+  const resolved = await persistRemoteImage({
     sourceLabel: params.sourceLabel,
-    localPath,
+    localPath: params.localPath,
     uri: params.uri,
-    preferGcs: true,
     artifactName: params.artifactName,
     jobId: params.jobId,
     imageId: params.imageId,
     continuityGroupId: params.continuityGroupId,
   });
 
-  if (resolved.kind === "gcs" && resolved.uri) {
-    return resolved.uri;
-  }
-
-  throw new VertexSecondaryContinuityError(
-    `${params.sourceLabel} must resolve to a persisted gs:// URI before dispatch to the vertex continuity worker`,
-    "continuity_remote_uri_required"
-  );
+  return {
+    sourceLabel: params.sourceLabel,
+    uri: resolved.uri!,
+    mimeType: resolved.mimeType,
+    artifactName: resolved.artifactName || params.artifactName,
+  };
 }
 
 async function bootstrapQueueDispatchCredentialsIfNeeded(params: ExperimentalSecondaryContinuityInput): Promise<void> {
   const requiresSecondaryUpload = !resolveGcsUri(params.secondaryImageUri);
   const requiresMasterUpload = !resolveGcsUri(params.masterImageUri);
+  const requiresMaskUpload = !!params.occupancyConstraintMaskPath;
 
-  if (!requiresSecondaryUpload && !requiresMasterUpload) {
+  if (!requiresSecondaryUpload && !requiresMasterUpload && !requiresMaskUpload) {
     return;
   }
 
@@ -100,6 +84,7 @@ async function bootstrapQueueDispatchCredentialsIfNeeded(params: ExperimentalSec
     bootstrapMs: authBootstrap.bootstrapMs,
     requiresSecondaryUpload,
     requiresMasterUpload,
+    requiresMaskUpload,
   });
 }
 
@@ -161,7 +146,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
 
     await bootstrapQueueDispatchCredentialsIfNeeded(params);
 
-    const secondaryImageUri = await ensureRemoteQueueImage({
+    const secondaryImage = await buildRemoteQueueArtifact({
       sourceLabel: "secondary-continuity-source",
       localPath: params.secondaryImagePath,
       uri: params.secondaryImageUri,
@@ -170,7 +155,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       imageId: params.imageId,
       continuityGroupId: params.continuityGroupId,
     });
-    const masterImageUri = await ensureRemoteQueueImage({
+    const masterImage = await buildRemoteQueueArtifact({
       sourceLabel: "secondary-continuity-master",
       localPath: params.masterImagePath,
       uri: params.masterImageUri,
@@ -179,13 +164,32 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       imageId: params.imageId,
       continuityGroupId: params.continuityGroupId,
     });
+    const occupancyConstraintMask = params.occupancyConstraintMaskPath
+      ? await buildRemoteQueueArtifact({
+          sourceLabel: "continuity-occupancy-mask",
+          localPath: params.occupancyConstraintMaskPath,
+          artifactName: `${params.imageId}-continuity-mask-attempt-${params.attempt}.png`,
+          jobId: params.jobId,
+          imageId: params.imageId,
+          continuityGroupId: params.continuityGroupId,
+        })
+      : null;
 
     const payload: VertexExperimentalContinuityJobPayload = {
       type: "vertex-continuity-experimental",
       requestedAt: new Date().toISOString(),
-      ...params,
-      secondaryImageUri,
-      masterImageUri,
+      secondaryImage,
+      masterImage,
+      occupancyConstraintMask,
+      roomType: params.roomType,
+      stagingStyle: params.stagingStyle,
+      roomConsistency: params.roomConsistency,
+      continuityGroupId: params.continuityGroupId,
+      jobId: params.jobId,
+      imageId: params.imageId,
+      attempt: params.attempt,
+      renderMode: params.renderMode,
+      intent: params.intent,
       queueName,
       workerIdentity,
     };
@@ -197,20 +201,21 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       stage: "producer-pre-enqueue",
       inputs: {
         baseImage: {
-          resolvedInputType: classifyInput(secondaryImageUri),
-          requestPath: params.secondaryImagePath,
+          resolvedInputType: classifyInput(secondaryImage.uri),
+          requestPath: null,
           requestUri: params.secondaryImageUri || null,
-          dispatchedUri: secondaryImageUri,
+          dispatchedUri: secondaryImage.uri,
         },
         masterImage: {
-          resolvedInputType: classifyInput(masterImageUri),
-          requestPath: params.masterImagePath,
+          resolvedInputType: classifyInput(masterImage.uri),
+          requestPath: null,
           requestUri: params.masterImageUri || null,
-          dispatchedUri: masterImageUri,
+          dispatchedUri: masterImage.uri,
         },
         occupancyConstraintMask: {
-          resolvedInputType: classifyInput(params.occupancyConstraintMaskPath),
-          requestPath: params.occupancyConstraintMaskPath || null,
+          resolvedInputType: classifyInput(occupancyConstraintMask?.uri),
+          requestPath: null,
+          dispatchedUri: occupancyConstraintMask?.uri || null,
         },
       },
     });
@@ -247,7 +252,14 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
     });
 
     const result = await dispatchedJob.waitUntilFinished(queueEvents, DEFAULT_DISPATCH_TIMEOUT_MS) as Record<string, unknown>;
-    const outputPath = String(result?.outputPath || "").trim() || params.outputPath;
+    const outputUri = String(result?.outputUri || "").trim();
+    if (!outputUri) {
+      throw new VertexSecondaryContinuityError(
+        "vertex continuity worker completed without a remote output URI",
+        "continuity_remote_output_missing"
+      );
+    }
+    const outputPath = await downloadToTemp(outputUri, `${params.jobId}-continuity-output`);
 
     nLog("[CONTINUITY_RESULT_RETURNED]", {
       continuityGroupId: params.continuityGroupId || null,
@@ -262,6 +274,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       provider,
       stage2Mode,
       resultWorkerIdentity: String(result?.workerIdentity || dispatchTarget),
+      outputUri,
       outputPath,
     });
 
@@ -272,6 +285,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       workerIdentity: String(result?.workerIdentity || params.workerIdentity || "worker-vertex-experimental"),
+      outputUri,
       outputPath,
       result: result?.ok === true ? "success" : "unknown",
       plannerVersion: result?.planner || null,

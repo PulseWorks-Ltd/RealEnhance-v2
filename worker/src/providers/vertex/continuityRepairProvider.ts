@@ -4,7 +4,7 @@ import { nLog } from "../../logger";
 import { persistContinuityArtifacts } from "../../continuity/artifactStore";
 import { compileDeterministicMask } from "../../continuity/maskCompiler";
 import { validateCompiledMask } from "../../continuity/maskValidation";
-import { ensureLocalImagePath, loadImageReference, persistMaskArtifact } from "../imageTransport";
+import { ensureLocalImagePath, persistMaskArtifact, persistRemoteImage } from "../imageTransport";
 import type { ContinuityRepairProvider, ContinuityRepairRequest, ContinuityRepairResponse } from "../types";
 import { VertexImageRendererProvider, buildImagenInsertionPrompt } from "./imageRendererProvider";
 import { VertexSpatialPlannerProvider } from "./spatialPlannerProvider";
@@ -17,26 +17,8 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
 
   async repair(request: ContinuityRepairRequest): Promise<ContinuityRepairResponse> {
     try {
-      const secondaryImage = await loadImageReference({
-        sourceLabel: "secondary-continuity-source",
-        localPath: request.secondaryImagePath,
-        uri: request.secondaryImageUri,
-        preferGcs: true,
-        artifactName: `${request.imageId}-secondary-source${request.attempt}.webp`,
-        jobId: request.jobId,
-        imageId: request.imageId,
-        continuityGroupId: request.continuityGroupId,
-      });
-      const masterImage = await loadImageReference({
-        sourceLabel: "secondary-continuity-master",
-        localPath: request.masterImagePath,
-        uri: request.masterImageUri,
-        preferGcs: true,
-        artifactName: `${request.imageId}-approved-master${request.attempt}.webp`,
-        jobId: request.jobId,
-        imageId: request.imageId,
-        continuityGroupId: request.continuityGroupId,
-      });
+      const secondaryImage = request.secondaryImage;
+      const masterImage = request.masterImage;
       const secondaryWorkingPath = await ensureLocalImagePath({
         reference: secondaryImage,
         sourceLabel: "secondary-continuity-source",
@@ -44,6 +26,15 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
       });
+      const occupancyConstraintMaskPath = request.occupancyConstraintMask
+        ? await ensureLocalImagePath({
+            reference: request.occupancyConstraintMask,
+            sourceLabel: "continuity-occupancy-mask",
+            jobId: request.jobId,
+            imageId: request.imageId,
+            continuityGroupId: request.continuityGroupId,
+          })
+        : undefined;
 
       nLog("[CONTINUITY_INPUT_MANIFEST]", {
         continuityGroupId: request.continuityGroupId || null,
@@ -55,18 +46,19 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           baseImage: {
             resolvedInputType: secondaryImage.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
             localPath: secondaryWorkingPath,
-            requestPath: request.secondaryImagePath,
-            uri: secondaryImage.uri || request.secondaryImageUri || null,
+            requestPath: secondaryImage.localPath || null,
+            uri: secondaryImage.uri || null,
           },
           masterImage: {
             resolvedInputType: masterImage.kind === "gcs" ? "REMOTE_GCS" : "LOCAL_TMP",
             localPath: masterImage.localPath || null,
-            requestPath: request.masterImagePath,
-            uri: masterImage.uri || request.masterImageUri || null,
+            requestPath: masterImage.localPath || null,
+            uri: masterImage.uri || null,
           },
           occupancyConstraintMask: {
-            resolvedInputType: request.occupancyConstraintMaskPath ? "LOCAL_TMP" : null,
-            localPath: request.occupancyConstraintMaskPath || null,
+            resolvedInputType: request.occupancyConstraintMask?.kind === "gcs" ? "REMOTE_GCS" : request.occupancyConstraintMask?.localPath ? "LOCAL_TMP" : null,
+            localPath: occupancyConstraintMaskPath || null,
+            uri: request.occupancyConstraintMask?.uri || null,
           },
         },
       });
@@ -76,7 +68,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         jobId: request.jobId,
         renderMode: request.renderMode,
-        masterImageUri: request.masterImageUri || null,
+        masterImageUri: masterImage.uri || null,
         masterTransport: masterImage.kind,
         secondaryTransport: secondaryImage.kind,
       });
@@ -103,7 +95,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         occupancyMaskPath,
         exclusionMaskPath,
         finalMaskPath,
-        occupancyConstraintMaskPath: request.occupancyConstraintMaskPath,
+        occupancyConstraintMaskPath,
         continuityGroupId: request.continuityGroupId,
         jobId: request.jobId,
         imageId: request.imageId,
@@ -164,6 +156,14 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         },
         localPath: render.outputPath,
       });
+      const renderedImage = await persistRemoteImage({
+        sourceLabel: "continuity-render-output",
+        localPath: render.outputPath,
+        artifactName: `${request.imageId}-continuity-render-attempt-${request.attempt}.webp`,
+        jobId: request.jobId,
+        imageId: request.imageId,
+        continuityGroupId: request.continuityGroupId,
+      });
 
       const persistedArtifacts = await persistContinuityArtifacts({
         continuityGroupId: request.continuityGroupId,
@@ -179,6 +179,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         masks: compiledMask,
         validation,
         render,
+        renderedImageUri: renderedImage.uri || null,
       });
 
       nLog("[VERTEX_CONTINUITY_RESULT]", {
@@ -201,11 +202,13 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         artifactDir: persistedArtifacts.artifactDir,
         queueName: request.queueName || null,
         workerIdentity: request.workerIdentity || null,
+        renderedImageUri: renderedImage.uri || null,
         result: "success",
       });
 
       return {
         outputPath: render.outputPath,
+        renderedImage,
         secondaryImage,
         masterImage,
         maskImage,

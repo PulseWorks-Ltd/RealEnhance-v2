@@ -1,3 +1,5 @@
+import os from "os";
+import path from "path";
 import { QueueEvents, Worker, type Job } from "bullmq";
 import { CONTINUITY_RENDER_QUEUE } from "../../shared/src/constants";
 import { nLog } from "./logger";
@@ -6,6 +8,7 @@ import { validateVertexExperimentalEnv } from "./bootstrap/envValidation";
 import { runGcsHealthcheck, runVertexConnectivityTest } from "./bootstrap/healthChecks";
 import { createContinuityRepairProvider } from "./providers";
 import type { VertexExperimentalContinuityJobPayload } from "./continuity/types";
+import type { ImageReference } from "./providers/types";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const WORKER_IDENTITY = "worker-vertex-experimental";
@@ -20,11 +23,27 @@ function isVertexExperimentalContinuityJobPayload(value: unknown): value is Vert
     && payload.type === "vertex-continuity-experimental"
     && typeof payload.jobId === "string"
     && typeof payload.imageId === "string"
-    && typeof payload.secondaryImagePath === "string"
-    && typeof payload.masterImagePath === "string"
-    && typeof payload.outputPath === "string"
+    && typeof payload.secondaryImage?.uri === "string"
+    && typeof payload.masterImage?.uri === "string"
     && typeof payload.roomType === "string"
     && Number.isFinite(Number(payload.attempt));
+}
+
+function manifestToImageReference(manifest: VertexExperimentalContinuityJobPayload["secondaryImage"]): ImageReference {
+  return {
+    kind: "gcs",
+    uri: manifest.uri,
+    mimeType: manifest.mimeType,
+    sourceLabel: manifest.sourceLabel,
+    artifactName: manifest.artifactName,
+  };
+}
+
+function buildWorkerOutputPath(payload: VertexExperimentalContinuityJobPayload): string {
+  return path.join(
+    os.tmpdir(),
+    `vertex-continuity-${payload.jobId}-${payload.imageId}-attempt-${Math.max(1, Number(payload.attempt))}.webp`
+  );
 }
 
 async function shutdown(signal: string): Promise<void> {
@@ -77,15 +96,16 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     stage: "worker-start",
     inputs: {
       baseImage: {
-        requestPath: job.data.secondaryImagePath,
-        requestUri: job.data.secondaryImageUri || null,
+        requestPath: null,
+        requestUri: job.data.secondaryImage.uri,
       },
       masterImage: {
-        requestPath: job.data.masterImagePath,
-        requestUri: job.data.masterImageUri || null,
+        requestPath: null,
+        requestUri: job.data.masterImage.uri,
       },
       occupancyConstraintMask: {
-        requestPath: job.data.occupancyConstraintMaskPath || null,
+        requestPath: null,
+        requestUri: job.data.occupancyConstraintMask?.uri || null,
       },
     },
   });
@@ -107,11 +127,12 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
   });
 
   const result = await provider.repair({
-    secondaryImagePath: job.data.secondaryImagePath,
-    secondaryImageUri: job.data.secondaryImageUri,
-    masterImagePath: job.data.masterImagePath,
-    masterImageUri: job.data.masterImageUri,
-    outputPath: job.data.outputPath,
+    secondaryImage: manifestToImageReference(job.data.secondaryImage),
+    masterImage: manifestToImageReference(job.data.masterImage),
+    occupancyConstraintMask: job.data.occupancyConstraintMask
+      ? manifestToImageReference(job.data.occupancyConstraintMask)
+      : null,
+    outputPath: buildWorkerOutputPath(job.data),
     roomType: job.data.roomType,
     stagingStyle: job.data.stagingStyle,
     roomConsistency: job.data.roomConsistency,
@@ -121,7 +142,6 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     attempt: Number(job.data.attempt),
     renderMode: job.data.renderMode,
     intent: job.data.intent,
-    occupancyConstraintMaskPath: job.data.occupancyConstraintMaskPath,
     queueName,
     workerIdentity: WORKER_IDENTITY,
   });
@@ -140,6 +160,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     stage2Mode,
     queueJobId: String(job.id || ""),
     outputPath: result.outputPath,
+    outputUri: result.renderedImage.uri,
     planner: result.planner.model,
     renderer: result.render.model,
   });
@@ -150,6 +171,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     imageId: job.data.imageId,
     renderMode: job.data.renderMode,
     outputPath: result.outputPath,
+    outputUri: result.renderedImage.uri,
     planner: result.planner.model,
     renderer: result.render.model,
     queueName,

@@ -62,6 +62,7 @@ export async function persistContinuityArtifacts(params: {
     mimeType: string;
     payload: Record<string, unknown>;
   };
+  renderedImageUri?: string | null;
 }): Promise<{ artifactDir: string; artifactPaths: string[] }> {
   const artifactDir = getContinuityArtifactDir({
     continuityGroupId: params.continuityGroupId,
@@ -91,6 +92,7 @@ export async function persistContinuityArtifacts(params: {
       queueName: params.queueName || null,
       workerIdentity: params.workerIdentity || null,
       sourceImagePath: params.sourceImagePath,
+      renderedImageUri: params.renderedImageUri || null,
       plannerModel: params.planner.model,
       rendererModel: params.render.model,
     }, null, 2)
