@@ -52,6 +52,11 @@ function parseBooleanEnv(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true";
 }
 
+function parseNumberEnv(value: string | undefined, fallback: number): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+}
+
 // SINGLE-AUTHORITY: Specialist advisory signals always reach Unified for adjudication.
 export const STAGE2_ENABLE_SPECIALIST_ADVISORY = true;
 
@@ -60,4 +65,25 @@ export const STAGE2_ENABLE_SPECIALIST_ADVISORY = true;
 // High-confidence critical structural signals hard-fail unconditionally regardless.
 export const STAGE2_ENABLE_ISSUETYPE_HARDFAIL = parseBooleanEnv(
   process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL
+);
+
+export const ENABLE_VERTEX_SECONDARY_CONTINUITY = parseBooleanEnv(
+  process.env.ENABLE_VERTEX_SECONDARY_CONTINUITY
+);
+
+export const SECONDARY_CONTINUITY_RENDERER = String(
+  process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3"
+).trim();
+
+export const SECONDARY_CONTINUITY_PLANNER = String(
+  process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro"
+).trim();
+
+export const SECONDARY_CONTINUITY_PROVIDER = String(
+  process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex"
+).trim();
+
+export const VERTEX_CONTINUITY_GUIDANCE_SCALE = parseNumberEnv(
+  process.env.VERTEX_CONTINUITY_GUIDANCE_SCALE,
+  12
 );

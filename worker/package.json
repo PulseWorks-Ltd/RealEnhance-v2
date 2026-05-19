@@ -6,9 +6,11 @@
   "types": "dist/worker/src/worker.d.ts",
   "scripts": {
     "dev": "NODE_ENV=development tsx src/worker.ts",
+    "dev:vertex-experimental": "NODE_ENV=development tsx src/vertexExperimentalWorker.ts",
     "build": "pnpm --filter @realenhance/shared run build && tsc -p tsconfig.json",
     "prestart": "pnpm run build",
     "start": "NODE_ENV=production node dist/worker/src/worker.js",
+    "start:vertex-experimental": "NODE_ENV=production node dist/worker/src/vertexExperimentalWorker.js",
     "test": "jest --config jest.config.cjs --no-coverage",
     "test:guard:multizone": "tsx src/scripts/assert-multizone-full-mode.ts",
     "test:furnished-gate": "tsx src/scripts/test-furnished-gate.ts",
@@ -16,6 +18,7 @@
     "test:publish": "tsx src/scripts/test-publish.ts"
   },
   "dependencies": {
+    "@google-cloud/storage": "^7.19.0",
     "@google/genai": "^0.7.0",
     "@realenhance/shared": "workspace:*",
     "@types/node": "^20.11.30",

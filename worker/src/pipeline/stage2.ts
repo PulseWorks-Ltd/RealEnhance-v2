@@ -15,6 +15,12 @@ import { buildTightenedPrompt, getTightenLevelFromAttempt, logTighteningInfo, Ti
 import type { Mode } from "../validators/validationModes";
 import { focusLog } from "../utils/logFocus";
 import { nLog } from "../logger";
+import {
+  ENABLE_VERTEX_SECONDARY_CONTINUITY,
+  SECONDARY_CONTINUITY_PROVIDER,
+  SECONDARY_CONTINUITY_PLANNER,
+  SECONDARY_CONTINUITY_RENDERER,
+} from "../config";
 import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanner";
 import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
@@ -24,6 +30,8 @@ import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 import { runPerceptualDiff } from "../validators/perceptualDiff";
 import { RoomConsistencyContextV1 } from "../../../shared/src/types";
+import { runExperimentalSecondaryContinuity } from "../continuity/experimentalSecondaryContinuity";
+import { VertexSecondaryContinuityError } from "../continuity/types";
 import sharp from "sharp";
 import path from "path";
 import fs from "fs/promises";
@@ -1903,6 +1911,12 @@ export async function runStage2(
     && opts.roomConsistencyV1?.viewRole === "reference"
     && !!String(opts.roomConsistencyV1?.approvedMasterImageUrl || "").trim()
     && !!opts.referenceImagePath;
+  const shouldUseExperimentalVertexSecondaryContinuity =
+    ENABLE_VERTEX_SECONDARY_CONTINUITY
+    && isSecondaryRoomConsistencyStage2
+    && SECONDARY_CONTINUITY_PROVIDER.toLowerCase() === "vertex"
+    && SECONDARY_CONTINUITY_RENDERER.toLowerCase() === "imagen3"
+    && SECONDARY_CONTINUITY_PLANNER.toLowerCase() === "gemini25pro";
   const referenceAnchorMap = isSecondaryRoomConsistencyStage2 && opts.referenceImagePath
     ? await extractStructuredFurnishingAnchorMap({
         referenceImagePath: opts.referenceImagePath,
@@ -1918,6 +1932,37 @@ export async function runStage2(
     failureType: StructuralFailureType | null;
     attemptNumber: number;
   }): Promise<string> => {
+    if (shouldUseExperimentalVertexSecondaryContinuity && opts.referenceImagePath) {
+      try {
+        localReasons.push(`vertex_secondary_continuity_attempt:${attempt}`);
+        return await runExperimentalSecondaryContinuity({
+          secondaryImagePath: basePath,
+          masterImagePath: opts.referenceImagePath,
+          masterImageUri: opts.roomConsistencyV1?.approvedMasterImageUrl || null,
+          outputPath,
+          roomType: opts.roomType,
+          stagingStyle: opts.stagingStyle,
+          roomConsistency: opts.roomConsistencyV1,
+          continuityGroupId: resolveContinuityGroupId(opts.roomConsistencyV1),
+          jobId: opts.jobId,
+          imageId: opts.imageId,
+          attempt,
+        });
+      } catch (error: any) {
+        const fallbackReason = error instanceof VertexSecondaryContinuityError
+          ? error.fallbackReason
+          : "vertex_secondary_continuity_error";
+        localReasons.push(`vertex_secondary_continuity_fallback:${fallbackReason}`);
+        nLog("[VERTEX_CONTINUITY_VALIDATION]", {
+          continuityGroupId: resolveContinuityGroupId(opts.roomConsistencyV1),
+          imageId: opts.imageId,
+          jobId: opts.jobId,
+          validatorFlow: "existing_stage2_pipeline",
+          fallbackReason,
+        });
+      }
+    }
+
     const generatedPath = await runStage2GenerationAttempt(basePath, {
       roomType: opts.roomType,
       sceneType: opts.sceneType,

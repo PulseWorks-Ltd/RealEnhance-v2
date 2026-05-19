@@ -42,6 +42,25 @@
       }
     },
     {
+      "name": "worker-vertex-experimental",
+      "builder": "NIXPACKS",
+      "rootDirectory": ".",
+      "watchPatterns": [
+        "worker/**",
+        "shared/**",
+        "package.json",
+        "pnpm-lock.yaml",
+        "pnpm-workspace.yaml",
+        "railway.json"
+      ],
+      "buildCommand": "CI=true NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/worker run build",
+      "startCommand": "pnpm --filter @realenhance/worker run start:vertex-experimental",
+      "deploy": {
+        "restartPolicyType": "ON_FAILURE",
+        "restartPolicyMaxRetries": 10
+      }
+    },
+    {
       "name": "client",
       "builder": "NIXPACKS",
       "rootDirectory": "client",
