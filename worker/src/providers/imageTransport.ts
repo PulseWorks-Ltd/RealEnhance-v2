@@ -53,6 +53,35 @@ function mimeFromSharpFormat(format?: string): string | null {
   return null;
 }
 
+function extensionFromMimeType(mimeType: string): string | null {
+  const normalized = normalizeMimeType(mimeType);
+  if (normalized === "image/jpeg") {
+    return ".jpg";
+  }
+  if (normalized === "image/png") {
+    return ".png";
+  }
+  if (normalized === "image/webp") {
+    return ".webp";
+  }
+  return null;
+}
+
+function normalizeArtifactNameForMimeType(artifactName: string, mimeType: string): string {
+  const targetExtension = extensionFromMimeType(mimeType);
+  if (!targetExtension) {
+    return artifactName;
+  }
+
+  const parsed = path.parse(artifactName);
+  const currentMimeType = parsed.ext ? normalizeMimeType(mimeFromPath(artifactName)) : null;
+  if (currentMimeType === normalizeMimeType(mimeType)) {
+    return artifactName;
+  }
+
+  return `${parsed.name || artifactName}${targetExtension}`;
+}
+
 function sanitizeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "artifact";
 }
@@ -288,7 +317,11 @@ async function uploadLocalFileToGcs(params: {
     };
   }
   const storage = getStorageClient();
-  const baseName = sanitizeSegment(params.artifactName || path.basename(params.localPath));
+  const resolvedArtifactName = normalizeArtifactNameForMimeType(
+    params.artifactName || path.basename(params.localPath),
+    localValidation.mimeType,
+  );
+  const baseName = sanitizeSegment(resolvedArtifactName);
   const continuityGroupId = sanitizeSegment(params.continuityGroupId || "ungrouped");
   const key = [
     getGcsPrefix(),

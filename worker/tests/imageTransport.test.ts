@@ -30,7 +30,7 @@ jest.mock("@google-cloud/storage", () => ({
 
 import { ensureLocalImagePath, persistRemoteImage } from "../src/providers/imageTransport";
 
-async function makeImageFile(name: string, format: "png" | "webp" = "png"): Promise<{ filePath: string; sizeBytes: number }> {
+async function makeImageFile(name: string, format: "jpeg" | "png" | "webp" = "png"): Promise<{ filePath: string; sizeBytes: number }> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "image-transport-test-"));
   const filePath = path.join(tempDir, `${name}.${format}`);
   const pipeline = sharp({
@@ -43,6 +43,8 @@ async function makeImageFile(name: string, format: "png" | "webp" = "png"): Prom
   });
   if (format === "png") {
     await pipeline.png().toFile(filePath);
+  } else if (format === "jpeg") {
+    await pipeline.jpeg().toFile(filePath);
   } else {
     await pipeline.webp().toFile(filePath);
   }
@@ -105,6 +107,30 @@ describe("image transport validation", () => {
     expect(mockExists).toHaveBeenCalled();
     expect(mockGetMetadata).toHaveBeenCalled();
     expect(mockCreateReadStream).toHaveBeenCalled();
+  });
+
+  it("normalizes persisted artifact extensions to the decoded local mime type", async () => {
+    const { filePath, sizeBytes } = await makeImageFile("retry-stage1a", "jpeg");
+    mockGetMetadata.mockResolvedValue([{ size: String(sizeBytes), contentType: "image/jpeg" }]);
+
+    const result = await persistRemoteImage({
+      sourceLabel: "secondary-continuity-source",
+      localPath: filePath,
+      artifactName: "retry-stage1a.webp",
+      jobId: "job-retry",
+      imageId: "image-retry",
+      continuityGroupId: "group-retry",
+    });
+
+    expect(result.uri).toBe("gs://continuity-test-bucket/vertex-secondary-continuity/job-retry/image-retry/group-retry/retry-stage1a.jpg");
+    expect(result.mimeType).toBe("image/jpeg");
+    expect(mockUpload).toHaveBeenCalledWith(
+      filePath,
+      expect.objectContaining({
+        destination: "vertex-secondary-continuity/job-retry/image-retry/group-retry/retry-stage1a.jpg",
+        contentType: "image/jpeg",
+      })
+    );
   });
 
   it("rejects preexisting remote manifests with invalid image metadata", async () => {
