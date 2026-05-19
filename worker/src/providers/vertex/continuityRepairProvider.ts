@@ -26,6 +26,54 @@ function asLocalRenderReference(reference: ImageReference, localPath: string): I
   };
 }
 
+function summarizeImageReference(reference: ImageReference | null | undefined): Record<string, unknown> {
+  return {
+    kind: reference?.kind || null,
+    sourceLabel: reference?.sourceLabel || null,
+    uri: reference?.uri || null,
+    localPath: reference?.localPath || null,
+    mimeType: reference?.mimeType || null,
+    artifactName: reference?.artifactName || null,
+  };
+}
+
+function summarizeRenderPayload(payload: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!payload) {
+    return null;
+  }
+
+  const instances = Array.isArray(payload.instances) ? payload.instances : [];
+  const firstInstance = (instances[0] as Record<string, any> | undefined) || undefined;
+  const parameters = (payload.parameters as Record<string, any> | undefined) || undefined;
+
+  return {
+    instanceCount: instances.length,
+    hasPrompt: typeof firstInstance?.prompt === "string" && firstInstance.prompt.length > 0,
+    sourceImageKeys: firstInstance?.image ? Object.keys(firstInstance.image) : [],
+    maskImageKeys: firstInstance?.mask?.image ? Object.keys(firstInstance.mask.image) : [],
+    guidanceScale: parameters?.guidanceScale ?? null,
+    editMode: parameters?.editMode ?? null,
+    maskMode: parameters?.maskMode ?? null,
+    outputMimeType: parameters?.outputOptions?.mimeType ?? null,
+  };
+}
+
+function summarizeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack || null,
+    };
+  }
+
+  return {
+    name: null,
+    message: String(error),
+    stack: null,
+  };
+}
+
 export class VertexContinuityRepairProvider implements ContinuityRepairProvider {
   constructor(
     private readonly plannerProvider = new VertexSpatialPlannerProvider(),
@@ -33,6 +81,11 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
   ) {}
 
   async repair(request: ContinuityRepairRequest): Promise<ContinuityRepairResponse> {
+    let executionStage = "hydrate-inputs";
+    let plannerState: Record<string, unknown> | null = null;
+    let renderPayloadSummary: Record<string, unknown> | null = null;
+    let artifactSummary: Record<string, unknown> | null = null;
+
     try {
       const secondaryImage = request.secondaryImage;
       const masterImage = request.masterImage;
@@ -99,6 +152,19 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         secondaryTransport: secondaryImage.kind,
       });
 
+      nLog("[VERTEX_CONTINUITY_OCCUPANCY_MASK]", {
+        phase: "branch",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        branch: occupancyConstraintMaskPath ? "constraint-mask-present" : "constraint-mask-absent",
+        fallbackMode: occupancyConstraintMaskPath ? "intersect-compiled-occupancy" : "planner-occupancy-without-constraint-mask",
+        requestedMask: summarizeImageReference(request.occupancyConstraintMask || null),
+        hydratedLocalPath: occupancyConstraintMaskPath || null,
+      });
+
+      executionStage = "planner";
       const planner = await this.plannerProvider.plan({
         secondaryImage: hydratedSecondaryImage,
         masterImage: hydratedMasterImage,
@@ -111,10 +177,30 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         renderMode: request.renderMode,
         intent: request.intent,
       });
+      plannerState = {
+        model: planner.model,
+        latencyMs: planner.latencyMs,
+        zoneCount: planner.plan.furnitureZones.length,
+      };
 
       const occupancyMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-occupancy-mask", ".png");
       const exclusionMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-exclusion-mask", ".png");
       const finalMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-final-mask", ".png");
+      executionStage = "mask-compilation";
+      nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
+        phase: "start",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        plannerModel: planner.model,
+        zoneCount: planner.plan.furnitureZones.length,
+        secondaryImagePath: secondaryWorkingPath,
+        occupancyConstraintMaskPath: occupancyConstraintMaskPath || null,
+        occupancyMaskPath,
+        exclusionMaskPath,
+        finalMaskPath,
+      });
       const compiledMask = await compileDeterministicMask({
         plan: planner.plan,
         secondaryImagePath: secondaryWorkingPath,
@@ -125,6 +211,19 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         continuityGroupId: request.continuityGroupId,
         jobId: request.jobId,
         imageId: request.imageId,
+      });
+      nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
+        phase: "complete",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        occupancyMaskPath: compiledMask.occupancyMaskPath,
+        exclusionMaskPath: compiledMask.exclusionMaskPath,
+        finalMaskPath: compiledMask.finalMaskPath,
+        occupancyConstraintApplied: !!occupancyConstraintMaskPath,
+        finalPixelCount: compiledMask.finalPixelCount,
+        occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
       await logImageAttemptUrl({
         ctx: {
@@ -163,6 +262,17 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         lightingHint,
       });
 
+      executionStage = "render-payload";
+      nLog("[VERTEX_CONTINUITY_RENDER_PAYLOAD]", {
+        phase: "start",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        promptLength: prompt.length,
+        sourceImage: summarizeImageReference(renderSourceImage),
+        maskImage: summarizeImageReference(renderMaskImage),
+      });
       const render = await this.rendererProvider.render({
         sourceImage: renderSourceImage,
         maskImage: renderMaskImage,
@@ -175,6 +285,15 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         intent: request.intent,
         workerIdentity: request.workerIdentity,
       });
+      renderPayloadSummary = summarizeRenderPayload(render.payload);
+      nLog("[VERTEX_CONTINUITY_RENDER_PAYLOAD]", {
+        phase: "complete",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        payloadSummary: renderPayloadSummary,
+      });
       await logImageAttemptUrl({
         ctx: {
           jobId: request.jobId,
@@ -184,6 +303,17 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         },
         localPath: render.outputPath,
       });
+      executionStage = "output-publication";
+      nLog("[VERTEX_CONTINUITY_OUTPUT_PUBLICATION]", {
+        phase: "start",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        renderOutputPath: render.outputPath,
+        renderModel: render.model,
+        rendererLatencyMs: render.latencyMs,
+      });
       const renderedImage = await persistRemoteImage({
         sourceLabel: "continuity-render-output",
         localPath: render.outputPath,
@@ -192,7 +322,22 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
       });
+      artifactSummary = {
+        renderOutputPath: render.outputPath,
+        renderedImageUri: renderedImage.uri || null,
+        finalMaskPath: compiledMask.finalMaskPath,
+      };
+      nLog("[VERTEX_CONTINUITY_OUTPUT_PUBLICATION]", {
+        phase: "complete",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        renderedImageUri: renderedImage.uri || null,
+        artifactName: renderedImage.artifactName || null,
+      });
 
+      executionStage = "artifact-persistence";
       const persistedArtifacts = await persistContinuityArtifacts({
         continuityGroupId: request.continuityGroupId,
         imageId: request.imageId,
@@ -255,7 +400,17 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         renderMode: request.renderMode,
         queueName: request.queueName || null,
         workerIdentity: request.workerIdentity || null,
+        executionStage,
         error: error?.message || String(error),
+        ...summarizeError(error),
+        inputArtifacts: {
+          secondaryImage: summarizeImageReference(request.secondaryImage),
+          masterImage: summarizeImageReference(request.masterImage),
+          occupancyConstraintMask: summarizeImageReference(request.occupancyConstraintMask || null),
+        },
+        plannerState,
+        renderPayloadSummary,
+        artifactSummary,
       });
       throw error;
     }

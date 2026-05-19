@@ -111,6 +111,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
   });
 
   const provider = createContinuityRepairProvider();
+  const outputPath = buildWorkerOutputPath(job.data);
   nLog("[VERTEX_RENDER_EXECUTION_START]", {
     continuityGroupId: job.data.continuityGroupId || null,
     imageId: job.data.imageId,
@@ -124,59 +125,86 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     provider: providerName,
     stage2Mode,
     queueJobId: String(job.id || ""),
+    outputPath,
   });
 
-  const result = await provider.repair({
-    secondaryImage: manifestToImageReference(job.data.secondaryImage),
-    masterImage: manifestToImageReference(job.data.masterImage),
-    occupancyConstraintMask: job.data.occupancyConstraintMask
-      ? manifestToImageReference(job.data.occupancyConstraintMask)
-      : null,
-    outputPath: buildWorkerOutputPath(job.data),
-    roomType: job.data.roomType,
-    stagingStyle: job.data.stagingStyle,
-    roomConsistency: job.data.roomConsistency,
-    continuityGroupId: job.data.continuityGroupId,
-    jobId: job.data.jobId,
-    imageId: job.data.imageId,
-    attempt: Number(job.data.attempt),
-    renderMode: job.data.renderMode,
-    intent: job.data.intent,
-    queueName,
-    workerIdentity: WORKER_IDENTITY,
-  });
+  try {
+    const result = await provider.repair({
+      secondaryImage: manifestToImageReference(job.data.secondaryImage),
+      masterImage: manifestToImageReference(job.data.masterImage),
+      occupancyConstraintMask: job.data.occupancyConstraintMask
+        ? manifestToImageReference(job.data.occupancyConstraintMask)
+        : null,
+      outputPath,
+      roomType: job.data.roomType,
+      stagingStyle: job.data.stagingStyle,
+      roomConsistency: job.data.roomConsistency,
+      continuityGroupId: job.data.continuityGroupId,
+      jobId: job.data.jobId,
+      imageId: job.data.imageId,
+      attempt: Number(job.data.attempt),
+      renderMode: job.data.renderMode,
+      intent: job.data.intent,
+      queueName,
+      workerIdentity: WORKER_IDENTITY,
+    });
 
-  nLog("[VERTEX_RENDER_EXECUTION_COMPLETE]", {
-    continuityGroupId: job.data.continuityGroupId || null,
-    imageId: job.data.imageId,
-    jobId: job.data.jobId,
-    renderMode: job.data.renderMode,
-    queueName,
-    workerIdentity: WORKER_IDENTITY,
-    executionAuthority: EXECUTION_AUTHORITY,
-    executionMode: "render-execution",
-    dispatchTarget: WORKER_IDENTITY,
-    provider: providerName,
-    stage2Mode,
-    queueJobId: String(job.id || ""),
-    outputPath: result.outputPath,
-    outputUri: result.renderedImage.uri,
-    planner: result.planner.model,
-    renderer: result.render.model,
-  });
+    nLog("[VERTEX_RENDER_EXECUTION_COMPLETE]", {
+      continuityGroupId: job.data.continuityGroupId || null,
+      imageId: job.data.imageId,
+      jobId: job.data.jobId,
+      renderMode: job.data.renderMode,
+      queueName,
+      workerIdentity: WORKER_IDENTITY,
+      executionAuthority: EXECUTION_AUTHORITY,
+      executionMode: "render-execution",
+      dispatchTarget: WORKER_IDENTITY,
+      provider: providerName,
+      stage2Mode,
+      queueJobId: String(job.id || ""),
+      outputPath: result.outputPath,
+      outputUri: result.renderedImage.uri,
+      planner: result.planner.model,
+      renderer: result.render.model,
+    });
 
-  return {
-    ok: true,
-    jobId: job.data.jobId,
-    imageId: job.data.imageId,
-    renderMode: job.data.renderMode,
-    outputPath: result.outputPath,
-    outputUri: result.renderedImage.uri,
-    planner: result.planner.model,
-    renderer: result.render.model,
-    queueName,
-    workerIdentity: WORKER_IDENTITY,
-  };
+    return {
+      ok: true,
+      jobId: job.data.jobId,
+      imageId: job.data.imageId,
+      renderMode: job.data.renderMode,
+      outputPath: result.outputPath,
+      outputUri: result.renderedImage.uri,
+      planner: result.planner.model,
+      renderer: result.render.model,
+      queueName,
+      workerIdentity: WORKER_IDENTITY,
+    };
+  } catch (error: any) {
+    nLog("[VERTEX_RENDER_EXECUTION_FAILURE]", {
+      continuityGroupId: job.data.continuityGroupId || null,
+      imageId: job.data.imageId,
+      jobId: job.data.jobId,
+      renderMode: job.data.renderMode,
+      queueName,
+      workerIdentity: WORKER_IDENTITY,
+      executionAuthority: EXECUTION_AUTHORITY,
+      executionMode: "render-execution",
+      dispatchTarget: WORKER_IDENTITY,
+      provider: providerName,
+      stage2Mode,
+      queueJobId: String(job.id || ""),
+      outputPath,
+      inputArtifacts: {
+        secondaryImageUri: job.data.secondaryImage.uri,
+        masterImageUri: job.data.masterImage.uri,
+        occupancyConstraintMaskUri: job.data.occupancyConstraintMask?.uri || null,
+      },
+      error: error?.message || String(error),
+      stack: error instanceof Error ? error.stack || null : null,
+    });
+    throw error;
+  }
 }
 
 async function main(): Promise<void> {
@@ -280,10 +308,28 @@ process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
 
+process.on("unhandledRejection", (reason) => {
+  nLog("[VERTEX_WORKER_UNHANDLED_REJECTION]", {
+    workerIdentity: WORKER_IDENTITY,
+    error: reason instanceof Error ? reason.message : String(reason),
+    stack: reason instanceof Error ? reason.stack || null : null,
+  });
+});
+
+process.on("uncaughtException", (error) => {
+  nLog("[VERTEX_WORKER_UNCAUGHT_EXCEPTION]", {
+    workerIdentity: WORKER_IDENTITY,
+    error: error?.message || String(error),
+    stack: error instanceof Error ? error.stack || null : null,
+  });
+  process.exit(1);
+});
+
 main().catch((error) => {
   nLog("[VERTEX_WORKER_STARTUP_FAILURE]", {
     workerIdentity: WORKER_IDENTITY,
     error: (error as any)?.message || String(error),
+    stack: error instanceof Error ? error.stack || null : null,
   });
   process.exit(1);
 });

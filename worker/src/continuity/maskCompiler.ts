@@ -96,6 +96,16 @@ export async function compileDeterministicMask(params: {
   jobId: string;
   imageId: string;
 }): Promise<CompiledMaskResult> {
+  nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
+    phase: "compiler-start",
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    secondaryImagePath: params.secondaryImagePath,
+    occupancyConstraintMaskPath: params.occupancyConstraintMaskPath || null,
+  });
+
+  try {
   const metadata = await sharp(params.secondaryImagePath).metadata();
   const width = metadata.width || 0;
   const height = metadata.height || 0;
@@ -241,6 +251,18 @@ export async function compileDeterministicMask(params: {
     artifactPath: params.finalMaskPath,
   });
 
+  nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
+    phase: "compiler-complete",
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    width,
+    height,
+    finalMaskPath: params.finalMaskPath,
+    occupancyConstraintApplied: !!params.occupancyConstraintMaskPath,
+    finalPixelCount,
+  });
+
   return {
     occupancyMaskBuffer,
     occupancyMaskPath: params.occupancyMaskPath,
@@ -263,4 +285,17 @@ export async function compileDeterministicMask(params: {
     insertionBounds,
     protectedEdgeStats: exclusionMask.protectedEdgeStats,
   };
+  } catch (error: any) {
+    nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
+      phase: "compiler-failure",
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      secondaryImagePath: params.secondaryImagePath,
+      occupancyConstraintMaskPath: params.occupancyConstraintMaskPath || null,
+      error: error?.message || String(error),
+      stack: error instanceof Error ? error.stack || null : null,
+    });
+    throw error;
+  }
 }

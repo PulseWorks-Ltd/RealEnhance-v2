@@ -120,6 +120,28 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       },
     };
 
+    nLog("[VERTEX_CONTINUITY_RENDER_PAYLOAD]", {
+      phase: "created",
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      model,
+      sourceImage: {
+        kind: request.sourceImage.kind,
+        localPath: request.sourceImage.localPath || null,
+        uri: request.sourceImage.uri || null,
+      },
+      maskImage: {
+        kind: request.maskImage.kind,
+        localPath: request.maskImage.localPath || null,
+        uri: request.maskImage.uri || null,
+      },
+      promptLength: prompt.length,
+      guidanceScale,
+      outputPath: request.outputPath,
+    });
+
     nLog("[VERTEX_CONTINUITY_IMAGEN_RENDER]", {
       phase: "start",
       continuityGroupId: request.continuityGroupId || null,
@@ -143,54 +165,81 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       guidanceScale,
     });
 
-    const apiClient = (ai as any).apiClient;
-    const rawResponse = await apiClient.request({
-      path: `${resolveModelResource(model)}:predict`,
-      body: JSON.stringify(payload),
-      httpMethod: "POST",
-      httpOptions: {
-        timeout: 120000,
-      },
-    }).then((response: any) => response.json());
+    try {
+      const apiClient = (ai as any).apiClient;
+      const rawResponse = await apiClient.request({
+        path: `${resolveModelResource(model)}:predict`,
+        body: JSON.stringify(payload),
+        httpMethod: "POST",
+        httpOptions: {
+          timeout: 120000,
+        },
+      }).then((response: any) => response.json());
 
-    const generated = extractGeneratedImage(rawResponse);
-    const imageBuffer = Buffer.from(generated.imageBytes, "base64");
-    await sharp(imageBuffer).webp({ quality: 95 }).toFile(request.outputPath);
-    await fs.access(request.outputPath);
-    const latencyMs = Date.now() - startedAt;
+      const generated = extractGeneratedImage(rawResponse);
+      const imageBuffer = Buffer.from(generated.imageBytes, "base64");
+      await sharp(imageBuffer).webp({ quality: 95 }).toFile(request.outputPath);
+      await fs.access(request.outputPath);
+      const latencyMs = Date.now() - startedAt;
 
-    nLog("[VERTEX_CONTINUITY_IMAGEN_RENDER]", {
-      phase: "complete",
-      continuityGroupId: request.continuityGroupId || null,
-      imageId: request.imageId,
-      jobId: request.jobId,
-      renderMode: request.renderMode,
-      model,
-      latencyMs,
-      outputPath: request.outputPath,
-      mimeType: generated.mimeType,
-    });
+      nLog("[VERTEX_CONTINUITY_IMAGEN_RENDER]", {
+        phase: "complete",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        model,
+        latencyMs,
+        outputPath: request.outputPath,
+        mimeType: generated.mimeType,
+      });
 
-    nLog("[VERTEX_CONTINUITY_RENDER]", {
-      phase: "complete",
-      continuityGroupId: request.continuityGroupId || null,
-      imageId: request.imageId,
-      jobId: request.jobId,
-      renderMode: request.renderMode,
-      workerIdentity: request.workerIdentity || null,
-      model,
-      guidanceScale,
-      latencyMs,
-      outputPath: request.outputPath,
-    });
+      nLog("[VERTEX_CONTINUITY_RENDER]", {
+        phase: "complete",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        workerIdentity: request.workerIdentity || null,
+        model,
+        guidanceScale,
+        latencyMs,
+        outputPath: request.outputPath,
+      });
 
-    return {
-      outputPath: request.outputPath,
-      model,
-      latencyMs,
-      mimeType: generated.mimeType,
-      guidanceScale,
-      payload,
-    };
+      return {
+        outputPath: request.outputPath,
+        model,
+        latencyMs,
+        mimeType: generated.mimeType,
+        guidanceScale,
+        payload,
+      };
+    } catch (error: any) {
+      nLog("[VERTEX_CONTINUITY_IMAGEN_RENDER]", {
+        phase: "failure",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        model,
+        outputPath: request.outputPath,
+        error: error?.message || String(error),
+        stack: error instanceof Error ? error.stack || null : null,
+      });
+
+      nLog("[VERTEX_CONTINUITY_RENDER]", {
+        phase: "failure",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        workerIdentity: request.workerIdentity || null,
+        model,
+        guidanceScale,
+        error: error?.message || String(error),
+      });
+      throw error;
+    }
   }
 }

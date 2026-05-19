@@ -283,21 +283,6 @@ export class VertexSpatialPlannerProvider implements SpatialPlannerProvider {
     const plannerFlag = String(process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro").trim().toLowerCase();
     const model = plannerFlag === "gemini25pro" ? "gemini-2.5-pro" : plannerFlag;
     const dimensionSourcePath = request.secondaryImage.localPath || request.masterImage.localPath;
-    if (!dimensionSourcePath) {
-      throw new VertexSecondaryContinuityError(
-        "Planner requires a hydrated local secondary or master image reference",
-        "planner_missing_local_image_reference"
-      );
-    }
-    const metadata = await sharp(dimensionSourcePath).metadata().catch(() => ({ width: 0, height: 0 }));
-    const imageWidth = metadata.width || 0;
-    const imageHeight = metadata.height || 0;
-    if (!imageWidth || !imageHeight) {
-      throw new VertexSecondaryContinuityError(
-        "Unable to read secondary image dimensions for planning",
-        "planner_missing_dimensions"
-      );
-    }
     const roomConsistencySummary = [
       request.roomConsistency?.roomState?.furnitureContinuityHints,
       request.roomConsistency?.roomState?.relationalSummary?.placementDirective,
@@ -322,68 +307,103 @@ export class VertexSpatialPlannerProvider implements SpatialPlannerProvider {
       model,
       sourceTransport: request.secondaryImage.kind,
       masterTransport: request.masterImage.kind,
+      secondaryLocalPath: request.secondaryImage.localPath || null,
+      masterLocalPath: request.masterImage.localPath || null,
+      promptLength: prompt.length,
     });
 
-    const startedAt = Date.now();
-    const ai = getVertexGenAiClient();
-    const response = await ai.models.generateContent({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
-            { text: "APPROVED_MASTER_STAGED_IMAGE" },
-            toGenAiPart(request.masterImage),
-            { text: "SECONDARY_TARGET_IMAGE" },
-            toGenAiPart(request.secondaryImage),
-          ],
+    try {
+      if (!dimensionSourcePath) {
+        throw new VertexSecondaryContinuityError(
+          "Planner requires a hydrated local secondary or master image reference",
+          "planner_missing_local_image_reference"
+        );
+      }
+      const metadata = await sharp(dimensionSourcePath).metadata().catch(() => ({ width: 0, height: 0 }));
+      const imageWidth = metadata.width || 0;
+      const imageHeight = metadata.height || 0;
+      if (!imageWidth || !imageHeight) {
+        throw new VertexSecondaryContinuityError(
+          "Unable to read secondary image dimensions for planning",
+          "planner_missing_dimensions"
+        );
+      }
+
+      const startedAt = Date.now();
+      const ai = getVertexGenAiClient();
+      const response = await ai.models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              { text: "APPROVED_MASTER_STAGED_IMAGE" },
+              toGenAiPart(request.masterImage),
+              { text: "SECONDARY_TARGET_IMAGE" },
+              toGenAiPart(request.secondaryImage),
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          topP: 0.1,
+          maxOutputTokens: 4096,
+          responseMimeType: "application/json",
         },
-      ],
-      generationConfig: {
-        temperature: 0,
-        topP: 0.1,
-        maxOutputTokens: 4096,
-        responseMimeType: "application/json",
-      },
-    } as any);
-    const rawText = (response.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("").trim();
-    if (!rawText) {
-      throw new VertexSecondaryContinuityError("Planner returned no JSON text", "planner_empty_response");
+      } as any);
+      const rawText = (response.candidates?.[0]?.content?.parts || []).map((part) => part.text || "").join("").trim();
+      if (!rawText) {
+        throw new VertexSecondaryContinuityError("Planner returned no JSON text", "planner_empty_response");
+      }
+      const parsed = extractJson(rawText);
+      const plan = normalizePlan(parsed, imageWidth, imageHeight, request.roomType);
+      const latencyMs = Date.now() - startedAt;
+
+      nLog("[VERTEX_CONTINUITY_PLANNER]", {
+        phase: "complete",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        latencyMs,
+        zoneCount: plan.furnitureZones.length,
+        model,
+      });
+
+      nLog("[CONTINUITY_TOPOLOGY_CAGE]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        hasTopologyCage: !!plan.structuralTopologyCage,
+        vanishingPointCount: plan.structuralTopologyCage?.vanishingPoints?.length || 0,
+        planeCount: plan.structuralTopologyCage?.majorRoomPlanes?.length || 0,
+      });
+
+      nLog("[CONTINUITY_ANCHOR_GRAPH]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        hasAnchorGraph: !!plan.relationalAnchorGraph,
+        anchorCount: plan.relationalAnchorGraph?.anchors.length || 0,
+        relationshipCount: plan.relationalAnchorGraph?.relationships.length || 0,
+      });
+
+      return { plan, prompt, rawText, model, latencyMs };
+    } catch (error: any) {
+      nLog("[VERTEX_CONTINUITY_PLANNER]", {
+        phase: "failure",
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        model,
+        secondaryLocalPath: request.secondaryImage.localPath || null,
+        masterLocalPath: request.masterImage.localPath || null,
+        error: error?.message || String(error),
+        stack: error instanceof Error ? error.stack || null : null,
+      });
+      throw error;
     }
-    const parsed = extractJson(rawText);
-    const plan = normalizePlan(parsed, imageWidth, imageHeight, request.roomType);
-    const latencyMs = Date.now() - startedAt;
-
-    nLog("[VERTEX_CONTINUITY_PLANNER]", {
-      phase: "complete",
-      continuityGroupId: request.continuityGroupId || null,
-      imageId: request.imageId,
-      jobId: request.jobId,
-      renderMode: request.renderMode,
-      latencyMs,
-      zoneCount: plan.furnitureZones.length,
-      model,
-    });
-
-    nLog("[CONTINUITY_TOPOLOGY_CAGE]", {
-      continuityGroupId: request.continuityGroupId || null,
-      imageId: request.imageId,
-      jobId: request.jobId,
-      hasTopologyCage: !!plan.structuralTopologyCage,
-      vanishingPointCount: plan.structuralTopologyCage?.vanishingPoints?.length || 0,
-      planeCount: plan.structuralTopologyCage?.majorRoomPlanes?.length || 0,
-    });
-
-    nLog("[CONTINUITY_ANCHOR_GRAPH]", {
-      continuityGroupId: request.continuityGroupId || null,
-      imageId: request.imageId,
-      jobId: request.jobId,
-      hasAnchorGraph: !!plan.relationalAnchorGraph,
-      anchorCount: plan.relationalAnchorGraph?.anchors.length || 0,
-      relationshipCount: plan.relationalAnchorGraph?.relationships.length || 0,
-    });
-
-    return { plan, prompt, rawText, model, latencyMs };
   }
 }
