@@ -8,6 +8,18 @@ import { VertexSecondaryContinuityError } from "./types";
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const DEFAULT_DISPATCH_TIMEOUT_MS = Math.max(60_000, Number(process.env.VERTEX_EXPERIMENTAL_DISPATCH_TIMEOUT_MS || 10 * 60 * 1000));
 
+function buildContinuityQueueJobId(params: ExperimentalSecondaryContinuityInput): string {
+  return [
+    params.jobId,
+    params.imageId,
+    params.renderMode,
+    String(params.attempt),
+    randomUUID(),
+  ]
+    .map((part) => String(part).trim().replace(/[^a-zA-Z0-9_-]/g, "_"))
+    .join("__");
+}
+
 export async function runExperimentalSecondaryContinuity(params: ExperimentalSecondaryContinuityInput): Promise<string> {
   const queueName = params.queueName || getVertexExperimentalQueueName();
   const workerIdentity = process.env.WORKER_ROLE || "worker";
@@ -72,7 +84,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       workerIdentity,
     };
     const dispatchedJob = await queue.add("vertex-continuity-experimental", payload, {
-      jobId: `${params.jobId}:${params.imageId}:${params.renderMode}:${params.attempt}:${randomUUID()}`,
+      jobId: buildContinuityQueueJobId(params),
       removeOnComplete: 50,
       removeOnFail: 50,
     });
