@@ -46,9 +46,21 @@ export async function validateCompiledMask(params: {
     );
   }
 
-  const occupancyRaw = await sharp(params.compiledMask.occupancyMaskBuffer).raw().toBuffer();
-  const exclusionRaw = await sharp(params.compiledMask.exclusionMaskBuffer).raw().toBuffer();
-  const finalRaw = await sharp(params.compiledMask.finalMaskBuffer).raw().toBuffer();
+  const occupancyRaw = await sharp(params.compiledMask.occupancyMaskBuffer)
+    .removeAlpha()
+    .grayscale()
+    .raw()
+    .toBuffer();
+  const exclusionRaw = await sharp(params.compiledMask.exclusionMaskBuffer)
+    .removeAlpha()
+    .grayscale()
+    .raw()
+    .toBuffer();
+  const finalRaw = await sharp(params.compiledMask.finalMaskBuffer)
+    .removeAlpha()
+    .grayscale()
+    .raw()
+    .toBuffer();
 
   const binaryIntegrity = {
     occupancy: isBinaryMask(occupancyRaw),
@@ -97,6 +109,22 @@ export async function validateCompiledMask(params: {
   const occupancyStrippedRatio = params.compiledMask.occupancyPixelCount > 0
     ? params.compiledMask.overlapPixelCount / params.compiledMask.occupancyPixelCount
     : 1;
+  nLog("[CONTINUITY_MASK_VALIDATION_COVERAGE]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    totalPixelCount,
+    occupancyPixelCount: params.compiledMask.occupancyPixelCount,
+    exclusionPixelCount: params.compiledMask.exclusionPixelCount,
+    finalPixelCount: params.compiledMask.finalPixelCount,
+    overlapPixelCount: params.compiledMask.overlapPixelCount,
+    occupancyAreaRatio: Number(params.compiledMask.occupancyAreaRatio.toFixed(4)),
+    exclusionAreaRatio: Number(params.compiledMask.exclusionAreaRatio.toFixed(4)),
+    finalAreaRatio: Number(params.compiledMask.finalAreaRatio.toFixed(4)),
+    occupancyStrippedRatio: Number(occupancyStrippedRatio.toFixed(4)),
+    protectedEdgeStats: params.compiledMask.protectedEdgeStats,
+  });
+
   if (occupancyStrippedRatio >= 0.95) {
     throw new VertexSecondaryContinuityError(
       "Occupancy mask is almost entirely removed by the exclusion mask",

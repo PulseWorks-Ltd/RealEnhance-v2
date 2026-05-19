@@ -182,7 +182,11 @@ export async function compileDeterministicMask(params: {
     jobId: params.jobId,
     imageId: params.imageId,
   });
-  const exclusionRaw = await sharp(exclusionMask.maskBuffer).raw().toBuffer();
+  const exclusionRaw = await sharp(exclusionMask.maskBuffer)
+    .removeAlpha()
+    .grayscale()
+    .raw()
+    .toBuffer();
 
   const finalRaw = Buffer.alloc(width * height);
   let overlapPixelCount = 0;

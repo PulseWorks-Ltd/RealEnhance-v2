@@ -51,7 +51,9 @@ export async function buildArchitecturalExclusionMask(params: {
         -1, -1, -1,
       ],
       scale: 1,
-      offset: 0,
+      // Keep the Laplacian response centered so flat regions stay near 128
+      // instead of being mistaken for strong edges after unsigned conversion.
+      offset: 128,
     })
     .raw()
     .toBuffer();
@@ -69,6 +71,7 @@ export async function buildArchitecturalExclusionMask(params: {
   let cornerPixels = 0;
   let edgeProtectedPixels = 0;
   let borderProtectedPixels = 0;
+  let preDilationProtectedPixels = 0;
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       const index = y * width + x;
@@ -79,6 +82,9 @@ export async function buildArchitecturalExclusionMask(params: {
       const nearArchitecturalBoundary = nearVerticalBorder || nearTopBorder || nearBottomBorder;
       const protectPixel = nearArchitecturalBoundary || edgeStrength >= edgeThreshold;
       exclusion[index] = threshold(protectPixel ? 255 : 0, 1);
+      if (protectPixel) {
+        preDilationProtectedPixels += 1;
+      }
 
       if (protectPixel && edgeStrength >= edgeThreshold) {
         edgeProtectedPixels += 1;
@@ -114,15 +120,29 @@ export async function buildArchitecturalExclusionMask(params: {
 
   await sharp(dilated).toFile(params.exclusionMaskPath);
   const protectedPixelCount = countWhitePixels(
-    await sharp(dilated).raw().toBuffer()
+    await sharp(dilated)
+      .removeAlpha()
+      .grayscale()
+      .raw()
+      .toBuffer()
   );
+  const totalPixelCount = width * height;
+  const preDilationCoverageRatio = preDilationProtectedPixels / totalPixelCount;
+  const postDilationCoverageRatio = protectedPixelCount / totalPixelCount;
 
   nLog("[CONTINUITY_EXCLUSION_MASK]", {
     continuityGroupId: params.continuityGroupId || null,
     imageId: params.imageId,
     jobId: params.jobId,
     maskDimensions: `${width}x${height}`,
+    edgeThreshold,
+    borderX,
+    borderTop,
+    borderBottom,
+    preDilationProtectedPixels,
+    preDilationCoverageRatio: Number(preDilationCoverageRatio.toFixed(4)),
     exclusionPixelCount: protectedPixelCount,
+    postDilationCoverageRatio: Number(postDilationCoverageRatio.toFixed(4)),
     protectedEdgeStats: {
       baseboardPixels,
       trimPixels,
