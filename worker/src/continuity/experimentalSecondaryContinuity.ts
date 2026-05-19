@@ -1,8 +1,9 @@
 import { randomUUID } from "crypto";
 import { Queue, QueueEvents } from "bullmq";
+import { bootstrapGoogleCredentialsFromEnv } from "../bootstrap/googleCredentials";
 import { getVertexExperimentalQueueName } from "../bootstrap/envValidation";
 import { nLog } from "../logger";
-import { resolveImageSource } from "../providers/imageTransport";
+import { resolveGcsUri, resolveImageSource } from "../providers/imageTransport";
 import type { ExperimentalSecondaryContinuityInput, VertexExperimentalContinuityJobPayload } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
 
@@ -49,6 +50,28 @@ async function ensureRemoteQueueImage(params: {
     `${params.sourceLabel} must resolve to a persisted gs:// URI before dispatch to the vertex continuity worker`,
     "continuity_remote_uri_required"
   );
+}
+
+async function bootstrapQueueDispatchCredentialsIfNeeded(params: ExperimentalSecondaryContinuityInput): Promise<void> {
+  const requiresSecondaryUpload = !resolveGcsUri(params.secondaryImageUri);
+  const requiresMasterUpload = !resolveGcsUri(params.masterImageUri);
+
+  if (!requiresSecondaryUpload && !requiresMasterUpload) {
+    return;
+  }
+
+  const authBootstrap = await bootstrapGoogleCredentialsFromEnv();
+  nLog("[CONTINUITY_PRODUCER_AUTH_READY]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    renderMode: params.renderMode,
+    credentialsPath: authBootstrap.credentialsPath,
+    fileExists: authBootstrap.fileExists,
+    bootstrapMs: authBootstrap.bootstrapMs,
+    requiresSecondaryUpload,
+    requiresMasterUpload,
+  });
 }
 
 export async function runExperimentalSecondaryContinuity(params: ExperimentalSecondaryContinuityInput): Promise<string> {
@@ -106,6 +129,8 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       operationLabel: params.intent?.operationLabel || null,
       promptScope: params.intent?.promptScope || null,
     });
+
+    await bootstrapQueueDispatchCredentialsIfNeeded(params);
 
     const secondaryImageUri = await ensureRemoteQueueImage({
       sourceLabel: "secondary-continuity-source",
