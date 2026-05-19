@@ -1,4 +1,5 @@
 import { QueueEvents, Worker, type Job } from "bullmq";
+import { CONTINUITY_RENDER_QUEUE } from "../../shared/src/constants";
 import { nLog } from "./logger";
 import { bootstrapGoogleCredentialsFromEnv } from "./bootstrap/googleCredentials";
 import { validateVertexExperimentalEnv } from "./bootstrap/envValidation";
@@ -8,6 +9,7 @@ import type { VertexExperimentalContinuityJobPayload } from "./continuity/types"
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const WORKER_IDENTITY = "worker-vertex-experimental";
+const EXECUTION_AUTHORITY = "vertex-worker";
 
 let queueEventsRef: QueueEvents | null = null;
 let workerRef: Worker | null = null;
@@ -37,7 +39,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     throw new Error("unsupported_vertex_experimental_payload");
   }
 
-  const queueName = job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE || null;
+  const queueName = job.data.queueName || CONTINUITY_RENDER_QUEUE;
   const providerName = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
   const stage2Mode = job.data.intent?.promptScope || null;
 
@@ -59,6 +61,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     renderMode: job.data.renderMode,
     queueName,
     workerIdentity: WORKER_IDENTITY,
+    executionAuthority: EXECUTION_AUTHORITY,
     executionMode: "queue-consumer",
     dispatchTarget: WORKER_IDENTITY,
     provider: providerName,
@@ -74,6 +77,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     renderMode: job.data.renderMode,
     queueName,
     workerIdentity: WORKER_IDENTITY,
+    executionAuthority: EXECUTION_AUTHORITY,
     executionMode: "render-execution",
     dispatchTarget: WORKER_IDENTITY,
     provider: providerName,
@@ -97,7 +101,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     renderMode: job.data.renderMode,
     intent: job.data.intent,
     occupancyConstraintMaskPath: job.data.occupancyConstraintMaskPath,
-    queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE,
+    queueName,
     workerIdentity: WORKER_IDENTITY,
   });
 
@@ -108,6 +112,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     renderMode: job.data.renderMode,
     queueName,
     workerIdentity: WORKER_IDENTITY,
+    executionAuthority: EXECUTION_AUTHORITY,
     executionMode: "render-execution",
     dispatchTarget: WORKER_IDENTITY,
     provider: providerName,
@@ -126,7 +131,7 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     outputPath: result.outputPath,
     planner: result.planner.model,
     renderer: result.render.model,
-    queueName: job.data.queueName || process.env.VERTEX_EXPERIMENTAL_QUEUE || null,
+    queueName,
     workerIdentity: WORKER_IDENTITY,
   };
 }

@@ -14,6 +14,7 @@ import {
   normalizeEditMode,
   type EditContext,
 } from "./prompts";
+import { CONTINUITY_RENDER_QUEUE } from "../../../shared/src/constants";
 import { runExperimentalSecondaryContinuity } from "../continuity/experimentalSecondaryContinuity";
 import { VertexSecondaryContinuityError } from "../continuity/types";
 import { nLog } from "../logger";
@@ -2370,8 +2371,9 @@ export async function applyEdit({
     const continuityGroupId = editContext?.secondaryContinuity?.continuityGroupId || editContext?.secondaryContinuity?.roomId || null;
     const normalizedJobId = String(jobId || "unknown-job").trim() || "unknown-job";
     const normalizedImageId = String(imageId || "unknown-image").trim() || "unknown-image";
-    const queueName = process.env.VERTEX_EXPERIMENTAL_QUEUE || "continuity-experimental";
+    const queueName = CONTINUITY_RENDER_QUEUE;
     const workerIdentity = process.env.WORKER_ROLE || "worker";
+    const executionAuthority = "main-worker";
     const renderMode = normalizedMode === "add" ? "missing_object_insert" : "localized_repair";
     const provider = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
 
@@ -2383,6 +2385,7 @@ export async function applyEdit({
         renderMode,
         queueName,
         workerIdentity,
+        executionAuthority,
         executionMode: "orchestrator-preflight",
         dispatchTarget: "worker-vertex-experimental",
         provider,
@@ -2398,6 +2401,7 @@ export async function applyEdit({
         renderMode,
         queueName,
         workerIdentity,
+        executionAuthority,
         executionMode: "inline-blocked",
         dispatchTarget: "legacy-edit-inline",
         provider,
@@ -2421,6 +2425,7 @@ export async function applyEdit({
         renderMode,
         queueName,
         workerIdentity,
+        executionAuthority,
         executionMode: "orchestrator-request",
         dispatchTarget: "worker-vertex-experimental",
         provider,

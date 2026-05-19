@@ -1,6 +1,4 @@
-import { JOB_QUEUE_NAME } from "../../../shared/src/constants";
-
-const DEFAULT_VERTEX_EXPERIMENTAL_QUEUE = "continuity-experimental";
+import { CONTINUITY_RENDER_QUEUE, JOB_QUEUE_NAME } from "../../../shared/src/constants";
 
 export type VertexExperimentalEnv = {
   googleApplicationCredentialsJson: string;
@@ -25,11 +23,11 @@ function readOptionalEnv(name: string): string | undefined {
 }
 
 export function getVertexExperimentalQueueName(): string {
-  return String(process.env.VERTEX_EXPERIMENTAL_QUEUE || DEFAULT_VERTEX_EXPERIMENTAL_QUEUE).trim()
-    || DEFAULT_VERTEX_EXPERIMENTAL_QUEUE;
+  return CONTINUITY_RENDER_QUEUE;
 }
 
 export function validateVertexExperimentalEnv(): VertexExperimentalEnv {
+  const configuredExperimentalQueue = readOptionalEnv("VERTEX_EXPERIMENTAL_QUEUE");
   const env: VertexExperimentalEnv = {
     googleApplicationCredentialsJson: readRequiredEnv("GOOGLE_APPLICATION_CREDENTIALS_JSON"),
     googleApplicationCredentials: readRequiredEnv("GOOGLE_APPLICATION_CREDENTIALS"),
@@ -52,6 +50,12 @@ export function validateVertexExperimentalEnv(): VertexExperimentalEnv {
 
   if (missing.length > 0) {
     throw new Error(`Missing required Vertex experimental worker env vars: ${missing.join(", ")}`);
+  }
+
+  if (configuredExperimentalQueue && configuredExperimentalQueue !== CONTINUITY_RENDER_QUEUE) {
+    throw new Error(
+      `VERTEX_EXPERIMENTAL_QUEUE must remain ${CONTINUITY_RENDER_QUEUE}; dynamic continuity queue overrides are not allowed`
+    );
   }
 
   if (env.vertexExperimentalQueue === JOB_QUEUE_NAME) {

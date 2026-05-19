@@ -28,6 +28,7 @@ import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemet
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 import { runPerceptualDiff } from "../validators/perceptualDiff";
+import { CONTINUITY_RENDER_QUEUE } from "../../../shared/src/constants";
 import { RoomConsistencyContextV1 } from "../../../shared/src/types";
 import { runExperimentalSecondaryContinuity } from "../continuity/experimentalSecondaryContinuity";
 import { VertexSecondaryContinuityError } from "../continuity/types";
@@ -1906,7 +1907,8 @@ export async function runStage2(
   const maxAttempts = resolveStage2MaxAttempts();
   const localReasons: string[] = [];
   const workerIdentity = process.env.WORKER_ROLE || "worker";
-  const queueName = process.env.VERTEX_EXPERIMENTAL_QUEUE || "continuity-experimental";
+  const queueName = CONTINUITY_RENDER_QUEUE;
+  const executionAuthority = "main-worker";
   const dispatchTarget = "worker-vertex-experimental";
   const provider = SECONDARY_CONTINUITY_PROVIDER.toLowerCase();
   const stage2Mode = opts.stage2Mode || null;
@@ -1947,6 +1949,7 @@ export async function runStage2(
         renderMode,
         queueName,
         workerIdentity,
+        executionAuthority,
         executionMode: "orchestrator-preflight",
         dispatchTarget,
         provider,
@@ -1960,6 +1963,7 @@ export async function runStage2(
         renderMode,
         queueName,
         workerIdentity,
+        executionAuthority,
         executionMode: "inline-blocked",
         dispatchTarget: "legacy-stage2-inline",
         provider,
@@ -1981,6 +1985,7 @@ export async function runStage2(
           renderMode,
           queueName,
           workerIdentity,
+          executionAuthority,
           executionMode: "orchestrator-preflight",
           dispatchTarget,
           provider,
@@ -1996,6 +2001,7 @@ export async function runStage2(
           renderMode,
           queueName,
           workerIdentity,
+          executionAuthority,
           executionMode: "inline-blocked",
           dispatchTarget: "legacy-stage2-inline",
           provider,
@@ -2015,6 +2021,7 @@ export async function runStage2(
         renderMode,
         queueName,
         workerIdentity,
+        executionAuthority,
         executionMode: "orchestrator-request",
         dispatchTarget,
         provider,
@@ -2056,6 +2063,7 @@ export async function runStage2(
           renderMode,
           queueName,
           workerIdentity,
+          executionAuthority,
           executionMode: "orchestrator-dispatch",
           dispatchTarget,
           provider,

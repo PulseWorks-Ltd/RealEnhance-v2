@@ -67,10 +67,6 @@ export const STAGE2_ENABLE_ISSUETYPE_HARDFAIL = parseBooleanEnv(
   process.env.STAGE2_ENABLE_ISSUETYPE_HARDFAIL
 );
 
-export const ENABLE_VERTEX_SECONDARY_CONTINUITY = parseBooleanEnv(
-  process.env.ENABLE_VERTEX_SECONDARY_CONTINUITY
-);
-
 export const SECONDARY_CONTINUITY_RENDERER = String(
   process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3"
 ).trim();

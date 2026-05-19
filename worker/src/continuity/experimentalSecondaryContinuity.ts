@@ -11,6 +11,7 @@ const DEFAULT_DISPATCH_TIMEOUT_MS = Math.max(60_000, Number(process.env.VERTEX_E
 export async function runExperimentalSecondaryContinuity(params: ExperimentalSecondaryContinuityInput): Promise<string> {
   const queueName = params.queueName || getVertexExperimentalQueueName();
   const workerIdentity = process.env.WORKER_ROLE || "worker";
+  const executionAuthority = "main-worker";
   const dispatchTarget = "worker-vertex-experimental";
   const provider = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
   const stage2Mode = params.intent?.promptScope || null;
@@ -31,6 +32,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       workerIdentity,
+      executionAuthority,
       executionMode: "queue-producer",
       dispatchTarget,
       provider,
@@ -44,6 +46,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       workerIdentity,
+      executionAuthority,
       executionMode: "queue-producer",
       dispatchTarget,
       provider,
@@ -56,7 +59,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       jobId: params.jobId,
       renderMode: params.renderMode,
       queueName,
-      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+      workerIdentity,
       operationLabel: params.intent?.operationLabel || null,
       promptScope: params.intent?.promptScope || null,
     });
@@ -66,7 +69,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       requestedAt: new Date().toISOString(),
       ...params,
       queueName,
-      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+      workerIdentity,
     };
     const dispatchedJob = await queue.add("vertex-continuity-experimental", payload, {
       jobId: `${params.jobId}:${params.imageId}:${params.renderMode}:${params.attempt}:${randomUUID()}`,
@@ -81,6 +84,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       workerIdentity,
+      executionAuthority,
       executionMode: "queue-producer",
       dispatchTarget,
       provider,
@@ -95,7 +99,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       queueJobId: String(dispatchedJob.id || ""),
-      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+      workerIdentity,
       status: "enqueued",
     });
 
@@ -109,6 +113,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       workerIdentity,
+      executionAuthority,
       executionMode: "orchestrator-await",
       dispatchTarget,
       provider,
@@ -142,6 +147,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       renderMode: params.renderMode,
       queueName,
       workerIdentity,
+      executionAuthority,
       executionMode: "queue-producer",
       dispatchTarget,
       provider,
@@ -155,7 +161,7 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       jobId: params.jobId,
       renderMode: params.renderMode,
       queueName,
-      workerIdentity: params.workerIdentity || "worker-vertex-experimental",
+      workerIdentity,
       fallbackReason,
       error: String(error?.message || error),
     });
