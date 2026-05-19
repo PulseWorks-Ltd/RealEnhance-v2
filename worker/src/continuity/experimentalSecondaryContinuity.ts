@@ -1,9 +1,11 @@
 import { randomUUID } from "crypto";
+import { existsSync } from "fs";
 import { Queue, QueueEvents } from "bullmq";
 import { bootstrapGoogleCredentialsFromEnv } from "../bootstrap/googleCredentials";
 import { getVertexExperimentalQueueName } from "../bootstrap/envValidation";
 import { nLog } from "../logger";
 import { resolveGcsUri, resolveImageSource } from "../providers/imageTransport";
+import { downloadToTemp } from "../utils/remote";
 import type { ExperimentalSecondaryContinuityInput, VertexExperimentalContinuityJobPayload } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
 
@@ -31,9 +33,22 @@ async function ensureRemoteQueueImage(params: {
   imageId: string;
   continuityGroupId?: string | null;
 }): Promise<string> {
+  let localPath = params.localPath;
+  if ((!localPath || !existsSync(localPath)) && params.uri && !resolveGcsUri(params.uri)) {
+    localPath = await downloadToTemp(params.uri, `${params.jobId}-${params.sourceLabel}`);
+    nLog("[CONTINUITY_MISSING_LOCAL_RECOVERED]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      sourceLabel: params.sourceLabel,
+      recoveredFromUri: params.uri,
+      recoveredLocalPath: localPath,
+    });
+  }
+
   const resolved = await resolveImageSource({
     sourceLabel: params.sourceLabel,
-    localPath: params.localPath,
+    localPath,
     uri: params.uri,
     preferGcs: true,
     artifactName: params.artifactName,

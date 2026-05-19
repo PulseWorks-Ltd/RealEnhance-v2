@@ -1838,6 +1838,7 @@ export async function runStage2(
   basePath: string,
   baseStage: "1A" | "1B",
   opts: {
+    baseImageUri?: string;
     roomType: string;
     sceneType?: "interior" | "exterior";
     profile?: StagingProfile;
@@ -2034,6 +2035,7 @@ export async function runStage2(
         localReasons.push(`vertex_secondary_continuity_attempt:${attempt}`);
         return await runExperimentalSecondaryContinuity({
           secondaryImagePath: basePath,
+          secondaryImageUri: opts.baseImageUri || null,
           masterImagePath: opts.referenceImagePath,
           masterImageUri: opts.roomConsistencyV1?.approvedMasterImageUrl || null,
           outputPath,

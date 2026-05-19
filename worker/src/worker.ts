@@ -7049,6 +7049,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       for (stage2OnlyAttemptNo = 1; stage2OnlyAttemptNo <= stage2OnlyMaxValidationAttempts; stage2OnlyAttemptNo++) {
         stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
+          baseImageUri: stage2OnlyBaseSourceUrl,
           stagingStyle: payload.options.stagingStyle || "standard_listing",
           roomType: payload.options.roomType,
           sceneType: payload.options.sceneType as any,
