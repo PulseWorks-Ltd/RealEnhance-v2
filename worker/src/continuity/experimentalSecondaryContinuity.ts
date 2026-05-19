@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { Queue, QueueEvents } from "bullmq";
 import { getVertexExperimentalQueueName } from "../bootstrap/envValidation";
 import { nLog } from "../logger";
+import { resolveImageSource } from "../providers/imageTransport";
 import type { ExperimentalSecondaryContinuityInput, VertexExperimentalContinuityJobPayload } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
 
@@ -18,6 +19,36 @@ function buildContinuityQueueJobId(params: ExperimentalSecondaryContinuityInput)
   ]
     .map((part) => String(part).trim().replace(/[^a-zA-Z0-9_-]/g, "_"))
     .join("__");
+}
+
+async function ensureRemoteQueueImage(params: {
+  sourceLabel: string;
+  localPath: string;
+  uri?: string | null;
+  artifactName: string;
+  jobId: string;
+  imageId: string;
+  continuityGroupId?: string | null;
+}): Promise<string> {
+  const resolved = await resolveImageSource({
+    sourceLabel: params.sourceLabel,
+    localPath: params.localPath,
+    uri: params.uri,
+    preferGcs: true,
+    artifactName: params.artifactName,
+    jobId: params.jobId,
+    imageId: params.imageId,
+    continuityGroupId: params.continuityGroupId,
+  });
+
+  if (resolved.kind === "gcs" && resolved.uri) {
+    return resolved.uri;
+  }
+
+  throw new VertexSecondaryContinuityError(
+    `${params.sourceLabel} must resolve to a persisted gs:// URI before dispatch to the vertex continuity worker`,
+    "continuity_remote_uri_required"
+  );
 }
 
 export async function runExperimentalSecondaryContinuity(params: ExperimentalSecondaryContinuityInput): Promise<string> {
@@ -76,10 +107,31 @@ export async function runExperimentalSecondaryContinuity(params: ExperimentalSec
       promptScope: params.intent?.promptScope || null,
     });
 
+    const secondaryImageUri = await ensureRemoteQueueImage({
+      sourceLabel: "secondary-continuity-source",
+      localPath: params.secondaryImagePath,
+      uri: params.secondaryImageUri,
+      artifactName: `${params.imageId}-secondary-source${params.attempt}.webp`,
+      jobId: params.jobId,
+      imageId: params.imageId,
+      continuityGroupId: params.continuityGroupId,
+    });
+    const masterImageUri = await ensureRemoteQueueImage({
+      sourceLabel: "secondary-continuity-master",
+      localPath: params.masterImagePath,
+      uri: params.masterImageUri,
+      artifactName: `${params.imageId}-approved-master${params.attempt}.webp`,
+      jobId: params.jobId,
+      imageId: params.imageId,
+      continuityGroupId: params.continuityGroupId,
+    });
+
     const payload: VertexExperimentalContinuityJobPayload = {
       type: "vertex-continuity-experimental",
       requestedAt: new Date().toISOString(),
       ...params,
+      secondaryImageUri,
+      masterImageUri,
       queueName,
       workerIdentity,
     };
