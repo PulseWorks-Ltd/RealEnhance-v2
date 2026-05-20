@@ -33,7 +33,6 @@ type VertexEditPredictPayload = {
     guidanceScale: number;
     addWatermark: boolean;
     editMode: string;
-    maskMode: string;
     outputOptions: {
       mimeType: string;
     };
@@ -281,7 +280,6 @@ export function buildVertexEditPredictPayload(params: {
       guidanceScale: params.guidanceScale,
       addWatermark: false,
       editMode: "EDIT_MODE_INPAINT_INSERTION",
-      maskMode: "MASK_MODE_USER_PROVIDED",
       outputOptions: {
         mimeType: "image/png",
       },
@@ -805,6 +803,18 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         payload,
       };
     } catch (error: any) {
+      // Extract structured Vertex error body from the SDK ClientError message string
+      let vertexErrorBody: Record<string, unknown> | null = null;
+      try {
+        const msgStr = typeof error?.message === "string" ? error.message : "";
+        const jsonMatch = msgStr.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          vertexErrorBody = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        }
+      } catch {
+        // ignore parse failures — raw message is still logged below
+      }
+
       nLog("[VERTEX_CONTINUITY_IMAGEN_RENDER]", {
         phase: "failure",
         continuityGroupId: request.continuityGroupId || null,
@@ -814,6 +824,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         model,
         outputPath: request.outputPath,
         error: error?.message || String(error),
+        vertexErrorBody,
         stack: error instanceof Error ? error.stack || null : null,
       });
 
@@ -827,6 +838,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         model,
         guidanceScale,
         error: error?.message || String(error),
+        vertexErrorBody,
       });
       throw error;
     }

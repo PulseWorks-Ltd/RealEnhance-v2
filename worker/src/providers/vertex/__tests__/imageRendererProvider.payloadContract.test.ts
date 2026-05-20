@@ -127,10 +127,22 @@ test("parameters include required Imagen edit fields", () => {
   const payload = buildPayload();
   const params = payload.parameters;
   assert.equal(params.editMode, "EDIT_MODE_INPAINT_INSERTION");
-  assert.equal(params.maskMode, "MASK_MODE_USER_PROVIDED");
   assert.equal(params.sampleCount, 1);
   assert.equal(params.addWatermark, false);
   assert.equal(params.outputOptions.mimeType, "image/png");
+});
+
+test("parameters must NOT contain maskMode (it belongs only in mask config)", () => {
+  // For the referenceImages path (Imagen 3), maskMode lives in
+  // referenceImages[1].config.maskMode, not in top-level parameters.
+  // Duplicating it in parameters triggers a generic INVALID_ARGUMENT from Vertex.
+  const payload = buildPayload();
+  const serialised = JSON.parse(JSON.stringify(payload));
+  assert.equal(
+    (serialised.parameters as Record<string, unknown>).maskMode,
+    undefined,
+    "maskMode must not appear in parameters when using the referenceImages path"
+  );
 });
 
 test("GCS uri source payload serialises without imageBytes", () => {
