@@ -28,7 +28,7 @@ jest.mock("@google-cloud/storage", () => ({
   File: class File {},
 }));
 
-import { ensureLocalImagePath, persistRemoteImage } from "../src/providers/imageTransport";
+import { ensureLocalImagePath, loadImageReference, persistRemoteImage } from "../src/providers/imageTransport";
 
 async function makeImageFile(name: string, format: "jpeg" | "png" | "webp" = "png"): Promise<{ filePath: string; sizeBytes: number }> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "image-transport-test-"));
@@ -131,6 +131,50 @@ describe("image transport validation", () => {
         contentType: "image/jpeg",
       })
     );
+  });
+
+  it("normalizes stale declared mime types to the decoded local mime type during upload", async () => {
+    const { filePath, sizeBytes } = await makeImageFile("mismatch-source", "png");
+    mockGetMetadata.mockResolvedValue([{ size: String(sizeBytes), contentType: "image/png" }]);
+
+    const result = await persistRemoteImage({
+      sourceLabel: "secondary-continuity-source",
+      localPath: filePath,
+      uri: undefined,
+      artifactName: "mismatch-source.webp",
+      jobId: "job-mismatch",
+      imageId: "image-mismatch",
+      continuityGroupId: "group-mismatch",
+    });
+
+    expect(result.mimeType).toBe("image/png");
+    expect(result.uri).toBe("gs://continuity-test-bucket/vertex-secondary-continuity/job-mismatch/image-mismatch/group-mismatch/mismatch-source.png");
+    expect(mockUpload).toHaveBeenCalledWith(
+      filePath,
+      expect.objectContaining({
+        destination: "vertex-secondary-continuity/job-mismatch/image-mismatch/group-mismatch/mismatch-source.png",
+        contentType: "image/png",
+      })
+    );
+  });
+
+  it("returns decoded mime type for local references even when the declared mime is stale", async () => {
+    const { filePath } = await makeImageFile("local-mismatch", "png");
+
+    const result = await loadImageReference({
+      sourceLabel: "secondary-continuity-source",
+      localPath: filePath,
+      mimeType: "image/webp",
+      jobId: "job-local-mismatch",
+      imageId: "image-local-mismatch",
+      continuityGroupId: "group-local-mismatch",
+    });
+
+    expect(result).toMatchObject({
+      kind: "local",
+      localPath: filePath,
+      mimeType: "image/png",
+    });
   });
 
   it("rejects preexisting remote manifests with invalid image metadata", async () => {

@@ -171,10 +171,6 @@ async function validateLocalImageArtifact(params: {
     );
   }
 
-  const normalizedExpectedMimeType = assertValidImageMimeType(
-    params.expectedMimeType || mimeFromPath(params.filePath),
-    params.sourceLabel
-  );
   const metadata = await sharp(params.filePath).metadata();
   const decodedMimeType = mimeFromSharpFormat(metadata.format);
 
@@ -185,11 +181,18 @@ async function validateLocalImageArtifact(params: {
     );
   }
 
-  if (decodedMimeType !== normalizedExpectedMimeType) {
-    throw new VertexSecondaryContinuityError(
-      `${params.sourceLabel} mime mismatch: expected ${normalizedExpectedMimeType} but decoded ${decodedMimeType}`,
-      "image_reference_mime_mismatch"
-    );
+  const expectedMimeCandidate = params.expectedMimeType || mimeFromPath(params.filePath);
+  const normalizedExpectedMimeType = normalizeMimeType(expectedMimeCandidate);
+  if (normalizedExpectedMimeType && normalizedExpectedMimeType !== "application/octet-stream") {
+    assertValidImageMimeType(normalizedExpectedMimeType, params.sourceLabel);
+    if (decodedMimeType !== normalizedExpectedMimeType) {
+      nLog("[CONTINUITY_LOCAL_MIME_NORMALIZED]", {
+        sourceLabel: params.sourceLabel,
+        filePath: params.filePath,
+        expectedMimeType: normalizedExpectedMimeType,
+        decodedMimeType,
+      });
+    }
   }
 
   return {
@@ -392,7 +395,7 @@ async function validateHydratedImage(filePath: string, sourceLabel: string): Pro
 
 export async function resolveImageSource(input: ResolveImageSourceInput): Promise<ImageReference> {
   const gcsUri = resolveGcsUri(input.uri);
-  const mimeType = input.mimeType || (input.localPath ? mimeFromPath(input.localPath) : "application/octet-stream");
+  const requestedMimeType = input.mimeType || (input.localPath ? mimeFromPath(input.localPath) : "application/octet-stream");
   nLog("[CONTINUITY_URI_REFERENCE]", {
     sourceLabel: input.sourceLabel,
     continuityGroupId: input.continuityGroupId || null,
@@ -418,7 +421,7 @@ export async function resolveImageSource(input: ResolveImageSourceInput): Promis
       kind: "gcs",
       uri: gcsUri,
       localPath: input.localPath,
-      mimeType,
+      mimeType: requestedMimeType,
       sourceLabel: input.sourceLabel,
       artifactName: input.artifactName,
     };
@@ -429,10 +432,15 @@ export async function resolveImageSource(input: ResolveImageSourceInput): Promis
       "image_source_unresolved"
     );
   }
+  const localValidation = await validateLocalImageArtifact({
+    filePath: input.localPath,
+    sourceLabel: input.sourceLabel,
+    expectedMimeType: input.mimeType,
+  });
   if (input.preferGcs) {
     const resolved = await uploadLocalFileToGcs({
       localPath: input.localPath,
-      mimeType,
+      mimeType: localValidation.mimeType,
       sourceLabel: input.sourceLabel,
       artifactName: input.artifactName,
       jobId: input.jobId,
@@ -466,7 +474,7 @@ export async function resolveImageSource(input: ResolveImageSourceInput): Promis
   return {
     kind: "local",
     localPath: input.localPath,
-    mimeType,
+    mimeType: localValidation.mimeType,
     sourceLabel: input.sourceLabel,
     artifactName: input.artifactName,
   };
