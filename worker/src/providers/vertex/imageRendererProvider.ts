@@ -8,8 +8,8 @@ import { toVertexImagePayload } from "../imageTransport";
 import type { ImageRendererProvider, ImageRenderRequest, ImageRenderResponse } from "../types";
 import { getVertexGenAiClient, getVertexProjectConfig } from "./adc";
 
-type VertexWireImagePayload = {
-  imageBytes?: string;
+export type VertexWireImagePayload = {
+  bytesBase64Encoded?: string;
   gcsUri?: string;
   mimeType?: string;
 };
@@ -227,8 +227,8 @@ async function snapshotLocalRenderReference(params: {
 }
 
 function summarizeVertexImagePayload(payload: Record<string, unknown>): Record<string, unknown> {
-  const imageBytes = typeof payload.imageBytes === "string"
-    ? payload.imageBytes
+  const imageBytes = typeof payload.bytesBase64Encoded === "string"
+    ? payload.bytesBase64Encoded
     : "";
   const gcsUri = typeof payload.gcsUri === "string"
     ? payload.gcsUri
@@ -249,7 +249,7 @@ function isSupportedVertexImageMimeType(value: unknown): value is string {
   return typeof value === "string" && SUPPORTED_VERTEX_IMAGE_MIME_TYPES.has(value);
 }
 
-function buildVertexEditPredictPayload(params: {
+export function buildVertexEditPredictPayload(params: {
   prompt: string;
   sourcePayload: VertexWireImagePayload;
   maskPayload: VertexWireImagePayload;
@@ -291,11 +291,11 @@ function redactVertexWireImagePayload(payload: VertexWireImagePayload): Record<s
   return {
     ...("gcsUri" in payload && payload.gcsUri ? { gcsUri: payload.gcsUri } : {}),
     ...("mimeType" in payload && payload.mimeType ? { mimeType: payload.mimeType } : {}),
-    ...("imageBytes" in payload
+    ...("bytesBase64Encoded" in payload
       ? {
-          imageBytes: typeof payload.imageBytes === "string"
-            ? `<base64:${payload.imageBytes.length}>`
-            : payload.imageBytes,
+          bytesBase64Encoded: typeof payload.bytesBase64Encoded === "string"
+            ? `<base64:${payload.bytesBase64Encoded.length}>`
+            : payload.bytesBase64Encoded,
         }
       : {}),
   };
@@ -394,8 +394,8 @@ function validateSerializedVertexEditPredictPayload(params: {
         `imagen_edit_payload_serialization_invalid_${expectedRole}_reference_type`
       );
     }
-    const imageBytes = typeof referenceImage.referenceImage.imageBytes === "string"
-      ? referenceImage.referenceImage.imageBytes
+    const imageBytes = typeof referenceImage.referenceImage.bytesBase64Encoded === "string"
+      ? referenceImage.referenceImage.bytesBase64Encoded
       : "";
     if (!referenceImage.referenceImage.gcsUri && imageBytes.length <= 0) {
       throw new VertexSecondaryContinuityError(
@@ -458,11 +458,11 @@ function validateVertexEditPredictPayload(params: {
   const sourceReferenceType = firstInstance.referenceImages[0]?.referenceType;
   const maskReferenceType = firstInstance.referenceImages[1]?.referenceType;
 
-  const sourceBytesLength = typeof sourceReference?.imageBytes === "string"
-    ? sourceReference.imageBytes.length
+  const sourceBytesLength = typeof sourceReference?.bytesBase64Encoded === "string"
+    ? sourceReference.bytesBase64Encoded.length
     : 0;
-  const maskBytesLength = typeof maskReference?.imageBytes === "string"
-    ? maskReference.imageBytes.length
+  const maskBytesLength = typeof maskReference?.bytesBase64Encoded === "string"
+    ? maskReference.bytesBase64Encoded.length
     : 0;
 
   if (!sourceReference || (!sourceReference.gcsUri && sourceBytesLength <= 0)) {
@@ -581,7 +581,7 @@ async function buildVerifiedVertexImagePayload(
 
   return {
     payload: {
-      imageBytes: fileBuffer.toString("base64"),
+      bytesBase64Encoded: fileBuffer.toString("base64"),
       mimeType: (artifact.decodedMimeType as string) || reference.mimeType,
     },
     artifact,
