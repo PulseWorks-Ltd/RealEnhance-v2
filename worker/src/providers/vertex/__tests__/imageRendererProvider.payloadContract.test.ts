@@ -86,6 +86,29 @@ test("source referenceType is REFERENCE_TYPE_RAW", () => {
   );
 });
 
+test("source referenceId is a number", () => {
+  const payload = buildPayload();
+  const sourceRef = payload.instances[0]!.referenceImages[0]!;
+  assert.ok(typeof sourceRef.referenceId === "number",
+    "source referenceId must be a number — Vertex returns 400 if it is absent");
+  const serialised = JSON.parse(JSON.stringify(payload));
+  assert.ok(typeof serialised.instances[0].referenceImages[0].referenceId === "number",
+    "source referenceId must survive JSON serialization round-trip");
+});
+
+test("mask referenceId is a number and different from source", () => {
+  const payload = buildPayload();
+  const sourceRef = payload.instances[0]!.referenceImages[0]!;
+  const maskRef = payload.instances[0]!.referenceImages[1]!;
+  assert.ok(typeof maskRef.referenceId === "number",
+    "mask referenceId must be a number — Vertex returns 400 if it is absent");
+  assert.notEqual(maskRef.referenceId, sourceRef.referenceId,
+    "source and mask must have distinct referenceId values");
+  const serialised = JSON.parse(JSON.stringify(payload));
+  assert.ok(typeof serialised.instances[0].referenceImages[1].referenceId === "number",
+    "mask referenceId must survive JSON serialization round-trip");
+});
+
 test("mask referenceType is REFERENCE_TYPE_MASK with MASK_MODE_USER_PROVIDED config", () => {
   const payload = buildPayload();
   const maskRef = payload.instances[0]!.referenceImages[1]!;

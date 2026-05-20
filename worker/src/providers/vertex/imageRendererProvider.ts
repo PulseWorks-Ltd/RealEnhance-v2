@@ -262,10 +262,12 @@ export function buildVertexEditPredictPayload(params: {
         referenceImages: [
           {
             referenceImage: params.sourcePayload,
+            referenceId: 1,
             referenceType: VERTEX_REFERENCE_TYPE_RAW,
           },
           {
             referenceImage: params.maskPayload,
+            referenceId: 2,
             referenceType: VERTEX_REFERENCE_TYPE_MASK,
             config: {
               maskMode: "MASK_MODE_USER_PROVIDED",
@@ -403,6 +405,12 @@ function validateSerializedVertexEditPredictPayload(params: {
         `imagen_edit_payload_serialization_missing_${expectedRole}_image_data`
       );
     }
+    if (typeof referenceImage.referenceId !== "number") {
+      throw new VertexSecondaryContinuityError(
+        `Vertex continuity ${expectedRole} referenceImage lost required referenceId during serialization`,
+        `imagen_edit_payload_serialization_missing_${expectedRole}_reference_id`
+      );
+    }
   });
 
   if (firstInstance.referenceImages[0]?.config) {
@@ -511,6 +519,18 @@ function validateVertexEditPredictPayload(params: {
     throw new VertexSecondaryContinuityError(
       `Vertex continuity mask reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_MASK}`,
       "imagen_edit_payload_invalid_mask_reference_type"
+    );
+  }
+  if (typeof firstInstance.referenceImages[0]?.referenceId !== "number") {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity source reference is missing required referenceId",
+      "imagen_edit_payload_missing_source_reference_id"
+    );
+  }
+  if (typeof firstInstance.referenceImages[1]?.referenceId !== "number") {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity mask reference is missing required referenceId",
+      "imagen_edit_payload_missing_mask_reference_id"
     );
   }
   if (maskConfig?.maskMode !== "MASK_MODE_USER_PROVIDED") {
