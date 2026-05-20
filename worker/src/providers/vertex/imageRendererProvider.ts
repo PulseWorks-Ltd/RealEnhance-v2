@@ -33,12 +33,12 @@ const VERTEX_EDIT_MODE_INPAINT_INSERTION = "EDIT_MODE_INPAINT_INSERTION" as cons
 //   { referenceImage: {...}, referenceId: 1, referenceType: "REFERENCE_TYPE_RAW" }
 //
 // Correct (proto3 JSON wire format):
-//   { referenceId: 1, referenceType: "REFERENCE_TYPE_RAW", rawReferenceImage: { referenceImage: {...} } }
+//   { referenceId: 1, referenceType: "REFERENCE_TYPE_RAW", rawReferenceImage: { image: {...} } }
 type VertexRawReferenceEntry = {
   referenceId: number;
   referenceType: typeof VERTEX_REFERENCE_TYPE_RAW;
   rawReferenceImage: {
-    referenceImage: VertexWireImagePayload;
+    image: VertexWireImagePayload;
   };
 };
 
@@ -49,7 +49,7 @@ type VertexMaskReferenceEntry = {
   referenceType: typeof VERTEX_REFERENCE_TYPE_MASK;
   maskReferenceImage: {
     maskMode: string;
-    referenceImage: VertexWireImagePayload;
+    image: VertexWireImagePayload;
   };
 };
 
@@ -290,7 +290,7 @@ export function buildVertexEditPredictPayload(params: {
             referenceId: 1,
             referenceType: VERTEX_REFERENCE_TYPE_RAW,
             rawReferenceImage: {
-              referenceImage: params.sourcePayload,
+              image: params.sourcePayload,
             },
           },
           {
@@ -298,7 +298,7 @@ export function buildVertexEditPredictPayload(params: {
             referenceType: VERTEX_REFERENCE_TYPE_MASK,
             maskReferenceImage: {
               maskMode: VERTEX_MASK_MODE_USER_PROVIDED,
-              referenceImage: params.maskPayload,
+              image: params.maskPayload,
             },
           },
         ],
@@ -346,7 +346,7 @@ function redactVertexEditPredictPayload(payload: VertexEditPredictPayload): Reco
           return {
             ...base,
             rawReferenceImage: {
-              referenceImage: redactVertexWireImagePayload(raw.rawReferenceImage.referenceImage),
+              image: redactVertexWireImagePayload(raw.rawReferenceImage.image),
             },
           };
         }
@@ -355,7 +355,7 @@ function redactVertexEditPredictPayload(payload: VertexEditPredictPayload): Reco
           ...base,
           maskReferenceImage: {
             maskMode: mask.maskReferenceImage.maskMode,
-            referenceImage: redactVertexWireImagePayload(mask.maskReferenceImage.referenceImage),
+            image: redactVertexWireImagePayload(mask.maskReferenceImage.image),
           },
         };
       }),
@@ -435,23 +435,29 @@ function validateSerializedVertexEditPredictPayload(params: {
       "imagen_edit_payload_serialization_missing_source_raw_wrapper"
     );
   }
-  const sourceInnerImage = sourceRawWrapper.referenceImage as Record<string, unknown> | undefined;
+  const sourceInnerImage = sourceRawWrapper.image as Record<string, unknown> | undefined;
   if (!sourceInnerImage || typeof sourceInnerImage !== "object" || Object.keys(sourceInnerImage).length <= 0) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.referenceImage is missing or empty after serialization",
+      "Vertex continuity source rawReferenceImage.image is missing or empty after serialization",
       "imagen_edit_payload_serialization_missing_source_inner_image"
+    );
+  }
+  if (sourceRawWrapper.referenceImage !== undefined) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity source rawReferenceImage contains legacy referenceImage key after serialization",
+      "imagen_edit_payload_serialization_source_legacy_inner_reference_image"
     );
   }
   if (!isSupportedVertexImageMimeType(sourceInnerImage.mimeType)) {
     throw new VertexSecondaryContinuityError(
-      `Vertex continuity source referenceImage lost a valid mimeType during serialization`,
+      `Vertex continuity source image lost a valid mimeType during serialization`,
       "imagen_edit_payload_serialization_invalid_source_mime_type"
     );
   }
   const sourceBytesB64 = typeof sourceInnerImage.bytesBase64Encoded === "string" ? sourceInnerImage.bytesBase64Encoded : "";
   if (!sourceInnerImage.gcsUri && sourceBytesB64.length <= 0) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.referenceImage lost bytes and uri during serialization",
+      "Vertex continuity source rawReferenceImage.image lost bytes and uri during serialization",
       "imagen_edit_payload_serialization_missing_source_image_data"
     );
   }
@@ -496,23 +502,29 @@ function validateSerializedVertexEditPredictPayload(params: {
       "imagen_edit_payload_serialization_invalid_mask_mode"
     );
   }
-  const maskInnerImage = maskWrapper.referenceImage as Record<string, unknown> | undefined;
+  const maskInnerImage = maskWrapper.image as Record<string, unknown> | undefined;
   if (!maskInnerImage || typeof maskInnerImage !== "object" || Object.keys(maskInnerImage).length <= 0) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.referenceImage is missing or empty after serialization",
+      "Vertex continuity mask maskReferenceImage.image is missing or empty after serialization",
       "imagen_edit_payload_serialization_missing_mask_inner_image"
+    );
+  }
+  if (maskWrapper.referenceImage !== undefined) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity mask maskReferenceImage contains legacy referenceImage key after serialization",
+      "imagen_edit_payload_serialization_mask_legacy_inner_reference_image"
     );
   }
   if (!isSupportedVertexImageMimeType(maskInnerImage.mimeType)) {
     throw new VertexSecondaryContinuityError(
-      `Vertex continuity mask referenceImage lost a valid mimeType during serialization`,
+      `Vertex continuity mask image lost a valid mimeType during serialization`,
       "imagen_edit_payload_serialization_invalid_mask_mime_type"
     );
   }
   const maskBytesB64 = typeof maskInnerImage.bytesBase64Encoded === "string" ? maskInnerImage.bytesBase64Encoded : "";
   if (!maskInnerImage.gcsUri && maskBytesB64.length <= 0) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.referenceImage lost bytes and uri during serialization",
+      "Vertex continuity mask maskReferenceImage.image lost bytes and uri during serialization",
       "imagen_edit_payload_serialization_missing_mask_image_data"
     );
   }
@@ -593,18 +605,24 @@ function validateVertexEditPredictPayload(params: {
       "imagen_edit_payload_missing_source_raw_wrapper"
     );
   }
-  const sourceInnerImage = sourceWrapper.referenceImage;
+  const sourceInnerImage = sourceWrapper.image;
   if (!sourceInnerImage || typeof sourceInnerImage !== "object") {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.referenceImage is missing",
+      "Vertex continuity source rawReferenceImage.image is missing",
       "imagen_edit_payload_missing_source_inner_image"
+    );
+  }
+  if ((sourceWrapper as Record<string, unknown>).referenceImage !== undefined) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity source rawReferenceImage contains legacy referenceImage key",
+      "imagen_edit_payload_legacy_source_inner_reference_image"
     );
   }
   const sourceBytesLength = typeof sourceInnerImage.bytesBase64Encoded === "string"
     ? sourceInnerImage.bytesBase64Encoded.length : 0;
   if (!sourceInnerImage.gcsUri && sourceBytesLength <= 0) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.referenceImage is missing bytes and uri",
+      "Vertex continuity source rawReferenceImage.image is missing bytes and uri",
       "imagen_edit_payload_missing_raw_source_image"
     );
   }
@@ -642,18 +660,24 @@ function validateVertexEditPredictPayload(params: {
       "imagen_edit_payload_missing_mask_mode"
     );
   }
-  const maskInnerImage = maskWrapper.referenceImage;
+  const maskInnerImage = maskWrapper.image;
   if (!maskInnerImage || typeof maskInnerImage !== "object") {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.referenceImage is missing",
+      "Vertex continuity mask maskReferenceImage.image is missing",
       "imagen_edit_payload_missing_mask_inner_image"
+    );
+  }
+  if ((maskWrapper as Record<string, unknown>).referenceImage !== undefined) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity mask maskReferenceImage contains legacy referenceImage key",
+      "imagen_edit_payload_legacy_mask_inner_reference_image"
     );
   }
   const maskBytesLength = typeof maskInnerImage.bytesBase64Encoded === "string"
     ? maskInnerImage.bytesBase64Encoded.length : 0;
   if (!maskInnerImage.gcsUri && maskBytesLength <= 0) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.referenceImage is missing bytes and uri",
+      "Vertex continuity mask maskReferenceImage.image is missing bytes and uri",
       "imagen_edit_payload_missing_mask_image"
     );
   }

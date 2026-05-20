@@ -57,6 +57,12 @@ function summarizeRenderPayload(payload: Record<string, unknown> | null | undefi
     maskImageKeys: firstInstance?.mask?.image ? Object.keys(firstInstance.mask.image) : [],
     referenceImageKeys: referenceImages.map((entry: Record<string, any>) => ({
       referenceImageKeys: entry?.referenceImage ? Object.keys(entry.referenceImage) : [],
+      rawReferenceImageKeys: entry?.rawReferenceImage ? Object.keys(entry.rawReferenceImage) : [],
+      rawReferenceImageImageKeys: entry?.rawReferenceImage?.image ? Object.keys(entry.rawReferenceImage.image) : [],
+      rawReferenceImageLegacyKeys: entry?.rawReferenceImage?.referenceImage ? Object.keys(entry.rawReferenceImage.referenceImage) : [],
+      maskReferenceImageKeys: entry?.maskReferenceImage ? Object.keys(entry.maskReferenceImage) : [],
+      maskReferenceImageImageKeys: entry?.maskReferenceImage?.image ? Object.keys(entry.maskReferenceImage.image) : [],
+      maskReferenceImageLegacyKeys: entry?.maskReferenceImage?.referenceImage ? Object.keys(entry.maskReferenceImage.referenceImage) : [],
       configKeys: entry?.config ? Object.keys(entry.config) : [],
     })),
     guidanceScale: parameters?.guidanceScale ?? null,

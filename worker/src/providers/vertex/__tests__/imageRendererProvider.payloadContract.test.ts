@@ -15,11 +15,11 @@
  * CORRECT (proto3 JSON wire format — what this file asserts):
  *   referenceImages[0] = {
  *     referenceId: 1, referenceType: "REFERENCE_TYPE_RAW",
- *     rawReferenceImage: { referenceImage: { bytesBase64Encoded: "...", mimeType: "..." } }
+ *     rawReferenceImage: { image: { bytesBase64Encoded: "...", mimeType: "..." } }
  *   }
  *   referenceImages[1] = {
  *     referenceId: 2, referenceType: "REFERENCE_TYPE_MASK",
- *     maskReferenceImage: { maskMode: "MASK_MODE_USER_PROVIDED", referenceImage: { bytesBase64Encoded: "...", mimeType: "..." } }
+ *     maskReferenceImage: { maskMode: "MASK_MODE_USER_PROVIDED", image: { bytesBase64Encoded: "...", mimeType: "..." } }
  *   }
  */
 
@@ -78,26 +78,29 @@ test("source uses rawReferenceImage wrapper (proto3 wire format)", () => {
   );
 });
 
-test("source rawReferenceImage.referenceImage carries bytesBase64Encoded (not imageBytes)", () => {
+test("source rawReferenceImage.image carries bytesBase64Encoded (not imageBytes)", () => {
   const payload = buildPayload();
   const sourceEntry = payload.instances[0]!.referenceImages[0]! as any;
-  const inner = sourceEntry.rawReferenceImage?.referenceImage;
+  const inner = sourceEntry.rawReferenceImage?.image;
 
-  assert.ok(inner, "rawReferenceImage.referenceImage must exist");
+  assert.ok(inner, "rawReferenceImage.image must exist");
   assert.equal(inner.bytesBase64Encoded, SOURCE_B64,
-    "rawReferenceImage.referenceImage must carry bytesBase64Encoded");
+    "rawReferenceImage.image must carry bytesBase64Encoded");
 
   // Guard: must not carry the deprecated SDK field name
   assert.equal(inner.imageBytes, undefined,
     "imageBytes must never appear — Vertex returns 400 if it does");
+  assert.equal(sourceEntry.rawReferenceImage?.referenceImage, undefined,
+    "rawReferenceImage.referenceImage must never appear — Vertex expects rawReferenceImage.image");
 });
 
-test("source rawReferenceImage.referenceImage survives JSON serialization round-trip", () => {
+test("source rawReferenceImage.image survives JSON serialization round-trip", () => {
   const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const inner = serialised.instances[0].referenceImages[0].rawReferenceImage.referenceImage;
+  const inner = serialised.instances[0].referenceImages[0].rawReferenceImage.image;
   assert.equal(inner.mimeType, "image/jpeg");
   assert.ok(typeof inner.bytesBase64Encoded === "string" && inner.bytesBase64Encoded.length > 0);
   assert.equal(inner.imageBytes, undefined);
+  assert.equal(serialised.instances[0].referenceImages[0].rawReferenceImage.referenceImage, undefined);
 });
 
 test("source referenceType is REFERENCE_TYPE_RAW", () => {
@@ -150,24 +153,27 @@ test("mask maskReferenceImage.maskMode is MASK_MODE_USER_PROVIDED", () => {
   );
 });
 
-test("mask maskReferenceImage.referenceImage carries bytesBase64Encoded (not imageBytes)", () => {
+test("mask maskReferenceImage.image carries bytesBase64Encoded (not imageBytes)", () => {
   const payload = buildPayload();
   const maskEntry = payload.instances[0]!.referenceImages[1]! as any;
-  const inner = maskEntry.maskReferenceImage?.referenceImage;
+  const inner = maskEntry.maskReferenceImage?.image;
 
-  assert.ok(inner, "maskReferenceImage.referenceImage must exist");
+  assert.ok(inner, "maskReferenceImage.image must exist");
   assert.equal(inner.bytesBase64Encoded, MASK_B64,
-    "maskReferenceImage.referenceImage must carry bytesBase64Encoded");
+    "maskReferenceImage.image must carry bytesBase64Encoded");
   assert.equal(inner.imageBytes, undefined,
     "imageBytes must never appear in mask image");
+  assert.equal(maskEntry.maskReferenceImage?.referenceImage, undefined,
+    "maskReferenceImage.referenceImage must never appear — Vertex expects maskReferenceImage.image");
 });
 
-test("mask maskReferenceImage.referenceImage survives JSON serialization round-trip", () => {
+test("mask maskReferenceImage.image survives JSON serialization round-trip", () => {
   const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const inner = serialised.instances[0].referenceImages[1].maskReferenceImage.referenceImage;
+  const inner = serialised.instances[0].referenceImages[1].maskReferenceImage.image;
   assert.equal(inner.mimeType, "image/png");
   assert.ok(typeof inner.bytesBase64Encoded === "string" && inner.bytesBase64Encoded.length > 0);
   assert.equal(inner.imageBytes, undefined);
+  assert.equal(serialised.instances[0].referenceImages[1].maskReferenceImage.referenceImage, undefined);
 });
 
 test("mask referenceType is REFERENCE_TYPE_MASK", () => {
@@ -235,6 +241,16 @@ test("no legacy config object at outer referenceImages entry level (mask)", () =
     "outer-level config must not exist — maskMode belongs inside maskReferenceImage");
 });
 
+test("no legacy nested referenceImage key inside rawReferenceImage or maskReferenceImage", () => {
+  const serialised = JSON.parse(JSON.stringify(buildPayload()));
+  const sourceEntry = serialised.instances[0].referenceImages[0];
+  const maskEntry = serialised.instances[0].referenceImages[1];
+  assert.equal(sourceEntry.rawReferenceImage.referenceImage, undefined,
+    "rawReferenceImage.referenceImage must not exist — Vertex expects rawReferenceImage.image");
+  assert.equal(maskEntry.maskReferenceImage.referenceImage, undefined,
+    "maskReferenceImage.referenceImage must not exist — Vertex expects maskReferenceImage.image");
+});
+
 // ─── GCS path ────────────────────────────────────────────────────────────────
 
 test("GCS uri source uses rawReferenceImage wrapper and no imageBytes", () => {
@@ -252,9 +268,10 @@ test("GCS uri source uses rawReferenceImage wrapper and no imageBytes", () => {
   const sourceEntry = serialised.instances[0].referenceImages[0];
   assert.ok("rawReferenceImage" in sourceEntry, "GCS source must still use rawReferenceImage wrapper");
   assert.equal(sourceEntry.referenceImage, undefined, "no outer-level referenceImage for GCS source");
-  const inner = sourceEntry.rawReferenceImage.referenceImage;
+  const inner = sourceEntry.rawReferenceImage.image;
   assert.equal(inner.gcsUri, "gs://my-bucket/source.jpeg");
   assert.equal(inner.imageBytes, undefined);
   assert.equal(inner.bytesBase64Encoded, undefined);
+  assert.equal(sourceEntry.rawReferenceImage.referenceImage, undefined);
 });
 
