@@ -42,6 +42,8 @@ type VertexEditPredictPayload = {
 
 const SUPPORTED_VERTEX_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const VERTEX_EDIT_REFERENCE_ORDER = ["source", "mask"] as const;
+const VERTEX_REFERENCE_TYPE_RAW = "REFERENCE_TYPE_RAW";
+const VERTEX_REFERENCE_TYPE_MASK = "REFERENCE_TYPE_MASK";
 
 function compactPromptSegment(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
@@ -260,9 +262,11 @@ function buildVertexEditPredictPayload(params: {
         referenceImages: [
           {
             referenceImage: params.sourcePayload,
+            referenceType: VERTEX_REFERENCE_TYPE_RAW,
           },
           {
             referenceImage: params.maskPayload,
+            referenceType: VERTEX_REFERENCE_TYPE_MASK,
             config: {
               maskMode: "MASK_MODE_USER_PROVIDED",
             },
@@ -383,6 +387,13 @@ function validateSerializedVertexEditPredictPayload(params: {
         `imagen_edit_payload_serialization_invalid_${expectedRole}_mime_type`
       );
     }
+    const expectedReferenceType = index === 0 ? VERTEX_REFERENCE_TYPE_RAW : VERTEX_REFERENCE_TYPE_MASK;
+    if (referenceImage.referenceType !== expectedReferenceType) {
+      throw new VertexSecondaryContinuityError(
+        `Vertex continuity ${expectedRole} referenceImage lost required referenceType ${expectedReferenceType} during serialization`,
+        `imagen_edit_payload_serialization_invalid_${expectedRole}_reference_type`
+      );
+    }
     const imageBytes = typeof referenceImage.referenceImage.imageBytes === "string"
       ? referenceImage.referenceImage.imageBytes
       : "";
@@ -444,6 +455,8 @@ function validateVertexEditPredictPayload(params: {
   const sourceReference = firstInstance.referenceImages[0]?.referenceImage;
   const maskReference = firstInstance.referenceImages[1]?.referenceImage;
   const maskConfig = firstInstance.referenceImages[1]?.config;
+  const sourceReferenceType = firstInstance.referenceImages[0]?.referenceType;
+  const maskReferenceType = firstInstance.referenceImages[1]?.referenceType;
 
   const sourceBytesLength = typeof sourceReference?.imageBytes === "string"
     ? sourceReference.imageBytes.length
@@ -486,6 +499,18 @@ function validateVertexEditPredictPayload(params: {
     throw new VertexSecondaryContinuityError(
       `Vertex continuity mask image MIME type is invalid for edit payload: ${String(maskReference?.mimeType || "unknown")}`,
       "imagen_edit_payload_invalid_mask_mime_type"
+    );
+  }
+  if (sourceReferenceType !== VERTEX_REFERENCE_TYPE_RAW) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity source reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_RAW}`,
+      "imagen_edit_payload_invalid_source_reference_type"
+    );
+  }
+  if (maskReferenceType !== VERTEX_REFERENCE_TYPE_MASK) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity mask reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_MASK}`,
+      "imagen_edit_payload_invalid_mask_reference_type"
     );
   }
   if (maskConfig?.maskMode !== "MASK_MODE_USER_PROVIDED") {

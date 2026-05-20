@@ -145,10 +145,12 @@ describe("vertex image renderer preflight", () => {
     expect(body.instances[0].referenceImages).toHaveLength(2);
 
     expect(body.instances[0].referenceImages[0].config).toBeUndefined();
+    expect(body.instances[0].referenceImages[0].referenceType).toBe("REFERENCE_TYPE_RAW");
     expect(body.instances[0].referenceImages[0].referenceImage.mimeType).toBe("image/png");
     expect(typeof body.instances[0].referenceImages[0].referenceImage.imageBytes).toBe("string");
     expect(body.instances[0].referenceImages[0].referenceImage.imageBytes.length).toBeGreaterThan(0);
 
+    expect(body.instances[0].referenceImages[1].referenceType).toBe("REFERENCE_TYPE_MASK");
     expect(body.instances[0].referenceImages[1].config.maskMode).toBe("MASK_MODE_USER_PROVIDED");
     expect(body.instances[0].referenceImages[1].referenceImage.mimeType).toBe("image/png");
     expect(typeof body.instances[0].referenceImages[1].referenceImage.imageBytes).toBe("string");
@@ -164,6 +166,8 @@ describe("vertex image renderer preflight", () => {
     const sdkRequestLogPayload = sdkRequestLogCall?.[1];
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"imageBytes\":\"<base64:");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("bytesBase64Encoded");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceType\":\"REFERENCE_TYPE_RAW\"");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceType\":\"REFERENCE_TYPE_MASK\"");
 
     await mask.cleanup();
     await fs.rm(tempDir, { recursive: true, force: true });
