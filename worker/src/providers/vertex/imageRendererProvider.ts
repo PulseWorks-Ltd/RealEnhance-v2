@@ -8,6 +8,38 @@ import { toVertexImagePayload } from "../imageTransport";
 import type { ImageRendererProvider, ImageRenderRequest, ImageRenderResponse } from "../types";
 import { getVertexGenAiClient, getVertexProjectConfig } from "./adc";
 
+type VertexWireImagePayload = {
+  bytesBase64Encoded?: string;
+  gcsUri?: string;
+  mimeType?: string;
+};
+
+type VertexEditReferenceImage = {
+  referenceImage: VertexWireImagePayload;
+  config?: {
+    maskMode?: string;
+  };
+};
+
+type VertexEditPredictPayload = {
+  instances: Array<{
+    prompt: string;
+    referenceImages: VertexEditReferenceImage[];
+  }>;
+  parameters: {
+    sampleCount: number;
+    guidanceScale: number;
+    addWatermark: boolean;
+    editMode: string;
+    maskMode: string;
+    outputOptions: {
+      mimeType: string;
+    };
+  };
+};
+
+const SUPPORTED_VERTEX_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
 function compactPromptSegment(values: string[]): string[] {
   return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
 }
@@ -208,6 +240,167 @@ function summarizeVertexImagePayload(payload: Record<string, unknown>): Record<s
   };
 }
 
+function isSupportedVertexImageMimeType(value: unknown): value is string {
+  return typeof value === "string" && SUPPORTED_VERTEX_IMAGE_MIME_TYPES.has(value);
+}
+
+function buildVertexEditPredictPayload(params: {
+  prompt: string;
+  sourcePayload: VertexWireImagePayload;
+  maskPayload: VertexWireImagePayload;
+  guidanceScale: number;
+}): VertexEditPredictPayload {
+  return {
+    instances: [
+      {
+        prompt: params.prompt,
+        referenceImages: [
+          {
+            referenceImage: params.sourcePayload,
+          },
+          {
+            referenceImage: params.maskPayload,
+            config: {
+              maskMode: "MASK_MODE_USER_PROVIDED",
+            },
+          },
+        ],
+      },
+    ],
+    parameters: {
+      sampleCount: 1,
+      guidanceScale: params.guidanceScale,
+      addWatermark: false,
+      editMode: "EDIT_MODE_INPAINT_INSERTION",
+      maskMode: "MASK_MODE_USER_PROVIDED",
+      outputOptions: {
+        mimeType: "image/png",
+      },
+    },
+  };
+}
+
+function redactVertexWireImagePayload(payload: VertexWireImagePayload): Record<string, unknown> {
+  return {
+    ...("gcsUri" in payload && payload.gcsUri ? { gcsUri: payload.gcsUri } : {}),
+    ...("mimeType" in payload && payload.mimeType ? { mimeType: payload.mimeType } : {}),
+    ...("bytesBase64Encoded" in payload
+      ? {
+          bytesBase64Encoded: typeof payload.bytesBase64Encoded === "string"
+            ? `<base64:${payload.bytesBase64Encoded.length}>`
+            : payload.bytesBase64Encoded,
+        }
+      : {}),
+  };
+}
+
+function redactVertexEditPredictPayload(payload: VertexEditPredictPayload): Record<string, unknown> {
+  return {
+    instances: payload.instances.map((instance) => ({
+      prompt: instance.prompt,
+      referenceImages: instance.referenceImages.map((referenceImage) => ({
+        referenceImage: redactVertexWireImagePayload(referenceImage.referenceImage),
+        ...(referenceImage.config ? { config: referenceImage.config } : {}),
+      })),
+    })),
+    parameters: payload.parameters,
+  };
+}
+
+function validateVertexEditPredictPayload(params: {
+  payload: VertexEditPredictPayload;
+  sourceArtifact: Record<string, unknown>;
+  maskArtifact: Record<string, unknown>;
+}): void {
+  const firstInstance = params.payload.instances[0];
+  if (!firstInstance) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing instances[0]",
+      "imagen_edit_payload_missing_instance"
+    );
+  }
+
+  if (typeof firstInstance.prompt !== "string" || firstInstance.prompt.trim().length <= 0) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing a prompt",
+      "imagen_edit_payload_missing_prompt"
+    );
+  }
+
+  if (!Array.isArray(firstInstance.referenceImages) || firstInstance.referenceImages.length < 2) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing required reference images",
+      "imagen_edit_payload_missing_reference_images"
+    );
+  }
+
+  const sourceReference = firstInstance.referenceImages[0]?.referenceImage;
+  const maskReference = firstInstance.referenceImages[1]?.referenceImage;
+  const maskConfig = firstInstance.referenceImages[1]?.config;
+
+  const sourceBytesLength = typeof sourceReference?.bytesBase64Encoded === "string"
+    ? sourceReference.bytesBase64Encoded.length
+    : 0;
+  const maskBytesLength = typeof maskReference?.bytesBase64Encoded === "string"
+    ? maskReference.bytesBase64Encoded.length
+    : 0;
+
+  if (!sourceReference || (!sourceReference.gcsUri && sourceBytesLength <= 0)) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing the raw source image in referenceImages[0].referenceImage",
+      "imagen_edit_payload_missing_raw_source_image"
+    );
+  }
+  if (!maskReference || (!maskReference.gcsUri && maskBytesLength <= 0)) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing the user-provided mask in referenceImages[1].referenceImage",
+      "imagen_edit_payload_missing_mask_image"
+    );
+  }
+  if (!isSupportedVertexImageMimeType(sourceReference.mimeType)) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity source image MIME type is invalid for edit payload: ${String(sourceReference?.mimeType || "unknown")}`,
+      "imagen_edit_payload_invalid_source_mime_type"
+    );
+  }
+  if (!isSupportedVertexImageMimeType(maskReference.mimeType)) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity mask image MIME type is invalid for edit payload: ${String(maskReference?.mimeType || "unknown")}`,
+      "imagen_edit_payload_invalid_mask_mime_type"
+    );
+  }
+  if (maskConfig?.maskMode !== "MASK_MODE_USER_PROVIDED") {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing MASK_MODE_USER_PROVIDED on the mask reference",
+      "imagen_edit_payload_missing_mask_mode"
+    );
+  }
+  if (params.payload.parameters.editMode !== "EDIT_MODE_INPAINT_INSERTION") {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing EDIT_MODE_INPAINT_INSERTION",
+      "imagen_edit_payload_missing_edit_mode"
+    );
+  }
+  if (params.payload.parameters.outputOptions?.mimeType !== "image/png") {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity edit payload is missing the required PNG output mime type",
+      "imagen_edit_payload_invalid_output_mime_type"
+    );
+  }
+  if (Number(params.sourceArtifact.sizeBytes || 0) <= 0) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity source image artifact is empty before SDK execution",
+      "imagen_source_image_empty_before_sdk_execution"
+    );
+  }
+  if (Number(params.maskArtifact.sizeBytes || 0) <= 0) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity mask image artifact is empty before SDK execution",
+      "imagen_mask_image_empty_before_sdk_execution"
+    );
+  }
+}
+
 async function buildVerifiedVertexImagePayload(
   reference: ImageRenderRequest["sourceImage"],
   role: "source" | "mask"
@@ -306,27 +499,18 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       maskPayloadSummary,
     });
 
-    const payload = {
-      instances: [
-        {
-          prompt,
-          image: sourcePayload,
-          mask: {
-            image: maskPayload,
-          },
-        },
-      ],
-      parameters: {
-        sampleCount: 1,
-        guidanceScale,
-        addWatermark: false,
-        editMode: "EDIT_MODE_INPAINT_INSERTION",
-        maskMode: "MASK_MODE_USER_PROVIDED",
-        outputOptions: {
-          mimeType: "image/png",
-        },
-      },
-    };
+    const payload = buildVertexEditPredictPayload({
+      prompt,
+      sourcePayload: sourcePayload as VertexWireImagePayload,
+      maskPayload: maskPayload as VertexWireImagePayload,
+      guidanceScale,
+    });
+    validateVertexEditPredictPayload({
+      payload,
+      sourceArtifact,
+      maskArtifact,
+    });
+    const serializedPayload = JSON.stringify(payload);
 
     nLog("[VERTEX_CONTINUITY_RENDER_PAYLOAD]", {
       phase: "created",
@@ -356,6 +540,21 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       outputPath: request.outputPath,
     });
 
+    nLog("[VERTEX_CONTINUITY_RENDER_SDK_REQUEST]", {
+      phase: "before-execution",
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      model,
+      sdkRequest: {
+        path: `${resolveModelResource(model)}:predict`,
+        httpMethod: "POST",
+        body: redactVertexEditPredictPayload(payload),
+      },
+      serializedBodyBytes: Buffer.byteLength(serializedPayload, "utf8"),
+    });
+
     nLog("[VERTEX_CONTINUITY_IMAGEN_RENDER]", {
       phase: "start",
       continuityGroupId: request.continuityGroupId || null,
@@ -383,7 +582,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       const apiClient = (ai as any).apiClient;
       const rawResponse = await apiClient.request({
         path: `${resolveModelResource(model)}:predict`,
-        body: JSON.stringify(payload),
+        body: serializedPayload,
         httpMethod: "POST",
         httpOptions: {
           timeout: 120000,

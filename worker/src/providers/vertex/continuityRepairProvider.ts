@@ -45,12 +45,20 @@ function summarizeRenderPayload(payload: Record<string, unknown> | null | undefi
   const instances = Array.isArray(payload.instances) ? payload.instances : [];
   const firstInstance = (instances[0] as Record<string, any> | undefined) || undefined;
   const parameters = (payload.parameters as Record<string, any> | undefined) || undefined;
+  const referenceImages = Array.isArray(firstInstance?.referenceImages)
+    ? firstInstance.referenceImages
+    : [];
 
   return {
     instanceCount: instances.length,
     hasPrompt: typeof firstInstance?.prompt === "string" && firstInstance.prompt.length > 0,
+    referenceImageCount: referenceImages.length,
     sourceImageKeys: firstInstance?.image ? Object.keys(firstInstance.image) : [],
     maskImageKeys: firstInstance?.mask?.image ? Object.keys(firstInstance.mask.image) : [],
+    referenceImageKeys: referenceImages.map((entry: Record<string, any>) => ({
+      referenceImageKeys: entry?.referenceImage ? Object.keys(entry.referenceImage) : [],
+      configKeys: entry?.config ? Object.keys(entry.config) : [],
+    })),
     guidanceScale: parameters?.guidanceScale ?? null,
     editMode: parameters?.editMode ?? null,
     maskMode: parameters?.maskMode ?? null,
