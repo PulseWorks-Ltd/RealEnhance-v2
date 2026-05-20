@@ -22,17 +22,28 @@ jest.mock("../src/logger", () => ({
   nLog: mockNLog,
 }));
 
-import { VertexImageRendererProvider } from "../src/providers/vertex/imageRendererProvider";
+import {
+  resolveNearestImagenAspectRatio,
+  VertexImageRendererProvider,
+} from "../src/providers/vertex/imageRendererProvider";
 
-async function makeImageFile(name: string): Promise<{ filePath: string; cleanup: () => Promise<void> }> {
+async function makeImageFile(
+  name: string,
+  options?: {
+    width?: number;
+    height?: number;
+    channels?: 3 | 4;
+    background?: { r: number; g: number; b: number; alpha?: number };
+  }
+): Promise<{ filePath: string; cleanup: () => Promise<void> }> {
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), `vertex-renderer-${name}-`));
   const filePath = path.join(tempDir, `${name}.png`);
   await sharp({
     create: {
-      width: 8,
-      height: 8,
-      channels: 3,
-      background: { r: 100, g: 120, b: 140 },
+      width: options?.width ?? 8,
+      height: options?.height ?? 8,
+      channels: options?.channels ?? 3,
+      background: options?.background ?? { r: 100, g: 120, b: 140 },
     },
   }).png().toFile(filePath);
 
@@ -57,6 +68,7 @@ async function makePngBuffer(): Promise<Buffer> {
 
 describe("vertex image renderer preflight", () => {
   const originalFlatSchemaEnv = process.env.VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA;
+  const originalAspectRatioNormalizationEnv = process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION;
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -65,6 +77,49 @@ describe("vertex image renderer preflight", () => {
     } else {
       process.env.VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA = originalFlatSchemaEnv;
     }
+    if (originalAspectRatioNormalizationEnv === undefined) {
+      delete process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION;
+    } else {
+      process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION = originalAspectRatioNormalizationEnv;
+    }
+  });
+
+  it("resolves 3:2 landscape dimensions to the nearest supported 4:3 canvas", () => {
+    expect(resolveNearestImagenAspectRatio(2048, 1365)).toEqual({
+      originalWidth: 2048,
+      originalHeight: 1365,
+      originalRatio: 2048 / 1365,
+      targetWidth: 2048,
+      targetHeight: 1536,
+      paddedWidth: 2048,
+      paddedHeight: 1536,
+      targetRatio: 4 / 3,
+      targetAspectRatio: "4:3",
+      padLeft: 0,
+      padRight: 0,
+      padTop: 85,
+      padBottom: 86,
+      normalizationApplied: true,
+    });
+  });
+
+  it("resolves portrait dimensions to the nearest supported 3:4 canvas", () => {
+    expect(resolveNearestImagenAspectRatio(1365, 2048)).toEqual({
+      originalWidth: 1365,
+      originalHeight: 2048,
+      originalRatio: 1365 / 2048,
+      targetWidth: 1536,
+      targetHeight: 2048,
+      paddedWidth: 1536,
+      paddedHeight: 2048,
+      targetRatio: 3 / 4,
+      targetAspectRatio: "3:4",
+      padLeft: 85,
+      padRight: 86,
+      padTop: 0,
+      padBottom: 0,
+      normalizationApplied: true,
+    });
   });
 
   it("fails before Vertex request when the source image file is empty", async () => {
@@ -263,6 +318,205 @@ describe("vertex image renderer preflight", () => {
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"rawReferenceImage\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"maskReferenceImage\"");
 
+    await mask.cleanup();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("pads unsupported source and mask identically and restores the original crop after render", async () => {
+    process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION = "true";
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vertex-renderer-aspect-"));
+    const source = await makeImageFile("source-aspect", {
+      width: 6,
+      height: 4,
+      background: { r: 20, g: 40, b: 200 },
+    });
+    const mask = await makeImageFile("mask-aspect", {
+      width: 6,
+      height: 4,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    });
+    const generated = await sharp({
+      create: {
+        width: 8,
+        height: 6,
+        channels: 4,
+        background: { r: 255, g: 0, b: 0, alpha: 1 },
+      },
+    })
+      .composite([
+        {
+          input: await sharp({
+            create: {
+              width: 6,
+              height: 4,
+              channels: 4,
+              background: { r: 0, g: 255, b: 0, alpha: 1 },
+            },
+          }).png().toBuffer(),
+          left: 1,
+          top: 1,
+        },
+      ])
+      .png()
+      .toBuffer();
+
+    mockRequest.mockImplementation(async (request: { body: string }) => ({
+      json: async () => ({
+        predictions: [
+          {
+            bytesBase64Encoded: generated.toString("base64"),
+            mimeType: "image/png",
+          },
+        ],
+      }),
+    }));
+
+    const provider = new VertexImageRendererProvider();
+    const outputPath = path.join(tempDir, "out.webp");
+
+    await provider.render({
+      sourceImage: {
+        kind: "local",
+        localPath: source.filePath,
+        mimeType: "image/png",
+        sourceLabel: "secondary-continuity-source",
+      },
+      maskImage: {
+        kind: "local",
+        localPath: mask.filePath,
+        mimeType: "image/png",
+        sourceLabel: "continuity-mask",
+      },
+      outputPath,
+      prompt: "test prompt",
+      jobId: "job-render-aspect",
+      imageId: "img-render-aspect",
+      renderMode: "full_secondary_continuity",
+    });
+
+    const body = JSON.parse(mockRequest.mock.calls[0][0].body);
+    const sourceBytes = body.instances[0].referenceImages[0].rawReferenceImage.image.bytesBase64Encoded;
+    const maskBytes = body.instances[0].referenceImages[1].maskReferenceImage.image.bytesBase64Encoded;
+    const sourceMetadata = await sharp(Buffer.from(sourceBytes, "base64")).metadata();
+    const maskMetadata = await sharp(Buffer.from(maskBytes, "base64")).metadata();
+
+    expect(sourceMetadata.width).toBe(8);
+    expect(sourceMetadata.height).toBe(6);
+    expect(maskMetadata.width).toBe(8);
+    expect(maskMetadata.height).toBe(6);
+
+    const normalizationLogCall = mockNLog.mock.calls.find((call) => call[0] === "[VERTEX_ASPECT_RATIO_NORMALIZATION]");
+    expect(normalizationLogCall).toBeDefined();
+    expect(normalizationLogCall?.[1]).toMatchObject({
+      featureEnabled: true,
+      normalizationApplied: true,
+      originalDimensions: { width: 6, height: 4 },
+      paddedDimensions: { width: 8, height: 6 },
+      paddingApplied: { left: 1, right: 1, top: 1, bottom: 1 },
+      targetRatio: "4:3",
+    });
+
+    const restorationLogCall = mockNLog.mock.calls.find((call) => call[0] === "[VERTEX_ASPECT_RATIO_RESTORATION]");
+    expect(restorationLogCall).toBeDefined();
+    expect(restorationLogCall?.[1]).toMatchObject({
+      normalizationApplied: true,
+      originalDimensions: { width: 6, height: 4 },
+      paddedDimensions: { width: 8, height: 6 },
+      crop: { left: 1, top: 1, width: 6, height: 4 },
+      targetRatio: "4:3",
+    });
+
+    const outputMetadata = await sharp(outputPath).metadata();
+    expect(outputMetadata.width).toBe(6);
+    expect(outputMetadata.height).toBe(4);
+
+    const outputPixels = await sharp(outputPath).raw().toBuffer({ resolveWithObject: true });
+    expect(outputPixels.info.width).toBe(6);
+    expect(outputPixels.info.height).toBe(4);
+    expect(outputPixels.data[1]).toBeGreaterThan(outputPixels.data[0]);
+    expect(outputPixels.data[1]).toBeGreaterThan(outputPixels.data[2]);
+
+    await source.cleanup();
+    await mask.cleanup();
+    await fs.rm(tempDir, { recursive: true, force: true });
+  });
+
+  it("does not pad already supported aspect ratios", async () => {
+    process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION = "true";
+
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vertex-renderer-supported-"));
+    const source = await makeImageFile("source-supported", {
+      width: 8,
+      height: 6,
+      background: { r: 20, g: 40, b: 200 },
+    });
+    const mask = await makeImageFile("mask-supported", {
+      width: 8,
+      height: 6,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    });
+    const generated = await sharp({
+      create: {
+        width: 8,
+        height: 6,
+        channels: 3,
+        background: { r: 10, g: 20, b: 30 },
+      },
+    }).png().toBuffer();
+
+    mockRequest.mockImplementation(async () => ({
+      json: async () => ({
+        predictions: [
+          {
+            bytesBase64Encoded: generated.toString("base64"),
+            mimeType: "image/png",
+          },
+        ],
+      }),
+    }));
+
+    const provider = new VertexImageRendererProvider();
+    const outputPath = path.join(tempDir, "out.webp");
+
+    await provider.render({
+      sourceImage: {
+        kind: "local",
+        localPath: source.filePath,
+        mimeType: "image/png",
+        sourceLabel: "secondary-continuity-source",
+      },
+      maskImage: {
+        kind: "local",
+        localPath: mask.filePath,
+        mimeType: "image/png",
+        sourceLabel: "continuity-mask",
+      },
+      outputPath,
+      prompt: "test prompt",
+      jobId: "job-render-supported",
+      imageId: "img-render-supported",
+      renderMode: "full_secondary_continuity",
+    });
+
+    const normalizationLogCall = mockNLog.mock.calls.find((call) => call[0] === "[VERTEX_ASPECT_RATIO_NORMALIZATION]");
+    expect(normalizationLogCall).toBeDefined();
+    expect(normalizationLogCall?.[1]).toMatchObject({
+      featureEnabled: true,
+      normalizationApplied: false,
+      originalDimensions: { width: 8, height: 6 },
+      paddedDimensions: { width: 8, height: 6 },
+      paddingApplied: { left: 0, right: 0, top: 0, bottom: 0 },
+      targetRatio: "4:3",
+    });
+
+    const outputMetadata = await sharp(outputPath).metadata();
+    expect(outputMetadata.width).toBe(8);
+    expect(outputMetadata.height).toBe(6);
+
+    await source.cleanup();
     await mask.cleanup();
     await fs.rm(tempDir, { recursive: true, force: true });
   });

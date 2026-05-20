@@ -22,8 +22,34 @@ const VERTEX_REFERENCE_TYPE_MASK = "REFERENCE_TYPE_MASK" as const;
 const VERTEX_MASK_MODE_USER_PROVIDED = "MASK_MODE_USER_PROVIDED" as const;
 const VERTEX_EDIT_MODE_INPAINT_INSERTION = "EDIT_MODE_INPAINT_INSERTION" as const;
 const VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA_ENV = "VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA" as const;
+const VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION_ENV = "VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION" as const;
+
+const SUPPORTED_IMAGEN_ASPECT_RATIOS = [
+  { label: "1:1", widthUnits: 1, heightUnits: 1, value: 1 },
+  { label: "4:3", widthUnits: 4, heightUnits: 3, value: 4 / 3 },
+  { label: "3:4", widthUnits: 3, heightUnits: 4, value: 3 / 4 },
+  { label: "16:9", widthUnits: 16, heightUnits: 9, value: 16 / 9 },
+  { label: "9:16", widthUnits: 9, heightUnits: 16, value: 9 / 16 },
+] as const;
 
 export type VertexPayloadSchemaMode = "wrapper" | "flat";
+
+export type ImagenAspectRatioNormalizationMetadata = {
+  originalWidth: number;
+  originalHeight: number;
+  originalRatio: number;
+  targetWidth: number;
+  targetHeight: number;
+  paddedWidth: number;
+  paddedHeight: number;
+  targetRatio: number;
+  targetAspectRatio: (typeof SUPPORTED_IMAGEN_ASPECT_RATIOS)[number]["label"];
+  padLeft: number;
+  padRight: number;
+  padTop: number;
+  padBottom: number;
+  normalizationApplied: boolean;
+};
 
 // Proto3 JSON wire format for EditableReferenceImage.raw_reference_image variant.
 //
@@ -96,6 +122,97 @@ type VertexEditPredictPayload = {
 function resolveVertexPayloadSchemaMode(): VertexPayloadSchemaMode {
   const rawValue = String(process.env[VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA_ENV] || "").trim().toLowerCase();
   return rawValue === "true" ? "flat" : "wrapper";
+}
+
+function isVertexImagenAspectRatioNormalizationEnabled(): boolean {
+  return String(process.env[VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION_ENV] || "").trim().toLowerCase() === "true";
+}
+
+function findSupportedImagenAspectRatio(width: number, height: number) {
+  return SUPPORTED_IMAGEN_ASPECT_RATIOS.find((candidate) => width * candidate.heightUnits === height * candidate.widthUnits);
+}
+
+export function resolveNearestImagenAspectRatio(width: number, height: number): ImagenAspectRatioNormalizationMetadata {
+  if (!Number.isFinite(width) || width <= 0 || !Number.isFinite(height) || height <= 0) {
+    throw new Error(`Invalid image dimensions for Imagen aspect ratio normalization: ${width}x${height}`);
+  }
+
+  const originalRatio = width / height;
+  const exactMatch = findSupportedImagenAspectRatio(width, height);
+  if (exactMatch) {
+    return {
+      originalWidth: width,
+      originalHeight: height,
+      originalRatio,
+      targetWidth: width,
+      targetHeight: height,
+      paddedWidth: width,
+      paddedHeight: height,
+      targetRatio: exactMatch.value,
+      targetAspectRatio: exactMatch.label,
+      padLeft: 0,
+      padRight: 0,
+      padTop: 0,
+      padBottom: 0,
+      normalizationApplied: false,
+    };
+  }
+
+  const bestCandidate = [...SUPPORTED_IMAGEN_ASPECT_RATIOS]
+    .map((candidate) => {
+      const scale = Math.max(
+        Math.ceil(width / candidate.widthUnits),
+        Math.ceil(height / candidate.heightUnits)
+      );
+      const targetWidth = scale * candidate.widthUnits;
+      const targetHeight = scale * candidate.heightUnits;
+      const totalPadWidth = targetWidth - width;
+      const totalPadHeight = targetHeight - height;
+      const padLeft = Math.floor(totalPadWidth / 2);
+      const padRight = totalPadWidth - padLeft;
+      const padTop = Math.floor(totalPadHeight / 2);
+      const padBottom = totalPadHeight - padTop;
+      return {
+        candidate,
+        targetWidth,
+        targetHeight,
+        totalAddedPixels: (targetWidth * targetHeight) - (width * height),
+        ratioDelta: Math.abs(originalRatio - candidate.value),
+        padLeft,
+        padRight,
+        padTop,
+        padBottom,
+      };
+    })
+    .sort((left, right) => {
+      if (left.ratioDelta !== right.ratioDelta) {
+        return left.ratioDelta - right.ratioDelta;
+      }
+      if (left.totalAddedPixels !== right.totalAddedPixels) {
+        return left.totalAddedPixels - right.totalAddedPixels;
+      }
+      if (left.targetWidth !== right.targetWidth) {
+        return left.targetWidth - right.targetWidth;
+      }
+      return left.targetHeight - right.targetHeight;
+    })[0];
+
+  return {
+    originalWidth: width,
+    originalHeight: height,
+    originalRatio,
+    targetWidth: bestCandidate.targetWidth,
+    targetHeight: bestCandidate.targetHeight,
+    paddedWidth: bestCandidate.targetWidth,
+    paddedHeight: bestCandidate.targetHeight,
+    targetRatio: bestCandidate.candidate.value,
+    targetAspectRatio: bestCandidate.candidate.label,
+    padLeft: bestCandidate.padLeft,
+    padRight: bestCandidate.padRight,
+    padTop: bestCandidate.padTop,
+    padBottom: bestCandidate.padBottom,
+    normalizationApplied: true,
+  };
 }
 
 function compactPromptSegment(values: string[]): string[] {
@@ -249,6 +366,157 @@ async function inspectRenderArtifact(
     format: metadata.format || null,
     decodedMimeType,
   };
+}
+
+async function inspectLocalRenderDimensions(localPath: string, role: "source" | "mask"): Promise<{
+  width: number;
+  height: number;
+  format: string | null;
+}> {
+  const metadata = await sharp(localPath).metadata().catch(() => ({ width: 0, height: 0, format: null }));
+  if (!metadata.width || !metadata.height) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity ${role} image local artifact has invalid dimensions: ${localPath}`,
+      `imagen_${role}_image_invalid_dimensions`
+    );
+  }
+  return {
+    width: metadata.width,
+    height: metadata.height,
+    format: metadata.format || null,
+  };
+}
+
+async function padLocalRenderImageInPlace(params: {
+  localPath: string;
+  role: "source" | "mask";
+  metadata: ImagenAspectRatioNormalizationMetadata;
+}): Promise<void> {
+  const tempPath = `${params.localPath}.vertex-aspect-normalized.tmp`;
+  await sharp(params.localPath)
+    .extend({
+      left: params.metadata.padLeft,
+      right: params.metadata.padRight,
+      top: params.metadata.padTop,
+      bottom: params.metadata.padBottom,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    })
+    .png()
+    .toFile(tempPath);
+  await fs.rename(tempPath, params.localPath);
+}
+
+async function maybeNormalizeVertexAspectRatio(params: {
+  request: ImageRenderRequest;
+  sourceReference: ImageRenderRequest["sourceImage"];
+  maskReference: ImageRenderRequest["maskImage"];
+}): Promise<ImagenAspectRatioNormalizationMetadata | null> {
+  const featureEnabled = isVertexImagenAspectRatioNormalizationEnabled();
+  if (!featureEnabled) {
+    nLog("[VERTEX_ASPECT_RATIO_NORMALIZATION]", {
+      continuityGroupId: params.request.continuityGroupId || null,
+      imageId: params.request.imageId,
+      jobId: params.request.jobId,
+      renderMode: params.request.renderMode,
+      featureEnabled: false,
+      normalizationApplied: false,
+      originalDimensions: null,
+      maskDimensions: null,
+      originalRatio: null,
+      targetRatio: null,
+      paddedDimensions: null,
+      paddingApplied: null,
+      skippedReason: "feature_disabled",
+    });
+    return null;
+  }
+
+  if (
+    params.sourceReference.kind !== "local" ||
+    !params.sourceReference.localPath ||
+    params.maskReference.kind !== "local" ||
+    !params.maskReference.localPath
+  ) {
+    nLog("[VERTEX_ASPECT_RATIO_NORMALIZATION]", {
+      continuityGroupId: params.request.continuityGroupId || null,
+      imageId: params.request.imageId,
+      jobId: params.request.jobId,
+      renderMode: params.request.renderMode,
+      featureEnabled,
+      normalizationApplied: false,
+      originalDimensions: null,
+      maskDimensions: null,
+      originalRatio: null,
+      targetRatio: null,
+      paddedDimensions: null,
+      paddingApplied: null,
+      skippedReason: "non_local_reference",
+    });
+    return null;
+  }
+
+  const [sourceDimensions, maskDimensions] = await Promise.all([
+    inspectLocalRenderDimensions(params.sourceReference.localPath, "source"),
+    inspectLocalRenderDimensions(params.maskReference.localPath, "mask"),
+  ]);
+
+  if (sourceDimensions.width !== maskDimensions.width || sourceDimensions.height !== maskDimensions.height) {
+    throw new VertexSecondaryContinuityError(
+      `Vertex continuity source/mask dimensions diverged before Imagen normalization: source=${sourceDimensions.width}x${sourceDimensions.height} mask=${maskDimensions.width}x${maskDimensions.height}`,
+      "imagen_aspect_ratio_normalization_dimension_mismatch"
+    );
+  }
+
+  const metadata = resolveNearestImagenAspectRatio(sourceDimensions.width, sourceDimensions.height);
+  const normalizationApplied = featureEnabled && metadata.normalizationApplied;
+
+  if (normalizationApplied) {
+    // Padding is symmetric so planner-space coordinates translate by fixed offsets and
+    // are restored by subtracting the same offsets from the generated canvas.
+    await Promise.all([
+      padLocalRenderImageInPlace({
+        localPath: params.sourceReference.localPath,
+        role: "source",
+        metadata,
+      }),
+      padLocalRenderImageInPlace({
+        localPath: params.maskReference.localPath,
+        role: "mask",
+        metadata,
+      }),
+    ]);
+  }
+
+  nLog("[VERTEX_ASPECT_RATIO_NORMALIZATION]", {
+    continuityGroupId: params.request.continuityGroupId || null,
+    imageId: params.request.imageId,
+    jobId: params.request.jobId,
+    renderMode: params.request.renderMode,
+    featureEnabled,
+    normalizationApplied,
+    originalDimensions: {
+      width: metadata.originalWidth,
+      height: metadata.originalHeight,
+    },
+    maskDimensions: {
+      width: maskDimensions.width,
+      height: maskDimensions.height,
+    },
+    originalRatio: metadata.originalRatio,
+    targetRatio: metadata.targetAspectRatio,
+    paddedDimensions: {
+      width: metadata.paddedWidth,
+      height: metadata.paddedHeight,
+    },
+    paddingApplied: {
+      left: normalizationApplied ? metadata.padLeft : 0,
+      right: normalizationApplied ? metadata.padRight : 0,
+      top: normalizationApplied ? metadata.padTop : 0,
+      bottom: normalizationApplied ? metadata.padBottom : 0,
+    },
+  });
+
+  return normalizationApplied ? metadata : null;
 }
 
 async function snapshotLocalRenderReference(params: {
@@ -1188,6 +1456,11 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
     });
     const sourceReference = sourceSnapshot.reference;
     const maskReference = maskSnapshot.reference;
+    const aspectRatioNormalization = await maybeNormalizeVertexAspectRatio({
+      request,
+      sourceReference,
+      maskReference,
+    });
 
     const sourcePrepared = await buildVerifiedVertexImagePayload(sourceReference, "source");
     const maskPrepared = await buildVerifiedVertexImagePayload(maskReference, "mask");
@@ -1340,7 +1613,71 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
 
       const generated = extractGeneratedImage(rawResponse);
       const imageBuffer = Buffer.from(generated.imageBytes, "base64");
-      await sharp(imageBuffer).webp({ quality: 95 }).toFile(request.outputPath);
+      if (aspectRatioNormalization) {
+        const generatedMetadata = await sharp(imageBuffer).metadata();
+        if (
+          !generatedMetadata.width ||
+          !generatedMetadata.height ||
+          generatedMetadata.width < aspectRatioNormalization.paddedWidth ||
+          generatedMetadata.height < aspectRatioNormalization.paddedHeight
+        ) {
+          throw new VertexSecondaryContinuityError(
+            `Vertex generated image dimensions cannot restore original framing: generated=${generatedMetadata.width || 0}x${generatedMetadata.height || 0} expected_at_least=${aspectRatioNormalization.paddedWidth}x${aspectRatioNormalization.paddedHeight}`,
+            "imagen_aspect_ratio_restoration_invalid_dimensions"
+          );
+        }
+
+        await sharp(imageBuffer)
+          .extract({
+            left: aspectRatioNormalization.padLeft,
+            top: aspectRatioNormalization.padTop,
+            width: aspectRatioNormalization.originalWidth,
+            height: aspectRatioNormalization.originalHeight,
+          })
+          .webp({ quality: 95 })
+          .toFile(request.outputPath);
+
+        nLog("[VERTEX_ASPECT_RATIO_RESTORATION]", {
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          renderMode: request.renderMode,
+          normalizationApplied: true,
+          originalDimensions: {
+            width: aspectRatioNormalization.originalWidth,
+            height: aspectRatioNormalization.originalHeight,
+          },
+          paddedDimensions: {
+            width: aspectRatioNormalization.paddedWidth,
+            height: aspectRatioNormalization.paddedHeight,
+          },
+          generatedDimensions: {
+            width: generatedMetadata.width,
+            height: generatedMetadata.height,
+          },
+          crop: {
+            left: aspectRatioNormalization.padLeft,
+            top: aspectRatioNormalization.padTop,
+            width: aspectRatioNormalization.originalWidth,
+            height: aspectRatioNormalization.originalHeight,
+          },
+          targetRatio: aspectRatioNormalization.targetAspectRatio,
+        });
+      } else {
+        await sharp(imageBuffer).webp({ quality: 95 }).toFile(request.outputPath);
+        nLog("[VERTEX_ASPECT_RATIO_RESTORATION]", {
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          renderMode: request.renderMode,
+          normalizationApplied: false,
+          originalDimensions: null,
+          paddedDimensions: null,
+          generatedDimensions: null,
+          crop: null,
+          targetRatio: null,
+        });
+      }
       await fs.access(request.outputPath);
       const latencyMs = Date.now() - startedAt;
 
