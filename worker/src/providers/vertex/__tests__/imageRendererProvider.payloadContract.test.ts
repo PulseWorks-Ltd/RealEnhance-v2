@@ -27,6 +27,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   buildVertexEditPredictPayload,
+  buildVertexEditPredictPayloadFlat,
+  buildVertexEditPredictPayloadForMode,
   type VertexWireImagePayload,
 } from "../imageRendererProvider.js";
 
@@ -51,6 +53,15 @@ function buildPayload() {
   });
 }
 
+function buildFlatPayload() {
+  return buildVertexEditPredictPayloadFlat({
+    prompt: "test prompt",
+    sourcePayload,
+    maskPayload,
+    guidanceScale: 12,
+  });
+}
+
 // ─── Structure ───────────────────────────────────────────────────────────────
 
 test("instances[0] has exactly one prompt and two referenceImages", () => {
@@ -59,6 +70,32 @@ test("instances[0] has exactly one prompt and two referenceImages", () => {
   const instance = payload.instances[0]!;
   assert.equal(instance.prompt, "test prompt");
   assert.equal(instance.referenceImages.length, 2);
+});
+
+test("mode-based builder selects wrapper schema deterministically", () => {
+  const payload = buildVertexEditPredictPayloadForMode({
+    prompt: "test prompt",
+    sourcePayload,
+    maskPayload,
+    guidanceScale: 12,
+    payloadSchemaMode: "wrapper",
+  });
+
+  assert.ok("rawReferenceImage" in payload.instances[0]!.referenceImages[0]!);
+  assert.ok("maskReferenceImage" in payload.instances[0]!.referenceImages[1]!);
+});
+
+test("mode-based builder selects flat schema deterministically", () => {
+  const payload = buildVertexEditPredictPayloadForMode({
+    prompt: "test prompt",
+    sourcePayload,
+    maskPayload,
+    guidanceScale: 12,
+    payloadSchemaMode: "flat",
+  });
+
+  assert.ok("referenceImage" in payload.instances[0]!.referenceImages[0]!);
+  assert.ok("referenceImage" in payload.instances[0]!.referenceImages[1]!);
 });
 
 // ─── Source: rawReferenceImage wrapper ───────────────────────────────────────
@@ -273,5 +310,63 @@ test("GCS uri source uses rawReferenceImage wrapper and no imageBytes", () => {
   assert.equal(inner.imageBytes, undefined);
   assert.equal(inner.bytesBase64Encoded, undefined);
   assert.equal(sourceEntry.rawReferenceImage.referenceImage, undefined);
+});
+
+// ─── Flat schema probe ──────────────────────────────────────────────────────
+
+test("flat source uses referenceImage and rejects rawReferenceImage wrapper", () => {
+  const payload = buildFlatPayload();
+  const sourceEntry = payload.instances[0]!.referenceImages[0]! as Record<string, unknown>;
+
+  assert.ok("referenceImage" in sourceEntry);
+  assert.equal(sourceEntry.rawReferenceImage, undefined);
+  assert.equal(sourceEntry.maskReferenceImage, undefined);
+  assert.equal(sourceEntry.config, undefined);
+});
+
+test("flat mask uses referenceImage plus config.maskMode and no wrappers", () => {
+  const payload = buildFlatPayload();
+  const maskEntry = payload.instances[0]!.referenceImages[1]! as Record<string, any>;
+
+  assert.ok("referenceImage" in maskEntry);
+  assert.equal(maskEntry.rawReferenceImage, undefined);
+  assert.equal(maskEntry.maskReferenceImage, undefined);
+  assert.equal(maskEntry.config?.maskMode, "MASK_MODE_USER_PROVIDED");
+});
+
+test("flat payload serializes deterministically with no mixed schema leakage", () => {
+  const serialised = JSON.parse(JSON.stringify(buildFlatPayload()));
+
+  assert.equal(serialised.instances[0].referenceImages[0].referenceImage.mimeType, "image/jpeg");
+  assert.ok(typeof serialised.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded === "string");
+  assert.equal(serialised.instances[0].referenceImages[0].rawReferenceImage, undefined);
+  assert.equal(serialised.instances[0].referenceImages[0].maskReferenceImage, undefined);
+
+  assert.equal(serialised.instances[0].referenceImages[1].referenceImage.mimeType, "image/png");
+  assert.ok(typeof serialised.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded === "string");
+  assert.equal(serialised.instances[0].referenceImages[1].config.maskMode, "MASK_MODE_USER_PROVIDED");
+  assert.equal(serialised.instances[0].referenceImages[1].rawReferenceImage, undefined);
+  assert.equal(serialised.instances[0].referenceImages[1].maskReferenceImage, undefined);
+});
+
+test("flat GCS source uses referenceImage and no wrapper keys", () => {
+  const gcsSourcePayload: VertexWireImagePayload = {
+    gcsUri: "gs://my-bucket/source.jpeg",
+    mimeType: "image/jpeg",
+  };
+  const payload = buildVertexEditPredictPayloadFlat({
+    prompt: "gcs test",
+    sourcePayload: gcsSourcePayload,
+    maskPayload,
+    guidanceScale: 10,
+  });
+  const serialised = JSON.parse(JSON.stringify(payload));
+  const sourceEntry = serialised.instances[0].referenceImages[0];
+  assert.ok("referenceImage" in sourceEntry);
+  assert.equal(sourceEntry.rawReferenceImage, undefined);
+  assert.equal(sourceEntry.maskReferenceImage, undefined);
+  assert.equal(sourceEntry.referenceImage.gcsUri, "gs://my-bucket/source.jpeg");
+  assert.equal(sourceEntry.referenceImage.imageBytes, undefined);
+  assert.equal(sourceEntry.referenceImage.bytesBase64Encoded, undefined);
 });
 
