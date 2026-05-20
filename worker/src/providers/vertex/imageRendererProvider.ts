@@ -9,7 +9,7 @@ import type { ImageRendererProvider, ImageRenderRequest, ImageRenderResponse } f
 import { getVertexGenAiClient, getVertexProjectConfig } from "./adc";
 
 type VertexWireImagePayload = {
-  bytesBase64Encoded?: string;
+  imageBytes?: string;
   gcsUri?: string;
   mimeType?: string;
 };
@@ -225,21 +225,21 @@ async function snapshotLocalRenderReference(params: {
 }
 
 function summarizeVertexImagePayload(payload: Record<string, unknown>): Record<string, unknown> {
-  const bytesBase64Encoded = typeof payload.bytesBase64Encoded === "string"
-    ? payload.bytesBase64Encoded
+  const imageBytes = typeof payload.imageBytes === "string"
+    ? payload.imageBytes
     : "";
   const gcsUri = typeof payload.gcsUri === "string"
     ? payload.gcsUri
     : null;
 
   return {
-    hasInlineBytes: bytesBase64Encoded.length > 0,
-    inlineBytesLength: bytesBase64Encoded.length,
+    hasInlineBytes: imageBytes.length > 0,
+    inlineBytesLength: imageBytes.length,
     hasGcsUri: Boolean(gcsUri),
     gcsUri,
     mimeType: typeof payload.mimeType === "string" ? payload.mimeType : null,
     keys: Object.keys(payload),
-    payloadImageMode: gcsUri ? "gcsUri" : bytesBase64Encoded.length > 0 ? "inline_bytes" : "missing",
+    payloadImageMode: gcsUri ? "gcsUri" : imageBytes.length > 0 ? "inline_bytes" : "missing",
   };
 }
 
@@ -287,11 +287,11 @@ function redactVertexWireImagePayload(payload: VertexWireImagePayload): Record<s
   return {
     ...("gcsUri" in payload && payload.gcsUri ? { gcsUri: payload.gcsUri } : {}),
     ...("mimeType" in payload && payload.mimeType ? { mimeType: payload.mimeType } : {}),
-    ...("bytesBase64Encoded" in payload
+    ...("imageBytes" in payload
       ? {
-          bytesBase64Encoded: typeof payload.bytesBase64Encoded === "string"
-            ? `<base64:${payload.bytesBase64Encoded.length}>`
-            : payload.bytesBase64Encoded,
+          imageBytes: typeof payload.imageBytes === "string"
+            ? `<base64:${payload.imageBytes.length}>`
+            : payload.imageBytes,
         }
       : {}),
   };
@@ -383,10 +383,10 @@ function validateSerializedVertexEditPredictPayload(params: {
         `imagen_edit_payload_serialization_invalid_${expectedRole}_mime_type`
       );
     }
-    const bytesBase64Encoded = typeof referenceImage.referenceImage.bytesBase64Encoded === "string"
-      ? referenceImage.referenceImage.bytesBase64Encoded
+    const imageBytes = typeof referenceImage.referenceImage.imageBytes === "string"
+      ? referenceImage.referenceImage.imageBytes
       : "";
-    if (!referenceImage.referenceImage.gcsUri && bytesBase64Encoded.length <= 0) {
+    if (!referenceImage.referenceImage.gcsUri && imageBytes.length <= 0) {
       throw new VertexSecondaryContinuityError(
         `Vertex continuity ${expectedRole} referenceImage lost bytes and uri during serialization`,
         `imagen_edit_payload_serialization_missing_${expectedRole}_image_data`
@@ -445,11 +445,11 @@ function validateVertexEditPredictPayload(params: {
   const maskReference = firstInstance.referenceImages[1]?.referenceImage;
   const maskConfig = firstInstance.referenceImages[1]?.config;
 
-  const sourceBytesLength = typeof sourceReference?.bytesBase64Encoded === "string"
-    ? sourceReference.bytesBase64Encoded.length
+  const sourceBytesLength = typeof sourceReference?.imageBytes === "string"
+    ? sourceReference.imageBytes.length
     : 0;
-  const maskBytesLength = typeof maskReference?.bytesBase64Encoded === "string"
-    ? maskReference.bytesBase64Encoded.length
+  const maskBytesLength = typeof maskReference?.imageBytes === "string"
+    ? maskReference.imageBytes.length
     : 0;
 
   if (!sourceReference || (!sourceReference.gcsUri && sourceBytesLength <= 0)) {
@@ -556,7 +556,7 @@ async function buildVerifiedVertexImagePayload(
 
   return {
     payload: {
-      bytesBase64Encoded: fileBuffer.toString("base64"),
+      imageBytes: fileBuffer.toString("base64"),
       mimeType: (artifact.decodedMimeType as string) || reference.mimeType,
     },
     artifact,

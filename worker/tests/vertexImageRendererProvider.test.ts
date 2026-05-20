@@ -4,6 +4,7 @@ import path from "path";
 import sharp from "sharp";
 
 const mockRequest = jest.fn();
+const mockNLog = jest.fn();
 
 jest.mock("../src/providers/vertex/adc", () => ({
   getVertexGenAiClient: jest.fn(() => ({
@@ -18,7 +19,7 @@ jest.mock("../src/providers/vertex/adc", () => ({
 }));
 
 jest.mock("../src/logger", () => ({
-  nLog: jest.fn(),
+  nLog: mockNLog,
 }));
 
 import { VertexImageRendererProvider } from "../src/providers/vertex/imageRendererProvider";
@@ -96,7 +97,7 @@ describe("vertex image renderer preflight", () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it("serializes local payloads with decoder-verified mime instead of file extension", async () => {
+  it("serializes referenceImages with SDK Image fields and decoder-verified mime", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vertex-renderer-mime-"));
     const sourcePath = path.join(tempDir, "source-misleading.jpg");
     await fs.writeFile(sourcePath, await makePngBuffer());
@@ -139,9 +140,30 @@ describe("vertex image renderer preflight", () => {
 
     expect(mockRequest).toHaveBeenCalledTimes(1);
     const body = JSON.parse(mockRequest.mock.calls[0][0].body);
-    expect(body.instances[0].image.mimeType).toBe("image/png");
-    expect(typeof body.instances[0].image.bytesBase64Encoded).toBe("string");
-    expect(body.instances[0].image.bytesBase64Encoded.length).toBeGreaterThan(0);
+    expect(body.instances[0].prompt).toContain("test prompt");
+    expect(Array.isArray(body.instances[0].referenceImages)).toBe(true);
+    expect(body.instances[0].referenceImages).toHaveLength(2);
+
+    expect(body.instances[0].referenceImages[0].config).toBeUndefined();
+    expect(body.instances[0].referenceImages[0].referenceImage.mimeType).toBe("image/png");
+    expect(typeof body.instances[0].referenceImages[0].referenceImage.imageBytes).toBe("string");
+    expect(body.instances[0].referenceImages[0].referenceImage.imageBytes.length).toBeGreaterThan(0);
+
+    expect(body.instances[0].referenceImages[1].config.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.instances[0].referenceImages[1].referenceImage.mimeType).toBe("image/png");
+    expect(typeof body.instances[0].referenceImages[1].referenceImage.imageBytes).toBe("string");
+    expect(body.instances[0].referenceImages[1].referenceImage.imageBytes.length).toBeGreaterThan(0);
+
+    expect(body.parameters.editMode).toBe("EDIT_MODE_INPAINT_INSERTION");
+    expect(body.parameters.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.parameters.outputOptions.mimeType).toBe("image/png");
+
+    const sdkRequestLogCall = mockNLog.mock.calls.find((call) => call[0] === "[VERTEX_CONTINUITY_RENDER_SDK_REQUEST]");
+    expect(sdkRequestLogCall).toBeDefined();
+
+    const sdkRequestLogPayload = sdkRequestLogCall?.[1];
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"imageBytes\":\"<base64:");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("bytesBase64Encoded");
 
     await mask.cleanup();
     await fs.rm(tempDir, { recursive: true, force: true });
