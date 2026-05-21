@@ -37,7 +37,7 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
-import { getCardArtifactView, type DisplayOutputKey } from "@/lib/card-artifacts";
+import { getCardArtifactView, resolveImageUrlRoles, type DisplayOutputKey } from "@/lib/card-artifacts";
 import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
 
@@ -5570,9 +5570,13 @@ export default function BatchProcessor({
       selectedKey: selectedStage || null,
       originalFallback: previewUrls[index] || null,
     });
+    const urlRoles = resolveImageUrlRoles(result, {
+      selectedKey: selectedStage || null,
+      originalFallback: previewUrls[index] || null,
+    });
     const bestDisplayUrl = isEditedArtifactMissing
       ? null
-      : (artifactView.active?.url || previewUrls[index] || null);
+      : (urlRoles.displayUrl || previewUrls[index] || null);
     const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
 
     const persistedOriginalUrl =
@@ -8334,6 +8338,10 @@ export default function BatchProcessor({
                           selectedKey: requestedStage,
                           originalFallback: previewUrls[i] || null,
                         });
+                        const urlRoles = resolveImageUrlRoles(result, {
+                          selectedKey: requestedStage,
+                          originalFallback: previewUrls[i] || null,
+                        });
                         const activeArtifact = artifactView.active;
 
                         // Image Preview Logic with artifact preference (avoid failed/blocked outputs)
@@ -8363,8 +8371,9 @@ export default function BatchProcessor({
                             url: artifact.url,
                           }));
                         const displayedUrl = missingEditedArtifact ? null : (activeArtifact?.url || null);
-                        const bestDisplayUrl = missingEditedArtifact ? null : (activeArtifact?.url || null);
-                        const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
+                        const fullDisplayUrl = missingEditedArtifact ? null : (urlRoles.displayUrl || null);
+                        const bestDisplayUrl = fullDisplayUrl;
+                        const enhancedUrl = withVersion(fullDisplayUrl, result?.version || result?.updatedAt) || fullDisplayUrl;
                         const persistedOriginalUrl =
                           result?.result?.originalImageUrl ||
                           result?.originalImageUrl ||
@@ -8394,7 +8403,7 @@ export default function BatchProcessor({
                               result?.version || result?.updatedAt || result?.statusLastModified
                             ) || canonicalPreviewBase)
                           : null;
-                        const previewUrl = (() => {
+                        const detailPreviewUrl = (() => {
                           if (missingEditedArtifact) {
                             return null;
                           }
@@ -8415,7 +8424,11 @@ export default function BatchProcessor({
                             ? (enhancedUrl || progressivePreviewUrl || canonicalPreviewBase)
                             : (progressivePreviewUrl || canonicalPreviewBase);
                         })();
-                        const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
+                        const cardThumbnailUrl = missingEditedArtifact
+                          ? null
+                          : (urlRoles.thumbnailUrl || detailPreviewUrl || null);
+                        const cardImageUrl = cardThumbnailUrl || detailPreviewUrl;
+                        const isRetriedPreviewMissing = selectedStage === "retried" && !cardImageUrl;
                         const canEditThisImage = canEditArtifactAtIndex(i);
                         const hasFinalArtifactUrl = !!(
                           finalResultUrl ||
@@ -8468,14 +8481,14 @@ export default function BatchProcessor({
                             <div
                               className={`relative w-full aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
-                                if (!previewUrl) return;
+                                if (!cardImageUrl) return;
                                 openPreviewImage(i);
                               }}
                             >
-                              {previewUrl ? (
+                              {cardImageUrl ? (
                                 <img 
-                                  key={previewUrl}
-                                  src={previewUrl} 
+                                  key={cardImageUrl}
+                                  src={cardImageUrl} 
                                   alt={file.name} 
                                   className={`h-full w-full object-cover transition-opacity duration-300 ease-in-out animate-in fade-in ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
                                   onLoad={() => {
@@ -8487,19 +8500,24 @@ export default function BatchProcessor({
                                       toDisplayUrl(results[i]?.retryLatestUrl) ||
                                       toDisplayUrl(results[i]?.result?.retryLatestUrl) ||
                                       null;
-                                    const loadedPreviewUrl = toDisplayUrl(previewUrl);
+                                    const loadedPreviewUrl = toDisplayUrl(cardImageUrl);
                                     const isConfirmedRetryResult = !!(
                                       loadedPreviewUrl &&
                                       confirmedRetryUrl &&
                                       loadedPreviewUrl === confirmedRetryUrl
                                     );
-                                    if (!isRetryActiveNow || isConfirmedRetryResult) {
+                                    if (!isRetryActiveNow || isUiComplete || isConfirmedRetryResult) {
                                       clearRetryFlags(i);
                                     }
                                   }}
                                   onError={(e) => {
                                     clearRetryFlags(i);
+                                    const fullResFallback = detailPreviewUrl || "";
                                     const localFallback = previewUrls[i] || "";
+                                    if (fullResFallback && e.currentTarget.src !== fullResFallback) {
+                                      e.currentTarget.src = fullResFallback;
+                                      return;
+                                    }
                                     if (localFallback && e.currentTarget.src !== localFallback) {
                                       e.currentTarget.src = localFallback;
                                     }
@@ -8669,9 +8687,9 @@ export default function BatchProcessor({
                                       type="button"
                                       onClick={() => {
                                         if (!requireVerifiedEmail("download")) return;
-                                        const url = enhancedUrl || previewUrl;
-                                        if (url) {
-                                          void downloadDisplayedArtifact(url, i);
+                                        const downloadUrl = urlRoles.downloadUrl || fullDisplayUrl || enhancedUrl || detailPreviewUrl;
+                                        if (downloadUrl) {
+                                          void downloadDisplayedArtifact(downloadUrl, i);
                                         }
                                       }}
                                       className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition"

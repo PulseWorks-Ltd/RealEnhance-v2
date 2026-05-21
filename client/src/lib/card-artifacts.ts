@@ -19,6 +19,12 @@ export type CardArtifactView = {
   selectedKey: DisplayOutputKey | null;
 };
 
+export type ImageUrlRoles = {
+  thumbnailUrl: string | null;
+  displayUrl: string | null;
+  downloadUrl: string | null;
+};
+
 const toDisplayUrl = (value: unknown): string | null => {
   if (typeof value !== "string") return null;
   const normalized = value.trim();
@@ -33,6 +39,37 @@ const toDisplayUrl = (value: unknown): string | null => {
     return normalized;
   }
   return null;
+};
+
+const isSignedUrl = (url: string): boolean => {
+  const text = String(url || "");
+  return (
+    text.includes("X-Amz-Signature=") ||
+    text.includes("Signature=") ||
+    text.includes("GoogleAccessId=") ||
+    text.includes("X-Goog-Signature=")
+  );
+};
+
+const deriveThumbnailUrlFromDisplay = (displayUrl: string | null): string | null => {
+  if (!displayUrl || isSignedUrl(displayUrl)) return null;
+
+  try {
+    const parsed = new URL(displayUrl, "http://localhost");
+    const path = parsed.pathname || "";
+    const dotIndex = path.lastIndexOf(".");
+    if (dotIndex <= 0) return null;
+
+    parsed.pathname = `${path.slice(0, dotIndex)}__thumb_640x480.webp`;
+    const serialized = parsed.toString();
+    // Preserve relative URLs if the source was relative.
+    if (displayUrl.startsWith("/")) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return serialized;
+  } catch {
+    return null;
+  }
 };
 
 export function getCardArtifactView(
@@ -203,4 +240,31 @@ export function getCardArtifactView(
 export function resolveSafeStageUrl(data: any): { url: string | null; stage: StageKey | null } {
   const active = getCardArtifactView(data).active;
   return { url: active?.url || null, stage: active?.stage || null };
+}
+
+export function resolveImageUrlRoles(
+  data: any,
+  options?: {
+    selectedKey?: DisplayOutputKey | null;
+    originalFallback?: string | null;
+    stageFallback?: { stage2?: string | null; stage1B?: string | null; stage1A?: string | null };
+  }
+): ImageUrlRoles {
+  const view = getCardArtifactView(data, options);
+  const displayUrl = view.active?.url || null;
+  const explicitThumbnailUrl =
+    toDisplayUrl(data?.thumbnailUrl) ||
+    toDisplayUrl(data?.result?.thumbnailUrl) ||
+    toDisplayUrl(data?.thumbUrl) ||
+    toDisplayUrl(data?.result?.thumbUrl) ||
+    toDisplayUrl(data?.previewThumbnailUrl) ||
+    toDisplayUrl(data?.result?.previewThumbnailUrl) ||
+    null;
+  const derivedThumbnailUrl = deriveThumbnailUrlFromDisplay(displayUrl);
+
+  return {
+    thumbnailUrl: explicitThumbnailUrl || derivedThumbnailUrl,
+    displayUrl,
+    downloadUrl: displayUrl,
+  };
 }

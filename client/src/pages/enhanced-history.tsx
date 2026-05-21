@@ -363,6 +363,11 @@ export default function EnhancedHistoryPage() {
       const statusBadge = resolveHistoryStatusBadge(editStatusByImageId[String(image.id)]);
       const editIndex = editIndexByImageId.get(String(image.id));
       const isDeleteDisabled = !canDeleteImage(image);
+      const imageUrls = {
+        thumbnailUrl: image.thumbnailUrl || image.publicUrl,
+        displayUrl: image.publicUrl,
+        downloadUrl: image.publicUrl,
+      };
 
       return (
         <div
@@ -376,7 +381,7 @@ export default function EnhancedHistoryPage() {
         aria-label="Preview enhanced image"
       >
         <img
-          src={image.thumbnailUrl}
+          src={imageUrls.thumbnailUrl}
           alt="Enhanced property photo"
           className="w-full h-full object-cover"
           width={640}
