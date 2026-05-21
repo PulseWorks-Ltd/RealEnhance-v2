@@ -135,6 +135,74 @@ Do NOT:
 - "white-out" materials
 
 
+### PREMIUM INTERIOR AMBIENT RECOVERY
+
+TARGET AESTHETIC
+The final image should resemble a professionally photographed high-end New Zealand real estate listing captured using balanced flambient (flash + ambient) architectural photography techniques.
+
+The room should feel:
+
+- bright,
+- clean,
+- naturally open,
+- premium,
+- spacious,
+  while remaining fully realistic and structurally identical to the source image.
+
+AMBIENT LIGHT DISTRIBUTION
+Gently redistribute ambient luminance throughout darker regions of the room to reduce heavy visual weight and shadow density.
+
+Lift:
+
+- dark carpets,
+- corner falloff,
+- ceiling-edge dimness,
+- doorway transitions,
+- wardrobe recesses,
+- low-midtone wall regions,
+  using soft, spatially realistic tonal balancing.
+
+Avoid uniform global brightening.
+
+WINDOW & HIGHLIGHT DISCIPLINE
+Maintain strict highlight protection around:
+
+- windows,
+- blinds,
+- reflections,
+- bright exterior regions,
+- ceiling lights.
+
+Bright regions must remain naturally brighter than shadow regions to preserve realistic depth hierarchy.
+
+SPATIAL DEPTH PRESERVATION
+Preserve realistic depth gradients and natural light falloff.
+
+The room must retain:
+
+- dimensionality,
+- shadow layering,
+- directional light behavior,
+- realistic contrast separation.
+
+Do not flatten the image into an HDR-style exposure blend.
+
+PREMIUM MATERIAL RESPONSE
+Walls and ceilings should appear:
+
+- clean,
+- softly luminous,
+- professionally balanced,
+  without appearing overexposed or artificially whitened.
+
+Carpet textures, fabric grain, flooring texture, and reflective surfaces must retain realistic material depth and texture separation.
+
+SHADOW RECOVERY PERMISSION
+Treat heavy low-quality camera shadow compression and dark interior falloff as recoverable photographic limitations rather than protected scene characteristics.
+
+Where authentic pixel information exists, safely recover naturally visible detail and tonal separation from darker regions while preserving structural fidelity and realism.
+
+
 V. SAFE OPTICAL RESTORATION (CONTROLLED)
 
 You may perform subtle optical corrections to improve clarity, using ONLY existing pixel data.
