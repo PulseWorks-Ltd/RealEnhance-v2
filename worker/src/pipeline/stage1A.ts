@@ -18,6 +18,7 @@ import { logIfNotFocusMode } from "../logger";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import type { PipelineContext } from "../types/pipelineContext";
 import { applyStage1APostGenerationFinish } from "./stage1A-post-finish";
+import { resolveStage1AAblationSettings } from "./stage1A-presets";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -29,10 +30,6 @@ const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
 const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
 // Automatically disable Stability primary after a payment/credit error
 const DISABLE_STABILITY_ON_PAYMENT_REQUIRED = process.env.STABILITY_STAGE1A_DISABLE_ON_PAYMENT_REQUIRED !== "0";
-const STAGE1A_ENABLE_PRESERVATION_PREGEN = process.env.STAGE1A_ENABLE_PRESERVATION_PREGEN === "1";
-const STAGE1A_ENABLE_POSTGEN_FINISH = process.env.STAGE1A_ENABLE_POSTGEN_FINISH === "1";
-const STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE = process.env.STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE === "1";
-
 function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
   if (raw === undefined) return undefined;
   const normalized = String(raw).trim().toLowerCase();
@@ -75,6 +72,61 @@ interface TransformDiagnosticMeta {
   hasAlpha: boolean | null;
 }
 
+interface TransformTraceEvent {
+  operation: string;
+  phase: "before" | "after" | "skipped" | "error";
+  reason?: string;
+  gain?: number;
+  offset?: number;
+  gamma?: number;
+  values?: { brightness?: number; saturation?: number; hue?: number; lightness?: number };
+  meta: TransformDiagnosticMeta;
+}
+
+interface TransformTelemetryContext {
+  jobId: string;
+  sceneType: string;
+  roomType?: string;
+  trace?: TransformTraceEvent[];
+}
+
+const stage1ATransformSkipCounters = {
+  skippedLinearCount: 0,
+  skippedGammaCount: 0,
+  skippedModulateCount: 0,
+  skippedPostFinishCount: 0,
+};
+
+function recordTrace(context: TransformTelemetryContext | undefined, event: TransformTraceEvent): void {
+  if (!context?.trace) return;
+  context.trace.push(event);
+}
+
+function bumpSkipCounter(
+  key: keyof typeof stage1ATransformSkipCounters,
+  context: TransformTelemetryContext | undefined,
+  operation: string,
+  reason: string,
+  meta: TransformDiagnosticMeta
+): void {
+  stage1ATransformSkipCounters[key] += 1;
+  console.warn("[stage1A] transform_skip_metric", {
+    key,
+    operation,
+    reason,
+    count: stage1ATransformSkipCounters[key],
+    jobId: context?.jobId,
+    sceneType: context?.sceneType,
+    roomType: context?.roomType ?? null,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+  });
+}
+
 function toTransformDiagnosticMeta(meta: sharp.Metadata | null | undefined): TransformDiagnosticMeta {
   return {
     width: typeof meta?.width === "number" ? meta.width : null,
@@ -90,7 +142,7 @@ function isToneTransformCompatible(meta: TransformDiagnosticMeta): boolean {
   const channels = meta.channels ?? 0;
   const space = (meta.space || "").toLowerCase();
   const rgbLikeSpace = !space || space === "srgb" || space === "rgb";
-  return channels >= 3 && rgbLikeSpace;
+  return (channels === 3 || channels === 4) && rgbLikeSpace;
 }
 
 function logTransformDiagnostic(
@@ -120,7 +172,8 @@ function applyGuardedLinear(
   branch: string,
   gain: number,
   offset: number,
-  reason: string
+  reason: string,
+  context?: TransformTelemetryContext
 ): sharp.Sharp {
   if (!isToneTransformCompatible(meta)) {
     console.warn("[stage1A] Skipping unsupported linear() transform", {
@@ -136,11 +189,15 @@ function applyGuardedLinear(
       hasAlpha: meta.hasAlpha,
     });
     logTransformDiagnostic("linear", "skipped", meta, branch, { reason, gain, offset });
+    recordTrace(context, { operation: "linear", phase: "skipped", reason, gain, offset, meta });
+    bumpSkipCounter("skippedLinearCount", context, "linear", reason, meta);
     return image;
   }
   logTransformDiagnostic("linear", "before", meta, branch, { reason, gain, offset });
+  recordTrace(context, { operation: "linear", phase: "before", reason, gain, offset, meta });
   const next = image.linear(gain, offset);
   logTransformDiagnostic("linear", "after", meta, branch, { reason });
+  recordTrace(context, { operation: "linear", phase: "after", reason, gain, offset, meta });
   return next;
 }
 
@@ -149,7 +206,8 @@ function applyGuardedGamma(
   meta: TransformDiagnosticMeta,
   branch: string,
   gamma: number,
-  reason: string
+  reason: string,
+  context?: TransformTelemetryContext
 ): sharp.Sharp {
   if (!isToneTransformCompatible(meta)) {
     console.warn("[stage1A] Skipping unsupported gamma() transform", {
@@ -164,11 +222,15 @@ function applyGuardedGamma(
       hasAlpha: meta.hasAlpha,
     });
     logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma });
+    recordTrace(context, { operation: "gamma", phase: "skipped", reason, gamma, meta });
+    bumpSkipCounter("skippedGammaCount", context, "gamma", reason, meta);
     return image;
   }
   logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma });
+  recordTrace(context, { operation: "gamma", phase: "before", reason, gamma, meta });
   const next = image.gamma(gamma);
   logTransformDiagnostic("gamma", "after", meta, branch, { reason });
+  recordTrace(context, { operation: "gamma", phase: "after", reason, gamma, meta });
   return next;
 }
 
@@ -177,7 +239,8 @@ function applyGuardedModulate(
   meta: TransformDiagnosticMeta,
   branch: string,
   values: { brightness?: number; saturation?: number; hue?: number; lightness?: number },
-  reason: string
+  reason: string,
+  context?: TransformTelemetryContext
 ): sharp.Sharp {
   if (!isToneTransformCompatible(meta)) {
     console.warn("[stage1A] Skipping unsupported modulate() transform", {
@@ -192,17 +255,22 @@ function applyGuardedModulate(
       hasAlpha: meta.hasAlpha,
     });
     logTransformDiagnostic("modulate", "skipped", meta, branch, { reason });
+    recordTrace(context, { operation: "modulate", phase: "skipped", reason, values, meta });
+    bumpSkipCounter("skippedModulateCount", context, "modulate", reason, meta);
     return image;
   }
   logTransformDiagnostic("modulate", "before", meta, branch, { reason, ...values });
+  recordTrace(context, { operation: "modulate", phase: "before", reason, values, meta });
   const next = image.modulate(values);
   logTransformDiagnostic("modulate", "after", meta, branch, { reason });
+  recordTrace(context, { operation: "modulate", phase: "after", reason, values, meta });
   return next;
 }
 
-function getStage1APreGenerationControls(): Stage1APreGenerationControls {
-  const preservationMode = STAGE1A_ENABLE_PRESERVATION_PREGEN;
-  const normalizeEnabled = parseOptionalBoolean(process.env.STAGE1A_PREGEN_NORMALIZE_ENABLED) ?? true;
+function getStage1APreGenerationControls(sceneType?: string): Stage1APreGenerationControls {
+  const { settings } = resolveStage1AAblationSettings(sceneType);
+  const preservationMode = settings.STAGE1A_ENABLE_PRESERVATION_PREGEN;
+  const normalizeEnabled = settings.STAGE1A_PREGEN_NORMALIZE_ENABLED;
   const moveSharpenToPost = parseOptionalBoolean(process.env.STAGE1A_MOVE_SHARPEN_TO_POST)
     ?? preservationMode;
 
@@ -221,19 +289,20 @@ function getStage1APreGenerationControls(): Stage1APreGenerationControls {
       0,
       1
     ),
-    toneStackScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_TONE_STACK_SCALE, preservationMode ? 0.55 : 1, 0, 2),
-    localContrastScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_LOCAL_CONTRAST_SCALE, preservationMode ? 0.35 : 1, 0, 2),
-    shadowOffsetScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHADOW_OFFSET_SCALE, preservationMode ? 0.5 : 1, 0, 2),
-    modulateScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_MODULATE_SCALE, preservationMode ? 0.8 : 1, 0, 2),
-    pregenMedianEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_MEDIAN_ENABLED) ?? !preservationMode,
-    pregenSharpenEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_SHARPEN_ENABLED) ?? !moveSharpenToPost,
-    pregenSharpenScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHARPEN_SCALE, preservationMode ? 0.7 : 1, 0, 2),
+    toneStackScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_TONE_STACK_SCALE, settings.STAGE1A_PREGEN_TONE_STACK_SCALE, 0, 2),
+    localContrastScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_LOCAL_CONTRAST_SCALE, settings.STAGE1A_PREGEN_LOCAL_CONTRAST_SCALE, 0, 2),
+    shadowOffsetScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHADOW_OFFSET_SCALE, settings.STAGE1A_PREGEN_SHADOW_OFFSET_SCALE, 0, 2),
+    modulateScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_MODULATE_SCALE, settings.STAGE1A_PREGEN_MODULATE_SCALE, 0, 2),
+    pregenMedianEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_MEDIAN_ENABLED) ?? settings.STAGE1A_PREGEN_MEDIAN_ENABLED,
+    pregenSharpenEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_SHARPEN_ENABLED) ?? settings.STAGE1A_PREGEN_SHARPEN_ENABLED,
+    pregenSharpenScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHARPEN_SCALE, settings.STAGE1A_PREGEN_SHARPEN_SCALE, 0, 2),
     moveSharpenToPost,
   };
 }
 
-function getStage1APreGenWebpOptions(): sharp.WebpOptions {
-  if (STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE) {
+function getStage1APreGenWebpOptions(sceneType?: string): sharp.WebpOptions {
+  const { settings } = resolveStage1AAblationSettings(sceneType);
+  if (settings.STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE) {
     return {
       quality: 100,
       effort: 6,
@@ -710,17 +779,34 @@ async function applyStage1ANeutralBalance(
     return { image: img, balance: null };
   }
 
+  const toneMeta = toTransformDiagnosticMeta(await img.clone().metadata().catch(() => null));
+  if (!isToneTransformCompatible(toneMeta)) {
+    console.warn("[stage1A] Neutral balance skipped due to incompatible band state", {
+      width: toneMeta.width,
+      height: toneMeta.height,
+      space: toneMeta.space,
+      channels: toneMeta.channels,
+      depth: toneMeta.depth,
+      hasAlpha: toneMeta.hasAlpha,
+    });
+    return { image: img, balance: null };
+  }
+
   const strength = clampStage1AFactor(options?.strength ?? 1, 0, 1);
   const redGain = 1 + ((balance.redGain - 1) * strength);
   const greenGain = 1 + ((balance.greenGain - 1) * strength);
   const blueGain = 1 + ((balance.blueGain - 1) * strength);
 
+  const channels = toneMeta.channels ?? 3;
+  const gains = channels === 4
+    ? [redGain, greenGain, blueGain, 1]
+    : [redGain, greenGain, blueGain];
+  const offsets = channels === 4
+    ? [0, 0, 0, 0]
+    : [0, 0, 0];
+
   return {
-    image: img.linear([
-      redGain,
-      greenGain,
-      blueGain,
-    ], [0, 0, 0]),
+    image: img.linear(gains, offsets),
     balance: {
       ...balance,
       redGain,
@@ -777,13 +863,31 @@ export async function runStage1A(
     attempt: 1,
   };
   const analysis = await analyzeStage1AInput(inputPath, sceneType);
+  const { presetName, settings: ablationSettings } = resolveStage1AAblationSettings(analysis.sceneType);
   console.log("[Stage1A Analysis]", analysis);
   const factors = computeStage1AFactors(analysis);
-  const preGenControls = getStage1APreGenerationControls();
-  const preGenWebpOptions = getStage1APreGenWebpOptions();
+  const preGenControls = getStage1APreGenerationControls(analysis.sceneType);
+  const preGenWebpOptions = getStage1APreGenWebpOptions(analysis.sceneType);
+  const presetSummary = {
+    preset: presetName,
+    sceneType: analysis.sceneType,
+    normalizeEnabled: preGenControls.normalizeEnabled,
+    normalizeShadowThreshold: preGenControls.normalizeShadowLiftThreshold,
+    normalizeContrastThreshold: preGenControls.normalizeContrastThreshold,
+    toneStackScale: preGenControls.toneStackScale,
+    localContrastScale: preGenControls.localContrastScale,
+    shadowOffsetScale: preGenControls.shadowOffsetScale,
+    postFinish: ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH,
+    highFidelityEncode: ablationSettings.STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE,
+    canonicalHighFidelity: ablationSettings.PREPROCESS_CANONICAL_HIGH_FIDELITY,
+    canonicalWebpQuality: ablationSettings.PREPROCESS_CANONICAL_WEBP_QUALITY,
+  };
   console.log("[Stage1A Factors]", factors);
+  logIfNotFocusMode(`[stage1A] Ablation preset resolved: ${presetName}`);
+  logIfNotFocusMode("[stage1A] Ablation settings", ablationSettings);
   logIfNotFocusMode("[stage1A] Pre-generation controls", preGenControls);
   logIfNotFocusMode("[stage1A] Pre-generation encode options", preGenWebpOptions);
+  console.log("[stage1A] preset_summary", JSON.stringify(presetSummary));
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const effectiveSceneType = analysis.sceneType;
   const isInterior = effectiveSceneType === "interior";
@@ -806,9 +910,16 @@ export async function runStage1A(
   const metadata = await img.metadata();
   const stage1ATransformMeta = toTransformDiagnosticMeta(metadata);
   const stage1ABranch = effectiveSceneType === "exterior" ? "exterior" : "interior";
+  const transformTrace: TransformTraceEvent[] = [];
+  const transformTelemetry: TransformTelemetryContext = {
+    jobId: jobIdResolved,
+    sceneType: effectiveSceneType,
+    roomType: roomTypeResolved,
+    trace: transformTrace,
+  };
   
   // 1. Auto-rotate based on EXIF orientation
-  img = img.rotate();
+  img = img.rotate().removeAlpha().toColourspace("srgb");
 
   const runGeminiStage1AWithOptionalFinish = async (): Promise<string> => {
     const geminiOutputPath = await enhanceWithGeminiStage1A(
@@ -824,7 +935,7 @@ export async function runStage1A(
       options.jobSampling
     );
 
-    if (!STAGE1A_ENABLE_POSTGEN_FINISH) {
+    if (!ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH) {
       return geminiOutputPath;
     }
 
@@ -832,6 +943,7 @@ export async function runStage1A(
       const finishedPath = await applyStage1APostGenerationFinish(geminiOutputPath, {
         jobId: jobIdResolved,
         sceneType: effectiveSceneType,
+        roomType: roomTypeResolved,
       });
 
       await logImageAttemptUrl({
@@ -839,16 +951,32 @@ export async function runStage1A(
         localPath: finishedPath,
       });
 
+      console.warn("[stage1A] artifact_consistency", {
+        deliveryArtifactPath: finishedPath,
+        validatorArtifactPath: finishedPath,
+        previewArtifactPath: finishedPath,
+        mode: "postfinish_success",
+      });
+
       return finishedPath;
     } catch (err: any) {
+      stage1ATransformSkipCounters.skippedPostFinishCount += 1;
       console.warn("[stage1A] Post-finish failed, falling back to pre-postfinish artifact", {
         jobId: jobIdResolved,
         sceneType: effectiveSceneType,
+        roomType: roomTypeResolved ?? null,
         message: err?.message || String(err),
+        skippedPostFinishCount: stage1ATransformSkipCounters.skippedPostFinishCount,
       });
       await logImageAttemptUrl({
         ctx: stage1ACtx,
         localPath: geminiOutputPath,
+      });
+      console.warn("[stage1A] artifact_consistency", {
+        deliveryArtifactPath: geminiOutputPath,
+        validatorArtifactPath: geminiOutputPath,
+        previewArtifactPath: geminiOutputPath,
+        mode: "postfinish_fail_open",
       });
       return geminiOutputPath;
     }
@@ -884,7 +1012,7 @@ export async function runStage1A(
       return path1ACore;
     } catch (err) {
       logIfNotFocusMode("[stage1A] Stability blur rescue failed — continuing with softened Sharp path", err);
-      img = sharp(inputPath).rotate();
+      img = sharp(inputPath).rotate().removeAlpha().toColourspace("srgb");
     }
   }
   
@@ -934,7 +1062,8 @@ export async function runStage1A(
       stage1ATransformMeta,
       stage1ABranch,
       1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale),
-      "tone_stack_gamma"
+      "tone_stack_gamma",
+      transformTelemetry
     );
     if (!analysis.isExterior) {
       img = applyGuardedLinear(
@@ -943,7 +1072,8 @@ export async function runStage1A(
         stage1ABranch,
         1 + (factors.shadowLift * 0.08 * preGenControls.toneStackScale),
         0,
-        "tone_stack_shadow_lift"
+        "tone_stack_shadow_lift",
+        transformTelemetry
       );
     }
   }
@@ -955,7 +1085,8 @@ export async function runStage1A(
       stage1ABranch,
       1 - (factors.highlightCompress * 0.2 * preGenControls.toneStackScale),
       0,
-      "tone_stack_highlight_compress"
+      "tone_stack_highlight_compress",
+      transformTelemetry
     );
   }
 
@@ -966,7 +1097,8 @@ export async function runStage1A(
       stage1ABranch,
       1 + (factors.contrastBoost * 0.3 * preGenControls.toneStackScale),
       0,
-      "tone_stack_contrast_boost"
+      "tone_stack_contrast_boost",
+      transformTelemetry
     );
   }
 
@@ -996,7 +1128,8 @@ export async function runStage1A(
       stage1ATransformMeta,
       stage1ABranch,
       { brightness, saturation },
-      "interior_profile_modulate"
+      "interior_profile_modulate",
+      transformTelemetry
     );
     if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35 && preGenControls.localContrastScale > 0) {
       img = applyGuardedLinear(
@@ -1005,7 +1138,8 @@ export async function runStage1A(
         stage1ABranch,
         1 + (interiorCfg.localContrast * 0.4 * preGenControls.localContrastScale),
         -(128 * interiorCfg.localContrast * 0.35 * preGenControls.localContrastScale),
-        "interior_local_contrast"
+        "interior_local_contrast",
+        transformTelemetry
       );
     }
     logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
@@ -1027,7 +1161,8 @@ export async function runStage1A(
         brightness,
         saturation,
       },
-      "default_profile_modulate"
+      "default_profile_modulate",
+      transformTelemetry
     );
     logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   }
@@ -1041,7 +1176,8 @@ export async function runStage1A(
         stage1ABranch,
         1.0,
         Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift * preGenControls.shadowOffsetScale),
-        "interior_shadow_offset_profile"
+        "interior_shadow_offset_profile",
+        transformTelemetry
       );
     } else {
       img = applyGuardedLinear(
@@ -1050,7 +1186,8 @@ export async function runStage1A(
         stage1ABranch,
         1.0,
         Math.round(2 * preGenControls.shadowOffsetScale),
-        "interior_shadow_offset_default"
+        "interior_shadow_offset_default",
+        transformTelemetry
       );
     }
   }
@@ -1071,7 +1208,8 @@ export async function runStage1A(
       stage1ABranch,
       1.0,
       Math.round(3 * preGenControls.shadowOffsetScale),
-      "interior_edge_brightening"
+      "interior_edge_brightening",
+      transformTelemetry
     );
   }
   
@@ -1136,6 +1274,9 @@ export async function runStage1A(
       if (!meta.width || !meta.height) {
         throw new Error("Failed to read Stage1A artifact dimensions");
       }
+      if (!rgb) {
+        throw new Error("BaseArtifacts cache build incomplete: rgb branch unavailable");
+      }
       const grayData = new Uint8Array(gray.data.buffer, gray.data.byteOffset, gray.data.byteLength);
       const edge = computeEdgeMapFromGray(grayData, gray.info.width, gray.info.height, 38);
       return {
@@ -1147,14 +1288,25 @@ export async function runStage1A(
         smallWidth: small.info.width,
         smallHeight: small.info.height,
         edge,
-        rgb: rgb ? new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength) : undefined,
+        rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
       };
     });
   })() : null;
 
-  await img
-    .webp(preGenWebpOptions)
-    .toFile(sharpOutputPath);
+  try {
+    await img
+      .webp(preGenWebpOptions)
+      .toFile(sharpOutputPath);
+  } catch (err: any) {
+    console.error("[stage1A] Failed to render pre-generation output", {
+      jobId: jobIdResolved,
+      sceneType: effectiveSceneType,
+      roomType: roomTypeResolved ?? null,
+      message: err?.message || String(err),
+      transformTrace: transformTrace.slice(-30),
+    });
+    throw err;
+  }
 
   await logImageAttemptUrl({
     ctx: stage1ACtx,
@@ -1167,6 +1319,14 @@ export async function runStage1A(
       baseArtifactsCache.set(sharpOutputPath, artifacts);
     } catch (e) {
       logIfNotFocusMode("[stage1A] Failed to build BaseArtifacts cache:", e);
+      console.warn("[stage1A] BaseArtifacts build failed with transform trace", {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+        roomType: roomTypeResolved ?? null,
+        error: (e as any)?.message || String(e),
+        cacheEntryWritten: false,
+        transformTrace: transformTrace.slice(-30),
+      });
     }
   }
   

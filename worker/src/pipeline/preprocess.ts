@@ -4,6 +4,7 @@ import { randomUUID } from "crypto";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 import { assertNoDarkBorder } from "../utils/finalBlackEdgeGuard";
+import { resolveStage1AAblationSettings } from "./stage1A-presets";
 
 type CropRect = { left: number; top: number; width: number; height: number };
 
@@ -723,8 +724,20 @@ export async function preprocessToCanonical(
   sceneType: string,
   options: { buildArtifacts?: boolean; smallSize?: number; stage1ABorderRetryIndex?: number; jobId?: string } = {}
 ): Promise<BaseArtifacts | undefined> {
-  const highFidelityCanonical = process.env.PREPROCESS_CANONICAL_HIGH_FIDELITY === "1";
-  const canonicalWebpQuality = parseQuality(process.env.PREPROCESS_CANONICAL_WEBP_QUALITY, 95);
+  const { presetName, settings: ablationSettings } = resolveStage1AAblationSettings(sceneType);
+  const highFidelityCanonical = ablationSettings.PREPROCESS_CANONICAL_HIGH_FIDELITY;
+  const canonicalWebpQuality = parseQuality(
+    process.env.PREPROCESS_CANONICAL_WEBP_QUALITY,
+    ablationSettings.PREPROCESS_CANONICAL_WEBP_QUALITY,
+  );
+  console.log("[stage0] preset_summary", JSON.stringify({
+    preset: presetName,
+    sceneType,
+    canonicalHighFidelity: highFidelityCanonical,
+    canonicalWebpQuality,
+    preservationPregen: ablationSettings.STAGE1A_ENABLE_PRESERVATION_PREGEN,
+    postFinish: ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH,
+  }));
 
   let img = sharp(inputPath);
   const inputMeta = await img.metadata();
@@ -821,7 +834,7 @@ export async function preprocessToCanonical(
   const buildArtifacts = options.buildArtifacts === true;
   const smallSize = Number.isFinite(options.smallSize) ? Number(options.smallSize) : 512;
 
-  let artifactsPromise: Promise<BaseArtifacts> | undefined;
+  let artifactsPromise: Promise<BaseArtifacts | undefined> | undefined;
   if (buildArtifacts) {
     const base = img.clone();
     const metaPromise = base.metadata();
@@ -864,6 +877,14 @@ export async function preprocessToCanonical(
         if (!meta.width || !meta.height) {
           throw new Error("Failed to read canonical dimensions for BaseArtifacts");
         }
+        if (!rgb) {
+          console.warn("[preprocess] BaseArtifacts skipped due to unavailable RGB branch", {
+            width: meta.width,
+            height: meta.height,
+            scene: sceneType,
+          });
+          return undefined;
+        }
         const grayData = new Uint8Array(gray.data.buffer, gray.data.byteOffset, gray.data.byteLength);
         const edge = computeEdgeMapFromGray(grayData, gray.info.width, gray.info.height, 38);
         return {
@@ -875,7 +896,7 @@ export async function preprocessToCanonical(
           smallWidth: small.info.width,
           smallHeight: small.info.height,
           edge,
-          rgb: rgb ? new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength) : undefined,
+          rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
         } satisfies BaseArtifacts;
       }
     );
@@ -889,7 +910,7 @@ export async function preprocessToCanonical(
         smartSubsample: true,
       })
       .toFile(outputPath);
-    console.log(`[stage0] canonical encode mode=high_fidelity quality=${canonicalWebpQuality}`);
+    console.log(`[stage0] canonical encode mode=high_fidelity quality=${canonicalWebpQuality} preset=${presetName}`);
   } else {
     await img.toFile(outputPath);
   }

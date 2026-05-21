@@ -82,7 +82,7 @@ import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageT
 import { toBase64, siblingOutPath } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
-import { publishImage } from "./utils/publish";
+import { publishImage, publishThumbnailVariant, type PublishResult } from "./utils/publish";
 import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
@@ -3654,6 +3654,38 @@ async function publishWithOptionalBlackEdgeGuard(localPath: string, stageLabel: 
   return publishImage(deliveryPath);
 }
 
+function extractStorageKeyFromUrl(url?: string | null): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveGalleryThumbnailDerivative(params: {
+  sourcePath: string;
+  published: PublishResult;
+  context: string;
+}): Promise<{ thumbnailUrl: string; thumbS3Key: string | null }> {
+  try {
+    const thumb = await publishThumbnailVariant(params.sourcePath, {
+      baseKeyHint: params.published.key,
+    });
+    return {
+      thumbnailUrl: thumb.url,
+      thumbS3Key: thumb.key || extractStorageKeyFromUrl(thumb.url),
+    };
+  } catch (err: any) {
+    nLog(`[thumb-derivative] fallback_to_full context=${params.context} reason=${err?.message || err}`);
+    return {
+      thumbnailUrl: params.published.url,
+      thumbS3Key: params.published.key || extractStorageKeyFromUrl(params.published.url),
+    };
+  }
+}
+
 function isStage2DeliveryStage(stageLabel: string): boolean {
   const normalizedStageLabel = String(stageLabel || "").trim().toLowerCase();
   return normalizedStageLabel === "2"
@@ -3988,8 +4020,13 @@ async function completePartialJob(params: {
     const traceId = generateTraceId(jobId);
     const stagesCompleted: string[] = finalStage === "1B" ? ["1A", "1B"] : ["1A"];
     const historyOriginalUrl = payloadAny.remoteOriginalUrl || pub1AUrl || null;
-    const originalKey = payloadAny.remoteOriginalKey || extractKey(historyOriginalUrl);
-    const enhancedKey = extractKey(resultUrl);
+    const originalKey = payloadAny.remoteOriginalKey || extractStorageKeyFromUrl(historyOriginalUrl);
+    const enhancedKey = extractStorageKeyFromUrl(resultUrl);
+    const thumbnail = await resolveGalleryThumbnailDerivative({
+      sourcePath: finalPath,
+      published: { url: resultUrl, kind: "s3", key: enhancedKey || undefined },
+      context: `partial-${finalStage}`,
+    });
 
       recordEnhancedImageHistory({
         agencyId: payloadAny.agencyId,
@@ -4001,11 +4038,11 @@ async function completePartialJob(params: {
         stagesCompleted,
         completionType: finalStage === "1B" ? "fallback_1b" : "fallback_1a",
         publicUrl: resultUrl,
-        thumbnailUrl: resultUrl,
+        thumbnailUrl: thumbnail.thumbnailUrl,
         originalUrl: historyOriginalUrl,
         originalS3Key: originalKey,
         enhancedS3Key: enhancedKey,
-        thumbS3Key: enhancedKey,
+        thumbS3Key: thumbnail.thumbS3Key,
         auditRef,
         traceId,
       }).catch((err) => {
@@ -7202,6 +7239,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               : null;
             const auditRef = generateAuditRef();
             const traceId = generateTraceId(payload.jobId);
+            const thumbnail = await resolveGalleryThumbnailDerivative({
+              sourcePath: path2,
+              published: pub2,
+              context: "stage2-only",
+            });
 
             recordEnhancedImageHistory({
               agencyId: payload.agencyId,
@@ -7213,11 +7255,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               stagesCompleted: stage1BUrl ? ["1A", "1B", "2"] : ["1A", "2"],
               completionType: "full_success",
               publicUrl: pub2Url,
-              thumbnailUrl: pub2Url,
+              thumbnailUrl: thumbnail.thumbnailUrl,
               originalUrl: stage1AUrl,
-              originalS3Key: extractKey(stage1AUrl),
-              enhancedS3Key: extractKey(pub2Url),
-              thumbS3Key: extractKey(pub2Url),
+              originalS3Key: extractStorageKeyFromUrl(stage1AUrl),
+              enhancedS3Key: extractStorageKeyFromUrl(pub2Url),
+              thumbS3Key: thumbnail.thumbS3Key,
               auditRef,
               traceId,
             }).catch((err) => {
@@ -8018,15 +8060,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (payload.agencyId && resultUrl) {
       const auditRef = generateAuditRef();
       const traceId = generateTraceId(payload.jobId);
-      const extractKey = (url?: string | null) => {
-        if (!url) return null;
-        try {
-          const u = new URL(url);
-          return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
-        } catch {
-          return null;
-        }
-      };
+      const enhancedKey = extractStorageKeyFromUrl(resultUrl);
+      const thumbnail = await resolveGalleryThumbnailDerivative({
+        sourcePath: path1A,
+        published: { url: resultUrl, kind: "s3", key: enhancedKey || undefined },
+        context: "enhance-only-1A",
+      });
 
       recordEnhancedImageHistory({
         agencyId: payload.agencyId,
@@ -8038,11 +8077,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         stagesCompleted: ['1A'],
         completionType: 'intentional_1a_success',
         publicUrl: resultUrl,
-        thumbnailUrl: resultUrl,
+        thumbnailUrl: thumbnail.thumbnailUrl,
         originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
-        originalS3Key: extractKey((payload as any).remoteOriginalUrl || publishedOriginal?.url || null),
-        enhancedS3Key: extractKey(resultUrl),
-        thumbS3Key: extractKey(resultUrl),
+        originalS3Key: extractStorageKeyFromUrl((payload as any).remoteOriginalUrl || publishedOriginal?.url || null),
+        enhancedS3Key: enhancedKey,
+        thumbS3Key: thumbnail.thumbS3Key,
         auditRef,
         traceId,
       }).catch((err) => {
@@ -8618,15 +8657,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (payload.agencyId && opt1AResultUrl) {
           const auditRefOpt = generateAuditRef();
           const traceIdOpt = generateTraceId(payload.jobId);
-          const extractKeyOpt = (url?: string | null) => {
-            if (!url) return null;
-            try {
-              const u = new URL(url);
-              return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
-            } catch {
-              return null;
-            }
-          };
+          const enhancedKeyOpt = extractStorageKeyFromUrl(opt1AResultUrl);
+          const thumbnailOpt = await resolveGalleryThumbnailDerivative({
+            sourcePath: path1A,
+            published: { url: opt1AResultUrl, kind: "s3", key: enhancedKeyOpt || undefined },
+            context: "optimized-1A",
+          });
           recordEnhancedImageHistory({
             agencyId: payload.agencyId,
             userId: payload.userId,
@@ -8637,11 +8673,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             stagesCompleted: ['1A'],
             completionType: 'optimized_1a_success',
             publicUrl: opt1AResultUrl,
-            thumbnailUrl: opt1AResultUrl,
+            thumbnailUrl: thumbnailOpt.thumbnailUrl,
             originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
-            originalS3Key: extractKeyOpt((payload as any).remoteOriginalUrl || publishedOriginal?.url || null),
-            enhancedS3Key: extractKeyOpt(opt1AResultUrl),
-            thumbS3Key: extractKeyOpt(opt1AResultUrl),
+            originalS3Key: extractStorageKeyFromUrl((payload as any).remoteOriginalUrl || publishedOriginal?.url || null),
+            enhancedS3Key: enhancedKeyOpt,
+            thumbS3Key: thumbnailOpt.thumbS3Key,
             auditRef: auditRefOpt,
             traceId: traceIdOpt,
           }).catch((err) => {
@@ -14217,18 +14253,17 @@ All openings must remain identical in position and size to the original image.`;
 
     const auditRef = generateAuditRef();
     const traceId = generateTraceId(payload.jobId);
-    const extractKey = (url?: string | null) => {
-      if (!url) return null;
-      try {
-        const u = new URL(url);
-        return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
-      } catch {
-        return null;
-      }
-    };
-    const originalKey = (payload as any).remoteOriginalKey || extractKey((payload as any).remoteOriginalUrl || publishedOriginal?.url || null);
-    const enhancedKey = extractKey(pubFinalUrl || null);
-    const thumbKey = extractKey(pubFinalUrl || null);
+    const originalKey = (payload as any).remoteOriginalKey || extractStorageKeyFromUrl((payload as any).remoteOriginalUrl || publishedOriginal?.url || null);
+    const enhancedKey = extractStorageKeyFromUrl(pubFinalUrl || null);
+    const thumbnail = await resolveGalleryThumbnailDerivative({
+      sourcePath: finalBasePath,
+      published: {
+        url: pubFinalUrl,
+        kind: publishedFinal?.kind || "s3",
+        key: publishedFinal?.key || enhancedKey || undefined,
+      },
+      context: "final",
+    });
 
     recordEnhancedImageHistory({
       agencyId: payload.agencyId,
@@ -14240,11 +14275,11 @@ All openings must remain identical in position and size to the original image.`;
       stagesCompleted,
       completionType: 'full_success',
       publicUrl: pubFinalUrl,
-      thumbnailUrl: pubFinalUrl, // Use same URL for thumbnail (can be optimized later)
+      thumbnailUrl: thumbnail.thumbnailUrl,
       originalUrl: publishedOriginal?.url || (payload as any).remoteOriginalUrl || null,
       originalS3Key: originalKey,
       enhancedS3Key: enhancedKey,
-      thumbS3Key: thumbKey,
+      thumbS3Key: thumbnail.thumbS3Key,
       auditRef,
       traceId,
     }).catch((err) => {
@@ -14340,19 +14375,15 @@ async function handleEditJob(payload: any) {
 
   // Also record in enhanced_images gallery history (non-blocking)
   if ((payload as any).agencyId && pub.url) {
-    const extractKey = (url?: string | null) => {
-      if (!url) return null;
-      try {
-        const u = new URL(url);
-        return u.pathname.startsWith('/') ? u.pathname.slice(1) : u.pathname;
-      } catch {
-        return null;
-      }
-    };
     const auditRef = generateAuditRef();
     const traceId = generateTraceId(jobId);
-    const originalKey = extractKey(baseImageUrl || null);
-    const enhancedKey = extractKey(pub.url || null);
+    const originalKey = extractStorageKeyFromUrl(baseImageUrl || null);
+    const enhancedKey = extractStorageKeyFromUrl(pub.url || null);
+    const thumbnail = await resolveGalleryThumbnailDerivative({
+      sourcePath: deliveryEditPath,
+      published: pub,
+      context: "edit",
+    });
     recordEnhancedImageHistory({
       agencyId: (payload as any).agencyId,
       userId,
@@ -14363,11 +14394,11 @@ async function handleEditJob(payload: any) {
       stagesCompleted: ["edit"],
       completionType: 'full_success',
       publicUrl: pub.url,
-      thumbnailUrl: pub.url,
+      thumbnailUrl: thumbnail.thumbnailUrl,
       originalUrl: baseImageUrl || null,
       originalS3Key: originalKey,
       enhancedS3Key: enhancedKey,
-      thumbS3Key: enhancedKey,
+      thumbS3Key: thumbnail.thumbS3Key,
       auditRef,
       traceId,
     }).catch((err) => {
@@ -15204,8 +15235,13 @@ const worker = new Worker(
             };
             const auditRef = generateAuditRef();
             const traceId = generateTraceId(regionPayload.jobId);
-            const originalKey = extractKey(baseImageUrl || null);
-            const enhancedKey = extractKey(pub.url || null);
+            const originalKey = extractStorageKeyFromUrl(baseImageUrl || null);
+            const enhancedKey = extractStorageKeyFromUrl(pub.url || null);
+            const thumbnail = await resolveGalleryThumbnailDerivative({
+              sourcePath: outPath,
+              published: pub,
+              context: "region-edit",
+            });
             recordEnhancedImageHistory({
               agencyId: (regionPayload as any).agencyId,
               userId: regionPayload.userId,
@@ -15216,11 +15252,11 @@ const worker = new Worker(
               stagesCompleted: ["edit"],
               completionType: 'full_success',
               publicUrl: pub.url,
-              thumbnailUrl: pub.url,
+              thumbnailUrl: thumbnail.thumbnailUrl,
               originalUrl: baseImageUrl || null,
               originalS3Key: originalKey,
               enhancedS3Key: enhancedKey,
-              thumbS3Key: enhancedKey,
+              thumbS3Key: thumbnail.thumbS3Key,
               auditRef,
               traceId,
             }).catch((err) => {

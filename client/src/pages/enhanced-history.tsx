@@ -379,7 +379,11 @@ export default function EnhancedHistoryPage() {
           src={image.thumbnailUrl}
           alt="Enhanced property photo"
           className="w-full h-full object-cover"
+          width={640}
+          height={480}
           loading="lazy"
+          decoding="async"
+          style={{ imageRendering: 'auto' }}
         />
         <div className="absolute inset-0 flex items-center justify-center bg-brand-900/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-slate-900 shadow-sm">

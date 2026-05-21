@@ -4,7 +4,12 @@ import { applyTransformation } from "../utils/sharp-utils";
 export interface Stage1APostFinishOptions {
   jobId: string;
   sceneType?: string;
+  roomType?: string;
 }
+
+const stage1APostFinishCounters = {
+  skippedLinearCount: 0,
+};
 
 interface TransformDiagnosticMeta {
   width: number | null;
@@ -107,8 +112,12 @@ export async function applyStage1APostGenerationFinish(
           pipeline = pipeline.linear(1 + scale, -(128 * scale * 0.2));
           logTransformDiagnostic("linear", "after", sourceMeta, branch);
         } else {
+          stage1APostFinishCounters.skippedLinearCount += 1;
           console.warn("[stage1A-postfinish] Skipping unsupported linear() transform", {
             branch,
+            sceneType: options.sceneType ?? null,
+            roomType: options.roomType ?? null,
+            skippedLinearCount: stage1APostFinishCounters.skippedLinearCount,
             width: sourceMeta.width,
             height: sourceMeta.height,
             space: sourceMeta.space,

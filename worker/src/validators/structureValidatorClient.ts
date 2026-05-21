@@ -33,6 +33,8 @@ import type { Mode } from "./validationModes";
  */
 export interface StructureValidationResult {
   mode: Mode;
+  status?: "ok" | "skipped" | "error";
+  skipCode?: "VALIDATION_SKIPPED_DISABLED" | "VALIDATION_SKIPPED_INVALID_INPUT_URL" | "VALIDATION_SKIPPED_INVALID_VALIDATOR_URL";
   isSuspicious: boolean;
   deviationScore: number;
   verticalShift: number;
@@ -60,6 +62,8 @@ function getValidatorConfig() {
 function createDisabledResult(reason: string): StructureValidationResult {
   return {
     mode: "log",
+    status: "skipped",
+    skipCode: "VALIDATION_SKIPPED_DISABLED",
     isSuspicious: false,
     deviationScore: 0,
     verticalShift: 0,
@@ -134,7 +138,16 @@ export async function validateStructure(
         configuredUrlPreview: String(url).slice(0, 120),
       });
     }
-    return createDisabledResult("Validator disabled");
+    if (!url) {
+      return createDisabledResult("Validator disabled");
+    }
+    const validatorReason = validatorUrl.ok ? "validator_url_unknown" : validatorUrl.reason;
+    return {
+      ...createDisabledResult("Invalid validator URL"),
+      mode,
+      skipCode: "VALIDATION_SKIPPED_INVALID_VALIDATOR_URL",
+      error: validatorReason,
+    };
   }
 
   const normalizedOriginal = normalizeHttpUrl(originalUrl, "originalUrl");
@@ -150,6 +163,7 @@ export async function validateStructure(
     return {
       ...createDisabledResult("Invalid image URLs"),
       mode,
+      skipCode: "VALIDATION_SKIPPED_INVALID_INPUT_URL",
       error: `invalid_image_urls:${normalizedOriginal.ok ? "ok" : normalizedOriginal.reason}|${normalizedEnhanced.ok ? "ok" : normalizedEnhanced.reason}`,
     };
   }
@@ -186,6 +200,7 @@ export async function validateStructure(
 
     return {
       mode,
+      status: "ok",
       isSuspicious: data.isSuspicious,
       deviationScore: data.deviationScore,
       verticalShift: data.verticalShift,
@@ -206,6 +221,7 @@ export async function validateStructure(
       return {
         ...createDisabledResult(`Validation service error: ${axiosError.response.status}`),
         mode,
+        status: "error",
         error: String(axiosError.response.data),
       };
     } else if (axiosError.request) {
@@ -216,6 +232,7 @@ export async function validateStructure(
       return {
         ...createDisabledResult("Validation service unreachable"),
         mode,
+        status: "error",
         error: axiosError.message,
       };
     } else {
@@ -224,6 +241,7 @@ export async function validateStructure(
       return {
         ...createDisabledResult("Validation error"),
         mode,
+        status: "error",
         error: String(error),
       };
     }
@@ -252,6 +270,10 @@ export async function runStructuralCheck(
   // Log results (always, for all modes)
   console.log("[structureValidator] === STRUCTURAL VALIDATION RESULT ===");
   console.log(`[structureValidator] Mode: ${result.mode}`);
+  console.log(`[structureValidator] Status: ${result.status || "ok"}`);
+  if (result.skipCode) {
+    console.log(`[structureValidator] SkipCode: ${result.skipCode}`);
+  }
   console.log(`[structureValidator] Deviation Score: ${result.deviationScore}°`);
   console.log(`[structureValidator] Vertical Shift: ${result.verticalShift}°`);
   console.log(`[structureValidator] Horizontal Shift: ${result.horizontalShift}°`);
