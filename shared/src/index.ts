@@ -1,5 +1,6 @@
 export * from "./constants";
 export * from "./completionTypes";
+export * from "./enhancedImageSemantics";
 export * from "./imageHistory";
 export * from "./imageStore";
 export * from "./stageUrlResolver";

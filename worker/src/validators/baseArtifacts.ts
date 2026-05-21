@@ -21,6 +21,54 @@ export interface BuildBaseArtifactsOptions {
   blurSigma?: number;
 }
 
+interface TransformDiagnosticMeta {
+  width: number | null;
+  height: number | null;
+  space: string | null;
+  channels: number | null;
+  depth: string | null;
+  hasAlpha: boolean | null;
+}
+
+function toTransformDiagnosticMeta(meta: sharp.Metadata | null | undefined): TransformDiagnosticMeta {
+  return {
+    width: typeof meta?.width === "number" ? meta.width : null,
+    height: typeof meta?.height === "number" ? meta.height : null,
+    space: meta?.space ?? null,
+    channels: typeof meta?.channels === "number" ? meta.channels : null,
+    depth: meta?.depth ?? null,
+    hasAlpha: typeof meta?.hasAlpha === "boolean" ? meta.hasAlpha : null,
+  };
+}
+
+function isRgbCompatible(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+  const rgbLikeSpace = !space || space === "srgb" || space === "rgb";
+  return channels >= 3 && rgbLikeSpace;
+}
+
+function logTransformDiagnostic(
+  operation: string,
+  phase: "before" | "after" | "skipped",
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  extras?: Record<string, unknown>
+): void {
+  console.debug("[baseArtifacts] transform", {
+    operation,
+    phase,
+    branch,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+    ...(extras || {}),
+  });
+}
+
 export async function buildBaseArtifacts(
   basePath: string,
   options: BuildBaseArtifactsOptions = {}
@@ -47,14 +95,40 @@ export async function buildBaseArtifacts(
     .toBuffer({ resolveWithObject: true });
 
   const rgbPromise = includeRgb
-    ? baseSharp
-        .clone()
-        .ensureAlpha()
-        .removeAlpha()
-        .toColourspace("srgb")
-        .resize(width, height, { fit: "fill" })
-        .raw()
-        .toBuffer({ resolveWithObject: true })
+    ? Promise.resolve().then(async () => {
+        const rgbMeta = toTransformDiagnosticMeta(meta);
+        if (!isRgbCompatible(rgbMeta)) {
+          console.warn("[baseArtifacts] Skipping RGB conversion due to unsupported metadata", {
+            width: rgbMeta.width,
+            height: rgbMeta.height,
+            space: rgbMeta.space,
+            channels: rgbMeta.channels,
+            depth: rgbMeta.depth,
+            hasAlpha: rgbMeta.hasAlpha,
+          });
+          logTransformDiagnostic("rgb_conversion", "skipped", rgbMeta, "base_artifacts");
+          return null;
+        }
+
+        logTransformDiagnostic("ensureAlpha", "before", rgbMeta, "base_artifacts");
+        const rgba = baseSharp.clone().ensureAlpha();
+        logTransformDiagnostic("ensureAlpha", "after", rgbMeta, "base_artifacts");
+        logTransformDiagnostic("removeAlpha", "before", rgbMeta, "base_artifacts");
+        const rgb = rgba.removeAlpha();
+        logTransformDiagnostic("removeAlpha", "after", rgbMeta, "base_artifacts");
+        logTransformDiagnostic("toColourspace", "before", rgbMeta, "base_artifacts", { target: "srgb" });
+        const srgb = rgb.toColourspace("srgb");
+        logTransformDiagnostic("toColourspace", "after", rgbMeta, "base_artifacts", { target: "srgb" });
+        return srgb
+          .resize(width, height, { fit: "fill" })
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+      }).catch((err) => {
+        console.warn("[baseArtifacts] RGB conversion failed-open", {
+          message: (err as any)?.message || String(err),
+        });
+        return null;
+      })
     : null;
 
   const blurPromise = buildBlur

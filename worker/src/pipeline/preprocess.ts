@@ -11,6 +11,54 @@ const PREPROCESS_DEBUG = process.env.PREPROCESS_DEBUG === "1" || process.env.DEB
 let preprocessInvalidCropRectCount = 0;
 let preprocessSkippedCropCount = 0;
 
+interface TransformDiagnosticMeta {
+  width: number | null;
+  height: number | null;
+  space: string | null;
+  channels: number | null;
+  depth: string | null;
+  hasAlpha: boolean | null;
+}
+
+function toTransformDiagnosticMeta(meta: sharp.Metadata | null | undefined): TransformDiagnosticMeta {
+  return {
+    width: typeof meta?.width === "number" ? meta.width : null,
+    height: typeof meta?.height === "number" ? meta.height : null,
+    space: meta?.space ?? null,
+    channels: typeof meta?.channels === "number" ? meta.channels : null,
+    depth: meta?.depth ?? null,
+    hasAlpha: typeof meta?.hasAlpha === "boolean" ? meta.hasAlpha : null,
+  };
+}
+
+function isRgbCompatible(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+  const rgbLikeSpace = !space || space === "srgb" || space === "rgb";
+  return channels >= 3 && rgbLikeSpace;
+}
+
+function logTransformDiagnostic(
+  operation: string,
+  phase: "before" | "after" | "skipped",
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  extras?: Record<string, unknown>
+): void {
+  console.debug("[preprocess] transform", {
+    operation,
+    phase,
+    branch,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+    ...(extras || {}),
+  });
+}
+
 function computeMaxInscribedRect(
   width: number,
   height: number,
@@ -735,7 +783,10 @@ export async function preprocessToCanonical(
     }
   }
 
+  const canonicalMeta = toTransformDiagnosticMeta(await img.metadata().catch(() => null));
+  logTransformDiagnostic("removeAlpha", "before", canonicalMeta, "canonical");
   img = img.removeAlpha();
+  logTransformDiagnostic("removeAlpha", "after", canonicalMeta, "canonical");
 
   let stage0ResultBuffer = await img.toBuffer();
   console.log(`[STRAIGHTEN_ATTEMPT] jobId=${options.jobId || 'unknown'}`);
@@ -776,7 +827,37 @@ export async function preprocessToCanonical(
     const metaPromise = base.metadata();
     const grayPromise = base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
     const smallPromise = base.clone().greyscale().resize(smallSize, smallSize, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
-    const rgbPromise = base.clone().ensureAlpha().removeAlpha().toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
+    const rgbPromise = metaPromise.then((meta) => {
+      const rgbMeta = toTransformDiagnosticMeta(meta);
+      if (!isRgbCompatible(rgbMeta)) {
+        console.warn("[preprocess] Skipping BaseArtifacts RGB conversion due to unsupported metadata", {
+          width: rgbMeta.width,
+          height: rgbMeta.height,
+          space: rgbMeta.space,
+          channels: rgbMeta.channels,
+          depth: rgbMeta.depth,
+          hasAlpha: rgbMeta.hasAlpha,
+        });
+        logTransformDiagnostic("base_artifacts_rgb", "skipped", rgbMeta, "canonical");
+        return null;
+      }
+
+      logTransformDiagnostic("ensureAlpha", "before", rgbMeta, "canonical", { branch: "base_artifacts_rgb" });
+      const rgba = base.clone().ensureAlpha();
+      logTransformDiagnostic("ensureAlpha", "after", rgbMeta, "canonical", { branch: "base_artifacts_rgb" });
+      logTransformDiagnostic("removeAlpha", "before", rgbMeta, "canonical", { branch: "base_artifacts_rgb" });
+      const rgb = rgba.removeAlpha();
+      logTransformDiagnostic("removeAlpha", "after", rgbMeta, "canonical", { branch: "base_artifacts_rgb" });
+      logTransformDiagnostic("toColourspace", "before", rgbMeta, "canonical", { branch: "base_artifacts_rgb", target: "srgb" });
+      const srgb = rgb.toColourspace("srgb");
+      logTransformDiagnostic("toColourspace", "after", rgbMeta, "canonical", { branch: "base_artifacts_rgb", target: "srgb" });
+      return srgb.raw().toBuffer({ resolveWithObject: true });
+    }).catch((err) => {
+      console.warn("[preprocess] BaseArtifacts RGB conversion failed-open", {
+        message: (err as any)?.message || String(err),
+      });
+      return null;
+    });
 
     artifactsPromise = Promise.all([metaPromise, grayPromise, smallPromise, rgbPromise]).then(
       ([meta, gray, small, rgb]) => {
@@ -794,7 +875,7 @@ export async function preprocessToCanonical(
           smallWidth: small.info.width,
           smallHeight: small.info.height,
           edge,
-          rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
+          rgb: rgb ? new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength) : undefined,
         } satisfies BaseArtifacts;
       }
     );

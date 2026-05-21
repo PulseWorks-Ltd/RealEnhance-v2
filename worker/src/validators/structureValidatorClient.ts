@@ -86,6 +86,25 @@ function createDisabledResult(reason: string): StructureValidationResult {
   };
 }
 
+function normalizeHttpUrl(input: string | undefined, field: "originalUrl" | "enhancedUrl" | "validatorUrl"):
+  | { ok: true; value: string }
+  | { ok: false; reason: string } {
+  const raw = typeof input === "string" ? input.trim() : "";
+  if (!raw) {
+    return { ok: false, reason: `${field}_missing` };
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, reason: `${field}_unsupported_protocol` };
+    }
+    return { ok: true, value: parsed.toString() };
+  } catch {
+    return { ok: false, reason: `${field}_invalid_url` };
+  }
+}
+
 /**
  * Validate structural integrity between original and enhanced images
  *
@@ -104,32 +123,50 @@ export async function validateStructure(
   enhancedUrl: string
 ): Promise<StructureValidationResult> {
   const { url, mode, sensitivity } = getValidatorConfig();
+  const validatorUrl = normalizeHttpUrl(url, "validatorUrl");
 
   // Check if validator is disabled
-  if (!url) {
+  if (!url || !validatorUrl.ok) {
     console.log("[structureValidator] Validator disabled (no URL configured)");
+    if (url && !validatorUrl.ok) {
+      console.warn("[structureValidator] Invalid validator URL; disabling validation", {
+        reason: validatorUrl.reason,
+        configuredUrlPreview: String(url).slice(0, 120),
+      });
+    }
     return createDisabledResult("Validator disabled");
   }
 
-  // Validate URLs
-  if (!originalUrl || !enhancedUrl) {
-    console.warn("[structureValidator] Missing image URLs, skipping validation");
-    return createDisabledResult("Missing image URLs");
+  const normalizedOriginal = normalizeHttpUrl(originalUrl, "originalUrl");
+  const normalizedEnhanced = normalizeHttpUrl(enhancedUrl, "enhancedUrl");
+  if (!normalizedOriginal.ok || !normalizedEnhanced.ok) {
+    console.warn("[structureValidator] Invalid image URL(s), skipping validation", {
+      originalValid: normalizedOriginal.ok,
+      originalReason: normalizedOriginal.ok ? undefined : normalizedOriginal.reason,
+      enhancedValid: normalizedEnhanced.ok,
+      enhancedReason: normalizedEnhanced.ok ? undefined : normalizedEnhanced.reason,
+      mode,
+    });
+    return {
+      ...createDisabledResult("Invalid image URLs"),
+      mode,
+      error: `invalid_image_urls:${normalizedOriginal.ok ? "ok" : normalizedOriginal.reason}|${normalizedEnhanced.ok ? "ok" : normalizedEnhanced.reason}`,
+    };
   }
 
   console.log(`[structureValidator] Validating structure (mode=${mode}, sensitivity=${sensitivity}°)`);
-  console.log(`[structureValidator] Original: ${originalUrl.substring(0, 80)}...`);
-  console.log(`[structureValidator] Enhanced: ${enhancedUrl.substring(0, 80)}...`);
+  console.log(`[structureValidator] Original: ${normalizedOriginal.value.substring(0, 80)}...`);
+  console.log(`[structureValidator] Enhanced: ${normalizedEnhanced.value.substring(0, 80)}...`);
 
   try {
     const startTime = Date.now();
 
     // Call OpenCV validator microservice
     const response = await axios.post(
-      `${url}/validate-structure`,
+      `${validatorUrl.value}/validate-structure`,
       {
-        originalUrl,
-        enhancedUrl,
+        originalUrl: normalizedOriginal.value,
+        enhancedUrl: normalizedEnhanced.value,
         sensitivity,
       },
       {

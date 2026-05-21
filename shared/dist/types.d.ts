@@ -1,4 +1,5 @@
 import type { EnhancedImageCompletionType } from "./completionTypes";
+import type { EnhancedImageExecutionMode, EnhancedImagePersistenceStatus, EnhancedImageUserOutcome } from "./enhancedImageSemantics";
 export interface ReinstateConfig {
     targetType: "window" | "doorway" | "opening" | "auto";
     geometry?: {
@@ -282,6 +283,9 @@ export interface EnhancedImage {
     source?: 'stage2' | 'region-edit';
     stagesCompleted: string[];
     completionType?: EnhancedImageCompletionType;
+    userOutcome?: EnhancedImageUserOutcome;
+    executionMode?: EnhancedImageExecutionMode;
+    persistenceStatus?: EnhancedImagePersistenceStatus;
     storageKey: string;
     publicUrl: string;
     thumbnailUrl?: string;
@@ -312,6 +316,9 @@ export interface EnhancedImageListItem {
     originalUrl?: string | null;
     stagesCompleted: string[];
     completionType?: EnhancedImageCompletionType;
+    userOutcome?: EnhancedImageUserOutcome;
+    executionMode?: EnhancedImageExecutionMode;
+    persistenceStatus?: EnhancedImagePersistenceStatus;
     createdAt: string;
     auditRef: string;
     propertyId?: string | null;

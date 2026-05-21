@@ -11,6 +11,17 @@ import {
   isEnhancedImageCompletionType,
   type EnhancedImageCompletionType,
 } from '@realenhance/shared/completionTypes';
+import {
+  deriveExecutionModeFromCompletionType,
+  deriveLegacyCompletionTypeFromExecutionMode,
+  deriveUserOutcomeFromCompletionType,
+  isEnhancedImageExecutionMode,
+  isEnhancedImagePersistenceStatus,
+  isEnhancedImageUserOutcome,
+  type EnhancedImageExecutionMode,
+  type EnhancedImagePersistenceStatus,
+  type EnhancedImageUserOutcome,
+} from '@realenhance/shared/enhancedImageSemantics';
 
 interface CreateEnhancedImageParams {
   agencyId: string;
@@ -21,6 +32,9 @@ interface CreateEnhancedImageParams {
   source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
   completionType?: EnhancedImageCompletionType;
+  userOutcome?: EnhancedImageUserOutcome;
+  executionMode?: EnhancedImageExecutionMode;
+  persistenceStatus?: EnhancedImagePersistenceStatus;
   publicUrl: string;
   thumbnailUrl?: string;
   originalUrl?: string | null;
@@ -49,6 +63,18 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
     return;
   }
 
+  if (params.userOutcome && !isEnhancedImageUserOutcome(params.userOutcome)) return;
+  if (params.executionMode && !isEnhancedImageExecutionMode(params.executionMode)) return;
+  if (params.persistenceStatus && !isEnhancedImagePersistenceStatus(params.persistenceStatus)) return;
+
+  const executionMode =
+    params.executionMode || deriveExecutionModeFromCompletionType(params.completionType);
+  const completionType =
+    params.completionType || deriveLegacyCompletionTypeFromExecutionMode(executionMode);
+  const userOutcome =
+    params.userOutcome || deriveUserOutcomeFromCompletionType(completionType);
+  const persistenceStatus = params.persistenceStatus || 'recorded';
+
   try {
     // Extract storage key from URL (remove protocol and domain)
     const storageKey = extractStorageKey(params.publicUrl);
@@ -57,19 +83,23 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
       `INSERT INTO enhanced_images (
         agency_id, user_id, job_id, stages_completed,
         completion_type,
+        user_outcome, execution_mode, persistence_status,
         property_id, parent_image_id, source,
         storage_key, public_url, thumbnail_url,
         original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url,
         audit_ref, trace_id,
         is_expired
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, FALSE)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, FALSE)
       ON CONFLICT (job_id) DO NOTHING`,
       [
         params.agencyId,
         params.userId,
         params.jobId,
         params.stagesCompleted,
-        params.completionType || null,
+        completionType,
+        userOutcome,
+        executionMode,
+        persistenceStatus,
         params.propertyId || null,
         params.parentImageId || null,
         params.source || 'stage2',

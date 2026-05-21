@@ -6,6 +6,54 @@ export interface Stage1APostFinishOptions {
   sceneType?: string;
 }
 
+interface TransformDiagnosticMeta {
+  width: number | null;
+  height: number | null;
+  space: string | null;
+  channels: number | null;
+  depth: string | null;
+  hasAlpha: boolean | null;
+}
+
+function toTransformDiagnosticMeta(meta: sharp.Metadata | null | undefined): TransformDiagnosticMeta {
+  return {
+    width: typeof meta?.width === "number" ? meta.width : null,
+    height: typeof meta?.height === "number" ? meta.height : null,
+    space: meta?.space ?? null,
+    channels: typeof meta?.channels === "number" ? meta.channels : null,
+    depth: meta?.depth ?? null,
+    hasAlpha: typeof meta?.hasAlpha === "boolean" ? meta.hasAlpha : null,
+  };
+}
+
+function isToneTransformCompatible(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+  const rgbLikeSpace = !space || space === "srgb" || space === "rgb";
+  return channels >= 3 && rgbLikeSpace;
+}
+
+function logTransformDiagnostic(
+  operation: string,
+  phase: "before" | "after" | "skipped",
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  extras?: Record<string, unknown>
+): void {
+  console.debug("[stage1A-postfinish] transform", {
+    operation,
+    phase,
+    branch,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+    ...(extras || {}),
+  });
+}
+
 function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
   if (raw === undefined) return undefined;
   const normalized = String(raw).trim().toLowerCase();
@@ -36,8 +84,10 @@ export async function applyStage1APostGenerationFinish(
   const quality = parseBoundedNumber(process.env.STAGE1A_POSTGEN_FINISH_WEBP_QUALITY, 96, 80, 100);
 
   const isExterior = options.sceneType === "exterior";
+  const branch = isExterior ? "exterior" : "interior";
   const sharpenM2Base = isExterior ? 0.5 : 0.38;
   const contrastBase = isExterior ? 0.022 : 0.018;
+  const sourceMeta = toTransformDiagnosticMeta(await sharp(inputPath).metadata().catch(() => null));
 
   const outPath = inputPath.replace(/\.webp$/i, "-postfinish.webp");
 
@@ -49,10 +99,32 @@ export async function applyStage1APostGenerationFinish(
 
       if (microContrastEnabled && microContrastScale > 0) {
         const scale = contrastBase * microContrastScale;
-        pipeline = pipeline.linear(1 + scale, -(128 * scale * 0.2));
+        if (isToneTransformCompatible(sourceMeta)) {
+          logTransformDiagnostic("linear", "before", sourceMeta, branch, {
+            scale,
+            offset: -(128 * scale * 0.2),
+          });
+          pipeline = pipeline.linear(1 + scale, -(128 * scale * 0.2));
+          logTransformDiagnostic("linear", "after", sourceMeta, branch);
+        } else {
+          console.warn("[stage1A-postfinish] Skipping unsupported linear() transform", {
+            branch,
+            width: sourceMeta.width,
+            height: sourceMeta.height,
+            space: sourceMeta.space,
+            channels: sourceMeta.channels,
+            depth: sourceMeta.depth,
+            hasAlpha: sourceMeta.hasAlpha,
+          });
+          logTransformDiagnostic("linear", "skipped", sourceMeta, branch);
+        }
       }
 
       if (sharpenEnabled && sharpenScale > 0) {
+        logTransformDiagnostic("sharpen", "before", sourceMeta, branch, {
+          sigma: 1.1,
+          m2: sharpenM2Base * sharpenScale,
+        });
         pipeline = pipeline.sharpen({
           sigma: 1.1,
           m1: 0.8,
@@ -61,6 +133,7 @@ export async function applyStage1APostGenerationFinish(
           y2: 10,
           y3: 20,
         });
+        logTransformDiagnostic("sharpen", "after", sourceMeta, branch);
       }
 
       return pipeline.webp({

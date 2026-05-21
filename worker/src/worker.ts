@@ -5,6 +5,11 @@ import * as BullMQ from "bullmq";
 import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
 import { ENHANCED_IMAGE_COMPLETION_TYPES } from "@realenhance/shared/completionTypes";
 import {
+  ENHANCED_IMAGE_EXECUTION_MODES,
+  ENHANCED_IMAGE_PERSISTENCE_STATUSES,
+  ENHANCED_IMAGE_USER_OUTCOMES,
+} from "@realenhance/shared/enhancedImageSemantics";
+import {
   AnyJobPayload,
   EnhanceJobPayload,
   EditJobPayload,
@@ -14569,6 +14574,42 @@ async function ensureEnhancedImagesCompletionTypeContract(): Promise<void> {
   if (!completionTypeMatches) {
     throw new Error(
       `[worker-startup] completion type contract mismatch: expected=${ENHANCED_IMAGE_COMPLETION_TYPES.join(",")} definition=${completionConstraintDefinition || "missing"}`
+    );
+  }
+
+  const enumRows = await workerDbPool.query(
+    `
+      SELECT t.typname AS enum_name, e.enumlabel AS enum_label
+      FROM pg_type t
+      JOIN pg_enum e ON t.oid = e.enumtypid
+      WHERE t.typname IN (
+        'enhanced_image_user_outcome_enum',
+        'enhanced_image_execution_mode_enum',
+        'enhanced_image_persistence_status_enum'
+      )
+    `
+  );
+  const enumMap = new Map<string, Set<string>>();
+  for (const row of enumRows.rows) {
+    const key = String(row.enum_name);
+    const label = String(row.enum_label);
+    if (!enumMap.has(key)) enumMap.set(key, new Set());
+    enumMap.get(key)!.add(label);
+  }
+
+  const outcomeEnumMatches = ENHANCED_IMAGE_USER_OUTCOMES.every((v) =>
+    enumMap.get('enhanced_image_user_outcome_enum')?.has(v)
+  );
+  const executionEnumMatches = ENHANCED_IMAGE_EXECUTION_MODES.every((v) =>
+    enumMap.get('enhanced_image_execution_mode_enum')?.has(v)
+  );
+  const persistenceEnumMatches = ENHANCED_IMAGE_PERSISTENCE_STATUSES.every((v) =>
+    enumMap.get('enhanced_image_persistence_status_enum')?.has(v)
+  );
+
+  if (!outcomeEnumMatches || !executionEnumMatches || !persistenceEnumMatches) {
+    throw new Error(
+      `[worker-startup] semantic enum contract mismatch: outcome=${outcomeEnumMatches} execution=${executionEnumMatches} persistence=${persistenceEnumMatches}`
     );
   }
 }

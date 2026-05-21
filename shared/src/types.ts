@@ -1,4 +1,9 @@
 import type { EnhancedImageCompletionType } from "./completionTypes";
+import type {
+  EnhancedImageExecutionMode,
+  EnhancedImagePersistenceStatus,
+  EnhancedImageUserOutcome,
+} from "./enhancedImageSemantics";
 
 export interface ReinstateConfig {
   targetType: "window" | "doorway" | "opening" | "auto";
@@ -357,6 +362,9 @@ export interface EnhancedImage {
   // Stage completion tracking
   stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
   completionType?: EnhancedImageCompletionType;
+  userOutcome?: EnhancedImageUserOutcome;
+  executionMode?: EnhancedImageExecutionMode;
+  persistenceStatus?: EnhancedImagePersistenceStatus;
 
   // Storage
   storageKey: string; // S3 key
@@ -397,6 +405,9 @@ export interface EnhancedImageListItem {
   originalUrl?: string | null;
   stagesCompleted: string[];
   completionType?: EnhancedImageCompletionType;
+  userOutcome?: EnhancedImageUserOutcome;
+  executionMode?: EnhancedImageExecutionMode;
+  persistenceStatus?: EnhancedImagePersistenceStatus;
   createdAt: string;
   auditRef: string; // May be shown to users as generic "Support reference"
   propertyId?: string | null;

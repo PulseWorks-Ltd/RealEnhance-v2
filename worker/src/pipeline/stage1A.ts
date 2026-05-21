@@ -66,6 +66,140 @@ interface Stage1APreGenerationControls {
   moveSharpenToPost: boolean;
 }
 
+interface TransformDiagnosticMeta {
+  width: number | null;
+  height: number | null;
+  space: string | null;
+  channels: number | null;
+  depth: string | null;
+  hasAlpha: boolean | null;
+}
+
+function toTransformDiagnosticMeta(meta: sharp.Metadata | null | undefined): TransformDiagnosticMeta {
+  return {
+    width: typeof meta?.width === "number" ? meta.width : null,
+    height: typeof meta?.height === "number" ? meta.height : null,
+    space: meta?.space ?? null,
+    channels: typeof meta?.channels === "number" ? meta.channels : null,
+    depth: meta?.depth ?? null,
+    hasAlpha: typeof meta?.hasAlpha === "boolean" ? meta.hasAlpha : null,
+  };
+}
+
+function isToneTransformCompatible(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+  const rgbLikeSpace = !space || space === "srgb" || space === "rgb";
+  return channels >= 3 && rgbLikeSpace;
+}
+
+function logTransformDiagnostic(
+  operation: string,
+  phase: "before" | "after" | "skipped",
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  extras?: Record<string, unknown>
+): void {
+  console.debug("[stage1A] transform", {
+    operation,
+    phase,
+    branch,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+    ...(extras || {}),
+  });
+}
+
+function applyGuardedLinear(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  gain: number,
+  offset: number,
+  reason: string
+): sharp.Sharp {
+  if (!isToneTransformCompatible(meta)) {
+    console.warn("[stage1A] Skipping unsupported linear() transform", {
+      reason,
+      branch,
+      gain,
+      offset,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("linear", "skipped", meta, branch, { reason, gain, offset });
+    return image;
+  }
+  logTransformDiagnostic("linear", "before", meta, branch, { reason, gain, offset });
+  const next = image.linear(gain, offset);
+  logTransformDiagnostic("linear", "after", meta, branch, { reason });
+  return next;
+}
+
+function applyGuardedGamma(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  gamma: number,
+  reason: string
+): sharp.Sharp {
+  if (!isToneTransformCompatible(meta)) {
+    console.warn("[stage1A] Skipping unsupported gamma() transform", {
+      reason,
+      branch,
+      gamma,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma });
+    return image;
+  }
+  logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma });
+  const next = image.gamma(gamma);
+  logTransformDiagnostic("gamma", "after", meta, branch, { reason });
+  return next;
+}
+
+function applyGuardedModulate(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  values: { brightness?: number; saturation?: number; hue?: number; lightness?: number },
+  reason: string
+): sharp.Sharp {
+  if (!isToneTransformCompatible(meta)) {
+    console.warn("[stage1A] Skipping unsupported modulate() transform", {
+      reason,
+      branch,
+      values,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("modulate", "skipped", meta, branch, { reason });
+    return image;
+  }
+  logTransformDiagnostic("modulate", "before", meta, branch, { reason, ...values });
+  const next = image.modulate(values);
+  logTransformDiagnostic("modulate", "after", meta, branch, { reason });
+  return next;
+}
+
 function getStage1APreGenerationControls(): Stage1APreGenerationControls {
   const preservationMode = STAGE1A_ENABLE_PRESERVATION_PREGEN;
   const normalizeEnabled = parseOptionalBoolean(process.env.STAGE1A_PREGEN_NORMALIZE_ENABLED) ?? true;
@@ -670,6 +804,8 @@ export async function runStage1A(
   
   let img = sharp(inputPath);
   const metadata = await img.metadata();
+  const stage1ATransformMeta = toTransformDiagnosticMeta(metadata);
+  const stage1ABranch = effectiveSceneType === "exterior" ? "exterior" : "interior";
   
   // 1. Auto-rotate based on EXIF orientation
   img = img.rotate();
@@ -692,17 +828,30 @@ export async function runStage1A(
       return geminiOutputPath;
     }
 
-    const finishedPath = await applyStage1APostGenerationFinish(geminiOutputPath, {
-      jobId: jobIdResolved,
-      sceneType: effectiveSceneType,
-    });
+    try {
+      const finishedPath = await applyStage1APostGenerationFinish(geminiOutputPath, {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+      });
 
-    await logImageAttemptUrl({
-      ctx: stage1ACtx,
-      localPath: finishedPath,
-    });
+      await logImageAttemptUrl({
+        ctx: stage1ACtx,
+        localPath: finishedPath,
+      });
 
-    return finishedPath;
+      return finishedPath;
+    } catch (err: any) {
+      console.warn("[stage1A] Post-finish failed, falling back to pre-postfinish artifact", {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+        message: err?.message || String(err),
+      });
+      await logImageAttemptUrl({
+        ctx: stage1ACtx,
+        localPath: geminiOutputPath,
+      });
+      return geminiOutputPath;
+    }
   };
 
   if (analysis.isBlurry && shouldUseStabilityStage1A()) {
@@ -760,7 +909,9 @@ export async function runStage1A(
     && (factors.shadowLift > preGenControls.normalizeShadowLiftThreshold
       || factors.contrastBoost > preGenControls.normalizeContrastThreshold)
   ) {
+    logTransformDiagnostic("normalize", "before", stage1ATransformMeta, stage1ABranch);
     img = img.normalize();
+    logTransformDiagnostic("normalize", "after", stage1ATransformMeta, stage1ABranch);
   }
 
   // 4b. Re-anchor white balance on bright low-chroma regions so neutral walls
@@ -778,18 +929,45 @@ export async function runStage1A(
   
   // 5. Apply scaled corrections rather than hard switching.
   if (factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
-    img = img.gamma(1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale));
+    img = applyGuardedGamma(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale),
+      "tone_stack_gamma"
+    );
     if (!analysis.isExterior) {
-      img = img.linear(1 + (factors.shadowLift * 0.08 * preGenControls.toneStackScale), 0);
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
+        1 + (factors.shadowLift * 0.08 * preGenControls.toneStackScale),
+        0,
+        "tone_stack_shadow_lift"
+      );
     }
   }
 
   if (factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
-    img = img.linear(1 - (factors.highlightCompress * 0.2 * preGenControls.toneStackScale), 0);
+    img = applyGuardedLinear(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1 - (factors.highlightCompress * 0.2 * preGenControls.toneStackScale),
+      0,
+      "tone_stack_highlight_compress"
+    );
   }
 
   if (factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
-    img = img.linear(1 + (factors.contrastBoost * 0.3 * preGenControls.toneStackScale), 0);
+    img = applyGuardedLinear(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1 + (factors.contrastBoost * 0.3 * preGenControls.toneStackScale),
+      0,
+      "tone_stack_contrast_boost"
+    );
   }
 
   if ((factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
@@ -813,11 +991,21 @@ export async function runStage1A(
     const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
     const saturationRaw = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03) + factors.saturationBoost;
     const saturation = scaleFromNeutral(saturationRaw, preGenControls.modulateScale);
-    img = img.modulate({ brightness, saturation });
+    img = applyGuardedModulate(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      { brightness, saturation },
+      "interior_profile_modulate"
+    );
     if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35 && preGenControls.localContrastScale > 0) {
-      img = img.linear(
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
         1 + (interiorCfg.localContrast * 0.4 * preGenControls.localContrastScale),
-        -(128 * interiorCfg.localContrast * 0.35 * preGenControls.localContrastScale)
+        -(128 * interiorCfg.localContrast * 0.35 * preGenControls.localContrastScale),
+        "interior_local_contrast"
       );
     }
     logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
@@ -831,22 +1019,39 @@ export async function runStage1A(
       ? 1.01 + (factors.contrastBoost * 0.02) + factors.saturationBoost
       : 1.04 + (factors.contrastBoost * 0.04);
     const saturation = scaleFromNeutral(saturationRaw, preGenControls.modulateScale);
-    img = img.modulate({
-      brightness,
-      saturation,
-    });
+    img = applyGuardedModulate(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      {
+        brightness,
+        saturation,
+      },
+      "default_profile_modulate"
+    );
     logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   }
   
   // 7. Keep only a very mild interior shadow offset; preserve exterior shadows.
   if (!analysis.isExterior && factors.shadowLift > 0.12 && preGenControls.shadowOffsetScale > 0) {
     if (applyInteriorProfile) {
-      img = img.linear(
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
         1.0,
-        Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift * preGenControls.shadowOffsetScale)
+        Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift * preGenControls.shadowOffsetScale),
+        "interior_shadow_offset_profile"
       );
     } else {
-      img = img.linear(1.0, Math.round(2 * preGenControls.shadowOffsetScale));
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
+        1.0,
+        Math.round(2 * preGenControls.shadowOffsetScale),
+        "interior_shadow_offset_default"
+      );
     }
   }
   
@@ -860,11 +1065,22 @@ export async function runStage1A(
   
   // 9. Keep edge brightening narrow and only for darker interiors.
   if (!analysis.isExterior && factors.shadowLift > 0.18 && preGenControls.shadowOffsetScale > 0) {
-    img = img.linear(1.0, Math.round(3 * preGenControls.shadowOffsetScale));
+    img = applyGuardedLinear(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1.0,
+      Math.round(3 * preGenControls.shadowOffsetScale),
+      "interior_edge_brightening"
+    );
   }
   
   // 10. Sharpen only for non-blurry images with moderate edge density.
   if (preGenControls.pregenSharpenEnabled && factors.sharpenAmount > 0) {
+    logTransformDiagnostic("sharpen", "before", stage1ATransformMeta, stage1ABranch, {
+      sigma: 1.2,
+      amount: factors.sharpenAmount * preGenControls.pregenSharpenScale,
+    });
     img = img.sharpen({
       sigma: 1.2,
       m1: 1.0,
@@ -873,6 +1089,7 @@ export async function runStage1A(
       y2: 10.0,
       y3: 20.0,
     });
+    logTransformDiagnostic("sharpen", "after", stage1ATransformMeta, stage1ABranch);
   }
   
   // 12. Export Sharp enhancement with maximum quality
@@ -884,7 +1101,37 @@ export async function runStage1A(
     const metaPromise = base.metadata();
     const grayPromise = base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
     const smallPromise = base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
-    const rgbPromise = base.clone().ensureAlpha().removeAlpha().toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
+    const rgbPromise = metaPromise.then((meta) => {
+      const rgbMeta = toTransformDiagnosticMeta(meta);
+      const rgbCompatible = isToneTransformCompatible(rgbMeta);
+      if (!rgbCompatible) {
+        console.warn("[stage1A] Skipping BaseArtifacts RGB conversion due to unsupported metadata", {
+          width: rgbMeta.width,
+          height: rgbMeta.height,
+          space: rgbMeta.space,
+          channels: rgbMeta.channels,
+          depth: rgbMeta.depth,
+          hasAlpha: rgbMeta.hasAlpha,
+        });
+        logTransformDiagnostic("base_artifacts_rgb", "skipped", rgbMeta, stage1ABranch);
+        return null;
+      }
+      logTransformDiagnostic("ensureAlpha", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+      const rgbPipeline = base.clone().ensureAlpha();
+      logTransformDiagnostic("ensureAlpha", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+      logTransformDiagnostic("removeAlpha", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+      const rgbNoAlpha = rgbPipeline.removeAlpha();
+      logTransformDiagnostic("removeAlpha", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+      logTransformDiagnostic("toColourspace", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb", target: "srgb" });
+      const srgb = rgbNoAlpha.toColourspace("srgb");
+      logTransformDiagnostic("toColourspace", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb", target: "srgb" });
+      return srgb.raw().toBuffer({ resolveWithObject: true });
+    }).catch((err) => {
+      console.warn("[stage1A] BaseArtifacts RGB conversion failed-open", {
+        message: (err as any)?.message || String(err),
+      });
+      return null;
+    });
     return Promise.all([metaPromise, grayPromise, smallPromise, rgbPromise]).then(([meta, gray, small, rgb]) => {
       if (!meta.width || !meta.height) {
         throw new Error("Failed to read Stage1A artifact dimensions");
@@ -900,7 +1147,7 @@ export async function runStage1A(
         smallWidth: small.info.width,
         smallHeight: small.info.height,
         edge,
-        rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
+        rgb: rgb ? new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength) : undefined,
       };
     });
   })() : null;
