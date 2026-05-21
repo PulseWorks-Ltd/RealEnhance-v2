@@ -11,6 +11,11 @@ import type {
   EnhancedImageGalleryResponse,
   EnhancedImageListItem,
 } from '@realenhance/shared/types';
+import {
+  ENHANCED_IMAGE_COMPLETION_TYPES,
+  isEnhancedImageCompletionType,
+  type EnhancedImageCompletionType,
+} from '@realenhance/shared/completionTypes';
 import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/audit.js';
 import { getS3SignedUrl, deleteS3Object } from '../utils/s3.js';
 import { getJob } from './jobs.js';
@@ -34,7 +39,7 @@ interface CreateEnhancedImageParams {
   parentImageId?: string | null;
   source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+  completionType?: EnhancedImageCompletionType;
   publicUrl: string;
   thumbnailUrl?: string;
   originalUrl?: string | null;
@@ -59,6 +64,16 @@ interface Scope {
 export async function createEnhancedImage(
   params: CreateEnhancedImageParams
 ): Promise<EnhancedImage> {
+  if (params.completionType && !isEnhancedImageCompletionType(params.completionType)) {
+    console.error('[enhanced-images] INVALID_COMPLETION_TYPE_FOR_DB', {
+      completionType: params.completionType,
+      allowedValues: ENHANCED_IMAGE_COMPLETION_TYPES,
+      source: 'server.services.enhancedImages.createEnhancedImage',
+      jobId: params.jobId,
+    });
+    throw new Error(`Invalid completionType: ${params.completionType}`);
+  }
+
   const auditRef = generateAuditRef();
   const traceId = params.traceId || generateTraceId(params.jobId);
   const storageKey = extractStorageKey(params.publicUrl);

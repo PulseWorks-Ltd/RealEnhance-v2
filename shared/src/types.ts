@@ -1,3 +1,5 @@
+import type { EnhancedImageCompletionType } from "./completionTypes";
+
 export interface ReinstateConfig {
   targetType: "window" | "doorway" | "opening" | "auto";
   geometry?: {
@@ -354,7 +356,7 @@ export interface EnhancedImage {
 
   // Stage completion tracking
   stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+  completionType?: EnhancedImageCompletionType;
 
   // Storage
   storageKey: string; // S3 key
@@ -394,7 +396,7 @@ export interface EnhancedImageListItem {
   publicUrl: string;
   originalUrl?: string | null;
   stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+  completionType?: EnhancedImageCompletionType;
   createdAt: string;
   auditRef: string; // May be shown to users as generic "Support reference"
   propertyId?: string | null;

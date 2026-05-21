@@ -48,6 +48,7 @@ import batchSubmitRouter from "./routes/batch-submit.js";
 import { enhanceRouter } from "./routes/enhance.js";
 import { internalEnhanceRouter } from "./routes/internalEnhance.js";
 import fs from "fs";
+import { ENHANCED_IMAGE_COMPLETION_TYPES } from "@realenhance/shared/completionTypes";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 import { ensureS3Ready } from "./utils/s3.js";
 import { pool } from "./db/index.js";
@@ -116,11 +117,28 @@ async function ensureEnhancedImagesSchemaCompatibility(): Promise<void> {
 
   const propertiesTableExists = Boolean(tableRes.rows[0]?.exists);
 
-  if (missingColumns.length > 0 || !propertiesTableExists) {
+  const completionConstraintRes = await pool.query(
+    `
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conname = 'enhanced_images_completion_type_check'
+      LIMIT 1
+    `
+  );
+
+  const completionConstraintDefinition = String(
+    completionConstraintRes.rows[0]?.definition || ""
+  );
+  const completionTypeMatches = ENHANCED_IMAGE_COMPLETION_TYPES.every((value) =>
+    completionConstraintDefinition.includes(`'${value}'`)
+  );
+
+  if (missingColumns.length > 0 || !propertiesTableExists || !completionTypeMatches) {
     throw new Error(
       `[startup] Schema mismatch detected. Missing migration features for enhanced image gallery. ` +
       `missingColumns=${missingColumns.join(",") || "none"} propertiesTable=${propertiesTableExists ? "present" : "missing"}. ` +
-      `Apply migrations (including 008_property_folders_and_versions.sql) before starting the server.`
+      `completionTypeContract=${completionTypeMatches ? "ok" : "stale"}. ` +
+      `Apply migrations before starting the server.`
     );
   }
 }

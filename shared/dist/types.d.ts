@@ -1,3 +1,4 @@
+import type { EnhancedImageCompletionType } from "./completionTypes";
 export interface ReinstateConfig {
     targetType: "window" | "doorway" | "opening" | "auto";
     geometry?: {
@@ -280,7 +281,7 @@ export interface EnhancedImage {
     parentImageId?: string | null;
     source?: 'stage2' | 'region-edit';
     stagesCompleted: string[];
-    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+    completionType?: EnhancedImageCompletionType;
     storageKey: string;
     publicUrl: string;
     thumbnailUrl?: string;
@@ -310,7 +311,7 @@ export interface EnhancedImageListItem {
     publicUrl: string;
     originalUrl?: string | null;
     stagesCompleted: string[];
-    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+    completionType?: EnhancedImageCompletionType;
     createdAt: string;
     auditRef: string;
     propertyId?: string | null;

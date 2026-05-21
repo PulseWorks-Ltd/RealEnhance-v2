@@ -3,7 +3,11 @@
  * Calls the billing service to finalize charges based on stage completion
  */
 
-import { finalizeImageCharge, type StageFlags } from "@realenhance/shared";
+import {
+  finalizeImageCharge,
+  type StageFlags,
+} from "@realenhance/shared";
+import type { EnhancedImageCompletionType } from "@realenhance/shared/completionTypes";
 import { createHash } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 
@@ -243,7 +247,7 @@ export async function finalizeImageChargeFromWorker(params: {
   stage1BSuccess: boolean;
   stage2Success: boolean;
   sceneType: string;
-  completionType?: "full_success" | "fallback_1b" | "fallback_1a" | "intentional_1a_success" | "optimized_1a_success";
+  completionType?: EnhancedImageCompletionType;
   finalDeliveredStage?: "1A" | "1B" | "2";
   requestedBeyond1A?: boolean;
   /** Whether the user explicitly selected declutter/Stage1B before submission */

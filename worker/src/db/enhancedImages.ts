@@ -6,6 +6,11 @@
  */
 
 import { pool } from './index.js';
+import {
+  ENHANCED_IMAGE_COMPLETION_TYPES,
+  isEnhancedImageCompletionType,
+  type EnhancedImageCompletionType,
+} from '@realenhance/shared/completionTypes';
 
 interface CreateEnhancedImageParams {
   agencyId: string;
@@ -15,7 +20,7 @@ interface CreateEnhancedImageParams {
   parentImageId?: string | null;
   source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a' | 'intentional_1a_success' | 'optimized_1a_success';
+  completionType?: EnhancedImageCompletionType;
   publicUrl: string;
   thumbnailUrl?: string;
   originalUrl?: string | null;
@@ -33,6 +38,16 @@ interface CreateEnhancedImageParams {
  * IMPORTANT: This is fail-safe - if it fails, log but don't block the job.
  */
 export async function recordEnhancedImage(params: CreateEnhancedImageParams): Promise<void> {
+
+  if (params.completionType && !isEnhancedImageCompletionType(params.completionType)) {
+    console.error('[enhanced-images] INVALID_COMPLETION_TYPE_FOR_DB', {
+      completionType: params.completionType,
+      allowedValues: ENHANCED_IMAGE_COMPLETION_TYPES,
+      source: 'worker.db.enhancedImages.recordEnhancedImage',
+      jobId: params.jobId,
+    });
+    return;
+  }
 
   try {
     // Extract storage key from URL (remove protocol and domain)
@@ -73,6 +88,17 @@ export async function recordEnhancedImage(params: CreateEnhancedImageParams): Pr
     console.log(`[enhanced-images] Recorded: ${params.auditRef} for job ${params.jobId}`);
   } catch (error) {
     // FAIL-SAFE: Log but don't throw - this is not critical for job completion
+    const isCompletionTypeConstraintError =
+      String((error as any)?.message || '').includes('enhanced_images_completion_type_check');
+    if (isCompletionTypeConstraintError) {
+      console.error('[enhanced-images] INVALID_COMPLETION_TYPE_FOR_DB', {
+        completionType: params.completionType || null,
+        allowedValues: ENHANCED_IMAGE_COMPLETION_TYPES,
+        source: 'worker.db.enhancedImages.recordEnhancedImage',
+        jobId: params.jobId,
+        error: (error as any)?.message || String(error),
+      });
+    }
     console.error(`[enhanced-images] Failed to record image for job ${params.jobId}:`, error);
   }
 }

@@ -3,6 +3,7 @@ import { Worker, Job } from "bullmq";
 import { Queue, QueueEvents } from "bullmq";
 import * as BullMQ from "bullmq";
 import { JOB_QUEUE_NAME } from "@realenhance/shared/constants";
+import { ENHANCED_IMAGE_COMPLETION_TYPES } from "@realenhance/shared/completionTypes";
 import {
   AnyJobPayload,
   EnhanceJobPayload,
@@ -114,6 +115,7 @@ import {
   type StructuralBaseline,
 } from "./validators/openingPreservationValidator";
 import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
+import { pool as workerDbPool } from "./db/index";
 import {
   classifyIssueTier,
   CRITICAL_ISSUES,
@@ -14546,6 +14548,31 @@ if (typeof QueueSchedulerCtor === "function") {
 }
 
 // BullMQ worker
+async function ensureEnhancedImagesCompletionTypeContract(): Promise<void> {
+  const completionConstraintRes = await workerDbPool.query(
+    `
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conname = 'enhanced_images_completion_type_check'
+      LIMIT 1
+    `
+  );
+
+  const completionConstraintDefinition = String(
+    completionConstraintRes.rows[0]?.definition || ""
+  );
+
+  const completionTypeMatches = ENHANCED_IMAGE_COMPLETION_TYPES.every((value) =>
+    completionConstraintDefinition.includes(`'${value}'`)
+  );
+
+  if (!completionTypeMatches) {
+    throw new Error(
+      `[worker-startup] completion type contract mismatch: expected=${ENHANCED_IMAGE_COMPLETION_TYPES.join(",")} definition=${completionConstraintDefinition || "missing"}`
+    );
+  }
+}
+
 const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job: Job) => {
@@ -15399,8 +15426,20 @@ const worker = new Worker(
     connection: { url: REDIS_URL },
     concurrency: Number(process.env.WORKER_CONCURRENCY || 2),
     lockDuration: Number(process.env.BULLMQ_LOCK_DURATION_MS || 300_000), // 5 min — jobs run 2–5 min
+    autorun: false,
   }
 );
+
+void (async () => {
+  try {
+    await ensureEnhancedImagesCompletionTypeContract();
+    nLog("[worker-startup] completion type contract confirmed");
+    await worker.run();
+  } catch (err) {
+    console.error("[worker-startup] completion type contract check failed", err);
+    process.exit(1);
+  }
+})();
 
 // Wire up shutdown handler reference
 _workerRef = worker;
