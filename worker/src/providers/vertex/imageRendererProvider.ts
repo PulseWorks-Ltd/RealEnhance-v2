@@ -14,13 +14,17 @@ export type VertexWireImagePayload = {
   mimeType?: string;
 };
 
+export type VertexReferenceType = typeof VERTEX_REFERENCE_TYPE_RAW | typeof VERTEX_REFERENCE_TYPE_MASK;
+export type VertexMaskMode = typeof VERTEX_MASK_MODE_USER_PROVIDED;
+export type VertexEditMode = "EDIT_MODE_DEFAULT" | "EDIT_MODE_INPAINT_INSERTION" | "EDIT_MODE_INPAINT_REMOVAL" | "EDIT_MODE_OUTPAINT";
+
 // Wire-format constants — declared before types that use typeof on them.
 const SUPPORTED_VERTEX_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
 const VERTEX_EDIT_REFERENCE_ORDER = ["source", "mask"] as const;
 const VERTEX_REFERENCE_TYPE_RAW = "REFERENCE_TYPE_RAW" as const;
 const VERTEX_REFERENCE_TYPE_MASK = "REFERENCE_TYPE_MASK" as const;
 const VERTEX_MASK_MODE_USER_PROVIDED = "MASK_MODE_USER_PROVIDED" as const;
-const VERTEX_EDIT_MODE_INPAINT_INSERTION = "EDIT_MODE_INPAINT_INSERTION" as const;
+const VERTEX_EDIT_MODE_DEFAULT = "EDIT_MODE_DEFAULT" as const;
 const VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA_ENV = "VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA" as const;
 const VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION_ENV = "VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION" as const;
 
@@ -51,77 +55,40 @@ export type ImagenAspectRatioNormalizationMetadata = {
   normalizationApplied: boolean;
 };
 
-// Proto3 JSON wire format for EditableReferenceImage.raw_reference_image variant.
-//
-// IMPORTANT: The @google/genai SDK TypeScript types (RawReferenceImage, MaskReferenceImage)
-// are user-facing abstractions. Had the SDK supported editing, it would transform them
-// into these type-specific wrappers before the REST call. We bypass SDK serialization
-// via raw apiClient.request(), so we MUST produce the proto3 JSON wire shape directly.
-//
-// Wrong (TypeScript SDK shape, NOT wire format):
-//   { referenceImage: {...}, referenceId: 1, referenceType: "REFERENCE_TYPE_RAW" }
-//
-// Correct (proto3 JSON wire format):
-//   { referenceId: 1, referenceType: "REFERENCE_TYPE_RAW", rawReferenceImage: { image: {...} } }
-type VertexRawReferenceEntry = {
-  referenceId: number;
-  referenceType: typeof VERTEX_REFERENCE_TYPE_RAW;
-  rawReferenceImage: {
-    image: VertexWireImagePayload;
-  };
-};
+export interface VertexMaskImageConfig {
+  maskMode: VertexMaskMode;
+  maskDilation?: number;
+}
 
-// Proto3 JSON wire format for EditableReferenceImage.mask_reference_image variant.
-// maskMode lives directly inside maskReferenceImage — NOT in a nested "config" sub-object.
-type VertexMaskReferenceEntry = {
+export interface VertexReferenceImageContainer {
   referenceId: number;
-  referenceType: typeof VERTEX_REFERENCE_TYPE_MASK;
-  maskReferenceImage: {
-    maskMode: string;
-    image: VertexWireImagePayload;
-  };
-};
-
-type VertexFlatRawReferenceEntry = {
-  referenceId: number;
-  referenceType: typeof VERTEX_REFERENCE_TYPE_RAW;
+  referenceType: VertexReferenceType;
   referenceImage: VertexWireImagePayload;
-};
+  maskImageConfig?: VertexMaskImageConfig;
+}
 
-type VertexFlatMaskReferenceEntry = {
-  referenceId: number;
-  referenceType: typeof VERTEX_REFERENCE_TYPE_MASK;
-  referenceImage: VertexWireImagePayload;
-  config: {
-    maskMode: string;
-  };
-};
+export interface VertexImagenInstance {
+  prompt: string;
+  referenceImages: VertexReferenceImageContainer[];
+}
 
-type VertexEditReferenceImage =
-  | VertexRawReferenceEntry
-  | VertexMaskReferenceEntry
-  | VertexFlatRawReferenceEntry
-  | VertexFlatMaskReferenceEntry;
+export interface VertexImagenParameters {
+  editMode: VertexEditMode;
+  aspectRatio?: "1:1" | "3:4" | "4:3" | "9:16" | "16:9";
+  numberOfImages?: number;
+  outputMimeType?: "image/jpeg" | "image/png";
+}
 
-type VertexEditPredictPayload = {
-  instances: Array<{
-    prompt: string;
-    referenceImages: VertexEditReferenceImage[];
-  }>;
-  parameters: {
-    sampleCount: number;
-    guidanceScale: number;
-    addWatermark: boolean;
-    editMode: string;
-    outputOptions: {
-      mimeType: string;
-    };
-  };
-};
+export interface VertexImagenPredictionRequest {
+  instances: VertexImagenInstance[];
+  parameters: VertexImagenParameters;
+}
+
+type VertexEditPredictPayload = VertexImagenPredictionRequest;
 
 function resolveVertexPayloadSchemaMode(): VertexPayloadSchemaMode {
   const rawValue = String(process.env[VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA_ENV] || "").trim().toLowerCase();
-  return rawValue === "true" ? "flat" : "wrapper";
+  return rawValue === "wrapper" ? "wrapper" : "flat";
 }
 
 function isVertexImagenAspectRatioNormalizationEnabled(): boolean {
@@ -584,29 +551,23 @@ export function buildVertexEditPredictPayload(params: {
           {
             referenceId: 1,
             referenceType: VERTEX_REFERENCE_TYPE_RAW,
-            rawReferenceImage: {
-              image: params.sourcePayload,
-            },
+            referenceImage: params.sourcePayload,
           },
           {
             referenceId: 2,
             referenceType: VERTEX_REFERENCE_TYPE_MASK,
-            maskReferenceImage: {
+            referenceImage: params.maskPayload,
+            maskImageConfig: {
               maskMode: VERTEX_MASK_MODE_USER_PROVIDED,
-              image: params.maskPayload,
+              maskDilation: 0.1,
             },
           },
         ],
       },
     ],
     parameters: {
-      sampleCount: 1,
-      guidanceScale: params.guidanceScale,
-      addWatermark: false,
-      editMode: VERTEX_EDIT_MODE_INPAINT_INSERTION,
-      outputOptions: {
-        mimeType: "image/png",
-      },
+      editMode: VERTEX_EDIT_MODE_DEFAULT,
+      numberOfImages: 1,
     },
   };
 }
@@ -617,37 +578,7 @@ export function buildVertexEditPredictPayloadFlat(params: {
   maskPayload: VertexWireImagePayload;
   guidanceScale: number;
 }): VertexEditPredictPayload {
-  return {
-    instances: [
-      {
-        prompt: params.prompt,
-        referenceImages: [
-          {
-            referenceId: 1,
-            referenceType: VERTEX_REFERENCE_TYPE_RAW,
-            referenceImage: params.sourcePayload,
-          },
-          {
-            referenceId: 2,
-            referenceType: VERTEX_REFERENCE_TYPE_MASK,
-            referenceImage: params.maskPayload,
-            config: {
-              maskMode: VERTEX_MASK_MODE_USER_PROVIDED,
-            },
-          },
-        ],
-      },
-    ],
-    parameters: {
-      sampleCount: 1,
-      guidanceScale: params.guidanceScale,
-      addWatermark: false,
-      editMode: VERTEX_EDIT_MODE_INPAINT_INSERTION,
-      outputOptions: {
-        mimeType: "image/png",
-      },
-    },
-  };
+  return buildVertexEditPredictPayload(params);
 }
 
 export function buildVertexEditPredictPayloadForMode(params: {
@@ -688,36 +619,19 @@ function redactVertexEditPredictPayload(payload: VertexEditPredictPayload, paylo
           referenceId: entry.referenceId,
           referenceType: entry.referenceType,
         };
-        if (payloadSchemaMode === "flat") {
-          const flatEntry = entry as VertexFlatRawReferenceEntry | VertexFlatMaskReferenceEntry;
-          return {
-            ...base,
-            referenceImage: redactVertexWireImagePayload(flatEntry.referenceImage),
-            ...(flatEntry.referenceType === VERTEX_REFERENCE_TYPE_MASK
-              ? {
-                  config: {
-                    maskMode: (flatEntry as VertexFlatMaskReferenceEntry).config?.maskMode,
-                  },
-                }
-              : {}),
-          };
-        }
-        if (entry.referenceType === VERTEX_REFERENCE_TYPE_RAW) {
-          const raw = entry as VertexRawReferenceEntry;
-          return {
-            ...base,
-            rawReferenceImage: {
-              image: redactVertexWireImagePayload(raw.rawReferenceImage.image),
-            },
-          };
-        }
-        const mask = entry as VertexMaskReferenceEntry;
         return {
           ...base,
-          maskReferenceImage: {
-            maskMode: mask.maskReferenceImage.maskMode,
-            image: redactVertexWireImagePayload(mask.maskReferenceImage.image),
-          },
+          referenceImage: redactVertexWireImagePayload(entry.referenceImage),
+          ...(entry.maskImageConfig
+            ? {
+                maskImageConfig: {
+                  maskMode: entry.maskImageConfig.maskMode,
+                  ...(entry.maskImageConfig.maskDilation !== undefined
+                    ? { maskDilation: entry.maskImageConfig.maskDilation }
+                    : {}),
+                },
+              }
+            : {}),
         };
       }),
     })),
@@ -756,30 +670,9 @@ function getFinalReferenceImagePayload(reference: Record<string, unknown> | unde
     return undefined;
   }
 
-  const directImage = reference.image;
-  if (directImage && typeof directImage === "object") {
-    return directImage as Record<string, unknown>;
-  }
-
   const flatImage = reference.referenceImage;
   if (flatImage && typeof flatImage === "object") {
     return flatImage as Record<string, unknown>;
-  }
-
-  const rawWrapper = reference.rawReferenceImage;
-  if (rawWrapper && typeof rawWrapper === "object") {
-    const rawImage = (rawWrapper as Record<string, unknown>).image;
-    if (rawImage && typeof rawImage === "object") {
-      return rawImage as Record<string, unknown>;
-    }
-  }
-
-  const maskWrapper = reference.maskReferenceImage;
-  if (maskWrapper && typeof maskWrapper === "object") {
-    const maskImage = (maskWrapper as Record<string, unknown>).image;
-    if (maskImage && typeof maskImage === "object") {
-      return maskImage as Record<string, unknown>;
-    }
   }
 
   return undefined;
@@ -804,7 +697,7 @@ function logFinalImagenRequestBoundary(params: {
     hasReferenceImages: !!referenceImages,
     referenceImagesCount: referenceImages?.length,
     firstReferenceKeys: Object.keys(referenceImages?.[0] || {}),
-    nestedImageKeys: Object.keys((referenceImages?.[0] as { image?: Record<string, unknown> } | undefined)?.image || {}),
+    nestedImageKeys: Object.keys(getFinalReferenceImagePayload(referenceImages?.[0]) || {}),
     firstReferencePreview: referenceImages?.[0]
       ? JSON.stringify(referenceImages[0], null, 2).slice(0, 4000)
       : null,
@@ -851,172 +744,7 @@ function logFinalImagenRequestBoundary(params: {
 function validateSerializedVertexEditPredictPayload(params: {
   serializedPayload: string;
 }): void {
-  let parsedPayload: VertexEditPredictPayload;
-  try {
-    parsedPayload = safeJsonParse<VertexEditPredictPayload>(params.serializedPayload);
-  } catch (error) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity edit payload failed JSON serialization integrity check: ${error instanceof Error ? error.message : String(error)}`,
-      "imagen_edit_payload_serialization_invalid_json"
-    );
-  }
-
-  const firstInstance = parsedPayload.instances?.[0];
-  if (!firstInstance || !Array.isArray(firstInstance.referenceImages)) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity edit payload lost referenceImages during serialization",
-      "imagen_edit_payload_serialization_missing_reference_images"
-    );
-  }
-
-  if (firstInstance.referenceImages.length !== VERTEX_EDIT_REFERENCE_ORDER.length) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity edit payload serialized with invalid reference image count: ${firstInstance.referenceImages.length}`,
-      "imagen_edit_payload_serialization_invalid_reference_image_count"
-    );
-  }
-
-  // Guard: source must use rawReferenceImage wrapper (proto3 wire format)
-  const sourceEntry = firstInstance.referenceImages[0] as Record<string, unknown>;
-  if (!sourceEntry || typeof sourceEntry !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source reference entry is missing after serialization",
-      "imagen_edit_payload_serialization_missing_source_entry"
-    );
-  }
-  if (sourceEntry.referenceType !== VERTEX_REFERENCE_TYPE_RAW) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity source reference lost referenceType ${VERTEX_REFERENCE_TYPE_RAW} during serialization`,
-      "imagen_edit_payload_serialization_invalid_source_reference_type"
-    );
-  }
-  if (typeof sourceEntry.referenceId !== "number") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source reference lost required referenceId during serialization",
-      "imagen_edit_payload_serialization_missing_source_reference_id"
-    );
-  }
-  const sourceRawWrapper = sourceEntry.rawReferenceImage as Record<string, unknown> | undefined;
-  if (!sourceRawWrapper || typeof sourceRawWrapper !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source reference lost rawReferenceImage wrapper during serialization",
-      "imagen_edit_payload_serialization_missing_source_raw_wrapper"
-    );
-  }
-  const sourceInnerImage = sourceRawWrapper.image as Record<string, unknown> | undefined;
-  if (!sourceInnerImage || typeof sourceInnerImage !== "object" || Object.keys(sourceInnerImage).length <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.image is missing or empty after serialization",
-      "imagen_edit_payload_serialization_missing_source_inner_image"
-    );
-  }
-  if (sourceRawWrapper.referenceImage !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage contains legacy referenceImage key after serialization",
-      "imagen_edit_payload_serialization_source_legacy_inner_reference_image"
-    );
-  }
-  if (!isSupportedVertexImageMimeType(sourceInnerImage.mimeType)) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity source image lost a valid mimeType during serialization`,
-      "imagen_edit_payload_serialization_invalid_source_mime_type"
-    );
-  }
-  const sourceBytesB64 = typeof sourceInnerImage.bytesBase64Encoded === "string" ? sourceInnerImage.bytesBase64Encoded : "";
-  if (!sourceInnerImage.gcsUri && sourceBytesB64.length <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.image lost bytes and uri during serialization",
-      "imagen_edit_payload_serialization_missing_source_image_data"
-    );
-  }
-  // Guard: source must NOT have legacy flat referenceImage at outer level
-  if (sourceEntry.referenceImage !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source reference contains legacy flat referenceImage at outer level — must use rawReferenceImage wrapper",
-      "imagen_edit_payload_serialization_source_legacy_flat_reference_image"
-    );
-  }
-
-  // Guard: mask must use maskReferenceImage wrapper (proto3 wire format)
-  const maskEntry = firstInstance.referenceImages[1] as Record<string, unknown>;
-  if (!maskEntry || typeof maskEntry !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference entry is missing after serialization",
-      "imagen_edit_payload_serialization_missing_mask_entry"
-    );
-  }
-  if (maskEntry.referenceType !== VERTEX_REFERENCE_TYPE_MASK) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity mask reference lost referenceType ${VERTEX_REFERENCE_TYPE_MASK} during serialization`,
-      "imagen_edit_payload_serialization_invalid_mask_reference_type"
-    );
-  }
-  if (typeof maskEntry.referenceId !== "number") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference lost required referenceId during serialization",
-      "imagen_edit_payload_serialization_missing_mask_reference_id"
-    );
-  }
-  const maskWrapper = maskEntry.maskReferenceImage as Record<string, unknown> | undefined;
-  if (!maskWrapper || typeof maskWrapper !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference lost maskReferenceImage wrapper during serialization",
-      "imagen_edit_payload_serialization_missing_mask_wrapper"
-    );
-  }
-  if (maskWrapper.maskMode !== VERTEX_MASK_MODE_USER_PROVIDED) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity maskReferenceImage.maskMode lost ${VERTEX_MASK_MODE_USER_PROVIDED} during serialization`,
-      "imagen_edit_payload_serialization_invalid_mask_mode"
-    );
-  }
-  const maskInnerImage = maskWrapper.image as Record<string, unknown> | undefined;
-  if (!maskInnerImage || typeof maskInnerImage !== "object" || Object.keys(maskInnerImage).length <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.image is missing or empty after serialization",
-      "imagen_edit_payload_serialization_missing_mask_inner_image"
-    );
-  }
-  if (maskWrapper.referenceImage !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage contains legacy referenceImage key after serialization",
-      "imagen_edit_payload_serialization_mask_legacy_inner_reference_image"
-    );
-  }
-  if (!isSupportedVertexImageMimeType(maskInnerImage.mimeType)) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity mask image lost a valid mimeType during serialization`,
-      "imagen_edit_payload_serialization_invalid_mask_mime_type"
-    );
-  }
-  const maskBytesB64 = typeof maskInnerImage.bytesBase64Encoded === "string" ? maskInnerImage.bytesBase64Encoded : "";
-  if (!maskInnerImage.gcsUri && maskBytesB64.length <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.image lost bytes and uri during serialization",
-      "imagen_edit_payload_serialization_missing_mask_image_data"
-    );
-  }
-  // Guard: mask must NOT have legacy flat referenceImage at outer level
-  if (maskEntry.referenceImage !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference contains legacy flat referenceImage at outer level — must use maskReferenceImage wrapper",
-      "imagen_edit_payload_serialization_mask_legacy_flat_reference_image"
-    );
-  }
-  // Guard: mask must NOT have legacy config object at outer level
-  if (maskEntry.config !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference contains legacy config object at outer level — maskMode must be inside maskReferenceImage",
-      "imagen_edit_payload_serialization_mask_legacy_config"
-    );
-  }
-  // Guard: parameters must NOT contain maskMode (belongs in maskReferenceImage, not parameters)
-  if ((parsedPayload.parameters as Record<string, unknown>).maskMode !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity parameters contains maskMode — it must only be inside maskReferenceImage",
-      "imagen_edit_payload_serialization_parameters_has_mask_mode"
-    );
-  }
+  validateSerializedVertexEditPredictPayloadFlat(params);
 }
 
 function validateSerializedVertexEditPredictPayloadFlat(params: {
@@ -1046,7 +774,7 @@ function validateSerializedVertexEditPredictPayloadFlat(params: {
     );
   }
 
-  const sourceEntry = firstInstance.referenceImages[0] as Record<string, unknown>;
+  const sourceEntry = firstInstance.referenceImages[0] as unknown as Record<string, unknown>;
   if (!sourceEntry || typeof sourceEntry !== "object") {
     throw new VertexSecondaryContinuityError(
       "Vertex continuity flat source reference entry is missing after serialization",
@@ -1098,7 +826,7 @@ function validateSerializedVertexEditPredictPayloadFlat(params: {
     );
   }
 
-  const maskEntry = firstInstance.referenceImages[1] as Record<string, unknown>;
+  const maskEntry = firstInstance.referenceImages[1] as unknown as Record<string, unknown>;
   if (!maskEntry || typeof maskEntry !== "object") {
     throw new VertexSecondaryContinuityError(
       "Vertex continuity flat mask reference entry is missing after serialization",
@@ -1123,10 +851,16 @@ function validateSerializedVertexEditPredictPayloadFlat(params: {
       "imagen_edit_payload_flat_serialization_mask_wrapper_leak"
     );
   }
-  const maskConfig = maskEntry.config as Record<string, unknown> | undefined;
+  if (maskEntry.image !== undefined || maskEntry.rawReferenceImage !== undefined || maskEntry.maskReferenceImage !== undefined) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity flat mask reference contains legacy image or wrapper keys after serialization",
+      "imagen_edit_payload_flat_serialization_mask_wrapper_leak"
+    );
+  }
+  const maskConfig = maskEntry.maskImageConfig as Record<string, unknown> | undefined;
   if (!maskConfig || maskConfig.maskMode !== VERTEX_MASK_MODE_USER_PROVIDED) {
     throw new VertexSecondaryContinuityError(
-      `Vertex continuity flat mask config is missing required maskMode ${VERTEX_MASK_MODE_USER_PROVIDED}`,
+      `Vertex continuity flat maskImageConfig is missing required maskMode ${VERTEX_MASK_MODE_USER_PROVIDED}`,
       "imagen_edit_payload_flat_serialization_invalid_mask_mode"
     );
   }
@@ -1151,9 +885,15 @@ function validateSerializedVertexEditPredictPayloadFlat(params: {
     );
   }
 
-  if ((parsedPayload.parameters as Record<string, unknown>).maskMode !== undefined) {
+  if (sourceEntry.image !== undefined) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity flat parameters contains maskMode — it must only be inside referenceImages[1].config",
+      "Vertex continuity flat source reference contains legacy image key after serialization",
+      "imagen_edit_payload_flat_serialization_source_legacy_image_key"
+    );
+  }
+  if ((parsedPayload.parameters as unknown as Record<string, unknown>).maskMode !== undefined) {
+    throw new VertexSecondaryContinuityError(
+      "Vertex continuity flat parameters contains maskMode — it must only be inside referenceImages[1].maskImageConfig",
       "imagen_edit_payload_flat_serialization_parameters_has_mask_mode"
     );
   }
@@ -1175,162 +915,7 @@ function validateVertexEditPredictPayload(params: {
   sourceArtifact: Record<string, unknown>;
   maskArtifact: Record<string, unknown>;
 }): void {
-  const firstInstance = params.payload.instances[0];
-  if (!firstInstance) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity edit payload is missing instances[0]",
-      "imagen_edit_payload_missing_instance"
-    );
-  }
-
-  if (typeof firstInstance.prompt !== "string" || firstInstance.prompt.trim().length <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity edit payload is missing a prompt",
-      "imagen_edit_payload_missing_prompt"
-    );
-  }
-
-  if (!Array.isArray(firstInstance.referenceImages) || firstInstance.referenceImages.length < 2) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity edit payload is missing required reference images",
-      "imagen_edit_payload_missing_reference_images"
-    );
-  }
-  if (firstInstance.referenceImages.length !== VERTEX_EDIT_REFERENCE_ORDER.length) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity edit payload has invalid reference image count: ${firstInstance.referenceImages.length}`,
-      "imagen_edit_payload_invalid_reference_image_count"
-    );
-  }
-
-  // Validate source entry — must use rawReferenceImage wrapper (proto3 wire format)
-  const sourceEntry = firstInstance.referenceImages[0] as VertexRawReferenceEntry;
-  if (sourceEntry.referenceType !== VERTEX_REFERENCE_TYPE_RAW) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity source reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_RAW}`,
-      "imagen_edit_payload_invalid_source_reference_type"
-    );
-  }
-  if (typeof sourceEntry.referenceId !== "number") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source reference is missing required referenceId",
-      "imagen_edit_payload_missing_source_reference_id"
-    );
-  }
-  const sourceWrapper = sourceEntry.rawReferenceImage;
-  if (!sourceWrapper || typeof sourceWrapper !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source reference is missing rawReferenceImage wrapper",
-      "imagen_edit_payload_missing_source_raw_wrapper"
-    );
-  }
-  const sourceInnerImage = sourceWrapper.image;
-  if (!sourceInnerImage || typeof sourceInnerImage !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.image is missing",
-      "imagen_edit_payload_missing_source_inner_image"
-    );
-  }
-  if ((sourceWrapper as Record<string, unknown>).referenceImage !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage contains legacy referenceImage key",
-      "imagen_edit_payload_legacy_source_inner_reference_image"
-    );
-  }
-  const sourceBytesLength = typeof sourceInnerImage.bytesBase64Encoded === "string"
-    ? sourceInnerImage.bytesBase64Encoded.length : 0;
-  if (!sourceInnerImage.gcsUri && sourceBytesLength <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source rawReferenceImage.image is missing bytes and uri",
-      "imagen_edit_payload_missing_raw_source_image"
-    );
-  }
-  if (!isSupportedVertexImageMimeType(sourceInnerImage.mimeType)) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity source image MIME type is invalid for edit payload: ${String(sourceInnerImage.mimeType || "unknown")}`,
-      "imagen_edit_payload_invalid_source_mime_type"
-    );
-  }
-
-  // Validate mask entry — must use maskReferenceImage wrapper (proto3 wire format)
-  const maskEntry = firstInstance.referenceImages[1] as VertexMaskReferenceEntry;
-  if (maskEntry.referenceType !== VERTEX_REFERENCE_TYPE_MASK) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity mask reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_MASK}`,
-      "imagen_edit_payload_invalid_mask_reference_type"
-    );
-  }
-  if (typeof maskEntry.referenceId !== "number") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference is missing required referenceId",
-      "imagen_edit_payload_missing_mask_reference_id"
-    );
-  }
-  const maskWrapper = maskEntry.maskReferenceImage;
-  if (!maskWrapper || typeof maskWrapper !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask reference is missing maskReferenceImage wrapper",
-      "imagen_edit_payload_missing_mask_wrapper"
-    );
-  }
-  if (maskWrapper.maskMode !== VERTEX_MASK_MODE_USER_PROVIDED) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity maskReferenceImage is missing required maskMode ${VERTEX_MASK_MODE_USER_PROVIDED}`,
-      "imagen_edit_payload_missing_mask_mode"
-    );
-  }
-  const maskInnerImage = maskWrapper.image;
-  if (!maskInnerImage || typeof maskInnerImage !== "object") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.image is missing",
-      "imagen_edit_payload_missing_mask_inner_image"
-    );
-  }
-  if ((maskWrapper as Record<string, unknown>).referenceImage !== undefined) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage contains legacy referenceImage key",
-      "imagen_edit_payload_legacy_mask_inner_reference_image"
-    );
-  }
-  const maskBytesLength = typeof maskInnerImage.bytesBase64Encoded === "string"
-    ? maskInnerImage.bytesBase64Encoded.length : 0;
-  if (!maskInnerImage.gcsUri && maskBytesLength <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask maskReferenceImage.image is missing bytes and uri",
-      "imagen_edit_payload_missing_mask_image"
-    );
-  }
-  if (!isSupportedVertexImageMimeType(maskInnerImage.mimeType)) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity mask image MIME type is invalid for edit payload: ${String(maskInnerImage.mimeType || "unknown")}`,
-      "imagen_edit_payload_invalid_mask_mime_type"
-    );
-  }
-
-  if (params.payload.parameters.editMode !== VERTEX_EDIT_MODE_INPAINT_INSERTION) {
-    throw new VertexSecondaryContinuityError(
-      `Vertex continuity edit payload is missing ${VERTEX_EDIT_MODE_INPAINT_INSERTION}`,
-      "imagen_edit_payload_missing_edit_mode"
-    );
-  }
-  if (params.payload.parameters.outputOptions?.mimeType !== "image/png") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity edit payload is missing the required PNG output mime type",
-      "imagen_edit_payload_invalid_output_mime_type"
-    );
-  }
-  if (Number(params.sourceArtifact.sizeBytes || 0) <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity source image artifact is empty before SDK execution",
-      "imagen_source_image_empty_before_sdk_execution"
-    );
-  }
-  if (Number(params.maskArtifact.sizeBytes || 0) <= 0) {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity mask image artifact is empty before SDK execution",
-      "imagen_mask_image_empty_before_sdk_execution"
-    );
-  }
+  validateVertexEditPredictPayloadFlat(params);
 }
 
 function validateVertexEditPredictPayloadFlat(params: {
@@ -1366,7 +951,7 @@ function validateVertexEditPredictPayloadFlat(params: {
     );
   }
 
-  const sourceEntry = firstInstance.referenceImages[0] as VertexFlatRawReferenceEntry & Record<string, unknown>;
+  const sourceEntry = firstInstance.referenceImages[0] as VertexReferenceImageContainer & Record<string, unknown>;
   if (sourceEntry.referenceType !== VERTEX_REFERENCE_TYPE_RAW) {
     throw new VertexSecondaryContinuityError(
       `Vertex continuity flat source reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_RAW}`,
@@ -1413,7 +998,7 @@ function validateVertexEditPredictPayloadFlat(params: {
     );
   }
 
-  const maskEntry = firstInstance.referenceImages[1] as VertexFlatMaskReferenceEntry & Record<string, unknown>;
+  const maskEntry = firstInstance.referenceImages[1] as VertexReferenceImageContainer & Record<string, unknown>;
   if (maskEntry.referenceType !== VERTEX_REFERENCE_TYPE_MASK) {
     throw new VertexSecondaryContinuityError(
       `Vertex continuity flat mask reference is missing required referenceType ${VERTEX_REFERENCE_TYPE_MASK}`,
@@ -1426,9 +1011,9 @@ function validateVertexEditPredictPayloadFlat(params: {
       "imagen_edit_payload_flat_missing_mask_reference_id"
     );
   }
-  if (maskEntry.rawReferenceImage !== undefined || maskEntry.maskReferenceImage !== undefined) {
+  if (maskEntry.image !== undefined || maskEntry.rawReferenceImage !== undefined || maskEntry.maskReferenceImage !== undefined) {
     throw new VertexSecondaryContinuityError(
-      "Vertex continuity flat mask reference unexpectedly contains wrapper keys",
+      "Vertex continuity flat mask reference unexpectedly contains legacy image or wrapper keys",
       "imagen_edit_payload_flat_mask_wrapper_leak"
     );
   }
@@ -1453,23 +1038,17 @@ function validateVertexEditPredictPayloadFlat(params: {
       "imagen_edit_payload_flat_invalid_mask_mime_type"
     );
   }
-  if (!maskEntry.config || maskEntry.config.maskMode !== VERTEX_MASK_MODE_USER_PROVIDED) {
+  if (!maskEntry.maskImageConfig || maskEntry.maskImageConfig.maskMode !== VERTEX_MASK_MODE_USER_PROVIDED) {
     throw new VertexSecondaryContinuityError(
-      `Vertex continuity flat mask config is missing required maskMode ${VERTEX_MASK_MODE_USER_PROVIDED}`,
+      `Vertex continuity flat maskImageConfig is missing required maskMode ${VERTEX_MASK_MODE_USER_PROVIDED}`,
       "imagen_edit_payload_flat_missing_mask_mode"
     );
   }
 
-  if (params.payload.parameters.editMode !== VERTEX_EDIT_MODE_INPAINT_INSERTION) {
+  if (params.payload.parameters.editMode !== VERTEX_EDIT_MODE_DEFAULT) {
     throw new VertexSecondaryContinuityError(
-      `Vertex continuity flat edit payload is missing ${VERTEX_EDIT_MODE_INPAINT_INSERTION}`,
+      `Vertex continuity flat edit payload is missing ${VERTEX_EDIT_MODE_DEFAULT}`,
       "imagen_edit_payload_flat_missing_edit_mode"
-    );
-  }
-  if (params.payload.parameters.outputOptions?.mimeType !== "image/png") {
-    throw new VertexSecondaryContinuityError(
-      "Vertex continuity flat edit payload is missing the required PNG output mime type",
-      "imagen_edit_payload_flat_invalid_output_mime_type"
     );
   }
   if (Number(params.sourceArtifact.sizeBytes || 0) <= 0) {
@@ -1824,7 +1403,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         latencyMs,
         mimeType: generated.mimeType,
         guidanceScale,
-        payload,
+        payload: payload as unknown as Record<string, unknown>,
       };
     } catch (error: any) {
       // Extract structured Vertex error body from the SDK ClientError message string

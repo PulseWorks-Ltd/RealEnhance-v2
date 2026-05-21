@@ -1,26 +1,12 @@
 /**
- * Canonical regression tests for the Vertex Imagen 3 edit `:predict` wire payload.
+ * Canonical regression tests for the verified Vertex Imagen 3 edit `:predict` wire payload.
  *
- * KEY ARCHITECTURAL FACT:
- * The @google/genai SDK's RawReferenceImage / MaskReferenceImage TypeScript types
- * are USER-FACING ABSTRACTIONS, not wire-format shapes. Had the SDK supported
- * editing, it would transform them into type-specific wrappers before the REST call.
- * We bypass SDK serialization via raw apiClient.request(), so we must produce the
- * proto3 JSON wire format ourselves.
- *
- * WRONG (TypeScript SDK shape accidentally sent as wire format):
- *   referenceImages[0] = { referenceImage: {...}, referenceType: "REFERENCE_TYPE_RAW" }
- *   referenceImages[1] = { referenceImage: {...}, config: { maskMode: "..." }, referenceType: "REFERENCE_TYPE_MASK" }
- *
- * CORRECT (proto3 JSON wire format — what this file asserts):
- *   referenceImages[0] = {
- *     referenceId: 1, referenceType: "REFERENCE_TYPE_RAW",
- *     rawReferenceImage: { image: { bytesBase64Encoded: "...", mimeType: "..." } }
- *   }
- *   referenceImages[1] = {
- *     referenceId: 2, referenceType: "REFERENCE_TYPE_MASK",
- *     maskReferenceImage: { maskMode: "MASK_MODE_USER_PROVIDED", image: { bytesBase64Encoded: "...", mimeType: "..." } }
- *   }
+ * VERIFIED CONTRACT:
+ * - `referenceImages[]` entries must carry image data under `referenceImage`
+ * - mask configuration must live under `maskImageConfig`
+ * - camelCase JSON field names are required on this synchronous endpoint
+ * - legacy wrapper keys like `rawReferenceImage`, `maskReferenceImage`, and flat `image`
+ *   must never reappear in the outbound payload
  */
 
 import { test } from "node:test";
@@ -62,8 +48,6 @@ function buildFlatPayload() {
   });
 }
 
-// ─── Structure ───────────────────────────────────────────────────────────────
-
 test("instances[0] has exactly one prompt and two referenceImages", () => {
   const payload = buildPayload();
   assert.equal(payload.instances.length, 1);
@@ -72,7 +56,7 @@ test("instances[0] has exactly one prompt and two referenceImages", () => {
   assert.equal(instance.referenceImages.length, 2);
 });
 
-test("mode-based builder selects wrapper schema deterministically", () => {
+test("mode-based builder defaults to the verified camelCase referenceImage schema", () => {
   const payload = buildVertexEditPredictPayloadForMode({
     prompt: "test prompt",
     sourcePayload,
@@ -81,11 +65,11 @@ test("mode-based builder selects wrapper schema deterministically", () => {
     payloadSchemaMode: "wrapper",
   });
 
-  assert.ok("rawReferenceImage" in payload.instances[0]!.referenceImages[0]!);
-  assert.ok("maskReferenceImage" in payload.instances[0]!.referenceImages[1]!);
+  assert.ok("referenceImage" in payload.instances[0]!.referenceImages[0]!);
+  assert.ok("referenceImage" in payload.instances[0]!.referenceImages[1]!);
 });
 
-test("mode-based builder selects flat schema deterministically", () => {
+test("mode-based builder flat mode stays on the same verified schema", () => {
   const payload = buildVertexEditPredictPayloadForMode({
     prompt: "test prompt",
     sourcePayload,
@@ -98,199 +82,86 @@ test("mode-based builder selects flat schema deterministically", () => {
   assert.ok("referenceImage" in payload.instances[0]!.referenceImages[1]!);
 });
 
-// ─── Source: rawReferenceImage wrapper ───────────────────────────────────────
-
-test("source uses rawReferenceImage wrapper (proto3 wire format)", () => {
+test("source uses nested referenceImage and never legacy image keys", () => {
   const payload = buildPayload();
   const sourceEntry = payload.instances[0]!.referenceImages[0]! as Record<string, unknown>;
 
-  assert.ok(
-    "rawReferenceImage" in sourceEntry,
-    "source must have rawReferenceImage wrapper — not a flat referenceImage at outer level"
-  );
-  assert.equal(
-    (sourceEntry as any).referenceImage,
-    undefined,
-    "source must NOT have a legacy flat referenceImage at outer level"
-  );
+  assert.equal(sourceEntry.referenceType, "REFERENCE_TYPE_RAW");
+  assert.equal(sourceEntry.referenceId, 1);
+  assert.ok("referenceImage" in sourceEntry);
+  assert.equal((sourceEntry as any).image, undefined);
+  assert.equal((sourceEntry as any).rawReferenceImage, undefined);
+  assert.equal((sourceEntry as any).maskReferenceImage, undefined);
+  assert.equal((sourceEntry as any).config, undefined);
+
+  const image = (sourceEntry as any).referenceImage;
+  assert.equal(image.mimeType, "image/jpeg");
+  assert.equal(image.bytesBase64Encoded, SOURCE_B64);
+  assert.equal(image.imageBytes, undefined);
+  assert.equal(image.bytes_base64_encoded, undefined);
 });
 
-test("source rawReferenceImage.image carries bytesBase64Encoded (not imageBytes)", () => {
-  const payload = buildPayload();
-  const sourceEntry = payload.instances[0]!.referenceImages[0]! as any;
-  const inner = sourceEntry.rawReferenceImage?.image;
-
-  assert.ok(inner, "rawReferenceImage.image must exist");
-  assert.equal(inner.bytesBase64Encoded, SOURCE_B64,
-    "rawReferenceImage.image must carry bytesBase64Encoded");
-
-  // Guard: must not carry the deprecated SDK field name
-  assert.equal(inner.imageBytes, undefined,
-    "imageBytes must never appear — Vertex returns 400 if it does");
-  assert.equal(sourceEntry.rawReferenceImage?.referenceImage, undefined,
-    "rawReferenceImage.referenceImage must never appear — Vertex expects rawReferenceImage.image");
-});
-
-test("source rawReferenceImage.image survives JSON serialization round-trip", () => {
-  const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const inner = serialised.instances[0].referenceImages[0].rawReferenceImage.image;
-  assert.equal(inner.mimeType, "image/jpeg");
-  assert.ok(typeof inner.bytesBase64Encoded === "string" && inner.bytesBase64Encoded.length > 0);
-  assert.equal(inner.imageBytes, undefined);
-  assert.equal(serialised.instances[0].referenceImages[0].rawReferenceImage.referenceImage, undefined);
-});
-
-test("source referenceType is REFERENCE_TYPE_RAW", () => {
-  const payload = buildPayload();
-  assert.equal(
-    (payload.instances[0]!.referenceImages[0]! as any).referenceType,
-    "REFERENCE_TYPE_RAW"
-  );
-});
-
-test("source referenceId is numeric and survives JSON round-trip", () => {
-  const payload = buildPayload();
-  const entry = payload.instances[0]!.referenceImages[0]! as any;
-  assert.ok(typeof entry.referenceId === "number",
-    "source referenceId must be a number — Vertex returns 400 if absent");
-  const serialised = JSON.parse(JSON.stringify(payload));
-  assert.ok(typeof serialised.instances[0].referenceImages[0].referenceId === "number",
-    "source referenceId must survive JSON round-trip");
-});
-
-// ─── Mask: maskReferenceImage wrapper ────────────────────────────────────────
-
-test("mask uses maskReferenceImage wrapper (proto3 wire format)", () => {
+test("mask uses referenceImage plus maskImageConfig and never legacy wrapper keys", () => {
   const payload = buildPayload();
   const maskEntry = payload.instances[0]!.referenceImages[1]! as Record<string, unknown>;
 
-  assert.ok(
-    "maskReferenceImage" in maskEntry,
-    "mask must have maskReferenceImage wrapper — not a flat referenceImage + config at outer level"
-  );
-  assert.equal(
-    (maskEntry as any).referenceImage,
-    undefined,
-    "mask must NOT have a legacy flat referenceImage at outer level"
-  );
-  assert.equal(
-    (maskEntry as any).config,
-    undefined,
-    "mask must NOT have a legacy config object at outer level — maskMode must be inside maskReferenceImage"
-  );
+  assert.equal(maskEntry.referenceType, "REFERENCE_TYPE_MASK");
+  assert.equal(maskEntry.referenceId, 2);
+  assert.ok("referenceImage" in maskEntry);
+  assert.ok("maskImageConfig" in maskEntry);
+  assert.equal((maskEntry as any).image, undefined);
+  assert.equal((maskEntry as any).rawReferenceImage, undefined);
+  assert.equal((maskEntry as any).maskReferenceImage, undefined);
+  assert.equal((maskEntry as any).config, undefined);
+
+  const image = (maskEntry as any).referenceImage;
+  assert.equal(image.mimeType, "image/png");
+  assert.equal(image.bytesBase64Encoded, MASK_B64);
+  assert.equal(image.imageBytes, undefined);
+  assert.equal(image.bytes_base64_encoded, undefined);
+
+  const maskImageConfig = (maskEntry as any).maskImageConfig;
+  assert.equal(maskImageConfig.maskMode, "MASK_MODE_USER_PROVIDED");
+  assert.equal(maskImageConfig.maskDilation, 0.1);
 });
 
-test("mask maskReferenceImage.maskMode is MASK_MODE_USER_PROVIDED", () => {
-  const payload = buildPayload();
-  const maskEntry = payload.instances[0]!.referenceImages[1]! as any;
-  assert.equal(
-    maskEntry.maskReferenceImage?.maskMode,
-    "MASK_MODE_USER_PROVIDED",
-    "maskMode must be directly inside maskReferenceImage, not in outer config"
-  );
-});
-
-test("mask maskReferenceImage.image carries bytesBase64Encoded (not imageBytes)", () => {
-  const payload = buildPayload();
-  const maskEntry = payload.instances[0]!.referenceImages[1]! as any;
-  const inner = maskEntry.maskReferenceImage?.image;
-
-  assert.ok(inner, "maskReferenceImage.image must exist");
-  assert.equal(inner.bytesBase64Encoded, MASK_B64,
-    "maskReferenceImage.image must carry bytesBase64Encoded");
-  assert.equal(inner.imageBytes, undefined,
-    "imageBytes must never appear in mask image");
-  assert.equal(maskEntry.maskReferenceImage?.referenceImage, undefined,
-    "maskReferenceImage.referenceImage must never appear — Vertex expects maskReferenceImage.image");
-});
-
-test("mask maskReferenceImage.image survives JSON serialization round-trip", () => {
+test("referenceImage shape survives JSON serialization round-trip", () => {
   const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const inner = serialised.instances[0].referenceImages[1].maskReferenceImage.image;
-  assert.equal(inner.mimeType, "image/png");
-  assert.ok(typeof inner.bytesBase64Encoded === "string" && inner.bytesBase64Encoded.length > 0);
-  assert.equal(inner.imageBytes, undefined);
-  assert.equal(serialised.instances[0].referenceImages[1].maskReferenceImage.referenceImage, undefined);
-});
+  assert.equal(serialised.instances[0].referenceImages[0].referenceImage.mimeType, "image/jpeg");
+  assert.ok(typeof serialised.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded === "string");
+  assert.equal(serialised.instances[0].referenceImages[0].image, undefined);
+  assert.equal(serialised.instances[0].referenceImages[0].rawReferenceImage, undefined);
 
-test("mask referenceType is REFERENCE_TYPE_MASK", () => {
-  const payload = buildPayload();
-  assert.equal(
-    (payload.instances[0]!.referenceImages[1]! as any).referenceType,
-    "REFERENCE_TYPE_MASK"
-  );
+  assert.equal(serialised.instances[0].referenceImages[1].referenceImage.mimeType, "image/png");
+  assert.ok(typeof serialised.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded === "string");
+  assert.equal(serialised.instances[0].referenceImages[1].maskImageConfig.maskMode, "MASK_MODE_USER_PROVIDED");
+  assert.equal(serialised.instances[0].referenceImages[1].config, undefined);
 });
-
-test("mask referenceId is numeric, distinct from source, and survives JSON round-trip", () => {
-  const payload = buildPayload();
-  const sourceEntry = payload.instances[0]!.referenceImages[0]! as any;
-  const maskEntry = payload.instances[0]!.referenceImages[1]! as any;
-  assert.ok(typeof maskEntry.referenceId === "number",
-    "mask referenceId must be a number — Vertex returns 400 if absent");
-  assert.notEqual(maskEntry.referenceId, sourceEntry.referenceId,
-    "source and mask must have distinct referenceId values");
-  const serialised = JSON.parse(JSON.stringify(payload));
-  assert.ok(typeof serialised.instances[0].referenceImages[1].referenceId === "number",
-    "mask referenceId must survive JSON round-trip");
-});
-
-// ─── Parameters ──────────────────────────────────────────────────────────────
 
 test("parameters contain required Imagen 3 edit fields", () => {
   const payload = buildPayload();
   const params = payload.parameters;
-  assert.equal(params.editMode, "EDIT_MODE_INPAINT_INSERTION");
-  assert.equal(params.sampleCount, 1);
-  assert.equal(params.guidanceScale, 12);
-  assert.equal(params.addWatermark, false);
-  assert.equal(params.outputOptions.mimeType, "image/png");
+  assert.equal(params.editMode, "EDIT_MODE_DEFAULT");
+  assert.equal(params.numberOfImages, 1);
+  assert.equal((params as Record<string, unknown>).sampleCount, undefined);
+  assert.equal((params as Record<string, unknown>).guidanceScale, undefined);
+  assert.equal((params as Record<string, unknown>).addWatermark, undefined);
+  assert.equal((params as Record<string, unknown>).outputOptions, undefined);
 });
 
-test("parameters must NOT contain maskMode (belongs only inside maskReferenceImage)", () => {
+test("parameters must NOT contain maskMode and entries must NOT regress to image/config keys", () => {
   const serialised = JSON.parse(JSON.stringify(buildPayload()));
   assert.equal(
     (serialised.parameters as Record<string, unknown>).maskMode,
     undefined,
-    "maskMode must not appear in parameters when using the referenceImages path — Vertex INVALID_ARGUMENT if duplicated"
+    "maskMode must not appear in parameters when using the referenceImages path"
   );
+  assert.equal(serialised.instances[0].referenceImages[0].image, undefined);
+  assert.equal(serialised.instances[0].referenceImages[1].image, undefined);
+  assert.equal(serialised.instances[0].referenceImages[1].config, undefined);
 });
 
-// ─── Legacy field leakage guards ─────────────────────────────────────────────
-
-test("no legacy flat referenceImage at outer referenceImages entry level (source)", () => {
-  const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const sourceEntry = serialised.instances[0].referenceImages[0];
-  assert.equal(sourceEntry.referenceImage, undefined,
-    "outer-level referenceImage must not exist on source — image data belongs in rawReferenceImage.referenceImage");
-});
-
-test("no legacy flat referenceImage at outer referenceImages entry level (mask)", () => {
-  const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const maskEntry = serialised.instances[0].referenceImages[1];
-  assert.equal(maskEntry.referenceImage, undefined,
-    "outer-level referenceImage must not exist on mask — image data belongs in maskReferenceImage.referenceImage");
-});
-
-test("no legacy config object at outer referenceImages entry level (mask)", () => {
-  const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const maskEntry = serialised.instances[0].referenceImages[1];
-  assert.equal(maskEntry.config, undefined,
-    "outer-level config must not exist — maskMode belongs inside maskReferenceImage");
-});
-
-test("no legacy nested referenceImage key inside rawReferenceImage or maskReferenceImage", () => {
-  const serialised = JSON.parse(JSON.stringify(buildPayload()));
-  const sourceEntry = serialised.instances[0].referenceImages[0];
-  const maskEntry = serialised.instances[0].referenceImages[1];
-  assert.equal(sourceEntry.rawReferenceImage.referenceImage, undefined,
-    "rawReferenceImage.referenceImage must not exist — Vertex expects rawReferenceImage.image");
-  assert.equal(maskEntry.maskReferenceImage.referenceImage, undefined,
-    "maskReferenceImage.referenceImage must not exist — Vertex expects maskReferenceImage.image");
-});
-
-// ─── GCS path ────────────────────────────────────────────────────────────────
-
-test("GCS uri source uses rawReferenceImage wrapper and no imageBytes", () => {
+test("GCS uri source uses referenceImage and no inline byte keys", () => {
   const gcsSourcePayload: VertexWireImagePayload = {
     gcsUri: "gs://my-bucket/source.jpeg",
     mimeType: "image/jpeg",
@@ -303,70 +174,30 @@ test("GCS uri source uses rawReferenceImage wrapper and no imageBytes", () => {
   });
   const serialised = JSON.parse(JSON.stringify(payload));
   const sourceEntry = serialised.instances[0].referenceImages[0];
-  assert.ok("rawReferenceImage" in sourceEntry, "GCS source must still use rawReferenceImage wrapper");
-  assert.equal(sourceEntry.referenceImage, undefined, "no outer-level referenceImage for GCS source");
-  const inner = sourceEntry.rawReferenceImage.image;
+  assert.ok("referenceImage" in sourceEntry, "GCS source must use referenceImage");
+  assert.equal(sourceEntry.image, undefined);
+  assert.equal(sourceEntry.rawReferenceImage, undefined);
+  const inner = sourceEntry.referenceImage;
   assert.equal(inner.gcsUri, "gs://my-bucket/source.jpeg");
   assert.equal(inner.imageBytes, undefined);
   assert.equal(inner.bytesBase64Encoded, undefined);
-  assert.equal(sourceEntry.rawReferenceImage.referenceImage, undefined);
+  assert.equal(inner.bytes_base64_encoded, undefined);
 });
 
-// ─── Flat schema probe ──────────────────────────────────────────────────────
-
-test("flat source uses referenceImage and rejects rawReferenceImage wrapper", () => {
+test("flat builder is an alias of the verified referenceImage contract", () => {
   const payload = buildFlatPayload();
   const sourceEntry = payload.instances[0]!.referenceImages[0]! as Record<string, unknown>;
 
   assert.ok("referenceImage" in sourceEntry);
+  assert.equal(sourceEntry.image, undefined);
   assert.equal(sourceEntry.rawReferenceImage, undefined);
   assert.equal(sourceEntry.maskReferenceImage, undefined);
   assert.equal(sourceEntry.config, undefined);
-});
 
-test("flat mask uses referenceImage plus config.maskMode and no wrappers", () => {
-  const payload = buildFlatPayload();
   const maskEntry = payload.instances[0]!.referenceImages[1]! as Record<string, any>;
-
   assert.ok("referenceImage" in maskEntry);
   assert.equal(maskEntry.rawReferenceImage, undefined);
   assert.equal(maskEntry.maskReferenceImage, undefined);
-  assert.equal(maskEntry.config?.maskMode, "MASK_MODE_USER_PROVIDED");
-});
-
-test("flat payload serializes deterministically with no mixed schema leakage", () => {
-  const serialised = JSON.parse(JSON.stringify(buildFlatPayload()));
-
-  assert.equal(serialised.instances[0].referenceImages[0].referenceImage.mimeType, "image/jpeg");
-  assert.ok(typeof serialised.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded === "string");
-  assert.equal(serialised.instances[0].referenceImages[0].rawReferenceImage, undefined);
-  assert.equal(serialised.instances[0].referenceImages[0].maskReferenceImage, undefined);
-
-  assert.equal(serialised.instances[0].referenceImages[1].referenceImage.mimeType, "image/png");
-  assert.ok(typeof serialised.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded === "string");
-  assert.equal(serialised.instances[0].referenceImages[1].config.maskMode, "MASK_MODE_USER_PROVIDED");
-  assert.equal(serialised.instances[0].referenceImages[1].rawReferenceImage, undefined);
-  assert.equal(serialised.instances[0].referenceImages[1].maskReferenceImage, undefined);
-});
-
-test("flat GCS source uses referenceImage and no wrapper keys", () => {
-  const gcsSourcePayload: VertexWireImagePayload = {
-    gcsUri: "gs://my-bucket/source.jpeg",
-    mimeType: "image/jpeg",
-  };
-  const payload = buildVertexEditPredictPayloadFlat({
-    prompt: "gcs test",
-    sourcePayload: gcsSourcePayload,
-    maskPayload,
-    guidanceScale: 10,
-  });
-  const serialised = JSON.parse(JSON.stringify(payload));
-  const sourceEntry = serialised.instances[0].referenceImages[0];
-  assert.ok("referenceImage" in sourceEntry);
-  assert.equal(sourceEntry.rawReferenceImage, undefined);
-  assert.equal(sourceEntry.maskReferenceImage, undefined);
-  assert.equal(sourceEntry.referenceImage.gcsUri, "gs://my-bucket/source.jpeg");
-  assert.equal(sourceEntry.referenceImage.imageBytes, undefined);
-  assert.equal(sourceEntry.referenceImage.bytesBase64Encoded, undefined);
+  assert.equal(maskEntry.maskImageConfig?.maskMode, "MASK_MODE_USER_PROVIDED");
 });
 

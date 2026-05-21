@@ -1,0 +1,304 @@
+[
+  {
+    "candidate": "B_CROSS_BASELINE_1_2",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339258400/candidate-b_cross_baseline_1_2-gcs.json",
+    "serializedBytes": 1138,
+    "fingerprint": {
+      "candidate": "B_CROSS_BASELINE_1_2",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].config.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)"
+    }
+  },
+  {
+    "candidate": "B_CROSS_ZERO_BASED_0_1",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339258400/candidate-b_cross_zero_based_0_1-gcs.json",
+    "serializedBytes": 1138,
+    "fingerprint": {
+      "candidate": "B_CROSS_ZERO_BASED_0_1",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].config.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)"
+    }
+  },
+  {
+    "candidate": "B_CROSS_SWAPPED_IDS_2_1",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339258400/candidate-b_cross_swapped_ids_2_1-gcs.json",
+    "serializedBytes": 1138,
+    "fingerprint": {
+      "candidate": "B_CROSS_SWAPPED_IDS_2_1",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].config.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)"
+    }
+  },
+  {
+    "candidate": "B_CROSS_DUPLICATE_IDS_1_1",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339258400/candidate-b_cross_duplicate_ids_1_1-gcs.json",
+    "serializedBytes": 1138,
+    "fingerprint": {
+      "candidate": "B_CROSS_DUPLICATE_IDS_1_1",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].config.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)"
+    }
+  },
+  {
+    "candidate": "B_CROSS_MASK_FIRST_2_1",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339258400/candidate-b_cross_mask_first_2_1-gcs.json",
+    "serializedBytes": 1138,
+    "fingerprint": {
+      "candidate": "B_CROSS_MASK_FIRST_2_1",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage",
+        "config"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": true,
+      "maskModeLocation": null
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Request contains an invalid argument.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)"
+    }
+  },
+  {
+    "candidate": "B_CROSS_MASK_FIRST_1_2",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339258400/candidate-b_cross_mask_first_1_2-gcs.json",
+    "serializedBytes": 1138,
+    "fingerprint": {
+      "candidate": "B_CROSS_MASK_FIRST_1_2",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage",
+        "config"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": true,
+      "maskModeLocation": null
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 429 Too Many Requests. {\"error\":{\"code\":429,\"message\":\"Quota exceeded for aiplatform.googleapis.com/online_prediction_requests_per_base_model with base model: imagen-3.0-capability. Please submit a quota increase request. https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai.\",\"status\":\"RESOURCE_EXHAUSTED\"}}",
+      "stack": "ClientError: got status: 429 Too Many Requests. {\"error\":{\"code\":429,\"message\":\"Quota exceeded for aiplatform.googleapis.com/online_prediction_requests_per_base_model with base model: imagen-3.0-capability. Please submit a quota increase request. https://cloud.google.com/vertex-ai/docs/generative-ai/quotas-genai.\",\"status\":\"RESOURCE_EXHAUSTED\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:848:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:957:22)"
+    }
+  }
+]

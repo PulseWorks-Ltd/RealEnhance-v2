@@ -1,0 +1,200 @@
+[
+  {
+    "candidate": "A",
+    "transportMode": "inline",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779335957222/candidate-a-inline.json",
+    "serializedBytes": 824,
+    "fingerprint": {
+      "candidate": "A",
+      "transportMode": "inline",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "rawReferenceImage"
+      ],
+      "nestedKeys": [
+        "image"
+      ],
+      "imageLeafKeys": [
+        "bytesBase64Encoded",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": true,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": false,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].maskReferenceImage.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "Error",
+      "message": "The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'",
+      "stack": "Error: The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'\n    at Object.realpathSync (node:fs:2786:29)\n    at GoogleAuth._getApplicationCredentialsFromFilePath (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:375:27)\n    at GoogleAuth._tryGetApplicationCredentialsFromEnvironmentVariable (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:316:25)\n    at GoogleAuth.getApplicationDefaultAsync (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:260:24)\n    at GoogleAuth._GoogleAuth_determineClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:834:43)\n    at GoogleAuth.getClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:696:223)\n    at GoogleAuth.getAccessToken (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:722:35)\n    at NodeAuth.addGoogleAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:76:41)\n    at NodeAuth.addAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:49:17)\n    at ApiClient.getHeadersInternal (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:519:35)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": null
+    }
+  },
+  {
+    "candidate": "B",
+    "transportMode": "inline",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779335957222/candidate-b-inline.json",
+    "serializedBytes": 808,
+    "fingerprint": {
+      "candidate": "B",
+      "transportMode": "inline",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage"
+      ],
+      "nestedKeys": [
+        "bytesBase64Encoded",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "bytesBase64Encoded",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].config.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "Error",
+      "message": "The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'",
+      "stack": "Error: The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'\n    at Object.realpathSync (node:fs:2786:29)\n    at GoogleAuth._getApplicationCredentialsFromFilePath (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:375:27)\n    at GoogleAuth._tryGetApplicationCredentialsFromEnvironmentVariable (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:316:25)\n    at GoogleAuth.getApplicationDefaultAsync (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:260:24)\n    at GoogleAuth._GoogleAuth_determineClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:834:43)\n    at GoogleAuth.getClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:696:223)\n    at GoogleAuth.getAccessToken (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:722:35)\n    at NodeAuth.addGoogleAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:76:41)\n    at NodeAuth.addAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:49:17)\n    at ApiClient.getHeadersInternal (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:519:35)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": null
+    }
+  },
+  {
+    "candidate": "C",
+    "transportMode": "inline",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779335957222/candidate-c-inline.json",
+    "serializedBytes": 828,
+    "fingerprint": {
+      "candidate": "C",
+      "transportMode": "inline",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "referenceImage"
+      ],
+      "nestedKeys": [
+        "image"
+      ],
+      "imageLeafKeys": [
+        "bytesBase64Encoded",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": true,
+      "hasDirectImage": false,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].config.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "Error",
+      "message": "The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'",
+      "stack": "Error: The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'\n    at Object.realpathSync (node:fs:2786:29)\n    at GoogleAuth._getApplicationCredentialsFromFilePath (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:375:27)\n    at GoogleAuth._tryGetApplicationCredentialsFromEnvironmentVariable (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:316:25)\n    at GoogleAuth.getApplicationDefaultAsync (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:260:24)\n    at GoogleAuth._GoogleAuth_determineClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:834:43)\n    at GoogleAuth.getClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:696:223)\n    at GoogleAuth.getAccessToken (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:722:35)\n    at NodeAuth.addGoogleAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:76:41)\n    at NodeAuth.addAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:49:17)\n    at ApiClient.getHeadersInternal (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:519:35)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": null
+    }
+  },
+  {
+    "candidate": "D",
+    "transportMode": "inline",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779335957222/candidate-d-inline.json",
+    "serializedBytes": 779,
+    "fingerprint": {
+      "candidate": "D",
+      "transportMode": "inline",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "image"
+      ],
+      "nestedKeys": [
+        "bytesBase64Encoded",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "bytesBase64Encoded",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": false,
+      "hasDirectImage": true,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "Error",
+      "message": "The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'",
+      "stack": "Error: The file at /tmp/gcp-key.json does not exist, or it is not a file. ENOENT: no such file or directory, lstat '/tmp/gcp-key.json'\n    at Object.realpathSync (node:fs:2786:29)\n    at GoogleAuth._getApplicationCredentialsFromFilePath (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:375:27)\n    at GoogleAuth._tryGetApplicationCredentialsFromEnvironmentVariable (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:316:25)\n    at GoogleAuth.getApplicationDefaultAsync (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:260:24)\n    at GoogleAuth._GoogleAuth_determineClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:834:43)\n    at GoogleAuth.getClient (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:696:223)\n    at GoogleAuth.getAccessToken (/workspaces/RealEnhance-v2/node_modules/.pnpm/google-auth-library@9.15.1/node_modules/google-auth-library/build/src/auth/googleauth.js:722:35)\n    at NodeAuth.addGoogleAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:76:41)\n    at NodeAuth.addAuthHeaders (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/node/_node_auth.ts:49:17)\n    at ApiClient.getHeadersInternal (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:519:35)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": null
+    }
+  }
+]

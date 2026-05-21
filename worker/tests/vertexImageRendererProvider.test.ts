@@ -212,52 +212,59 @@ describe("vertex image renderer preflight", () => {
     expect(Array.isArray(body.instances[0].referenceImages)).toBe(true);
     expect(body.instances[0].referenceImages).toHaveLength(2);
 
-    expect(body.instances[0].referenceImages[0].config).toBeUndefined();
     expect(body.instances[0].referenceImages[0].referenceType).toBe("REFERENCE_TYPE_RAW");
-    expect(body.instances[0].referenceImages[0].referenceImage).toBeUndefined();
-    expect(body.instances[0].referenceImages[0].rawReferenceImage.image.mimeType).toBe("image/png");
-    expect(typeof body.instances[0].referenceImages[0].rawReferenceImage.image.bytesBase64Encoded).toBe("string");
-    expect(body.instances[0].referenceImages[0].rawReferenceImage.image.bytesBase64Encoded.length).toBeGreaterThan(0);
+    expect(body.instances[0].referenceImages[0].referenceImage.mimeType).toBe("image/png");
+    expect(typeof body.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded).toBe("string");
+    expect(body.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded.length).toBeGreaterThan(0);
+    expect(body.instances[0].referenceImages[0].image).toBeUndefined();
+    expect(body.instances[0].referenceImages[0].rawReferenceImage).toBeUndefined();
+    expect(body.instances[0].referenceImages[0].maskReferenceImage).toBeUndefined();
+    expect(body.instances[0].referenceImages[0].config).toBeUndefined();
 
     expect(body.instances[0].referenceImages[1].referenceType).toBe("REFERENCE_TYPE_MASK");
+    expect(body.instances[0].referenceImages[1].referenceImage.mimeType).toBe("image/png");
+    expect(typeof body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded).toBe("string");
+    expect(body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded.length).toBeGreaterThan(0);
+    expect(body.instances[0].referenceImages[1].maskImageConfig.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.instances[0].referenceImages[1].image).toBeUndefined();
+    expect(body.instances[0].referenceImages[1].rawReferenceImage).toBeUndefined();
+    expect(body.instances[0].referenceImages[1].maskReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[1].config).toBeUndefined();
-    expect(body.instances[0].referenceImages[1].maskReferenceImage.maskMode).toBe("MASK_MODE_USER_PROVIDED");
-    expect(body.instances[0].referenceImages[1].maskReferenceImage.image.mimeType).toBe("image/png");
-    expect(typeof body.instances[0].referenceImages[1].maskReferenceImage.image.bytesBase64Encoded).toBe("string");
-    expect(body.instances[0].referenceImages[1].maskReferenceImage.image.bytesBase64Encoded.length).toBeGreaterThan(0);
-    expect(body.instances[0].referenceImages[1].maskReferenceImage.referenceImage).toBeUndefined();
 
-    expect(body.parameters.editMode).toBe("EDIT_MODE_INPAINT_INSERTION");
+    expect(body.parameters.editMode).toBe("EDIT_MODE_DEFAULT");
+    expect(body.parameters.numberOfImages).toBe(1);
     expect(body.parameters.maskMode).toBeUndefined();
-    expect(body.parameters.outputOptions.mimeType).toBe("image/png");
+    expect(body.parameters.outputOptions).toBeUndefined();
 
     const sdkRequestLogCall = mockNLog.mock.calls.find((call) => call[0] === "[VERTEX_CONTINUITY_RENDER_SDK_REQUEST]");
     expect(sdkRequestLogCall).toBeDefined();
 
     const sdkRequestLogPayload = sdkRequestLogCall?.[1];
-    expect(sdkRequestLogPayload.payloadSchemaMode).toBe("wrapper");
+    expect(sdkRequestLogPayload.payloadSchemaMode).toBe("flat");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"bytesBase64Encoded\":\"<base64:");
-    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"payloadSchemaMode\":\"wrapper\"");
-    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"rawReferenceImage\":{\"image\":");
-    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"maskReferenceImage\":{\"maskMode\":\"MASK_MODE_USER_PROVIDED\",\"image\":");
-    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"referenceImage\":{\"mimeType\"");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"payloadSchemaMode\":\"flat\"");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceImage\":{\"mimeType\":\"image/png\",\"bytesBase64Encoded\":\"<base64:");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"maskImageConfig\":{\"maskMode\":\"MASK_MODE_USER_PROVIDED\"");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"rawReferenceImage\"");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"maskReferenceImage\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceType\":\"REFERENCE_TYPE_RAW\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceType\":\"REFERENCE_TYPE_MASK\"");
 
     const finalPayloadLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[IMAGEN_FINAL_PAYLOAD]");
     expect(finalPayloadLogCall).toBeDefined();
     expect(finalPayloadLogCall?.[1]).toContain('"model": "imagen-3.0-capability-001"');
-    expect(finalPayloadLogCall?.[1]).toContain('"rawReferenceImage": {');
-    expect(finalPayloadLogCall?.[1]).toContain('"maskReferenceImage": {');
+    expect(finalPayloadLogCall?.[1]).toContain('"referenceImage": {');
+    expect(finalPayloadLogCall?.[1]).toContain('"maskImageConfig": {');
+    expect(finalPayloadLogCall?.[1]).not.toContain('"rawReferenceImage": {');
 
     const referenceSchemaLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_SCHEMA_DEBUG]");
     expect(referenceSchemaLogCall?.[1]).toMatchObject({
       flatSchemaEnabled: undefined,
       hasReferenceImages: true,
       referenceImagesCount: 2,
-      firstReferenceKeys: ["referenceId", "referenceType", "rawReferenceImage"],
-      nestedImageKeys: [],
+      firstReferenceKeys: ["referenceId", "referenceType", "referenceImage"],
     });
+    expect(referenceSchemaLogCall?.[1].nestedImageKeys).toEqual(expect.arrayContaining(["bytesBase64Encoded", "mimeType"]));
 
     const referenceValidationLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_IMAGE_VALIDATION]");
     expect(referenceValidationLogCall?.[1]).toEqual(expect.arrayContaining([
@@ -285,7 +292,7 @@ describe("vertex image renderer preflight", () => {
     await fs.rm(tempDir, { recursive: true, force: true });
   });
 
-  it("switches to flat referenceImages schema when the probe flag is enabled", async () => {
+  it("keeps the verified referenceImage schema when the probe flag is enabled", async () => {
     process.env.VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA = "true";
 
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "vertex-renderer-flat-"));
@@ -335,6 +342,7 @@ describe("vertex image renderer preflight", () => {
     expect(body.instances[0].referenceImages[0].referenceType).toBe("REFERENCE_TYPE_RAW");
     expect(body.instances[0].referenceImages[0].referenceImage.mimeType).toBe("image/png");
     expect(typeof body.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded).toBe("string");
+    expect(body.instances[0].referenceImages[0].image).toBeUndefined();
     expect(body.instances[0].referenceImages[0].rawReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[0].maskReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[0].config).toBeUndefined();
@@ -342,13 +350,16 @@ describe("vertex image renderer preflight", () => {
     expect(body.instances[0].referenceImages[1].referenceType).toBe("REFERENCE_TYPE_MASK");
     expect(body.instances[0].referenceImages[1].referenceImage.mimeType).toBe("image/png");
     expect(typeof body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded).toBe("string");
-    expect(body.instances[0].referenceImages[1].config.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.instances[0].referenceImages[1].maskImageConfig.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.instances[0].referenceImages[1].image).toBeUndefined();
     expect(body.instances[0].referenceImages[1].rawReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[1].maskReferenceImage).toBeUndefined();
+    expect(body.instances[0].referenceImages[1].config).toBeUndefined();
 
-    expect(body.parameters.editMode).toBe("EDIT_MODE_INPAINT_INSERTION");
+    expect(body.parameters.editMode).toBe("EDIT_MODE_DEFAULT");
+    expect(body.parameters.numberOfImages).toBe(1);
     expect(body.parameters.maskMode).toBeUndefined();
-    expect(body.parameters.outputOptions.mimeType).toBe("image/png");
+    expect(body.parameters.outputOptions).toBeUndefined();
 
     const sdkRequestLogCall = mockNLog.mock.calls.find((call) => call[0] === "[VERTEX_CONTINUITY_RENDER_SDK_REQUEST]");
     expect(sdkRequestLogCall).toBeDefined();
@@ -356,15 +367,15 @@ describe("vertex image renderer preflight", () => {
     const sdkRequestLogPayload = sdkRequestLogCall?.[1];
     expect(sdkRequestLogPayload.payloadSchemaMode).toBe("flat");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"payloadSchemaMode\":\"flat\"");
-    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceImage\":{\"mimeType\":\"image/png\"");
-    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"config\":{\"maskMode\":\"MASK_MODE_USER_PROVIDED\"}");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceImage\":{\"mimeType\":\"image/png\",\"bytesBase64Encoded\":\"<base64:");
+    expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"maskImageConfig\":{\"maskMode\":\"MASK_MODE_USER_PROVIDED\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"rawReferenceImage\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"maskReferenceImage\"");
 
     const finalPayloadLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[IMAGEN_FINAL_PAYLOAD]");
     expect(finalPayloadLogCall).toBeDefined();
     expect(finalPayloadLogCall?.[1]).toContain('"referenceImage": {');
-    expect(finalPayloadLogCall?.[1]).toContain('"config": {');
+    expect(finalPayloadLogCall?.[1]).toContain('"maskImageConfig": {');
     expect(finalPayloadLogCall?.[1]).not.toContain('"rawReferenceImage": {');
 
     const referenceSchemaLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_SCHEMA_DEBUG]");
@@ -373,8 +384,8 @@ describe("vertex image renderer preflight", () => {
       hasReferenceImages: true,
       referenceImagesCount: 2,
       firstReferenceKeys: ["referenceId", "referenceType", "referenceImage"],
-      nestedImageKeys: [],
     });
+    expect(referenceSchemaLogCall?.[1].nestedImageKeys).toEqual(expect.arrayContaining(["bytesBase64Encoded", "mimeType"]));
 
     const referenceValidationLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_IMAGE_VALIDATION]");
     expect(referenceValidationLogCall?.[1]).toEqual(expect.arrayContaining([
@@ -471,8 +482,8 @@ describe("vertex image renderer preflight", () => {
     });
 
     const body = JSON.parse(mockRequest.mock.calls[0][0].body);
-    const sourceBytes = body.instances[0].referenceImages[0].rawReferenceImage.image.bytesBase64Encoded;
-    const maskBytes = body.instances[0].referenceImages[1].maskReferenceImage.image.bytesBase64Encoded;
+    const sourceBytes = body.instances[0].referenceImages[0].referenceImage.bytesBase64Encoded;
+    const maskBytes = body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded;
     const sourceMetadata = await sharp(Buffer.from(sourceBytes, "base64")).metadata();
     const maskMetadata = await sharp(Buffer.from(maskBytes, "base64")).metadata();
 

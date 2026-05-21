@@ -15,7 +15,8 @@
     "test:guard:multizone": "tsx src/scripts/assert-multizone-full-mode.ts",
     "test:furnished-gate": "tsx src/scripts/test-furnished-gate.ts",
     "test:opening-occlusion-gate": "tsx src/scripts/test-opening-occlusion-gate.ts",
-    "test:publish": "tsx src/scripts/test-publish.ts"
+    "test:publish": "tsx src/scripts/test-publish.ts",
+    "probe:vertex-imagen-contract": "tsx src/scripts/vertex-imagen-contract-probe.ts"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",

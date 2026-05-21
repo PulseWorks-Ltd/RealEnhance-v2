@@ -1,0 +1,97 @@
+[
+  {
+    "candidate": "IMAGE_FIELD_DIRECT_BASELINE_1_2",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339768508/candidate-image_field_direct_baseline_1_2-gcs.json",
+    "serializedBytes": 1110,
+    "fingerprint": {
+      "candidate": "IMAGE_FIELD_DIRECT_BASELINE_1_2",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "image"
+      ],
+      "nestedKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "imageLeafKeys": [
+        "gcsUri",
+        "mimeType"
+      ],
+      "hasRawReferenceImage": false,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": false,
+      "hasDirectImage": true,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Reference image should have image field.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Reference image should have image field.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:990:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:1105:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:990:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:1105:22)"
+    }
+  },
+  {
+    "candidate": "IMAGE_FIELD_HYBRID_WITH_WRAPPERS_1_2",
+    "transportMode": "gcs",
+    "payloadFile": "/workspaces/RealEnhance-v2/worker/.tmp-test/vertex-imagen-contract-probe-1779339768508/candidate-image_field_hybrid_with_wrappers_1_2-gcs.json",
+    "serializedBytes": 1156,
+    "fingerprint": {
+      "candidate": "IMAGE_FIELD_HYBRID_WITH_WRAPPERS_1_2",
+      "transportMode": "gcs",
+      "topLevelKeys": [
+        "instances",
+        "parameters"
+      ],
+      "instanceKeys": [
+        "prompt",
+        "referenceImages"
+      ],
+      "referenceKeys": [
+        "referenceId",
+        "referenceType",
+        "image",
+        "rawReferenceImage"
+      ],
+      "nestedKeys": [],
+      "imageLeafKeys": [],
+      "hasRawReferenceImage": true,
+      "hasMaskReferenceImage": false,
+      "hasReferenceImage": false,
+      "hasDirectImage": true,
+      "hasConfig": false,
+      "maskModeLocation": "referenceImages[1].maskReferenceImage.maskMode"
+    },
+    "success": false,
+    "responseStatus": null,
+    "responseStatusText": null,
+    "responseBody": null,
+    "error": {
+      "name": "ClientError",
+      "message": "got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Reference image should have image field.\",\"status\":\"INVALID_ARGUMENT\"}}",
+      "stack": "ClientError: got status: 400 Bad Request. {\"error\":{\"code\":400,\"message\":\"Reference image should have image field.\",\"status\":\"INVALID_ARGUMENT\"}}\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:990:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:1105:22)",
+      "status": null,
+      "statusText": null,
+      "responseData": null,
+      "cause": "Error\n    at new ClientError (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:29:30)\n    at throwErrorIfNotOK (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:637:27)\n    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)\n    at async <anonymous> (/workspaces/RealEnhance-v2/node_modules/.pnpm/@google+genai@0.7.0/node_modules/@google/genai/src/_api_client.ts:410:9)\n    at async runCandidate (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:990:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/vertex-imagen-contract-probe.ts:1105:22)"
+    }
+  }
+]
