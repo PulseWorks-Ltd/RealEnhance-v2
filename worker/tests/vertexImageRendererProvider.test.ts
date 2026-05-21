@@ -69,9 +69,11 @@ async function makePngBuffer(): Promise<Buffer> {
 describe("vertex image renderer preflight", () => {
   const originalFlatSchemaEnv = process.env.VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA;
   const originalAspectRatioNormalizationEnv = process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION;
+  let consoleLogSpy: jest.SpyInstance;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => undefined);
     if (originalFlatSchemaEnv === undefined) {
       delete process.env.VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA;
     } else {
@@ -82,6 +84,10 @@ describe("vertex image renderer preflight", () => {
     } else {
       process.env.VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION = originalAspectRatioNormalizationEnv;
     }
+  });
+
+  afterEach(() => {
+    consoleLogSpy.mockRestore();
   });
 
   it("resolves 3:2 landscape dimensions to the nearest supported 4:3 canvas", () => {
@@ -238,6 +244,43 @@ describe("vertex image renderer preflight", () => {
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceType\":\"REFERENCE_TYPE_RAW\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"referenceType\":\"REFERENCE_TYPE_MASK\"");
 
+    const finalPayloadLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[IMAGEN_FINAL_PAYLOAD]");
+    expect(finalPayloadLogCall).toBeDefined();
+    expect(finalPayloadLogCall?.[1]).toContain('"model": "imagen-3.0-capability-001"');
+    expect(finalPayloadLogCall?.[1]).toContain('"rawReferenceImage": {');
+    expect(finalPayloadLogCall?.[1]).toContain('"maskReferenceImage": {');
+
+    const referenceSchemaLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_SCHEMA_DEBUG]");
+    expect(referenceSchemaLogCall?.[1]).toMatchObject({
+      flatSchemaEnabled: undefined,
+      hasReferenceImages: true,
+      referenceImagesCount: 2,
+      firstReferenceKeys: ["referenceId", "referenceType", "rawReferenceImage"],
+      nestedImageKeys: [],
+    });
+
+    const referenceValidationLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_IMAGE_VALIDATION]");
+    expect(referenceValidationLogCall?.[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        index: 0,
+        referenceType: "REFERENCE_TYPE_RAW",
+        hasBytesBase64Encoded: true,
+      }),
+      expect.objectContaining({
+        index: 1,
+        referenceType: "REFERENCE_TYPE_MASK",
+        hasBytesBase64Encoded: true,
+      }),
+    ]));
+
+    const payloadFingerprintLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[IMAGEN_PAYLOAD_FINGERPRINT]");
+    expect(payloadFingerprintLogCall?.[1]).toMatchObject({
+      hasInstances: true,
+      hasParameters: true,
+      hasReferenceImages: true,
+      topLevelKeys: ["instances", "parameters"],
+    });
+
     await mask.cleanup();
     await fs.rm(tempDir, { recursive: true, force: true });
   });
@@ -317,6 +360,37 @@ describe("vertex image renderer preflight", () => {
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).toContain("\"config\":{\"maskMode\":\"MASK_MODE_USER_PROVIDED\"}");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"rawReferenceImage\"");
     expect(sdkRequestLogPayload.sdkRequest.bodyJsonRedacted).not.toContain("\"maskReferenceImage\"");
+
+    const finalPayloadLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[IMAGEN_FINAL_PAYLOAD]");
+    expect(finalPayloadLogCall).toBeDefined();
+    expect(finalPayloadLogCall?.[1]).toContain('"referenceImage": {');
+    expect(finalPayloadLogCall?.[1]).toContain('"config": {');
+    expect(finalPayloadLogCall?.[1]).not.toContain('"rawReferenceImage": {');
+
+    const referenceSchemaLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_SCHEMA_DEBUG]");
+    expect(referenceSchemaLogCall?.[1]).toMatchObject({
+      flatSchemaEnabled: "true",
+      hasReferenceImages: true,
+      referenceImagesCount: 2,
+      firstReferenceKeys: ["referenceId", "referenceType", "referenceImage"],
+      nestedImageKeys: [],
+    });
+
+    const referenceValidationLogCall = consoleLogSpy.mock.calls.find((call) => call[0] === "[REFERENCE_IMAGE_VALIDATION]");
+    expect(referenceValidationLogCall?.[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        index: 0,
+        imageKeys: ["bytesBase64Encoded", "mimeType"],
+        referenceType: "REFERENCE_TYPE_RAW",
+        hasBytesBase64Encoded: true,
+      }),
+      expect.objectContaining({
+        index: 1,
+        imageKeys: ["bytesBase64Encoded", "mimeType"],
+        referenceType: "REFERENCE_TYPE_MASK",
+        hasBytesBase64Encoded: true,
+      }),
+    ]));
 
     await mask.cleanup();
     await fs.rm(tempDir, { recursive: true, force: true });

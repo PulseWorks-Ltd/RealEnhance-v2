@@ -744,6 +744,110 @@ function buildSerializedVertexEditPredictPayloadAudit(
   };
 }
 
+function getFinalPayloadReferenceImages(payload: VertexEditPredictPayload): Array<Record<string, unknown>> | undefined {
+  const firstInstance = payload.instances?.[0] as { referenceImages?: unknown } | undefined;
+  return Array.isArray(firstInstance?.referenceImages)
+    ? firstInstance.referenceImages as Array<Record<string, unknown>>
+    : undefined;
+}
+
+function getFinalReferenceImagePayload(reference: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!reference || typeof reference !== "object") {
+    return undefined;
+  }
+
+  const directImage = reference.image;
+  if (directImage && typeof directImage === "object") {
+    return directImage as Record<string, unknown>;
+  }
+
+  const flatImage = reference.referenceImage;
+  if (flatImage && typeof flatImage === "object") {
+    return flatImage as Record<string, unknown>;
+  }
+
+  const rawWrapper = reference.rawReferenceImage;
+  if (rawWrapper && typeof rawWrapper === "object") {
+    const rawImage = (rawWrapper as Record<string, unknown>).image;
+    if (rawImage && typeof rawImage === "object") {
+      return rawImage as Record<string, unknown>;
+    }
+  }
+
+  const maskWrapper = reference.maskReferenceImage;
+  if (maskWrapper && typeof maskWrapper === "object") {
+    const maskImage = (maskWrapper as Record<string, unknown>).image;
+    if (maskImage && typeof maskImage === "object") {
+      return maskImage as Record<string, unknown>;
+    }
+  }
+
+  return undefined;
+}
+
+function logFinalImagenRequestBoundary(params: {
+  endpoint: string;
+  model: string;
+  serializedPayload: string;
+}): VertexEditPredictPayload {
+  const payload = safeJsonParse<VertexEditPredictPayload>(params.serializedPayload);
+  const referenceImages = getFinalPayloadReferenceImages(payload);
+
+  console.log("[IMAGEN_FINAL_PAYLOAD]", JSON.stringify({
+    endpoint: params.endpoint,
+    model: params.model,
+    payload,
+  }, null, 2));
+
+  console.log("[REFERENCE_SCHEMA_DEBUG]", {
+    flatSchemaEnabled: process.env.VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA,
+    hasReferenceImages: !!referenceImages,
+    referenceImagesCount: referenceImages?.length,
+    firstReferenceKeys: Object.keys(referenceImages?.[0] || {}),
+    nestedImageKeys: Object.keys((referenceImages?.[0] as { image?: Record<string, unknown> } | undefined)?.image || {}),
+    firstReferencePreview: referenceImages?.[0]
+      ? JSON.stringify(referenceImages[0], null, 2).slice(0, 4000)
+      : null,
+  });
+
+  console.log("[REFERENCE_IMAGE_VALIDATION]", referenceImages?.map((reference, index) => {
+    const imagePayload = getFinalReferenceImagePayload(reference);
+    const bytesBase64Encoded = typeof imagePayload?.bytesBase64Encoded === "string"
+      ? imagePayload.bytesBase64Encoded
+      : "";
+
+    return {
+      index,
+      topLevelKeys: Object.keys(reference || {}),
+      imageKeys: Object.keys(imagePayload || {}),
+      hasBytesBase64Encoded: bytesBase64Encoded.length > 0,
+      bytesLength: bytesBase64Encoded.length,
+      mimeType: typeof imagePayload?.mimeType === "string" ? imagePayload.mimeType : undefined,
+      referenceType: reference?.referenceType,
+    };
+  }));
+
+  console.log("[IMAGEN_PAYLOAD_FINGERPRINT]", {
+    hasInstances: !!payload.instances,
+    hasParameters: !!payload.parameters,
+    hasReferenceImages: !!referenceImages,
+    topLevelKeys: Object.keys(payload || {}),
+  });
+
+  if (!referenceImages?.length) {
+    throw new Error("No referenceImages present before Imagen submission");
+  }
+
+  for (const [idx, reference] of referenceImages.entries()) {
+    const imagePayload = getFinalReferenceImagePayload(reference);
+    if (!imagePayload?.bytesBase64Encoded) {
+      throw new Error(`Reference image ${idx} missing bytesBase64Encoded`);
+    }
+  }
+
+  return payload;
+}
+
 function validateSerializedVertexEditPredictPayload(params: {
   serializedPayload: string;
 }): void {
@@ -1602,8 +1706,14 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
 
     try {
       const apiClient = (ai as any).apiClient;
+      const endpoint = `${resolveModelResource(model)}:predict`;
+      logFinalImagenRequestBoundary({
+        endpoint,
+        model,
+        serializedPayload,
+      });
       const rawResponse = await apiClient.request({
-        path: `${resolveModelResource(model)}:predict`,
+        path: endpoint,
         body: serializedPayload,
         httpMethod: "POST",
         httpOptions: {
