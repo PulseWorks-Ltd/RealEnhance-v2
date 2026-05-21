@@ -11,15 +11,27 @@
  *
  * Use when: Room looks dim, flat, shadow-heavy, evening interiors, poor lighting
  */
+const INTERIOR_TONAL_REFINEMENT_BLOCK = `
+
+INTERIOR SHADOW & TONAL BALANCING:
+• Subtly improve visibility within darker interior regions while preserving realistic natural room lighting.
+• Gently reduce heavy shadow buildup in corners, ceiling joins, alcoves, and recessed areas without flattening contrast.
+• Maintain natural depth, tonal separation, and believable light falloff throughout the room.
+• Preserve realistic wall texture, carpet texture, and surface detail without over-smoothing or artificial brightening.
+• Keep strong highlight discipline near windows, doors, and natural light sources to avoid blown highlights.
+• Ensure secondary rooms or hallways visible through open doorways remain naturally exposed and proportionally balanced.
+• Preserve a premium real-estate photography aesthetic with soft, believable tonal recovery.
+• Avoid artificial HDR appearance, excessive whitening, unnatural ambient glow, or flattened contrast.`;
+
 export const STAGE1A_PROMPT_DARK_INTERIOR = `You are enhancing a real estate photograph taken in low or poor lighting for professional property marketing.
 
 This is a QUALITY ENHANCEMENT ONLY task.
 
 PRIMARY GOAL:
-Gently lift brightness and clarity while keeping the image fully realistic and structurally identical to the original.
+Improve readability, tonal balance, and clarity while keeping the image fully realistic and structurally identical to the original.
 
 YOU MUST:
-• Lift overall exposure slightly to a natural daylight-balanced level
+• Lift overall exposure only modestly to a natural daylight-balanced level
 • Recover detail in shadows without flattening depth
 • Reduce digital noise associated with low-light photography
 • Improve midtone contrast carefully
@@ -44,7 +56,7 @@ The image must still feel:
 • Trustworthy for property listings
 
 This must look like the SAME photograph captured with:
-• Better exposure
+• Better balanced exposure
 • Cleaner shadows
 • A higher quality camera sensor
 
@@ -52,13 +64,14 @@ The final result MUST be:
 • Structurally identical to the original
 • Object-for-object identical
 • Layout-for-layout identical
-• But brighter, cleaner, and more professional.
+• But cleaner, better balanced, and more professional.
 
 DO NOT generate new details.
 DO NOT reinterpret surfaces.
 DO NOT replace any visible items.
 
 Enhance only.
+${INTERIOR_TONAL_REFINEMENT_BLOCK}
 
 WINDOW / OPENING PRESERVATION RULE:
 • Do NOT overexpose exterior sky visible through windows.
@@ -128,6 +141,7 @@ DO NOT reinterpret surfaces.
 DO NOT replace any visible items.
 
 Enhance only.
+${INTERIOR_TONAL_REFINEMENT_BLOCK}
 
 WINDOW / OPENING PRESERVATION RULE:
 • Do NOT overexpose exterior sky visible through windows.
@@ -149,12 +163,23 @@ TONAL STABILIZATION REQUIREMENTS:
  *
  * Use when: Exterior photos, daylight outdoor shots, facades, decks, gardens
  */
+const EXTERIOR_TONAL_REFINEMENT_BLOCK = `
+
+LUMINANCE & SHADOW RECOVERY:
+• Improve visibility within shaded exterior regions while maintaining realistic natural lighting.
+• Gently recover detail in tree shadows, shaded facades, under-eave areas, landscaping, and darker building materials.
+• Lift underexposed regions selectively without flattening overall contrast or changing the natural direction of sunlight.
+• Preserve realistic depth, shadow gradients, and outdoor tonal balance.
+• Maintain strong highlight discipline in skies, clouds, windows, and sunlit surfaces.
+• Avoid artificial HDR appearance, halos, overprocessed contrast, or unnaturally vibrant lighting.
+• Preserve a physically believable real-estate photography aesthetic with clean, readable shadow detail.`;
+
 export const STAGE1A_PROMPT_EXTERIOR_SKY_STRONG = `You are enhancing a real estate EXTERIOR photograph taken in daylight for professional property marketing.
 
 This is a QUALITY ENHANCEMENT ONLY task.
 
 PRIMARY GOAL:
-Refine clarity, sharpness, and tonal balance while keeping the image fully realistic and structurally identical to the original.
+Refine clarity, sharpness, tonal balance, and shaded-region readability while keeping the image fully realistic and structurally identical to the original.
 
 YOU MUST:
 • Improve global sharpness and edge clarity gently
@@ -162,7 +187,7 @@ YOU MUST:
 • RELIGHTING AUTHORIZATION: If transforming an overcast/flat sky to a sunny blue sky, introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the house with the new weather. Do not leave the property with flat, overcast lighting.
 • Do NOT modify sky unless SKY ENHANCEMENT RULE conditions are met.
 • Recover highlight detail ONLY if clipping is clearly present (pure white with no visible detail) AND sky is confirmed.
-• Improve shadow detail under eaves and shaded zones naturally
+• Improve shadow detail under eaves and shaded zones naturally, with slightly stronger recovery than interiors while still looking naturally photographed
 • Reduce compression artefacts
 • Maintain true-to-life exterior colour balance (no artificial saturation)
 
@@ -201,6 +226,7 @@ DO NOT reinterpret landscaping.
 DO NOT replace any visible items.
 
 Enhance only.
+${EXTERIOR_TONAL_REFINEMENT_BLOCK}
 
 WINDOW / OPENING PRESERVATION RULE:
 • Do NOT overexpose exterior sky visible through windows.
