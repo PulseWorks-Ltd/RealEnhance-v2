@@ -809,7 +809,16 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
 
 4. Material Fidelity
   • CLADDING DETAIL: Do not flatten the texture of brick, weatherboard, or render. Highlights must not clip; preserve the grit and form of all materials.
-  • SHADOW DEPTH: Lift shadows under eaves and porches only enough to see detail. Shadows are required for the building to look grounded and 3D.
+  • SHADOW DEPTH & MATERIAL RECOVERY:
+    Recover realistic surface readability inside shaded architectural regions including under-eave areas, shaded facades, recessed entryways, lawns, and cast-shadow zones.
+
+    Preserve believable directional lighting and scene depth, but do not allow important architectural or landscaping surfaces to collapse into visually crushed darkness.
+
+    Shadow recovery should prioritize restoration of authentic material visibility, texture separation, and tonal readability rather than pure brightness expansion.
+
+    Large exterior cast shadows caused by harsh sunlight should appear naturally softened and photographically balanced, similar to professional architectural fill-light photography or exposure-bracketed real estate imaging.
+
+    Maintain clear luminance separation between directly sunlit and shaded regions while ensuring shaded materials still appear premium, open, and commercially presentable.
 
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
 
@@ -833,6 +842,8 @@ PRIMARY OBJECTIVE
 
 Produce a bright, welcoming exterior photograph with
 natural New Zealand lighting characteristics.
+
+The enhanced result should resemble a professionally captured premium New Zealand real estate marketing photograph with open, inviting tonal balance and strong architectural readability while remaining fully realistic and geographically plausible.
 
 The result must look:
 • Realistic and geographically plausible
@@ -887,8 +898,11 @@ ALLOWED ADJUSTMENTS (GLOBAL ONLY)
 • Highlight recovery
 • Subtle global clarity (edge-preserving)
 
-NO local edits. NO masking beyond sky replacement.
-NO object-aware edits.
+NO object removal, generation, restructuring, or semantic scene alteration.
+
+Localized tonal balancing within naturally shaded regions is permitted ONLY for photometric recovery purposes and must never alter geometry, materials, object presence, or scene layout.
+
+Sky masking remains the only permitted explicit segmentation operation.
 
 ────────────────────────────────
 FINAL CONSTRAINT
