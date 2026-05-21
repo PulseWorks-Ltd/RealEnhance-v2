@@ -51,6 +51,12 @@ function parseByteThreshold(raw: string | undefined, fallback: number): number {
   return Math.max(0, Math.min(255, Math.round(parsed)));
 }
 
+function parseQuality(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(100, Math.round(parsed)));
+}
+
 function getStage0CropThresholds(): { opencvBlackThreshold: number; trimThreshold: number } {
   const shared = parseByteThreshold(process.env.PREPROCESS_CROP_BLACK_THRESHOLD, 10);
   const opencvBlackThreshold = parseByteThreshold(
@@ -669,6 +675,9 @@ export async function preprocessToCanonical(
   sceneType: string,
   options: { buildArtifacts?: boolean; smallSize?: number; stage1ABorderRetryIndex?: number; jobId?: string } = {}
 ): Promise<BaseArtifacts | undefined> {
+  const highFidelityCanonical = process.env.PREPROCESS_CANONICAL_HIGH_FIDELITY === "1";
+  const canonicalWebpQuality = parseQuality(process.env.PREPROCESS_CANONICAL_WEBP_QUALITY, 95);
+
   let img = sharp(inputPath);
   const inputMeta = await img.metadata();
   console.log(`[stage0] ROTATE size=before ${inputMeta.width || 0}x${inputMeta.height || 0}`);
@@ -791,7 +800,18 @@ export async function preprocessToCanonical(
     );
   }
 
-  await img.toFile(outputPath);
+  if (highFidelityCanonical && /\.webp$/i.test(outputPath)) {
+    await img
+      .webp({
+        quality: canonicalWebpQuality,
+        effort: 6,
+        smartSubsample: true,
+      })
+      .toFile(outputPath);
+    console.log(`[stage0] canonical encode mode=high_fidelity quality=${canonicalWebpQuality}`);
+  } else {
+    await img.toFile(outputPath);
+  }
   try {
     const finalMeta = await sharp(outputPath).metadata();
     console.log(`[stage0] FINAL size=${finalMeta.width || 0}x${finalMeta.height || 0}`);

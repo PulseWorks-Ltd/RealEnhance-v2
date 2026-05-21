@@ -17,6 +17,7 @@ import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 import { logIfNotFocusMode } from "../logger";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import type { PipelineContext } from "../types/pipelineContext";
+import { applyStage1APostGenerationFinish } from "./stage1A-post-finish";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -28,6 +29,92 @@ const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
 const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
 // Automatically disable Stability primary after a payment/credit error
 const DISABLE_STABILITY_ON_PAYMENT_REQUIRED = process.env.STABILITY_STAGE1A_DISABLE_ON_PAYMENT_REQUIRED !== "0";
+const STAGE1A_ENABLE_PRESERVATION_PREGEN = process.env.STAGE1A_ENABLE_PRESERVATION_PREGEN === "1";
+const STAGE1A_ENABLE_POSTGEN_FINISH = process.env.STAGE1A_ENABLE_POSTGEN_FINISH === "1";
+const STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE = process.env.STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE === "1";
+
+function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined;
+  const normalized = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
+function parseBoundedNumber(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function scaleFromNeutral(value: number, scale: number): number {
+  return 1 + ((value - 1) * scale);
+}
+
+interface Stage1APreGenerationControls {
+  preservationMode: boolean;
+  normalizeEnabled: boolean;
+  normalizeShadowLiftThreshold: number;
+  normalizeContrastThreshold: number;
+  toneStackScale: number;
+  localContrastScale: number;
+  shadowOffsetScale: number;
+  modulateScale: number;
+  pregenMedianEnabled: boolean;
+  pregenSharpenEnabled: boolean;
+  pregenSharpenScale: number;
+  moveSharpenToPost: boolean;
+}
+
+function getStage1APreGenerationControls(): Stage1APreGenerationControls {
+  const preservationMode = STAGE1A_ENABLE_PRESERVATION_PREGEN;
+  const normalizeEnabled = parseOptionalBoolean(process.env.STAGE1A_PREGEN_NORMALIZE_ENABLED) ?? true;
+  const moveSharpenToPost = parseOptionalBoolean(process.env.STAGE1A_MOVE_SHARPEN_TO_POST)
+    ?? preservationMode;
+
+  return {
+    preservationMode,
+    normalizeEnabled,
+    normalizeShadowLiftThreshold: parseBoundedNumber(
+      process.env.STAGE1A_PREGEN_NORMALIZE_SHADOW_THRESHOLD,
+      preservationMode ? 0.28 : 0.18,
+      0,
+      1
+    ),
+    normalizeContrastThreshold: parseBoundedNumber(
+      process.env.STAGE1A_PREGEN_NORMALIZE_CONTRAST_THRESHOLD,
+      preservationMode ? 0.34 : 0.24,
+      0,
+      1
+    ),
+    toneStackScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_TONE_STACK_SCALE, preservationMode ? 0.55 : 1, 0, 2),
+    localContrastScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_LOCAL_CONTRAST_SCALE, preservationMode ? 0.35 : 1, 0, 2),
+    shadowOffsetScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHADOW_OFFSET_SCALE, preservationMode ? 0.5 : 1, 0, 2),
+    modulateScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_MODULATE_SCALE, preservationMode ? 0.8 : 1, 0, 2),
+    pregenMedianEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_MEDIAN_ENABLED) ?? !preservationMode,
+    pregenSharpenEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_SHARPEN_ENABLED) ?? !moveSharpenToPost,
+    pregenSharpenScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHARPEN_SCALE, preservationMode ? 0.7 : 1, 0, 2),
+    moveSharpenToPost,
+  };
+}
+
+function getStage1APreGenWebpOptions(): sharp.WebpOptions {
+  if (STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE) {
+    return {
+      quality: 100,
+      effort: 6,
+      smartSubsample: true,
+      nearLossless: true,
+    };
+  }
+
+  return {
+    quality: 97,
+    effort: 6,
+    smartSubsample: true,
+    nearLossless: false,
+  };
+}
 
 let stabilityPrimaryLockedReason: string | null = null;
 
@@ -558,7 +645,11 @@ export async function runStage1A(
   const analysis = await analyzeStage1AInput(inputPath, sceneType);
   console.log("[Stage1A Analysis]", analysis);
   const factors = computeStage1AFactors(analysis);
+  const preGenControls = getStage1APreGenerationControls();
+  const preGenWebpOptions = getStage1APreGenWebpOptions();
   console.log("[Stage1A Factors]", factors);
+  logIfNotFocusMode("[stage1A] Pre-generation controls", preGenControls);
+  logIfNotFocusMode("[stage1A] Pre-generation encode options", preGenWebpOptions);
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const effectiveSceneType = analysis.sceneType;
   const isInterior = effectiveSceneType === "interior";
@@ -583,15 +674,41 @@ export async function runStage1A(
   // 1. Auto-rotate based on EXIF orientation
   img = img.rotate();
 
+  const runGeminiStage1AWithOptionalFinish = async (): Promise<string> => {
+    const geminiOutputPath = await enhanceWithGeminiStage1A(
+      sharpOutputPath,
+      effectiveSceneType,
+      replaceSky,
+      applyInteriorProfile,
+      interiorProfileKey,
+      skyMode,
+      jobIdResolved,
+      imageId,
+      roomTypeResolved,
+      options.jobSampling
+    );
+
+    if (!STAGE1A_ENABLE_POSTGEN_FINISH) {
+      return geminiOutputPath;
+    }
+
+    const finishedPath = await applyStage1APostGenerationFinish(geminiOutputPath, {
+      jobId: jobIdResolved,
+      sceneType: effectiveSceneType,
+    });
+
+    await logImageAttemptUrl({
+      ctx: stage1ACtx,
+      localPath: finishedPath,
+    });
+
+    return finishedPath;
+  };
+
   if (analysis.isBlurry && shouldUseStabilityStage1A()) {
     await img
       .clone()
-      .webp({
-        quality: 97,
-        effort: 6,
-        smartSubsample: true,
-        nearLossless: false,
-      })
+      .webp(preGenWebpOptions)
       .toFile(sharpOutputPath);
 
     await logImageAttemptUrl({
@@ -623,7 +740,12 @@ export async function runStage1A(
   }
   
   // 2. Conservative denoise: keep interiors clean, preserve exterior texture and blurry detail.
-  if (!analysis.isBlurry && !analysis.isExterior && (factors.shadowLift > 0.12 || factors.contrastBoost > 0.08)) {
+  if (
+    preGenControls.pregenMedianEnabled
+    && !analysis.isBlurry
+    && !analysis.isExterior
+    && (factors.shadowLift > 0.12 || factors.contrastBoost > 0.08)
+  ) {
     img = img.median(3);
   }
   
@@ -633,7 +755,11 @@ export async function runStage1A(
   }
   
   // 4. Exposure triage: normalize only when the image is dark or compressed.
-  if (factors.shadowLift > 0.18 || factors.contrastBoost > 0.24) {
+  if (
+    preGenControls.normalizeEnabled
+    && (factors.shadowLift > preGenControls.normalizeShadowLiftThreshold
+      || factors.contrastBoost > preGenControls.normalizeContrastThreshold)
+  ) {
     img = img.normalize();
   }
 
@@ -651,24 +777,24 @@ export async function runStage1A(
   }
   
   // 5. Apply scaled corrections rather than hard switching.
-  if (factors.shadowLift > 0.05) {
-    img = img.gamma(1 + (factors.gammaBoost * 0.6));
+  if (factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
+    img = img.gamma(1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale));
     if (!analysis.isExterior) {
-      img = img.linear(1 + (factors.shadowLift * 0.08), 0);
+      img = img.linear(1 + (factors.shadowLift * 0.08 * preGenControls.toneStackScale), 0);
     }
   }
 
-  if (factors.highlightCompress > 0.05) {
-    img = img.linear(1 - (factors.highlightCompress * 0.2), 0);
+  if (factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
+    img = img.linear(1 - (factors.highlightCompress * 0.2 * preGenControls.toneStackScale), 0);
   }
 
-  if (factors.contrastBoost > 0.05) {
-    img = img.linear(1 + (factors.contrastBoost * 0.3), 0);
+  if (factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
+    img = img.linear(1 + (factors.contrastBoost * 0.3 * preGenControls.toneStackScale), 0);
   }
 
-  if (factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) {
+  if ((factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
     const postToneNeutralBalance = await applyStage1ANeutralBalance(img, {
-      strength: 0.4,
+      strength: 0.4 * Math.min(1, preGenControls.toneStackScale),
       highlightBias: true,
     });
     img = postToneNeutralBalance.image;
@@ -683,13 +809,15 @@ export async function runStage1A(
   // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
   if (applyInteriorProfile) {
     const baseBrightness = 1 + (interiorCfg.brightnessBoost * (0.14 + (factors.shadowLift * 0.42)));
-    const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
-    const saturation = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03) + factors.saturationBoost;
+    const guardedBrightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
+    const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
+    const saturationRaw = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03) + factors.saturationBoost;
+    const saturation = scaleFromNeutral(saturationRaw, preGenControls.modulateScale);
     img = img.modulate({ brightness, saturation });
-    if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35) {
+    if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35 && preGenControls.localContrastScale > 0) {
       img = img.linear(
-        1 + (interiorCfg.localContrast * 0.4),
-        -(128 * interiorCfg.localContrast * 0.35)
+        1 + (interiorCfg.localContrast * 0.4 * preGenControls.localContrastScale),
+        -(128 * interiorCfg.localContrast * 0.35 * preGenControls.localContrastScale)
       );
     }
     logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
@@ -697,10 +825,12 @@ export async function runStage1A(
     const baseBrightness = analysis.isExterior
       ? 1 + (factors.shadowLift * 0.05)
       : 1 + (factors.shadowLift * 0.08);
-    const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
-    const saturation = analysis.isExterior
+    const guardedBrightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
+    const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
+    const saturationRaw = analysis.isExterior
       ? 1.01 + (factors.contrastBoost * 0.02) + factors.saturationBoost
       : 1.04 + (factors.contrastBoost * 0.04);
+    const saturation = scaleFromNeutral(saturationRaw, preGenControls.modulateScale);
     img = img.modulate({
       brightness,
       saturation,
@@ -709,11 +839,14 @@ export async function runStage1A(
   }
   
   // 7. Keep only a very mild interior shadow offset; preserve exterior shadows.
-  if (!analysis.isExterior && factors.shadowLift > 0.12) {
+  if (!analysis.isExterior && factors.shadowLift > 0.12 && preGenControls.shadowOffsetScale > 0) {
     if (applyInteriorProfile) {
-      img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift));
+      img = img.linear(
+        1.0,
+        Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift * preGenControls.shadowOffsetScale)
+      );
     } else {
-      img = img.linear(1.0, 2);
+      img = img.linear(1.0, Math.round(2 * preGenControls.shadowOffsetScale));
     }
   }
   
@@ -726,16 +859,16 @@ export async function runStage1A(
   }
   
   // 9. Keep edge brightening narrow and only for darker interiors.
-  if (!analysis.isExterior && factors.shadowLift > 0.18) {
-    img = img.linear(1.0, 3);
+  if (!analysis.isExterior && factors.shadowLift > 0.18 && preGenControls.shadowOffsetScale > 0) {
+    img = img.linear(1.0, Math.round(3 * preGenControls.shadowOffsetScale));
   }
   
   // 10. Sharpen only for non-blurry images with moderate edge density.
-  if (factors.sharpenAmount > 0) {
+  if (preGenControls.pregenSharpenEnabled && factors.sharpenAmount > 0) {
     img = img.sharpen({
       sigma: 1.2,
       m1: 1.0,
-      m2: factors.sharpenAmount,
+      m2: factors.sharpenAmount * preGenControls.pregenSharpenScale,
       x1: 2.0,
       y2: 10.0,
       y3: 20.0,
@@ -773,12 +906,7 @@ export async function runStage1A(
   })() : null;
 
   await img
-    .webp({ 
-      quality: 97,            // Very high quality (maintains 4K detail)
-      effort: 6,              // Maximum compression efficiency
-      smartSubsample: true,   // Better color preservation, reduces banding
-      nearLossless: false,    // Lossy for optimal compression
-    })
+    .webp(preGenWebpOptions)
     .toFile(sharpOutputPath);
 
   await logImageAttemptUrl({
@@ -834,7 +962,7 @@ export async function runStage1A(
 
       if (forceGemini) {
         logIfNotFocusMode("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
-        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+        const geminiOutputPath = await runGeminiStage1AWithOptionalFinish();
         return geminiOutputPath;
       }
     } else {
@@ -860,7 +988,7 @@ export async function runStage1A(
         lockStabilityPrimary("Stability credits exhausted (payment_required)");
       }
       logIfNotFocusMode("[stage1A] 🔁 Falling back to Gemini...");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+      primary1AImage = await runGeminiStage1AWithOptionalFinish();
     }
 
     // ✅ AUTHORITATIVE CONTENT VALIDATION
@@ -874,7 +1002,7 @@ export async function runStage1A(
       logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+        const geminiImage = await runGeminiStage1AWithOptionalFinish();
 
         await runStage1AStructuralValidationSafely(sharpOutputPath, geminiImage, "gemini output");
 
@@ -925,7 +1053,7 @@ export async function runStage1A(
         : "feature flag off";
     logIfNotFocusMode(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+    const geminiOutputPath = await runGeminiStage1AWithOptionalFinish();
 
     logIfNotFocusMode("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 
