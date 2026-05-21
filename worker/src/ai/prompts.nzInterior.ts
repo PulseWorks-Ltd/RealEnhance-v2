@@ -111,6 +111,7 @@ All adjustments must operate ONLY on existing pixel information.
 WHITE BALANCE
 Target neutral daylight ("Gallery White" ~5500K).
 Remove color casts while maintaining natural material tones.
+Preserve clean neutral whites while introducing a subtle sense of natural ambient warmth consistent with premium architectural photography, without yellowing whites, orange drift, or artificial staged warmth.
 
 HIGHLIGHTS, MIDTONES & SHADOW RECOVERY
 - Midtones Lift (Dark Images): When correcting dark rooms, focus the exposure boost heavily on the midtones and low-midtones. This elevates the overall ambiance of the room without overexposing the highlights.
