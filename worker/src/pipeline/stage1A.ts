@@ -163,17 +163,83 @@ async function canonicalizeToSrgbWithFallback(
   branch: string,
   reason: string,
 ): Promise<sharp.Sharp> {
-  if (shouldConvertToSrgb(meta)) {
-    logTransformDiagnostic("toColourspace", "before", meta, branch, { target: "srgb", reason });
-    const converted = image.toColourspace("srgb");
-    logTransformDiagnostic("toColourspace", "after", meta, branch, { target: "srgb", reason });
-    return converted;
+  const buildRgbFromRaw = async (source: sharp.Sharp, sourceReason: string): Promise<sharp.Sharp> => {
+    const { data, info } = await source.raw().toBuffer({ resolveWithObject: true });
+    const width = info.width || 0;
+    const height = info.height || 0;
+    const srcChannels = info.channels || 0;
+    if (!width || !height || !srcChannels) {
+      throw new Error(`canonical_raw_invalid:${sourceReason}:${width}x${height}x${srcChannels}`);
+    }
+
+    const pixelCount = width * height;
+    const rgbData = Buffer.allocUnsafe(pixelCount * 3);
+    for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+      const srcOffset = pixelIndex * srcChannels;
+      const dstOffset = pixelIndex * 3;
+      if (srcChannels >= 3) {
+        rgbData[dstOffset] = data[srcOffset] ?? 0;
+        rgbData[dstOffset + 1] = data[srcOffset + 1] ?? 0;
+        rgbData[dstOffset + 2] = data[srcOffset + 2] ?? 0;
+      } else {
+        const value = data[srcOffset] ?? 0;
+        rgbData[dstOffset] = value;
+        rgbData[dstOffset + 1] = value;
+        rgbData[dstOffset + 2] = value;
+      }
+    }
+
+    logTransformDiagnostic("canonicalize_raw_to_rgb", "after", meta, branch, {
+      reason: sourceReason,
+      width,
+      height,
+      srcChannels,
+      dstChannels: 3,
+    });
+
+    // Canonical RGB representation for downstream processing and validators.
+    return sharp(rgbData, { raw: { width, height, channels: 3 } });
+  };
+
+  const canDirectConvert = shouldConvertToSrgb(meta);
+  if (canDirectConvert) {
+    try {
+      logTransformDiagnostic("toColourspace", "before", meta, branch, { target: "srgb", reason });
+      const converted = await image
+        .clone()
+        .toColourspace("srgb")
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      logTransformDiagnostic("toColourspace", "after", meta, branch, { target: "srgb", reason });
+      return sharp(converted.data, {
+        raw: {
+          width: converted.info.width,
+          height: converted.info.height,
+          channels: converted.info.channels,
+        },
+      }).removeAlpha();
+    } catch (err: any) {
+      const message = String(err?.message || err || "");
+      console.warn("[stage1A] Direct toColourspace('srgb') failed, falling back to canonical raw RGB", {
+        reason,
+        width: meta.width,
+        height: meta.height,
+        space: meta.space,
+        channels: meta.channels,
+        depth: meta.depth,
+        hasAlpha: meta.hasAlpha,
+        message,
+      });
+      logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+        target: "srgb",
+        reason: `${reason}:direct_conversion_failed`,
+      });
+      return await buildRgbFromRaw(image.clone(), `${reason}:direct_conversion_failed`);
+    }
   }
 
-  const channels = meta.channels ?? 0;
-  const space = (meta.space || "").toLowerCase();
-  if (space === "linear" && channels > 0 && channels < 3) {
-    console.warn("[stage1A] Converting linear single-band input to explicit RGB canonical form", {
+  try {
+    console.warn("[stage1A] Converting unsupported colourspace state via canonical raw RGB fallback", {
       reason,
       width: meta.width,
       height: meta.height,
@@ -182,63 +248,28 @@ async function canonicalizeToSrgbWithFallback(
       depth: meta.depth,
       hasAlpha: meta.hasAlpha,
     });
-
     logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
       target: "srgb",
-      reason: `${reason}:linear_single_band_expand_to_rgb`,
+      reason: `${reason}:unsupported_direct_conversion`,
     });
-
-    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
-    const width = info.width || 0;
-    const height = info.height || 0;
-    const srcChannels = info.channels || 0;
-    if (!width || !height || !srcChannels) {
-      console.warn("[stage1A] RGB canonicalization fallback failed-open due to invalid raw metadata", {
-        reason,
-        width,
-        height,
-        srcChannels,
-      });
-      return image;
-    }
-
-    const pixelCount = width * height;
-    const rgbData = Buffer.allocUnsafe(pixelCount * 3);
-    for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
-      const srcOffset = pixelIndex * srcChannels;
-      const value = data[srcOffset] ?? 0;
-      const dstOffset = pixelIndex * 3;
-      rgbData[dstOffset] = value;
-      rgbData[dstOffset + 1] = value;
-      rgbData[dstOffset + 2] = value;
-    }
-
-    logTransformDiagnostic("canonicalize_linear_single_band", "after", meta, branch, {
+    return await buildRgbFromRaw(image.clone(), `${reason}:unsupported_direct_conversion`);
+  } catch (fallbackErr: any) {
+    console.warn("[stage1A] Canonical raw RGB fallback failed-open", {
       reason,
-      width,
-      height,
-      srcChannels,
-      dstChannels: 3,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+      message: String(fallbackErr?.message || fallbackErr || ""),
     });
-
-    // Raw RGB has no ICC profile metadata, so keep interpretation explicit by pinning to sRGB.
-    return sharp(rgbData, { raw: { width, height, channels: 3 } }).toColourspace("srgb");
+    logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+      target: "srgb",
+      reason: `${reason}:no_safe_canonicalization_path`,
+    });
+    return image;
   }
-
-  console.warn("[stage1A] Skipping toColourspace('srgb') with no safe canonicalization path", {
-    reason,
-    width: meta.width,
-    height: meta.height,
-    space: meta.space,
-    channels: meta.channels,
-    depth: meta.depth,
-    hasAlpha: meta.hasAlpha,
-  });
-  logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
-    target: "srgb",
-    reason: `${reason}:no_safe_canonicalization_path`,
-  });
-  return image;
 }
 
 function logTransformDiagnostic(
@@ -1348,12 +1379,15 @@ export async function runStage1A(
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifactsCache" });
   const baseArtifactsCache: Map<string, BaseArtifacts> = options.baseArtifactsCache || new Map();
   const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
-  const artifactsPromise = buildArtifacts ? ((): Promise<BaseArtifacts> => {
-    const base = img.clone();
-    const metaPromise = base.metadata();
-    const grayPromise = base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
-    const smallPromise = base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
-    const rgbPromise = metaPromise.then(async () => {
+  const artifactsPromise: Promise<BaseArtifacts | null> | null = buildArtifacts ? (async (): Promise<BaseArtifacts | null> => {
+    try {
+      const base = img.clone();
+      const meta = await base.metadata();
+      const [gray, small] = await Promise.all([
+        base.clone().greyscale().raw().toBuffer({ resolveWithObject: true }),
+        base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true }),
+      ]);
+
       const rgbNoAlpha = base.clone().removeAlpha();
       const rgbMeta = toTransformDiagnosticMeta(await rgbNoAlpha.metadata().catch(() => null));
       if ((rgbMeta.channels ?? 0) <= 0) {
@@ -1379,20 +1413,12 @@ export async function runStage1A(
         stage1ABranch,
         "base_artifacts_rgb",
       );
-      return srgb.raw().toBuffer({ resolveWithObject: true });
-    }).catch((err) => {
-      console.warn("[stage1A] BaseArtifacts RGB conversion failed-open", {
-        message: (err as any)?.message || String(err),
-      });
-      return null;
-    });
-    return Promise.all([metaPromise, grayPromise, smallPromise, rgbPromise]).then(([meta, gray, small, rgb]) => {
+      const rgb = await srgb.raw().toBuffer({ resolveWithObject: true });
+
       if (!meta.width || !meta.height) {
         throw new Error("Failed to read Stage1A artifact dimensions");
       }
-      if (!rgb) {
-        throw new Error("BaseArtifacts cache build incomplete: rgb branch unavailable");
-      }
+
       const grayData = new Uint8Array(gray.data.buffer, gray.data.byteOffset, gray.data.byteLength);
       const edge = computeEdgeMapFromGray(grayData, gray.info.width, gray.info.height, 38);
       return {
@@ -1406,7 +1432,19 @@ export async function runStage1A(
         edge,
         rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
       };
-    });
+    } catch (err) {
+      // Attach handler at creation time to avoid transient unhandled rejection warnings.
+      logIfNotFocusMode("[stage1A] Failed to build BaseArtifacts cache:", err);
+      console.warn("[stage1A] BaseArtifacts build failed with transform trace", {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+        roomType: roomTypeResolved ?? null,
+        error: (err as any)?.message || String(err),
+        cacheEntryWritten: false,
+        transformTrace: transformTrace.slice(-30),
+      });
+      return null;
+    }
   })() : null;
 
   try {
@@ -1430,19 +1468,9 @@ export async function runStage1A(
   });
 
   if (artifactsPromise) {
-    try {
-      const artifacts = await artifactsPromise;
+    const artifacts = await artifactsPromise;
+    if (artifacts) {
       baseArtifactsCache.set(sharpOutputPath, artifacts);
-    } catch (e) {
-      logIfNotFocusMode("[stage1A] Failed to build BaseArtifacts cache:", e);
-      console.warn("[stage1A] BaseArtifacts build failed with transform trace", {
-        jobId: jobIdResolved,
-        sceneType: effectiveSceneType,
-        roomType: roomTypeResolved ?? null,
-        error: (e as any)?.message || String(e),
-        cacheEntryWritten: false,
-        transformTrace: transformTrace.slice(-30),
-      });
     }
   }
   
