@@ -891,7 +891,7 @@ LANDSCAPE VIBRANCY
 ────────────────────────────────
 
 • LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.
-• SHADED LANDSCAPING: Maintain healthy tonal separation and natural green variation within shaded lawn and landscaping regions without introducing artificial saturation.
+• SHADED LANDSCAPING: Preserve the exact original landscaping layout and ground-material boundaries within shaded regions. Improve tonal separation and visibility of EXISTING vegetation only, without introducing, extending, or inventing new grass, plants, or ground coverage.
 • HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint to "fix" worn or dirt patches.
 
 ────────────────────────────────
