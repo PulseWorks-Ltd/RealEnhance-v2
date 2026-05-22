@@ -145,6 +145,102 @@ function isToneTransformCompatible(meta: TransformDiagnosticMeta): boolean {
   return (channels === 3 || channels === 4) && rgbLikeSpace;
 }
 
+function shouldConvertToSrgb(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+
+  // libvips cannot reliably expand single-band linear data during colourspace conversion.
+  if (space === "linear" && channels > 0 && channels < 3) {
+    return false;
+  }
+
+  return true;
+}
+
+async function canonicalizeToSrgbWithFallback(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  reason: string,
+): Promise<sharp.Sharp> {
+  if (shouldConvertToSrgb(meta)) {
+    logTransformDiagnostic("toColourspace", "before", meta, branch, { target: "srgb", reason });
+    const converted = image.toColourspace("srgb");
+    logTransformDiagnostic("toColourspace", "after", meta, branch, { target: "srgb", reason });
+    return converted;
+  }
+
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+  if (space === "linear" && channels > 0 && channels < 3) {
+    console.warn("[stage1A] Converting linear single-band input to explicit RGB canonical form", {
+      reason,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+
+    logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+      target: "srgb",
+      reason: `${reason}:linear_single_band_expand_to_rgb`,
+    });
+
+    const { data, info } = await image.raw().toBuffer({ resolveWithObject: true });
+    const width = info.width || 0;
+    const height = info.height || 0;
+    const srcChannels = info.channels || 0;
+    if (!width || !height || !srcChannels) {
+      console.warn("[stage1A] RGB canonicalization fallback failed-open due to invalid raw metadata", {
+        reason,
+        width,
+        height,
+        srcChannels,
+      });
+      return image;
+    }
+
+    const pixelCount = width * height;
+    const rgbData = Buffer.allocUnsafe(pixelCount * 3);
+    for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+      const srcOffset = pixelIndex * srcChannels;
+      const value = data[srcOffset] ?? 0;
+      const dstOffset = pixelIndex * 3;
+      rgbData[dstOffset] = value;
+      rgbData[dstOffset + 1] = value;
+      rgbData[dstOffset + 2] = value;
+    }
+
+    logTransformDiagnostic("canonicalize_linear_single_band", "after", meta, branch, {
+      reason,
+      width,
+      height,
+      srcChannels,
+      dstChannels: 3,
+    });
+
+    // Raw RGB has no ICC profile metadata, so keep interpretation explicit by pinning to sRGB.
+    return sharp(rgbData, { raw: { width, height, channels: 3 } }).toColourspace("srgb");
+  }
+
+  console.warn("[stage1A] Skipping toColourspace('srgb') with no safe canonicalization path", {
+    reason,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+  });
+  logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+    target: "srgb",
+    reason: `${reason}:no_safe_canonicalization_path`,
+  });
+  return image;
+}
+
 function logTransformDiagnostic(
   operation: string,
   phase: "before" | "after" | "skipped",
@@ -678,13 +774,17 @@ async function estimateStage1ANeutralBalance(
   img: sharp.Sharp,
   options?: Stage1ANeutralBalanceOptions
 ): Promise<Stage1ANeutralBalance | null> {
-  const { data, info } = await img
-    .clone()
-    .ensureAlpha()
-    .removeAlpha()
-    .toColourspace("srgb")
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  const probe = img.clone().removeAlpha();
+  const probeMeta = toTransformDiagnosticMeta(await probe.metadata().catch(() => null));
+
+  const rgbProbe = await canonicalizeToSrgbWithFallback(
+    probe,
+    probeMeta,
+    "neutral_balance",
+    "neutral_balance_probe",
+  );
+
+  const { data, info } = await rgbProbe.raw().toBuffer({ resolveWithObject: true });
 
   if (!info.width || !info.height || info.channels < 3) {
     return null;
@@ -919,7 +1019,14 @@ export async function runStage1A(
   };
   
   // 1. Auto-rotate based on EXIF orientation
-  img = img.rotate().removeAlpha().toColourspace("srgb");
+  img = img.rotate().removeAlpha();
+  const srgbInitMeta = toTransformDiagnosticMeta(await img.metadata().catch(() => null));
+  img = await canonicalizeToSrgbWithFallback(
+    img,
+    srgbInitMeta,
+    stage1ABranch,
+    "initial_canonicalization",
+  );
 
   const runGeminiStage1AWithOptionalFinish = async (): Promise<string> => {
     const geminiOutputPath = await enhanceWithGeminiStage1A(
@@ -1012,7 +1119,14 @@ export async function runStage1A(
       return path1ACore;
     } catch (err) {
       logIfNotFocusMode("[stage1A] Stability blur rescue failed — continuing with softened Sharp path", err);
-      img = sharp(inputPath).rotate().removeAlpha().toColourspace("srgb");
+      img = sharp(inputPath).rotate().removeAlpha();
+      const fallbackMeta = toTransformDiagnosticMeta(await img.metadata().catch(() => null));
+      img = await canonicalizeToSrgbWithFallback(
+        img,
+        fallbackMeta,
+        stage1ABranch,
+        "blurry_fallback_reset",
+      );
     }
   }
   
@@ -1239,11 +1353,11 @@ export async function runStage1A(
     const metaPromise = base.metadata();
     const grayPromise = base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
     const smallPromise = base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
-    const rgbPromise = metaPromise.then((meta) => {
-      const rgbMeta = toTransformDiagnosticMeta(meta);
-      const rgbCompatible = isToneTransformCompatible(rgbMeta);
-      if (!rgbCompatible) {
-        console.warn("[stage1A] Skipping BaseArtifacts RGB conversion due to unsupported metadata", {
+    const rgbPromise = metaPromise.then(async () => {
+      const rgbNoAlpha = base.clone().removeAlpha();
+      const rgbMeta = toTransformDiagnosticMeta(await rgbNoAlpha.metadata().catch(() => null));
+      if ((rgbMeta.channels ?? 0) <= 0) {
+        console.warn("[stage1A] BaseArtifacts RGB conversion unavailable: invalid channel metadata", {
           width: rgbMeta.width,
           height: rgbMeta.height,
           space: rgbMeta.space,
@@ -1251,18 +1365,20 @@ export async function runStage1A(
           depth: rgbMeta.depth,
           hasAlpha: rgbMeta.hasAlpha,
         });
-        logTransformDiagnostic("base_artifacts_rgb", "skipped", rgbMeta, stage1ABranch);
+        logTransformDiagnostic("base_artifacts_rgb", "skipped", rgbMeta, stage1ABranch, {
+          reason: "invalid_channel_metadata",
+        });
         return null;
       }
-      logTransformDiagnostic("ensureAlpha", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
-      const rgbPipeline = base.clone().ensureAlpha();
-      logTransformDiagnostic("ensureAlpha", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+
       logTransformDiagnostic("removeAlpha", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
-      const rgbNoAlpha = rgbPipeline.removeAlpha();
       logTransformDiagnostic("removeAlpha", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
-      logTransformDiagnostic("toColourspace", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb", target: "srgb" });
-      const srgb = rgbNoAlpha.toColourspace("srgb");
-      logTransformDiagnostic("toColourspace", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb", target: "srgb" });
+      const srgb = await canonicalizeToSrgbWithFallback(
+        rgbNoAlpha,
+        rgbMeta,
+        stage1ABranch,
+        "base_artifacts_rgb",
+      );
       return srgb.raw().toBuffer({ resolveWithObject: true });
     }).catch((err) => {
       console.warn("[stage1A] BaseArtifacts RGB conversion failed-open", {
