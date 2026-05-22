@@ -820,6 +820,12 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
 
     Maintain clear luminance separation between directly sunlit and shaded regions while ensuring shaded materials still appear premium, open, and commercially presentable.
 
+  • COVERED EXTERIOR RECOVERY:
+    Recover natural visibility and tonal separation within covered exterior areas such as verandahs, recessed entries, shaded glazing, and sheltered outdoor transitions while preserving realistic architectural depth and shadow direction.
+
+  • PREMIUM GLAZING READABILITY:
+    Preserve black window and door framing while allowing adjacent reflected and transmitted light to remain naturally visible and open.
+
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
 
 ────────────────────────────────
@@ -885,6 +891,7 @@ LANDSCAPE VIBRANCY
 ────────────────────────────────
 
 • LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.
+• SHADED LANDSCAPING: Maintain healthy tonal separation and natural green variation within shaded lawn and landscaping regions without introducing artificial saturation.
 • HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint to "fix" worn or dirt patches.
 
 ────────────────────────────────

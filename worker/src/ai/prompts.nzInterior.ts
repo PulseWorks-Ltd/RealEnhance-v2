@@ -153,6 +153,8 @@ The room should feel:
 AMBIENT LIGHT DISTRIBUTION
 Gently redistribute ambient luminance throughout darker regions of the room to reduce heavy visual weight and shadow density.
 
+Enhance interior tonal openness and natural reflected light distribution while preserving realistic architectural depth and material integrity.
+
 Lift:
 
 - dark carpets,
@@ -196,7 +198,13 @@ Walls and ceilings should appear:
 - professionally balanced,
   without appearing overexposed or artificially whitened.
 
+Preserve clean neutral wall tones while avoiding chalkiness, clipping, or flat over-bright rendering.
+
+Recover subtle texture and tonal separation within darker carpet and flooring regions without flattening natural shadow gradients.
+
 Carpet textures, fabric grain, flooring texture, and reflective surfaces must retain realistic material depth and texture separation.
+
+Create a refined, professionally balanced real estate photography appearance with balanced luminosity, soft dimensional contrast, and natural material realism.
 
 SHADOW RECOVERY PERMISSION
 Treat heavy low-quality camera shadow compression and dark interior falloff as recoverable photographic limitations rather than protected scene characteristics.
