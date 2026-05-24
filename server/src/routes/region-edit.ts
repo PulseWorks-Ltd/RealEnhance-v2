@@ -748,15 +748,22 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       if (!effectiveStageUrls["1A"]) effectiveStageUrls["1A"] = baseImageUrl;
     }
 
+    const canonicalRegionImageId = String(
+      canonicalLineage.parentImageId || record.imageId || record.id || ""
+    ).trim();
+    if (!canonicalRegionImageId) {
+      return res.status(400).json({ success: false, error: "missing_canonical_image_id" });
+    }
+
     const jobPayload: Parameters<typeof enqueueRegionEditJob>[0] = {
       userId: sessUser.id,
       agencyId: sessUser.agencyId,
       sourceJobId,
       parentJobId,
-      sourceImageId: record.imageId || record.id,
+      sourceImageId: canonicalRegionImageId,
       propertyId: sourceEnhanced?.propertyId || undefined,
       galleryParentImageId: sourceEnhanced?.id || null,
-      imageId: record.imageId || record.id,
+      imageId: canonicalRegionImageId,
       currentCardJobId,
       mode: apiMode,
       editIntent,
@@ -778,7 +785,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
 
     console.log("[region-edit] Enqueuing job:", {
       jobId,
-      imageId: record.imageId || record.id,
+      imageId: canonicalRegionImageId,
       mode: apiMode,
       sourceStage: resolvedSourceStage,
       executionSourceStage: effectiveExecutionSourceStage,
@@ -799,8 +806,10 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     console.log("[region-edit] Mask field value type:", typeof jobPayload.mask);
     console.log("[region-edit] Mask field value length:", jobPayload.mask?.length || 0);
     console.log("[IMAGE_ID_CHAIN]", {
-      imageId: record.imageId || record.id,
-      sourceImageId: record.imageId || record.id,
+      imageId: canonicalRegionImageId,
+      sourceImageId: canonicalRegionImageId,
+      canonicalParentImageId: canonicalLineage.parentImageId || null,
+      parentJobId: parentJobId || null,
       sourceJobId: sourceJobId || null,
     });
 
@@ -811,7 +820,7 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       jobId: result.jobId,
       userId: sessUser.id,
       operation: "region-edit",
-      imageId: record.imageId || record.id,
+      imageId: canonicalRegionImageId,
       originalImageUrl: baseImageUrl,
       prompt: instruction,
       mask: maskBase64 || null,
