@@ -144,7 +144,6 @@ type CompositeExpandedCropDebug = {
   compositePreview?: Buffer;
   changedPixels?: number;
 };
-
 type HarmonizationSignalStats = {
   pixelCount: number;
   lumaMean: number;
@@ -942,6 +941,308 @@ async function buildDeltaMaskForCrop(params: {
     alphaMask: deltaRaw,
     changedPixels,
   };
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min;
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+function buildRingMasks(binaryMask: Buffer, width: number, height: number, bandPx: number): {
+  innerEdge: Uint8Array;
+  outerBand: Uint8Array;
+  interiorMask: Uint8Array;
+} {
+  const total = width * height;
+  const innerEdge = new Uint8Array(total);
+  const outerBand = new Uint8Array(total);
+  const interiorMask = new Uint8Array(total);
+
+  const radius = Math.max(1, bandPx);
+  const indexOf = (x: number, y: number) => (y * width) + x;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = indexOf(x, y);
+      const inMask = (binaryMask[idx] ?? 0) > 127;
+      if (!inMask) continue;
+
+      interiorMask[idx] = 255;
+
+      let nearestOutside = radius + 1;
+      for (let oy = -radius; oy <= radius; oy += 1) {
+        const ny = y + oy;
+        if (ny < 0 || ny >= height) continue;
+        for (let ox = -radius; ox <= radius; ox += 1) {
+          const nx = x + ox;
+          if (nx < 0 || nx >= width) continue;
+          const nIdx = indexOf(nx, ny);
+          if ((binaryMask[nIdx] ?? 0) > 127) continue;
+          const d = Math.max(Math.abs(ox), Math.abs(oy));
+          if (d < nearestOutside) nearestOutside = d;
+        }
+      }
+
+      if (nearestOutside <= radius) {
+        innerEdge[idx] = 255;
+      }
+    }
+  }
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = indexOf(x, y);
+      const inMask = (binaryMask[idx] ?? 0) > 127;
+      if (inMask) continue;
+
+      let nearestInside = radius + 1;
+      for (let oy = -radius; oy <= radius; oy += 1) {
+        const ny = y + oy;
+        if (ny < 0 || ny >= height) continue;
+        for (let ox = -radius; ox <= radius; ox += 1) {
+          const nx = x + ox;
+          if (nx < 0 || nx >= width) continue;
+          const nIdx = indexOf(nx, ny);
+          if ((binaryMask[nIdx] ?? 0) <= 127) continue;
+          const d = Math.max(Math.abs(ox), Math.abs(oy));
+          if (d < nearestInside) nearestInside = d;
+        }
+      }
+
+      if (nearestInside <= radius) {
+        outerBand[idx] = 255;
+      }
+    }
+  }
+
+  return { innerEdge, outerBand, interiorMask };
+}
+
+function computeSignalStats(rgbRaw: Buffer, width: number, height: number, mask: Uint8Array): HarmonizationSignalStats {
+  const total = width * height;
+  let count = 0;
+  let sum = 0;
+  let sumSq = 0;
+  let edgeAccum = 0;
+  let hfAccum = 0;
+
+  const lumaAt = (idx: number): number => {
+    const base = idx * 3;
+    const r = rgbRaw[base] ?? 0;
+    const g = rgbRaw[base + 1] ?? 0;
+    const b = rgbRaw[base + 2] ?? 0;
+    return (0.2126 * r) + (0.7152 * g) + (0.0722 * b);
+  };
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const idx = (y * width) + x;
+      if ((mask[idx] ?? 0) === 0) continue;
+
+      const center = lumaAt(idx);
+      sum += center;
+      sumSq += center * center;
+      count += 1;
+
+      const right = x + 1 < width ? lumaAt(idx + 1) : center;
+      const down = y + 1 < height ? lumaAt(idx + width) : center;
+      edgeAccum += Math.abs(center - right) + Math.abs(center - down);
+
+      const left = x > 0 ? lumaAt(idx - 1) : center;
+      const up = y > 0 ? lumaAt(idx - width) : center;
+      const localMean = (left + right + up + down) * 0.25;
+      hfAccum += Math.abs(center - localMean);
+    }
+  }
+
+  if (count === 0) {
+    return {
+      pixelCount: 0,
+      lumaMean: 0,
+      lumaStd: 0,
+      edgeEnergy: 0,
+      hfEnergy: 0,
+    };
+  }
+
+  const mean = sum / count;
+  const variance = Math.max(0, (sumSq / count) - (mean * mean));
+  return {
+    pixelCount: count,
+    lumaMean: mean,
+    lumaStd: Math.sqrt(variance),
+    edgeEnergy: edgeAccum / count,
+    hfEnergy: hfAccum / count,
+  };
+}
+
+function deriveHarmonizationPlan(sourceStats: HarmonizationSignalStats, targetStats: HarmonizationSignalStats): HarmonizationPlan {
+  const sourceStd = Math.max(1, sourceStats.lumaStd);
+  const targetStd = Math.max(1, targetStats.lumaStd);
+  const gain = clampNumber(
+    targetStd / sourceStd,
+    1 - HARMONIZE_MAX_GAIN_DELTA,
+    1 + HARMONIZE_MAX_GAIN_DELTA,
+  );
+  const bias = clampNumber(
+    targetStats.lumaMean - (sourceStats.lumaMean * gain),
+    -HARMONIZE_MAX_BIAS,
+    HARMONIZE_MAX_BIAS,
+  );
+
+  const sourceEdge = Math.max(1, sourceStats.edgeEnergy);
+  const targetEdge = Math.max(1, targetStats.edgeEnergy);
+  const edgeRatio = targetEdge / sourceEdge;
+
+  const sourceHf = Math.max(1, sourceStats.hfEnergy);
+  const targetHf = Math.max(1, targetStats.hfEnergy);
+  const hfRatio = targetHf / sourceHf;
+
+  let blurSigma = 0;
+  let sharpenM2 = 0;
+  if (edgeRatio < 0.94 || hfRatio < 0.94) {
+    const softness = Math.max(0, 1 - Math.min(edgeRatio, hfRatio));
+    blurSigma = clampNumber(softness * 2.1, 0, HARMONIZE_MAX_BLUR_SIGMA);
+  } else if (edgeRatio > 1.06 || hfRatio > 1.06) {
+    const crispness = Math.max(0, Math.max(edgeRatio, hfRatio) - 1);
+    sharpenM2 = clampNumber(crispness * 1.5, 0, HARMONIZE_MAX_SHARPEN_M2);
+  }
+
+  return {
+    gain,
+    bias,
+    blurSigma,
+    sharpenM2,
+    sourceStats,
+    targetStats,
+  };
+}
+
+async function harmonizePatchToLocalNeighborhood(params: {
+  candidateBuffer: Buffer;
+  referenceBuffer: Buffer;
+  binaryMaskBuffer: Buffer;
+  width: number;
+  height: number;
+  context: string;
+}): Promise<Buffer> {
+  const { candidateBuffer, referenceBuffer, binaryMaskBuffer, width, height, context } = params;
+
+  const [candidateRaw, referenceRaw, maskRaw] = await Promise.all([
+    sharp(candidateBuffer)
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true }),
+    sharp(referenceBuffer)
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+      .removeAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true }),
+    sharp(binaryMaskBuffer)
+      .removeAlpha()
+      .grayscale()
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+      .threshold(127, { grayscale: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true }),
+  ]);
+
+  const ringBand = Math.max(3, Math.min(14, Math.round(Math.max(width, height) * 0.015))) || HARMONIZE_DEFAULT_BAND_PX;
+  const { innerEdge, outerBand, interiorMask } = buildRingMasks(maskRaw.data, width, height, ringBand);
+  const sourceStats = computeSignalStats(candidateRaw.data, width, height, innerEdge);
+  const targetStats = computeSignalStats(referenceRaw.data, width, height, outerBand);
+
+  if (sourceStats.pixelCount < HARMONIZE_MIN_SAMPLE_PIXELS || targetStats.pixelCount < HARMONIZE_MIN_SAMPLE_PIXELS) {
+    console.log("[editApply] LOCAL_HARMONIZE_SKIPPED", {
+      context,
+      reason: "insufficient_samples",
+      sourcePixels: sourceStats.pixelCount,
+      targetPixels: targetStats.pixelCount,
+    });
+    return candidateBuffer;
+  }
+
+  const plan = deriveHarmonizationPlan(sourceStats, targetStats);
+
+  let corrected = await sharp(candidateBuffer)
+    .linear([plan.gain, plan.gain, plan.gain], [plan.bias, plan.bias, plan.bias])
+    .removeAlpha()
+    .png()
+    .toBuffer();
+
+  if (plan.blurSigma > 0.01) {
+    corrected = await sharp(corrected)
+      .blur(plan.blurSigma)
+      .png()
+      .toBuffer();
+  }
+
+  if (plan.sharpenM2 > 0.01) {
+    corrected = await sharp(corrected)
+      .sharpen({
+        sigma: 1.1,
+        m1: 1.0,
+        m2: plan.sharpenM2,
+        x1: 2.0,
+        y2: 8.0,
+        y3: 16.0,
+      })
+      .png()
+      .toBuffer();
+  }
+
+  const boundaryMask = await sharp(Buffer.from(innerEdge), {
+    raw: { width, height, channels: 1 },
+  })
+    .blur(Math.max(0.6, ringBand * 0.35))
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const alphaRaw = Buffer.alloc(width * height, 0);
+  for (let i = 0; i < alphaRaw.length; i += 1) {
+    const inMask = (interiorMask[i] ?? 0) > 0;
+    if (!inMask) continue;
+    const boundaryWeight = ((boundaryMask.data[i] ?? 0) / 255) * HARMONIZE_BOUNDARY_WEIGHT;
+    const interiorWeight = HARMONIZE_INTERIOR_WEIGHT;
+    const weight = clampNumber(boundaryWeight + interiorWeight, 0, 1);
+    alphaRaw[i] = Math.round(weight * 255);
+  }
+
+  const overlay = await sharp(corrected)
+    .joinChannel(alphaRaw, { raw: { width, height, channels: 1 } })
+    .png()
+    .toBuffer();
+
+  console.log("[editApply] LOCAL_HARMONIZE_APPLIED", {
+    context,
+    ringBand,
+    gain: Number(plan.gain.toFixed(4)),
+    bias: Number(plan.bias.toFixed(4)),
+    blurSigma: Number(plan.blurSigma.toFixed(4)),
+    sharpenM2: Number(plan.sharpenM2.toFixed(4)),
+    sourceStats: {
+      lumaMean: Number(plan.sourceStats.lumaMean.toFixed(3)),
+      lumaStd: Number(plan.sourceStats.lumaStd.toFixed(3)),
+      edgeEnergy: Number(plan.sourceStats.edgeEnergy.toFixed(3)),
+      hfEnergy: Number(plan.sourceStats.hfEnergy.toFixed(3)),
+      pixelCount: plan.sourceStats.pixelCount,
+    },
+    targetStats: {
+      lumaMean: Number(plan.targetStats.lumaMean.toFixed(3)),
+      lumaStd: Number(plan.targetStats.lumaStd.toFixed(3)),
+      edgeEnergy: Number(plan.targetStats.edgeEnergy.toFixed(3)),
+      hfEnergy: Number(plan.targetStats.hfEnergy.toFixed(3)),
+      pixelCount: plan.targetStats.pixelCount,
+    },
+  });
+
+  return sharp(candidateBuffer)
+    .composite([{ input: overlay, blend: "over" }])
+    .png()
+    .toBuffer();
 }
 
 async function normalizeMaskToImageSpace(mask: Buffer, width: number, height: number): Promise<Buffer> {
@@ -2122,7 +2423,6 @@ async function compositeExpandedCrop(
   }
 
   const finalAlphaMask = Buffer.from(alphaRaw);
-
   const overlayBuffer = await sharp(harmonizedGenerated)
     .joinChannel(alphaRaw, { raw: { width: box.width, height: box.height, channels: 1 } })
     .png()
