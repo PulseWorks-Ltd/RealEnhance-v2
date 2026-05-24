@@ -6,6 +6,23 @@
  */
 
 import { pool } from './index.js';
+import {
+  ENHANCED_IMAGE_COMPLETION_TYPES,
+  isEnhancedImageCompletionType,
+  type EnhancedImageCompletionType,
+} from '@realenhance/shared/completionTypes';
+import {
+  deriveExecutionModeFromCompletionType,
+  deriveLegacyCompletionTypeFromExecutionMode,
+  deriveUserOutcomeFromCompletionType,
+  isEnhancedImageExecutionMode,
+  isEnhancedImagePersistenceStatus,
+  isEnhancedImageUserOutcome,
+  type EnhancedImageExecutionMode,
+  type EnhancedImagePersistenceStatus,
+  type EnhancedImageUserOutcome,
+} from '@realenhance/shared/enhancedImageSemantics';
+import { normalizeDbUuid, type DbUuidNormalizationResult } from '@realenhance/shared/idNormalization';
 
 interface CreateEnhancedImageParams {
   agencyId: string;

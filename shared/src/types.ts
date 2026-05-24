@@ -105,6 +105,9 @@ export interface EnhancedImage {
   source?: "stage2" | "region-edit" | null;
   stagesCompleted: string[];
   completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+  userOutcome?: EnhancedImageUserOutcome | null;
+  executionMode?: EnhancedImageExecutionMode | null;
+  persistenceStatus?: EnhancedImagePersistenceStatus | null;
   storageKey?: string | null;
   publicUrl: string;
   thumbnailUrl?: string | null;
@@ -132,6 +135,9 @@ export interface EnhancedImageListItem {
   originalUrl?: string | null;
   stagesCompleted: string[];
   completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+  userOutcome?: EnhancedImageUserOutcome | null;
+  executionMode?: EnhancedImageExecutionMode | null;
+  persistenceStatus?: EnhancedImagePersistenceStatus | null;
   createdAt: string;
   auditRef?: string | null;
   propertyId?: string | null;
@@ -146,6 +152,9 @@ export interface EnhancedImageGalleryProperty {
   normalizedAddress: string;
   images: EnhancedImageListItem[];
 }
+
+// Backward-compatible alias used by the client gallery view.
+export type PropertyFolder = EnhancedImageGalleryProperty;
 
 export interface EnhancedImageGalleryResponse {
   properties: EnhancedImageGalleryProperty[];
@@ -506,83 +515,3 @@ export interface EnhancementAttempt {
   createdAt: string;
 }
 
-/**
- * Enhanced image record with quota-bound retention
- * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
- * Oldest images expire first (FIFO)
- */
-export interface EnhancedImage {
-  id: string; // UUID
-
-  // Ownership & scoping
-  agencyId: string;
-  userId: UserId;
-  jobId: JobId;
-  propertyId?: string | null;
-  parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
-
-  // Stage completion tracking
-  stagesCompleted: string[]; // e.g., ['1A', '1B', '2'] or ['1A', '2']
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-
-  // Storage
-  storageKey: string; // S3 key
-  publicUrl: string; // Full public URL
-  thumbnailUrl?: string; // Optional thumbnail
-  originalUrl?: string | null; // Signed original URL (nullable)
-  originalS3Key?: string | null; // S3 key for original
-  enhancedS3Key?: string | null; // S3 key for enhanced (final)
-  thumbS3Key?: string | null; // S3 key for thumbnail
-
-  // File metadata
-  sizeBytes?: number;
-  contentType?: string;
-
-  // Retention & expiry
-  isExpired: boolean;
-  expiresAt?: string; // Computed based on retention policy
-
-  // Audit & traceability (NEVER expose validator details to users)
-  auditRef: string; // Short human-friendly reference (e.g., "RE-7F3K9Q")
-  traceId: string; // Correlates with worker logs
-  stage12AttemptId?: string; // UUID reference
-  stage2AttemptId?: string; // UUID reference
-
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
- * Enhanced image list item (for API responses)
- * Excludes sensitive audit data
- */
-export interface EnhancedImageListItem {
-  id: string;
-  jobId: string;
-  thumbnailUrl: string;
-  publicUrl: string;
-  originalUrl?: string | null;
-  stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-  createdAt: string;
-  auditRef: string; // May be shown to users as generic "Support reference"
-  propertyId?: string | null;
-  parentImageId?: string | null;
-  source?: 'stage2' | 'region-edit';
-  versionCount?: number;
-}
-
-export interface PropertyFolder {
-  id: string;
-  address: string;
-  normalizedAddress: string;
-  images: EnhancedImageListItem[];
-}
-
-export interface EnhancedImageGalleryResponse {
-  properties: PropertyFolder[];
-  unassignedImages: EnhancedImageListItem[];
-  total: number;
-  images?: EnhancedImageListItem[];
-}

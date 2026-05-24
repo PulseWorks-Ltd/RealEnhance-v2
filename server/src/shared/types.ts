@@ -110,6 +110,9 @@ export interface EnhancedImage {
   source?: "stage2" | "region-edit" | null;
   stagesCompleted: string[];
   completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+  userOutcome?: "success" | "partial_success" | "failed" | null;
+  executionMode?: "full_pipeline" | "fallback_1b" | "fallback_1a" | "intentional_1a" | "optimized_1a" | "stage2_repair" | null;
+  persistenceStatus?: "recorded" | "recorded_with_warnings" | "pending_repair" | null;
   storageKey?: string | null;
   publicUrl: string;
   thumbnailUrl?: string | null;
@@ -137,6 +140,9 @@ export interface EnhancedImageListItem {
   originalUrl?: string | null;
   stagesCompleted: string[];
   completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+  userOutcome?: "success" | "partial_success" | "failed" | null;
+  executionMode?: "full_pipeline" | "fallback_1b" | "fallback_1a" | "intentional_1a" | "optimized_1a" | "stage2_repair" | null;
+  persistenceStatus?: "recorded" | "recorded_with_warnings" | "pending_repair" | null;
   createdAt: string;
   auditRef?: string | null;
   propertyId?: string | null;

@@ -156,9 +156,10 @@ export async function validateStructure(
   enhancedUrl: string
 ): Promise<StructureValidationResult> {
   const { url, mode, sensitivity } = getValidatorConfig();
+  const validatorUrl = normalizeHttpUrl(url ?? undefined, "validatorUrl");
 
   // Check if validator is disabled
-  if (!url) {
+  if (!url || !validatorUrl.ok) {
     console.log("[structureValidator] Validator disabled (no URL configured)");
     if (url && !validatorUrl.ok) {
       console.warn("[structureValidator] Invalid validator URL; disabling validation", {

@@ -1,4 +1,3 @@
-import type { EnhancedImageCompletionType } from "./completionTypes";
 import type { EnhancedImageExecutionMode, EnhancedImagePersistenceStatus, EnhancedImageUserOutcome } from "./enhancedImageSemantics";
 export interface ReinstateConfig {
     targetType: "window" | "doorway" | "opening" | "auto";
@@ -98,6 +97,9 @@ export interface EnhancedImage {
     source?: "stage2" | "region-edit" | null;
     stagesCompleted: string[];
     completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+    userOutcome?: EnhancedImageUserOutcome | null;
+    executionMode?: EnhancedImageExecutionMode | null;
+    persistenceStatus?: EnhancedImagePersistenceStatus | null;
     storageKey?: string | null;
     publicUrl: string;
     thumbnailUrl?: string | null;
@@ -124,6 +126,9 @@ export interface EnhancedImageListItem {
     originalUrl?: string | null;
     stagesCompleted: string[];
     completionType?: "full_success" | "fallback_1b" | "fallback_1a" | null;
+    userOutcome?: EnhancedImageUserOutcome | null;
+    executionMode?: EnhancedImageExecutionMode | null;
+    persistenceStatus?: EnhancedImagePersistenceStatus | null;
     createdAt: string;
     auditRef?: string | null;
     propertyId?: string | null;
@@ -137,6 +142,7 @@ export interface EnhancedImageGalleryProperty {
     normalizedAddress: string;
     images: EnhancedImageListItem[];
 }
+export type PropertyFolder = EnhancedImageGalleryProperty;
 export interface EnhancedImageGalleryResponse {
     properties: EnhancedImageGalleryProperty[];
     unassignedImages: EnhancedImageListItem[];
@@ -422,68 +428,4 @@ export interface EnhancementAttempt {
     validatorSummaryInternal?: Record<string, any>;
     traceId: string;
     createdAt: string;
-}
-/**
- * Enhanced image record with quota-bound retention
- * Retention window: up to 3 months of plan allowance (monthly_included_images * 3)
- * Oldest images expire first (FIFO)
- */
-export interface EnhancedImage {
-    id: string;
-    agencyId: string;
-    userId: UserId;
-    jobId: JobId;
-    propertyId?: string | null;
-    parentImageId?: string | null;
-    source?: 'stage2' | 'region-edit';
-    stagesCompleted: string[];
-    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-    storageKey: string;
-    publicUrl: string;
-    thumbnailUrl?: string;
-    originalUrl?: string | null;
-    originalS3Key?: string | null;
-    enhancedS3Key?: string | null;
-    thumbS3Key?: string | null;
-    sizeBytes?: number;
-    contentType?: string;
-    isExpired: boolean;
-    expiresAt?: string;
-    auditRef: string;
-    traceId: string;
-    stage12AttemptId?: string;
-    stage2AttemptId?: string;
-    createdAt: string;
-    updatedAt: string;
-}
-/**
- * Enhanced image list item (for API responses)
- * Excludes sensitive audit data
- */
-export interface EnhancedImageListItem {
-    id: string;
-    jobId: string;
-    thumbnailUrl: string;
-    publicUrl: string;
-    originalUrl?: string | null;
-    stagesCompleted: string[];
-    completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
-    createdAt: string;
-    auditRef: string;
-    propertyId?: string | null;
-    parentImageId?: string | null;
-    source?: 'stage2' | 'region-edit';
-    versionCount?: number;
-}
-export interface PropertyFolder {
-    id: string;
-    address: string;
-    normalizedAddress: string;
-    images: EnhancedImageListItem[];
-}
-export interface EnhancedImageGalleryResponse {
-    properties: PropertyFolder[];
-    unassignedImages: EnhancedImageListItem[];
-    total: number;
-    images?: EnhancedImageListItem[];
 }
