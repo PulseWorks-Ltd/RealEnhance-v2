@@ -724,6 +724,13 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
         })
       : null);
 
+    const canonicalRegionImageId = String(
+      canonicalLineage.parentImageId || record.imageId || record.id || ""
+    ).trim();
+    if (!canonicalRegionImageId) {
+      return res.status(400).json({ success: false, error: "missing_canonical_image_id" });
+    }
+
     if (foundViaDbFallback) {
       console.log("[region-edit] Proceeding with DB-backed image lookup", {
         redisMiss: true,
@@ -746,13 +753,6 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
     } else {
       if (!effectiveStageUrls.stage1A) effectiveStageUrls.stage1A = baseImageUrl;
       if (!effectiveStageUrls["1A"]) effectiveStageUrls["1A"] = baseImageUrl;
-    }
-
-    const canonicalRegionImageId = String(
-      canonicalLineage.parentImageId || record.imageId || record.id || ""
-    ).trim();
-    if (!canonicalRegionImageId) {
-      return res.status(400).json({ success: false, error: "missing_canonical_image_id" });
     }
 
     const jobPayload: Parameters<typeof enqueueRegionEditJob>[0] = {
@@ -809,8 +809,8 @@ regionEditRouter.post("/region-edit", uploadMw, async (req: Request, res: Respon
       imageId: canonicalRegionImageId,
       sourceImageId: canonicalRegionImageId,
       canonicalParentImageId: canonicalLineage.parentImageId || null,
-      parentJobId: parentJobId || null,
       sourceJobId: sourceJobId || null,
+      parentJobId: parentJobId || null,
     });
 
     const result = await enqueueRegionEditJob(jobPayload);
