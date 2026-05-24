@@ -27,8 +27,8 @@ const MAX_PROJECTION_DILATE_PX = 4;
 const EXPANDED_EDIT_PADDING_RATIO = 0.2;
 const MIN_EXPANDED_EDIT_DIMENSION_PX = 64;
 const MIN_EXPANDED_EDIT_AREA_PX = 4096;
-const MIN_EXPANDED_EDGE_FEATHER_PX = 2;
-const MAX_EXPANDED_EDGE_FEATHER_PX = 5;
+const MIN_EXPANDED_EDGE_FEATHER_PX = 1;
+const MAX_EXPANDED_EDGE_FEATHER_PX = 3;
 const MAX_REGION_EXPANSION_IMAGE_RATIO = 0.4;
 const REGION_OVERLAP_MERGE_RATIO = 0.05;
 const MAX_EXPANDED_REGION_AREA_RATIO = 0.35;
@@ -37,8 +37,6 @@ const DEFAULT_REGION_INFERENCE_SIZE = 1024;
 const MIN_REGION_INFERENCE_SIZE = 256;
 const MAX_REGION_INFERENCE_SIZE = 2048;
 const DELTA_DIFF_THRESHOLD = 24;
-const DELTA_MASK_DILATE_PX = 1;
-const DELTA_MASK_BLUR_SIGMA = 0.8;
 const DELTA_MASK_MIN_CHANGED_PIXELS = 12;
 
 type RegionRetryReason = "gemini_error" | "timeout" | "dimension_mismatch" | "empty_image" | "corrupted_image";
@@ -113,6 +111,29 @@ type PreparedRegionInference = {
   transformedImageBuffer: Buffer;
   transformedMaskBuffer: Buffer;
   metadata: RegionTransformMetadata;
+};
+
+type ReverseTransformResult = {
+  restoredCropBuffer: Buffer;
+  reverseUnpaddedBuffer: Buffer;
+  geminiReturnedBuffer: Buffer;
+  restorePath: "crop-native" | "inference-unpad" | "crop-ratio-resize" | "inference-ratio-unpad" | "safe-cover-fallback";
+  generatedWidth: number;
+  generatedHeight: number;
+};
+
+type RegionEditResult = {
+  restoredBuffer: Buffer;
+  transformMetadata: RegionTransformMetadata;
+  reverseTransform: ReverseTransformResult;
+};
+
+type CompositeExpandedCropDebug = {
+  rawBinaryMask?: Buffer;
+  featheredMask?: Buffer;
+  finalAlphaMask?: Buffer;
+  compositePreview?: Buffer;
+  changedPixels?: number;
 };
 
 function normalizeSceneDetailLabel(value: unknown): string {
@@ -267,6 +288,52 @@ function projectionDilatePx(width: number, height: number): number {
   return Math.max(MIN_PROJECTION_DILATE_PX, Math.min(MAX_PROJECTION_DILATE_PX, scaled || 5));
 }
 
+function shouldWriteReintegrationDebug(jobId?: string, imageId?: string): boolean {
+  const enabled = String(process.env.REINTEGRATION_DEBUG_ENABLED || "").trim().toLowerCase();
+  if (!["1", "true", "yes", "on"].includes(enabled)) return false;
+
+  const targetJobId = String(process.env.REINTEGRATION_DEBUG_JOB_ID || "").trim();
+  const targetImageId = String(process.env.REINTEGRATION_DEBUG_IMAGE_ID || "").trim();
+  if (!targetJobId && !targetImageId) return true;
+  if (targetJobId && String(jobId || "").trim() === targetJobId) return true;
+  if (targetImageId && String(imageId || "").trim() === targetImageId) return true;
+  return false;
+}
+
+function reintegrationDebugDirForOutput(outPath: string, regionIndex: number): string {
+  return siblingOutPath(outPath, `.reintegration-debug.region-${regionIndex + 1}`, "");
+}
+
+async function writeReintegrationDebugImage(
+  debugDir: string,
+  filename: string,
+  image: Buffer,
+): Promise<void> {
+  await sharp(image).png().toFile(path.join(debugDir, filename));
+}
+
+async function writeReintegrationDebugMetadata(
+  debugDir: string,
+  payload: Record<string, unknown>,
+): Promise<void> {
+  await require("fs/promises").mkdir(debugDir, { recursive: true });
+  await require("fs/promises").writeFile(
+    path.join(debugDir, "metadata.json"),
+    JSON.stringify(payload, null, 2),
+    "utf8",
+  );
+}
+
+function aspectRatio(width: number, height: number): number {
+  if (width <= 0 || height <= 0) return 0;
+  return width / height;
+}
+
+function isAspectRatioClose(left: number, right: number, tolerance = 0.02): boolean {
+  if (left <= 0 || right <= 0) return false;
+  return Math.abs(left - right) <= tolerance;
+}
+
 function resolveRegionInferenceSize(): number {
   const raw = Number.parseInt(String(process.env.REGION_EDIT_INFERENCE_SIZE || "").trim(), 10);
   if (!Number.isFinite(raw)) return DEFAULT_REGION_INFERENCE_SIZE;
@@ -353,34 +420,143 @@ async function prepareRegionInferencePayload(params: {
 async function reverseRegionInferenceTransform(
   generatedBuffer: Buffer,
   metadata: RegionTransformMetadata,
-): Promise<Buffer> {
+): Promise<ReverseTransformResult> {
+  const generatedMeta = await sharp(generatedBuffer).metadata().catch(() => null);
+  const generatedWidth = Number(generatedMeta?.width || 0);
+  const generatedHeight = Number(generatedMeta?.height || 0);
+  const generatedAspect = aspectRatio(generatedWidth, generatedHeight);
+  const cropAspect = aspectRatio(metadata.cropWidth, metadata.cropHeight);
+  const inferenceAspect = aspectRatio(metadata.inferenceWidth, metadata.inferenceHeight);
+
+  const cropNativeMatch = generatedWidth === metadata.cropWidth && generatedHeight === metadata.cropHeight;
+  const inferenceMatch = generatedWidth === metadata.inferenceWidth && generatedHeight === metadata.inferenceHeight;
+
   const normalizedGenerated = await sharp(generatedBuffer)
-    .resize(metadata.inferenceWidth, metadata.inferenceHeight, {
-      fit: "contain",
-      background: { r: 0, g: 0, b: 0, alpha: 1 },
-      kernel: sharp.kernel.lanczos3,
-    })
     .removeAlpha()
     .png()
     .toBuffer();
 
-  const depaddedCrop = await sharp(normalizedGenerated)
-    .extract({
-      left: metadata.paddingLeft,
-      top: metadata.paddingTop,
-      width: metadata.paddedWidth,
-      height: metadata.paddedHeight,
-    })
-    .png()
-    .toBuffer();
+  if (cropNativeMatch) {
+    return {
+      restoredCropBuffer: normalizedGenerated,
+      reverseUnpaddedBuffer: normalizedGenerated,
+      geminiReturnedBuffer: normalizedGenerated,
+      restorePath: "crop-native",
+      generatedWidth,
+      generatedHeight,
+    };
+  }
 
-  return sharp(depaddedCrop)
+  if (inferenceMatch) {
+    const depaddedCrop = await sharp(normalizedGenerated)
+      .extract({
+        left: metadata.paddingLeft,
+        top: metadata.paddingTop,
+        width: metadata.paddedWidth,
+        height: metadata.paddedHeight,
+      })
+      .png()
+      .toBuffer();
+
+    const restoredCropBuffer = await sharp(depaddedCrop)
+      .resize(metadata.cropWidth, metadata.cropHeight, {
+        fit: "fill",
+        kernel: sharp.kernel.lanczos3,
+      })
+      .removeAlpha()
+      .toBuffer();
+
+    return {
+      restoredCropBuffer,
+      reverseUnpaddedBuffer: depaddedCrop,
+      geminiReturnedBuffer: normalizedGenerated,
+      restorePath: "inference-unpad",
+      generatedWidth,
+      generatedHeight,
+    };
+  }
+
+  if (isAspectRatioClose(generatedAspect, cropAspect)) {
+    const restoredCropBuffer = await sharp(normalizedGenerated)
+      .resize(metadata.cropWidth, metadata.cropHeight, {
+        fit: "fill",
+        kernel: sharp.kernel.lanczos3,
+      })
+      .removeAlpha()
+      .toBuffer();
+    return {
+      restoredCropBuffer,
+      reverseUnpaddedBuffer: restoredCropBuffer,
+      geminiReturnedBuffer: normalizedGenerated,
+      restorePath: "crop-ratio-resize",
+      generatedWidth,
+      generatedHeight,
+    };
+  }
+
+  if (isAspectRatioClose(generatedAspect, inferenceAspect)) {
+    const resizedInference = await sharp(normalizedGenerated)
+      .resize(metadata.inferenceWidth, metadata.inferenceHeight, {
+        fit: "fill",
+        kernel: sharp.kernel.lanczos3,
+      })
+      .png()
+      .toBuffer();
+
+    const depaddedCrop = await sharp(resizedInference)
+      .extract({
+        left: metadata.paddingLeft,
+        top: metadata.paddingTop,
+        width: metadata.paddedWidth,
+        height: metadata.paddedHeight,
+      })
+      .png()
+      .toBuffer();
+
+    const restoredCropBuffer = await sharp(depaddedCrop)
+      .resize(metadata.cropWidth, metadata.cropHeight, {
+        fit: "fill",
+        kernel: sharp.kernel.lanczos3,
+      })
+      .removeAlpha()
+      .toBuffer();
+
+    return {
+      restoredCropBuffer,
+      reverseUnpaddedBuffer: depaddedCrop,
+      geminiReturnedBuffer: normalizedGenerated,
+      restorePath: "inference-ratio-unpad",
+      generatedWidth,
+      generatedHeight,
+    };
+  }
+
+  const restoredCropBuffer = await sharp(normalizedGenerated)
     .resize(metadata.cropWidth, metadata.cropHeight, {
-      fit: "fill",
+      fit: "cover",
+      position: normalizeSharpResizePosition("left top"),
       kernel: sharp.kernel.lanczos3,
     })
     .removeAlpha()
     .toBuffer();
+
+  console.warn("[editApply] REVERSE_TRANSFORM_FALLBACK", {
+    generatedWidth,
+    generatedHeight,
+    generatedAspect,
+    cropAspect,
+    inferenceAspect,
+    metadata,
+  });
+
+  return {
+    restoredCropBuffer,
+    reverseUnpaddedBuffer: restoredCropBuffer,
+    geminiReturnedBuffer: normalizedGenerated,
+    restorePath: "safe-cover-fallback",
+    generatedWidth,
+    generatedHeight,
+  };
 }
 
 async function buildDeltaMaskForCrop(params: {
@@ -433,14 +609,8 @@ async function buildDeltaMaskForCrop(params: {
     };
   }
 
-  const softenedMask = await sharp(deltaRaw, { raw: { width, height, channels: 1 } })
-    .dilate(DELTA_MASK_DILATE_PX)
-    .blur(DELTA_MASK_BLUR_SIGMA)
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-
   return {
-    alphaMask: Buffer.from(softenedMask.data),
+    alphaMask: deltaRaw,
     changedPixels,
   };
 }
@@ -1213,7 +1383,7 @@ async function runRegionEditWithRetry(params: {
   regionIndex: number;
   totalRegions: number;
   expandedBox: PixelBox;
-}): Promise<Buffer> {
+}): Promise<RegionEditResult> {
   const {
     prompt,
     systemPrompt,
@@ -1289,7 +1459,12 @@ RETRY INSTRUCTION:
         editMode: mode,
       });
       const validated = await validateRegionEditResultOrThrow(editedBuffer, regionIndex);
-      return await reverseRegionInferenceTransform(validated, preparedInference.metadata);
+      const reverseTransform = await reverseRegionInferenceTransform(validated, preparedInference.metadata);
+      return {
+        restoredBuffer: reverseTransform.restoredCropBuffer,
+        transformMetadata: preparedInference.metadata,
+        reverseTransform,
+      };
     } catch (error) {
       lastError = error;
       const retryReason = getRetryReason(error);
@@ -1558,7 +1733,7 @@ async function compositeExpandedCrop(
   croppedMaskPngBuffer: Buffer,
   box: PixelBox,
   featherPx: number,
-): Promise<Buffer> {
+): Promise<{ compositedImage: Buffer; debug: CompositeExpandedCropDebug }> {
   const alignedGenerated = await sharp(generatedBuffer)
     .resize(box.width, box.height, { fit: "fill" })
     .removeAlpha()
@@ -1583,7 +1758,16 @@ async function compositeExpandedCrop(
       changedPixels,
       threshold: DELTA_MASK_MIN_CHANGED_PIXELS,
     });
-    return sharp(originalImagePath).png().toBuffer();
+    return {
+      compositedImage: await sharp(originalImagePath).png().toBuffer(),
+      debug: {
+        rawBinaryMask: Buffer.alloc(box.width * box.height, 0),
+        featheredMask: Buffer.alloc(box.width * box.height, 0),
+        finalAlphaMask: Buffer.alloc(box.width * box.height, 0),
+        compositePreview: originalCropBuffer,
+        changedPixels,
+      },
+    };
   }
 
   const alphaRaw = Buffer.alloc(box.width * box.height, 255);
@@ -1603,19 +1787,35 @@ async function compositeExpandedCrop(
     alphaRaw[i] = Math.round(((alphaRaw[i] ?? 0) * deltaAlpha) / 255);
   }
 
+  const finalAlphaMask = Buffer.from(alphaRaw);
+
   const overlayBuffer = await sharp(alignedGenerated)
     .joinChannel(alphaRaw, { raw: { width: box.width, height: box.height, channels: 1 } })
     .png()
     .toBuffer();
 
-  return sharp(originalImagePath)
+  const compositedImage = await sharp(originalImagePath)
     .composite([{ input: overlayBuffer, left: box.x, top: box.y }])
     .png()
     .toBuffer();
+
+  return {
+    compositedImage,
+    debug: {
+      rawBinaryMask: alphaMask,
+      featheredMask: Buffer.from(alphaRaw),
+      finalAlphaMask,
+      compositePreview: await sharp(alignedGenerated)
+        .joinChannel(finalAlphaMask, { raw: { width: box.width, height: box.height, channels: 1 } })
+        .png()
+        .toBuffer(),
+      changedPixels,
+    },
+  };
 }
 
 function resolveMaskFeatherPx(box: PixelBox): number {
-  return Math.max(2, Math.min(4, computeExpandedEdgeFeatherPx(box)));
+  return Math.max(1, Math.min(2, computeExpandedEdgeFeatherPx(box)));
 }
 
 async function compositeMaskedSourceIntoBase(params: {
@@ -2916,6 +3116,8 @@ export async function applyEdit({
         const processedExpandedBoxes: PixelBox[] = [];
         const perRegionAllowedMaskPaths: string[] = [];
 
+        const reintegrationDebugEnabled = shouldWriteReintegrationDebug(jobId, imageId);
+
         for (let regionIndex = 0; regionIndex < expandedRegions.length; regionIndex += 1) {
           const region = expandedRegions[regionIndex]!;
           logMaskAlignment(regionIndex, region.bbox, region.expandedBox);
@@ -2996,8 +3198,9 @@ export async function applyEdit({
           });
 
           let exactSizedEditedBuffer: Buffer | null = null;
+          let regionEditResult: RegionEditResult | null = null;
           try {
-            const editedBuffer = await runRegionEditWithRetry({
+            regionEditResult = await runRegionEditWithRetry({
               prompt: regionPrompt.promptText,
               systemPrompt: regionPrompt.systemPrompt,
               userPrompt: regionPrompt.userPrompt,
@@ -3015,7 +3218,7 @@ export async function applyEdit({
               expandedBox: region.expandedBox,
             });
 
-            exactSizedEditedBuffer = await ensureExactCropSize(editedBuffer, region.expandedBox, regionIndex);
+            exactSizedEditedBuffer = await ensureExactCropSize(regionEditResult.restoredBuffer, region.expandedBox, regionIndex);
           } catch (error) {
             console.warn("[editApply] Skipping region after retry failure", {
               regionIndex,
@@ -3027,14 +3230,69 @@ export async function applyEdit({
             continue;
           }
 
-          workingImageBuffer = await compositeExpandedCrop(
+          const compositeResult = await compositeExpandedCrop(
             workingImageBuffer,
             exactSizedEditedBuffer,
             croppedMaskPngBuffer,
             region.expandedBox,
             computeExpandedEdgeFeatherPx(region.expandedBox),
           );
+          workingImageBuffer = compositeResult.compositedImage;
           processedExpandedBoxes.push(region.expandedBox);
+
+          if (reintegrationDebugEnabled && regionEditResult) {
+            const debugDir = reintegrationDebugDirForOutput(outPath, regionIndex);
+            await require("fs/promises").mkdir(debugDir, { recursive: true });
+
+            const originalRegionCrop = await sharp(workingImageBuffer)
+              .extract({ left: region.bbox.x, top: region.bbox.y, width: region.bbox.width, height: region.bbox.height })
+              .png()
+              .toBuffer();
+
+            await Promise.all([
+              writeReintegrationDebugImage(debugDir, "01-original-full.png", await sharp(baseImagePath).png().toBuffer()),
+              writeReintegrationDebugImage(debugDir, "02-original-crop.png", originalRegionCrop),
+              writeReintegrationDebugImage(debugDir, "03-expanded-crop.png", croppedEditableImageBuffer),
+              writeReintegrationDebugImage(debugDir, "04-padded-inference-image.png", await prepareRegionInferencePayload({
+                editableCropBuffer: croppedEditableImageBuffer,
+                guidanceMaskBuffer: guidanceMaskPngBuffer,
+                box: region.expandedBox,
+              }).then((p) => p.transformedImageBuffer)),
+              writeReintegrationDebugImage(debugDir, "05-gemini-returned-image.png", regionEditResult.reverseTransform.geminiReturnedBuffer),
+              writeReintegrationDebugImage(debugDir, "06-reverse-unpadded-image.png", regionEditResult.reverseTransform.reverseUnpaddedBuffer),
+              writeReintegrationDebugImage(debugDir, "07-restored-crop-space-image.png", exactSizedEditedBuffer),
+              writeReintegrationDebugImage(debugDir, "08-raw-binary-mask.png", await sharp(compositeResult.debug.rawBinaryMask || Buffer.alloc(region.expandedBox.width * region.expandedBox.height, 0), {
+                raw: { width: region.expandedBox.width, height: region.expandedBox.height, channels: 1 },
+              }).png().toBuffer()),
+              writeReintegrationDebugImage(debugDir, "09-feathered-mask.png", await sharp(compositeResult.debug.featheredMask || Buffer.alloc(region.expandedBox.width * region.expandedBox.height, 0), {
+                raw: { width: region.expandedBox.width, height: region.expandedBox.height, channels: 1 },
+              }).png().toBuffer()),
+              writeReintegrationDebugImage(debugDir, "10-final-alpha-mask.png", await sharp(compositeResult.debug.finalAlphaMask || Buffer.alloc(region.expandedBox.width * region.expandedBox.height, 0), {
+                raw: { width: region.expandedBox.width, height: region.expandedBox.height, channels: 1 },
+              }).png().toBuffer()),
+              writeReintegrationDebugImage(debugDir, "11-composite-preview.png", compositeResult.debug.compositePreview || exactSizedEditedBuffer),
+              writeReintegrationDebugImage(debugDir, "12-final-merged-output.png", workingImageBuffer),
+            ]);
+
+            await writeReintegrationDebugMetadata(debugDir, {
+              regionIndex,
+              jobId,
+              imageId,
+              bbox: region.bbox,
+              expandedBox: region.expandedBox,
+              transform: regionEditResult.transformMetadata,
+              reverseTransform: {
+                restorePath: regionEditResult.reverseTransform.restorePath,
+                generatedWidth: regionEditResult.reverseTransform.generatedWidth,
+                generatedHeight: regionEditResult.reverseTransform.generatedHeight,
+              },
+              composite: {
+                featherPx: computeExpandedEdgeFeatherPx(region.expandedBox),
+                changedPixels: compositeResult.debug.changedPixels ?? null,
+                compositeOffset: { x: region.expandedBox.x, y: region.expandedBox.y },
+              },
+            });
+          }
 
           const perRegionAllowedMask = await buildFullImageBoxMask(region.expandedBox, meta.width, meta.height);
           const perRegionAllowedMaskPath = regionAllowedMaskArtifactPathForOutput(outPath, regionIndex);

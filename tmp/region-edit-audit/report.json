@@ -1,0 +1,17 @@
+{
+  "changedPixels": 20528,
+  "crop": {
+    "x": 180,
+    "y": 80,
+    "width": 913,
+    "height": 777
+  },
+  "padding": {
+    "left": 0,
+    "top": 76
+  },
+  "resized": {
+    "width": 1024,
+    "height": 871
+  }
+}
