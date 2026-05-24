@@ -17,6 +17,8 @@ import { GEMINI_TRIGGER_THRESHOLDS } from "../ai/geminiTriggerThresholds";
 import { logIfNotFocusMode } from "../logger";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import type { PipelineContext } from "../types/pipelineContext";
+import { applyStage1APostGenerationFinish } from "./stage1A-post-finish";
+import { resolveStage1AAblationSettings } from "./stage1A-presets";
 
 // Feature flag: Enable Stability Conservative Upscaler (primary AI)
 const USE_STABILITY_STAGE1A = process.env.USE_STABILITY_STAGE1A !== "0";
@@ -28,6 +30,421 @@ const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
 const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
 // Automatically disable Stability primary after a payment/credit error
 const DISABLE_STABILITY_ON_PAYMENT_REQUIRED = process.env.STABILITY_STAGE1A_DISABLE_ON_PAYMENT_REQUIRED !== "0";
+function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
+  if (raw === undefined) return undefined;
+  const normalized = String(raw).trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
+}
+
+function parseBoundedNumber(raw: string | undefined, fallback: number, min: number, max: number): number {
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(min, Math.min(max, value));
+}
+
+function scaleFromNeutral(value: number, scale: number): number {
+  return 1 + ((value - 1) * scale);
+}
+
+interface Stage1APreGenerationControls {
+  preservationMode: boolean;
+  normalizeEnabled: boolean;
+  normalizeShadowLiftThreshold: number;
+  normalizeContrastThreshold: number;
+  toneStackScale: number;
+  localContrastScale: number;
+  shadowOffsetScale: number;
+  modulateScale: number;
+  pregenMedianEnabled: boolean;
+  pregenSharpenEnabled: boolean;
+  pregenSharpenScale: number;
+  moveSharpenToPost: boolean;
+}
+
+interface TransformDiagnosticMeta {
+  width: number | null;
+  height: number | null;
+  space: string | null;
+  channels: number | null;
+  depth: string | null;
+  hasAlpha: boolean | null;
+}
+
+interface TransformTraceEvent {
+  operation: string;
+  phase: "before" | "after" | "skipped" | "error";
+  reason?: string;
+  gain?: number;
+  offset?: number;
+  gamma?: number;
+  values?: { brightness?: number; saturation?: number; hue?: number; lightness?: number };
+  meta: TransformDiagnosticMeta;
+}
+
+interface TransformTelemetryContext {
+  jobId: string;
+  sceneType: string;
+  roomType?: string;
+  trace?: TransformTraceEvent[];
+}
+
+const stage1ATransformSkipCounters = {
+  skippedLinearCount: 0,
+  skippedGammaCount: 0,
+  skippedModulateCount: 0,
+  skippedPostFinishCount: 0,
+};
+
+function recordTrace(context: TransformTelemetryContext | undefined, event: TransformTraceEvent): void {
+  if (!context?.trace) return;
+  context.trace.push(event);
+}
+
+function bumpSkipCounter(
+  key: keyof typeof stage1ATransformSkipCounters,
+  context: TransformTelemetryContext | undefined,
+  operation: string,
+  reason: string,
+  meta: TransformDiagnosticMeta
+): void {
+  stage1ATransformSkipCounters[key] += 1;
+  console.warn("[stage1A] transform_skip_metric", {
+    key,
+    operation,
+    reason,
+    count: stage1ATransformSkipCounters[key],
+    jobId: context?.jobId,
+    sceneType: context?.sceneType,
+    roomType: context?.roomType ?? null,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+  });
+}
+
+function toTransformDiagnosticMeta(meta: sharp.Metadata | null | undefined): TransformDiagnosticMeta {
+  return {
+    width: typeof meta?.width === "number" ? meta.width : null,
+    height: typeof meta?.height === "number" ? meta.height : null,
+    space: meta?.space ?? null,
+    channels: typeof meta?.channels === "number" ? meta.channels : null,
+    depth: meta?.depth ?? null,
+    hasAlpha: typeof meta?.hasAlpha === "boolean" ? meta.hasAlpha : null,
+  };
+}
+
+function isToneTransformCompatible(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+  const rgbLikeSpace = !space || space === "srgb" || space === "rgb";
+  return (channels === 3 || channels === 4) && rgbLikeSpace;
+}
+
+function shouldConvertToSrgb(meta: TransformDiagnosticMeta): boolean {
+  const channels = meta.channels ?? 0;
+  const space = (meta.space || "").toLowerCase();
+
+  // libvips cannot reliably expand single-band linear data during colourspace conversion.
+  if (space === "linear" && channels > 0 && channels < 3) {
+    return false;
+  }
+
+  return true;
+}
+
+async function canonicalizeToSrgbWithFallback(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  reason: string,
+): Promise<sharp.Sharp> {
+  const buildRgbFromRaw = async (source: sharp.Sharp, sourceReason: string): Promise<sharp.Sharp> => {
+    const { data, info } = await source.raw().toBuffer({ resolveWithObject: true });
+    const width = info.width || 0;
+    const height = info.height || 0;
+    const srcChannels = info.channels || 0;
+    if (!width || !height || !srcChannels) {
+      throw new Error(`canonical_raw_invalid:${sourceReason}:${width}x${height}x${srcChannels}`);
+    }
+
+    const pixelCount = width * height;
+    const rgbData = Buffer.allocUnsafe(pixelCount * 3);
+    for (let pixelIndex = 0; pixelIndex < pixelCount; pixelIndex += 1) {
+      const srcOffset = pixelIndex * srcChannels;
+      const dstOffset = pixelIndex * 3;
+      if (srcChannels >= 3) {
+        rgbData[dstOffset] = data[srcOffset] ?? 0;
+        rgbData[dstOffset + 1] = data[srcOffset + 1] ?? 0;
+        rgbData[dstOffset + 2] = data[srcOffset + 2] ?? 0;
+      } else {
+        const value = data[srcOffset] ?? 0;
+        rgbData[dstOffset] = value;
+        rgbData[dstOffset + 1] = value;
+        rgbData[dstOffset + 2] = value;
+      }
+    }
+
+    logTransformDiagnostic("canonicalize_raw_to_rgb", "after", meta, branch, {
+      reason: sourceReason,
+      width,
+      height,
+      srcChannels,
+      dstChannels: 3,
+    });
+
+    // Canonical RGB representation for downstream processing and validators.
+    return sharp(rgbData, { raw: { width, height, channels: 3 } });
+  };
+
+  const canDirectConvert = shouldConvertToSrgb(meta);
+  if (canDirectConvert) {
+    try {
+      logTransformDiagnostic("toColourspace", "before", meta, branch, { target: "srgb", reason });
+      const converted = await image
+        .clone()
+        .toColourspace("srgb")
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      logTransformDiagnostic("toColourspace", "after", meta, branch, { target: "srgb", reason });
+      return sharp(converted.data, {
+        raw: {
+          width: converted.info.width,
+          height: converted.info.height,
+          channels: converted.info.channels,
+        },
+      }).removeAlpha();
+    } catch (err: any) {
+      const message = String(err?.message || err || "");
+      console.warn("[stage1A] Direct toColourspace('srgb') failed, falling back to canonical raw RGB", {
+        reason,
+        width: meta.width,
+        height: meta.height,
+        space: meta.space,
+        channels: meta.channels,
+        depth: meta.depth,
+        hasAlpha: meta.hasAlpha,
+        message,
+      });
+      logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+        target: "srgb",
+        reason: `${reason}:direct_conversion_failed`,
+      });
+      return await buildRgbFromRaw(image.clone(), `${reason}:direct_conversion_failed`);
+    }
+  }
+
+  try {
+    console.warn("[stage1A] Converting unsupported colourspace state via canonical raw RGB fallback", {
+      reason,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+      target: "srgb",
+      reason: `${reason}:unsupported_direct_conversion`,
+    });
+    return await buildRgbFromRaw(image.clone(), `${reason}:unsupported_direct_conversion`);
+  } catch (fallbackErr: any) {
+    console.warn("[stage1A] Canonical raw RGB fallback failed-open", {
+      reason,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+      message: String(fallbackErr?.message || fallbackErr || ""),
+    });
+    logTransformDiagnostic("toColourspace", "skipped", meta, branch, {
+      target: "srgb",
+      reason: `${reason}:no_safe_canonicalization_path`,
+    });
+    return image;
+  }
+}
+
+function logTransformDiagnostic(
+  operation: string,
+  phase: "before" | "after" | "skipped",
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  extras?: Record<string, unknown>
+): void {
+  console.debug("[stage1A] transform", {
+    operation,
+    phase,
+    branch,
+    width: meta.width,
+    height: meta.height,
+    space: meta.space,
+    channels: meta.channels,
+    depth: meta.depth,
+    hasAlpha: meta.hasAlpha,
+    ...(extras || {}),
+  });
+}
+
+function applyGuardedLinear(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  gain: number,
+  offset: number,
+  reason: string,
+  context?: TransformTelemetryContext
+): sharp.Sharp {
+  if (!isToneTransformCompatible(meta)) {
+    console.warn("[stage1A] Skipping unsupported linear() transform", {
+      reason,
+      branch,
+      gain,
+      offset,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("linear", "skipped", meta, branch, { reason, gain, offset });
+    recordTrace(context, { operation: "linear", phase: "skipped", reason, gain, offset, meta });
+    bumpSkipCounter("skippedLinearCount", context, "linear", reason, meta);
+    return image;
+  }
+  logTransformDiagnostic("linear", "before", meta, branch, { reason, gain, offset });
+  recordTrace(context, { operation: "linear", phase: "before", reason, gain, offset, meta });
+  const next = image.linear(gain, offset);
+  logTransformDiagnostic("linear", "after", meta, branch, { reason });
+  recordTrace(context, { operation: "linear", phase: "after", reason, gain, offset, meta });
+  return next;
+}
+
+function applyGuardedGamma(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  gamma: number,
+  reason: string,
+  context?: TransformTelemetryContext
+): sharp.Sharp {
+  if (!isToneTransformCompatible(meta)) {
+    console.warn("[stage1A] Skipping unsupported gamma() transform", {
+      reason,
+      branch,
+      gamma,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma });
+    recordTrace(context, { operation: "gamma", phase: "skipped", reason, gamma, meta });
+    bumpSkipCounter("skippedGammaCount", context, "gamma", reason, meta);
+    return image;
+  }
+  logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma });
+  recordTrace(context, { operation: "gamma", phase: "before", reason, gamma, meta });
+  const next = image.gamma(gamma);
+  logTransformDiagnostic("gamma", "after", meta, branch, { reason });
+  recordTrace(context, { operation: "gamma", phase: "after", reason, gamma, meta });
+  return next;
+}
+
+function applyGuardedModulate(
+  image: sharp.Sharp,
+  meta: TransformDiagnosticMeta,
+  branch: string,
+  values: { brightness?: number; saturation?: number; hue?: number; lightness?: number },
+  reason: string,
+  context?: TransformTelemetryContext
+): sharp.Sharp {
+  if (!isToneTransformCompatible(meta)) {
+    console.warn("[stage1A] Skipping unsupported modulate() transform", {
+      reason,
+      branch,
+      values,
+      width: meta.width,
+      height: meta.height,
+      space: meta.space,
+      channels: meta.channels,
+      depth: meta.depth,
+      hasAlpha: meta.hasAlpha,
+    });
+    logTransformDiagnostic("modulate", "skipped", meta, branch, { reason });
+    recordTrace(context, { operation: "modulate", phase: "skipped", reason, values, meta });
+    bumpSkipCounter("skippedModulateCount", context, "modulate", reason, meta);
+    return image;
+  }
+  logTransformDiagnostic("modulate", "before", meta, branch, { reason, ...values });
+  recordTrace(context, { operation: "modulate", phase: "before", reason, values, meta });
+  const next = image.modulate(values);
+  logTransformDiagnostic("modulate", "after", meta, branch, { reason });
+  recordTrace(context, { operation: "modulate", phase: "after", reason, values, meta });
+  return next;
+}
+
+function getStage1APreGenerationControls(sceneType?: string): Stage1APreGenerationControls {
+  const { settings } = resolveStage1AAblationSettings(sceneType);
+  const preservationMode = settings.STAGE1A_ENABLE_PRESERVATION_PREGEN;
+  const normalizeEnabled = settings.STAGE1A_PREGEN_NORMALIZE_ENABLED;
+  const moveSharpenToPost = parseOptionalBoolean(process.env.STAGE1A_MOVE_SHARPEN_TO_POST)
+    ?? preservationMode;
+
+  return {
+    preservationMode,
+    normalizeEnabled,
+    normalizeShadowLiftThreshold: parseBoundedNumber(
+      process.env.STAGE1A_PREGEN_NORMALIZE_SHADOW_THRESHOLD,
+      preservationMode ? 0.28 : 0.18,
+      0,
+      1
+    ),
+    normalizeContrastThreshold: parseBoundedNumber(
+      process.env.STAGE1A_PREGEN_NORMALIZE_CONTRAST_THRESHOLD,
+      preservationMode ? 0.34 : 0.24,
+      0,
+      1
+    ),
+    toneStackScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_TONE_STACK_SCALE, settings.STAGE1A_PREGEN_TONE_STACK_SCALE, 0, 2),
+    localContrastScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_LOCAL_CONTRAST_SCALE, settings.STAGE1A_PREGEN_LOCAL_CONTRAST_SCALE, 0, 2),
+    shadowOffsetScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHADOW_OFFSET_SCALE, settings.STAGE1A_PREGEN_SHADOW_OFFSET_SCALE, 0, 2),
+    modulateScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_MODULATE_SCALE, settings.STAGE1A_PREGEN_MODULATE_SCALE, 0, 2),
+    pregenMedianEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_MEDIAN_ENABLED) ?? settings.STAGE1A_PREGEN_MEDIAN_ENABLED,
+    pregenSharpenEnabled: parseOptionalBoolean(process.env.STAGE1A_PREGEN_SHARPEN_ENABLED) ?? settings.STAGE1A_PREGEN_SHARPEN_ENABLED,
+    pregenSharpenScale: parseBoundedNumber(process.env.STAGE1A_PREGEN_SHARPEN_SCALE, settings.STAGE1A_PREGEN_SHARPEN_SCALE, 0, 2),
+    moveSharpenToPost,
+  };
+}
+
+function getStage1APreGenWebpOptions(sceneType?: string): sharp.WebpOptions {
+  const { settings } = resolveStage1AAblationSettings(sceneType);
+  if (settings.STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE) {
+    return {
+      quality: 100,
+      effort: 6,
+      smartSubsample: true,
+      nearLossless: true,
+    };
+  }
+
+  return {
+    quality: 97,
+    effort: 6,
+    smartSubsample: true,
+    nearLossless: false,
+  };
+}
 
 let stabilityPrimaryLockedReason: string | null = null;
 
@@ -388,13 +805,17 @@ async function estimateStage1ANeutralBalance(
   img: sharp.Sharp,
   options?: Stage1ANeutralBalanceOptions
 ): Promise<Stage1ANeutralBalance | null> {
-  const { data, info } = await img
-    .clone()
-    .ensureAlpha()
-    .removeAlpha()
-    .toColourspace("srgb")
-    .raw()
-    .toBuffer({ resolveWithObject: true });
+  const probe = img.clone().removeAlpha();
+  const probeMeta = toTransformDiagnosticMeta(await probe.metadata().catch(() => null));
+
+  const rgbProbe = await canonicalizeToSrgbWithFallback(
+    probe,
+    probeMeta,
+    "neutral_balance",
+    "neutral_balance_probe",
+  );
+
+  const { data, info } = await rgbProbe.raw().toBuffer({ resolveWithObject: true });
 
   if (!info.width || !info.height || info.channels < 3) {
     return null;
@@ -489,17 +910,34 @@ async function applyStage1ANeutralBalance(
     return { image: img, balance: null };
   }
 
+  const toneMeta = toTransformDiagnosticMeta(await img.clone().metadata().catch(() => null));
+  if (!isToneTransformCompatible(toneMeta)) {
+    console.warn("[stage1A] Neutral balance skipped due to incompatible band state", {
+      width: toneMeta.width,
+      height: toneMeta.height,
+      space: toneMeta.space,
+      channels: toneMeta.channels,
+      depth: toneMeta.depth,
+      hasAlpha: toneMeta.hasAlpha,
+    });
+    return { image: img, balance: null };
+  }
+
   const strength = clampStage1AFactor(options?.strength ?? 1, 0, 1);
   const redGain = 1 + ((balance.redGain - 1) * strength);
   const greenGain = 1 + ((balance.greenGain - 1) * strength);
   const blueGain = 1 + ((balance.blueGain - 1) * strength);
 
+  const channels = toneMeta.channels ?? 3;
+  const gains = channels === 4
+    ? [redGain, greenGain, blueGain, 1]
+    : [redGain, greenGain, blueGain];
+  const offsets = channels === 4
+    ? [0, 0, 0, 0]
+    : [0, 0, 0];
+
   return {
-    image: img.linear([
-      redGain,
-      greenGain,
-      blueGain,
-    ], [0, 0, 0]),
+    image: img.linear(gains, offsets),
     balance: {
       ...balance,
       redGain,
@@ -556,9 +994,31 @@ export async function runStage1A(
     attempt: 1,
   };
   const analysis = await analyzeStage1AInput(inputPath, sceneType);
+  const { presetName, settings: ablationSettings } = resolveStage1AAblationSettings(analysis.sceneType);
   console.log("[Stage1A Analysis]", analysis);
   const factors = computeStage1AFactors(analysis);
+  const preGenControls = getStage1APreGenerationControls(analysis.sceneType);
+  const preGenWebpOptions = getStage1APreGenWebpOptions(analysis.sceneType);
+  const presetSummary = {
+    preset: presetName,
+    sceneType: analysis.sceneType,
+    normalizeEnabled: preGenControls.normalizeEnabled,
+    normalizeShadowThreshold: preGenControls.normalizeShadowLiftThreshold,
+    normalizeContrastThreshold: preGenControls.normalizeContrastThreshold,
+    toneStackScale: preGenControls.toneStackScale,
+    localContrastScale: preGenControls.localContrastScale,
+    shadowOffsetScale: preGenControls.shadowOffsetScale,
+    postFinish: ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH,
+    highFidelityEncode: ablationSettings.STAGE1A_PREGEN_HIGH_FIDELITY_ENCODE,
+    canonicalHighFidelity: ablationSettings.PREPROCESS_CANONICAL_HIGH_FIDELITY,
+    canonicalWebpQuality: ablationSettings.PREPROCESS_CANONICAL_WEBP_QUALITY,
+  };
   console.log("[Stage1A Factors]", factors);
+  logIfNotFocusMode(`[stage1A] Ablation preset resolved: ${presetName}`);
+  logIfNotFocusMode("[stage1A] Ablation settings", ablationSettings);
+  logIfNotFocusMode("[stage1A] Pre-generation controls", preGenControls);
+  logIfNotFocusMode("[stage1A] Pre-generation encode options", preGenWebpOptions);
+  console.log("[stage1A] preset_summary", JSON.stringify(presetSummary));
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const effectiveSceneType = analysis.sceneType;
   const isInterior = effectiveSceneType === "interior";
@@ -579,19 +1039,91 @@ export async function runStage1A(
   
   let img = sharp(inputPath);
   const metadata = await img.metadata();
+  const stage1ATransformMeta = toTransformDiagnosticMeta(metadata);
+  const stage1ABranch = effectiveSceneType === "exterior" ? "exterior" : "interior";
+  const transformTrace: TransformTraceEvent[] = [];
+  const transformTelemetry: TransformTelemetryContext = {
+    jobId: jobIdResolved,
+    sceneType: effectiveSceneType,
+    roomType: roomTypeResolved,
+    trace: transformTrace,
+  };
   
   // 1. Auto-rotate based on EXIF orientation
-  img = img.rotate();
+  img = img.rotate().removeAlpha();
+  const srgbInitMeta = toTransformDiagnosticMeta(await img.metadata().catch(() => null));
+  img = await canonicalizeToSrgbWithFallback(
+    img,
+    srgbInitMeta,
+    stage1ABranch,
+    "initial_canonicalization",
+  );
+
+  const runGeminiStage1AWithOptionalFinish = async (): Promise<string> => {
+    const geminiOutputPath = await enhanceWithGeminiStage1A(
+      sharpOutputPath,
+      effectiveSceneType,
+      replaceSky,
+      applyInteriorProfile,
+      interiorProfileKey,
+      skyMode,
+      jobIdResolved,
+      imageId,
+      roomTypeResolved,
+      options.jobSampling
+    );
+
+    if (!ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH) {
+      return geminiOutputPath;
+    }
+
+    try {
+      const finishedPath = await applyStage1APostGenerationFinish(geminiOutputPath, {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+        roomType: roomTypeResolved,
+      });
+
+      await logImageAttemptUrl({
+        ctx: stage1ACtx,
+        localPath: finishedPath,
+      });
+
+      console.warn("[stage1A] artifact_consistency", {
+        deliveryArtifactPath: finishedPath,
+        validatorArtifactPath: finishedPath,
+        previewArtifactPath: finishedPath,
+        mode: "postfinish_success",
+      });
+
+      return finishedPath;
+    } catch (err: any) {
+      stage1ATransformSkipCounters.skippedPostFinishCount += 1;
+      console.warn("[stage1A] Post-finish failed, falling back to pre-postfinish artifact", {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+        roomType: roomTypeResolved ?? null,
+        message: err?.message || String(err),
+        skippedPostFinishCount: stage1ATransformSkipCounters.skippedPostFinishCount,
+      });
+      await logImageAttemptUrl({
+        ctx: stage1ACtx,
+        localPath: geminiOutputPath,
+      });
+      console.warn("[stage1A] artifact_consistency", {
+        deliveryArtifactPath: geminiOutputPath,
+        validatorArtifactPath: geminiOutputPath,
+        previewArtifactPath: geminiOutputPath,
+        mode: "postfinish_fail_open",
+      });
+      return geminiOutputPath;
+    }
+  };
 
   if (analysis.isBlurry && shouldUseStabilityStage1A()) {
     await img
       .clone()
-      .webp({
-        quality: 97,
-        effort: 6,
-        smartSubsample: true,
-        nearLossless: false,
-      })
+      .webp(preGenWebpOptions)
       .toFile(sharpOutputPath);
 
     await logImageAttemptUrl({
@@ -618,12 +1150,24 @@ export async function runStage1A(
       return path1ACore;
     } catch (err) {
       logIfNotFocusMode("[stage1A] Stability blur rescue failed — continuing with softened Sharp path", err);
-      img = sharp(inputPath).rotate();
+      img = sharp(inputPath).rotate().removeAlpha();
+      const fallbackMeta = toTransformDiagnosticMeta(await img.metadata().catch(() => null));
+      img = await canonicalizeToSrgbWithFallback(
+        img,
+        fallbackMeta,
+        stage1ABranch,
+        "blurry_fallback_reset",
+      );
     }
   }
   
   // 2. Conservative denoise: keep interiors clean, preserve exterior texture and blurry detail.
-  if (!analysis.isBlurry && !analysis.isExterior && (factors.shadowLift > 0.12 || factors.contrastBoost > 0.08)) {
+  if (
+    preGenControls.pregenMedianEnabled
+    && !analysis.isBlurry
+    && !analysis.isExterior
+    && (factors.shadowLift > 0.12 || factors.contrastBoost > 0.08)
+  ) {
     img = img.median(3);
   }
   
@@ -633,8 +1177,14 @@ export async function runStage1A(
   }
   
   // 4. Exposure triage: normalize only when the image is dark or compressed.
-  if (factors.shadowLift > 0.18 || factors.contrastBoost > 0.24) {
+  if (
+    preGenControls.normalizeEnabled
+    && (factors.shadowLift > preGenControls.normalizeShadowLiftThreshold
+      || factors.contrastBoost > preGenControls.normalizeContrastThreshold)
+  ) {
+    logTransformDiagnostic("normalize", "before", stage1ATransformMeta, stage1ABranch);
     img = img.normalize();
+    logTransformDiagnostic("normalize", "after", stage1ATransformMeta, stage1ABranch);
   }
 
   // 4b. Re-anchor white balance on bright low-chroma regions so neutral walls
@@ -651,24 +1201,55 @@ export async function runStage1A(
   }
   
   // 5. Apply scaled corrections rather than hard switching.
-  if (factors.shadowLift > 0.05) {
-    img = img.gamma(1 + (factors.gammaBoost * 0.6));
+  if (factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
+    img = applyGuardedGamma(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale),
+      "tone_stack_gamma",
+      transformTelemetry
+    );
     if (!analysis.isExterior) {
-      img = img.linear(1 + (factors.shadowLift * 0.08), 0);
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
+        1 + (factors.shadowLift * 0.08 * preGenControls.toneStackScale),
+        0,
+        "tone_stack_shadow_lift",
+        transformTelemetry
+      );
     }
   }
 
-  if (factors.highlightCompress > 0.05) {
-    img = img.linear(1 - (factors.highlightCompress * 0.2), 0);
+  if (factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
+    img = applyGuardedLinear(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1 - (factors.highlightCompress * 0.2 * preGenControls.toneStackScale),
+      0,
+      "tone_stack_highlight_compress",
+      transformTelemetry
+    );
   }
 
-  if (factors.contrastBoost > 0.05) {
-    img = img.linear(1 + (factors.contrastBoost * 0.3), 0);
+  if (factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
+    img = applyGuardedLinear(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1 + (factors.contrastBoost * 0.3 * preGenControls.toneStackScale),
+      0,
+      "tone_stack_contrast_boost",
+      transformTelemetry
+    );
   }
 
-  if (factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) {
+  if ((factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
     const postToneNeutralBalance = await applyStage1ANeutralBalance(img, {
-      strength: 0.4,
+      strength: 0.4 * Math.min(1, preGenControls.toneStackScale),
       highlightBias: true,
     });
     img = postToneNeutralBalance.image;
@@ -683,13 +1264,27 @@ export async function runStage1A(
   // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
   if (applyInteriorProfile) {
     const baseBrightness = 1 + (interiorCfg.brightnessBoost * (0.14 + (factors.shadowLift * 0.42)));
-    const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
-    const saturation = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03) + factors.saturationBoost;
-    img = img.modulate({ brightness, saturation });
-    if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35) {
-      img = img.linear(
-        1 + (interiorCfg.localContrast * 0.4),
-        -(128 * interiorCfg.localContrast * 0.35)
+    const guardedBrightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
+    const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
+    const saturationRaw = 1.03 + (interiorCfg.saturation * 0.4) + (factors.contrastBoost * 0.03) + factors.saturationBoost;
+    const saturation = scaleFromNeutral(saturationRaw, preGenControls.modulateScale);
+    img = applyGuardedModulate(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      { brightness, saturation },
+      "interior_profile_modulate",
+      transformTelemetry
+    );
+    if (factors.contrastBoost > 0.05 && factors.highlightCompress < 0.35 && preGenControls.localContrastScale > 0) {
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
+        1 + (interiorCfg.localContrast * 0.4 * preGenControls.localContrastScale),
+        -(128 * interiorCfg.localContrast * 0.35 * preGenControls.localContrastScale),
+        "interior_local_contrast",
+        transformTelemetry
       );
     }
     logIfNotFocusMode(`[stage1A] Interior profile applied: ${interiorProfileKey} (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
@@ -697,23 +1292,48 @@ export async function runStage1A(
     const baseBrightness = analysis.isExterior
       ? 1 + (factors.shadowLift * 0.05)
       : 1 + (factors.shadowLift * 0.08);
-    const brightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
-    const saturation = analysis.isExterior
+    const guardedBrightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
+    const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
+    const saturationRaw = analysis.isExterior
       ? 1.01 + (factors.contrastBoost * 0.02) + factors.saturationBoost
       : 1.04 + (factors.contrastBoost * 0.04);
-    img = img.modulate({
-      brightness,
-      saturation,
-    });
+    const saturation = scaleFromNeutral(saturationRaw, preGenControls.modulateScale);
+    img = applyGuardedModulate(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      {
+        brightness,
+        saturation,
+      },
+      "default_profile_modulate",
+      transformTelemetry
+    );
     logIfNotFocusMode(`[stage1A] Default profile applied (brightness=${brightness.toFixed(2)}, sat=${saturation.toFixed(2)}, inputMeanBrightness=${typeof inputMeanBrightness === "number" ? inputMeanBrightness.toFixed(1) : "n/a"})`);
   }
   
   // 7. Keep only a very mild interior shadow offset; preserve exterior shadows.
-  if (!analysis.isExterior && factors.shadowLift > 0.12) {
+  if (!analysis.isExterior && factors.shadowLift > 0.12 && preGenControls.shadowOffsetScale > 0) {
     if (applyInteriorProfile) {
-      img = img.linear(1.0, Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift));
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
+        1.0,
+        Math.round(128 * interiorCfg.shadowLift * 0.06 * factors.shadowLift * preGenControls.shadowOffsetScale),
+        "interior_shadow_offset_profile",
+        transformTelemetry
+      );
     } else {
-      img = img.linear(1.0, 2);
+      img = applyGuardedLinear(
+        img,
+        stage1ATransformMeta,
+        stage1ABranch,
+        1.0,
+        Math.round(2 * preGenControls.shadowOffsetScale),
+        "interior_shadow_offset_default",
+        transformTelemetry
+      );
     }
   }
   
@@ -726,36 +1346,79 @@ export async function runStage1A(
   }
   
   // 9. Keep edge brightening narrow and only for darker interiors.
-  if (!analysis.isExterior && factors.shadowLift > 0.18) {
-    img = img.linear(1.0, 3);
+  if (!analysis.isExterior && factors.shadowLift > 0.18 && preGenControls.shadowOffsetScale > 0) {
+    img = applyGuardedLinear(
+      img,
+      stage1ATransformMeta,
+      stage1ABranch,
+      1.0,
+      Math.round(3 * preGenControls.shadowOffsetScale),
+      "interior_edge_brightening",
+      transformTelemetry
+    );
   }
   
   // 10. Sharpen only for non-blurry images with moderate edge density.
-  if (factors.sharpenAmount > 0) {
+  if (preGenControls.pregenSharpenEnabled && factors.sharpenAmount > 0) {
+    logTransformDiagnostic("sharpen", "before", stage1ATransformMeta, stage1ABranch, {
+      sigma: 1.2,
+      amount: factors.sharpenAmount * preGenControls.pregenSharpenScale,
+    });
     img = img.sharpen({
       sigma: 1.2,
       m1: 1.0,
-      m2: factors.sharpenAmount,
+      m2: factors.sharpenAmount * preGenControls.pregenSharpenScale,
       x1: 2.0,
       y2: 10.0,
       y3: 20.0,
     });
+    logTransformDiagnostic("sharpen", "after", stage1ATransformMeta, stage1ABranch);
   }
   
   // 12. Export Sharp enhancement with maximum quality
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifactsCache" });
   const baseArtifactsCache: Map<string, BaseArtifacts> = options.baseArtifactsCache || new Map();
   const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
-  const artifactsPromise = buildArtifacts ? ((): Promise<BaseArtifacts> => {
-    const base = img.clone();
-    const metaPromise = base.metadata();
-    const grayPromise = base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
-    const smallPromise = base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true });
-    const rgbPromise = base.clone().ensureAlpha().removeAlpha().toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
-    return Promise.all([metaPromise, grayPromise, smallPromise, rgbPromise]).then(([meta, gray, small, rgb]) => {
+  const artifactsPromise: Promise<BaseArtifacts | null> | null = buildArtifacts ? (async (): Promise<BaseArtifacts | null> => {
+    try {
+      const base = img.clone();
+      const meta = await base.metadata();
+      const [gray, small] = await Promise.all([
+        base.clone().greyscale().raw().toBuffer({ resolveWithObject: true }),
+        base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true }),
+      ]);
+
+      const rgbNoAlpha = base.clone().removeAlpha();
+      const rgbMeta = toTransformDiagnosticMeta(await rgbNoAlpha.metadata().catch(() => null));
+      if ((rgbMeta.channels ?? 0) <= 0) {
+        console.warn("[stage1A] BaseArtifacts RGB conversion unavailable: invalid channel metadata", {
+          width: rgbMeta.width,
+          height: rgbMeta.height,
+          space: rgbMeta.space,
+          channels: rgbMeta.channels,
+          depth: rgbMeta.depth,
+          hasAlpha: rgbMeta.hasAlpha,
+        });
+        logTransformDiagnostic("base_artifacts_rgb", "skipped", rgbMeta, stage1ABranch, {
+          reason: "invalid_channel_metadata",
+        });
+        return null;
+      }
+
+      logTransformDiagnostic("removeAlpha", "before", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+      logTransformDiagnostic("removeAlpha", "after", rgbMeta, stage1ABranch, { branch: "base_artifacts_rgb" });
+      const srgb = await canonicalizeToSrgbWithFallback(
+        rgbNoAlpha,
+        rgbMeta,
+        stage1ABranch,
+        "base_artifacts_rgb",
+      );
+      const rgb = await srgb.raw().toBuffer({ resolveWithObject: true });
+
       if (!meta.width || !meta.height) {
         throw new Error("Failed to read Stage1A artifact dimensions");
       }
+
       const grayData = new Uint8Array(gray.data.buffer, gray.data.byteOffset, gray.data.byteLength);
       const edge = computeEdgeMapFromGray(grayData, gray.info.width, gray.info.height, 38);
       return {
@@ -769,17 +1432,35 @@ export async function runStage1A(
         edge,
         rgb: new Uint8Array(rgb.data.buffer, rgb.data.byteOffset, rgb.data.byteLength),
       };
-    });
+    } catch (err) {
+      // Attach handler at creation time to avoid transient unhandled rejection warnings.
+      logIfNotFocusMode("[stage1A] Failed to build BaseArtifacts cache:", err);
+      console.warn("[stage1A] BaseArtifacts build failed with transform trace", {
+        jobId: jobIdResolved,
+        sceneType: effectiveSceneType,
+        roomType: roomTypeResolved ?? null,
+        error: (err as any)?.message || String(err),
+        cacheEntryWritten: false,
+        transformTrace: transformTrace.slice(-30),
+      });
+      return null;
+    }
   })() : null;
 
-  await img
-    .webp({ 
-      quality: 97,            // Very high quality (maintains 4K detail)
-      effort: 6,              // Maximum compression efficiency
-      smartSubsample: true,   // Better color preservation, reduces banding
-      nearLossless: false,    // Lossy for optimal compression
-    })
-    .toFile(sharpOutputPath);
+  try {
+    await img
+      .webp(preGenWebpOptions)
+      .toFile(sharpOutputPath);
+  } catch (err: any) {
+    console.error("[stage1A] Failed to render pre-generation output", {
+      jobId: jobIdResolved,
+      sceneType: effectiveSceneType,
+      roomType: roomTypeResolved ?? null,
+      message: err?.message || String(err),
+      transformTrace: transformTrace.slice(-30),
+    });
+    throw err;
+  }
 
   await logImageAttemptUrl({
     ctx: stage1ACtx,
@@ -787,11 +1468,9 @@ export async function runStage1A(
   });
 
   if (artifactsPromise) {
-    try {
-      const artifacts = await artifactsPromise;
+    const artifacts = await artifactsPromise;
+    if (artifacts) {
       baseArtifactsCache.set(sharpOutputPath, artifacts);
-    } catch (e) {
-      logIfNotFocusMode("[stage1A] Failed to build BaseArtifacts cache:", e);
     }
   }
   
@@ -834,7 +1513,7 @@ export async function runStage1A(
 
       if (forceGemini) {
         logIfNotFocusMode("[stage1A] ⚠️ Quality gate triggered — using Gemini instead of Stability");
-        const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+        const geminiOutputPath = await runGeminiStage1AWithOptionalFinish();
         return geminiOutputPath;
       }
     } else {
@@ -860,7 +1539,7 @@ export async function runStage1A(
         lockStabilityPrimary("Stability credits exhausted (payment_required)");
       }
       logIfNotFocusMode("[stage1A] 🔁 Falling back to Gemini...");
-      primary1AImage = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+      primary1AImage = await runGeminiStage1AWithOptionalFinish();
     }
 
     // ✅ AUTHORITATIVE CONTENT VALIDATION
@@ -874,7 +1553,7 @@ export async function runStage1A(
       logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {
-        const geminiImage = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+        const geminiImage = await runGeminiStage1AWithOptionalFinish();
 
         await runStage1AStructuralValidationSafely(sharpOutputPath, geminiImage, "gemini output");
 
@@ -925,7 +1604,7 @@ export async function runStage1A(
         : "feature flag off";
     logIfNotFocusMode(`[stage1A] 🟡 Using Gemini (Stability disabled: ${reason})...`);
 
-    const geminiOutputPath = await enhanceWithGeminiStage1A(sharpOutputPath, effectiveSceneType, replaceSky, applyInteriorProfile, interiorProfileKey, skyMode, jobIdResolved, imageId, roomTypeResolved, options.jobSampling);
+    const geminiOutputPath = await runGeminiStage1AWithOptionalFinish();
 
     logIfNotFocusMode("[stage1A] ✅ Gemini enhancement complete:", geminiOutputPath);
 

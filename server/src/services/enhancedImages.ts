@@ -12,6 +12,22 @@ import type {
   EnhancedImageGalleryResponse,
   EnhancedImageListItem,
 } from '@realenhance/shared/types';
+import {
+  ENHANCED_IMAGE_COMPLETION_TYPES,
+  isEnhancedImageCompletionType,
+  type EnhancedImageCompletionType,
+} from '@realenhance/shared/completionTypes';
+import {
+  deriveExecutionModeFromCompletionType,
+  deriveLegacyCompletionTypeFromExecutionMode,
+  deriveUserOutcomeFromCompletionType,
+  isEnhancedImageExecutionMode,
+  isEnhancedImagePersistenceStatus,
+  isEnhancedImageUserOutcome,
+  type EnhancedImageExecutionMode,
+  type EnhancedImagePersistenceStatus,
+  type EnhancedImageUserOutcome,
+} from '@realenhance/shared/enhancedImageSemantics';
 import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/audit.js';
 import { getS3SignedUrl, deleteS3Object } from '../utils/s3.js';
 import { getJob } from './jobs.js';
@@ -35,7 +51,10 @@ interface CreateEnhancedImageParams {
   parentImageId?: string | null;
   source?: 'stage2' | 'region-edit';
   stagesCompleted: string[];
-  completionType?: 'full_success' | 'fallback_1b' | 'fallback_1a';
+  completionType?: EnhancedImageCompletionType;
+  userOutcome?: EnhancedImageUserOutcome;
+  executionMode?: EnhancedImageExecutionMode;
+  persistenceStatus?: EnhancedImagePersistenceStatus;
   publicUrl: string;
   thumbnailUrl?: string;
   originalUrl?: string | null;
@@ -87,6 +106,34 @@ function logUuidBoundaryEvent(params: {
 export async function createEnhancedImage(
   params: CreateEnhancedImageParams
 ): Promise<EnhancedImage> {
+  if (params.completionType && !isEnhancedImageCompletionType(params.completionType)) {
+    console.error('[enhanced-images] INVALID_COMPLETION_TYPE_FOR_DB', {
+      completionType: params.completionType,
+      allowedValues: ENHANCED_IMAGE_COMPLETION_TYPES,
+      source: 'server.services.enhancedImages.createEnhancedImage',
+      jobId: params.jobId,
+    });
+    throw new Error(`Invalid completionType: ${params.completionType}`);
+  }
+
+  if (params.userOutcome && !isEnhancedImageUserOutcome(params.userOutcome)) {
+    throw new Error(`Invalid userOutcome: ${params.userOutcome}`);
+  }
+  if (params.executionMode && !isEnhancedImageExecutionMode(params.executionMode)) {
+    throw new Error(`Invalid executionMode: ${params.executionMode}`);
+  }
+  if (params.persistenceStatus && !isEnhancedImagePersistenceStatus(params.persistenceStatus)) {
+    throw new Error(`Invalid persistenceStatus: ${params.persistenceStatus}`);
+  }
+
+  const executionMode =
+    params.executionMode || deriveExecutionModeFromCompletionType(params.completionType);
+  const completionType =
+    params.completionType || deriveLegacyCompletionTypeFromExecutionMode(executionMode);
+  const userOutcome =
+    params.userOutcome || deriveUserOutcomeFromCompletionType(completionType);
+  const persistenceStatus = params.persistenceStatus || 'recorded';
+
   const auditRef = generateAuditRef();
   const traceId = params.traceId || generateTraceId(params.jobId);
   const storageKey = extractStorageKey(params.publicUrl);
@@ -157,6 +204,7 @@ export async function createEnhancedImage(
     `INSERT INTO enhanced_images (
       agency_id, user_id, job_id, stages_completed,
       completion_type,
+      user_outcome, execution_mode, persistence_status,
       property_id, parent_image_id, source,
       storage_key, public_url, thumbnail_url,
       original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url,
@@ -164,7 +212,7 @@ export async function createEnhancedImage(
       audit_ref, trace_id,
       stage12_attempt_id, stage2_attempt_id,
       is_expired
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, FALSE)
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, FALSE)
     ON CONFLICT (job_id) DO UPDATE SET
       updated_at = NOW()
     RETURNING *`,
@@ -174,8 +222,8 @@ export async function createEnhancedImage(
       params.jobId,
       params.stagesCompleted,
       params.completionType || null,
-      propertyIdResult.normalized,
-      parentImageIdResult.normalized,
+      params.propertyId || null,
+      params.parentImageId || null,
       params.source || 'stage2',
       storageKey,
       params.publicUrl,
@@ -238,6 +286,9 @@ export async function listEnhancedImages(
       ei.thumbnail_url,
       ei.stages_completed,
       ei.completion_type,
+      ei.user_outcome,
+      ei.execution_mode,
+      ei.persistence_status,
       ei.created_at,
       ei.audit_ref,
       ei.original_s3_key,
@@ -299,6 +350,9 @@ export async function listEnhancedImages(
       originalUrl: signedOriginal,
       stagesCompleted: row.stages_completed,
       completionType: row.completion_type,
+      userOutcome: row.user_outcome,
+      executionMode: row.execution_mode,
+      persistenceStatus: row.persistence_status,
       createdAt: row.created_at,
       auditRef: row.audit_ref,
       propertyId: row.property_id,
@@ -375,7 +429,7 @@ export async function getImageVersions(
   const params = userId ? [agencyId, userId, imageId] : [agencyId, imageId];
 
   const result = await pool.query(
-    `SELECT id, job_id, public_url, thumbnail_url, stages_completed, completion_type, created_at, audit_ref,
+    `SELECT id, job_id, public_url, thumbnail_url, stages_completed, completion_type, user_outcome, execution_mode, persistence_status, created_at, audit_ref,
             original_s3_key, enhanced_s3_key, thumb_s3_key, remote_original_url, storage_key,
             property_id, parent_image_id, source
      FROM enhanced_images
@@ -402,6 +456,9 @@ export async function getImageVersions(
       originalUrl: signedOriginal,
       stagesCompleted: row.stages_completed,
       completionType: row.completion_type,
+      userOutcome: row.user_outcome,
+      executionMode: row.execution_mode,
+      persistenceStatus: row.persistence_status,
       createdAt: row.created_at,
       auditRef: row.audit_ref,
       propertyId: row.property_id,
@@ -607,6 +664,9 @@ async function dbRowToEnhancedImage(row: any): Promise<EnhancedImage> {
     source: row.source,
     stagesCompleted: row.stages_completed,
     completionType: row.completion_type,
+    userOutcome: row.user_outcome,
+    executionMode: row.execution_mode,
+    persistenceStatus: row.persistence_status,
     storageKey: row.storage_key,
     publicUrl,
     thumbnailUrl,

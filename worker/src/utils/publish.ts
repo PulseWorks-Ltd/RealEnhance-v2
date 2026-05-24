@@ -179,6 +179,121 @@ export type PublishResult = {
   s3Error?: string;
 };
 
+export type ThumbnailPublishOptions = {
+  width?: number;
+  height?: number;
+  quality?: number;
+  baseKeyHint?: string;
+};
+
+const DASHBOARD_THUMB_WIDTH = parseEnvInt(process.env.DASHBOARD_THUMB_WIDTH, 640, 160, 2048);
+const DASHBOARD_THUMB_HEIGHT = parseEnvInt(process.env.DASHBOARD_THUMB_HEIGHT, 480, 120, 2048);
+const DASHBOARD_THUMB_QUALITY = parseEnvInt(process.env.DASHBOARD_THUMB_QUALITY, 84, 60, 95);
+
+function deriveThumbnailKey(baseKeyHint: string | undefined, width: number, height: number): string {
+  const suffix = `__thumb_${width}x${height}.webp`;
+  if (!baseKeyHint) {
+    const prefix = (process.env.S3_PREFIX || 'realenhance/outputs').replace(/\/+$/, '');
+    return `${prefix}/${Date.now()}-${suffix}`.replace(/\/{2,}/g, '/');
+  }
+
+  const normalized = baseKeyHint.replace(/^\/+/, '').split('?')[0];
+  const dot = normalized.lastIndexOf('.');
+  const withoutExt = dot > 0 ? normalized.slice(0, dot) : normalized;
+  return `${withoutExt}${suffix}`;
+}
+
+async function uploadBufferToS3(
+  body: Buffer,
+  key: string,
+  contentType: string
+): Promise<PublishResult> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) {
+    const b64 = body.toString('base64');
+    return { url: `data:${contentType};base64,${b64}`, kind: 'data-url' };
+  }
+
+  const rawRegion = process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || 'us-east-1';
+  const region = sanitizeRegion(rawRegion);
+
+  const importer: any = new Function('p', 'return import(p)');
+  const mod: any = await importer('@aws-sdk/client-s3');
+  const { S3Client, PutObjectCommand } = mod;
+
+  const clientConfig: any = { region };
+  if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+    clientConfig.credentials = {
+      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+    };
+  }
+
+  const s3 = new S3Client(clientConfig);
+  const envNoAcl = process.env.S3_NO_ACL === '1' || process.env.S3_NO_ACL === 'true';
+  const wantAcl = !!process.env.S3_ACL && !envNoAcl;
+  const shouldUseAcl = wantAcl || (!envNoAcl && !process.env.S3_ACL);
+  const aclValue = process.env.S3_ACL || 'public-read';
+  const baseParams: any = { Bucket: bucket, Key: key, Body: body, ContentType: contentType };
+
+  let uploaded = false;
+  if (shouldUseAcl) {
+    try {
+      await s3.send(new PutObjectCommand({ ...baseParams, ACL: aclValue }));
+      uploaded = true;
+    } catch (e: any) {
+      const msg = e?.message || String(e);
+      const code = e?.Code || e?.code || e?.name;
+      const aclNotAllowed = /does not allow ACLs|AccessControlListNotSupported|InvalidRequest/i.test(msg)
+        || /AccessControlListNotSupported|InvalidRequest/i.test(String(code || ''));
+      if (!aclNotAllowed) throw e;
+    }
+  }
+  if (!uploaded) {
+    await s3.send(new PutObjectCommand(baseParams));
+  }
+
+  const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
+  const url = base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+  return { url, kind: 's3', key };
+}
+
+export async function publishThumbnailVariant(
+  sourcePath: string,
+  options: ThumbnailPublishOptions = {}
+): Promise<PublishResult> {
+  const width = Number.isFinite(options.width) ? Number(options.width) : DASHBOARD_THUMB_WIDTH;
+  const height = Number.isFinite(options.height) ? Number(options.height) : DASHBOARD_THUMB_HEIGHT;
+  const quality = Number.isFinite(options.quality) ? Number(options.quality) : DASHBOARD_THUMB_QUALITY;
+
+  const importer: any = new Function('p', 'return import(p)');
+  const sharpMod: any = await importer('sharp');
+  const sharp = sharpMod?.default ?? sharpMod;
+
+  const thumbBuffer = await sharp(sourcePath)
+    .rotate()
+    .resize({
+      width,
+      height,
+      fit: 'cover',
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: false,
+      position: 'centre',
+    })
+    .webp({
+      quality,
+      effort: 5,
+      smartSubsample: true,
+    })
+    .toBuffer();
+
+  const thumbKey = deriveThumbnailKey(options.baseKeyHint, width, height);
+  const published = await uploadBufferToS3(thumbBuffer, thumbKey, 'image/webp');
+
+  logIfNotFocusMode(`[PUBLISH] Thumbnail derivative published key=${published.key || '(data-url)'} size=${width}x${height} quality=${quality}`);
+  return published;
+}
+
 /**
  * Publish an image so the client can access it across services.
  * - If S3_BUCKET is set, uploads to S3 (optionally via S3_PUBLIC_BASEURL/CDN).

@@ -363,6 +363,11 @@ export default function EnhancedHistoryPage() {
       const statusBadge = resolveHistoryStatusBadge(editStatusByImageId[String(image.id)]);
       const editIndex = editIndexByImageId.get(String(image.id));
       const isDeleteDisabled = !canDeleteImage(image);
+      const imageUrls = {
+        thumbnailUrl: image.thumbnailUrl || image.publicUrl,
+        displayUrl: image.publicUrl,
+        downloadUrl: image.publicUrl,
+      };
 
       return (
         <div
@@ -376,10 +381,14 @@ export default function EnhancedHistoryPage() {
         aria-label="Preview enhanced image"
       >
         <img
-          src={image.thumbnailUrl}
+          src={imageUrls.thumbnailUrl}
           alt="Enhanced property photo"
           className="w-full h-full object-cover"
+          width={640}
+          height={480}
           loading="lazy"
+          decoding="async"
+          style={{ imageRendering: 'auto' }}
         />
         <div className="absolute inset-0 flex items-center justify-center bg-brand-900/55 opacity-0 transition-opacity duration-200 group-hover:opacity-100">
           <span className="rounded-full bg-white/90 px-3 py-1 text-sm font-medium text-slate-900 shadow-sm">

@@ -48,6 +48,12 @@ import batchSubmitRouter from "./routes/batch-submit.js";
 import { enhanceRouter } from "./routes/enhance.js";
 import { internalEnhanceRouter } from "./routes/internalEnhance.js";
 import fs from "fs";
+import { ENHANCED_IMAGE_COMPLETION_TYPES } from "@realenhance/shared/completionTypes";
+import {
+  ENHANCED_IMAGE_EXECUTION_MODES,
+  ENHANCED_IMAGE_PERSISTENCE_STATUSES,
+  ENHANCED_IMAGE_USER_OUTCOMES,
+} from "@realenhance/shared/enhancedImageSemantics";
 import { NODE_ENV, PORT, PUBLIC_ORIGIN, SESSION_SECRET, REDIS_URL } from "./config.js";
 import { ensureS3Ready } from "./utils/s3.js";
 import { pool } from "./db/index.js";
@@ -87,7 +93,14 @@ async function checkDbConnection(): Promise<boolean> {
 }
 
 async function ensureEnhancedImagesSchemaCompatibility(): Promise<void> {
-  const requiredColumns = ["property_id", "parent_image_id", "source"] as const;
+  const requiredColumns = [
+    "property_id",
+    "parent_image_id",
+    "source",
+    "user_outcome",
+    "execution_mode",
+    "persistence_status",
+  ] as const;
 
   const colRes = await pool.query(
     `
@@ -116,11 +129,65 @@ async function ensureEnhancedImagesSchemaCompatibility(): Promise<void> {
 
   const propertiesTableExists = Boolean(tableRes.rows[0]?.exists);
 
-  if (missingColumns.length > 0 || !propertiesTableExists) {
+  const completionConstraintRes = await pool.query(
+    `
+      SELECT pg_get_constraintdef(oid) AS definition
+      FROM pg_constraint
+      WHERE conname = 'enhanced_images_completion_type_check'
+      LIMIT 1
+    `
+  );
+
+  const completionConstraintDefinition = String(
+    completionConstraintRes.rows[0]?.definition || ""
+  );
+  const completionTypeMatches = ENHANCED_IMAGE_COMPLETION_TYPES.every((value) =>
+    completionConstraintDefinition.includes(`'${value}'`)
+  );
+
+  const enumRows = await pool.query(
+    `
+      SELECT t.typname AS enum_name, e.enumlabel AS enum_label
+      FROM pg_type t
+      JOIN pg_enum e ON t.oid = e.enumtypid
+      WHERE t.typname IN (
+        'enhanced_image_user_outcome_enum',
+        'enhanced_image_execution_mode_enum',
+        'enhanced_image_persistence_status_enum'
+      )
+    `
+  );
+  const enumMap = new Map<string, Set<string>>();
+  for (const row of enumRows.rows) {
+    const key = String(row.enum_name);
+    const label = String(row.enum_label);
+    if (!enumMap.has(key)) enumMap.set(key, new Set());
+    enumMap.get(key)!.add(label);
+  }
+  const outcomeEnumMatches = ENHANCED_IMAGE_USER_OUTCOMES.every((v) =>
+    enumMap.get('enhanced_image_user_outcome_enum')?.has(v)
+  );
+  const executionEnumMatches = ENHANCED_IMAGE_EXECUTION_MODES.every((v) =>
+    enumMap.get('enhanced_image_execution_mode_enum')?.has(v)
+  );
+  const persistenceEnumMatches = ENHANCED_IMAGE_PERSISTENCE_STATUSES.every((v) =>
+    enumMap.get('enhanced_image_persistence_status_enum')?.has(v)
+  );
+
+  if (
+    missingColumns.length > 0 ||
+    !propertiesTableExists ||
+    !completionTypeMatches ||
+    !outcomeEnumMatches ||
+    !executionEnumMatches ||
+    !persistenceEnumMatches
+  ) {
     throw new Error(
       `[startup] Schema mismatch detected. Missing migration features for enhanced image gallery. ` +
       `missingColumns=${missingColumns.join(",") || "none"} propertiesTable=${propertiesTableExists ? "present" : "missing"}. ` +
-      `Apply migrations (including 008_property_folders_and_versions.sql) before starting the server.`
+      `completionTypeContract=${completionTypeMatches ? "ok" : "stale"}. ` +
+      `outcomeEnum=${outcomeEnumMatches ? "ok" : "stale"} executionEnum=${executionEnumMatches ? "ok" : "stale"} persistenceEnum=${persistenceEnumMatches ? "ok" : "stale"}. ` +
+      `Apply migrations before starting the server.`
     );
   }
 }

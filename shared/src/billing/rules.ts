@@ -1,3 +1,5 @@
+import type { EnhancedImageCompletionType } from "../completionTypes";
+
 /**
  * Billing Finalization - Pure Functions
  * 
@@ -11,7 +13,7 @@ export interface StageFlags {
   stage2: boolean;
   sceneType: string; // "interior" | "exterior"
   /** Final output classification written to history metadata. */
-  completionType?: "full_success" | "fallback_1b" | "fallback_1a" | "intentional_1a_success" | "optimized_1a_success";
+  completionType?: EnhancedImageCompletionType;
   /** Final stage delivered to the user (1A | 1B | 2). */
   finalDeliveredStage?: "1A" | "1B" | "2";
   /** True when user requested enhancement beyond Stage 1A. */

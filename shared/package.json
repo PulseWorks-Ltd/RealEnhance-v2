@@ -13,6 +13,22 @@
       "types": "./dist/constants.d.ts",
       "default": "./dist/constants.js"
     },
+    "./completionTypes": {
+      "types": "./dist/completionTypes.d.ts",
+      "default": "./dist/completionTypes.js"
+    },
+    "./completionTypes.js": {
+      "types": "./dist/completionTypes.d.ts",
+      "default": "./dist/completionTypes.js"
+    },
+    "./enhancedImageSemantics": {
+      "types": "./dist/enhancedImageSemantics.d.ts",
+      "default": "./dist/enhancedImageSemantics.js"
+    },
+    "./enhancedImageSemantics.js": {
+      "types": "./dist/enhancedImageSemantics.d.ts",
+      "default": "./dist/enhancedImageSemantics.js"
+    },
     "./types": {
       "types": "./dist/types.d.ts",
       "default": "./dist/types.js"

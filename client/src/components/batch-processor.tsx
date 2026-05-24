@@ -37,7 +37,7 @@ import { EmptyStateLaunchpad } from "@/components/ui/empty-state-launchpad";
 import { Loader2, CheckCircle, XCircle, AlertCircle, Home, Armchair, ChevronLeft, ChevronRight, CloudSun, Info, Maximize2, X, RefreshCw } from 'lucide-react';
 import { Switch } from "@/components/ui/switch";
 import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-guard";
-import { getCardArtifactView, type DisplayOutputKey } from "@/lib/card-artifacts";
+import { getCardArtifactView, resolveImageUrlRoles, type DisplayOutputKey } from "@/lib/card-artifacts";
 import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
 import { getRoomConsistencyWaitingCopy } from "@/lib/room-consistency";
@@ -5788,9 +5788,13 @@ export default function BatchProcessor({
       selectedKey: selectedStage || null,
       originalFallback: previewUrls[index] || null,
     });
+    const urlRoles = resolveImageUrlRoles(result, {
+      selectedKey: selectedStage || null,
+      originalFallback: previewUrls[index] || null,
+    });
     const bestDisplayUrl = isEditedArtifactMissing
       ? null
-      : (artifactView.active?.url || previewUrls[index] || null);
+      : (urlRoles.displayUrl || previewUrls[index] || null);
     const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
 
     const persistedOriginalUrl =
@@ -8692,6 +8696,10 @@ export default function BatchProcessor({
                           selectedKey: requestedStage,
                           originalFallback: previewUrls[i] || null,
                         });
+                        const urlRoles = resolveImageUrlRoles(result, {
+                          selectedKey: requestedStage,
+                          originalFallback: previewUrls[i] || null,
+                        });
                         const activeArtifact = artifactView.active;
 
                         // Image Preview Logic with artifact preference (avoid failed/blocked outputs)
@@ -8721,8 +8729,9 @@ export default function BatchProcessor({
                             url: artifact.url,
                           }));
                         const displayedUrl = missingEditedArtifact ? null : (activeArtifact?.url || null);
-                        const bestDisplayUrl = missingEditedArtifact ? null : (activeArtifact?.url || null);
-                        const enhancedUrl = withVersion(bestDisplayUrl, result?.version || result?.updatedAt) || bestDisplayUrl;
+                        const fullDisplayUrl = missingEditedArtifact ? null : (urlRoles.displayUrl || null);
+                        const bestDisplayUrl = fullDisplayUrl;
+                        const enhancedUrl = withVersion(fullDisplayUrl, result?.version || result?.updatedAt) || fullDisplayUrl;
                         const persistedOriginalUrl =
                           result?.result?.originalImageUrl ||
                           result?.originalImageUrl ||
@@ -8752,7 +8761,7 @@ export default function BatchProcessor({
                               result?.version || result?.updatedAt || result?.statusLastModified
                             ) || canonicalPreviewBase)
                           : null;
-                        const previewUrl = (() => {
+                        const detailPreviewUrl = (() => {
                           if (missingEditedArtifact) {
                             return null;
                           }
@@ -8773,7 +8782,11 @@ export default function BatchProcessor({
                             ? (enhancedUrl || progressivePreviewUrl || canonicalPreviewBase)
                             : (progressivePreviewUrl || canonicalPreviewBase);
                         })();
-                        const isRetriedPreviewMissing = selectedStage === "retried" && !previewUrl;
+                        const cardThumbnailUrl = missingEditedArtifact
+                          ? null
+                          : (urlRoles.thumbnailUrl || detailPreviewUrl || null);
+                        const cardImageUrl = cardThumbnailUrl || detailPreviewUrl;
+                        const isRetriedPreviewMissing = selectedStage === "retried" && !cardImageUrl;
                         const canEditThisImage = canEditArtifactAtIndex(i);
                         const hasFinalArtifactUrl = !!(
                           finalResultUrl ||
@@ -8826,14 +8839,14 @@ export default function BatchProcessor({
                             <div
                               className={`relative w-full aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 border border-slate-100 cursor-pointer ${isDone ? 'ring-2 ring-emerald-500/30 transition-all duration-500' : ''}`}
                               onClick={() => {
-                                if (!previewUrl) return;
+                                if (!cardImageUrl) return;
                                 openPreviewImage(i);
                               }}
                             >
-                              {previewUrl ? (
+                              {cardImageUrl ? (
                                 <img 
-                                  key={previewUrl}
-                                  src={previewUrl} 
+                                  key={cardImageUrl}
+                                  src={cardImageUrl} 
                                   alt={file.name} 
                                   className={`h-full w-full object-cover transition-opacity duration-300 ease-in-out animate-in fade-in ${isProcessing ? 'opacity-60' : 'opacity-100'}`}
                                   onLoad={() => {
@@ -8845,19 +8858,24 @@ export default function BatchProcessor({
                                       toDisplayUrl(results[i]?.retryLatestUrl) ||
                                       toDisplayUrl(results[i]?.result?.retryLatestUrl) ||
                                       null;
-                                    const loadedPreviewUrl = toDisplayUrl(previewUrl);
+                                    const loadedPreviewUrl = toDisplayUrl(cardImageUrl);
                                     const isConfirmedRetryResult = !!(
                                       loadedPreviewUrl &&
                                       confirmedRetryUrl &&
                                       loadedPreviewUrl === confirmedRetryUrl
                                     );
-                                    if (!isRetryActiveNow || isConfirmedRetryResult) {
+                                    if (!isRetryActiveNow || isUiComplete || isConfirmedRetryResult) {
                                       clearRetryFlags(i);
                                     }
                                   }}
                                   onError={(e) => {
                                     clearRetryFlags(i);
+                                    const fullResFallback = detailPreviewUrl || "";
                                     const localFallback = previewUrls[i] || "";
+                                    if (fullResFallback && e.currentTarget.src !== fullResFallback) {
+                                      e.currentTarget.src = fullResFallback;
+                                      return;
+                                    }
                                     if (localFallback && e.currentTarget.src !== localFallback) {
                                       e.currentTarget.src = localFallback;
                                     }
@@ -9036,9 +9054,9 @@ export default function BatchProcessor({
                                       type="button"
                                       onClick={() => {
                                         if (!requireVerifiedEmail("download")) return;
-                                        const url = enhancedUrl || previewUrl;
-                                        if (url) {
-                                          void downloadDisplayedArtifact(url, i);
+                                        const downloadUrl = urlRoles.downloadUrl || fullDisplayUrl || enhancedUrl || detailPreviewUrl;
+                                        if (downloadUrl) {
+                                          void downloadDisplayedArtifact(downloadUrl, i);
                                         }
                                       }}
                                       className="rounded-full px-4 py-2 text-xs font-semibold border border-slate-300 hover:bg-slate-100 transition"
@@ -9120,33 +9138,37 @@ export default function BatchProcessor({
       </div>
 
       {/* Preview/Edit Modals */}
-      {previewImage && (
-        <Modal isOpen={true} onClose={() => setPreviewImage(null)} maxWidth="full" contentClassName="max-w-7xl">
-          {(() => {
-            const previewResult = results[previewImage.index];
-            const status = String(previewResult?.status || previewResult?.result?.status || "").toLowerCase();
-            const isRetryActive = retryingImages.has(previewImage.index) || retryLoadingImages.has(previewImage.index) || !!previewResult?.retryInFlight;
-            const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
-            const isRetryStatusTerminal =
-              previewResult?.isTerminal === true ||
-              status === "completed" ||
-              status === "complete" ||
-              status === "failed";
-            const canRetryFromPreview = !isRetryStatusActive && !hasEditedArtifact(previewResult);
-            const previewEditSource = getEditSourceForIndex(previewImage.index);
-            const canEditThisPreviewImage = canEditArtifactAtIndex(previewImage.index);
-            return (
-          <div className="space-y-4">
-            <div className="flex flex-col gap-3 border-b border-slate-200 pb-4 md:flex-row md:items-start md:justify-between">
-              <div className="min-w-0">
-                <h3 className="truncate text-lg font-semibold text-slate-900">{previewImage.filename}</h3>
-                <p className="text-xs text-slate-500">{`Image ${previewImage.index + 1} of ${files.length}`}</p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 md:justify-end">
+      {previewImage && (() => {
+        const currentPreviewImage = buildPreviewImage(previewImage.index) || previewImage;
+        const previewResult = results[currentPreviewImage.index];
+        const status = String(previewResult?.status || previewResult?.result?.status || "").toLowerCase();
+        const isRetryActive = retryingImages.has(currentPreviewImage.index) || retryLoadingImages.has(currentPreviewImage.index) || !!previewResult?.retryInFlight;
+        const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
+        const isRetryStatusTerminal =
+          previewResult?.isTerminal === true ||
+          status === "completed" ||
+          status === "complete" ||
+          status === "failed";
+        const canRetryFromPreview = !isRetryStatusActive && !hasEditedArtifact(previewResult);
+        const canEditThisPreviewImage = canEditArtifactAtIndex(currentPreviewImage.index);
+        const previewArtifactView = getCardArtifactView(previewResult, {
+          selectedKey: (displayStageByIndex[currentPreviewImage.index] as DisplayOutputKey | undefined) || null,
+          originalFallback: previewUrls[currentPreviewImage.index] || null,
+        });
+        const previewOutputs = previewArtifactView.available.filter((artifact) => artifact.selectable);
+        const previewActiveLabel = previewArtifactView.active?.label || "Preview";
+        return (
+          <Modal
+            isOpen={true}
+            onClose={() => setPreviewImage(null)}
+            title={currentPreviewImage.filename}
+            maxWidth="full"
+            contentClassName="max-w-7xl"
+            headerActions={(
+              <>
                 <button
                   onClick={() => {
-                    const index = previewImage.index;
+                    const index = currentPreviewImage.index;
                     setPreviewImage(null);
                     handleEditImage(index);
                   }}
@@ -9158,11 +9180,11 @@ export default function BatchProcessor({
                 </button>
                 <button
                   onClick={() => {
-                    const index = previewImage.index;
+                    const index = currentPreviewImage.index;
                     setPreviewImage(null);
                     handleOpenRetryDialog(index);
                   }}
-                  disabled={!canRetryFromPreview || isRetryStatusActive || retryingImages.has(previewImage.index) || editingImages.has(previewImage.index)}
+                  disabled={!canRetryFromPreview || isRetryStatusActive || retryingImages.has(currentPreviewImage.index) || editingImages.has(currentPreviewImage.index)}
                   className="rounded-lg bg-action-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-action-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                   data-testid="button-retry-from-preview"
                 >
@@ -9172,75 +9194,89 @@ export default function BatchProcessor({
                   type="button"
                   onClick={() => {
                     if (!requireVerifiedEmail("download")) return;
-                    void downloadDisplayedArtifact(previewImage.url, previewImage.index);
+                    void downloadDisplayedArtifact(currentPreviewImage.url, currentPreviewImage.index);
                   }}
                   className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
                   data-testid="link-download-preview"
                 >
                   Download
                 </button>
-                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                  Enhanced ✓
-                </span>
+              </>
+            )}
+            headerContent={previewOutputs.length > 1 ? (
+              <div className="flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-2 py-2 sm:px-3">
+                {previewOutputs.map((artifact) => {
+                  const isActive = previewArtifactView.selectedKey === artifact.key;
+                  return (
+                    <button
+                      key={artifact.key}
+                      type="button"
+                      onClick={() => setDisplayStageByIndex((prev) => ({ ...prev, [currentPreviewImage.index]: artifact.key as DisplayOutputKey }))}
+                      className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${isActive ? "bg-slate-900 text-white shadow-sm" : "bg-white text-slate-600 hover:bg-slate-100"}`}
+                    >
+                      {artifact.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : undefined}
+          >
+            <div className="space-y-4">
+              <div className="group relative">
+                <button
+                  type="button"
+                  onClick={goToPreviousPreviewImage}
+                  disabled={currentPreviewImage.index <= 0}
+                  className="absolute left-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/55 opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none"
+                  aria-label="Previous image"
+                >
+                  <ChevronLeft className="mx-auto h-5 w-5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={goToNextPreviewImage}
+                  disabled={currentPreviewImage.index >= files.length - 1}
+                  className="absolute right-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/55 opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none"
+                  aria-label="Next image"
+                >
+                  <ChevronRight className="mx-auto h-5 w-5" />
+                </button>
+
+                {currentPreviewImage.originalUrl ? (
+                  <CompareSlider
+                    originalImage={currentPreviewImage.originalUrl}
+                    enhancedImage={currentPreviewImage.url}
+                    height="80vh"
+                    showLabels={true}
+                    originalLabel="Original"
+                    enhancedLabel={previewActiveLabel}
+                    className="mx-auto"
+                    data-testid="compare-slider-preview"
+                  />
+                ) : (
+                  <img
+                    src={currentPreviewImage.url}
+                    alt={currentPreviewImage.filename}
+                    className="max-h-[80vh] max-w-full mx-auto rounded border"
+                    data-testid="img-preview-modal"
+                    onError={(e) => {
+                      console.error('[PREVIEW] Image failed to load:', {
+                        url: currentPreviewImage.url,
+                        filename: currentPreviewImage.filename,
+                        error: e,
+                      });
+                    }}
+                    onLoad={() => {
+                      console.log('[PREVIEW] Image loaded successfully:', currentPreviewImage.url?.substring(0, 100));
+                    }}
+                  />
+                )}
               </div>
             </div>
-
-            <div className="group relative">
-              <button
-                type="button"
-                onClick={goToPreviousPreviewImage}
-                disabled={previewImage.index <= 0}
-                className="absolute left-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/55 opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none"
-                aria-label="Previous image"
-              >
-                <ChevronLeft className="mx-auto h-5 w-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={goToNextPreviewImage}
-                disabled={previewImage.index >= files.length - 1}
-                className="absolute right-3 top-1/2 z-10 h-10 w-10 -translate-y-1/2 rounded-full bg-black/40 text-white backdrop-blur-sm transition-opacity hover:bg-black/55 opacity-0 group-hover:opacity-100 disabled:opacity-0 disabled:pointer-events-none"
-                aria-label="Next image"
-              >
-                <ChevronRight className="mx-auto h-5 w-5" />
-              </button>
-
-              {previewImage.originalUrl ? (
-                <CompareSlider
-                  originalImage={previewImage.originalUrl}
-                  enhancedImage={previewImage.url}
-                  height="80vh"
-                  showLabels={true}
-                  originalLabel="Original"
-                  enhancedLabel="Enhanced ✨"
-                  className="mx-auto"
-                  data-testid="compare-slider-preview"
-                />
-              ) : (
-                <img
-                  src={previewImage.url}
-                  alt={previewImage.filename}
-                  className="max-h-[80vh] max-w-full mx-auto rounded border"
-                  data-testid="img-preview-modal"
-                  onError={(e) => {
-                    console.error('[PREVIEW] Image failed to load:', {
-                      url: previewImage.url,
-                      filename: previewImage.filename,
-                      error: e,
-                    });
-                  }}
-                  onLoad={() => {
-                    console.log('[PREVIEW] Image loaded successfully:', previewImage.url?.substring(0, 100));
-                  }}
-                />
-              )}
-            </div>
-          </div>
-            );
-          })()}
-        </Modal>
-      )}
+          </Modal>
+        );
+      })()}
 
       {/* RegionEditor Modal - all edit controls and enlarged image are inside the modal */}
       {regionEditorOpen && editingImageIndex !== null && activeEditSource && (

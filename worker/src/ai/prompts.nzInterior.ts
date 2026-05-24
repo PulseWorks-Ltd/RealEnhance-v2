@@ -111,6 +111,7 @@ All adjustments must operate ONLY on existing pixel information.
 WHITE BALANCE
 Target neutral daylight ("Gallery White" ~5500K).
 Remove color casts while maintaining natural material tones.
+Preserve clean neutral whites while introducing a subtle sense of natural ambient warmth consistent with premium architectural photography, without yellowing whites, orange drift, or artificial staged warmth.
 
 HIGHLIGHTS, MIDTONES & SHADOW RECOVERY
 - Midtones Lift (Dark Images): When correcting dark rooms, focus the exposure boost heavily on the midtones and low-midtones. This elevates the overall ambiance of the room without overexposing the highlights.
@@ -133,6 +134,82 @@ Do NOT:
 - smooth surfaces excessively
 - flatten textures
 - "white-out" materials
+
+
+### PREMIUM INTERIOR AMBIENT RECOVERY
+
+TARGET AESTHETIC
+The final image should resemble a professionally photographed high-end New Zealand real estate listing captured using balanced flambient (flash + ambient) architectural photography techniques.
+
+The room should feel:
+
+- bright,
+- clean,
+- naturally open,
+- premium,
+- spacious,
+  while remaining fully realistic and structurally identical to the source image.
+
+AMBIENT LIGHT DISTRIBUTION
+Gently redistribute ambient luminance throughout darker regions of the room to reduce heavy visual weight and shadow density.
+
+Enhance interior tonal openness and natural reflected light distribution while preserving realistic architectural depth and material integrity.
+
+Lift:
+
+- dark carpets,
+- corner falloff,
+- ceiling-edge dimness,
+- doorway transitions,
+- wardrobe recesses,
+- low-midtone wall regions,
+  using soft, spatially realistic tonal balancing.
+
+Avoid uniform global brightening.
+
+WINDOW & HIGHLIGHT DISCIPLINE
+Maintain strict highlight protection around:
+
+- windows,
+- blinds,
+- reflections,
+- bright exterior regions,
+- ceiling lights.
+
+Bright regions must remain naturally brighter than shadow regions to preserve realistic depth hierarchy.
+
+SPATIAL DEPTH PRESERVATION
+Preserve realistic depth gradients and natural light falloff.
+
+The room must retain:
+
+- dimensionality,
+- shadow layering,
+- directional light behavior,
+- realistic contrast separation.
+
+Do not flatten the image into an HDR-style exposure blend.
+
+PREMIUM MATERIAL RESPONSE
+Walls and ceilings should appear:
+
+- clean,
+- softly luminous,
+- professionally balanced,
+  without appearing overexposed or artificially whitened.
+
+Preserve clean neutral wall tones while avoiding chalkiness, clipping, or flat over-bright rendering.
+
+Recover subtle texture and tonal separation within darker carpet and flooring regions without flattening natural shadow gradients.
+
+Carpet textures, fabric grain, flooring texture, and reflective surfaces must retain realistic material depth and texture separation.
+
+Create a refined, professionally balanced real estate photography appearance with balanced luminosity, soft dimensional contrast, and natural material realism.
+
+SHADOW RECOVERY PERMISSION
+Treat heavy low-quality camera shadow compression and dark interior falloff as recoverable photographic limitations rather than protected scene characteristics.
+
+Where authentic pixel information exists, safely recover naturally visible detail and tonal separation from darker regions while preserving structural fidelity and realism.
 
 
 V. SAFE OPTICAL RESTORATION (CONTROLLED)

@@ -33,6 +33,8 @@ import type { Mode } from "./validationModes";
  */
 export interface StructureValidationResult {
   mode: Mode;
+  status?: "ok" | "skipped" | "error";
+  skipCode?: "VALIDATION_SKIPPED_DISABLED" | "VALIDATION_SKIPPED_INVALID_INPUT_URL" | "VALIDATION_SKIPPED_INVALID_VALIDATOR_URL";
   isSuspicious: boolean;
   deviationScore: number;
   verticalShift: number;
@@ -89,6 +91,8 @@ export function validateStructureValidatorStartupConfig(): {
 function createDisabledResult(reason: string): StructureValidationResult {
   return {
     mode: "log",
+    status: "skipped",
+    skipCode: "VALIDATION_SKIPPED_DISABLED",
     isSuspicious: false,
     deviationScore: 0,
     verticalShift: 0,
@@ -115,6 +119,25 @@ function createDisabledResult(reason: string): StructureValidationResult {
   };
 }
 
+function normalizeHttpUrl(input: string | undefined, field: "originalUrl" | "enhancedUrl" | "validatorUrl"):
+  | { ok: true; value: string }
+  | { ok: false; reason: string } {
+  const raw = typeof input === "string" ? input.trim() : "";
+  if (!raw) {
+    return { ok: false, reason: `${field}_missing` };
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return { ok: false, reason: `${field}_unsupported_protocol` };
+    }
+    return { ok: true, value: parsed.toString() };
+  } catch {
+    return { ok: false, reason: `${field}_invalid_url` };
+  }
+}
+
 /**
  * Validate structural integrity between original and enhanced images
  *
@@ -132,37 +155,60 @@ export async function validateStructure(
   originalUrl: string,
   enhancedUrl: string
 ): Promise<StructureValidationResult> {
-  const { url, mode, sensitivity, valid, reason } = getValidatorConfig();
+  const { url, mode, sensitivity } = getValidatorConfig();
 
   // Check if validator is disabled
   if (!url) {
-    if (!valid) {
-      console.error(`[structureValidator] Validator disabled due to invalid STRUCTURE_VALIDATOR_URL (${reason})`);
-      return createDisabledResult("Validator disabled (invalid URL)");
-    }
     console.log("[structureValidator] Validator disabled (no URL configured)");
-    return createDisabledResult("Validator disabled");
+    if (url && !validatorUrl.ok) {
+      console.warn("[structureValidator] Invalid validator URL; disabling validation", {
+        reason: validatorUrl.reason,
+        configuredUrlPreview: String(url).slice(0, 120),
+      });
+    }
+    if (!url) {
+      return createDisabledResult("Validator disabled");
+    }
+    const validatorReason = validatorUrl.ok ? "validator_url_unknown" : validatorUrl.reason;
+    return {
+      ...createDisabledResult("Invalid validator URL"),
+      mode,
+      skipCode: "VALIDATION_SKIPPED_INVALID_VALIDATOR_URL",
+      error: validatorReason,
+    };
   }
 
-  // Validate URLs
-  if (!originalUrl || !enhancedUrl) {
-    console.warn("[structureValidator] Missing image URLs, skipping validation");
-    return createDisabledResult("Missing image URLs");
+  const normalizedOriginal = normalizeHttpUrl(originalUrl, "originalUrl");
+  const normalizedEnhanced = normalizeHttpUrl(enhancedUrl, "enhancedUrl");
+  if (!normalizedOriginal.ok || !normalizedEnhanced.ok) {
+    console.warn("[structureValidator] Invalid image URL(s), skipping validation", {
+      originalValid: normalizedOriginal.ok,
+      originalReason: normalizedOriginal.ok ? undefined : normalizedOriginal.reason,
+      enhancedValid: normalizedEnhanced.ok,
+      enhancedReason: normalizedEnhanced.ok ? undefined : normalizedEnhanced.reason,
+      mode,
+    });
+    return {
+      ...createDisabledResult("Invalid image URLs"),
+      mode,
+      skipCode: "VALIDATION_SKIPPED_INVALID_INPUT_URL",
+      error: `invalid_image_urls:${normalizedOriginal.ok ? "ok" : normalizedOriginal.reason}|${normalizedEnhanced.ok ? "ok" : normalizedEnhanced.reason}`,
+    };
   }
 
   console.log(`[structureValidator] Validating structure (mode=${mode}, sensitivity=${sensitivity}°)`);
-  console.log(`[structureValidator] Original: ${originalUrl.substring(0, 80)}...`);
-  console.log(`[structureValidator] Enhanced: ${enhancedUrl.substring(0, 80)}...`);
+  console.log(`[structureValidator] Original: ${normalizedOriginal.value.substring(0, 80)}...`);
+  console.log(`[structureValidator] Enhanced: ${normalizedEnhanced.value.substring(0, 80)}...`);
 
   try {
     const startTime = Date.now();
 
     // Call OpenCV validator microservice
     const response = await axios.post(
-      `${url}/validate-structure`,
+      `${validatorUrl.value}/validate-structure`,
       {
-        originalUrl,
-        enhancedUrl,
+        originalUrl: normalizedOriginal.value,
+        enhancedUrl: normalizedEnhanced.value,
         sensitivity,
       },
       {
@@ -182,6 +228,7 @@ export async function validateStructure(
 
     return {
       mode,
+      status: "ok",
       isSuspicious: data.isSuspicious,
       deviationScore: data.deviationScore,
       verticalShift: data.verticalShift,
@@ -202,6 +249,7 @@ export async function validateStructure(
       return {
         ...createDisabledResult(`Validation service error: ${axiosError.response.status}`),
         mode,
+        status: "error",
         error: String(axiosError.response.data),
       };
     } else if (axiosError.request) {
@@ -212,6 +260,7 @@ export async function validateStructure(
       return {
         ...createDisabledResult("Validation service unreachable"),
         mode,
+        status: "error",
         error: axiosError.message,
       };
     } else {
@@ -220,6 +269,7 @@ export async function validateStructure(
       return {
         ...createDisabledResult("Validation error"),
         mode,
+        status: "error",
         error: String(error),
       };
     }
@@ -248,6 +298,10 @@ export async function runStructuralCheck(
   // Log results (always, for all modes)
   console.log("[structureValidator] === STRUCTURAL VALIDATION RESULT ===");
   console.log(`[structureValidator] Mode: ${result.mode}`);
+  console.log(`[structureValidator] Status: ${result.status || "ok"}`);
+  if (result.skipCode) {
+    console.log(`[structureValidator] SkipCode: ${result.skipCode}`);
+  }
   console.log(`[structureValidator] Deviation Score: ${result.deviationScore}°`);
   console.log(`[structureValidator] Vertical Shift: ${result.verticalShift}°`);
   console.log(`[structureValidator] Horizontal Shift: ${result.horizontalShift}°`);
