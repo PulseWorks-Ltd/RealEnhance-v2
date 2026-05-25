@@ -1,0 +1,32 @@
+{
+  "generatedAt": "2026-05-25T09:01:19.493Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation-smoke/run_20260525090119479",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "totalRooms": 5,
+  "totalSecondaryViews": 7,
+  "completedCases": 0,
+  "successCount": 0,
+  "failureCount": 0,
+  "skippedCount": 0,
+  "successRate": 0,
+  "plannerFailureRate": 0,
+  "occupancyFailureRate": 0,
+  "continuityPassRate": 0,
+  "averageOccupancyAreaRatio": 0,
+  "averageUnionOccupancyRatio": 0,
+  "averageRequiredClusterOccupancy": 0,
+  "averageOptionalClusterOccupancy": 0,
+  "averageRetryCount": 0,
+  "total429Count": 0,
+  "failureCategories": {},
+  "roomTypeBreakdown": {},
+  "occupancyDistribution": {
+    "required": [],
+    "optional": [],
+    "union": [],
+    "variance": 0
+  },
+  "cases": []
+}

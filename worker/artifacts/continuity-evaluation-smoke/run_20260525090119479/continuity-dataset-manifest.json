@@ -1,0 +1,55 @@
+{
+  "generatedAt": "2026-05-25T09:01:19.488Z",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "totalRooms": 5,
+  "totalSecondaryViews": 7,
+  "groups": [
+    {
+      "roomKey": "bedroom_1",
+      "roomLabel": "Bedroom 1",
+      "roomType": "bedroom",
+      "masterImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.1.jpg",
+      "secondaryImages": [
+        "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg"
+      ]
+    },
+    {
+      "roomKey": "bedroom_2",
+      "roomLabel": "Bedroom 2",
+      "roomType": "bedroom",
+      "masterImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 2.1.jpg",
+      "secondaryImages": [
+        "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 2.2.jpg"
+      ]
+    },
+    {
+      "roomKey": "bedroom_3",
+      "roomLabel": "Bedroom 3",
+      "roomType": "bedroom",
+      "masterImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 3.1.jpg",
+      "secondaryImages": [
+        "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 3.2.jpg"
+      ]
+    },
+    {
+      "roomKey": "kitchen_1",
+      "roomLabel": "Kitchen 1",
+      "roomType": "kitchen",
+      "masterImage": "/workspaces/RealEnhance-v2/MultiView Images/Kitchen 1.1.jpg",
+      "secondaryImages": [
+        "/workspaces/RealEnhance-v2/MultiView Images/Kitchen 1.2.jpg"
+      ]
+    },
+    {
+      "roomKey": "lounge_1",
+      "roomLabel": "Lounge 1",
+      "roomType": "living_room",
+      "masterImage": "/workspaces/RealEnhance-v2/MultiView Images/Lounge 1.1.jpg",
+      "secondaryImages": [
+        "/workspaces/RealEnhance-v2/MultiView Images/Lounge 1.2.jpg",
+        "/workspaces/RealEnhance-v2/MultiView Images/Lounge 1.3.jpg",
+        "/workspaces/RealEnhance-v2/MultiView Images/Lounge 1.4.jpg"
+      ]
+    }
+  ]
+}

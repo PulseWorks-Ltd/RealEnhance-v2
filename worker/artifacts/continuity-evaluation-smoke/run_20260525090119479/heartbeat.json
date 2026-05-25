@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T09:01:19.491Z",
+  "uptimeMs": 1,
+  "rssMb": 113.1,
+  "heapTotalMb": 31.5,
+  "heapUsedMb": 18.8,
+  "externalMb": 3.8,
+  "arrayBuffersMb": 0.1,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": null,
+    "roomLabel": null,
+    "roomType": null,
+    "secondaryView": null,
+    "secondaryImage": null,
+    "status": null,
+    "failureCategory": null,
+    "failureReason": null
+  },
+  "completedCases": 0,
+  "failedCases": 0,
+  "skippedCases": 0,
+  "totalCases": 0,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "casesCompleted": 0,
+  "currentCaseStatus": null
+}

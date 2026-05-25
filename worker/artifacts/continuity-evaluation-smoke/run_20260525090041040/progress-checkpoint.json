@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-05-25T09:00:41.070Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation-smoke/run_20260525090041040",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "completedCases": 0,
+  "failedCases": 0,
+  "skippedCases": 0,
+  "totalCases": 0,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": null,
+    "roomLabel": null,
+    "roomType": null,
+    "secondaryView": null,
+    "secondaryImage": null,
+    "status": null,
+    "failureCategory": null,
+    "failureReason": null
+  },
+  "cases": []
+}

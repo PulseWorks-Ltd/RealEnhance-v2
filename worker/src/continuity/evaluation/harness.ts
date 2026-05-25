@@ -46,6 +46,56 @@ type EvaluationCase = {
   secondaryView: number;
 };
 
+type RuntimeMemorySnapshot = {
+  rss: number;
+  heapTotal: number;
+  heapUsed: number;
+  external: number;
+  arrayBuffers: number;
+};
+
+type RuntimePhase =
+  | "idle"
+  | "planner"
+  | "occupancy"
+  | "continuity"
+  | "validator"
+  | "checkpoint"
+  | "finalizing";
+
+type RuntimeCaseState = {
+  roomKey: string | null;
+  roomLabel: string | null;
+  roomType: string | null;
+  secondaryView: number | null;
+  secondaryImage: string | null;
+  status: CaseStatus | null;
+  failureCategory: string | null;
+  failureReason: string | null;
+};
+
+type EvaluationRuntimeState = {
+  runDir: string;
+  datasetDir: string;
+  mode: EvaluationMode;
+  sourceRunDir: string | null;
+  useGeminiOccupancy: boolean;
+  startTimeMs: number;
+  currentPhase: RuntimePhase;
+  currentProviderCall: string | null;
+  currentCase: RuntimeCaseState;
+  completedCases: number;
+  failedCases: number;
+  skippedCases: number;
+  totalCases: number;
+  checkpointPath: string;
+  heartbeatPath: string;
+  crashReportPath: string;
+  pidFilePath: string;
+  shutdownRequested: boolean;
+  lastCheckpoint?: unknown;
+};
+
 type PlannerExecution = {
   plan: PlacementPlan;
   prompt: string;
@@ -147,6 +197,36 @@ export type RunContinuityEvaluationOptions = {
   sourceRunDir?: string;
   useGeminiOccupancy: boolean;
   maxCases?: number;
+  resume?: boolean;
+  runDir?: string;
+  daemon?: boolean;
+  pidFilePath?: string;
+  heartbeatIntervalMs?: number;
+};
+
+type ResumeCheckpoint = {
+  generatedAt?: string;
+  runDir?: string;
+  completedCases?: number;
+  failedCases?: number;
+  skippedCases?: number;
+  totalCases?: number;
+  cases?: Array<{
+    roomKey: string;
+    secondaryView: number;
+    status: CaseStatus;
+    roomLabel?: string;
+    roomType?: string;
+    secondaryImage?: string;
+    mode?: EvaluationMode;
+    plannerMode?: "live" | "replay";
+    plannerPath?: string | null;
+    occupancyGenerationMode?: CompiledMaskResult["occupancyGenerationMode"] | null;
+    failureCategory?: string | null;
+    failureReason?: string | null;
+    outputDir?: string;
+    telemetry?: CaseResult["telemetry"];
+  }>;
 };
 
 function normalizeMode(mode: EvaluationMode): EvaluationMode {
@@ -204,6 +284,266 @@ async function readJson<T>(filePath: string): Promise<T> {
 
 async function writeJson(filePath: string, value: unknown): Promise<void> {
   await fs.writeFile(filePath, JSON.stringify(value, null, 2));
+}
+
+function captureMemorySnapshot(): RuntimeMemorySnapshot {
+  const memory = process.memoryUsage();
+  return {
+    rss: memory.rss,
+    heapTotal: memory.heapTotal,
+    heapUsed: memory.heapUsed,
+    external: memory.external,
+    arrayBuffers: memory.arrayBuffers,
+  };
+}
+
+function formatMemoryMb(snapshot: RuntimeMemorySnapshot): Record<string, number> {
+  return {
+    rssMb: Number((snapshot.rss / 1024 / 1024).toFixed(1)),
+    heapTotalMb: Number((snapshot.heapTotal / 1024 / 1024).toFixed(1)),
+    heapUsedMb: Number((snapshot.heapUsed / 1024 / 1024).toFixed(1)),
+    externalMb: Number((snapshot.external / 1024 / 1024).toFixed(1)),
+    arrayBuffersMb: Number((snapshot.arrayBuffers / 1024 / 1024).toFixed(1)),
+  };
+}
+
+async function bestEffortWriteJson(filePath: string, value: unknown): Promise<void> {
+  try {
+    await writeJson(filePath, value);
+  } catch {
+    // best-effort diagnostics only
+  }
+}
+
+function createRuntimeState(params: {
+  runDir: string;
+  datasetDir: string;
+  mode: EvaluationMode;
+  sourceRunDir?: string;
+  useGeminiOccupancy: boolean;
+  totalCases: number;
+  pidFilePath?: string;
+}): EvaluationRuntimeState {
+  const pidFilePath = params.pidFilePath || path.join(params.runDir, "continuity-eval.pid");
+  return {
+    runDir: params.runDir,
+    datasetDir: params.datasetDir,
+    mode: params.mode,
+    sourceRunDir: params.sourceRunDir || null,
+    useGeminiOccupancy: params.useGeminiOccupancy,
+    startTimeMs: Date.now(),
+    currentPhase: "idle",
+    currentProviderCall: null,
+    currentCase: {
+      roomKey: null,
+      roomLabel: null,
+      roomType: null,
+      secondaryView: null,
+      secondaryImage: null,
+      status: null,
+      failureCategory: null,
+      failureReason: null,
+    },
+    completedCases: 0,
+    failedCases: 0,
+    skippedCases: 0,
+    totalCases: params.totalCases,
+    checkpointPath: path.join(params.runDir, "progress-checkpoint.json"),
+    heartbeatPath: path.join(params.runDir, "heartbeat.json"),
+    crashReportPath: path.join(params.runDir, "crash-report.json"),
+    pidFilePath,
+    shutdownRequested: false,
+  };
+}
+
+function runtimeSnapshot(state: EvaluationRuntimeState): Record<string, unknown> {
+  const memory = captureMemorySnapshot();
+  return {
+    timestamp: new Date().toISOString(),
+    uptimeMs: Date.now() - state.startTimeMs,
+    ...formatMemoryMb(memory),
+    currentPhase: state.currentPhase,
+    currentProviderCall: state.currentProviderCall,
+    currentCase: state.currentCase,
+    completedCases: state.completedCases,
+    failedCases: state.failedCases,
+    skippedCases: state.skippedCases,
+    totalCases: state.totalCases,
+    datasetDir: state.datasetDir,
+    mode: state.mode,
+    sourceRunDir: state.sourceRunDir,
+    useGeminiOccupancy: state.useGeminiOccupancy,
+  };
+}
+
+async function writeCheckpoint(state: EvaluationRuntimeState, cases: CaseResult[]): Promise<void> {
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    runDir: state.runDir,
+    datasetDir: state.datasetDir,
+    mode: state.mode,
+    sourceRunDir: state.sourceRunDir,
+    useGeminiOccupancy: state.useGeminiOccupancy,
+    completedCases: state.completedCases,
+    failedCases: state.failedCases,
+    skippedCases: state.skippedCases,
+    totalCases: state.totalCases,
+    currentPhase: state.currentPhase,
+    currentProviderCall: state.currentProviderCall,
+    currentCase: state.currentCase,
+    cases: cases.map((item) => ({
+      roomKey: item.roomKey,
+      roomType: item.roomType,
+      secondaryView: item.secondaryView,
+      status: item.status,
+      failureCategory: item.failureCategory,
+      failureReason: item.failureReason,
+      plannerMode: item.plannerMode,
+      occupancyGenerationMode: item.occupancyGenerationMode,
+      outputDir: item.outputDir,
+      telemetry: item.telemetry,
+    })),
+  };
+  state.lastCheckpoint = payload;
+  await bestEffortWriteJson(state.checkpointPath, payload);
+}
+
+async function writeHeartbeat(state: EvaluationRuntimeState, cases: CaseResult[]): Promise<void> {
+  const payload = {
+    ...runtimeSnapshot(state),
+    casesCompleted: cases.length,
+    currentCaseStatus: state.currentCase.status,
+  };
+  await bestEffortWriteJson(state.heartbeatPath, payload);
+}
+
+async function writeCrashReport(state: EvaluationRuntimeState, error: unknown, signal?: NodeJS.Signals | string): Promise<void> {
+  const payload = {
+    ...runtimeSnapshot(state),
+    signal: signal || null,
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack || null : null,
+    checkpointPath: state.checkpointPath,
+  };
+  await bestEffortWriteJson(state.crashReportPath, payload);
+  await bestEffortWriteJson(state.checkpointPath, state.lastCheckpoint || payload);
+}
+
+function attachRuntimeHandlers(state: EvaluationRuntimeState, cases: CaseResult[]): () => void {
+  let shuttingDown = false;
+
+  const terminate = (signal: NodeJS.Signals | string, error?: unknown, exitCode = 128) => {
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    state.shutdownRequested = true;
+    void (async () => {
+      await writeCrashReport(state, error || new Error(`Evaluation terminated by ${signal}`), signal);
+      await writeHeartbeat(state, cases);
+      process.exit(exitCode);
+    })();
+  };
+
+  const onSigint = () => { terminate("SIGINT", undefined, 130); };
+  const onSigterm = () => { terminate("SIGTERM", undefined, 143); };
+  const onUncaughtException = (error: Error) => { terminate("uncaughtException", error, 1); };
+  const onUnhandledRejection = (reason: unknown) => { terminate("unhandledRejection", reason, 1); };
+
+  process.on("SIGINT", onSigint);
+  process.on("SIGTERM", onSigterm);
+  process.on("uncaughtException", onUncaughtException);
+  process.on("unhandledRejection", onUnhandledRejection);
+
+  return () => {
+    process.off("SIGINT", onSigint);
+    process.off("SIGTERM", onSigterm);
+    process.off("uncaughtException", onUncaughtException);
+    process.off("unhandledRejection", onUnhandledRejection);
+  };
+}
+
+async function loadResumeCheckpoint(runDir: string): Promise<ResumeCheckpoint | null> {
+  const checkpointPath = path.join(runDir, "progress-checkpoint.json");
+  try {
+    return await readJson<ResumeCheckpoint>(checkpointPath);
+  } catch {
+    return null;
+  }
+}
+
+function mergeResumedCases(allCases: EvaluationCase[], checkpoint: ResumeCheckpoint | null): EvaluationCase[] {
+  if (!checkpoint?.cases?.length) {
+    return allCases;
+  }
+  const completed = new Set(checkpoint.cases.filter((item) => item.status === "success").map((item) => `${item.roomKey}:${item.secondaryView}`));
+  return allCases.filter((item) => !completed.has(`${item.roomKey}:${item.secondaryView}`));
+}
+
+function materializeCheckpointCases(allCases: EvaluationCase[], checkpoint: ResumeCheckpoint | null, mode: EvaluationMode, runDir: string): CaseResult[] {
+  if (!checkpoint?.cases?.length) {
+    return [];
+  }
+  const lookup = new Map(allCases.map((item) => [`${item.roomKey}:${item.secondaryView}`, item]));
+  return checkpoint.cases.map((item) => {
+    const manifestCase = lookup.get(`${item.roomKey}:${item.secondaryView}`);
+    return {
+      roomKey: item.roomKey,
+      roomLabel: item.roomLabel || manifestCase?.roomLabel || item.roomKey,
+      roomType: item.roomType || manifestCase?.roomType || "unknown",
+      secondaryView: item.secondaryView,
+      secondaryImage: item.secondaryImage || manifestCase?.secondaryImage || "",
+      status: item.status,
+      mode: item.mode || mode,
+      plannerMode: item.plannerMode || "replay",
+      plannerPath: item.plannerPath || null,
+      occupancyGenerationMode: item.occupancyGenerationMode || null,
+      outputDir: item.outputDir || path.join(runDir, slugForRoomCase(item.roomKey, item.secondaryView)),
+      failureCategory: item.failureCategory || null,
+      failureReason: item.failureReason || null,
+      telemetry: item.telemetry || {
+        plannerLatencyMs: null,
+        occupancyLatencyMs: null,
+        renderLatencyMs: null,
+        occupancyAreaRatio: null,
+        finalAreaRatio: null,
+        requiredClusterOccupancy: null,
+        optionalClusterOccupancy: null,
+        unionOccupancy: null,
+        retryCount: null,
+        clusterApiCallCount: null,
+        rateLimit429Count: 0,
+        validatorDriftPass: null,
+      },
+    };
+  });
+}
+
+async function withRuntimePhase<T>(state: EvaluationRuntimeState, phase: RuntimePhase, providerCall: string | null, work: () => Promise<T>): Promise<T> {
+  const previousPhase = state.currentPhase;
+  const previousCall = state.currentProviderCall;
+  const start = captureMemorySnapshot();
+  const startedAt = Date.now();
+  state.currentPhase = phase;
+  state.currentProviderCall = providerCall;
+  nLog("[EVAL_PHASE_START]", {
+    phase,
+    providerCall,
+    ...formatMemoryMb(start),
+  });
+  try {
+    return await work();
+  } finally {
+    const end = captureMemorySnapshot();
+    nLog("[EVAL_PHASE_END]", {
+      phase,
+      providerCall,
+      latencyMs: Date.now() - startedAt,
+      ...formatMemoryMb(end),
+    });
+    state.currentPhase = previousPhase;
+    state.currentProviderCall = previousCall;
+  }
 }
 
 function parseDatasetFilename(fileName: string): { roomLabel: string; view: number } | null {
@@ -468,6 +808,7 @@ async function resolvePlannerExecution(params: {
   sourceRunDir?: string;
   secondaryRef: ImageReference;
   masterRef: ImageReference;
+  runtime?: EvaluationRuntimeState;
 }): Promise<PlannerExecution> {
   const mode = normalizeMode(params.mode);
   const replayModes: EvaluationMode[] = ["replay_planner", "occupancy_only", "continuity_only", "validator_only"];
@@ -511,15 +852,25 @@ async function resolvePlannerExecution(params: {
   }
 
   const plannerProvider = new VertexSpatialPlannerProvider();
-  const planner = await plannerProvider.plan({
-    secondaryImage: params.secondaryRef,
-    masterImage: params.masterRef,
-    roomType: params.caseItem.roomType,
-    continuityGroupId: `${params.caseItem.roomKey}-group`,
-    jobId: `${params.caseItem.roomKey}-planner`,
-    imageId: `${params.caseItem.roomKey}-view-${params.caseItem.secondaryView}`,
-    renderMode: "full_secondary_continuity",
-  });
+  const planner = await (params.runtime
+    ? withRuntimePhase(params.runtime, "planner", `${params.caseItem.roomKey}-planner`, () => plannerProvider.plan({
+        secondaryImage: params.secondaryRef,
+        masterImage: params.masterRef,
+        roomType: params.caseItem.roomType,
+        continuityGroupId: `${params.caseItem.roomKey}-group`,
+        jobId: `${params.caseItem.roomKey}-planner`,
+        imageId: `${params.caseItem.roomKey}-view-${params.caseItem.secondaryView}`,
+        renderMode: "full_secondary_continuity",
+      }))
+    : plannerProvider.plan({
+        secondaryImage: params.secondaryRef,
+        masterImage: params.masterRef,
+        roomType: params.caseItem.roomType,
+        continuityGroupId: `${params.caseItem.roomKey}-group`,
+        jobId: `${params.caseItem.roomKey}-planner`,
+        imageId: `${params.caseItem.roomKey}-view-${params.caseItem.secondaryView}`,
+        renderMode: "full_secondary_continuity",
+      }));
 
   await writeJson(plannerPathInCase, planner.plan);
   await fs.writeFile(path.join(params.plannerDir, "planner-raw.txt"), planner.rawText || "");
@@ -562,6 +913,8 @@ async function runCase(params: {
   runDir: string;
   sourceRunDir?: string;
   useGeminiOccupancy: boolean;
+  runtime: EvaluationRuntimeState;
+  caseResults: CaseResult[];
 }): Promise<CaseResult> {
   const caseOutputDir = path.join(params.runDir, slugForRoomCase(params.caseItem.roomKey, params.caseItem.secondaryView));
   const plannerDir = path.join(caseOutputDir, "planner");
@@ -620,6 +973,7 @@ async function runCase(params: {
       sourceRunDir: params.sourceRunDir,
       secondaryRef,
       masterRef,
+      runtime: params.runtime,
     });
 
     const normalizedMode = normalizeMode(params.mode);
@@ -631,7 +985,7 @@ async function runCase(params: {
       process.env.CONTINUITY_USE_GEMINI_OCCUPANCY_MASK = params.useGeminiOccupancy ? "true" : "false";
       const caseJobId = `eval-${params.caseItem.roomKey}_v${params.caseItem.secondaryView}`;
       const caseImageId = `${params.caseItem.roomKey}-view-${params.caseItem.secondaryView}`;
-      compiledMask = await compileDeterministicMask({
+      compiledMask = await withRuntimePhase(params.runtime, "occupancy", caseJobId, () => compileDeterministicMask({
         plan: planner.plan,
         secondaryImagePath: params.caseItem.secondaryImage,
         masterImagePath: params.caseItem.masterImage,
@@ -641,15 +995,20 @@ async function runCase(params: {
         continuityGroupId: params.caseItem.roomKey,
         jobId: caseJobId,
         imageId: caseImageId,
-      });
+      }));
 
-      const maskValidation = await validateCompiledMask({
+      if (!compiledMask) {
+        throw new VertexSecondaryContinuityError("Missing compiled mask after occupancy generation", "occupancy_generation_failed");
+      }
+      const resolvedCompiledMask = compiledMask;
+
+      const maskValidation = await withRuntimePhase(params.runtime, "validator", `${caseJobId}-mask-validation`, () => validateCompiledMask({
         sourceImagePath: params.caseItem.secondaryImage,
-        compiledMask,
+        compiledMask: resolvedCompiledMask,
         continuityGroupId: params.caseItem.roomKey,
         jobId: caseJobId,
         imageId: caseImageId,
-      });
+      }));
       await writeJson(path.join(telemetryDir, "mask-validation.json"), maskValidation);
 
       statusBase.telemetry.occupancyAreaRatio = compiledMask.occupancyAreaRatio;
@@ -703,7 +1062,7 @@ async function runCase(params: {
         materialPalette: [],
         lightingHint: "adapted natural lighting",
       });
-      const renderResult = await renderer.render({
+      const renderResult = await withRuntimePhase(params.runtime, "continuity", `eval-${params.caseItem.roomKey}_v${params.caseItem.secondaryView}-render`, () => renderer.render({
         sourceImage: secondaryRef,
         maskImage: {
           kind: "local",
@@ -718,7 +1077,7 @@ async function runCase(params: {
         jobId: `eval-${params.caseItem.roomKey}_v${params.caseItem.secondaryView}`,
         imageId: `${params.caseItem.roomKey}-view-${params.caseItem.secondaryView}`,
         renderMode: "full_secondary_continuity",
-      });
+      }));
       continuityOutputPath = renderResult.outputPath;
       statusBase.telemetry.renderLatencyMs = renderResult.latencyMs;
       await writeJson(path.join(continuityDir, "render-summary.json"), {
@@ -743,12 +1102,12 @@ async function runCase(params: {
     }
 
     if (continuityOutputPath && maskForRenderPath) {
-      driftSummary = await evaluateContinuityDrift({
+      driftSummary = await withRuntimePhase(params.runtime, "validator", `${params.caseItem.roomKey}-drift`, () => evaluateContinuityDrift({
         sourceImagePath: params.caseItem.secondaryImage,
         renderedImagePath: continuityOutputPath,
         maskPath: maskForRenderPath,
         outputDir: continuityDir,
-      });
+      }));
       statusBase.telemetry.validatorDriftPass = driftSummary.driftPass;
     }
 
@@ -913,8 +1272,9 @@ export async function runContinuityEvaluation(options: RunContinuityEvaluationOp
   const mode = normalizeMode(options.mode);
   await bootstrapGoogleCredentialsFromEnv();
 
+  await ensureDir(options.outputRootDir);
   const runId = `run_${new Date().toISOString().replace(/[-:.TZ]/g, "")}`;
-  const runDir = path.join(options.outputRootDir, runId);
+  const runDir = options.runDir ? path.resolve(options.runDir) : path.join(options.outputRootDir, runId);
   await ensureDir(runDir);
 
   nLog("[CONTINUITY_EVALUATION_START]", {
@@ -928,46 +1288,100 @@ export async function runContinuityEvaluation(options: RunContinuityEvaluationOp
   const datasetManifest = await discoverDataset(options.datasetDir);
   await writeJson(path.join(runDir, "continuity-dataset-manifest.json"), datasetManifest);
   await writeJson(path.join(runDir, "dataset-manifest.json"), datasetManifest);
+  await bestEffortWriteJson(path.join(options.outputRootDir, "latest-run.json"), { runDir, generatedAt: new Date().toISOString() });
 
   const allCases = expandCases(datasetManifest);
+  const checkpoint = options.resume ? await loadResumeCheckpoint(runDir) : null;
   const targetCases = Number.isFinite(options.maxCases)
     ? allCases.slice(0, Math.max(0, Number(options.maxCases || 0)))
     : allCases;
+  const pendingCases = options.resume ? mergeResumedCases(targetCases, checkpoint) : targetCases;
+  const seededResults = materializeCheckpointCases(targetCases, checkpoint, mode, runDir);
+  const runtime = createRuntimeState({
+    runDir,
+    datasetDir: options.datasetDir,
+    mode,
+    sourceRunDir: options.sourceRunDir,
+    useGeminiOccupancy: options.useGeminiOccupancy,
+    totalCases: pendingCases.length,
+    pidFilePath: options.pidFilePath,
+  });
+  await bestEffortWriteJson(runtime.pidFilePath, { pid: process.pid, runDir, generatedAt: new Date().toISOString() });
 
-  const caseResults: CaseResult[] = [];
-  for (const caseItem of targetCases) {
-    const result = await runCase({
-      caseItem,
-      mode,
-      runDir,
-      sourceRunDir: options.sourceRunDir,
-      useGeminiOccupancy: options.useGeminiOccupancy,
-    });
-    caseResults.push(result);
+  const caseResults: CaseResult[] = [...seededResults];
+  const cleanupHandlers = attachRuntimeHandlers(runtime, caseResults);
+  const heartbeatIntervalMs = Math.max(10_000, Math.floor(options.heartbeatIntervalMs || 30_000));
+  const heartbeatTimer = setInterval(() => {
+    void (async () => {
+      nLog("[EVAL_HEARTBEAT]", {
+        runDir,
+        ...runtimeSnapshot(runtime),
+      });
+      await writeHeartbeat(runtime, caseResults);
+      await writeCheckpoint(runtime, caseResults);
+    })();
+  }, heartbeatIntervalMs);
+  heartbeatTimer.unref();
 
-    nLog("[CONTINUITY_EVALUATION_CASE]", {
-      roomKey: result.roomKey,
-      secondaryView: result.secondaryView,
-      status: result.status,
-      failureCategory: result.failureCategory,
-      outputDir: result.outputDir,
-    });
+  try {
+    runtime.currentPhase = "checkpoint";
+    await writeCheckpoint(runtime, caseResults);
 
-    // Write incremental checkpoint so partial progress survives a kill signal
-    await writeJson(path.join(runDir, "progress-checkpoint.json"), {
-      generatedAt: new Date().toISOString(),
-      completedCases: caseResults.length,
-      totalCases: targetCases.length,
-      successCount: caseResults.filter((r) => r.status === "success").length,
-      failureCount: caseResults.filter((r) => r.status === "failure").length,
-      cases: caseResults.map((r) => ({
-        roomKey: r.roomKey,
-        secondaryView: r.secondaryView,
-        status: r.status,
-        failureCategory: r.failureCategory,
-        occupancyAreaRatio: r.telemetry.occupancyAreaRatio,
-      })),
-    });
+    for (const caseItem of pendingCases) {
+      runtime.currentCase = {
+        roomKey: caseItem.roomKey,
+        roomLabel: caseItem.roomLabel,
+        roomType: caseItem.roomType,
+        secondaryView: caseItem.secondaryView,
+        secondaryImage: caseItem.secondaryImage,
+        status: null,
+        failureCategory: null,
+        failureReason: null,
+      };
+      runtime.currentPhase = "idle";
+      nLog("[EVAL_MEMORY]", {
+        scope: "case-start",
+        roomKey: caseItem.roomKey,
+        secondaryView: caseItem.secondaryView,
+        ...formatMemoryMb(captureMemorySnapshot()),
+      });
+
+      const result = await runCase({
+        caseItem,
+        mode,
+        runDir,
+        sourceRunDir: options.sourceRunDir,
+        useGeminiOccupancy: options.useGeminiOccupancy,
+        runtime,
+        caseResults,
+      });
+      caseResults.push(result);
+
+      runtime.completedCases = caseResults.length;
+      runtime.failedCases = caseResults.filter((item) => item.status === "failure").length;
+      runtime.skippedCases = caseResults.filter((item) => item.status === "skipped").length;
+      runtime.currentCase.status = result.status;
+      runtime.currentCase.failureCategory = result.failureCategory;
+      runtime.currentCase.failureReason = result.failureReason;
+
+      nLog("[CONTINUITY_EVALUATION_CASE]", {
+        roomKey: result.roomKey,
+        secondaryView: result.secondaryView,
+        status: result.status,
+        failureCategory: result.failureCategory,
+        outputDir: result.outputDir,
+      });
+
+      runtime.currentPhase = "checkpoint";
+      await writeCheckpoint(runtime, caseResults);
+      await writeHeartbeat(runtime, caseResults);
+    }
+  } finally {
+    clearInterval(heartbeatTimer);
+    cleanupHandlers();
+    await writeCheckpoint(runtime, caseResults);
+    await writeHeartbeat(runtime, caseResults);
+    await bestEffortWriteJson(runtime.pidFilePath, { pid: process.pid, runDir, generatedAt: new Date().toISOString(), finishedAt: new Date().toISOString() });
   }
 
   const summary = summarizeCases({
