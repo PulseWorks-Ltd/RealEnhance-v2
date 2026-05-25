@@ -19,9 +19,12 @@ type ConnectedComponentStats = {
   centroidY: number;
 };
 
-type PriorZone = {
-  zoneId: string;
-  furnitureType: string;
+type PriorCluster = {
+  clusterId: string;
+  clusterLabel: string;
+  required: boolean;
+  zoneIds: string[];
+  furnitureTypes: string[];
   anchorX: number;
   anchorY: number;
   expectedAreaRatioMin: number;
@@ -41,8 +44,10 @@ type AttemptFailureMode =
   | "low_floor_contact"
   | "low_anchor_relevance";
 
-type ZoneAttemptSummary = {
-  zoneId: string;
+type ClusterAttemptSummary = {
+  clusterId: string;
+  required: boolean;
+  clusterLabel: string;
   attempt: number;
   failureMode: AttemptFailureMode;
   score: number;
@@ -98,9 +103,14 @@ export type GeminiOccupancyMaskResult = {
   anchorDistanceHeatmapPath: string;
   floorContactVisualizationPath: string;
   acceptedRejectedOverlayPath: string;
-  perObjectMaskPaths: string[];
+  perClusterMaskPaths: string[];
   usedConservativeFallback: boolean;
   retryCount: number;
+  clusterCount: number;
+  requiredClusterCount: number;
+  optionalClusterCount: number;
+  clusterApiCallCount: number;
+  estimatedCallReductionRatio: number;
   qualityScore: number;
   model: string;
   latencyMs: number;
@@ -152,6 +162,53 @@ function floorTypeMultiplier(furnitureType: string): number {
   if (normalized.includes("chair")) return 0.9;
   if (normalized.includes("lamp")) return 0.45;
   return 1;
+}
+
+function normalizeFurnitureType(value: string): string {
+  return String(value || "").trim().toLowerCase().replace(/[^a-z0-9]+/g, "_");
+}
+
+function classifyClusterRole(furnitureType: string): "anchor" | "support" | "decor" {
+  const normalized = normalizeFurnitureType(furnitureType);
+  if (normalized.includes("bed") || normalized.includes("sofa") || normalized.includes("couch") || normalized.includes("dining_table") || normalized.includes("desk") || normalized.includes("table")) {
+    return "anchor";
+  }
+  if (normalized.includes("nightstand") || normalized.includes("bedside") || normalized.includes("chair") || normalized.includes("rug") || normalized.includes("coffee_table") || normalized.includes("side_table")) {
+    return "support";
+  }
+  return "decor";
+}
+
+function inferClusterFamily(params: { roomType: string; furnitureType: string }): string {
+  const roomType = normalizeFurnitureType(params.roomType);
+  const furnitureType = normalizeFurnitureType(params.furnitureType);
+  if (roomType.includes("bedroom")) {
+    if (furnitureType.includes("bed") || furnitureType.includes("nightstand") || furnitureType.includes("bedside") || furnitureType.includes("lamp") || furnitureType.includes("rug")) {
+      return "bedside_composition";
+    }
+  }
+  if (roomType.includes("living")) {
+    if (furnitureType.includes("sofa") || furnitureType.includes("couch") || furnitureType.includes("coffee_table") || furnitureType.includes("side_table") || furnitureType.includes("rug")) {
+      return "seating_composition";
+    }
+  }
+  if (roomType.includes("dining")) {
+    if (furnitureType.includes("dining_table") || furnitureType.includes("chair") || furnitureType.includes("centerpiece")) {
+      return "dining_composition";
+    }
+  }
+  if (roomType.includes("office") || roomType.includes("study")) {
+    if (furnitureType.includes("desk") || furnitureType.includes("chair") || furnitureType.includes("monitor") || furnitureType.includes("lamp")) {
+      return "desk_composition";
+    }
+  }
+  if (classifyClusterRole(furnitureType) === "anchor") {
+    return `anchor_${furnitureType}`;
+  }
+  if (classifyClusterRole(furnitureType) === "support") {
+    return "support_group";
+  }
+  return "decor_group";
 }
 
 function getRoomTypeBandProfile(roomType: string): RoomTypeBandProfile {
@@ -253,6 +310,22 @@ function getZoneAreaBand(furnitureType: string): { min: number; target: number; 
   return { min: 0.003, target: 0.012, max: 0.06 };
 }
 
+function mergeAreaBands(bands: Array<{ min: number; target: number; max: number }>): { min: number; target: number; max: number } {
+  if (bands.length === 0) {
+    return { min: 0.003, target: 0.012, max: 0.06 };
+  }
+  const summed = bands.reduce((acc, band) => ({
+    min: acc.min + band.min,
+    target: acc.target + band.target,
+    max: acc.max + band.max,
+  }), { min: 0, target: 0, max: 0 });
+  return {
+    min: Math.max(0.004, Math.min(0.18, summed.min * 0.7)),
+    target: Math.max(0.01, Math.min(0.22, summed.target * 0.75)),
+    max: Math.max(0.03, Math.min(0.35, summed.max * 0.8)),
+  };
+}
+
 async function buildZonePriorMask(params: {
   zone: PlacementPlan["furnitureZones"][number];
   width: number;
@@ -307,32 +380,64 @@ function estimateFloorY(floorJunctions: NormalizedPoint[], xNorm: number): numbe
   return sorted[sorted.length - 1].y;
 }
 
-function buildPriorZones(plan: PlacementPlan, width: number, height: number, floorMask: Buffer): Promise<PriorZone[]> {
+function buildPriorClusters(plan: PlacementPlan, width: number, height: number, floorMask: Buffer): Promise<PriorCluster[]> {
   const floorJunctions = parsePoints(plan.structuralTopologyCage?.floorWallJunctions);
-  return Promise.all(plan.furnitureZones.map(async (zone) => {
-    const bbox = zone.normalizedBoundingBox;
-    const anchorXNorm = clamp01(bbox.x + (bbox.width / 2));
-    const floorY = estimateFloorY(floorJunctions, anchorXNorm);
-    const anchorYNorm = clamp01(Math.max(bbox.y + (bbox.height * 0.6), floorY));
-    const areaBand = getZoneAreaBand(zone.furnitureType);
-    const priorMask = await buildZonePriorMask({
-      zone,
-      width,
-      height,
-      floorMask,
+  const families = new Map<string, PlacementPlan["furnitureZones"]>();
+  for (const zone of plan.furnitureZones) {
+    const family = inferClusterFamily({ roomType: plan.roomType, furnitureType: zone.furnitureType });
+    const existing = families.get(family) || [];
+    existing.push(zone);
+    families.set(family, existing);
+  }
+
+  const clustered: Array<{ clusterId: string; clusterLabel: string; required: boolean; zones: PlacementPlan["furnitureZones"] }> = [];
+  for (const [family, zones] of families.entries()) {
+    const required = zones.some((zone) => classifyClusterRole(zone.furnitureType) === "anchor");
+    clustered.push({
+      clusterId: family,
+      clusterLabel: family.replace(/_/g, " "),
+      required,
+      zones,
     });
+  }
+
+  return Promise.all(clustered.map(async (cluster) => {
+    const zonePriorMasks: Buffer[] = [];
+    const anchorPoints: Array<{ x: number; y: number }> = [];
+    const areaBands: Array<{ min: number; target: number; max: number }> = [];
+
+    for (const zone of cluster.zones) {
+      const bbox = zone.normalizedBoundingBox;
+      const anchorXNorm = clamp01(bbox.x + (bbox.width / 2));
+      const floorY = estimateFloorY(floorJunctions, anchorXNorm);
+      const anchorYNorm = clamp01(Math.max(bbox.y + (bbox.height * 0.6), floorY));
+      anchorPoints.push({ x: anchorXNorm * width, y: anchorYNorm * height });
+      areaBands.push(getZoneAreaBand(zone.furnitureType));
+      zonePriorMasks.push(await buildZonePriorMask({ zone, width, height, floorMask }));
+    }
+
+    let priorMask = Buffer.alloc(width * height, 0);
+    for (const zoneMask of zonePriorMasks) {
+      priorMask = Buffer.from(safeMaskUnion(priorMask, zoneMask));
+    }
     const priorMaskPng = await sharp(priorMask, {
       raw: { width, height, channels: 1 },
     }).png().toBuffer();
+    const mergedBand = mergeAreaBands(areaBands);
+    const anchorX = anchorPoints.reduce((sum, point) => sum + point.x, 0) / Math.max(1, anchorPoints.length);
+    const anchorY = anchorPoints.reduce((sum, point) => sum + point.y, 0) / Math.max(1, anchorPoints.length);
 
     return {
-      zoneId: zone.id,
-      furnitureType: zone.furnitureType,
-      anchorX: anchorXNorm * width,
-      anchorY: anchorYNorm * height,
-      expectedAreaRatioMin: areaBand.min,
-      expectedAreaRatioTarget: areaBand.target,
-      expectedAreaRatioMax: areaBand.max,
+      clusterId: cluster.clusterId,
+      clusterLabel: cluster.clusterLabel,
+      required: cluster.required,
+      zoneIds: cluster.zones.map((zone) => zone.id),
+      furnitureTypes: cluster.zones.map((zone) => zone.furnitureType),
+      anchorX,
+      anchorY,
+      expectedAreaRatioMin: mergedBand.min,
+      expectedAreaRatioTarget: mergedBand.target,
+      expectedAreaRatioMax: mergedBand.max,
       priorMask,
       priorMaskPngBase64: priorMaskPng.toString("base64"),
     };
@@ -360,21 +465,25 @@ function buildAttemptInstruction(failureMode: AttemptFailureMode): string {
   }
 }
 
-function buildOccupancyPrompt(plan: PlacementPlan, priorZone: PriorZone, failureMode: AttemptFailureMode): string {
-  const zone = plan.furnitureZones.find((item) => item.id === priorZone.zoneId);
-  const bbox = zone?.normalizedBoundingBox || { x: 0, y: 0, width: 1, height: 1 };
-  const zoneHint = `zone_id=${priorZone.zoneId}; type=${priorZone.furnitureType}; anchor_px=(${Math.round(priorZone.anchorX)},${Math.round(priorZone.anchorY)}); bbox_norm=[x:${bbox.x.toFixed(3)},y:${bbox.y.toFixed(3)},w:${bbox.width.toFixed(3)},h:${bbox.height.toFixed(3)}]; expected_area_band=[min:${priorZone.expectedAreaRatioMin.toFixed(4)},target:${priorZone.expectedAreaRatioTarget.toFixed(4)},max:${priorZone.expectedAreaRatioMax.toFixed(4)}]`;
+function buildOccupancyPrompt(plan: PlacementPlan, priorCluster: PriorCluster, failureMode: AttemptFailureMode): string {
+  const zones = plan.furnitureZones.filter((item) => priorCluster.zoneIds.includes(item.id));
+  const zoneHints = zones.map((zone) => {
+    const bbox = zone.normalizedBoundingBox;
+    return `${zone.id}:${zone.furnitureType}[x:${bbox.x.toFixed(3)},y:${bbox.y.toFixed(3)},w:${bbox.width.toFixed(3)},h:${bbox.height.toFixed(3)}]`;
+  }).join(" | ");
+  const clusterHint = `cluster_id=${priorCluster.clusterId}; label=${priorCluster.clusterLabel}; required=${priorCluster.required}; anchor_px=(${Math.round(priorCluster.anchorX)},${Math.round(priorCluster.anchorY)}); furniture=${priorCluster.furnitureTypes.join(",")}; zones=${zoneHints}; expected_area_band=[min:${priorCluster.expectedAreaRatioMin.toFixed(4)},target:${priorCluster.expectedAreaRatioTarget.toFixed(4)},max:${priorCluster.expectedAreaRatioMax.toFixed(4)}]`;
   return [
-    "Generate a binary occupancy mask IMAGE for ONLY the target furniture zone described below.",
+    "Generate a binary occupancy mask IMAGE for ONLY the target furniture cluster described below.",
     "Output IMAGE ONLY. No text, no JSON.",
     "Mask semantics: WHITE=editable projected furniture occupancy, BLACK=protected.",
     "Hard constraints:",
-    "- Include only the specified furniture occupancy, perspective-aware.",
+    "- Include only the specified furniture composition occupancy, perspective-aware.",
+    "- Maintain relational coherence between the clustered furniture pieces.",
     "- Preserve architecture, envelope, openings, walls, ceiling.",
     "- Do not output giant room-spanning regions.",
     "- Do not infer hidden geometry.",
-    "- Keep region localized and silhouette-like.",
-    `Target furniture zone: ${zoneHint}`,
+    "- Keep region localized and composition-coherent.",
+    `Target furniture cluster: ${clusterHint}`,
     `Room type: ${plan.roomType}`,
     `Stabilization instruction: ${buildAttemptInstruction(failureMode)}`,
   ].join("\n");
@@ -604,15 +713,15 @@ function measureAnchorProximityScore(mask: Buffer, width: number, height: number
   return totalWeight > 0 ? weighted / totalWeight : 0;
 }
 
-function buildAnchorDistanceHeatmap(width: number, height: number, priorZones: PriorZone[]): Buffer {
+function buildAnchorDistanceHeatmap(width: number, height: number, priorClusters: PriorCluster[]): Buffer {
   const rgba = Buffer.alloc(width * height * 4, 0);
   const sigma = Math.max(1, Math.sqrt((width * width) + (height * height)) * 0.14);
   for (let y = 0; y < height; y += 1) {
     for (let x = 0; x < width; x += 1) {
       let maxWeight = 0;
-      for (const zone of priorZones) {
-        const dx = x - zone.anchorX;
-        const dy = y - zone.anchorY;
+      for (const cluster of priorClusters) {
+        const dx = x - cluster.anchorX;
+        const dy = y - cluster.anchorY;
         const distSq = (dx * dx) + (dy * dy);
         const weight = Math.exp(-distSq / (2 * sigma * sigma));
         if (weight > maxWeight) {
@@ -757,7 +866,7 @@ function rankComponents(params: {
   components: ConnectedComponentStats[];
   labelMap: Int32Array;
   candidateMask: Buffer;
-  priorZone: PriorZone;
+  priorCluster: PriorCluster;
   floorMask: Buffer;
   width: number;
   height: number;
@@ -773,8 +882,8 @@ function rankComponents(params: {
   const scored = params.components.map((component) => {
     const bboxArea = Math.max(1, (component.maxX - component.minX + 1) * (component.maxY - component.minY + 1));
     const compactness = component.pixelCount / bboxArea;
-    const dx = component.centroidX - params.priorZone.anchorX;
-    const dy = component.centroidY - params.priorZone.anchorY;
+    const dx = component.centroidX - params.priorCluster.anchorX;
+    const dy = component.centroidY - params.priorCluster.anchorY;
     const dist = Math.sqrt((dx * dx) + (dy * dy));
     const diag = Math.sqrt((params.width * params.width) + (params.height * params.height));
     const anchorScore = Math.exp(-(dist / Math.max(1, diag * 0.2)));
@@ -789,7 +898,7 @@ function rankComponents(params: {
         if (params.labelMap[idx] !== component.id || params.candidateMask[idx] === 0) {
           continue;
         }
-        if (params.priorZone.priorMask[idx] > 0) {
+        if (params.priorCluster.priorMask[idx] > 0) {
           priorOverlap += 1;
         }
         if (params.floorMask[idx] > 0) {
@@ -922,12 +1031,12 @@ function safeMaskUnion(baseMask: Buffer, addMask: Buffer): Buffer {
   return output;
 }
 
-function buildConservativeFallbackMask(priorZones: PriorZone[], floorMask: Buffer, width: number, height: number): Buffer {
+function buildConservativeFallbackMask(priorClusters: PriorCluster[], floorMask: Buffer, width: number, height: number): Buffer {
   const output = Buffer.alloc(width * height, 0);
-  for (const zone of priorZones) {
-    const radius = Math.max(6, Math.round(Math.sqrt(width * height * zone.expectedAreaRatioTarget) * 0.18));
-    const cx = Math.round(zone.anchorX);
-    const cy = Math.round(zone.anchorY);
+  for (const cluster of priorClusters) {
+    const radius = Math.max(6, Math.round(Math.sqrt(width * height * cluster.expectedAreaRatioTarget) * 0.18));
+    const cx = Math.round(cluster.anchorX);
+    const cy = Math.round(cluster.anchorY);
     for (let y = Math.max(0, cy - radius); y <= Math.min(height - 1, cy + radius); y += 1) {
       for (let x = Math.max(0, cx - radius); x <= Math.min(width - 1, cx + radius); x += 1) {
         const dx = x - cx;
@@ -1097,7 +1206,7 @@ export async function generateGeminiOccupancyMask(params: {
 
   const profile = getRoomTypeBandProfile(params.plan.roomType);
   const floorMask = await buildFloorPriorMask(params.plan, width, height);
-  const priorZones = await buildPriorZones(params.plan, width, height, floorMask);
+  const priorClusters = await buildPriorClusters(params.plan, width, height, floorMask);
 
   const outDir = path.dirname(params.occupancyMaskPath);
   const rawMaskPath = path.join(outDir, "gemini-occupancy-mask-raw.png");
@@ -1108,33 +1217,35 @@ export async function generateGeminiOccupancyMask(params: {
   const anchorDistanceHeatmapPath = path.join(outDir, "anchor-distance-heatmap.png");
   const floorContactVisualizationPath = path.join(outDir, "floor-contact-visualization.png");
   const acceptedRejectedOverlayPath = path.join(outDir, "accepted-vs-rejected-components.png");
-  const perObjectDir = path.join(outDir, "per-object-masks");
-  await fs.mkdir(perObjectDir, { recursive: true });
+  const clusterMaskDir = path.join(outDir, "cluster-occupancy-masks");
+  await fs.mkdir(clusterMaskDir, { recursive: true });
 
   const secondaryImage = toBase64(params.secondaryImagePath);
   const masterImage = toBase64(params.masterImagePath);
 
   const ai = getVertexGenAiClient();
 
-  const zoneSummaries: ZoneAttemptSummary[] = [];
-  const perObjectMaskPaths: string[] = [];
+  const clusterSummaries: ClusterAttemptSummary[] = [];
+  const perClusterMaskPaths: string[] = [];
   let unionAccepted = Buffer.alloc(width * height, 0);
   let unionRejected = Buffer.alloc(width * height, 0);
   let unionRawBest = Buffer.alloc(width * height, 0);
+  let clusterApiCallCount = 0;
 
-  let lastFailureMode: AttemptFailureMode = "none";
-  for (const priorZone of priorZones) {
-    let bestZoneMask: Buffer = Buffer.alloc(width * height, 0);
-    let bestZoneRawMask: Buffer = Buffer.alloc(width * height, 0);
-    let bestZoneScore = -1;
-    let bestZoneThreshold = 170;
-    let bestZoneInversion = false;
-    let zoneRateLimitFailures = 0;
+  for (const priorCluster of priorClusters) {
+    let bestClusterMask: Buffer = Buffer.alloc(width * height, 0);
+    let bestClusterRawMask: Buffer = Buffer.alloc(width * height, 0);
+    let bestClusterScore = -1;
+    let bestClusterThreshold = 170;
+    let bestClusterInversion = false;
+    let clusterRateLimitFailures = 0;
+    let clusterFailureMode: AttemptFailureMode = "none";
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      const prompt = buildOccupancyPrompt(params.plan, priorZone, lastFailureMode);
+      const prompt = buildOccupancyPrompt(params.plan, priorCluster, clusterFailureMode);
       let run: Awaited<ReturnType<typeof runWithSelectedImageModel>>;
       try {
+        clusterApiCallCount += 1;
         run = await runWithSelectedImageModel({
           stageLabel: "2",
           ai: ai as any,
@@ -1145,8 +1256,8 @@ export async function generateGeminiOccupancyMask(params: {
                 role: "user",
                 parts: [
                   { text: prompt },
-                  { text: "TARGET_ZONE_PRIOR" },
-                  { inlineData: { mimeType: "image/png", data: priorZone.priorMaskPngBase64 } },
+                  { text: "TARGET_CLUSTER_PRIOR" },
+                  { inlineData: { mimeType: "image/png", data: priorCluster.priorMaskPngBase64 } },
                   { text: "APPROVED_MASTER_STAGED_IMAGE" },
                   { inlineData: { mimeType: masterImage.mime, data: masterImage.data } },
                   { text: "SECONDARY_TARGET_IMAGE" },
@@ -1160,13 +1271,13 @@ export async function generateGeminiOccupancyMask(params: {
               candidateCount: 1,
             },
           } as any,
-          context: "continuity_gemini_occupancy_mask_zone",
+          context: "continuity_gemini_occupancy_mask_cluster",
           meta: {
             jobId: params.jobId,
             imageId: params.imageId,
             stage: "2",
             attempt,
-            reason: `continuity_occupancy_mask_zone_${priorZone.zoneId}`,
+            reason: `continuity_occupancy_mask_cluster_${priorCluster.clusterId}`,
             callType: "image_generation",
           },
         });
@@ -1175,19 +1286,21 @@ export async function generateGeminiOccupancyMask(params: {
           throw error;
         }
 
-        zoneRateLimitFailures += 1;
-        nLog("[VERTEX_CONTINUITY_GEMINI_ZONE_RETRY]", {
+        clusterRateLimitFailures += 1;
+        nLog("[VERTEX_CONTINUITY_GEMINI_CLUSTER_RETRY]", {
           continuityGroupId: params.continuityGroupId || null,
           imageId: params.imageId,
           jobId: params.jobId,
-          zoneId: priorZone.zoneId,
+          clusterId: priorCluster.clusterId,
           attempt,
           reason: "rate_limited",
           error: String((error as { message?: unknown }).message || error),
         });
 
-        zoneSummaries.push({
-          zoneId: priorZone.zoneId,
+        clusterSummaries.push({
+          clusterId: priorCluster.clusterId,
+          required: priorCluster.required,
+          clusterLabel: priorCluster.clusterLabel,
           attempt,
           failureMode: "too_sparse",
           score: 0,
@@ -1200,7 +1313,7 @@ export async function generateGeminiOccupancyMask(params: {
           selectedThreshold: 0,
           selectedInversion: false,
         });
-        lastFailureMode = "too_sparse";
+        clusterFailureMode = "too_sparse";
         await waitMs(Math.min(2500, 400 * attempt));
         continue;
       }
@@ -1208,8 +1321,10 @@ export async function generateGeminiOccupancyMask(params: {
       const parts: any[] = (run.resp as any)?.candidates?.[0]?.content?.parts || [];
       const imagePart = findFirstInlineImagePart(parts);
       if (!imagePart) {
-        zoneSummaries.push({
-          zoneId: priorZone.zoneId,
+        clusterSummaries.push({
+          clusterId: priorCluster.clusterId,
+          required: priorCluster.required,
+          clusterLabel: priorCluster.clusterLabel,
           attempt,
           failureMode: "too_sparse",
           score: 0,
@@ -1222,7 +1337,7 @@ export async function generateGeminiOccupancyMask(params: {
           selectedThreshold: 0,
           selectedInversion: false,
         });
-        lastFailureMode = "too_sparse";
+        clusterFailureMode = "too_sparse";
         continue;
       }
 
@@ -1240,12 +1355,14 @@ export async function generateGeminiOccupancyMask(params: {
         height,
         minComponentPixels,
         morphologyRadius,
-        areaTarget: priorZone.expectedAreaRatioTarget,
+        areaTarget: priorCluster.expectedAreaRatioTarget,
       });
 
       if (!selected) {
-        zoneSummaries.push({
-          zoneId: priorZone.zoneId,
+        clusterSummaries.push({
+          clusterId: priorCluster.clusterId,
+          required: priorCluster.required,
+          clusterLabel: priorCluster.clusterLabel,
           attempt,
           failureMode: "too_sparse",
           score: 0,
@@ -1258,7 +1375,7 @@ export async function generateGeminiOccupancyMask(params: {
           selectedThreshold: 0,
           selectedInversion: false,
         });
-        lastFailureMode = "too_sparse";
+        clusterFailureMode = "too_sparse";
         continue;
       }
 
@@ -1266,18 +1383,18 @@ export async function generateGeminiOccupancyMask(params: {
         components: selected.components,
         labelMap: selected.labelMap,
         candidateMask: selected.mask,
-        priorZone,
+        priorCluster,
         floorMask,
         width,
         height,
         maxRetainedComponents,
       });
 
-      const zoneMask = Buffer.from(ranked.acceptedMask);
-      const occupancyAreaRatio = countMaskPixels(zoneMask) / (width * height);
-      const connected = analyzeConnectedComponents(zoneMask, width, height, 1).components.length;
-      const wallTouchRatio = measureWallTouchRatio(zoneMask, width, height);
-      const topRegionRatio = measureTopRegionRatio(zoneMask, width, height);
+      const clusterMask = Buffer.from(ranked.acceptedMask);
+      const occupancyAreaRatio = countMaskPixels(clusterMask) / (width * height);
+      const connected = analyzeConnectedComponents(clusterMask, width, height, 1).components.length;
+      const wallTouchRatio = measureWallTouchRatio(clusterMask, width, height);
+      const topRegionRatio = measureTopRegionRatio(clusterMask, width, height);
       const floorContactRatio = ranked.floorContactRatio;
       const anchorScore = ranked.anchorScore;
 
@@ -1285,9 +1402,9 @@ export async function generateGeminiOccupancyMask(params: {
         occupancyAreaRatio,
         profile: {
           ...profile,
-          minAreaRatio: priorZone.expectedAreaRatioMin,
-          targetAreaRatio: priorZone.expectedAreaRatioTarget,
-          maxAreaRatio: priorZone.expectedAreaRatioMax,
+          minAreaRatio: priorCluster.expectedAreaRatioMin,
+          targetAreaRatio: priorCluster.expectedAreaRatioTarget,
+          maxAreaRatio: priorCluster.expectedAreaRatioMax,
         },
         connectedCount: connected,
         wallTouchRatio,
@@ -1306,14 +1423,16 @@ export async function generateGeminiOccupancyMask(params: {
         compactnessScore: ranked.compactnessScore,
         profile: {
           ...profile,
-          minAreaRatio: priorZone.expectedAreaRatioMin,
-          targetAreaRatio: priorZone.expectedAreaRatioTarget,
-          maxAreaRatio: priorZone.expectedAreaRatioMax,
+          minAreaRatio: priorCluster.expectedAreaRatioMin,
+          targetAreaRatio: priorCluster.expectedAreaRatioTarget,
+          maxAreaRatio: priorCluster.expectedAreaRatioMax,
         },
       });
 
-      zoneSummaries.push({
-        zoneId: priorZone.zoneId,
+      clusterSummaries.push({
+        clusterId: priorCluster.clusterId,
+        required: priorCluster.required,
+        clusterLabel: priorCluster.clusterLabel,
         attempt,
         failureMode,
         score: quality.score,
@@ -1327,70 +1446,88 @@ export async function generateGeminiOccupancyMask(params: {
         selectedInversion: selected.inverted,
       });
 
-      if (quality.score > bestZoneScore) {
-        bestZoneScore = quality.score;
-        bestZoneMask = Buffer.from(zoneMask);
-        bestZoneRawMask = Buffer.from(selected.mask);
-        bestZoneThreshold = selected.threshold;
-        bestZoneInversion = selected.inverted;
+      if (quality.score > bestClusterScore) {
+        bestClusterScore = quality.score;
+        bestClusterMask = Buffer.from(clusterMask);
+        bestClusterRawMask = Buffer.from(selected.mask);
+        bestClusterThreshold = selected.threshold;
+        bestClusterInversion = selected.inverted;
       }
 
       if (failureMode === "none") {
         break;
       }
-      lastFailureMode = failureMode;
+      clusterFailureMode = failureMode;
     }
 
-    if (bestZoneScore < 0) {
-      // If all attempts failed (including rate limits), keep a conservative per-zone prior projection.
-      bestZoneMask = buildConservativeFallbackMask([priorZone], floorMask, width, height);
-      bestZoneRawMask = Buffer.from(bestZoneMask);
-      bestZoneScore = 0;
-      bestZoneThreshold = 0;
-      bestZoneInversion = false;
-      nLog("[VERTEX_CONTINUITY_GEMINI_ZONE_FALLBACK]", {
+    if (bestClusterScore < 0 && priorCluster.required) {
+      // Required clusters fail closed but still use conservative occupancy priors to preserve structural continuity.
+      bestClusterMask = buildConservativeFallbackMask([priorCluster], floorMask, width, height);
+      bestClusterRawMask = Buffer.from(bestClusterMask);
+      bestClusterScore = 0;
+      bestClusterThreshold = 0;
+      bestClusterInversion = false;
+      nLog("[VERTEX_CONTINUITY_GEMINI_CLUSTER_FALLBACK]", {
         continuityGroupId: params.continuityGroupId || null,
         imageId: params.imageId,
         jobId: params.jobId,
-        zoneId: priorZone.zoneId,
-        rateLimitFailures: zoneRateLimitFailures,
+        clusterId: priorCluster.clusterId,
+        required: true,
+        rateLimitFailures: clusterRateLimitFailures,
       });
+    } else if (bestClusterScore < 0) {
+      nLog("[VERTEX_CONTINUITY_GEMINI_CLUSTER_SKIP]", {
+        continuityGroupId: params.continuityGroupId || null,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        clusterId: priorCluster.clusterId,
+        required: false,
+        rateLimitFailures: clusterRateLimitFailures,
+      });
+      continue;
     }
 
-    unionAccepted = Buffer.from(safeMaskUnion(unionAccepted, bestZoneMask));
-    unionRawBest = Buffer.from(safeMaskUnion(unionRawBest, bestZoneRawMask));
+    unionAccepted = Buffer.from(safeMaskUnion(unionAccepted, bestClusterMask));
+    unionRawBest = Buffer.from(safeMaskUnion(unionRawBest, bestClusterRawMask));
 
-    const rejectedForZone = Buffer.alloc(bestZoneRawMask.length, 0);
-    for (let i = 0; i < bestZoneRawMask.length; i += 1) {
-      if (bestZoneRawMask[i] > 0 && bestZoneMask[i] === 0) {
-        rejectedForZone[i] = 255;
+    const rejectedForCluster = Buffer.alloc(bestClusterRawMask.length, 0);
+    for (let i = 0; i < bestClusterRawMask.length; i += 1) {
+      if (bestClusterRawMask[i] > 0 && bestClusterMask[i] === 0) {
+        rejectedForCluster[i] = 255;
       }
     }
-    unionRejected = Buffer.from(safeMaskUnion(unionRejected, rejectedForZone));
+    unionRejected = Buffer.from(safeMaskUnion(unionRejected, rejectedForCluster));
 
-    const perObjectMaskPath = path.join(perObjectDir, `${priorZone.zoneId}-gemini-mask.png`);
-    await writeMaskPng(bestZoneMask, width, height, perObjectMaskPath);
-    perObjectMaskPaths.push(perObjectMaskPath);
+    const perClusterMaskPath = path.join(clusterMaskDir, `${priorCluster.clusterId}-gemini-mask.png`);
+    await writeMaskPng(bestClusterMask, width, height, perClusterMaskPath);
+    perClusterMaskPaths.push(perClusterMaskPath);
 
-    nLog("[VERTEX_CONTINUITY_GEMINI_ZONE_MASK]", {
+    nLog("[VERTEX_CONTINUITY_GEMINI_CLUSTER_MASK]", {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
       jobId: params.jobId,
-      zoneId: priorZone.zoneId,
-      score: Number(bestZoneScore.toFixed(4)),
-      selectedThreshold: bestZoneThreshold,
-      selectedInversion: bestZoneInversion,
+      clusterId: priorCluster.clusterId,
+      required: priorCluster.required,
+      score: Number(bestClusterScore.toFixed(4)),
+      selectedThreshold: bestClusterThreshold,
+      selectedInversion: bestClusterInversion,
     });
   }
 
   let usedConservativeFallback = false;
   if (countMaskPixels(unionAccepted) === 0) {
-    unionAccepted = Buffer.from(buildConservativeFallbackMask(priorZones, floorMask, width, height));
+    const fallbackClusters = priorClusters.filter((cluster) => cluster.required);
+    unionAccepted = Buffer.from(buildConservativeFallbackMask(
+      fallbackClusters.length > 0 ? fallbackClusters : priorClusters,
+      floorMask,
+      width,
+      height,
+    ));
     usedConservativeFallback = true;
   }
 
-  const anchorProximityScore = priorZones.length > 0
-    ? priorZones.reduce((sum, zone) => sum + measureAnchorProximityScore(unionAccepted, width, height, zone.anchorX, zone.anchorY), 0) / priorZones.length
+  const anchorProximityScore = priorClusters.length > 0
+    ? priorClusters.reduce((sum, cluster) => sum + measureAnchorProximityScore(unionAccepted, width, height, cluster.anchorX, cluster.anchorY), 0) / priorClusters.length
     : 0;
 
   const compactness = (() => {
@@ -1444,7 +1581,7 @@ export async function generateGeminiOccupancyMask(params: {
     raw: { width, height, channels: 4 },
   }).png().toFile(componentsPath);
 
-  const heatmap = buildAnchorDistanceHeatmap(width, height, priorZones);
+  const heatmap = buildAnchorDistanceHeatmap(width, height, priorClusters);
   await writeOverlayImage(params.secondaryImagePath, heatmap, width, height, anchorDistanceHeatmapPath);
 
   const floorViz = buildFloorContactVisualization(floorMask, width, height);
@@ -1458,16 +1595,26 @@ export async function generateGeminiOccupancyMask(params: {
   });
   await writeOverlayImage(params.secondaryImagePath, acceptedRejected, width, height, acceptedRejectedOverlayPath);
 
+  const requiredClusterCount = priorClusters.filter((cluster) => cluster.required).length;
+  const optionalClusterCount = Math.max(0, priorClusters.length - requiredClusterCount);
+  const baselineObjectCallCount = Math.max(1, params.plan.furnitureZones.length * maxAttempts);
+  const estimatedCallReductionRatio = Math.max(0, Math.min(1, 1 - (clusterApiCallCount / baselineObjectCallCount)));
+
   const qualityPayload = {
     roomTypeProfile: profile,
     safety: evaluated.safety,
     quality: evaluated.quality,
     usedConservativeFallback,
-    priorZoneCount: priorZones.length,
-    perObjectMaskPaths,
+    priorClusterCount: priorClusters.length,
+    requiredClusterCount,
+    optionalClusterCount,
+    baselineObjectCallCount,
+    clusterApiCallCount,
+    estimatedCallReductionRatio,
+    perClusterMaskPaths,
   };
   await fs.writeFile(qualityReportPath, JSON.stringify(qualityPayload, null, 2));
-  await fs.writeFile(retryComparisonPath, JSON.stringify(zoneSummaries, null, 2));
+  await fs.writeFile(retryComparisonPath, JSON.stringify(clusterSummaries, null, 2));
 
   nLog("[VERTEX_CONTINUITY_GEMINI_MASK]", {
     phase: "complete",
@@ -1480,7 +1627,12 @@ export async function generateGeminiOccupancyMask(params: {
     cleanedMaskPath,
     componentsPath,
     qualityScore: Number(evaluated.quality.score.toFixed(4)),
-    retryCount: zoneSummaries.length,
+    retryCount: clusterSummaries.length,
+    clusterCount: priorClusters.length,
+    requiredClusterCount,
+    optionalClusterCount,
+    clusterApiCallCount,
+    estimatedCallReductionRatio: Number(estimatedCallReductionRatio.toFixed(4)),
     usedConservativeFallback,
   });
 
@@ -1494,9 +1646,14 @@ export async function generateGeminiOccupancyMask(params: {
     anchorDistanceHeatmapPath,
     floorContactVisualizationPath,
     acceptedRejectedOverlayPath,
-    perObjectMaskPaths,
+    perClusterMaskPaths,
     usedConservativeFallback,
-    retryCount: zoneSummaries.length,
+    retryCount: clusterSummaries.length,
+    clusterCount: priorClusters.length,
+    requiredClusterCount,
+    optionalClusterCount,
+    clusterApiCallCount,
+    estimatedCallReductionRatio,
     qualityScore: evaluated.quality.score,
     model,
     latencyMs: Date.now() - startedAt,

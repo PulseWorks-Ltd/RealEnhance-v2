@@ -156,9 +156,14 @@ export type CompiledMaskResult = {
     anchorDistanceHeatmapPath: string;
     floorContactVisualizationPath: string;
     acceptedRejectedOverlayPath: string;
-    perObjectMaskPaths: string[];
+    perClusterMaskPaths: string[];
     usedConservativeFallback: boolean;
     retryCount: number;
+    clusterCount: number;
+    requiredClusterCount: number;
+    optionalClusterCount: number;
+    clusterApiCallCount: number;
+    estimatedCallReductionRatio: number;
     qualityScore: number;
     model: string;
     latencyMs: number;

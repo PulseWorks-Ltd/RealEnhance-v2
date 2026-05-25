@@ -124,7 +124,7 @@ export async function persistContinuityArtifacts(params: {
   const anchorDistanceHeatmapTarget = path.join(artifactDir, "anchor-distance-heatmap.png");
   const floorContactVisualizationTarget = path.join(artifactDir, "floor-contact-visualization.png");
   const acceptedRejectedOverlayTarget = path.join(artifactDir, "accepted-vs-rejected-components.png");
-  const perObjectMaskDir = path.join(artifactDir, "per-object-masks");
+  const perClusterMaskDir = path.join(artifactDir, "cluster-occupancy-masks");
 
   await fs.writeFile(plannerJsonPath, JSON.stringify(params.planner.plan, null, 2));
   await fs.writeFile(plannerRawPath, params.planner.rawText || "");
@@ -170,10 +170,10 @@ export async function persistContinuityArtifacts(params: {
   await copyIfPresent(params.masks.geminiMaskArtifacts?.floorContactVisualizationPath, floorContactVisualizationTarget);
   await copyIfPresent(params.masks.geminiMaskArtifacts?.acceptedRejectedOverlayPath, acceptedRejectedOverlayTarget);
 
-  if (params.masks.geminiMaskArtifacts?.perObjectMaskPaths?.length) {
-    await fs.mkdir(perObjectMaskDir, { recursive: true });
-    for (const sourceMaskPath of params.masks.geminiMaskArtifacts.perObjectMaskPaths) {
-      const targetMaskPath = path.join(perObjectMaskDir, path.basename(sourceMaskPath));
+  if (params.masks.geminiMaskArtifacts?.perClusterMaskPaths?.length) {
+    await fs.mkdir(perClusterMaskDir, { recursive: true });
+    for (const sourceMaskPath of params.masks.geminiMaskArtifacts.perClusterMaskPaths) {
+      const targetMaskPath = path.join(perClusterMaskDir, path.basename(sourceMaskPath));
       await copyIfPresent(sourceMaskPath, targetMaskPath);
     }
   }
