@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-05-25T13:33:55.721Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525133016520",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "totalRooms": 5,
+  "totalSecondaryViews": 7,
+  "completedCases": 1,
+  "successCount": 0,
+  "failureCount": 1,
+  "skippedCount": 0,
+  "successRate": 0,
+  "plannerFailureRate": 0,
+  "occupancyFailureRate": 0,
+  "continuityPassRate": 0,
+  "averageOccupancyAreaRatio": 0,
+  "averageUnionOccupancyRatio": 0,
+  "averageRequiredClusterOccupancy": 0,
+  "averageOptionalClusterOccupancy": 0,
+  "averageRetryCount": 0,
+  "total429Count": 0,
+  "failureCategories": {
+    "provider_failure": 1
+  },
+  "roomTypeBreakdown": {
+    "bedroom": {
+      "total": 1,
+      "success": 0,
+      "failures": 1,
+      "successRate": 0,
+      "averageOccupancyAreaRatio": 0
+    }
+  },
+  "occupancyDistribution": {
+    "required": [],
+    "optional": [],
+    "union": [],
+    "variance": 0
+  },
+  "cases": [
+    {
+      "roomKey": "bedroom_1",
+      "roomLabel": "Bedroom 1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+      "mode": "full",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525133016520/bedroom_1/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": null,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": null,
+        "finalAreaRatio": null,
+        "requiredClusterOccupancy": null,
+        "optionalClusterOccupancy": null,
+        "unionOccupancy": null,
+        "retryCount": null,
+        "clusterApiCallCount": null,
+        "rateLimit429Count": 0,
+        "validatorDriftPass": null
+      },
+      "status": "failure",
+      "plannerMode": "replay",
+      "plannerPath": null,
+      "occupancyGenerationMode": null,
+      "failureCategory": "provider_failure",
+      "failureReason": "Gemini occupancy mask has insufficient floor contact (0.198 < 0.412)"
+    }
+  ]
+}

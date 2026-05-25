@@ -470,6 +470,85 @@ async function buildFloorPriorMask(plan: PlacementPlan, width: number, height: n
   return fallback;
 }
 
+async function buildSupportSurfaceMask(plan: PlacementPlan, floorMask: Buffer, width: number, height: number): Promise<Buffer> {
+  const support = Buffer.from(floorMask);
+  const rugs = plan.furnitureZones.filter((zone) => {
+    const type = normalizeFurnitureType(zone.furnitureType);
+    return type.includes("rug") || type.includes("carpet") || type.includes("runner") || type.includes("mat");
+  });
+  if (rugs.length === 0) {
+    return support;
+  }
+
+  for (const rug of rugs) {
+    const floorPolygon = Array.isArray(rug.maskProjection?.floorPolygon)
+      ? rug.maskProjection.floorPolygon
+      : [];
+    if (floorPolygon.length >= 3) {
+      const svg = `
+        <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+          <rect width="100%" height="100%" fill="#000000" />
+          <polygon points="${polygonPointsAttribute(floorPolygon, width, height)}" fill="#ffffff" />
+        </svg>
+      `;
+      const rugMask = await sharp(Buffer.from(svg))
+        .removeAlpha()
+        .grayscale()
+        .threshold(1, { grayscale: true })
+        .raw()
+        .toBuffer();
+      for (let i = 0; i < support.length; i += 1) {
+        if (rugMask[i] > 0) {
+          support[i] = 255;
+        }
+      }
+      continue;
+    }
+
+    const bbox = rug.normalizedBoundingBox;
+    const startX = Math.max(0, Math.floor(bbox.x * width));
+    const endX = Math.min(width - 1, Math.ceil((bbox.x + bbox.width) * width));
+    const startY = Math.max(0, Math.floor((bbox.y + (bbox.height * 0.45)) * height));
+    const endY = Math.min(height - 1, Math.ceil((bbox.y + bbox.height) * height));
+    for (let y = startY; y <= endY; y += 1) {
+      for (let x = startX; x <= endX; x += 1) {
+        support[(y * width) + x] = 255;
+      }
+    }
+  }
+
+  return support;
+}
+
+function resolveAdaptiveFloorContactTarget(plan: PlacementPlan, profile: RoomTypeBandProfile): {
+  effectiveMinFloorContactRatio: number;
+  rugZoneCount: number;
+  rugAreaRatio: number;
+  reductionApplied: number;
+} {
+  const base = profile.minFloorContactRatio;
+  const rugs = plan.furnitureZones.filter((zone) => {
+    const type = normalizeFurnitureType(zone.furnitureType);
+    return type.includes("rug") || type.includes("carpet") || type.includes("runner") || type.includes("mat");
+  });
+  const rugAreaRatio = rugs.reduce((sum, zone) => {
+    const bbox = zone.normalizedBoundingBox;
+    return sum + Math.max(0, bbox.width) * Math.max(0, bbox.height);
+  }, 0);
+
+  const rawReduction = rugAreaRatio > 0.02
+    ? Math.min(0.22, (rugAreaRatio - 0.02) * 1.4)
+    : 0;
+  const reductionApplied = Math.max(0, Math.min(base - 0.35, rawReduction));
+  const effectiveMinFloorContactRatio = Math.max(0.35, base - reductionApplied);
+  return {
+    effectiveMinFloorContactRatio,
+    rugZoneCount: rugs.length,
+    rugAreaRatio,
+    reductionApplied,
+  };
+}
+
 function getZoneAreaBand(furnitureType: string): { min: number; target: number; max: number } {
   const normalized = furnitureType.toLowerCase();
   if (normalized.includes("bed")) return { min: 0.02, target: 0.065, max: 0.18 };
@@ -783,6 +862,291 @@ function keepAllowedComponents(mask: Buffer, labelMap: Int32Array, allowedIds: S
   return output;
 }
 
+function computeComponentSupportOverlap(params: {
+  component: ConnectedComponentStats;
+  labelMap: Int32Array;
+  supportMask: Buffer;
+  width: number;
+}): number {
+  let supportPixels = 0;
+  for (let y = params.component.minY; y <= params.component.maxY; y += 1) {
+    for (let x = params.component.minX; x <= params.component.maxX; x += 1) {
+      const idx = (y * params.width) + x;
+      if (params.labelMap[idx] !== params.component.id) {
+        continue;
+      }
+      if (params.supportMask[idx] > 0) {
+        supportPixels += 1;
+      }
+    }
+  }
+  return supportPixels / Math.max(1, params.component.pixelCount);
+}
+
+function computeBoundingBoxGap(a: ConnectedComponentStats, b: ConnectedComponentStats): number {
+  const dx = a.maxX < b.minX
+    ? (b.minX - a.maxX)
+    : b.maxX < a.minX
+      ? (a.minX - b.maxX)
+      : 0;
+  const dy = a.maxY < b.minY
+    ? (b.minY - a.maxY)
+    : b.maxY < a.minY
+      ? (a.minY - b.maxY)
+      : 0;
+  return Math.max(dx, dy);
+}
+
+function removeSmallComponents(params: {
+  mask: Buffer;
+  supportMask: Buffer;
+  width: number;
+  height: number;
+  minPixels: number;
+}): {
+  output: Buffer;
+  removedCount: number;
+  preservedSatelliteCount: number;
+} {
+  if (params.minPixels <= 1) {
+    return {
+      output: Buffer.from(params.mask),
+      removedCount: 0,
+      preservedSatelliteCount: 0,
+    };
+  }
+
+  const analyzed = analyzeConnectedComponents(params.mask, params.width, params.height, 1);
+  const largeComponents = analyzed.components.filter((component) => component.pixelCount >= params.minPixels);
+  const semanticSatelliteMinPixels = Math.max(6, Math.floor(params.minPixels * 0.35));
+  const minSemanticSupportOverlap = Math.max(
+    0.05,
+    Math.min(0.8, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_SATELLITE_SUPPORT_OVERLAP", 0.18)),
+  );
+  const maxSatelliteAttachmentGap = Math.max(
+    0,
+    Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MAX_SATELLITE_ATTACHMENT_GAP", 24)),
+  );
+
+  const allowedIds = new Set<number>();
+  for (const component of largeComponents) {
+    allowedIds.add(component.id);
+  }
+
+  for (const component of analyzed.components) {
+    if (component.pixelCount >= params.minPixels || component.pixelCount < semanticSatelliteMinPixels) {
+      continue;
+    }
+    if (largeComponents.length === 0) {
+      continue;
+    }
+
+    const supportOverlap = computeComponentSupportOverlap({
+      component,
+      labelMap: analyzed.labelMap,
+      supportMask: params.supportMask,
+      width: params.width,
+    });
+    if (supportOverlap < minSemanticSupportOverlap) {
+      continue;
+    }
+
+    let nearestGap = Number.POSITIVE_INFINITY;
+    for (const anchorComponent of largeComponents) {
+      nearestGap = Math.min(nearestGap, computeBoundingBoxGap(component, anchorComponent));
+      if (nearestGap <= maxSatelliteAttachmentGap) {
+        break;
+      }
+    }
+    if (nearestGap <= maxSatelliteAttachmentGap) {
+      allowedIds.add(component.id);
+    }
+  }
+
+  const removedCount = analyzed.components.filter((component) => !allowedIds.has(component.id)).length;
+  const preservedSatelliteCount = analyzed.components.filter((component) => {
+    return component.pixelCount < params.minPixels && allowedIds.has(component.id);
+  }).length;
+
+  return {
+    output: keepAllowedComponents(params.mask, analyzed.labelMap, allowedIds),
+    removedCount,
+    preservedSatelliteCount,
+  };
+}
+
+function keepMostSupportedComponents(mask: Buffer, supportMask: Buffer, width: number, height: number, maxComponents: number): {
+  output: Buffer;
+  componentCount: number;
+  retainedCount: number;
+} {
+  const analyzed = analyzeConnectedComponents(mask, width, height, 1);
+  if (analyzed.components.length <= maxComponents) {
+    return {
+      output: Buffer.from(mask),
+      componentCount: analyzed.components.length,
+      retainedCount: analyzed.components.length,
+    };
+  }
+
+  const maxPixels = analyzed.components.reduce((max, component) => Math.max(max, component.pixelCount), 1);
+  const kept = analyzed.components
+    .map((component) => {
+      const supportOverlap = computeComponentSupportOverlap({
+        component,
+        labelMap: analyzed.labelMap,
+        supportMask,
+        width,
+      });
+      const sizeScore = Math.sqrt(component.pixelCount / Math.max(1, maxPixels));
+      return {
+        component,
+        score: (sizeScore * 0.64) + (supportOverlap * 0.36),
+      };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, Math.max(1, maxComponents));
+  const allowedIds = new Set(kept.map((entry) => entry.component.id));
+  return {
+    output: keepAllowedComponents(mask, analyzed.labelMap, allowedIds),
+    componentCount: analyzed.components.length,
+    retainedCount: kept.length,
+  };
+}
+
+async function applyMorphologicalClose(mask: Buffer, width: number, height: number, radius: number): Promise<Buffer> {
+  if (radius <= 0) {
+    return Buffer.from(mask);
+  }
+  return sharp(mask, {
+    raw: { width, height, channels: 1 },
+  })
+    .dilate(radius)
+    .erode(radius)
+    .raw()
+    .toBuffer();
+}
+
+async function stabilizeFragmentedMask(params: {
+  mask: Buffer;
+  supportMask: Buffer;
+  width: number;
+  height: number;
+  targetMaxComponents: number;
+  closeRadius: number;
+  maxCloseRadius: number;
+  minIslandPixels: number;
+  maxAreaExpansionRatio: number;
+  minFinalAreaRatio: number;
+}): Promise<{
+  mask: Buffer;
+  beforeComponents: number;
+  afterComponents: number;
+  beforePixels: number;
+  afterPixels: number;
+  closePasses: number;
+  largestTrimApplied: boolean;
+  islandsRemoved: number;
+  satelliteIslandsRetained: number;
+  fallbackAreaRejected: boolean;
+}> {
+  const beforePixels = countMaskPixels(params.mask);
+  const beforeComponents = analyzeConnectedComponents(params.mask, params.width, params.height, 1).components.length;
+  if (beforeComponents <= params.targetMaxComponents || beforePixels === 0) {
+    return {
+      mask: Buffer.from(params.mask),
+      beforeComponents,
+      afterComponents: beforeComponents,
+      beforePixels,
+      afterPixels: beforePixels,
+      closePasses: 0,
+      largestTrimApplied: false,
+      islandsRemoved: 0,
+      satelliteIslandsRetained: 0,
+      fallbackAreaRejected: false,
+    };
+  }
+
+  let working = Buffer.from(params.mask);
+  let workingComponents = beforeComponents;
+  let closePasses = 0;
+  let islandsRemoved = 0;
+  let satelliteIslandsRetained = 0;
+  let fallbackAreaRejected = false;
+  const minRetainedAreaRatio = Math.max(0.15, Math.min(0.95, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_RETAINED_AREA_RATIO", 0.4)));
+  const minStepRetainedAreaRatioBase = Math.max(0.7, Math.min(1, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_STEP_RETAINED_RATIO", 0.9)));
+  const maxCloseRadius = Math.max(params.closeRadius, params.maxCloseRadius);
+
+  for (let radius = Math.max(1, params.closeRadius); radius <= maxCloseRadius; radius += 1) {
+    const closed = await applyMorphologicalClose(working, params.width, params.height, radius);
+    const pruned = removeSmallComponents({
+      mask: closed,
+      supportMask: params.supportMask,
+      width: params.width,
+      height: params.height,
+      minPixels: params.minIslandPixels,
+    });
+    const candidatePixels = countMaskPixels(pruned.output);
+    const candidateComponents = analyzeConnectedComponents(pruned.output, params.width, params.height, 1).components.length;
+    const workingPixels = countMaskPixels(working);
+    const areaRatio = candidatePixels / Math.max(1, beforePixels);
+    const stepRetainedRatio = candidatePixels / Math.max(1, workingPixels);
+    const componentPressure = workingComponents / Math.max(1, params.targetMaxComponents);
+    const adaptiveStepRetentionFloor = Math.max(
+      0.72,
+      minStepRetainedAreaRatioBase - (Math.max(0, componentPressure - 1) * 0.08),
+    );
+    const absoluteAreaRatio = candidatePixels / Math.max(1, params.width * params.height);
+    const retainedEnoughArea = candidatePixels > 0 && areaRatio >= minRetainedAreaRatio;
+    if (
+      candidateComponents < workingComponents
+      && areaRatio <= params.maxAreaExpansionRatio
+      && retainedEnoughArea
+      && stepRetainedRatio >= adaptiveStepRetentionFloor
+      && absoluteAreaRatio >= params.minFinalAreaRatio
+    ) {
+      working = Buffer.from(pruned.output);
+      workingComponents = candidateComponents;
+      closePasses += 1;
+      islandsRemoved += pruned.removedCount;
+      satelliteIslandsRetained += pruned.preservedSatelliteCount;
+    }
+    if (workingComponents <= params.targetMaxComponents) {
+      break;
+    }
+  }
+
+  let largestTrimApplied = false;
+  if (workingComponents > params.targetMaxComponents) {
+    const trimmed = keepMostSupportedComponents(working, params.supportMask, params.width, params.height, params.targetMaxComponents);
+    const workingAreaRatio = countMaskPixels(working) / Math.max(1, params.width * params.height);
+    const trimmedPixels = countMaskPixels(trimmed.output);
+    const retainedRatio = trimmedPixels / Math.max(1, countMaskPixels(working));
+    const minRetainedRatioForAreaFloor = Math.max(0.55, params.minFinalAreaRatio / Math.max(0.0001, workingAreaRatio));
+    const absoluteAreaRatio = trimmedPixels / Math.max(1, params.width * params.height);
+    if (retainedRatio >= minRetainedRatioForAreaFloor && absoluteAreaRatio >= params.minFinalAreaRatio) {
+      working = Buffer.from(trimmed.output);
+      workingComponents = analyzeConnectedComponents(working, params.width, params.height, 1).components.length;
+      largestTrimApplied = true;
+    } else {
+      fallbackAreaRejected = true;
+    }
+  }
+
+  return {
+    mask: working,
+    beforeComponents,
+    afterComponents: workingComponents,
+    beforePixels,
+    afterPixels: countMaskPixels(working),
+    closePasses,
+    largestTrimApplied,
+    islandsRemoved,
+    satelliteIslandsRetained,
+    fallbackAreaRejected,
+  };
+}
+
 function countMaskPixels(mask: Buffer): number {
   let count = 0;
   for (const value of mask) {
@@ -1054,18 +1418,176 @@ function measureTopRegionRatio(mask: Buffer, width: number, height: number): num
   return topPixels / occupancyPixelCount;
 }
 
-function measureFloorContactRatio(mask: Buffer, floorMask: Buffer): number {
-  const occupancyPixelCount = countMaskPixels(mask);
-  if (occupancyPixelCount === 0) {
+function measureFloorContactRatio(mask: Buffer, floorMask: Buffer, width: number, height: number): number {
+  if (mask.length === 0 || width <= 0 || height <= 0) {
     return 0;
   }
-  let floorOverlap = 0;
-  for (let i = 0; i < mask.length; i += 1) {
-    if (mask[i] > 0 && floorMask[i] > 0) {
-      floorOverlap += 1;
+
+  const maxDropPixels = Math.max(
+    4,
+    Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_FLOOR_CONTACT_MAX_DROP_PIXELS", Math.max(10, height * 0.08))),
+  );
+
+  let supportColumns = 0;
+  let groundedColumns = 0;
+  for (let x = 0; x < width; x += 1) {
+    let bottomY = -1;
+    for (let y = height - 1; y >= 0; y -= 1) {
+      if (mask[(y * width) + x] > 0) {
+        bottomY = y;
+        break;
+      }
+    }
+    if (bottomY < 0) {
+      continue;
+    }
+
+    supportColumns += 1;
+    const probeMaxY = Math.min(height - 1, bottomY + maxDropPixels);
+    let grounded = false;
+    for (let y = bottomY; y <= probeMaxY; y += 1) {
+      if (floorMask[(y * width) + x] > 0) {
+        grounded = true;
+        break;
+      }
+    }
+    if (grounded) {
+      groundedColumns += 1;
     }
   }
-  return floorOverlap / occupancyPixelCount;
+
+  return supportColumns > 0 ? groundedColumns / supportColumns : 0;
+}
+
+function buildGravityAwareFloorBridge(params: {
+  mask: Buffer;
+  floorMask: Buffer;
+  width: number;
+  height: number;
+  targetFloorContactRatio: number;
+  maxDropPixels: number;
+  maxHorizontalReach: number;
+  maxGrowthRatio: number;
+  maxIterations: number;
+}): {
+  mask: Buffer;
+  beforeFloorContactRatio: number;
+  afterFloorContactRatio: number;
+  beforePixels: number;
+  afterPixels: number;
+  addedPixels: number;
+  iterations: number;
+} {
+  const beforePixels = countMaskPixels(params.mask);
+  const beforeFloorContactRatio = measureFloorContactRatio(params.mask, params.floorMask, params.width, params.height);
+  if (beforePixels === 0 || beforeFloorContactRatio >= params.targetFloorContactRatio) {
+    return {
+      mask: Buffer.from(params.mask),
+      beforeFloorContactRatio,
+      afterFloorContactRatio: beforeFloorContactRatio,
+      beforePixels,
+      afterPixels: beforePixels,
+      addedPixels: 0,
+      iterations: 0,
+    };
+  }
+
+  const working = Buffer.from(params.mask);
+  const maxGrowthPixels = Math.max(1, Math.floor(beforePixels * Math.max(0.05, params.maxGrowthRatio)));
+  let addedPixels = 0;
+  let iterations = 0;
+
+  for (let iter = 0; iter < Math.max(1, params.maxIterations); iter += 1) {
+    iterations = iter + 1;
+    let passAdded = 0;
+
+    for (let x = 0; x < params.width; x += 1) {
+      let bottomY = -1;
+      for (let y = params.height - 1; y >= 0; y -= 1) {
+        if (working[(y * params.width) + x] > 0) {
+          bottomY = y;
+          break;
+        }
+      }
+      if (bottomY < 0) {
+        continue;
+      }
+
+      const probeMaxY = Math.min(params.height - 1, bottomY + params.maxDropPixels);
+      let alreadyGrounded = false;
+      for (let y = bottomY; y <= probeMaxY; y += 1) {
+        if (params.floorMask[(y * params.width) + x] > 0) {
+          alreadyGrounded = true;
+          break;
+        }
+      }
+      if (alreadyGrounded) {
+        continue;
+      }
+
+      let bestTarget: { tx: number; ty: number; cost: number } | null = null;
+      for (let dx = -params.maxHorizontalReach; dx <= params.maxHorizontalReach; dx += 1) {
+        const tx = x + dx;
+        if (tx < 0 || tx >= params.width) {
+          continue;
+        }
+        for (let ty = bottomY + 1; ty <= probeMaxY; ty += 1) {
+          if (params.floorMask[(ty * params.width) + tx] === 0) {
+            continue;
+          }
+          const vertical = ty - bottomY;
+          const cost = (vertical * 3) + Math.abs(dx);
+          if (!bestTarget || cost < bestTarget.cost) {
+            bestTarget = { tx, ty, cost };
+          }
+          break;
+        }
+      }
+
+      if (!bestTarget) {
+        continue;
+      }
+
+      const startY = bottomY + 1;
+      const dy = Math.max(0, bestTarget.ty - startY);
+      const dx = bestTarget.tx - x;
+      const steps = Math.max(1, Math.max(Math.abs(dx), dy));
+      for (let step = 0; step <= steps; step += 1) {
+        const xx = Math.max(0, Math.min(params.width - 1, Math.round(x + ((dx * step) / steps))));
+        const yy = Math.max(0, Math.min(params.height - 1, Math.round(startY + ((dy * step) / steps))));
+        const idx = (yy * params.width) + xx;
+        if (params.floorMask[idx] === 0 || working[idx] > 0) {
+          continue;
+        }
+        working[idx] = 255;
+        passAdded += 1;
+        addedPixels += 1;
+        if (addedPixels >= maxGrowthPixels) {
+          break;
+        }
+      }
+
+      if (addedPixels >= maxGrowthPixels) {
+        break;
+      }
+    }
+
+    const ratio = measureFloorContactRatio(working, params.floorMask, params.width, params.height);
+    if (ratio >= params.targetFloorContactRatio || passAdded === 0 || addedPixels >= maxGrowthPixels) {
+      break;
+    }
+  }
+
+  const afterFloorContactRatio = measureFloorContactRatio(working, params.floorMask, params.width, params.height);
+  return {
+    mask: working,
+    beforeFloorContactRatio,
+    afterFloorContactRatio,
+    beforePixels,
+    afterPixels: countMaskPixels(working),
+    addedPixels,
+    iterations,
+  };
 }
 
 function measureAnchorProximityScore(mask: Buffer, width: number, height: number, anchorX: number, anchorY: number): number {
@@ -1163,7 +1685,8 @@ async function selectBinarizationCandidate(params: {
   width: number;
   height: number;
   minComponentPixels: number;
-  morphologyRadius: number;
+  morphologyCloseRadius: number;
+  morphologyOpenRadius: number;
   areaTarget: number;
 }): Promise<{
   threshold: number;
@@ -1210,8 +1733,11 @@ async function selectBinarizationCandidate(params: {
           raw: { width: params.width, height: params.height, channels: 1 },
         }).threshold(127, { grayscale: true });
 
-        if (params.morphologyRadius > 0) {
-          pipeline = pipeline.erode(params.morphologyRadius).dilate(params.morphologyRadius);
+        if (params.morphologyCloseRadius > 0) {
+          pipeline = pipeline.dilate(params.morphologyCloseRadius).erode(params.morphologyCloseRadius);
+        }
+        if (params.morphologyOpenRadius > 0) {
+          pipeline = pipeline.erode(params.morphologyOpenRadius).dilate(params.morphologyOpenRadius);
         }
 
         const candidateRaster = await pipeline.raw().toBuffer({ resolveWithObject: true });
@@ -1290,6 +1816,7 @@ function rankComponents(params: {
   const scored = params.components.map((component) => {
     const bboxArea = Math.max(1, (component.maxX - component.minX + 1) * (component.maxY - component.minY + 1));
     const compactness = component.pixelCount / bboxArea;
+    const componentAreaRatio = component.pixelCount / Math.max(1, params.width * params.height);
     const dx = component.centroidX - params.priorCluster.anchorX;
     const dy = component.centroidY - params.priorCluster.anchorY;
     const dist = Math.sqrt((dx * dx) + (dy * dy));
@@ -1321,13 +1848,17 @@ function rankComponents(params: {
     const priorOverlapRatio = priorOverlap / Math.max(1, component.pixelCount);
     const floorOverlapRatio = floorOverlap / Math.max(1, component.pixelCount);
     const wallTouchRatio = wallTouch / Math.max(1, component.pixelCount);
+    const supportConfidence = Math.max(priorOverlapRatio, floorOverlapRatio * 0.92);
+    const sizeConfidence = Math.min(1, Math.sqrt(componentAreaRatio / Math.max(0.0005, params.priorCluster.expectedAreaRatioMin * 0.45)));
 
     const score =
-      (anchorScore * 0.34)
-      + (priorOverlapRatio * 0.26)
-      + (floorOverlapRatio * 0.2)
-      + (compactness * 0.16)
-      - (wallTouchRatio * 0.22);
+      (anchorScore * 0.24)
+      + (priorOverlapRatio * 0.21)
+      + (floorOverlapRatio * 0.19)
+      + (supportConfidence * 0.16)
+      + (sizeConfidence * 0.12)
+      + (compactness * 0.1)
+      - (wallTouchRatio * 0.16);
 
     return {
       component,
@@ -1341,8 +1872,9 @@ function rankComponents(params: {
   }).sort((left, right) => right.score - left.score);
 
   const totalPixelCount = Math.max(1, params.width * params.height);
-  const baseScoreThreshold = 0.18;
-  const recoveryScoreThreshold = params.priorCluster.required ? 0.08 : 0.12;
+  const baseScoreThreshold = 0.16;
+  const recoveryScoreThreshold = params.priorCluster.required ? 0.07 : 0.11;
+  const satelliteRescueScoreThreshold = params.priorCluster.required ? 0.05 : 0.09;
   const desiredAreaRatio = params.priorCluster.required
     ? params.priorCluster.expectedAreaRatioMin
     : Math.min(params.priorCluster.expectedAreaRatioMin, params.priorCluster.expectedAreaRatioTarget * 0.8);
@@ -1371,7 +1903,20 @@ function rankComponents(params: {
       && entry.score > recoveryScoreThreshold
       && structurallySupported;
 
-    if (!useBaseRetention && !useRecoveryRetention) {
+    const semanticallyAttachedSatellite = (
+      entry.floorOverlapRatio >= 0.08
+      || entry.priorOverlapRatio >= 0.012
+      || (entry.anchorScore >= 0.18 && entry.compactness >= 0.08)
+    ) && entry.wallTouchRatio <= 0.65;
+
+    const useSatelliteRescue = !useBaseRetention
+      && !useRecoveryRetention
+      && underTarget
+      && withinRecoveryLimit
+      && entry.score > satelliteRescueScoreThreshold
+      && semanticallyAttachedSatellite;
+
+    if (!useBaseRetention && !useRecoveryRetention && !useSatelliteRescue) {
       continue;
     }
 
@@ -1393,7 +1938,7 @@ function rankComponents(params: {
   const anchorScore = accepted.length
     ? accepted.reduce((sum, entry) => sum + entry.anchorScore, 0) / accepted.length
     : 0;
-  const floorContactRatio = measureFloorContactRatio(acceptedMask, params.floorMask);
+  const floorContactRatio = measureFloorContactRatio(acceptedMask, params.floorMask, params.width, params.height);
   const compactnessScore = accepted.length
     ? accepted.reduce((sum, entry) => sum + entry.compactness, 0) / accepted.length
     : 0;
@@ -1590,7 +2135,7 @@ function ensureSafetyOrThrow(params: {
   const occupancyAreaRatio = occupancyPixelCount / totalPixelCount;
   const connected = analyzeConnectedComponents(params.mask, params.width, params.height, 1).components;
   const connectedComponentCount = connected.length;
-  const floorContactRatio = measureFloorContactRatio(params.mask, params.floorMask);
+  const floorContactRatio = measureFloorContactRatio(params.mask, params.floorMask, params.width, params.height);
   const wallTouchOccupancyRatio = measureWallTouchRatio(params.mask, params.width, params.height);
   const topRegionOccupancyRatio = measureTopRegionRatio(params.mask, params.width, params.height);
 
@@ -1711,6 +2256,18 @@ export async function generateGeminiOccupancyMask(params: {
   const model = String(process.env.CONTINUITY_GEMINI_OCCUPANCY_MODEL || "gemini-2.5-flash-image").trim();
   const minComponentPixels = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MIN_COMPONENT_PIXELS", 120)));
   const morphologyRadius = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MORPH_RADIUS", 1)));
+  const morphologyCloseRadius = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MORPH_CLOSE_RADIUS", morphologyRadius || 1)));
+  const morphologyOpenRadius = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MORPH_OPEN_RADIUS", 0)));
+  const topologyCloseRadius = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_CLOSE_RADIUS", 1)));
+  const topologyMaxCloseRadius = Math.max(topologyCloseRadius, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MAX_CLOSE_RADIUS", 3)));
+  const topologyMinIslandRatio = Math.max(0, Math.min(0.005, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_ISLAND_RATIO", 0.00008)));
+  const topologyMaxAreaExpansionRatio = Math.max(1, Math.min(1.8, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MAX_AREA_EXPANSION", 1.3)));
+  const topologyMinFinalAreaFactor = Math.max(0.7, Math.min(1.6, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_FINAL_AREA_FACTOR", 1.0)));
+  const floorProjectionEnabled = !parseBooleanEnv(process.env.CONTINUITY_GEMINI_MASK_DISABLE_FLOOR_PROJECTION);
+  const floorProjectionMaxDropPixels = Math.max(4, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_FLOOR_PROJECTION_MAX_DROP_PIXELS", 96)));
+  const floorProjectionHorizontalReach = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_FLOOR_PROJECTION_HORIZONTAL_REACH", 2)));
+  const floorProjectionMaxGrowthRatio = Math.max(0.05, Math.min(2.5, readNumberEnv("CONTINUITY_GEMINI_MASK_FLOOR_PROJECTION_MAX_GROWTH_RATIO", 1.4)));
+  const floorProjectionMaxIterations = Math.max(1, Math.min(6, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_FLOOR_PROJECTION_MAX_ITERATIONS", 3))));
   const maxRetainedComponents = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MAX_RETAINED_COMPONENTS", 6)));
   const maxAttempts = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MAX_RETRIES", 3)));
   const requestedMaxOccupancyEdge = readNumberEnv("CONTINUITY_GEMINI_MASK_MAX_EDGE", 1536);
@@ -1740,6 +2297,8 @@ export async function generateGeminiOccupancyMask(params: {
       maxAttempts,
       maxRetainedComponents,
       morphologyRadius,
+      morphologyCloseRadius,
+      morphologyOpenRadius,
       minComponentPixels,
     },
   });
@@ -1783,12 +2342,29 @@ export async function generateGeminiOccupancyMask(params: {
   });
 
   const profile = getRoomTypeBandProfile(params.plan.roomType);
+  const adaptiveFloorTarget = resolveAdaptiveFloorContactTarget(params.plan, profile);
+  const effectiveFloorContactMin = parseBooleanEnv(process.env.CONTINUITY_GEMINI_MASK_DISABLE_ADAPTIVE_FLOOR_TARGET)
+    ? profile.minFloorContactRatio
+    : adaptiveFloorTarget.effectiveMinFloorContactRatio;
   const floorMask = await buildFloorPriorMask(params.plan, width, height);
+  const supportSurfaceMask = await buildSupportSurfaceMask(params.plan, floorMask, width, height);
   const priorClusters = await buildPriorClusters(params.plan, width, height, floorMask);
   const adaptiveExpectation = computeAdaptiveOccupancyExpectation({
     profile,
     roomType: params.plan.roomType,
     priorClusters,
+  });
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_FLOOR_TARGET]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    baseMinFloorContactRatio: profile.minFloorContactRatio,
+    effectiveMinFloorContactRatio: effectiveFloorContactMin,
+    rugZoneCount: adaptiveFloorTarget.rugZoneCount,
+    rugAreaRatio: Number(adaptiveFloorTarget.rugAreaRatio.toFixed(4)),
+    reductionApplied: Number(adaptiveFloorTarget.reductionApplied.toFixed(4)),
+    adaptiveDisabled: parseBooleanEnv(process.env.CONTINUITY_GEMINI_MASK_DISABLE_ADAPTIVE_FLOOR_TARGET),
   });
 
   const outDir = path.dirname(params.occupancyMaskPath);
@@ -2088,7 +2664,8 @@ export async function generateGeminiOccupancyMask(params: {
         width,
         height,
         minComponentPixels,
-        morphologyRadius,
+        morphologyCloseRadius,
+        morphologyOpenRadius,
         areaTarget: priorCluster.expectedAreaRatioTarget,
       });
 
@@ -2155,7 +2732,7 @@ export async function generateGeminiOccupancyMask(params: {
         labelMap: postFilterAnalysis.labelMap,
         candidateMask: componentFilteredMask,
         priorCluster,
-        floorMask,
+        floorMask: supportSurfaceMask,
         width,
         height,
         maxRetainedComponents,
@@ -2547,6 +3124,104 @@ export async function generateGeminiOccupancyMask(params: {
     usedConservativeFallback = true;
   }
 
+  const topologyMinIslandPixels = Math.max(8, Math.floor(width * height * topologyMinIslandRatio));
+  const topologyMinFinalAreaRatio = Math.max(
+    0.006,
+    Math.min(0.18, adaptiveExpectation.effectiveMinAreaRatio * topologyMinFinalAreaFactor),
+  );
+  const preTopologyPixels = countMaskPixels(unionAccepted);
+  const preTopologyAreaRatio = preTopologyPixels / Math.max(1, width * height);
+  const topologyStabilized = await stabilizeFragmentedMask({
+    mask: unionAccepted,
+    supportMask: supportSurfaceMask,
+    width,
+    height,
+    targetMaxComponents: profile.maxComponents,
+    closeRadius: topologyCloseRadius,
+    maxCloseRadius: topologyMaxCloseRadius,
+    minIslandPixels: topologyMinIslandPixels,
+    maxAreaExpansionRatio: topologyMaxAreaExpansionRatio,
+    minFinalAreaRatio: topologyMinFinalAreaRatio,
+  });
+  unionAccepted = Buffer.from(topologyStabilized.mask);
+  const postTopologyPixels = countMaskPixels(unionAccepted);
+  const postTopologyAreaRatio = postTopologyPixels / Math.max(1, width * height);
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_TOPOLOGY_CLEANUP]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    closeRadius: topologyCloseRadius,
+    maxCloseRadius: topologyMaxCloseRadius,
+    minIslandPixels: topologyMinIslandPixels,
+    beforeComponents: topologyStabilized.beforeComponents,
+    afterComponents: topologyStabilized.afterComponents,
+    beforePixels: topologyStabilized.beforePixels,
+    afterPixels: topologyStabilized.afterPixels,
+    closePasses: topologyStabilized.closePasses,
+    largestTrimApplied: topologyStabilized.largestTrimApplied,
+    islandsRemoved: topologyStabilized.islandsRemoved,
+    satelliteIslandsRetained: topologyStabilized.satelliteIslandsRetained,
+    minFinalAreaRatio: Number(topologyMinFinalAreaRatio.toFixed(4)),
+    fallbackAreaRejected: topologyStabilized.fallbackAreaRejected,
+  });
+
+  let floorProjectionBeforePixels = postTopologyPixels;
+  let floorProjectionAfterPixels = postTopologyPixels;
+  if (floorProjectionEnabled) {
+    const floorProjection = buildGravityAwareFloorBridge({
+      mask: unionAccepted,
+      floorMask: supportSurfaceMask,
+      width,
+      height,
+      targetFloorContactRatio: effectiveFloorContactMin,
+      maxDropPixels: floorProjectionMaxDropPixels,
+      maxHorizontalReach: floorProjectionHorizontalReach,
+      maxGrowthRatio: floorProjectionMaxGrowthRatio,
+      maxIterations: floorProjectionMaxIterations,
+    });
+    unionAccepted = Buffer.from(floorProjection.mask);
+    floorProjectionBeforePixels = floorProjection.beforePixels;
+    floorProjectionAfterPixels = floorProjection.afterPixels;
+
+    nLog("[VERTEX_CONTINUITY_GEMINI_MASK_FLOOR_PROJECTION]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      maxDropPixels: floorProjectionMaxDropPixels,
+      horizontalReach: floorProjectionHorizontalReach,
+      maxGrowthRatio: floorProjectionMaxGrowthRatio,
+      maxIterations: floorProjectionMaxIterations,
+      beforeFloorContactRatio: Number(floorProjection.beforeFloorContactRatio.toFixed(4)),
+      afterFloorContactRatio: Number(floorProjection.afterFloorContactRatio.toFixed(4)),
+      beforePixels: floorProjection.beforePixels,
+      afterPixels: floorProjection.afterPixels,
+      addedPixels: floorProjection.addedPixels,
+      iterationsUsed: floorProjection.iterations,
+    });
+  }
+
+  const finalPixels = countMaskPixels(unionAccepted);
+  const finalAreaRatio = finalPixels / Math.max(1, width * height);
+  const floorProjectionBeforeAreaRatio = floorProjectionBeforePixels / Math.max(1, width * height);
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_AREA_ATTRIBUTION]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    preTopologyPixels,
+    postTopologyPixels,
+    postFloorProjectionPixels: finalPixels,
+    preTopologyAreaRatio: Number(preTopologyAreaRatio.toFixed(4)),
+    postTopologyAreaRatio: Number(postTopologyAreaRatio.toFixed(4)),
+    postFloorProjectionAreaRatio: Number(finalAreaRatio.toFixed(4)),
+    topologyPixelDelta: postTopologyPixels - preTopologyPixels,
+    floorProjectionPixelDelta: finalPixels - floorProjectionBeforePixels,
+    topologyAreaDeltaRatio: Number((postTopologyAreaRatio - preTopologyAreaRatio).toFixed(4)),
+    floorProjectionAreaDeltaRatio: Number((finalAreaRatio - floorProjectionBeforeAreaRatio).toFixed(4)),
+    floorProjectionBeforePixels,
+    floorProjectionAfterPixels,
+  });
+
   const anchorProximityScore = priorClusters.length > 0
     ? priorClusters.reduce((sum, cluster) => sum + measureAnchorProximityScore(unionAccepted, width, height, cluster.anchorX, cluster.anchorY), 0) / priorClusters.length
     : 0;
@@ -2565,8 +3240,9 @@ export async function generateGeminiOccupancyMask(params: {
     profile: {
       ...profile,
       minAreaRatio: adaptiveExpectation.effectiveMinAreaRatio,
+      minFloorContactRatio: effectiveFloorContactMin,
     },
-    floorMask,
+    floorMask: supportSurfaceMask,
     anchorScore: anchorProximityScore,
     compactnessScore: compactness,
     continuityGroupId: params.continuityGroupId,

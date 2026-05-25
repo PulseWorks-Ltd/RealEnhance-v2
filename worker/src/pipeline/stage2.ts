@@ -1951,6 +1951,58 @@ export async function runStage2(
         imageId: opts.imageId,
       })
     : null;
+  let occupancyConstraintMaskPath: string | undefined;
+  if (opts.stagingRegion) {
+    try {
+      const meta = await sharp(basePath).metadata();
+      const W = meta.width || 0;
+      const H = meta.height || 0;
+      const r = opts.stagingRegion;
+      const x = Math.max(0, Math.min(Math.floor(r.x), Math.max(0, W - 1)));
+      const y = Math.max(0, Math.min(Math.floor(r.y), Math.max(0, H - 1)));
+      const w = Math.max(1, Math.min(Math.floor(r.width), W - x));
+      const h = Math.max(1, Math.min(Math.floor(r.height), H - y));
+
+      const whiteRect = await sharp({
+        create: {
+          width: w,
+          height: h,
+          channels: 4,
+          background: { r: 255, g: 255, b: 255, alpha: 1 },
+        },
+      }).png().toBuffer();
+      const maskBuf = await sharp({
+        create: {
+          width: W,
+          height: H,
+          channels: 4,
+          background: { r: 0, g: 0, b: 0, alpha: 0 },
+        },
+      })
+        .composite([{ input: whiteRect, left: x, top: y }])
+        .png()
+        .toBuffer();
+
+      const maskPath = siblingOutPath(basePath, "-staging-mask", ".png");
+      await sharp(maskBuf).toFile(maskPath);
+      occupancyConstraintMaskPath = maskPath;
+      focusLog("STAGE2_MASK", "[stage2] Built continuity occupancy constraint mask", {
+        jobId: opts.jobId,
+        width: W,
+        height: H,
+        x,
+        y,
+        w,
+        h,
+      });
+    } catch (e) {
+      focusLog("STAGE2_MASK", "[stage2] Failed to build continuity occupancy constraint mask; continuing without it", {
+        error: String(e),
+        jobId: opts.jobId,
+      });
+      occupancyConstraintMaskPath = undefined;
+    }
+  }
 
   const runAttempt = async (attempt: number, structuralRetryContext?: {
     compositeFail: boolean;

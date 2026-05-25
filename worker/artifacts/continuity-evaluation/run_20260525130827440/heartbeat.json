@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T13:11:57.665Z",
+  "uptimeMs": 210214,
+  "rssMb": 450.1,
+  "heapTotalMb": 36.9,
+  "heapUsedMb": 26.8,
+  "externalMb": 67.9,
+  "arrayBuffersMb": 54.1,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_1",
+    "roomLabel": "Bedroom 1",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+    "status": "failure",
+    "failureCategory": "occupancy_union_failure",
+    "failureReason": "Gemini occupancy mask is empty after cleanup"
+  },
+  "completedCases": 1,
+  "failedCases": 1,
+  "skippedCases": 0,
+  "totalCases": 1,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "casesCompleted": 1,
+  "currentCaseStatus": "failure"
+}

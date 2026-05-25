@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-05-25T13:33:55.721Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "provider_failure",
+      "failureReason": "Gemini occupancy mask has insufficient floor contact (0.198 < 0.412)",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525133016520/bedroom_1/secondary_2"
+    }
+  ]
+}

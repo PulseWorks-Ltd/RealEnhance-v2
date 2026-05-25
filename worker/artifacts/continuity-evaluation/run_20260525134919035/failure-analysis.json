@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-05-25T13:51:07.161Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "provider_failure",
+      "failureReason": "Gemini occupancy mask has low anchor relevance (0.196 < 0.280)",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134919035/bedroom_1/secondary_2"
+    }
+  ]
+}

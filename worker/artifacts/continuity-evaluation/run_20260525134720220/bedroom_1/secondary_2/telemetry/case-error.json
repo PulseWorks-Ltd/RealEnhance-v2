@@ -1,0 +1,5 @@
+{
+  "failureCategory": "provider_failure",
+  "failureReason": "Occupancy mask is empty or covers the full frame",
+  "stack": "VertexSecondaryContinuityError: Occupancy mask is empty or covers the full frame\n    at validateCompiledMask (/workspaces/RealEnhance-v2/worker/src/continuity/maskValidation.ts:79:11)\n    at async withRuntimePhase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:535:12)\n    at async runCase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1014:30)\n    at async runContinuityEvaluation (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1358:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/run-continuity-evaluation.ts:237:18)"
+}

@@ -1,0 +1,427 @@
+{
+  "roomType": "bedroom",
+  "imageWidth": 6033,
+  "imageHeight": 4017,
+  "structuralTopologyCage": {
+    "vanishingPoints": [
+      {
+        "id": "vp_left",
+        "x": 0,
+        "y": 0.45
+      }
+    ],
+    "floorWallJunctions": [
+      {
+        "x": 0,
+        "y": 0.959
+      },
+      {
+        "x": 0.306,
+        "y": 0.903
+      },
+      {
+        "x": 1,
+        "y": 0.796
+      }
+    ],
+    "ceilingWallJunctions": [
+      {
+        "x": 0,
+        "y": 0.142
+      },
+      {
+        "x": 0.306,
+        "y": 0.178
+      },
+      {
+        "x": 1,
+        "y": 0.23
+      }
+    ],
+    "majorRoomPlanes": [
+      {
+        "id": "floor_plane",
+        "planeType": "floor",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0.959
+          },
+          {
+            "x": 0.306,
+            "y": 0.903
+          },
+          {
+            "x": 1,
+            "y": 0.796
+          },
+          {
+            "x": 1,
+            "y": 1
+          },
+          {
+            "x": 0,
+            "y": 1
+          }
+        ]
+      },
+      {
+        "id": "wall_right",
+        "planeType": "wall",
+        "polygon": [
+          {
+            "x": 0.306,
+            "y": 0.178
+          },
+          {
+            "x": 1,
+            "y": 0.23
+          },
+          {
+            "x": 1,
+            "y": 0.796
+          },
+          {
+            "x": 0.306,
+            "y": 0.903
+          }
+        ]
+      },
+      {
+        "id": "wall_left",
+        "planeType": "wall",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0.142
+          },
+          {
+            "x": 0.306,
+            "y": 0.178
+          },
+          {
+            "x": 0.306,
+            "y": 0.903
+          },
+          {
+            "x": 0,
+            "y": 0.959
+          }
+        ]
+      },
+      {
+        "id": "ceiling_plane",
+        "planeType": "ceiling",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 1,
+            "y": 0
+          },
+          {
+            "x": 1,
+            "y": 0.23
+          },
+          {
+            "x": 0.306,
+            "y": 0.178
+          },
+          {
+            "x": 0,
+            "y": 0.142
+          }
+        ]
+      }
+    ]
+  },
+  "relationalAnchorGraph": {
+    "anchors": [
+      {
+        "id": "anchor_wall_right",
+        "anchorType": "plane_anchor",
+        "label": "main bed wall",
+        "planeId": "wall_right"
+      },
+      {
+        "id": "anchor_wall_left",
+        "anchorType": "plane_anchor",
+        "label": "door and closet wall",
+        "planeId": "wall_left"
+      },
+      {
+        "id": "anchor_floor",
+        "anchorType": "plane_anchor",
+        "label": "floor",
+        "planeId": "floor_plane"
+      },
+      {
+        "id": "anchor_wall_heater",
+        "anchorType": "object_anchor",
+        "label": "wall heater",
+        "planeId": "wall_right"
+      }
+    ],
+    "relationships": [
+      {
+        "from": "anchor_wall_right",
+        "relation": "is_perpendicular_to",
+        "to": "anchor_wall_left"
+      }
+    ]
+  },
+  "furnitureZones": [
+    {
+      "id": "zone_bed_1",
+      "furnitureType": "bed",
+      "normalizedBoundingBox": {
+        "x": 0.39,
+        "y": 0.45,
+        "width": 0.45,
+        "height": 0.5
+      },
+      "anchorRelationships": {
+        "adjacentWall": "wall_right",
+        "floorPlaneAlignment": "centered_on_wall_space"
+      },
+      "orientation": {
+        "yawDegrees": 0,
+        "perspectiveHint": "parallel_to_wall"
+      },
+      "maskProjection": {
+        "floorPolygon": [
+          {
+            "x": 0.435,
+            "y": 0.88
+          },
+          {
+            "x": 0.81,
+            "y": 0.84
+          },
+          {
+            "x": 0.77,
+            "y": 0.65
+          },
+          {
+            "x": 0.39,
+            "y": 0.68
+          }
+        ],
+        "wallProjectionPolygon": [
+          {
+            "x": 0.435,
+            "y": 0.88
+          },
+          {
+            "x": 0.81,
+            "y": 0.84
+          },
+          {
+            "x": 0.81,
+            "y": 0.52
+          },
+          {
+            "x": 0.435,
+            "y": 0.56
+          }
+        ]
+      },
+      "continuityReference": {
+        "derivedFromMaster": true,
+        "masterFurnitureId": "bed_master_1"
+      }
+    },
+    {
+      "id": "zone_nightstand_l_1",
+      "furnitureType": "bedside_table",
+      "normalizedBoundingBox": {
+        "x": 0.306,
+        "y": 0.65,
+        "width": 0.15,
+        "height": 0.26
+      },
+      "anchorRelationships": {
+        "adjacentWall": "wall_right",
+        "relativeToBed": "left",
+        "floorPlaneAlignment": "corner"
+      },
+      "orientation": {
+        "yawDegrees": 0,
+        "perspectiveHint": "parallel_to_wall"
+      },
+      "maskProjection": {
+        "floorPolygon": [
+          {
+            "x": 0.306,
+            "y": 0.903
+          },
+          {
+            "x": 0.435,
+            "y": 0.88
+          },
+          {
+            "x": 0.41,
+            "y": 0.76
+          },
+          {
+            "x": 0.306,
+            "y": 0.78
+          }
+        ],
+        "wallProjectionPolygon": [
+          {
+            "x": 0.306,
+            "y": 0.903
+          },
+          {
+            "x": 0.435,
+            "y": 0.88
+          },
+          {
+            "x": 0.435,
+            "y": 0.71
+          },
+          {
+            "x": 0.306,
+            "y": 0.73
+          }
+        ]
+      },
+      "continuityReference": {
+        "derivedFromMaster": true,
+        "masterFurnitureId": "nightstand_wood_left"
+      }
+    },
+    {
+      "id": "zone_lamp_l_1",
+      "furnitureType": "table_lamp",
+      "normalizedBoundingBox": {
+        "x": 0.34,
+        "y": 0.5,
+        "width": 0.08,
+        "height": 0.23
+      },
+      "anchorRelationships": {
+        "adjacentWall": "wall_right",
+        "relativeToBed": "on_left_nightstand"
+      },
+      "orientation": {
+        "yawDegrees": 0,
+        "perspectiveHint": "vertical"
+      },
+      "maskProjection": {
+        "floorPolygon": [],
+        "wallProjectionPolygon": [
+          {
+            "x": 0.37,
+            "y": 0.72
+          },
+          {
+            "x": 0.41,
+            "y": 0.71
+          },
+          {
+            "x": 0.41,
+            "y": 0.52
+          },
+          {
+            "x": 0.37,
+            "y": 0.53
+          }
+        ]
+      },
+      "continuityReference": {
+        "derivedFromMaster": true,
+        "masterFurnitureId": "lamp_white_left"
+      }
+    },
+    {
+      "id": "zone_rug_1",
+      "furnitureType": "rug",
+      "normalizedBoundingBox": {
+        "x": 0.3,
+        "y": 0.64,
+        "width": 0.6,
+        "height": 0.36
+      },
+      "anchorRelationships": {
+        "relativeToBed": "under",
+        "floorPlaneAlignment": "under_bed"
+      },
+      "orientation": {
+        "yawDegrees": 0,
+        "perspectiveHint": "flat_on_floor"
+      },
+      "maskProjection": {
+        "floorPolygon": [
+          {
+            "x": 0.33,
+            "y": 0.95
+          },
+          {
+            "x": 0.88,
+            "y": 0.89
+          },
+          {
+            "x": 0.83,
+            "y": 0.69
+          },
+          {
+            "x": 0.3,
+            "y": 0.73
+          }
+        ],
+        "wallProjectionPolygon": []
+      },
+      "continuityReference": {
+        "derivedFromMaster": true,
+        "masterFurnitureId": "rug_geometric_1"
+      }
+    },
+    {
+      "id": "zone_artwork_1",
+      "furnitureType": "artwork",
+      "normalizedBoundingBox": {
+        "x": 0.5,
+        "y": 0.3,
+        "width": 0.25,
+        "height": 0.2
+      },
+      "anchorRelationships": {
+        "adjacentWall": "wall_right",
+        "relativeToBed": "above"
+      },
+      "orientation": {
+        "yawDegrees": 0,
+        "perspectiveHint": "flush_with_wall"
+      },
+      "maskProjection": {
+        "floorPolygon": [],
+        "wallProjectionPolygon": [
+          {
+            "x": 0.53,
+            "y": 0.5
+          },
+          {
+            "x": 0.71,
+            "y": 0.48
+          },
+          {
+            "x": 0.71,
+            "y": 0.31
+          },
+          {
+            "x": 0.53,
+            "y": 0.32
+          }
+        ]
+      },
+      "continuityReference": {
+        "derivedFromMaster": true,
+        "masterFurnitureId": "artwork_abstract_blue_1"
+      }
+    }
+  ]
+}

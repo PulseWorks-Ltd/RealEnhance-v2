@@ -1,0 +1,75 @@
+{
+  "width": 1536,
+  "height": 1023,
+  "clusters": [
+    {
+      "clusterId": "bedside_composition",
+      "clusterRole": "required",
+      "decisions": [
+        {
+          "componentId": 1,
+          "pixelCount": 256348,
+          "areaRatio": 0.16314098647768002,
+          "score": 0.6427696405623187,
+          "accepted": true,
+          "rejectedReason": null,
+          "anchorScore": 0.699740870321546,
+          "priorOverlapRatio": 0.34932591633248555,
+          "floorOverlapRatio": 0.6577347980089566,
+          "compactness": 0.5968521536670547,
+          "wallTouchRatio": 0,
+          "minX": 458,
+          "minY": 523,
+          "maxX": 1316,
+          "maxY": 1022,
+          "centroidX": 810.566511148907,
+          "centroidY": 799.3864161218344
+        },
+        {
+          "componentId": 2,
+          "pixelCount": 1124,
+          "areaRatio": 0.0007153185076572173,
+          "score": 0.21352317337005006,
+          "accepted": true,
+          "rejectedReason": null,
+          "anchorScore": 0.46820115635115955,
+          "priorOverlapRatio": 0,
+          "floorOverlapRatio": 0,
+          "compactness": 0.7741046831955923,
+          "wallTouchRatio": 0,
+          "minX": 487,
+          "minY": 555,
+          "maxX": 530,
+          "maxY": 587,
+          "centroidX": 507.70818505338076,
+          "centroidY": 571.8567615658363
+        }
+      ]
+    },
+    {
+      "clusterId": "decor_group",
+      "clusterRole": "optional",
+      "decisions": [
+        {
+          "componentId": 1,
+          "pixelCount": 11095,
+          "areaRatio": 0.007060906443466928,
+          "score": 0.3008933845993371,
+          "accepted": true,
+          "rejectedReason": null,
+          "anchorScore": 0.3508538810012322,
+          "priorOverlapRatio": 0,
+          "floorOverlapRatio": 0,
+          "compactness": 0.966884531590414,
+          "wallTouchRatio": 0,
+          "minX": 623,
+          "minY": 355,
+          "maxX": 707,
+          "maxY": 489,
+          "centroidX": 664.9451104100947,
+          "centroidY": 423.48481297881926
+        }
+      ]
+    }
+  ]
+}
