@@ -14,6 +14,7 @@ export interface RegionEditArgs {
   sceneType?: "interior" | "exterior";
   preserveStructure?: boolean;
   editMode?: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+  semanticAddMode?: boolean;
 }
 
 const EDIT_GENERATION_CONFIG = {
@@ -40,6 +41,7 @@ export async function regionEditWithGemini(args: RegionEditArgs): Promise<Buffer
     sceneType,
     preserveStructure,
     editMode,
+    semanticAddMode,
   } = args;
 
   const composedPrompt = systemPrompt || userPrompt
@@ -84,7 +86,9 @@ ${(userPrompt || prompt).trim()}`.trim()
   });
 
   const parts: any[] = [
-    { text: "EDITABLE_CROPPED_REGION:" },
+    { text: semanticAddMode
+      ? "FULL_IMAGE_SCENE_CONTEXT (the highlighted mask is placement guidance only, not a hard crop boundary):"
+      : "EDITABLE_CROPPED_REGION:" },
     {
       inlineData: {
         mimeType: "image/webp",
@@ -125,7 +129,9 @@ ${(userPrompt || prompt).trim()}`.trim()
     });
   }
   if (maskPngBuffer) {
-    const maskLabel = maskMode === "guidance"
+    const maskLabel = semanticAddMode
+      ? "EDIT_GUIDANCE_MASK (WHITE=preferred placement region, GRAY=allowed spill zone for natural composition):"
+      : maskMode === "guidance"
       ? "EDIT_GUIDANCE_MASK (WHITE=target edit zone, GRAY=allowed spill zone inside the crop):"
       : "EDIT_MASK_IMAGE (WHITE=EDIT, BLACK=KEEP):";
     parts.push({ text: maskLabel });

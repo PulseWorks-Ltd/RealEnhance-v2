@@ -11,6 +11,7 @@ type RegionEditPromptArgs = {
   editContext?: EditContext;
   hasStage1ABaseline?: boolean;
   editMode?: "Add" | "Remove" | "Replace" | "Restore" | "Reinstate";
+  placementRegion?: PlacementRegionGuidance["placementRegion"];
   reinstateConfig?: {
     targetType: "window" | "doorway" | "opening" | "auto";
     geometry?: {
@@ -42,6 +43,32 @@ export type EditContext = {
     roomId?: string;
     continuityGroupId?: string;
   };
+};
+
+export type PlacementRegionGuidance = {
+  placementRegion: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    centerX: number;
+    centerY: number;
+    area: number;
+    relativePosition: string;
+  };
+  placementRegions?: Array<{
+    index: number;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    centerX: number;
+    centerY: number;
+    area: number;
+    relativePosition: string;
+  }>;
+  regionCount?: number;
+  totalArea?: number;
 };
 
 export const BASE_SYSTEM_PROMPT = `
@@ -181,12 +208,45 @@ Requested replacement: ${userIntent?.trim() || "Replace the current content with
 }
 
 function buildAddPrompt(userIntent?: string, sceneHint?: string): string {
+  return buildSemanticAddPrompt({ userIntent, sceneHint });
+}
+
+export function buildSemanticAddPrompt(params: {
+  userIntent?: string;
+  sceneHint?: string;
+  placementGuidance?: PlacementRegionGuidance;
+}): string {
+  const placementBlock = params.placementGuidance
+    ? `\n\nPLACEMENT GUIDANCE:\n${JSON.stringify(params.placementGuidance, null, 2)}`
+    : "";
+
   return `
-Add the requested content into this region as a complete, photorealistic insertion.
+SEMANTIC_ADD_EDIT
+
+Add the requested content using the FULL image as the primary scene context.
+
+The highlighted region is a placement cue, not a hard inpainting boundary.
+Use it to infer where the object should be placed, but reason globally about the room for scale, perspective, spacing, and composition.
 
 ${STRUCTURE_LOCK}
 
 ${buildModeSceneHint(sceneHint)}
+
+Full-image reasoning rules:
+- Consider the entire room when deciding object scale, angle, and relation to nearby furniture.
+- Use the highlighted region as the preferred insertion zone, not an exact clipping boundary.
+- Allow slight extension beyond the highlighted region if needed for natural placement, contact shadows, or object proportions.
+- Maintain architectural realism, room balance, and believable spacing from surrounding objects.
+
+Spatial intent:
+- Place the added object naturally relative to the existing furniture and room geometry.
+- Keep the insertion physically grounded and visually integrated.
+- Preserve the user’s placement intent while allowing global reasoning to improve the composition.${placementBlock}
+
+Multi-region mask handling:
+- If multiple placement regions are provided, treat each as a separate placement cue.
+- Keep the added object relationships coherent across the regions without collapsing them into a single bbox.
+- Use the aggregate placementRegion as the primary intent summary and the placementRegions array for per-island spatial guidance.
 
 Addition requirements:
 - Generate the added content so it is clearly present, physically grounded, and realistically supported.
@@ -421,14 +481,24 @@ export function buildRegionEditPrompt({
   editContext,
   editMode = "Replace",
   reinstateConfig,
+  placementRegion,
 }: RegionEditPromptArgs): string {
   const normalizedMode = normalizeEditMode(editMode as LegacyEditMode);
   const sceneHint = buildSceneHint(sceneType, buildLegacySceneDetail(editContext, roomType));
-  const prompt = buildEditPrompt({
-    mode: normalizedMode,
-    userIntent: userInstruction,
-    sceneHint,
-  });
+  const prompt = normalizedMode === "add"
+    ? {
+        system: BASE_SYSTEM_PROMPT.trim(),
+        user: buildSemanticAddPrompt({
+          userIntent: userInstruction,
+          sceneHint,
+          placementRegion,
+        }),
+      }
+    : buildEditPrompt({
+        mode: normalizedMode,
+        userIntent: userInstruction,
+        sceneHint,
+      });
 
   const reinstateGeometry = normalizedMode === "reinstate" && reinstateConfig?.geometry?.bbox
     ? `

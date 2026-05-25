@@ -10,6 +10,7 @@ import {
 import {
   buildSecondaryContinuityEditPrompt,
   buildEditPrompt,
+  buildSemanticAddPrompt,
   buildSceneHint,
   normalizeEditMode,
   type EditContext,
@@ -2552,6 +2553,144 @@ function getNormBboxCenter(bbox: [number, number, number, number]): { cx: number
   };
 }
 
+function describeRelativeImagePosition(cx: number, cy: number): string {
+  const horizontal = cx < 0.33 ? "left" : cx > 0.67 ? "right" : "center";
+  const vertical = cy < 0.33 ? "upper" : cy > 0.67 ? "lower" : "middle";
+
+  if (horizontal === "center" && vertical === "middle") {
+    return "center";
+  }
+
+  if (horizontal === "center") {
+    return vertical;
+  }
+
+  if (vertical === "middle") {
+    return horizontal;
+  }
+
+  return `${vertical}-${horizontal}`;
+}
+
+type SemanticAddPlacementRegion = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  centerX: number;
+  centerY: number;
+  area: number;
+  relativePosition: string;
+};
+
+type SemanticAddPlacementGuidance = {
+  placementRegion: SemanticAddPlacementRegion;
+  placementRegions: Array<SemanticAddPlacementRegion & { index: number }>;
+  regionCount: number;
+  totalArea: number;
+};
+
+function pixelBoxToNormalizedPlacementRegion(box: PixelBox, width: number, height: number): SemanticAddPlacementRegion {
+  const normalizedX = box.x / width;
+  const normalizedY = box.y / height;
+  const normalizedWidth = box.width / width;
+  const normalizedHeight = box.height / height;
+  const centerX = normalizedX + (normalizedWidth / 2);
+  const centerY = normalizedY + (normalizedHeight / 2);
+
+  return {
+    x: Number(normalizedX.toFixed(4)),
+    y: Number(normalizedY.toFixed(4)),
+    width: Number(normalizedWidth.toFixed(4)),
+    height: Number(normalizedHeight.toFixed(4)),
+    centerX: Number(centerX.toFixed(4)),
+    centerY: Number(centerY.toFixed(4)),
+    area: Number((normalizedWidth * normalizedHeight).toFixed(4)),
+    relativePosition: describeRelativeImagePosition(centerX, centerY),
+  };
+}
+
+async function buildSemanticAddPlacementGuidance(
+  maskPngBuffer: Buffer,
+  width: number,
+  height: number,
+): Promise<SemanticAddPlacementGuidance | null> {
+  const regions = await splitMaskIntoRegions(maskPngBuffer, width, height);
+  if (regions.length === 0) return null;
+
+  const sortedRegions = [...regions].sort((a, b) => {
+    if (a.bbox.y !== b.bbox.y) return a.bbox.y - b.bbox.y;
+    return a.bbox.x - b.bbox.x;
+  });
+
+  const placementRegions = sortedRegions.map((region, index) => ({
+    index,
+    ...pixelBoxToNormalizedPlacementRegion(region.bbox, width, height),
+  }));
+
+  const aggregateBox = sortedRegions.reduce((acc, region) => {
+    const right = region.bbox.x + region.bbox.width;
+    const bottom = region.bbox.y + region.bbox.height;
+    if (acc === null) {
+      return {
+        x: region.bbox.x,
+        y: region.bbox.y,
+        right,
+        bottom,
+      };
+    }
+    return {
+      x: Math.min(acc.x, region.bbox.x),
+      y: Math.min(acc.y, region.bbox.y),
+      right: Math.max(acc.right, right),
+      bottom: Math.max(acc.bottom, bottom),
+    };
+  }, null as null | { x: number; y: number; right: number; bottom: number });
+
+  const aggregatePlacementRegion = aggregateBox
+    ? pixelBoxToNormalizedPlacementRegion({
+        x: aggregateBox.x,
+        y: aggregateBox.y,
+        width: Math.max(1, aggregateBox.right - aggregateBox.x),
+        height: Math.max(1, aggregateBox.bottom - aggregateBox.y),
+      }, width, height)
+    : null;
+
+  const totalArea = placementRegions.reduce((sum, region) => sum + region.area, 0);
+
+  return {
+    placementRegion: aggregatePlacementRegion || placementRegions[0]!,
+    placementRegions,
+    regionCount: placementRegions.length,
+    totalArea: Number(totalArea.toFixed(4)),
+  };
+}
+
+async function buildSemanticAddPlacementRegion(
+  maskPngBuffer: Buffer,
+  width: number,
+  height: number,
+): Promise<SemanticAddPlacementRegion | null> {
+  const bbox = await maskToNormalizedBbox(maskPngBuffer, width, height);
+  if (!bbox) return null;
+
+  const center = getNormBboxCenter(bbox);
+  const regionWidth = Math.max(0, bbox[2] - bbox[0]);
+  const regionHeight = Math.max(0, bbox[3] - bbox[1]);
+  const area = regionWidth * regionHeight;
+
+  return {
+    x: Number(bbox[0].toFixed(4)),
+    y: Number(bbox[1].toFixed(4)),
+    width: Number(regionWidth.toFixed(4)),
+    height: Number(regionHeight.toFixed(4)),
+    centerX: Number(center.cx.toFixed(4)),
+    centerY: Number(center.cy.toFixed(4)),
+    area: Number(area.toFixed(4)),
+    relativePosition: describeRelativeImagePosition(center.cx, center.cy),
+  };
+}
+
 function computeNormalizedCenterDistance(
   a: { cx: number; cy: number },
   b: { cx: number; cy: number },
@@ -3383,6 +3522,47 @@ export async function applyEdit({
 
     const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
+
+    const isSemanticAddMode = normalizedMode === "add";
+    if (isSemanticAddMode) {
+      const placementGuidance = await buildSemanticAddPlacementGuidance(maskPngBuffer!, meta.width, meta.height);
+      const semanticAddGuidanceMaskBuffer = await buildSoftGuidanceMask(maskPngBuffer!, meta.width, meta.height);
+      const semanticAddPrompt = buildSemanticAddPrompt({
+        userIntent: instruction,
+        sceneHint: buildStructuredSceneHint({
+          sceneType: sceneType || "interior",
+          roomType,
+          editContext,
+        }),
+        placementGuidance: placementGuidance || undefined,
+      });
+
+      console.log("[editApply] SEMANTIC_ADD_EDIT", {
+        jobId,
+        imageId,
+        mode,
+        placementGuidance,
+        maskCoverageRatio: Number((await computeMaskCoverageRatio(maskPngBuffer!, meta.width, meta.height)).toFixed(4)),
+        guidanceMask: "soft_full_image_guidance",
+      });
+
+      const editedBuffer = await regionEditWithGemini({
+        prompt: semanticAddPrompt,
+        jobId,
+        imageId,
+        baseImageBuffer: fullSceneReferenceBuffer,
+        maskPngBuffer: semanticAddGuidanceMaskBuffer,
+        maskMode: "guidance",
+        roomType,
+        sceneType: sceneType || "interior",
+        editMode: mode,
+        semanticAddMode: true,
+      });
+
+      await sharp(editedBuffer).webp().toFile(outPath);
+      console.log("[editApply] Saved semantic add edit to", outPath);
+      return outPath;
+    }
 
     const fallbackPrompt = useSecondaryContinuityEditMode
       ? buildSecondaryContinuityEditPrompt({
