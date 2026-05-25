@@ -1,0 +1,5 @@
+{
+  "failureCategory": "provider_failure",
+  "failureReason": "Outside-mask drift exceeded thresholds (mae=3.7816, ratio=0.065157)",
+  "stack": "VertexSecondaryContinuityError: Outside-mask drift exceeded thresholds (mae=3.7816, ratio=0.065157)\n    at validateOutsideMaskDrift (/workspaces/RealEnhance-v2/worker/src/providers/vertex/imageRendererProvider.ts:1324:11)\n    at async VertexImageRendererProvider.render (/workspaces/RealEnhance-v2/worker/src/providers/vertex/imageRendererProvider.ts:1596:7)\n    at async withRuntimePhase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:535:12)\n    at async runCase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1074:28)\n    at async runContinuityEvaluation (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1363:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/run-continuity-evaluation.ts:237:18)"
+}

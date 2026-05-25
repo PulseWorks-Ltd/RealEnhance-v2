@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-05-25T21:02:59.907Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "occupancy_only",
+  "sourceRunDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641",
+  "useGeminiOccupancy": true,
+  "completedCases": 2,
+  "failedCases": 1,
+  "skippedCases": 0,
+  "totalCases": 2,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_2",
+    "roomLabel": "Bedroom 2",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 2.2.jpg",
+    "status": "failure",
+    "failureCategory": "provider_failure",
+    "failureReason": "ENOENT: no such file or directory, open '/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641/bedroom_2/secondary_2/planner/planner.json'"
+  },
+  "cases": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "status": "success",
+      "failureCategory": null,
+      "failureReason": null,
+      "plannerMode": "replay",
+      "occupancyGenerationMode": "gemini_image_mask_v1",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048/bedroom_1/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": 99188,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": 0.059280586927074934,
+        "finalAreaRatio": 0.05099473433828655,
+        "requiredClusterOccupancy": 0.06463450024437928,
+        "optionalClusterOccupancy": 0.005194332437275986,
+        "unionOccupancy": 0.06874567245030955,
+        "retryCount": 4,
+        "clusterApiCallCount": 4,
+        "rateLimit429Count": 0,
+        "validatorDriftPass": null
+      }
+    },
+    {
+      "roomKey": "bedroom_2",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "status": "failure",
+      "failureCategory": "provider_failure",
+      "failureReason": "ENOENT: no such file or directory, open '/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641/bedroom_2/secondary_2/planner/planner.json'",
+      "plannerMode": "replay",
+      "occupancyGenerationMode": null,
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048/bedroom_2/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": null,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": null,
+        "finalAreaRatio": null,
+        "requiredClusterOccupancy": null,
+        "optionalClusterOccupancy": null,
+        "unionOccupancy": null,
+        "retryCount": null,
+        "clusterApiCallCount": null,
+        "rateLimit429Count": 0,
+        "validatorDriftPass": null
+      }
+    }
+  ]
+}

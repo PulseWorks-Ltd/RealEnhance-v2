@@ -1,0 +1,144 @@
+{
+  "rawOccupancyRatio": 0.08363498900293255,
+  "acceptedOccupancyRatio": 0.03528989491691105,
+  "requiredClusterOccupancy": 0.03528989491691105,
+  "optionalClusterOccupancy": 0,
+  "requiredOccupancyRatio": 0.03528989491691105,
+  "optionalOccupancyRatio": 0,
+  "adaptiveExpectation": {
+    "effectiveMinAreaRatio": 0.02,
+    "requiredTargetAreaRatio": 0.02485,
+    "optionalTargetAreaRatio": 0.004,
+    "optionalWeight": 0.2
+  },
+  "occupancyLossByStage": {
+    "rawToAccepted": 0.048345
+  },
+  "occupancyLossByCluster": [
+    {
+      "clusterId": "bedside_composition",
+      "clusterRole": "required",
+      "occupancyLossByStage": {
+        "morphologyToComponentFiltered": 0.002862,
+        "componentFilteredToAccepted": 0.045483,
+        "acceptedToMergedUnion": 0,
+        "mergedUnionToFinalSafety": 0
+      }
+    },
+    {
+      "clusterId": "decor_group",
+      "clusterRole": "optional",
+      "occupancyLossByStage": {
+        "morphologyToComponentFiltered": 0,
+        "componentFilteredToAccepted": 0,
+        "acceptedToMergedUnion": 0,
+        "mergedUnionToFinalSafety": -0.03529
+      }
+    }
+  ],
+  "skippedOptionalClusters": [
+    "decor_group"
+  ],
+  "finalThreshold": 0.02,
+  "rejectionReason": null,
+  "clusterContributions": [
+    {
+      "clusterId": "bedside_composition",
+      "role": "required",
+      "contributionRatio": 0.03528989491691105,
+      "includedInFinalUnion": true,
+      "acceptedOccupancyRatio": 0.03528989491691105,
+      "mergedUnionRatioAfterCluster": 0.03528989491691105
+    }
+  ],
+  "perClusterStageMetrics": {
+    "bedside_composition": [
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "raw_gemini_mask",
+        "occupancyPixels": 1571328,
+        "occupancyAreaRatio": 1,
+        "componentCount": 1,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "alpha_normalized_mask",
+        "occupancyPixels": 1571328,
+        "occupancyAreaRatio": 1,
+        "componentCount": 1,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "thresholded_mask",
+        "occupancyPixels": 142259,
+        "occupancyAreaRatio": 0.09053424873737374,
+        "componentCount": 1348,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "morphology_cleaned_mask",
+        "occupancyPixels": 131418,
+        "occupancyAreaRatio": 0.08363498900293255,
+        "componentCount": 235,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "component_filtered_mask",
+        "occupancyPixels": 126921,
+        "occupancyAreaRatio": 0.08077307856793745,
+        "componentCount": 26,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "accepted_cluster_mask",
+        "occupancyPixels": 55452,
+        "occupancyAreaRatio": 0.03528989491691105,
+        "componentCount": 6,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "merged_union_mask",
+        "occupancyPixels": 55452,
+        "occupancyAreaRatio": 0.03528989491691105,
+        "componentCount": 6,
+        "rejectedReason": null,
+        "includedInFinalUnion": true
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "required",
+        "stage": "final_safety_mask",
+        "occupancyPixels": 55452,
+        "occupancyAreaRatio": 0.03528989491691105,
+        "componentCount": 6,
+        "rejectedReason": null,
+        "includedInFinalUnion": true
+      }
+    ],
+    "decor_group": [
+      {
+        "clusterId": "decor_group",
+        "clusterRole": "optional",
+        "stage": "final_safety_mask",
+        "occupancyPixels": 55452,
+        "occupancyAreaRatio": 0.03528989491691105,
+        "componentCount": 6,
+        "rejectedReason": null,
+        "includedInFinalUnion": false
+      }
+    ]
+  }
+}

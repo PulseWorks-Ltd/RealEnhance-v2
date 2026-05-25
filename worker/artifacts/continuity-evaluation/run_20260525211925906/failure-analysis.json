@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-05-25T21:22:13.689Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "provider_failure",
+      "failureReason": "Gemini occupancy mask has insufficient floor contact (0.408 < 0.526)",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211925906/bedroom_1/secondary_2"
+    },
+    {
+      "roomKey": "bedroom_2",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "occupancy_sparse",
+      "failureReason": "Gemini occupancy mask area too sparse (0.014 < 0.020)",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211925906/bedroom_2/secondary_2"
+    }
+  ]
+}

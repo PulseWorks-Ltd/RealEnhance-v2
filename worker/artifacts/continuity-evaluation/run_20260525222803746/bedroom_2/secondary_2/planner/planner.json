@@ -1,0 +1,212 @@
+{
+  "roomType": "bedroom",
+  "imageWidth": 6000,
+  "imageHeight": 4000,
+  "structuralTopologyCage": {
+    "vanishingPoints": [
+      {
+        "id": "vp_left",
+        "x": 0,
+        "y": 0.45
+      }
+    ],
+    "floorWallJunctions": [
+      {
+        "x": 0,
+        "y": 0.771
+      },
+      {
+        "x": 0.325,
+        "y": 0.733
+      },
+      {
+        "x": 0.485,
+        "y": 0.722
+      },
+      {
+        "x": 0.6,
+        "y": 0.715
+      },
+      {
+        "x": 1,
+        "y": 0.692
+      }
+    ],
+    "ceilingWallJunctions": [
+      {
+        "x": 0.29,
+        "y": 0.25
+      },
+      {
+        "x": 0.47,
+        "y": 0.24
+      },
+      {
+        "x": 0.6,
+        "y": 0.24
+      },
+      {
+        "x": 1,
+        "y": 0.23
+      }
+    ],
+    "majorRoomPlanes": [
+      {
+        "id": "plane_floor",
+        "planeType": "floor",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0.771
+          },
+          {
+            "x": 1,
+            "y": 0.692
+          },
+          {
+            "x": 1,
+            "y": 1
+          },
+          {
+            "x": 0,
+            "y": 1
+          }
+        ]
+      },
+      {
+        "id": "plane_left_wall",
+        "planeType": "wall",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0.05
+          },
+          {
+            "x": 0.325,
+            "y": 0.07
+          },
+          {
+            "x": 0.325,
+            "y": 0.733
+          },
+          {
+            "x": 0,
+            "y": 0.771
+          }
+        ]
+      },
+      {
+        "id": "plane_closet_wall",
+        "planeType": "wall",
+        "polygon": [
+          {
+            "x": 0.6,
+            "y": 0.24
+          },
+          {
+            "x": 1,
+            "y": 0.23
+          },
+          {
+            "x": 1,
+            "y": 0.692
+          },
+          {
+            "x": 0.6,
+            "y": 0.715
+          }
+        ]
+      },
+      {
+        "id": "plane_ceiling",
+        "planeType": "ceiling",
+        "polygon": [
+          {
+            "x": 0,
+            "y": 0
+          },
+          {
+            "x": 1,
+            "y": 0
+          },
+          {
+            "x": 1,
+            "y": 0.23
+          },
+          {
+            "x": 0,
+            "y": 0.05
+          }
+        ]
+      }
+    ]
+  },
+  "relationalAnchorGraph": {
+    "anchors": [
+      {
+        "id": "anchor_floor",
+        "anchorType": "plane_anchor",
+        "label": "floor",
+        "planeId": "plane_floor"
+      },
+      {
+        "id": "anchor_rug_1",
+        "anchorType": "furniture_anchor",
+        "label": "area_rug",
+        "furnitureZoneId": "fz-rug-01"
+      }
+    ],
+    "relationships": [
+      {
+        "from": "anchor_rug_1",
+        "relation": "on",
+        "to": "anchor_floor"
+      }
+    ]
+  },
+  "furnitureZones": [
+    {
+      "id": "fz-rug-01",
+      "furnitureType": "area_rug",
+      "normalizedBoundingBox": {
+        "x": 0.1,
+        "y": 0.78,
+        "width": 0.8,
+        "height": 0.21999999999999997
+      },
+      "anchorRelationships": {
+        "relativeToBed": "in_front_of",
+        "floorPlaneAlignment": "flat"
+      },
+      "orientation": {
+        "yawDegrees": 0,
+        "perspectiveHint": "three_point"
+      },
+      "maskProjection": {
+        "floorPolygon": [
+          {
+            "x": 0.25,
+            "y": 0.79
+          },
+          {
+            "x": 0.75,
+            "y": 0.78
+          },
+          {
+            "x": 0.9,
+            "y": 1
+          },
+          {
+            "x": 0.1,
+            "y": 1
+          }
+        ],
+        "wallProjectionPolygon": []
+      },
+      "continuityReference": {
+        "derivedFromMaster": true,
+        "masterFurnitureId": "rug_diamond_pattern_01"
+      }
+    }
+  ]
+}

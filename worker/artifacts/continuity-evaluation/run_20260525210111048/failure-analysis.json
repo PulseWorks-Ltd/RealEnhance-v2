@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-05-25T21:02:59.910Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_2",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "provider_failure",
+      "failureReason": "ENOENT: no such file or directory, open '/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641/bedroom_2/secondary_2/planner/planner.json'",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048/bedroom_2/secondary_2"
+    }
+  ]
+}

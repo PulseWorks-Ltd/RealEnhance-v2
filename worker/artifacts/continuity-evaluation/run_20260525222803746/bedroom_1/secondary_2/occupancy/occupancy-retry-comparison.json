@@ -1,0 +1,36 @@
+[
+  {
+    "clusterId": "bedside_composition",
+    "required": true,
+    "clusterLabel": "bedside composition",
+    "attempt": 1,
+    "failureMode": "none",
+    "score": 0.8620279483189741,
+    "occupancyAreaRatio": 0.11360899824861519,
+    "connectedComponentCount": 1,
+    "floorContactRatio": 0.925,
+    "wallTouchRatio": 0,
+    "topRegionRatio": 0,
+    "anchorProximityScore": 0.74760598325443,
+    "constraintAffinityScore": 0.8942565694023539,
+    "selectedThreshold": 250,
+    "selectedInversion": false
+  },
+  {
+    "clusterId": "decor_group",
+    "required": false,
+    "clusterLabel": "decor group",
+    "attempt": 1,
+    "failureMode": "none",
+    "score": 0.5338671748300396,
+    "occupancyAreaRatio": 0.03184631089116976,
+    "connectedComponentCount": 6,
+    "floorContactRatio": 0.7077294685990339,
+    "wallTouchRatio": 0,
+    "topRegionRatio": 0,
+    "anchorProximityScore": 0.4760099027606432,
+    "constraintAffinityScore": 0.9126116584400792,
+    "selectedThreshold": 192,
+    "selectedInversion": false
+  }
+]

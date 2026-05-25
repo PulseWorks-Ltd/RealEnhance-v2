@@ -1,0 +1,120 @@
+{
+  "rawOccupancyRatio": 0.039304097493489586,
+  "acceptedOccupancyRatio": 0.021442413330078125,
+  "requiredClusterOccupancy": 0,
+  "optionalClusterOccupancy": 0.021442413330078125,
+  "requiredOccupancyRatio": 0,
+  "optionalOccupancyRatio": 0.021442413330078125,
+  "adaptiveExpectation": {
+    "effectiveMinAreaRatio": 0.02,
+    "requiredTargetAreaRatio": 0,
+    "optionalTargetAreaRatio": 0.006999999999999999,
+    "optionalWeight": 0.2
+  },
+  "occupancyLossByStage": {
+    "rawToAccepted": 0.017862
+  },
+  "occupancyLossByCluster": [
+    {
+      "clusterId": "bedside_composition",
+      "clusterRole": "optional",
+      "occupancyLossByStage": {
+        "morphologyToComponentFiltered": 0.001886,
+        "componentFilteredToAccepted": 0.015976,
+        "acceptedToMergedUnion": 0,
+        "mergedUnionToFinalSafety": 0
+      }
+    }
+  ],
+  "skippedOptionalClusters": [],
+  "finalThreshold": 0.02,
+  "rejectionReason": null,
+  "clusterContributions": [
+    {
+      "clusterId": "bedside_composition",
+      "role": "optional",
+      "contributionRatio": 0.021442413330078125,
+      "includedInFinalUnion": true,
+      "acceptedOccupancyRatio": 0.021442413330078125,
+      "mergedUnionRatioAfterCluster": 0.021442413330078125
+    }
+  ],
+  "perClusterStageMetrics": {
+    "bedside_composition": [
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "raw_gemini_mask",
+        "occupancyPixels": 1572864,
+        "occupancyAreaRatio": 1,
+        "componentCount": 1,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "alpha_normalized_mask",
+        "occupancyPixels": 1572864,
+        "occupancyAreaRatio": 1,
+        "componentCount": 1,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "thresholded_mask",
+        "occupancyPixels": 66895,
+        "occupancyAreaRatio": 0.04253069559733073,
+        "componentCount": 696,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "morphology_cleaned_mask",
+        "occupancyPixels": 61820,
+        "occupancyAreaRatio": 0.039304097493489586,
+        "componentCount": 143,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "component_filtered_mask",
+        "occupancyPixels": 58854,
+        "occupancyAreaRatio": 0.037418365478515625,
+        "componentCount": 23,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "accepted_cluster_mask",
+        "occupancyPixels": 33726,
+        "occupancyAreaRatio": 0.021442413330078125,
+        "componentCount": 6,
+        "rejectedReason": null
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "merged_union_mask",
+        "occupancyPixels": 33726,
+        "occupancyAreaRatio": 0.021442413330078125,
+        "componentCount": 6,
+        "rejectedReason": null,
+        "includedInFinalUnion": true
+      },
+      {
+        "clusterId": "bedside_composition",
+        "clusterRole": "optional",
+        "stage": "final_safety_mask",
+        "occupancyPixels": 33726,
+        "occupancyAreaRatio": 0.021442413330078125,
+        "componentCount": 6,
+        "rejectedReason": null,
+        "includedInFinalUnion": true
+      }
+    ]
+  }
+}

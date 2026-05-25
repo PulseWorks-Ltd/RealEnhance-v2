@@ -1,0 +1,8 @@
+{
+  "mode": "replay",
+  "sourcePlannerPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211323661/bedroom_2/secondary_2/planner/planner.json",
+  "plannerModel": "planner_replay",
+  "plannerLatencyMs": 0,
+  "zoneCount": 1,
+  "roomType": "bedroom"
+}

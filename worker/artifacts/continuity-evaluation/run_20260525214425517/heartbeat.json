@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T21:46:32.833Z",
+  "uptimeMs": 127299,
+  "rssMb": 629.1,
+  "heapTotalMb": 30.9,
+  "heapUsedMb": 26.3,
+  "externalMb": 27.5,
+  "arrayBuffersMb": 22.6,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_2",
+    "roomLabel": "Bedroom 2",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 2.2.jpg",
+    "status": "failure",
+    "failureCategory": "occupancy_sparse",
+    "failureReason": "Gemini occupancy mask area too sparse (0.003 < 0.020)"
+  },
+  "completedCases": 2,
+  "failedCases": 1,
+  "skippedCases": 0,
+  "totalCases": 2,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "occupancy_only",
+  "sourceRunDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211323661",
+  "useGeminiOccupancy": true,
+  "casesCompleted": 2,
+  "currentCaseStatus": "failure"
+}

@@ -1,0 +1,439 @@
+{
+  "roomKey": "bedroom_1",
+  "roomType": "bedroom",
+  "secondaryView": 2,
+  "planner": {
+    "plan": {
+      "roomType": "bedroom",
+      "imageWidth": 6033,
+      "imageHeight": 4017,
+      "structuralTopologyCage": {
+        "vanishingPoints": [
+          {
+            "id": "vp_left",
+            "x": 0,
+            "y": 0.45
+          }
+        ],
+        "floorWallJunctions": [
+          {
+            "x": 0.412,
+            "y": 0.83
+          },
+          {
+            "x": 0.671,
+            "y": 0.799
+          },
+          {
+            "x": 0.942,
+            "y": 0.778
+          }
+        ],
+        "ceilingWallJunctions": [
+          {
+            "x": 0.412,
+            "y": 0.123
+          },
+          {
+            "x": 0.677,
+            "y": 0.139
+          },
+          {
+            "x": 1,
+            "y": 0.198
+          }
+        ],
+        "majorRoomPlanes": [
+          {
+            "id": "plane_floor",
+            "planeType": "floor",
+            "polygon": [
+              {
+                "x": 0,
+                "y": 1
+              },
+              {
+                "x": 1,
+                "y": 1
+              },
+              {
+                "x": 0.942,
+                "y": 0.778
+              },
+              {
+                "x": 0.671,
+                "y": 0.799
+              },
+              {
+                "x": 0.412,
+                "y": 0.83
+              },
+              {
+                "x": 0.201,
+                "y": 0.871
+              }
+            ]
+          },
+          {
+            "id": "plane_right_wall",
+            "planeType": "wall",
+            "polygon": [
+              {
+                "x": 0.671,
+                "y": 0.799
+              },
+              {
+                "x": 0.942,
+                "y": 0.778
+              },
+              {
+                "x": 1,
+                "y": 0.773
+              },
+              {
+                "x": 1,
+                "y": 0.198
+              },
+              {
+                "x": 0.677,
+                "y": 0.139
+              }
+            ]
+          },
+          {
+            "id": "plane_back_wall",
+            "planeType": "wall",
+            "polygon": [
+              {
+                "x": 0.412,
+                "y": 0.123
+              },
+              {
+                "x": 0.677,
+                "y": 0.139
+              },
+              {
+                "x": 0.671,
+                "y": 0.799
+              },
+              {
+                "x": 0.412,
+                "y": 0.83
+              }
+            ]
+          }
+        ]
+      },
+      "relationalAnchorGraph": {
+        "anchors": [
+          {
+            "id": "anchor_bed_center",
+            "anchorType": "furniture_placement",
+            "label": "center of bed headboard",
+            "furnitureZoneId": "fz_bed",
+            "planeId": "plane_right_wall"
+          },
+          {
+            "id": "anchor_nightstand_left",
+            "anchorType": "furniture_placement",
+            "label": "position of left nightstand",
+            "furnitureZoneId": "fz_nightstand_left",
+            "planeId": "plane_right_wall"
+          }
+        ],
+        "relationships": [
+          {
+            "from": "fz_nightstand_left",
+            "relation": "left_of",
+            "to": "fz_bed"
+          },
+          {
+            "from": "fz_artwork",
+            "relation": "above",
+            "to": "fz_bed"
+          },
+          {
+            "from": "fz_rug",
+            "relation": "under",
+            "to": "fz_bed"
+          },
+          {
+            "from": "fz_lamp_left",
+            "relation": "on_top_of",
+            "to": "fz_nightstand_left"
+          }
+        ]
+      },
+      "furnitureZones": [
+        {
+          "id": "fz_bed",
+          "furnitureType": "bed",
+          "normalizedBoundingBox": {
+            "x": 0.429,
+            "y": 0.403,
+            "width": 0.425,
+            "height": 0.462
+          },
+          "anchorRelationships": {
+            "adjacentWall": "plane_right_wall"
+          },
+          "orientation": {
+            "yawDegrees": 0,
+            "perspectiveHint": "front_left_oblique"
+          },
+          "maskProjection": {
+            "floorPolygon": [
+              {
+                "x": 0.498,
+                "y": 0.817
+              },
+              {
+                "x": 0.854,
+                "y": 0.791
+              },
+              {
+                "x": 0.781,
+                "y": 0.835
+              },
+              {
+                "x": 0.43,
+                "y": 0.865
+              }
+            ],
+            "wallProjectionPolygon": [
+              {
+                "x": 0.498,
+                "y": 0.41
+              },
+              {
+                "x": 0.854,
+                "y": 0.44
+              },
+              {
+                "x": 0.854,
+                "y": 0.791
+              },
+              {
+                "x": 0.498,
+                "y": 0.817
+              }
+            ]
+          },
+          "continuityReference": {
+            "derivedFromMaster": true,
+            "masterFurnitureId": "bed"
+          }
+        },
+        {
+          "id": "fz_nightstand_left",
+          "furnitureType": "nightstand",
+          "normalizedBoundingBox": {
+            "x": 0.341,
+            "y": 0.549,
+            "width": 0.157,
+            "height": 0.312
+          },
+          "anchorRelationships": {
+            "adjacentWall": "plane_right_wall",
+            "relativeToBed": "left_of"
+          },
+          "orientation": {
+            "yawDegrees": 0,
+            "perspectiveHint": "front_left_oblique"
+          },
+          "maskProjection": {
+            "floorPolygon": [
+              {
+                "x": 0.376,
+                "y": 0.828
+              },
+              {
+                "x": 0.498,
+                "y": 0.817
+              },
+              {
+                "x": 0.469,
+                "y": 0.842
+              },
+              {
+                "x": 0.342,
+                "y": 0.861
+              }
+            ],
+            "wallProjectionPolygon": [
+              {
+                "x": 0.376,
+                "y": 0.55
+              },
+              {
+                "x": 0.498,
+                "y": 0.564
+              },
+              {
+                "x": 0.498,
+                "y": 0.817
+              },
+              {
+                "x": 0.376,
+                "y": 0.828
+              }
+            ]
+          },
+          "continuityReference": {
+            "derivedFromMaster": true,
+            "masterFurnitureId": "left_nightstand"
+          }
+        },
+        {
+          "id": "fz_artwork",
+          "furnitureType": "artwork",
+          "normalizedBoundingBox": {
+            "x": 0.561,
+            "y": 0.212,
+            "width": 0.22,
+            "height": 0.165
+          },
+          "anchorRelationships": {
+            "adjacentWall": "plane_right_wall",
+            "relativeToBed": "above"
+          },
+          "orientation": {
+            "yawDegrees": 0,
+            "perspectiveHint": "frontal_oblique"
+          },
+          "maskProjection": {
+            "floorPolygon": [],
+            "wallProjectionPolygon": [
+              {
+                "x": 0.562,
+                "y": 0.212
+              },
+              {
+                "x": 0.781,
+                "y": 0.231
+              },
+              {
+                "x": 0.781,
+                "y": 0.377
+              },
+              {
+                "x": 0.562,
+                "y": 0.359
+              }
+            ]
+          },
+          "continuityReference": {
+            "derivedFromMaster": true,
+            "masterFurnitureId": "artwork"
+          }
+        },
+        {
+          "id": "fz_rug",
+          "furnitureType": "rug",
+          "normalizedBoundingBox": {
+            "x": 0.293,
+            "y": 0.788,
+            "width": 0.61,
+            "height": 0.12
+          },
+          "anchorRelationships": {
+            "floorPlaneAlignment": "under_bed"
+          },
+          "orientation": {
+            "yawDegrees": 0,
+            "perspectiveHint": "top_down_oblique"
+          },
+          "maskProjection": {
+            "floorPolygon": [
+              {
+                "x": 0.342,
+                "y": 0.831
+              },
+              {
+                "x": 0.903,
+                "y": 0.788
+              },
+              {
+                "x": 0.854,
+                "y": 0.879
+              },
+              {
+                "x": 0.293,
+                "y": 0.908
+              }
+            ],
+            "wallProjectionPolygon": []
+          },
+          "continuityReference": {
+            "derivedFromMaster": true,
+            "masterFurnitureId": "rug"
+          }
+        },
+        {
+          "id": "fz_lamp_left",
+          "furnitureType": "lamp",
+          "normalizedBoundingBox": {
+            "x": 0.39,
+            "y": 0.4,
+            "width": 0.1,
+            "height": 0.25
+          },
+          "anchorRelationships": {
+            "adjacentWall": "plane_right_wall",
+            "relativeToBed": "left_of"
+          },
+          "orientation": {
+            "yawDegrees": 0,
+            "perspectiveHint": "front_left_oblique"
+          },
+          "maskProjection": {
+            "floorPolygon": [
+              {
+                "x": 0.415,
+                "y": 0.85
+              },
+              {
+                "x": 0.449,
+                "y": 0.846
+              },
+              {
+                "x": 0.444,
+                "y": 0.857
+              },
+              {
+                "x": 0.41,
+                "y": 0.861
+              }
+            ],
+            "wallProjectionPolygon": []
+          },
+          "continuityReference": {
+            "derivedFromMaster": true,
+            "masterFurnitureId": "left_lamp"
+          }
+        }
+      ]
+    },
+    "prompt": "REPLAY_PLANNER",
+    "rawText": "{\n  \"roomType\": \"bedroom\",\n  \"imageWidth\": 6033,\n  \"imageHeight\": 4017,\n  \"structuralTopologyCage\": {\n    \"vanishingPoints\": [\n      {\n        \"id\": \"vp_left\",\n        \"x\": 0,\n        \"y\": 0.45\n      }\n    ],\n    \"floorWallJunctions\": [\n      {\n        \"x\": 0.412,\n        \"y\": 0.83\n      },\n      {\n        \"x\": 0.671,\n        \"y\": 0.799\n      },\n      {\n        \"x\": 0.942,\n        \"y\": 0.778\n      }\n    ],\n    \"ceilingWallJunctions\": [\n      {\n        \"x\": 0.412,\n        \"y\": 0.123\n      },\n      {\n        \"x\": 0.677,\n        \"y\": 0.139\n      },\n      {\n        \"x\": 1,\n        \"y\": 0.198\n      }\n    ],\n    \"majorRoomPlanes\": [\n      {\n        \"id\": \"plane_floor\",\n        \"planeType\": \"floor\",\n        \"polygon\": [\n          {\n            \"x\": 0,\n            \"y\": 1\n          },\n          {\n            \"x\": 1,\n            \"y\": 1\n          },\n          {\n            \"x\": 0.942,\n            \"y\": 0.778\n          },\n          {\n            \"x\": 0.671,\n            \"y\": 0.799\n          },\n          {\n            \"x\": 0.412,\n            \"y\": 0.83\n          },\n          {\n            \"x\": 0.201,\n            \"y\": 0.871\n          }\n        ]\n      },\n      {\n        \"id\": \"plane_right_wall\",\n        \"planeType\": \"wall\",\n        \"polygon\": [\n          {\n            \"x\": 0.671,\n            \"y\": 0.799\n          },\n          {\n            \"x\": 0.942,\n            \"y\": 0.778\n          },\n          {\n            \"x\": 1,\n            \"y\": 0.773\n          },\n          {\n            \"x\": 1,\n            \"y\": 0.198\n          },\n          {\n            \"x\": 0.677,\n            \"y\": 0.139\n          }\n        ]\n      },\n      {\n        \"id\": \"plane_back_wall\",\n        \"planeType\": \"wall\",\n        \"polygon\": [\n          {\n            \"x\": 0.412,\n            \"y\": 0.123\n          },\n          {\n            \"x\": 0.677,\n            \"y\": 0.139\n          },\n          {\n            \"x\": 0.671,\n            \"y\": 0.799\n          },\n          {\n            \"x\": 0.412,\n            \"y\": 0.83\n          }\n        ]\n      }\n    ]\n  },\n  \"relationalAnchorGraph\": {\n    \"anchors\": [\n      {\n        \"id\": \"anchor_bed_center\",\n        \"anchorType\": \"furniture_placement\",\n        \"label\": \"center of bed headboard\",\n        \"furnitureZoneId\": \"fz_bed\",\n        \"planeId\": \"plane_right_wall\"\n      },\n      {\n        \"id\": \"anchor_nightstand_left\",\n        \"anchorType\": \"furniture_placement\",\n        \"label\": \"position of left nightstand\",\n        \"furnitureZoneId\": \"fz_nightstand_left\",\n        \"planeId\": \"plane_right_wall\"\n      }\n    ],\n    \"relationships\": [\n      {\n        \"from\": \"fz_nightstand_left\",\n        \"relation\": \"left_of\",\n        \"to\": \"fz_bed\"\n      },\n      {\n        \"from\": \"fz_artwork\",\n        \"relation\": \"above\",\n        \"to\": \"fz_bed\"\n      },\n      {\n        \"from\": \"fz_rug\",\n        \"relation\": \"under\",\n        \"to\": \"fz_bed\"\n      },\n      {\n        \"from\": \"fz_lamp_left\",\n        \"relation\": \"on_top_of\",\n        \"to\": \"fz_nightstand_left\"\n      }\n    ]\n  },\n  \"furnitureZones\": [\n    {\n      \"id\": \"fz_bed\",\n      \"furnitureType\": \"bed\",\n      \"normalizedBoundingBox\": {\n        \"x\": 0.429,\n        \"y\": 0.403,\n        \"width\": 0.425,\n        \"height\": 0.462\n      },\n      \"anchorRelationships\": {\n        \"adjacentWall\": \"plane_right_wall\"\n      },\n      \"orientation\": {\n        \"yawDegrees\": 0,\n        \"perspectiveHint\": \"front_left_oblique\"\n      },\n      \"maskProjection\": {\n        \"floorPolygon\": [\n          {\n            \"x\": 0.498,\n            \"y\": 0.817\n          },\n          {\n            \"x\": 0.854,\n            \"y\": 0.791\n          },\n          {\n            \"x\": 0.781,\n            \"y\": 0.835\n          },\n          {\n            \"x\": 0.43,\n            \"y\": 0.865\n          }\n        ],\n        \"wallProjectionPolygon\": [\n          {\n            \"x\": 0.498,\n            \"y\": 0.41\n          },\n          {\n            \"x\": 0.854,\n            \"y\": 0.44\n          },\n          {\n            \"x\": 0.854,\n            \"y\": 0.791\n          },\n          {\n            \"x\": 0.498,\n            \"y\": 0.817\n          }\n        ]\n      },\n      \"continuityReference\": {\n        \"derivedFromMaster\": true,\n        \"masterFurnitureId\": \"bed\"\n      }\n    },\n    {\n      \"id\": \"fz_nightstand_left\",\n      \"furnitureType\": \"nightstand\",\n      \"normalizedBoundingBox\": {\n        \"x\": 0.341,\n        \"y\": 0.549,\n        \"width\": 0.157,\n        \"height\": 0.312\n      },\n      \"anchorRelationships\": {\n        \"adjacentWall\": \"plane_right_wall\",\n        \"relativeToBed\": \"left_of\"\n      },\n      \"orientation\": {\n        \"yawDegrees\": 0,\n        \"perspectiveHint\": \"front_left_oblique\"\n      },\n      \"maskProjection\": {\n        \"floorPolygon\": [\n          {\n            \"x\": 0.376,\n            \"y\": 0.828\n          },\n          {\n            \"x\": 0.498,\n            \"y\": 0.817\n          },\n          {\n            \"x\": 0.469,\n            \"y\": 0.842\n          },\n          {\n            \"x\": 0.342,\n            \"y\": 0.861\n          }\n        ],\n        \"wallProjectionPolygon\": [\n          {\n            \"x\": 0.376,\n            \"y\": 0.55\n          },\n          {\n            \"x\": 0.498,\n            \"y\": 0.564\n          },\n          {\n            \"x\": 0.498,\n            \"y\": 0.817\n          },\n          {\n            \"x\": 0.376,\n            \"y\": 0.828\n          }\n        ]\n      },\n      \"continuityReference\": {\n        \"derivedFromMaster\": true,\n        \"masterFurnitureId\": \"left_nightstand\"\n      }\n    },\n    {\n      \"id\": \"fz_artwork\",\n      \"furnitureType\": \"artwork\",\n      \"normalizedBoundingBox\": {\n        \"x\": 0.561,\n        \"y\": 0.212,\n        \"width\": 0.22,\n        \"height\": 0.165\n      },\n      \"anchorRelationships\": {\n        \"adjacentWall\": \"plane_right_wall\",\n        \"relativeToBed\": \"above\"\n      },\n      \"orientation\": {\n        \"yawDegrees\": 0,\n        \"perspectiveHint\": \"frontal_oblique\"\n      },\n      \"maskProjection\": {\n        \"floorPolygon\": [],\n        \"wallProjectionPolygon\": [\n          {\n            \"x\": 0.562,\n            \"y\": 0.212\n          },\n          {\n            \"x\": 0.781,\n            \"y\": 0.231\n          },\n          {\n            \"x\": 0.781,\n            \"y\": 0.377\n          },\n          {\n            \"x\": 0.562,\n            \"y\": 0.359\n          }\n        ]\n      },\n      \"continuityReference\": {\n        \"derivedFromMaster\": true,\n        \"masterFurnitureId\": \"artwork\"\n      }\n    },\n    {\n      \"id\": \"fz_rug\",\n      \"furnitureType\": \"rug\",\n      \"normalizedBoundingBox\": {\n        \"x\": 0.293,\n        \"y\": 0.788,\n        \"width\": 0.61,\n        \"height\": 0.12\n      },\n      \"anchorRelationships\": {\n        \"floorPlaneAlignment\": \"under_bed\"\n      },\n      \"orientation\": {\n        \"yawDegrees\": 0,\n        \"perspectiveHint\": \"top_down_oblique\"\n      },\n      \"maskProjection\": {\n        \"floorPolygon\": [\n          {\n            \"x\": 0.342,\n            \"y\": 0.831\n          },\n          {\n            \"x\": 0.903,\n            \"y\": 0.788\n          },\n          {\n            \"x\": 0.854,\n            \"y\": 0.879\n          },\n          {\n            \"x\": 0.293,\n            \"y\": 0.908\n          }\n        ],\n        \"wallProjectionPolygon\": []\n      },\n      \"continuityReference\": {\n        \"derivedFromMaster\": true,\n        \"masterFurnitureId\": \"rug\"\n      }\n    },\n    {\n      \"id\": \"fz_lamp_left\",\n      \"furnitureType\": \"lamp\",\n      \"normalizedBoundingBox\": {\n        \"x\": 0.39,\n        \"y\": 0.4,\n        \"width\": 0.1,\n        \"height\": 0.25\n      },\n      \"anchorRelationships\": {\n        \"adjacentWall\": \"plane_right_wall\",\n        \"relativeToBed\": \"left_of\"\n      },\n      \"orientation\": {\n        \"yawDegrees\": 0,\n        \"perspectiveHint\": \"front_left_oblique\"\n      },\n      \"maskProjection\": {\n        \"floorPolygon\": [\n          {\n            \"x\": 0.415,\n            \"y\": 0.85\n          },\n          {\n            \"x\": 0.449,\n            \"y\": 0.846\n          },\n          {\n            \"x\": 0.444,\n            \"y\": 0.857\n          },\n          {\n            \"x\": 0.41,\n            \"y\": 0.861\n          }\n        ],\n        \"wallProjectionPolygon\": []\n      },\n      \"continuityReference\": {\n        \"derivedFromMaster\": true,\n        \"masterFurnitureId\": \"left_lamp\"\n      }\n    }\n  ]\n}",
+    "model": "planner_replay",
+    "latencyMs": 0,
+    "mode": "replay",
+    "sourcePath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211323661/bedroom_1/secondary_2/planner/planner.json"
+  },
+  "driftSummary": null,
+  "telemetry": {
+    "plannerLatencyMs": null,
+    "occupancyLatencyMs": 45608,
+    "renderLatencyMs": null,
+    "occupancyAreaRatio": 0.10171048693640458,
+    "finalAreaRatio": 0.10106776846504462,
+    "requiredClusterOccupancy": 0.11360899824861519,
+    "optionalClusterOccupancy": 0.03184631089116976,
+    "unionOccupancy": 0.1155875794232649,
+    "retryCount": 2,
+    "clusterApiCallCount": 2,
+    "rateLimit429Count": 0,
+    "validatorDriftPass": null
+  }
+}

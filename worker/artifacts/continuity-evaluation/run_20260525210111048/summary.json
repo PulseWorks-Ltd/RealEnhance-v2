@@ -1,0 +1,107 @@
+{
+  "generatedAt": "2026-05-25T21:02:59.910Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "occupancy_only",
+  "sourceRunDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641",
+  "totalRooms": 5,
+  "totalSecondaryViews": 7,
+  "completedCases": 2,
+  "successCount": 1,
+  "failureCount": 1,
+  "skippedCount": 0,
+  "successRate": 0.5,
+  "plannerFailureRate": 0,
+  "occupancyFailureRate": 0,
+  "continuityPassRate": 0,
+  "averageOccupancyAreaRatio": 0.059280586927074934,
+  "averageUnionOccupancyRatio": 0.06874567245030955,
+  "averageRequiredClusterOccupancy": 0.06463450024437928,
+  "averageOptionalClusterOccupancy": 0.005194332437275986,
+  "averageRetryCount": 4,
+  "total429Count": 0,
+  "failureCategories": {
+    "provider_failure": 1
+  },
+  "roomTypeBreakdown": {
+    "bedroom": {
+      "total": 2,
+      "success": 1,
+      "failures": 1,
+      "successRate": 0.5,
+      "averageOccupancyAreaRatio": 0.059280586927074934
+    }
+  },
+  "occupancyDistribution": {
+    "required": [
+      0.06463450024437928
+    ],
+    "optional": [
+      0.005194332437275986
+    ],
+    "union": [
+      0.06874567245030955
+    ],
+    "variance": 0
+  },
+  "cases": [
+    {
+      "roomKey": "bedroom_1",
+      "roomLabel": "Bedroom 1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+      "mode": "occupancy_only",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048/bedroom_1/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": 99188,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": 0.059280586927074934,
+        "finalAreaRatio": 0.05099473433828655,
+        "requiredClusterOccupancy": 0.06463450024437928,
+        "optionalClusterOccupancy": 0.005194332437275986,
+        "unionOccupancy": 0.06874567245030955,
+        "retryCount": 4,
+        "clusterApiCallCount": 4,
+        "rateLimit429Count": 0,
+        "validatorDriftPass": null
+      },
+      "status": "success",
+      "plannerMode": "replay",
+      "plannerPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641/bedroom_1/secondary_2/planner/planner.json",
+      "occupancyGenerationMode": "gemini_image_mask_v1",
+      "failureCategory": null,
+      "failureReason": null
+    },
+    {
+      "roomKey": "bedroom_2",
+      "roomLabel": "Bedroom 2",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 2.2.jpg",
+      "mode": "occupancy_only",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525210111048/bedroom_2/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": null,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": null,
+        "finalAreaRatio": null,
+        "requiredClusterOccupancy": null,
+        "optionalClusterOccupancy": null,
+        "unionOccupancy": null,
+        "retryCount": null,
+        "clusterApiCallCount": null,
+        "rateLimit429Count": 0,
+        "validatorDriftPass": null
+      },
+      "status": "failure",
+      "plannerMode": "replay",
+      "plannerPath": null,
+      "occupancyGenerationMode": null,
+      "failureCategory": "provider_failure",
+      "failureReason": "ENOENT: no such file or directory, open '/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641/bedroom_2/secondary_2/planner/planner.json'"
+    }
+  ]
+}

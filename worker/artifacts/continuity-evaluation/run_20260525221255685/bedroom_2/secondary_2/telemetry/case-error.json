@@ -1,0 +1,5 @@
+{
+  "failureCategory": "occupancy_sparse",
+  "failureReason": "Gemini occupancy mask area too sparse (0.002 < 0.020)",
+  "stack": "VertexSecondaryContinuityError: Gemini occupancy mask area too sparse (0.002 < 0.020)\n    at ensureSafetyOrThrow (/workspaces/RealEnhance-v2/worker/src/continuity/geminiOccupancyMask.ts:2866:11)\n    at generateGeminiOccupancyMask (/workspaces/RealEnhance-v2/worker/src/continuity/geminiOccupancyMask.ts:4182:21)\n    at async compileDeterministicMask (/workspaces/RealEnhance-v2/worker/src/continuity/maskCompiler.ts:193:24)\n    at async withRuntimePhase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:535:12)\n    at async runCase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:996:22)\n    at async runContinuityEvaluation (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1363:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/run-continuity-evaluation.ts:237:18)"
+}

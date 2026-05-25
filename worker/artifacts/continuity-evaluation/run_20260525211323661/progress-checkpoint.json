@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-05-25T21:18:44.221Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211323661",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "completedCases": 2,
+  "failedCases": 2,
+  "skippedCases": 0,
+  "totalCases": 2,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_2",
+    "roomLabel": "Bedroom 2",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 2.2.jpg",
+    "status": "failure",
+    "failureCategory": "occupancy_sparse",
+    "failureReason": "Gemini occupancy mask area too sparse (0.019 < 0.020)"
+  },
+  "cases": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "status": "failure",
+      "failureCategory": "provider_failure",
+      "failureReason": "Outside-mask drift exceeded thresholds (mae=3.7816, ratio=0.065157)",
+      "plannerMode": "replay",
+      "occupancyGenerationMode": null,
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211323661/bedroom_1/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": 85794,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": 0.12414204655904433,
+        "finalAreaRatio": 0.12335907384499352,
+        "requiredClusterOccupancy": 0.13241411086673183,
+        "optionalClusterOccupancy": 0.004160811746497231,
+        "unionOccupancy": 0.13552167338709678,
+        "retryCount": 5,
+        "clusterApiCallCount": 5,
+        "rateLimit429Count": 2,
+        "validatorDriftPass": null
+      }
+    },
+    {
+      "roomKey": "bedroom_2",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "status": "failure",
+      "failureCategory": "occupancy_sparse",
+      "failureReason": "Gemini occupancy mask area too sparse (0.019 < 0.020)",
+      "plannerMode": "replay",
+      "occupancyGenerationMode": null,
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525211323661/bedroom_2/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": null,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": null,
+        "finalAreaRatio": null,
+        "requiredClusterOccupancy": null,
+        "optionalClusterOccupancy": null,
+        "unionOccupancy": null,
+        "retryCount": null,
+        "clusterApiCallCount": null,
+        "rateLimit429Count": 0,
+        "validatorDriftPass": null
+      }
+    }
+  ]
+}

@@ -156,6 +156,51 @@ type OccupancyQualityBreakdown = {
   compactnessScore: number;
 };
 
+type GeometryAdaptiveRecoveryProfile = {
+  projectionAreaRatio: number;
+  projectionCompactness: number;
+  floorGuideConfidence: number;
+  requiredClusterDensity: number;
+  areaRecoveryMaxGrowthRatio: number;
+  areaRecoveryMaxIterations: number;
+  floorDropMultiplier: number;
+  floorHorizontalBonus: number;
+  floorGrowthMultiplier: number;
+  floorIterationBonus: number;
+};
+
+type StarvationClusterSignal = {
+  clusterId: string;
+  required: boolean;
+  clusterLabel: string;
+  anchorX: number;
+  anchorY: number;
+  expectedAreaRatioMin: number;
+  expectedAreaRatioTarget: number;
+  rateLimitFailures: number;
+  retryExhausted: boolean;
+  priorMask: Buffer;
+};
+
+type StarvationFallbackTelemetry = {
+  activated: boolean;
+  activationReason: string | null;
+  starvedClusterIds: string[];
+  retryExhaustedClusterIds: string[];
+  seedPixelsAdded: number;
+  seedAreaRatioAdded: number;
+  occupancyInflationPixels: number;
+  occupancyInflationAreaRatio: number;
+  legalityOverlapBefore: number;
+  legalityOverlapAfter: number;
+  legalityOverlapDelta: number;
+  supportOverlapBefore: number;
+  supportOverlapAfter: number;
+  supportOverlapDelta: number;
+  targetShortfallPixels: number;
+  maxSeedPixels: number;
+};
+
 const geminiOccupancyInvocationCounts = new Map<string, number>();
 
 type RoomTypeBandProfile = {
@@ -328,6 +373,158 @@ function clamp01(value: number): number {
     return 0;
   }
   return Math.max(0, Math.min(1, value));
+}
+
+function computeBufferCompactness(mask: Buffer, width: number, height: number): number {
+  const bbox = computeBoundingBox(mask, width, height);
+  if (!bbox || bbox.pixelCount <= 0) {
+    return 0;
+  }
+  const area = Math.max(1, (bbox.maxX - bbox.minX + 1) * (bbox.maxY - bbox.minY + 1));
+  return bbox.pixelCount / area;
+}
+
+function deriveGeometryAdaptiveRecoveryProfile(params: {
+  plan: PlacementPlan;
+  priorClusters: PriorCluster[];
+  deterministicConstraintMask: Buffer;
+  width: number;
+  height: number;
+}): GeometryAdaptiveRecoveryProfile {
+  const totalPixels = Math.max(1, params.width * params.height);
+  const projectionAreaRatio = countMaskPixels(params.deterministicConstraintMask) / totalPixels;
+  const projectionCompactness = computeBufferCompactness(params.deterministicConstraintMask, params.width, params.height);
+  const requiredClusterCount = params.priorClusters.filter((cluster) => cluster.required).length;
+  const requiredClusterDensity = requiredClusterCount / Math.max(1, params.priorClusters.length);
+
+  const floorJunctionCount = Array.isArray(params.plan.structuralTopologyCage?.floorWallJunctions)
+    ? params.plan.structuralTopologyCage?.floorWallJunctions?.length || 0
+    : 0;
+  const hasFloorPlane = !!(params.plan.structuralTopologyCage?.majorRoomPlanes || []).find((plane) => /floor/i.test(String(plane.planeType || "")));
+  const floorGuideConfidence = clamp01(
+    (Math.min(1, floorJunctionCount / 6) * 0.7) + (hasFloorPlane ? 0.3 : 0),
+  );
+
+  const sparsityPressure = clamp01((0.22 - projectionAreaRatio) / 0.22);
+  const diffusePressure = clamp01((0.5 - projectionCompactness) / 0.5);
+  const anchorSparsity = clamp01(1 - requiredClusterDensity);
+
+  const areaAggression = clamp01(
+    (sparsityPressure * 0.45)
+    + (anchorSparsity * 0.35)
+    + (diffusePressure * 0.2),
+  );
+  const floorAggression = clamp01(
+    ((1 - floorGuideConfidence) * 0.6)
+    + (anchorSparsity * 0.4),
+  );
+
+  return {
+    projectionAreaRatio,
+    projectionCompactness,
+    floorGuideConfidence,
+    requiredClusterDensity,
+    areaRecoveryMaxGrowthRatio: 0.35 + (areaAggression * 1.1),
+    areaRecoveryMaxIterations: 1 + Math.round(areaAggression * 3),
+    floorDropMultiplier: 1 + (floorAggression * 1.4),
+    floorHorizontalBonus: Math.round(floorAggression * 2),
+    floorGrowthMultiplier: 1 + (floorAggression * 0.8),
+    floorIterationBonus: Math.round(floorAggression * 2),
+  };
+}
+
+async function buildConstraintBoundedAreaRecovery(params: {
+  mask: Buffer;
+  constraintMask: Buffer;
+  supportMask: Buffer;
+  width: number;
+  height: number;
+  targetAreaRatio: number;
+  maxGrowthRatio: number;
+  maxIterations: number;
+}): Promise<{
+  mask: Buffer;
+  beforePixels: number;
+  afterPixels: number;
+  iterations: number;
+  addedPixels: number;
+}> {
+  const totalPixels = Math.max(1, params.width * params.height);
+  const targetPixels = Math.max(0, Math.floor(params.targetAreaRatio * totalPixels));
+  const beforePixels = countMaskPixels(params.mask);
+  if (beforePixels <= 0 || beforePixels >= targetPixels) {
+    return {
+      mask: Buffer.from(params.mask),
+      beforePixels,
+      afterPixels: beforePixels,
+      iterations: 0,
+      addedPixels: 0,
+    };
+  }
+
+  const working = Buffer.from(params.mask);
+  const maxGrowthPixels = Math.max(
+    1,
+    Math.floor(beforePixels * Math.max(0.15, Math.min(2.8, params.maxGrowthRatio))),
+  );
+  let addedPixels = 0;
+  let iterations = 0;
+
+  for (let iter = 0; iter < Math.max(1, params.maxIterations); iter += 1) {
+    iterations = iter + 1;
+    const dilated = await sharp(working, {
+      raw: { width: params.width, height: params.height, channels: 1 },
+    }).dilate(1).threshold(1, { grayscale: true }).raw().toBuffer();
+
+    let passAdded = 0;
+    for (let i = 0; i < working.length; i += 1) {
+      if (working[i] > 0) {
+        continue;
+      }
+      if (dilated[i] === 0 || params.constraintMask[i] === 0 || params.supportMask[i] === 0) {
+        continue;
+      }
+      working[i] = 255;
+      addedPixels += 1;
+      passAdded += 1;
+      if (addedPixels >= maxGrowthPixels) {
+        break;
+      }
+    }
+
+    if (countMaskPixels(working) >= targetPixels || addedPixels >= maxGrowthPixels) {
+      break;
+    }
+
+    if (passAdded === 0) {
+      for (let i = 0; i < working.length; i += 1) {
+        if (working[i] > 0) {
+          continue;
+        }
+        if (dilated[i] === 0 || params.constraintMask[i] === 0) {
+          continue;
+        }
+        working[i] = 255;
+        addedPixels += 1;
+        passAdded += 1;
+        if (addedPixels >= maxGrowthPixels) {
+          break;
+        }
+      }
+    }
+
+    if (passAdded === 0) {
+      break;
+    }
+  }
+
+  return {
+    mask: working,
+    beforePixels,
+    afterPixels: countMaskPixels(working),
+    iterations,
+    addedPixels,
+  };
 }
 
 function floorTypeMultiplier(furnitureType: string): number {
@@ -2449,6 +2646,137 @@ function safeMaskUnion(baseMask: Buffer, addMask: Buffer): Buffer {
   return output;
 }
 
+function computeMaskOverlapRatio(mask: Buffer, guideMask: Buffer): number {
+  let maskPixels = 0;
+  let overlapPixels = 0;
+  const total = Math.min(mask.length, guideMask.length);
+  for (let i = 0; i < total; i += 1) {
+    if (mask[i] === 0) {
+      continue;
+    }
+    maskPixels += 1;
+    if (guideMask[i] > 0) {
+      overlapPixels += 1;
+    }
+  }
+  if (maskPixels <= 0) {
+    return 0;
+  }
+  return overlapPixels / maskPixels;
+}
+
+function buildStarvationFallbackSeed(params: {
+  baseMask: Buffer;
+  starvedClusters: StarvationClusterSignal[];
+  constraintMask: Buffer;
+  supportMask: Buffer;
+  width: number;
+  height: number;
+  maxSeedPixels: number;
+}): { seedMask: Buffer; addedPixels: number } {
+  const total = params.width * params.height;
+  const seedMask = Buffer.alloc(total, 0);
+  if (params.maxSeedPixels <= 0 || params.starvedClusters.length === 0) {
+    return { seedMask, addedPixels: 0 };
+  }
+
+  const candidateMask = Buffer.alloc(total, 0);
+  for (const cluster of params.starvedClusters) {
+    for (let i = 0; i < total; i += 1) {
+      if (cluster.priorMask[i] > 0 && params.constraintMask[i] > 0 && params.supportMask[i] > 0 && params.baseMask[i] === 0) {
+        candidateMask[i] = 255;
+      }
+    }
+  }
+
+  const components = analyzeConnectedComponents(candidateMask, params.width, params.height, 6);
+  if (components.components.length === 0) {
+    return { seedMask, addedPixels: 0 };
+  }
+
+  const diag = Math.sqrt((params.width * params.width) + (params.height * params.height));
+  const epsilon = Math.max(1, diag * 0.18);
+  const componentScores = components.components.map((component) => {
+    let touchingBase = 0;
+    for (let y = component.minY; y <= component.maxY; y += 1) {
+      for (let x = component.minX; x <= component.maxX; x += 1) {
+        const idx = y * params.width + x;
+        if (components.labelMap[idx] !== component.id || candidateMask[idx] === 0) {
+          continue;
+        }
+        const left = x > 0 ? params.baseMask[idx - 1] : 0;
+        const right = x < (params.width - 1) ? params.baseMask[idx + 1] : 0;
+        const up = y > 0 ? params.baseMask[idx - params.width] : 0;
+        const down = y < (params.height - 1) ? params.baseMask[idx + params.width] : 0;
+        if (left > 0 || right > 0 || up > 0 || down > 0) {
+          touchingBase += 1;
+        }
+      }
+    }
+
+    const bestAnchorAffinity = params.starvedClusters.reduce((best, cluster) => {
+      const dx = component.centroidX - cluster.anchorX;
+      const dy = component.centroidY - cluster.anchorY;
+      const dist = Math.sqrt((dx * dx) + (dy * dy));
+      return Math.max(best, Math.exp(-(dist / epsilon)));
+    }, 0);
+    const continuityAffinity = touchingBase > 0 ? Math.min(1, touchingBase / Math.max(1, component.pixelCount * 0.22)) : 0;
+    const score = (bestAnchorAffinity * 0.62) + (continuityAffinity * 0.38);
+    return {
+      componentId: component.id,
+      pixelCount: component.pixelCount,
+      score,
+      requiredSignal: params.starvedClusters.some((cluster) => cluster.required),
+    };
+  }).sort((a, b) => {
+    if (b.score !== a.score) {
+      return b.score - a.score;
+    }
+    return b.pixelCount - a.pixelCount;
+  });
+
+  let remaining = params.maxSeedPixels;
+  for (const entry of componentScores) {
+    if (remaining <= 0) {
+      break;
+    }
+    if (entry.pixelCount > remaining) {
+      continue;
+    }
+    for (let i = 0; i < total; i += 1) {
+      if (components.labelMap[i] === entry.componentId && candidateMask[i] > 0) {
+        seedMask[i] = 255;
+      }
+    }
+    remaining -= entry.pixelCount;
+  }
+
+  if (countMaskPixels(seedMask) === 0 && componentScores.length > 0) {
+    const best = componentScores[0];
+    for (let i = 0; i < total; i += 1) {
+      if (components.labelMap[i] === best.componentId && candidateMask[i] > 0) {
+        seedMask[i] = 255;
+      }
+    }
+    const seeded = countMaskPixels(seedMask);
+    if (seeded > params.maxSeedPixels && params.maxSeedPixels > 0) {
+      let kept = 0;
+      for (let i = 0; i < total; i += 1) {
+        if (seedMask[i] === 0) {
+          continue;
+        }
+        kept += 1;
+        if (kept > params.maxSeedPixels) {
+          seedMask[i] = 0;
+        }
+      }
+    }
+  }
+
+  const addedPixels = countMaskPixels(seedMask);
+  return { seedMask, addedPixels };
+}
+
 function buildConservativeFallbackMask(priorClusters: PriorCluster[], floorMask: Buffer, width: number, height: number): Buffer {
   const output = Buffer.alloc(width * height, 0);
   for (const cluster of priorClusters) {
@@ -2736,10 +3064,33 @@ export async function generateGeminiOccupancyMask(params: {
     targetHeight: height,
   });
   const priorClusters = await buildPriorClusters(params.plan, width, height, floorMask);
+  const geometryRecoveryProfile = deriveGeometryAdaptiveRecoveryProfile({
+    plan: params.plan,
+    priorClusters,
+    deterministicConstraintMask,
+    width,
+    height,
+  });
   const adaptiveExpectation = computeAdaptiveOccupancyExpectation({
     profile,
     roomType: params.plan.roomType,
     priorClusters,
+  });
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_GEOMETRY_ADAPTIVE_RECOVERY]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    projectionAreaRatio: Number(geometryRecoveryProfile.projectionAreaRatio.toFixed(4)),
+    projectionCompactness: Number(geometryRecoveryProfile.projectionCompactness.toFixed(4)),
+    floorGuideConfidence: Number(geometryRecoveryProfile.floorGuideConfidence.toFixed(4)),
+    requiredClusterDensity: Number(geometryRecoveryProfile.requiredClusterDensity.toFixed(4)),
+    areaRecoveryMaxGrowthRatio: Number(geometryRecoveryProfile.areaRecoveryMaxGrowthRatio.toFixed(3)),
+    areaRecoveryMaxIterations: geometryRecoveryProfile.areaRecoveryMaxIterations,
+    floorDropMultiplier: Number(geometryRecoveryProfile.floorDropMultiplier.toFixed(3)),
+    floorHorizontalBonus: geometryRecoveryProfile.floorHorizontalBonus,
+    floorGrowthMultiplier: Number(geometryRecoveryProfile.floorGrowthMultiplier.toFixed(3)),
+    floorIterationBonus: geometryRecoveryProfile.floorIterationBonus,
   });
 
   nLog("[VERTEX_CONTINUITY_GEMINI_MASK_FLOOR_TARGET]", {
@@ -2816,6 +3167,7 @@ export async function generateGeminiOccupancyMask(params: {
   const ai = getVertexGenAiClient();
 
   const clusterSummaries: ClusterAttemptSummary[] = [];
+  const starvationSignals: StarvationClusterSignal[] = [];
   const stageMetricsByCluster = new Map<string, OccupancyStageMetric[]>();
   const componentAuditByCluster = new Map<string, {
     clusterId: string;
@@ -3435,29 +3787,29 @@ export async function generateGeminiOccupancyMask(params: {
       clusterFailureMode = failureMode;
     }
 
-    if (bestClusterScore < 0 && priorCluster.required) {
-      // Required clusters fail closed but still use conservative occupancy priors to preserve structural continuity.
-      bestClusterMask = buildConservativeFallbackMask([priorCluster], floorMask, width, height);
-      bestClusterRawMask = Buffer.from(bestClusterMask);
-      bestClusterScore = 0;
-      bestClusterThreshold = 0;
-      bestClusterInversion = false;
-      nLog("[VERTEX_CONTINUITY_GEMINI_CLUSTER_FALLBACK]", {
-        continuityGroupId: params.continuityGroupId || null,
-        imageId: params.imageId,
-        jobId: params.jobId,
+    if (bestClusterScore < 0) {
+      const retryExhausted = clusterRateLimitFailures >= maxAttempts;
+      starvationSignals.push({
         clusterId: priorCluster.clusterId,
-        required: true,
+        required: priorCluster.required,
+        clusterLabel: priorCluster.clusterLabel,
+        anchorX: priorCluster.anchorX,
+        anchorY: priorCluster.anchorY,
+        expectedAreaRatioMin: priorCluster.expectedAreaRatioMin,
+        expectedAreaRatioTarget: priorCluster.expectedAreaRatioTarget,
         rateLimitFailures: clusterRateLimitFailures,
+        retryExhausted,
+        priorMask: Buffer.from(priorCluster.priorMask),
       });
-    } else if (bestClusterScore < 0) {
+
       nLog("[VERTEX_CONTINUITY_GEMINI_CLUSTER_SKIP]", {
         continuityGroupId: params.continuityGroupId || null,
         imageId: params.imageId,
         jobId: params.jobId,
         clusterId: priorCluster.clusterId,
-        required: false,
+        required: priorCluster.required,
         rateLimitFailures: clusterRateLimitFailures,
+        retryExhausted,
       });
       continue;
     }
@@ -3525,16 +3877,24 @@ export async function generateGeminiOccupancyMask(params: {
   }
 
   let usedConservativeFallback = false;
-  if (countMaskPixels(unionAccepted) === 0) {
-    const fallbackClusters = priorClusters.filter((cluster) => cluster.required);
-    unionAccepted = Buffer.from(buildConservativeFallbackMask(
-      fallbackClusters.length > 0 ? fallbackClusters : priorClusters,
-      floorMask,
-      width,
-      height,
-    ));
-    usedConservativeFallback = true;
-  }
+  let starvationFallbackTelemetry: StarvationFallbackTelemetry = {
+    activated: false,
+    activationReason: null,
+    starvedClusterIds: starvationSignals.map((signal) => signal.clusterId),
+    retryExhaustedClusterIds: starvationSignals.filter((signal) => signal.retryExhausted).map((signal) => signal.clusterId),
+    seedPixelsAdded: 0,
+    seedAreaRatioAdded: 0,
+    occupancyInflationPixels: 0,
+    occupancyInflationAreaRatio: 0,
+    legalityOverlapBefore: computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height),
+    legalityOverlapAfter: computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height),
+    legalityOverlapDelta: 0,
+    supportOverlapBefore: computeMaskOverlapRatio(unionAccepted, supportSurfaceMask),
+    supportOverlapAfter: computeMaskOverlapRatio(unionAccepted, supportSurfaceMask),
+    supportOverlapDelta: 0,
+    targetShortfallPixels: 0,
+    maxSeedPixels: 0,
+  };
 
   const topologyMinIslandPixels = Math.max(8, Math.floor(width * height * topologyMinIslandRatio));
   const topologyMinFinalAreaRatio = Math.max(
@@ -3598,16 +3958,24 @@ export async function generateGeminiOccupancyMask(params: {
   let floorProjectionBeforePixels = postTopologyPixels;
   let floorProjectionAfterPixels = postTopologyPixels;
   if (floorProjectionEnabled) {
+    const adaptiveMaxDropPixels = Math.min(
+      Math.max(floorProjectionMaxDropPixels, Math.floor(height * 0.1)),
+      Math.max(floorProjectionMaxDropPixels, Math.floor(height * 0.3), Math.floor(floorProjectionMaxDropPixels * geometryRecoveryProfile.floorDropMultiplier)),
+    );
+    const adaptiveHorizontalReach = floorProjectionHorizontalReach + geometryRecoveryProfile.floorHorizontalBonus;
+    const adaptiveFloorGrowthRatio = Math.min(2.8, floorProjectionMaxGrowthRatio * geometryRecoveryProfile.floorGrowthMultiplier);
+    const adaptiveFloorIterations = Math.min(8, floorProjectionMaxIterations + geometryRecoveryProfile.floorIterationBonus);
+
     const floorProjection = buildGravityAwareFloorBridge({
       mask: unionAccepted,
       floorMask: supportSurfaceMask,
       width,
       height,
       targetFloorContactRatio: effectiveFloorContactMin,
-      maxDropPixels: floorProjectionMaxDropPixels,
-      maxHorizontalReach: floorProjectionHorizontalReach,
-      maxGrowthRatio: floorProjectionMaxGrowthRatio,
-      maxIterations: floorProjectionMaxIterations,
+      maxDropPixels: adaptiveMaxDropPixels,
+      maxHorizontalReach: adaptiveHorizontalReach,
+      maxGrowthRatio: adaptiveFloorGrowthRatio,
+      maxIterations: adaptiveFloorIterations,
     });
     unionAccepted = Buffer.from(floorProjection.mask);
     floorProjectionBeforePixels = floorProjection.beforePixels;
@@ -3617,16 +3985,168 @@ export async function generateGeminiOccupancyMask(params: {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
       jobId: params.jobId,
-      maxDropPixels: floorProjectionMaxDropPixels,
-      horizontalReach: floorProjectionHorizontalReach,
-      maxGrowthRatio: floorProjectionMaxGrowthRatio,
-      maxIterations: floorProjectionMaxIterations,
+      maxDropPixels: adaptiveMaxDropPixels,
+      horizontalReach: adaptiveHorizontalReach,
+      maxGrowthRatio: adaptiveFloorGrowthRatio,
+      maxIterations: adaptiveFloorIterations,
       beforeFloorContactRatio: Number(floorProjection.beforeFloorContactRatio.toFixed(4)),
       afterFloorContactRatio: Number(floorProjection.afterFloorContactRatio.toFixed(4)),
       beforePixels: floorProjection.beforePixels,
       afterPixels: floorProjection.afterPixels,
       addedPixels: floorProjection.addedPixels,
       iterationsUsed: floorProjection.iterations,
+    });
+  }
+
+  const starvationRetryExhaustedSignals = starvationSignals.filter((signal) => signal.retryExhausted);
+  const starvedRequiredCount = starvationRetryExhaustedSignals.filter((signal) => signal.required).length;
+  const starvedAnchorPoorOptionalCount = starvationRetryExhaustedSignals.filter((signal) => !signal.required).length;
+  const starvationDetected = starvationRetryExhaustedSignals.length > 0;
+  const retryExhaustionConfirmed = starvationRetryExhaustedSignals.length > 0;
+  const preStarvationFallbackPixels = countMaskPixels(unionAccepted);
+  const preStarvationFallbackAreaRatio = preStarvationFallbackPixels / Math.max(1, width * height);
+  const occupancyBelowMinimum = preStarvationFallbackAreaRatio < adaptiveExpectation.effectiveMinAreaRatio;
+  const legalityOverlapBefore = computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height);
+  const supportOverlapBefore = computeMaskOverlapRatio(unionAccepted, supportSurfaceMask);
+  const legalityOverlapStrongThreshold = Math.max(0.35, Math.min(0.9, readNumberEnv("CONTINUITY_GEMINI_MASK_STARVATION_FALLBACK_MIN_LEGALITY", 0.58)));
+  const legalityOverlapStrong = legalityOverlapBefore >= legalityOverlapStrongThreshold;
+  const legalSupportIntersectionPixels = (() => {
+    let total = 0;
+    for (let i = 0; i < deterministicConstraintMask.length; i += 1) {
+      if (deterministicConstraintMask[i] > 0 && supportSurfaceMask[i] > 0) {
+        total += 1;
+      }
+    }
+    return total;
+  })();
+  const deterministicLegalitySpaceExists = legalSupportIntersectionPixels > Math.max(32, Math.floor(width * height * 0.0002));
+  const supportSurfacesCoherent = (countMaskPixels(supportSurfaceMask) / Math.max(1, width * height)) >= 0.01;
+  const anchorPoorScene = geometryRecoveryProfile.requiredClusterDensity < Math.max(0.2, Math.min(0.8, readNumberEnv("CONTINUITY_GEMINI_MASK_STARVATION_FALLBACK_ANCHOR_POOR_DENSITY", 0.52)));
+  const starvationSeedEnabled = !parseBooleanEnv(process.env.CONTINUITY_GEMINI_MASK_DISABLE_STARVATION_SEED_FALLBACK);
+  const starvationFallbackEligible = starvationSeedEnabled
+    && starvationDetected
+    && retryExhaustionConfirmed
+    && occupancyBelowMinimum
+    && legalityOverlapStrong
+    && deterministicLegalitySpaceExists
+    && supportSurfacesCoherent
+    && (starvedRequiredCount > 0 || (anchorPoorScene && starvedAnchorPoorOptionalCount > 0));
+
+  if (starvationFallbackEligible) {
+    const totalPixels = Math.max(1, width * height);
+    const targetShortfallPixels = Math.max(0, Math.round((adaptiveExpectation.effectiveMinAreaRatio * totalPixels) - preStarvationFallbackPixels));
+    const starvationExpectedAreaRatio = starvationRetryExhaustedSignals
+      .reduce((sum, signal) => sum + (signal.required ? signal.expectedAreaRatioMin : Math.min(signal.expectedAreaRatioMin, signal.expectedAreaRatioTarget * 0.5)), 0);
+    const requiredStarvationPressure = starvedRequiredCount > 0 ? 1 : 0;
+    const seedHardCapRatio = Math.max(0.0015, Math.min(0.04, starvationExpectedAreaRatio * (requiredStarvationPressure > 0 ? 0.9 : 0.55)));
+    const seedHardCapPixels = Math.max(16, Math.round(totalPixels * seedHardCapRatio));
+    const shortfallBudgetDefault = requiredStarvationPressure > 0 ? 0.75 : 0.35;
+    const seedShortfallBudgetRatio = Math.max(0.18, Math.min(0.85, readNumberEnv("CONTINUITY_GEMINI_MASK_STARVATION_FALLBACK_SHORTFALL_BUDGET", shortfallBudgetDefault)));
+    const seedShortfallBudgetPixels = Math.max(8, Math.round(targetShortfallPixels * seedShortfallBudgetRatio));
+    const maxSeedPixels = Math.min(seedHardCapPixels, seedShortfallBudgetPixels);
+    const seed = buildStarvationFallbackSeed({
+      baseMask: unionAccepted,
+      starvedClusters: starvationRetryExhaustedSignals,
+      constraintMask: deterministicConstraintMask,
+      supportMask: supportSurfaceMask,
+      width,
+      height,
+      maxSeedPixels,
+    });
+
+    if (seed.addedPixels > 0) {
+      unionAccepted = Buffer.from(safeMaskUnion(unionAccepted, seed.seedMask));
+      usedConservativeFallback = true;
+      const legalityOverlapAfter = computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height);
+      const supportOverlapAfter = computeMaskOverlapRatio(unionAccepted, supportSurfaceMask);
+      const inflationPixels = countMaskPixels(unionAccepted) - preStarvationFallbackPixels;
+      starvationFallbackTelemetry = {
+        activated: true,
+        activationReason: "retry_exhaustion_under_informed_anchor_poor_or_required",
+        starvedClusterIds: starvationSignals.map((signal) => signal.clusterId),
+        retryExhaustedClusterIds: starvationRetryExhaustedSignals.map((signal) => signal.clusterId),
+        seedPixelsAdded: seed.addedPixels,
+        seedAreaRatioAdded: seed.addedPixels / totalPixels,
+        occupancyInflationPixels: inflationPixels,
+        occupancyInflationAreaRatio: inflationPixels / totalPixels,
+        legalityOverlapBefore,
+        legalityOverlapAfter,
+        legalityOverlapDelta: legalityOverlapAfter - legalityOverlapBefore,
+        supportOverlapBefore,
+        supportOverlapAfter,
+        supportOverlapDelta: supportOverlapAfter - supportOverlapBefore,
+        targetShortfallPixels,
+        maxSeedPixels,
+      };
+
+      nLog("[VERTEX_CONTINUITY_GEMINI_MASK_STARVATION_FALLBACK]", {
+        continuityGroupId: params.continuityGroupId || null,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        activationReason: starvationFallbackTelemetry.activationReason,
+        starvedClusterIds: starvationFallbackTelemetry.starvedClusterIds,
+        retryExhaustedClusterIds: starvationFallbackTelemetry.retryExhaustedClusterIds,
+        seedPixelsAdded: starvationFallbackTelemetry.seedPixelsAdded,
+        seedAreaRatioAdded: Number(starvationFallbackTelemetry.seedAreaRatioAdded.toFixed(6)),
+        legalityOverlapBefore: Number(starvationFallbackTelemetry.legalityOverlapBefore.toFixed(4)),
+        legalityOverlapAfter: Number(starvationFallbackTelemetry.legalityOverlapAfter.toFixed(4)),
+        legalityOverlapDelta: Number(starvationFallbackTelemetry.legalityOverlapDelta.toFixed(4)),
+        supportOverlapBefore: Number(starvationFallbackTelemetry.supportOverlapBefore.toFixed(4)),
+        supportOverlapAfter: Number(starvationFallbackTelemetry.supportOverlapAfter.toFixed(4)),
+        supportOverlapDelta: Number(starvationFallbackTelemetry.supportOverlapDelta.toFixed(4)),
+        occupancyInflationPixels: starvationFallbackTelemetry.occupancyInflationPixels,
+        occupancyInflationAreaRatio: Number(starvationFallbackTelemetry.occupancyInflationAreaRatio.toFixed(6)),
+        maxSeedPixels: starvationFallbackTelemetry.maxSeedPixels,
+        targetShortfallPixels: starvationFallbackTelemetry.targetShortfallPixels,
+      });
+    }
+  }
+
+  const preAreaRecoveryPixels = countMaskPixels(unionAccepted);
+  const preAreaRecoveryAreaRatio = preAreaRecoveryPixels / Math.max(1, width * height);
+  let areaRecoveryIterations = 0;
+  let areaRecoveryAddedPixels = 0;
+  if (preAreaRecoveryAreaRatio < adaptiveExpectation.effectiveMinAreaRatio) {
+    const areaRecovery = await buildConstraintBoundedAreaRecovery({
+      mask: unionAccepted,
+      constraintMask: deterministicConstraintMask,
+      supportMask: supportSurfaceMask,
+      width,
+      height,
+      targetAreaRatio: adaptiveExpectation.effectiveMinAreaRatio,
+      maxGrowthRatio: geometryRecoveryProfile.areaRecoveryMaxGrowthRatio,
+      maxIterations: geometryRecoveryProfile.areaRecoveryMaxIterations,
+    });
+    unionAccepted = Buffer.from(areaRecovery.mask);
+    areaRecoveryIterations = areaRecovery.iterations;
+    areaRecoveryAddedPixels = areaRecovery.addedPixels;
+  }
+  const postAreaRecoveryPixels = countMaskPixels(unionAccepted);
+  const postAreaRecoveryAreaRatio = postAreaRecoveryPixels / Math.max(1, width * height);
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_AREA_RECOVERY]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    minAreaTargetRatio: Number(adaptiveExpectation.effectiveMinAreaRatio.toFixed(4)),
+    beforePixels: preAreaRecoveryPixels,
+    afterPixels: postAreaRecoveryPixels,
+    beforeAreaRatio: Number(preAreaRecoveryAreaRatio.toFixed(4)),
+    afterAreaRatio: Number(postAreaRecoveryAreaRatio.toFixed(4)),
+    addedPixels: areaRecoveryAddedPixels,
+    iterations: areaRecoveryIterations,
+  });
+
+  if (!starvationFallbackTelemetry.activated) {
+    nLog("[VERTEX_CONTINUITY_GEMINI_MASK_STARVATION_FALLBACK]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      activated: false,
+      starvedClusterIds: starvationFallbackTelemetry.starvedClusterIds,
+      retryExhaustedClusterIds: starvationFallbackTelemetry.retryExhaustedClusterIds,
+      legalityOverlapBefore: Number(starvationFallbackTelemetry.legalityOverlapBefore.toFixed(4)),
+      supportOverlapBefore: Number(starvationFallbackTelemetry.supportOverlapBefore.toFixed(4)),
     });
   }
 
@@ -3964,6 +4484,7 @@ export async function generateGeminiOccupancyMask(params: {
     optionalOccupancyRatio: optionalClusterOccupancy,
     adaptiveExpectation,
     clusterContributions,
+    starvationFallback: starvationFallbackTelemetry,
   };
   await fs.writeFile(qualityReportPath, JSON.stringify(qualityPayload, null, 2));
   await fs.writeFile(retryComparisonPath, JSON.stringify(clusterSummaries, null, 2));

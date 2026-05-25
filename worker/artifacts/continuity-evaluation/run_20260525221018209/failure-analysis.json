@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-05-25T22:12:44.734Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_2",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "occupancy_sparse",
+      "failureReason": "Gemini occupancy mask area too sparse (0.019 < 0.020)",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525221018209/bedroom_2/secondary_2"
+    }
+  ]
+}

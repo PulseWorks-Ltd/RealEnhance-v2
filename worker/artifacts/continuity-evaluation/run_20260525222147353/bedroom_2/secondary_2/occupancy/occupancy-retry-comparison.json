@@ -1,0 +1,19 @@
+[
+  {
+    "clusterId": "bedside_composition",
+    "required": false,
+    "clusterLabel": "bedside composition",
+    "attempt": 1,
+    "failureMode": "none",
+    "score": 0.6436781503855736,
+    "occupancyAreaRatio": 0.021442413330078125,
+    "connectedComponentCount": 6,
+    "floorContactRatio": 0.9636363636363636,
+    "wallTouchRatio": 0,
+    "topRegionRatio": 0,
+    "anchorProximityScore": 0.4410443324442604,
+    "constraintAffinityScore": 0.954337899543379,
+    "selectedThreshold": 64,
+    "selectedInversion": true
+  }
+]

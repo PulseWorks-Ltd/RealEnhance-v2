@@ -1,0 +1,87 @@
+{
+  "roomTypeProfile": {
+    "minAreaRatio": 0.02,
+    "targetAreaRatio": 0.09,
+    "maxAreaRatio": 0.28,
+    "minFloorContactRatio": 0.6,
+    "maxComponents": 8,
+    "maxTopRegionRatio": 0.16,
+    "maxWallTouchRatio": 0.32
+  },
+  "safety": {
+    "occupancyAreaRatio": 0.1155875794232649,
+    "connectedComponentCount": 2,
+    "floorContactRatio": 0.88125,
+    "anchorProximityScore": 0.6129475624691161,
+    "constraintAffinityScore": 0.880264940041624,
+    "topRegionOccupancyRatio": 0,
+    "wallTouchOccupancyRatio": 0,
+    "boundingAreaRatio": 0.2036493971977843,
+    "boundingFillRatio": 0.56758125
+  },
+  "quality": {
+    "score": 0.7957998020801774,
+    "occupancyBandScore": 0.7156935619637232,
+    "componentCoherenceScore": 0.8571428571428572,
+    "floorContactScore": 1,
+    "anchorScore": 0.6129475624691161,
+    "wallPenalty": 0,
+    "topPenalty": 0,
+    "compactnessScore": 0.56758125
+  },
+  "usedConservativeFallback": false,
+  "priorClusterCount": 2,
+  "requiredClusterCount": 1,
+  "optionalClusterCount": 1,
+  "baselineObjectCallCount": 15,
+  "clusterApiCallCount": 2,
+  "estimatedCallReductionRatio": 0.8666666666666667,
+  "perClusterMaskPaths": [
+    "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525222803746/bedroom_1/secondary_2/occupancy/cluster-occupancy-masks/bedside_composition-gemini-mask.png",
+    "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525222803746/bedroom_1/secondary_2/occupancy/cluster-occupancy-masks/decor_group-gemini-mask.png"
+  ],
+  "requiredOccupancyRatio": 0.11360899824861519,
+  "optionalOccupancyRatio": 0.03184631089116976,
+  "adaptiveExpectation": {
+    "effectiveMinAreaRatio": 0.02,
+    "requiredTargetAreaRatio": 0.02485,
+    "optionalTargetAreaRatio": 0.004,
+    "optionalWeight": 0.2
+  },
+  "clusterContributions": [
+    {
+      "clusterId": "bedside_composition",
+      "role": "required",
+      "contributionRatio": 0.11360899824861519,
+      "includedInFinalUnion": true,
+      "acceptedOccupancyRatio": 0.11360899824861519,
+      "mergedUnionRatioAfterCluster": 0.11360899824861519
+    },
+    {
+      "clusterId": "decor_group",
+      "role": "optional",
+      "contributionRatio": 0.03184631089116976,
+      "includedInFinalUnion": true,
+      "acceptedOccupancyRatio": 0.03184631089116976,
+      "mergedUnionRatioAfterCluster": 0.1155875794232649
+    }
+  ],
+  "starvationFallback": {
+    "activated": false,
+    "activationReason": null,
+    "starvedClusterIds": [],
+    "retryExhaustedClusterIds": [],
+    "seedPixelsAdded": 0,
+    "seedAreaRatioAdded": 0,
+    "occupancyInflationPixels": 0,
+    "occupancyInflationAreaRatio": 0,
+    "legalityOverlapBefore": 0.880264940041624,
+    "legalityOverlapAfter": 0.880264940041624,
+    "legalityOverlapDelta": 0,
+    "supportOverlapBefore": 0.29376300749892637,
+    "supportOverlapAfter": 0.29376300749892637,
+    "supportOverlapDelta": 0,
+    "targetShortfallPixels": 0,
+    "maxSeedPixels": 0
+  }
+}
