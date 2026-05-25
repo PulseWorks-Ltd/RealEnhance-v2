@@ -2065,6 +2065,7 @@ export async function runStage2(
           intent: {
             operationLabel: "secondary_room_continuity_render",
             promptScope: resolvedPromptMode,
+            rendererIsolationMode: "continuity_strict_insertion",
             plannerVersion: SECONDARY_CONTINUITY_PLANNER,
             rendererVersion: SECONDARY_CONTINUITY_RENDERER,
           },

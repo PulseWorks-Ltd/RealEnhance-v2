@@ -36,6 +36,14 @@ function buildPayload() {
     sourcePayload,
     maskPayload,
     guidanceScale: 12,
+    renderProfile: {
+      isolationMode: "CONTINUITY_STRICT_INSERTION",
+      editMode: "EDIT_MODE_INPAINT_INSERTION",
+      maskDilation: 0,
+      outsideMaskMaxMae: 6,
+      outsideMaskMaxChangedRatio: 0.035,
+      outsideMaskChangeThreshold: 18,
+    },
   });
 }
 
@@ -45,6 +53,14 @@ function buildFlatPayload() {
     sourcePayload,
     maskPayload,
     guidanceScale: 12,
+    renderProfile: {
+      isolationMode: "CONTINUITY_STRICT_INSERTION",
+      editMode: "EDIT_MODE_INPAINT_INSERTION",
+      maskDilation: 0,
+      outsideMaskMaxMae: 6,
+      outsideMaskMaxChangedRatio: 0.035,
+      outsideMaskChangeThreshold: 18,
+    },
   });
 }
 
@@ -62,6 +78,14 @@ test("mode-based builder defaults to the verified camelCase referenceImage schem
     sourcePayload,
     maskPayload,
     guidanceScale: 12,
+    renderProfile: {
+      isolationMode: "CONTINUITY_STRICT_INSERTION",
+      editMode: "EDIT_MODE_INPAINT_INSERTION",
+      maskDilation: 0,
+      outsideMaskMaxMae: 6,
+      outsideMaskMaxChangedRatio: 0.035,
+      outsideMaskChangeThreshold: 18,
+    },
     payloadSchemaMode: "wrapper",
   });
 
@@ -75,6 +99,14 @@ test("mode-based builder flat mode stays on the same verified schema", () => {
     sourcePayload,
     maskPayload,
     guidanceScale: 12,
+    renderProfile: {
+      isolationMode: "CONTINUITY_STRICT_INSERTION",
+      editMode: "EDIT_MODE_INPAINT_INSERTION",
+      maskDilation: 0,
+      outsideMaskMaxMae: 6,
+      outsideMaskMaxChangedRatio: 0.035,
+      outsideMaskChangeThreshold: 18,
+    },
     payloadSchemaMode: "flat",
   });
 
@@ -122,7 +154,7 @@ test("mask uses referenceImage plus maskImageConfig and never legacy wrapper key
 
   const maskImageConfig = (maskEntry as any).maskImageConfig;
   assert.equal(maskImageConfig.maskMode, "MASK_MODE_USER_PROVIDED");
-  assert.equal(maskImageConfig.maskDilation, 0.1);
+  assert.equal(maskImageConfig.maskDilation, 0);
 });
 
 test("referenceImage shape survives JSON serialization round-trip", () => {
@@ -141,7 +173,7 @@ test("referenceImage shape survives JSON serialization round-trip", () => {
 test("parameters contain required Imagen 3 edit fields", () => {
   const payload = buildPayload();
   const params = payload.parameters;
-  assert.equal(params.editMode, "EDIT_MODE_DEFAULT");
+  assert.equal(params.editMode, "EDIT_MODE_INPAINT_INSERTION");
   assert.equal(params.numberOfImages, 1);
   assert.equal((params as Record<string, unknown>).sampleCount, undefined);
   assert.equal((params as Record<string, unknown>).guidanceScale, undefined);
@@ -171,6 +203,14 @@ test("GCS uri source uses referenceImage and no inline byte keys", () => {
     sourcePayload: gcsSourcePayload,
     maskPayload,
     guidanceScale: 10,
+    renderProfile: {
+      isolationMode: "CONTINUITY_STRICT_INSERTION",
+      editMode: "EDIT_MODE_INPAINT_INSERTION",
+      maskDilation: 0,
+      outsideMaskMaxMae: 6,
+      outsideMaskMaxChangedRatio: 0.035,
+      outsideMaskChangeThreshold: 18,
+    },
   });
   const serialised = JSON.parse(JSON.stringify(payload));
   const sourceEntry = serialised.instances[0].referenceImages[0];

@@ -3375,6 +3375,7 @@ export async function applyEdit({
           editMode: mode,
           promptScope: "localized_edit",
           operationLabel: "secondary_continuity_edit",
+          rendererIsolationMode: "continuity_strict_insertion",
           layoutHints: editContext?.layoutHints,
           anchorConstraints: editContext?.anchorConstraints,
           plannerVersion: process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro",

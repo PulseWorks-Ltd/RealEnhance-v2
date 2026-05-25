@@ -11,6 +11,7 @@ export type ContinuityIntentMetadata = {
   editMode?: string;
   promptScope?: string;
   operationLabel?: string;
+  rendererIsolationMode?: string;
   layoutHints?: string[];
   anchorConstraints?: string[];
   roomAnchors?: string[];

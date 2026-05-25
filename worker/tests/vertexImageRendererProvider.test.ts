@@ -226,12 +226,13 @@ describe("vertex image renderer preflight", () => {
     expect(typeof body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded).toBe("string");
     expect(body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded.length).toBeGreaterThan(0);
     expect(body.instances[0].referenceImages[1].maskImageConfig.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.instances[0].referenceImages[1].maskImageConfig.maskDilation).toBe(0);
     expect(body.instances[0].referenceImages[1].image).toBeUndefined();
     expect(body.instances[0].referenceImages[1].rawReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[1].maskReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[1].config).toBeUndefined();
 
-    expect(body.parameters.editMode).toBe("EDIT_MODE_DEFAULT");
+    expect(body.parameters.editMode).toBe("EDIT_MODE_INPAINT_INSERTION");
     expect(body.parameters.numberOfImages).toBe(1);
     expect(body.parameters.maskMode).toBeUndefined();
     expect(body.parameters.outputOptions).toBeUndefined();
@@ -351,12 +352,13 @@ describe("vertex image renderer preflight", () => {
     expect(body.instances[0].referenceImages[1].referenceImage.mimeType).toBe("image/png");
     expect(typeof body.instances[0].referenceImages[1].referenceImage.bytesBase64Encoded).toBe("string");
     expect(body.instances[0].referenceImages[1].maskImageConfig.maskMode).toBe("MASK_MODE_USER_PROVIDED");
+    expect(body.instances[0].referenceImages[1].maskImageConfig.maskDilation).toBe(0);
     expect(body.instances[0].referenceImages[1].image).toBeUndefined();
     expect(body.instances[0].referenceImages[1].rawReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[1].maskReferenceImage).toBeUndefined();
     expect(body.instances[0].referenceImages[1].config).toBeUndefined();
 
-    expect(body.parameters.editMode).toBe("EDIT_MODE_DEFAULT");
+    expect(body.parameters.editMode).toBe("EDIT_MODE_INPAINT_INSERTION");
     expect(body.parameters.numberOfImages).toBe(1);
     expect(body.parameters.maskMode).toBeUndefined();
     expect(body.parameters.outputOptions).toBeUndefined();

@@ -25,8 +25,13 @@ const VERTEX_REFERENCE_TYPE_RAW = "REFERENCE_TYPE_RAW" as const;
 const VERTEX_REFERENCE_TYPE_MASK = "REFERENCE_TYPE_MASK" as const;
 const VERTEX_MASK_MODE_USER_PROVIDED = "MASK_MODE_USER_PROVIDED" as const;
 const VERTEX_EDIT_MODE_DEFAULT = "EDIT_MODE_DEFAULT" as const;
+const VERTEX_EDIT_MODE_INPAINT_INSERTION = "EDIT_MODE_INPAINT_INSERTION" as const;
 const VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA_ENV = "VERTEX_IMAGEN_FLAT_REFERENCE_SCHEMA" as const;
 const VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION_ENV = "VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION" as const;
+const VERTEX_CONTINUITY_STRICT_INSERTION_ENV = "VERTEX_CONTINUITY_STRICT_INSERTION" as const;
+const VERTEX_CONTINUITY_OUTSIDE_MASK_MAX_MAE_ENV = "VERTEX_CONTINUITY_OUTSIDE_MASK_MAX_MAE" as const;
+const VERTEX_CONTINUITY_OUTSIDE_MASK_MAX_CHANGED_RATIO_ENV = "VERTEX_CONTINUITY_OUTSIDE_MASK_MAX_CHANGED_RATIO" as const;
+const VERTEX_CONTINUITY_OUTSIDE_MASK_CHANGE_THRESHOLD_ENV = "VERTEX_CONTINUITY_OUTSIDE_MASK_CHANGE_THRESHOLD" as const;
 
 const SUPPORTED_IMAGEN_ASPECT_RATIOS = [
   { label: "1:1", widthUnits: 1, heightUnits: 1, value: 1 },
@@ -37,6 +42,17 @@ const SUPPORTED_IMAGEN_ASPECT_RATIOS = [
 ] as const;
 
 export type VertexPayloadSchemaMode = "wrapper" | "flat";
+
+export type ContinuityRendererIsolationMode = "CONTINUITY_STRICT_INSERTION" | "CONTINUITY_RELAXED_DEFAULT";
+
+type ContinuityRendererProfile = {
+  isolationMode: ContinuityRendererIsolationMode;
+  editMode: VertexEditMode;
+  maskDilation: number;
+  outsideMaskMaxMae: number;
+  outsideMaskMaxChangedRatio: number;
+  outsideMaskChangeThreshold: number;
+};
 
 export type ImagenAspectRatioNormalizationMetadata = {
   originalWidth: number;
@@ -93,6 +109,56 @@ function resolveVertexPayloadSchemaMode(): VertexPayloadSchemaMode {
 
 function isVertexImagenAspectRatioNormalizationEnabled(): boolean {
   return String(process.env[VERTEX_IMAGEN_ASPECT_RATIO_NORMALIZATION_ENV] || "").trim().toLowerCase() === "true";
+}
+
+function parseFiniteEnvNumber(name: string, fallback: number): number {
+  const raw = String(process.env[name] || "").trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function isContinuityStrictInsertionEnabled(): boolean {
+  const raw = String(process.env[VERTEX_CONTINUITY_STRICT_INSERTION_ENV] || "").trim().toLowerCase();
+  if (!raw) {
+    return true;
+  }
+  return raw === "1" || raw === "true";
+}
+
+function hasSemanticAddLeakage(intent: ImageRenderRequest["intent"]): boolean {
+  const signature = [
+    String(intent?.operationLabel || ""),
+    String(intent?.promptScope || ""),
+    String(intent?.rendererIsolationMode || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return signature.includes("semantic add") || signature.includes("semantic_add") || signature.includes("semantic-add");
+}
+
+function resolveContinuityRendererProfile(request: ImageRenderRequest): ContinuityRendererProfile {
+  if (hasSemanticAddLeakage(request.intent)) {
+    throw new VertexSecondaryContinuityError(
+      "Semantic-add intent leaked into the continuity renderer path",
+      "continuity_semantic_add_leakage_blocked"
+    );
+  }
+
+  const strictInsertion = isContinuityStrictInsertionEnabled();
+  const isStrictIsolationRequested = strictInsertion
+    || String(request.intent?.rendererIsolationMode || "").trim().toLowerCase() === "continuity_strict_insertion";
+
+  return {
+    isolationMode: isStrictIsolationRequested ? "CONTINUITY_STRICT_INSERTION" : "CONTINUITY_RELAXED_DEFAULT",
+    editMode: isStrictIsolationRequested ? VERTEX_EDIT_MODE_INPAINT_INSERTION : VERTEX_EDIT_MODE_DEFAULT,
+    maskDilation: isStrictIsolationRequested ? 0 : 0.1,
+    outsideMaskMaxMae: parseFiniteEnvNumber(VERTEX_CONTINUITY_OUTSIDE_MASK_MAX_MAE_ENV, 6),
+    outsideMaskMaxChangedRatio: parseFiniteEnvNumber(VERTEX_CONTINUITY_OUTSIDE_MASK_MAX_CHANGED_RATIO_ENV, 0.035),
+    outsideMaskChangeThreshold: parseFiniteEnvNumber(VERTEX_CONTINUITY_OUTSIDE_MASK_CHANGE_THRESHOLD_ENV, 18),
+  };
 }
 
 function findSupportedImagenAspectRatio(width: number, height: number) {
@@ -216,32 +282,42 @@ function buildModeScopedPrompt(params: {
   intentInstruction?: string;
 }): string {
   const normalizedIntent = String(params.intentInstruction || "").trim();
+  const strictPreservationPrelude = [
+    "STRICT CONTINUITY PRESERVATION MODE.",
+    "Preserve room geometry, perspective lines, architectural boundaries, and scene identity.",
+    "Preserve furniture proportions, spacing, and relational layout unless the mask requires a direct continuity repair.",
+    "Do not reinterpret the full scene, redesign composition, or mutate unrelated objects outside the mask.",
+  ].join(" ");
   if (params.renderMode === "full_secondary_continuity") {
     return [
+      strictPreservationPrelude,
       "Use the approved master as the furnishing identity source for visible secondary-view staging.",
-      "Preserve architecture, openings, perspective, framing, and all content outside the compiled mask.",
+      "Preserve architecture, openings, perspective, framing, and all content outside the compiled mask with minimal drift.",
       params.basePrompt,
     ].join(", ");
   }
   if (params.renderMode === "continuity_refresh") {
     return [
+      strictPreservationPrelude,
       "Refresh only mismatched or incomplete continuity details visible from this secondary angle.",
-      "Do not restage the room broadly or rewrite protected architecture.",
+      "Do not restage the room broadly, rewrite protected architecture, or reposition unrelated furniture.",
       params.basePrompt,
     ].join(", ");
   }
   if (params.renderMode === "missing_object_insert") {
     return [
+      strictPreservationPrelude,
       normalizedIntent || "Insert only the missing approved furnishing implied by continuity.",
       "Keep the change localized to the compiled continuity mask.",
-      "Do not reposition unrelated furniture or redesign the room.",
+      "Do not reposition unrelated furniture, mutate room geometry, or redesign the room.",
       params.basePrompt,
     ].join(", ");
   }
   return [
+    strictPreservationPrelude,
     normalizedIntent || "Perform only the localized secondary continuity repair requested.",
     "Keep the change surgical and restricted to the compiled continuity mask.",
-    "Preserve unrelated furnishings, architecture, and composition.",
+    "Preserve unrelated furnishings, architecture, and composition with strict off-mask stability.",
     params.basePrompt,
   ].join(", ");
 }
@@ -542,6 +618,7 @@ export function buildVertexEditPredictPayload(params: {
   sourcePayload: VertexWireImagePayload;
   maskPayload: VertexWireImagePayload;
   guidanceScale: number;
+  renderProfile: ContinuityRendererProfile;
 }): VertexEditPredictPayload {
   return {
     instances: [
@@ -559,14 +636,14 @@ export function buildVertexEditPredictPayload(params: {
             referenceImage: params.maskPayload,
             maskImageConfig: {
               maskMode: VERTEX_MASK_MODE_USER_PROVIDED,
-              maskDilation: 0.1,
+              maskDilation: params.renderProfile.maskDilation,
             },
           },
         ],
       },
     ],
     parameters: {
-      editMode: VERTEX_EDIT_MODE_DEFAULT,
+      editMode: params.renderProfile.editMode,
       numberOfImages: 1,
     },
   };
@@ -577,6 +654,7 @@ export function buildVertexEditPredictPayloadFlat(params: {
   sourcePayload: VertexWireImagePayload;
   maskPayload: VertexWireImagePayload;
   guidanceScale: number;
+  renderProfile: ContinuityRendererProfile;
 }): VertexEditPredictPayload {
   return buildVertexEditPredictPayload(params);
 }
@@ -586,6 +664,7 @@ export function buildVertexEditPredictPayloadForMode(params: {
   sourcePayload: VertexWireImagePayload;
   maskPayload: VertexWireImagePayload;
   guidanceScale: number;
+  renderProfile: ContinuityRendererProfile;
   payloadSchemaMode: VertexPayloadSchemaMode;
 }): VertexEditPredictPayload {
   return params.payloadSchemaMode === "flat"
@@ -914,6 +993,7 @@ function validateVertexEditPredictPayload(params: {
   payload: VertexEditPredictPayload;
   sourceArtifact: Record<string, unknown>;
   maskArtifact: Record<string, unknown>;
+  expectedEditMode: VertexEditMode;
 }): void {
   validateVertexEditPredictPayloadFlat(params);
 }
@@ -922,6 +1002,7 @@ function validateVertexEditPredictPayloadFlat(params: {
   payload: VertexEditPredictPayload;
   sourceArtifact: Record<string, unknown>;
   maskArtifact: Record<string, unknown>;
+  expectedEditMode: VertexEditMode;
 }): void {
   const firstInstance = params.payload.instances[0];
   if (!firstInstance) {
@@ -1045,9 +1126,9 @@ function validateVertexEditPredictPayloadFlat(params: {
     );
   }
 
-  if (params.payload.parameters.editMode !== VERTEX_EDIT_MODE_DEFAULT) {
+  if (params.payload.parameters.editMode !== params.expectedEditMode) {
     throw new VertexSecondaryContinuityError(
-      `Vertex continuity flat edit payload is missing ${VERTEX_EDIT_MODE_DEFAULT}`,
+      `Vertex continuity flat edit payload is missing ${params.expectedEditMode}`,
       "imagen_edit_payload_flat_missing_edit_mode"
     );
   }
@@ -1069,6 +1150,7 @@ function validateVertexEditPredictPayloadForMode(params: {
   payload: VertexEditPredictPayload;
   sourceArtifact: Record<string, unknown>;
   maskArtifact: Record<string, unknown>;
+  expectedEditMode: VertexEditMode;
   payloadSchemaMode: VertexPayloadSchemaMode;
 }): void {
   if (params.payloadSchemaMode === "flat") {
@@ -1115,11 +1197,143 @@ async function buildVerifiedVertexImagePayload(
   };
 }
 
+type OutsideMaskDriftMetrics = {
+  outsidePixelCount: number;
+  meanAbsoluteDelta: number;
+  changedPixelCount: number;
+  changedPixelRatio: number;
+};
+
+async function measureOutsideMaskDrift(params: {
+  sourcePath: string;
+  candidatePath: string;
+  maskPath: string;
+  changeThreshold: number;
+}): Promise<OutsideMaskDriftMetrics> {
+  const sourceMeta = await sharp(params.sourcePath).metadata();
+  const width = Number(sourceMeta.width || 0);
+  const height = Number(sourceMeta.height || 0);
+  if (!width || !height) {
+    throw new VertexSecondaryContinuityError(
+      `Unable to read source dimensions for outside-mask drift validation: ${params.sourcePath}`,
+      "continuity_drift_missing_source_dimensions"
+    );
+  }
+
+  const [sourceRaw, candidateRaw, maskRaw] = await Promise.all([
+    sharp(params.sourcePath)
+      .removeAlpha()
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+      .raw()
+      .toBuffer(),
+    sharp(params.candidatePath)
+      .removeAlpha()
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
+      .raw()
+      .toBuffer(),
+    sharp(params.maskPath)
+      .removeAlpha()
+      .grayscale()
+      .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+      .raw()
+      .toBuffer(),
+  ]);
+
+  let outsidePixelCount = 0;
+  let changedPixelCount = 0;
+  let deltaSum = 0;
+  const threshold = Math.max(0, Number(params.changeThreshold));
+
+  for (let index = 0; index < maskRaw.length; index += 1) {
+    const maskValue = maskRaw[index] ?? 0;
+    if (maskValue >= 128) {
+      continue;
+    }
+    outsidePixelCount += 1;
+    const sourceOffset = index * 3;
+    const dr = Math.abs((sourceRaw[sourceOffset] ?? 0) - (candidateRaw[sourceOffset] ?? 0));
+    const dg = Math.abs((sourceRaw[sourceOffset + 1] ?? 0) - (candidateRaw[sourceOffset + 1] ?? 0));
+    const db = Math.abs((sourceRaw[sourceOffset + 2] ?? 0) - (candidateRaw[sourceOffset + 2] ?? 0));
+    const meanDelta = (dr + dg + db) / 3;
+    deltaSum += meanDelta;
+    if (Math.max(dr, dg, db) >= threshold) {
+      changedPixelCount += 1;
+    }
+  }
+
+  const meanAbsoluteDelta = outsidePixelCount > 0 ? deltaSum / outsidePixelCount : 0;
+  const changedPixelRatio = outsidePixelCount > 0 ? changedPixelCount / outsidePixelCount : 0;
+
+  return {
+    outsidePixelCount,
+    meanAbsoluteDelta,
+    changedPixelCount,
+    changedPixelRatio,
+  };
+}
+
+async function validateOutsideMaskDrift(params: {
+  request: ImageRenderRequest;
+  sourcePath?: string;
+  maskPath?: string;
+  candidatePath: string;
+  profile: ContinuityRendererProfile;
+}): Promise<void> {
+  if (!params.sourcePath || !params.maskPath) {
+    nLog("[VERTEX_CONTINUITY_OUTSIDE_MASK_DRIFT]", {
+      continuityGroupId: params.request.continuityGroupId || null,
+      imageId: params.request.imageId,
+      jobId: params.request.jobId,
+      renderMode: params.request.renderMode,
+      isolationMode: params.profile.isolationMode,
+      skipped: true,
+      reason: "missing_source_or_mask_local_path",
+    });
+    return;
+  }
+
+  const metrics = await measureOutsideMaskDrift({
+    sourcePath: params.sourcePath,
+    candidatePath: params.candidatePath,
+    maskPath: params.maskPath,
+    changeThreshold: params.profile.outsideMaskChangeThreshold,
+  });
+
+  const meanAbsoluteDelta = Number(metrics.meanAbsoluteDelta.toFixed(4));
+  const changedPixelRatio = Number(metrics.changedPixelRatio.toFixed(6));
+  const exceedsMae = meanAbsoluteDelta > params.profile.outsideMaskMaxMae;
+  const exceedsChangedRatio = changedPixelRatio > params.profile.outsideMaskMaxChangedRatio;
+
+  nLog("[VERTEX_CONTINUITY_OUTSIDE_MASK_DRIFT]", {
+    continuityGroupId: params.request.continuityGroupId || null,
+    imageId: params.request.imageId,
+    jobId: params.request.jobId,
+    renderMode: params.request.renderMode,
+    isolationMode: params.profile.isolationMode,
+    outsidePixelCount: metrics.outsidePixelCount,
+    changedPixelCount: metrics.changedPixelCount,
+    meanAbsoluteDelta,
+    changedPixelRatio,
+    maxMae: params.profile.outsideMaskMaxMae,
+    maxChangedRatio: params.profile.outsideMaskMaxChangedRatio,
+    changeThreshold: params.profile.outsideMaskChangeThreshold,
+    status: exceedsMae || exceedsChangedRatio ? "failed" : "passed",
+  });
+
+  if (exceedsMae || exceedsChangedRatio) {
+    throw new VertexSecondaryContinuityError(
+      `Outside-mask drift exceeded thresholds (mae=${meanAbsoluteDelta}, ratio=${changedPixelRatio})`,
+      "continuity_outside_mask_drift_exceeded"
+    );
+  }
+}
+
 export class VertexImageRendererProvider implements ImageRendererProvider {
   async render(request: ImageRenderRequest): Promise<ImageRenderResponse> {
     const rendererFlag = String(process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3").trim().toLowerCase();
     const model = rendererFlag === "imagen3" ? "imagen-3.0-capability-001" : rendererFlag;
     const guidanceScale = request.guidanceScale ?? Number(process.env.VERTEX_CONTINUITY_GUIDANCE_SCALE || 12);
+    const renderProfile = resolveContinuityRendererProfile(request);
     const ai = getVertexGenAiClient();
     const startedAt = Date.now();
     const prompt = buildModeScopedPrompt({
@@ -1174,6 +1388,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       jobId: request.jobId,
       renderMode: request.renderMode,
       model,
+      isolationMode: renderProfile.isolationMode,
       payloadSchemaMode,
       sourceArtifact,
       maskArtifact,
@@ -1188,12 +1403,14 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       sourcePayload: sourcePayload as VertexWireImagePayload,
       maskPayload: maskPayload as VertexWireImagePayload,
       guidanceScale,
+      renderProfile,
       payloadSchemaMode,
     });
     validateVertexEditPredictPayloadForMode({
       payload,
       sourceArtifact,
       maskArtifact,
+      expectedEditMode: renderProfile.editMode,
       payloadSchemaMode,
     });
     const serializedPayload = JSON.stringify(payload);
@@ -1210,6 +1427,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       jobId: request.jobId,
       renderMode: request.renderMode,
       model,
+      isolationMode: renderProfile.isolationMode,
       payloadSchemaMode,
       sourceImage: {
         kind: sourceReference.kind,
@@ -1232,6 +1450,8 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       outputPath: request.outputPath,
       payloadValidation: {
         payloadSchemaMode,
+        expectedEditMode: renderProfile.editMode,
+        expectedMaskDilation: renderProfile.maskDilation,
         status: "passed",
       },
     });
@@ -1243,6 +1463,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       jobId: request.jobId,
       renderMode: request.renderMode,
       model,
+      isolationMode: renderProfile.isolationMode,
       payloadSchemaMode,
       sdkRequest: {
         path: `${resolveModelResource(model)}:predict`,
@@ -1254,6 +1475,8 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       serializedBodyBytes: Buffer.byteLength(serializedPayload, "utf8"),
       payloadValidation: {
         payloadSchemaMode,
+        expectedEditMode: renderProfile.editMode,
+        expectedMaskDilation: renderProfile.maskDilation,
         status: "passed",
       },
     });
@@ -1265,6 +1488,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       jobId: request.jobId,
       renderMode: request.renderMode,
       model,
+      isolationMode: renderProfile.isolationMode,
       payloadSchemaMode,
       prompt,
       sourceTransport: request.sourceImage.kind,
@@ -1279,6 +1503,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       renderMode: request.renderMode,
       workerIdentity: request.workerIdentity || null,
       model,
+      isolationMode: renderProfile.isolationMode,
       payloadSchemaMode,
       guidanceScale,
     });
@@ -1367,6 +1592,15 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
           targetRatio: null,
         });
       }
+
+      await validateOutsideMaskDrift({
+        request,
+        sourcePath: request.sourceImage.localPath,
+        maskPath: request.maskImage.localPath,
+        candidatePath: request.outputPath,
+        profile: renderProfile,
+      });
+
       await fs.access(request.outputPath);
       const latencyMs = Date.now() - startedAt;
 
@@ -1377,6 +1611,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         jobId: request.jobId,
         renderMode: request.renderMode,
         model,
+        isolationMode: renderProfile.isolationMode,
         payloadSchemaMode,
         latencyMs,
         outputPath: request.outputPath,
@@ -1391,6 +1626,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         renderMode: request.renderMode,
         workerIdentity: request.workerIdentity || null,
         model,
+        isolationMode: renderProfile.isolationMode,
         payloadSchemaMode,
         guidanceScale,
         latencyMs,
@@ -1425,6 +1661,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         jobId: request.jobId,
         renderMode: request.renderMode,
         model,
+        isolationMode: renderProfile.isolationMode,
         payloadSchemaMode,
         outputPath: request.outputPath,
         error: error?.message || String(error),
@@ -1440,6 +1677,7 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         renderMode: request.renderMode,
         workerIdentity: request.workerIdentity || null,
         model,
+        isolationMode: renderProfile.isolationMode,
         payloadSchemaMode,
         guidanceScale,
         error: error?.message || String(error),
