@@ -1,0 +1,73 @@
+{
+  "width": 1536,
+  "height": 1023,
+  "normalizationWidth": 1536,
+  "normalizationHeight": 1023,
+  "normalizationSource": "occupancy_processing_dimensions",
+  "occupancyThresholdUsed": 170,
+  "alphaStatsPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/alpha-histogram.json",
+  "alphaHeatmapPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/alpha-heatmap.png",
+  "measurementStages": [
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 128,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 128,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 170,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "decor_group",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 16,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/occupancy-stage-debug/decor_group/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "decor_group",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 16,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/occupancy-stage-debug/decor_group/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "decor_group",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 32,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/occupancy-stage-debug/decor_group/occupancy-metric-debug.json"
+    }
+  ],
+  "finalUnionMetric": {
+    "measurementStage": "final_union_mask",
+    "occupancyPixels": 81758,
+    "totalPixels": 1571328,
+    "occupancyAreaRatio": 0.0520311481753014,
+    "width": 1536,
+    "height": 1023,
+    "alphaAware": false,
+    "threshold": null,
+    "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2/occupancy/gemini-occupancy-mask-cleaned.png",
+    "componentCount": 8
+  },
+  "rejectionReason": null,
+  "adaptiveExpectation": {
+    "effectiveMinAreaRatio": 0.02,
+    "requiredTargetAreaRatio": 0.028700000000000003,
+    "optionalTargetAreaRatio": 0.0042,
+    "optionalWeight": 0.2
+  }
+}

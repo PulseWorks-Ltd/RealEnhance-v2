@@ -7,6 +7,7 @@ import { toBase64 } from "../utils/images";
 import type { NormalizedPoint, PlacementPlan } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
 import { getVertexGenAiClient } from "../providers/vertex/adc";
+import { resolveDeterministicZoneProjection } from "./deterministicProjection";
 
 type ConnectedComponentStats = {
   id: number;
@@ -50,6 +51,7 @@ type ComponentDecision = {
   anchorScore: number;
   priorOverlapRatio: number;
   floorOverlapRatio: number;
+  constraintOverlapRatio: number;
   compactness: number;
   wallTouchRatio: number;
   minX: number;
@@ -66,6 +68,7 @@ type RankedComponentResult = {
   acceptedCount: number;
   anchorScore: number;
   floorContactRatio: number;
+  constraintAffinityScore: number;
   compactnessScore: number;
   decisions: ComponentDecision[];
 };
@@ -109,7 +112,8 @@ type AttemptFailureMode =
   | "wall_heavy"
   | "ceiling_heavy"
   | "low_floor_contact"
-  | "low_anchor_relevance";
+  | "low_anchor_relevance"
+  | "low_constraint_affinity";
 
 type ClusterAttemptSummary = {
   clusterId: string;
@@ -124,6 +128,7 @@ type ClusterAttemptSummary = {
   wallTouchRatio: number;
   topRegionRatio: number;
   anchorProximityScore: number;
+  constraintAffinityScore: number;
   selectedThreshold: number;
   selectedInversion: boolean;
 };
@@ -133,6 +138,7 @@ type GeminiMaskSafetyTelemetry = {
   connectedComponentCount: number;
   floorContactRatio: number;
   anchorProximityScore: number;
+  constraintAffinityScore: number;
   topRegionOccupancyRatio: number;
   wallTouchOccupancyRatio: number;
   boundingAreaRatio: number;
@@ -448,6 +454,129 @@ function polygonPointsAttribute(points: NormalizedPoint[], width: number, height
     .join(" ");
 }
 
+function buildFallbackProjectionWallPolygon(zone: PlacementPlan["furnitureZones"][number]): NormalizedPoint[] {
+  const bbox = zone.normalizedBoundingBox;
+  const top = bbox.y;
+  const mid = Math.min(1, bbox.y + bbox.height * 0.62);
+  const left = bbox.x;
+  const right = Math.min(1, bbox.x + bbox.width);
+  return [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: mid },
+    { x: left, y: mid },
+  ];
+}
+
+function buildFallbackProjectionFloorPolygon(zone: PlacementPlan["furnitureZones"][number]): NormalizedPoint[] {
+  const bbox = zone.normalizedBoundingBox;
+  const mid = Math.min(1, bbox.y + bbox.height * 0.56);
+  const bottom = Math.min(1, bbox.y + bbox.height);
+  const left = bbox.x;
+  const right = Math.min(1, bbox.x + bbox.width);
+  const inset = Math.min(0.08, bbox.width * 0.16);
+  return [
+    { x: Math.min(1, left + inset), y: mid },
+    { x: Math.max(0, right - inset), y: mid },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ];
+}
+
+function toDeterministicPixelPoint(point: NormalizedPoint, width: number, height: number): string {
+  const x = Math.max(0, Math.min(width, Math.round(point.x * width)));
+  const y = Math.max(0, Math.min(height, Math.round(point.y * height)));
+  return `${x},${y}`;
+}
+
+function deterministicPolygonSvg(points: NormalizedPoint[], width: number, height: number): string {
+  if (points.length < 3) {
+    return "";
+  }
+  const svgPoints = points.map((point) => toDeterministicPixelPoint(point, width, height)).join(" ");
+  return `<polygon points="${svgPoints}" fill="#ffffff" />`;
+}
+
+async function buildDeterministicConstraintMask(plan: PlacementPlan, width: number, height: number): Promise<Buffer> {
+  const polygons: string[] = [];
+  for (const zone of plan.furnitureZones) {
+    const projection = resolveDeterministicZoneProjection({
+      plan,
+      zone,
+    });
+    const wallPolygon = projection.wallPolygon.length >= 3
+      ? projection.wallPolygon
+      : buildFallbackProjectionWallPolygon(zone);
+    const floorPolygon = projection.floorPolygon.length >= 3
+      ? projection.floorPolygon
+      : buildFallbackProjectionFloorPolygon(zone);
+    polygons.push(deterministicPolygonSvg(wallPolygon, width, height));
+    polygons.push(deterministicPolygonSvg(floorPolygon, width, height));
+  }
+
+  if (polygons.length === 0) {
+    return Buffer.alloc(width * height, 0);
+  }
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <rect width="100%" height="100%" fill="#000000" />
+      ${polygons.join("\n")}
+    </svg>
+  `;
+
+  return sharp(Buffer.from(svg))
+    .removeAlpha()
+    .grayscale()
+    .threshold(1, { grayscale: true })
+    .raw()
+    .toBuffer();
+}
+
+function computeMaskConstraintAffinity(mask: Buffer, constraintMask: Buffer, width: number, height: number): number {
+  const total = countMaskPixels(mask);
+  if (total === 0 || mask.length !== constraintMask.length) {
+    return 0;
+  }
+
+  let overlap = 0;
+  for (let i = 0; i < mask.length; i += 1) {
+    if (mask[i] > 0 && constraintMask[i] > 0) {
+      overlap += 1;
+    }
+  }
+  const overlapRatio = overlap / Math.max(1, total);
+  if (overlapRatio > 0) {
+    return overlapRatio;
+  }
+
+  const occupancyComponents = analyzeConnectedComponents(mask, width, height, 1).components;
+  const constraintComponents = analyzeConnectedComponents(constraintMask, width, height, 1).components;
+  if (occupancyComponents.length === 0 || constraintComponents.length === 0) {
+    return 0;
+  }
+
+  const diag = Math.sqrt((width * width) + (height * height));
+  const sigma = Math.max(1, diag * 0.18);
+  let weighted = 0;
+  let weightTotal = 0;
+  for (const component of occupancyComponents) {
+    let minDistance = Number.POSITIVE_INFINITY;
+    for (const constraintComponent of constraintComponents) {
+      const dx = component.centroidX - constraintComponent.centroidX;
+      const dy = component.centroidY - constraintComponent.centroidY;
+      const distance = Math.sqrt((dx * dx) + (dy * dy));
+      if (distance < minDistance) {
+        minDistance = distance;
+      }
+    }
+    const proximity = Math.exp(-(minDistance / sigma));
+    weighted += proximity * component.pixelCount;
+    weightTotal += component.pixelCount;
+  }
+  return (weightTotal > 0 ? (weighted / weightTotal) : 0) * 0.35;
+}
+
 async function buildFloorPriorMask(plan: PlacementPlan, width: number, height: number): Promise<Buffer> {
   const floorPlane = (plan.structuralTopologyCage?.majorRoomPlanes || []).find((plane) => /floor/i.test(String(plane.planeType || "")));
   if (floorPlane?.polygon?.length && floorPlane.polygon.length >= 3) {
@@ -713,6 +842,8 @@ function buildAttemptInstruction(failureMode: AttemptFailureMode): string {
       return "Improve floor-contact plausibility for furniture occupancy. Avoid floating mask regions.";
     case "low_anchor_relevance":
       return "Align occupancy near expected furniture anchors and continuity target locations. Remove distant unrelated regions.";
+    case "low_constraint_affinity":
+      return "Align occupancy tightly with deterministic projection geometry for the target furniture; avoid offset or drifted regions.";
     default:
       return "Generate precise furniture-only occupancy with strict structural preservation.";
   }
@@ -736,6 +867,7 @@ function buildOccupancyPrompt(plan: PlacementPlan, priorCluster: PriorCluster, f
     "- Do not output giant room-spanning regions.",
     "- Do not infer hidden geometry.",
     "- Keep region localized and composition-coherent.",
+    "- Prefer strong overlap with the provided deterministic projection guide (white regions) while preserving furniture semantics.",
     `Target furniture cluster: ${clusterHint}`,
     `Room type: ${plan.roomType}`,
     `Stabilization instruction: ${buildAttemptInstruction(failureMode)}`,
@@ -883,6 +1015,63 @@ function computeComponentSupportOverlap(params: {
   return supportPixels / Math.max(1, params.component.pixelCount);
 }
 
+function computeComponentMaskOverlap(params: {
+  component: ConnectedComponentStats;
+  labelMap: Int32Array;
+  referenceMask: Buffer;
+  width: number;
+}): number {
+  let overlapPixels = 0;
+  for (let y = params.component.minY; y <= params.component.maxY; y += 1) {
+    for (let x = params.component.minX; x <= params.component.maxX; x += 1) {
+      const idx = (y * params.width) + x;
+      if (params.labelMap[idx] !== params.component.id) {
+        continue;
+      }
+      if (params.referenceMask[idx] > 0) {
+        overlapPixels += 1;
+      }
+    }
+  }
+  return overlapPixels / Math.max(1, params.component.pixelCount);
+}
+
+function computeComponentConstraintAffinity(params: {
+  component: ConnectedComponentStats;
+  labelMap: Int32Array;
+  constraintMask: Buffer;
+  constraintComponents: ConnectedComponentStats[];
+  width: number;
+  height: number;
+}): number {
+  const overlapRatio = computeComponentMaskOverlap({
+    component: params.component,
+    labelMap: params.labelMap,
+    referenceMask: params.constraintMask,
+    width: params.width,
+  });
+  if (overlapRatio > 0) {
+    return overlapRatio;
+  }
+  if (params.constraintComponents.length === 0) {
+    return 0;
+  }
+
+  const diag = Math.sqrt((params.width * params.width) + (params.height * params.height));
+  const sigma = Math.max(1, diag * 0.18);
+  let minDistance = Number.POSITIVE_INFINITY;
+  for (const constraintComponent of params.constraintComponents) {
+    const dx = params.component.centroidX - constraintComponent.centroidX;
+    const dy = params.component.centroidY - constraintComponent.centroidY;
+    const distance = Math.sqrt((dx * dx) + (dy * dy));
+    if (distance < minDistance) {
+      minDistance = distance;
+    }
+  }
+
+  return Math.exp(-(minDistance / sigma)) * 0.35;
+}
+
 function computeBoundingBoxGap(a: ConnectedComponentStats, b: ConnectedComponentStats): number {
   const dx = a.maxX < b.minX
     ? (b.minX - a.maxX)
@@ -897,9 +1086,35 @@ function computeBoundingBoxGap(a: ConnectedComponentStats, b: ConnectedComponent
   return Math.max(dx, dy);
 }
 
+function computeAnchorAffinityScore(params: {
+  component: ConnectedComponentStats;
+  anchors: Array<{ x: number; y: number; weight: number }>;
+  width: number;
+  height: number;
+}): number {
+  if (params.anchors.length === 0) {
+    return 0;
+  }
+  const diag = Math.sqrt((params.width * params.width) + (params.height * params.height));
+  const sigma = Math.max(1, diag * 0.2);
+  let weighted = 0;
+  let weightTotal = 0;
+  for (const anchor of params.anchors) {
+    const dx = params.component.centroidX - anchor.x;
+    const dy = params.component.centroidY - anchor.y;
+    const distance = Math.sqrt((dx * dx) + (dy * dy));
+    const affinity = Math.exp(-(distance / sigma));
+    const weight = Math.max(0.1, anchor.weight);
+    weighted += affinity * weight;
+    weightTotal += weight;
+  }
+  return weightTotal > 0 ? weighted / weightTotal : 0;
+}
+
 function removeSmallComponents(params: {
   mask: Buffer;
   supportMask: Buffer;
+  constraintMask: Buffer;
   width: number;
   height: number;
   minPixels: number;
@@ -917,11 +1132,16 @@ function removeSmallComponents(params: {
   }
 
   const analyzed = analyzeConnectedComponents(params.mask, params.width, params.height, 1);
+  const constraintComponents = analyzeConnectedComponents(params.constraintMask, params.width, params.height, 1).components;
   const largeComponents = analyzed.components.filter((component) => component.pixelCount >= params.minPixels);
   const semanticSatelliteMinPixels = Math.max(6, Math.floor(params.minPixels * 0.35));
   const minSemanticSupportOverlap = Math.max(
     0.05,
     Math.min(0.8, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_SATELLITE_SUPPORT_OVERLAP", 0.18)),
+  );
+  const minSatelliteConstraintAffinity = Math.max(
+    0,
+    Math.min(0.95, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_SATELLITE_CONSTRAINT_AFFINITY", 0.08)),
   );
   const maxSatelliteAttachmentGap = Math.max(
     0,
@@ -947,7 +1167,15 @@ function removeSmallComponents(params: {
       supportMask: params.supportMask,
       width: params.width,
     });
-    if (supportOverlap < minSemanticSupportOverlap) {
+    const constraintAffinity = computeComponentConstraintAffinity({
+      component,
+      labelMap: analyzed.labelMap,
+      constraintMask: params.constraintMask,
+      constraintComponents,
+      width: params.width,
+      height: params.height,
+    });
+    if (supportOverlap < minSemanticSupportOverlap || constraintAffinity < minSatelliteConstraintAffinity) {
       continue;
     }
 
@@ -975,40 +1203,73 @@ function removeSmallComponents(params: {
   };
 }
 
-function keepMostSupportedComponents(mask: Buffer, supportMask: Buffer, width: number, height: number, maxComponents: number): {
+function keepMostSupportedComponents(params: {
+  mask: Buffer;
+  supportMask: Buffer;
+  constraintMask: Buffer;
+  width: number;
+  height: number;
+  maxComponents: number;
+  anchors: Array<{ x: number; y: number; weight: number }>;
+}): {
   output: Buffer;
   componentCount: number;
   retainedCount: number;
 } {
-  const analyzed = analyzeConnectedComponents(mask, width, height, 1);
-  if (analyzed.components.length <= maxComponents) {
+  const analyzed = analyzeConnectedComponents(params.mask, params.width, params.height, 1);
+  const constraintComponents = analyzeConnectedComponents(params.constraintMask, params.width, params.height, 1).components;
+  if (analyzed.components.length <= params.maxComponents) {
     return {
-      output: Buffer.from(mask),
+      output: Buffer.from(params.mask),
       componentCount: analyzed.components.length,
       retainedCount: analyzed.components.length,
     };
   }
 
   const maxPixels = analyzed.components.reduce((max, component) => Math.max(max, component.pixelCount), 1);
+  const anchorBlend = Math.max(0, Math.min(0.28, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_ANCHOR_BLEND", 0.16)));
+  const supportBlend = Math.max(0.2, Math.min(0.5, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_SUPPORT_BLEND", 0.34)));
+  const constraintBlend = Math.max(0.08, Math.min(0.42, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_CONSTRAINT_BLEND", 0.24)));
+  const sizeBlend = Math.max(0.08, 1 - anchorBlend - supportBlend - constraintBlend);
+  const normalizedWeightSum = sizeBlend + supportBlend + anchorBlend + constraintBlend;
   const kept = analyzed.components
     .map((component) => {
       const supportOverlap = computeComponentSupportOverlap({
         component,
         labelMap: analyzed.labelMap,
-        supportMask,
-        width,
+        supportMask: params.supportMask,
+        width: params.width,
+      });
+      const constraintAffinity = computeComponentConstraintAffinity({
+        component,
+        labelMap: analyzed.labelMap,
+        constraintMask: params.constraintMask,
+        constraintComponents,
+        width: params.width,
+        height: params.height,
       });
       const sizeScore = Math.sqrt(component.pixelCount / Math.max(1, maxPixels));
+      const anchorScore = computeAnchorAffinityScore({
+        component,
+        anchors: params.anchors,
+        width: params.width,
+        height: params.height,
+      });
       return {
         component,
-        score: (sizeScore * 0.64) + (supportOverlap * 0.36),
+        score: (
+          (sizeScore * sizeBlend)
+          + (supportOverlap * supportBlend)
+          + (anchorScore * anchorBlend)
+          + (constraintAffinity * constraintBlend)
+        ) / Math.max(0.0001, normalizedWeightSum),
       };
     })
     .sort((left, right) => right.score - left.score)
-    .slice(0, Math.max(1, maxComponents));
+    .slice(0, Math.max(1, params.maxComponents));
   const allowedIds = new Set(kept.map((entry) => entry.component.id));
   return {
-    output: keepAllowedComponents(mask, analyzed.labelMap, allowedIds),
+    output: keepAllowedComponents(params.mask, analyzed.labelMap, allowedIds),
     componentCount: analyzed.components.length,
     retainedCount: kept.length,
   };
@@ -1030,6 +1291,8 @@ async function applyMorphologicalClose(mask: Buffer, width: number, height: numb
 async function stabilizeFragmentedMask(params: {
   mask: Buffer;
   supportMask: Buffer;
+  constraintMask: Buffer;
+  anchors: Array<{ x: number; y: number; weight: number }>;
   width: number;
   height: number;
   targetMaxComponents: number;
@@ -1049,9 +1312,13 @@ async function stabilizeFragmentedMask(params: {
   islandsRemoved: number;
   satelliteIslandsRetained: number;
   fallbackAreaRejected: boolean;
+  constrainedMergeApplied: boolean;
+  beforeConstraintAffinity: number;
+  afterConstraintAffinity: number;
 }> {
   const beforePixels = countMaskPixels(params.mask);
   const beforeComponents = analyzeConnectedComponents(params.mask, params.width, params.height, 1).components.length;
+  const beforeConstraintAffinity = computeMaskConstraintAffinity(params.mask, params.constraintMask, params.width, params.height);
   if (beforeComponents <= params.targetMaxComponents || beforePixels === 0) {
     return {
       mask: Buffer.from(params.mask),
@@ -1064,6 +1331,9 @@ async function stabilizeFragmentedMask(params: {
       islandsRemoved: 0,
       satelliteIslandsRetained: 0,
       fallbackAreaRejected: false,
+      constrainedMergeApplied: false,
+      beforeConstraintAffinity,
+      afterConstraintAffinity: beforeConstraintAffinity,
     };
   }
 
@@ -1073,15 +1343,21 @@ async function stabilizeFragmentedMask(params: {
   let islandsRemoved = 0;
   let satelliteIslandsRetained = 0;
   let fallbackAreaRejected = false;
+  let constrainedMergeApplied = false;
   const minRetainedAreaRatio = Math.max(0.15, Math.min(0.95, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_RETAINED_AREA_RATIO", 0.4)));
   const minStepRetainedAreaRatioBase = Math.max(0.7, Math.min(1, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MIN_STEP_RETAINED_RATIO", 0.9)));
   const maxCloseRadius = Math.max(params.closeRadius, params.maxCloseRadius);
+  const maxStepConstraintDrop = Math.max(
+    0,
+    Math.min(0.4, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_MAX_STEP_CONSTRAINT_DROP", 0.08)),
+  );
 
   for (let radius = Math.max(1, params.closeRadius); radius <= maxCloseRadius; radius += 1) {
     const closed = await applyMorphologicalClose(working, params.width, params.height, radius);
     const pruned = removeSmallComponents({
       mask: closed,
       supportMask: params.supportMask,
+      constraintMask: params.constraintMask,
       width: params.width,
       height: params.height,
       minPixels: params.minIslandPixels,
@@ -1089,6 +1365,8 @@ async function stabilizeFragmentedMask(params: {
     const candidatePixels = countMaskPixels(pruned.output);
     const candidateComponents = analyzeConnectedComponents(pruned.output, params.width, params.height, 1).components.length;
     const workingPixels = countMaskPixels(working);
+    const candidateConstraintAffinity = computeMaskConstraintAffinity(pruned.output, params.constraintMask, params.width, params.height);
+    const workingConstraintAffinity = computeMaskConstraintAffinity(working, params.constraintMask, params.width, params.height);
     const areaRatio = candidatePixels / Math.max(1, beforePixels);
     const stepRetainedRatio = candidatePixels / Math.max(1, workingPixels);
     const componentPressure = workingComponents / Math.max(1, params.targetMaxComponents);
@@ -1104,6 +1382,7 @@ async function stabilizeFragmentedMask(params: {
       && retainedEnoughArea
       && stepRetainedRatio >= adaptiveStepRetentionFloor
       && absoluteAreaRatio >= params.minFinalAreaRatio
+      && candidateConstraintAffinity >= Math.max(0, workingConstraintAffinity - maxStepConstraintDrop)
     ) {
       working = Buffer.from(pruned.output);
       workingComponents = candidateComponents;
@@ -1118,18 +1397,59 @@ async function stabilizeFragmentedMask(params: {
 
   let largestTrimApplied = false;
   if (workingComponents > params.targetMaxComponents) {
-    const trimmed = keepMostSupportedComponents(working, params.supportMask, params.width, params.height, params.targetMaxComponents);
+    const trimmed = keepMostSupportedComponents({
+      mask: working,
+      supportMask: params.supportMask,
+      constraintMask: params.constraintMask,
+      width: params.width,
+      height: params.height,
+      maxComponents: params.targetMaxComponents,
+      anchors: params.anchors,
+    });
     const workingAreaRatio = countMaskPixels(working) / Math.max(1, params.width * params.height);
     const trimmedPixels = countMaskPixels(trimmed.output);
     const retainedRatio = trimmedPixels / Math.max(1, countMaskPixels(working));
+    const trimmedConstraintAffinity = computeMaskConstraintAffinity(trimmed.output, params.constraintMask, params.width, params.height);
+    const workingConstraintAffinity = computeMaskConstraintAffinity(working, params.constraintMask, params.width, params.height);
     const minRetainedRatioForAreaFloor = Math.max(0.55, params.minFinalAreaRatio / Math.max(0.0001, workingAreaRatio));
     const absoluteAreaRatio = trimmedPixels / Math.max(1, params.width * params.height);
-    if (retainedRatio >= minRetainedRatioForAreaFloor && absoluteAreaRatio >= params.minFinalAreaRatio) {
+    if (
+      retainedRatio >= minRetainedRatioForAreaFloor
+      && absoluteAreaRatio >= params.minFinalAreaRatio
+      && trimmedConstraintAffinity >= Math.max(0, workingConstraintAffinity - maxStepConstraintDrop)
+    ) {
       working = Buffer.from(trimmed.output);
       workingComponents = analyzeConnectedComponents(working, params.width, params.height, 1).components.length;
       largestTrimApplied = true;
     } else {
       fallbackAreaRejected = true;
+    }
+  }
+
+  if (workingComponents > params.targetMaxComponents && fallbackAreaRejected) {
+    for (let radius = Math.max(1, params.closeRadius); radius <= Math.max(params.closeRadius, params.maxCloseRadius); radius += 1) {
+      const merged = await applyMorphologicalClose(working, params.width, params.height, radius);
+      const constrained = Buffer.alloc(merged.length, 0);
+      for (let i = 0; i < merged.length; i += 1) {
+        constrained[i] = merged[i] > 0 && params.constraintMask[i] > 0 ? 255 : 0;
+      }
+
+      const constrainedPixels = countMaskPixels(constrained);
+      const constrainedAreaRatio = constrainedPixels / Math.max(1, params.width * params.height);
+      if (constrainedAreaRatio < params.minFinalAreaRatio) {
+        continue;
+      }
+
+      const constrainedComponents = analyzeConnectedComponents(constrained, params.width, params.height, 1).components.length;
+      if (constrainedComponents < workingComponents) {
+        working = constrained;
+        workingComponents = constrainedComponents;
+        constrainedMergeApplied = true;
+      }
+
+      if (workingComponents <= params.targetMaxComponents) {
+        break;
+      }
     }
   }
 
@@ -1144,6 +1464,9 @@ async function stabilizeFragmentedMask(params: {
     islandsRemoved,
     satelliteIslandsRetained,
     fallbackAreaRejected,
+    constrainedMergeApplied,
+    beforeConstraintAffinity,
+    afterConstraintAffinity: computeMaskConstraintAffinity(working, params.constraintMask, params.width, params.height),
   };
 }
 
@@ -1809,10 +2132,13 @@ function rankComponents(params: {
   candidateMask: Buffer;
   priorCluster: PriorCluster;
   floorMask: Buffer;
+  constraintMask: Buffer;
   width: number;
   height: number;
   maxRetainedComponents: number;
 }): RankedComponentResult {
+  const constraintBlend = Math.max(0.08, Math.min(0.45, readNumberEnv("CONTINUITY_GEMINI_MASK_COMPONENT_CONSTRAINT_BLEND", 0.24)));
+  const constraintComponents = analyzeConnectedComponents(params.constraintMask, params.width, params.height, 1).components;
   const scored = params.components.map((component) => {
     const bboxArea = Math.max(1, (component.maxX - component.minX + 1) * (component.maxY - component.minY + 1));
     const compactness = component.pixelCount / bboxArea;
@@ -1825,6 +2151,7 @@ function rankComponents(params: {
 
     let priorOverlap = 0;
     let floorOverlap = 0;
+    let constraintOverlap = 0;
     let wallTouch = 0;
     const wallBand = Math.max(1, Math.floor(params.width * 0.06));
     for (let y = component.minY; y <= component.maxY; y += 1) {
@@ -1839,6 +2166,9 @@ function rankComponents(params: {
         if (params.floorMask[idx] > 0) {
           floorOverlap += 1;
         }
+        if (params.constraintMask[idx] > 0) {
+          constraintOverlap += 1;
+        }
         if (x < wallBand || x >= (params.width - wallBand)) {
           wallTouch += 1;
         }
@@ -1847,18 +2177,28 @@ function rankComponents(params: {
 
     const priorOverlapRatio = priorOverlap / Math.max(1, component.pixelCount);
     const floorOverlapRatio = floorOverlap / Math.max(1, component.pixelCount);
+    const constraintOverlapRatio = constraintOverlap / Math.max(1, component.pixelCount);
+    const constraintAffinity = computeComponentConstraintAffinity({
+      component,
+      labelMap: params.labelMap,
+      constraintMask: params.constraintMask,
+      constraintComponents,
+      width: params.width,
+      height: params.height,
+    });
     const wallTouchRatio = wallTouch / Math.max(1, component.pixelCount);
     const supportConfidence = Math.max(priorOverlapRatio, floorOverlapRatio * 0.92);
     const sizeConfidence = Math.min(1, Math.sqrt(componentAreaRatio / Math.max(0.0005, params.priorCluster.expectedAreaRatioMin * 0.45)));
 
     const score =
-      (anchorScore * 0.24)
-      + (priorOverlapRatio * 0.21)
-      + (floorOverlapRatio * 0.19)
-      + (supportConfidence * 0.16)
-      + (sizeConfidence * 0.12)
-      + (compactness * 0.1)
-      - (wallTouchRatio * 0.16);
+      (anchorScore * 0.18)
+      + (priorOverlapRatio * 0.16)
+      + (floorOverlapRatio * 0.14)
+      + (supportConfidence * 0.13)
+      + (sizeConfidence * 0.1)
+      + (compactness * 0.08)
+      + (constraintAffinity * constraintBlend)
+      - (wallTouchRatio * 0.15);
 
     return {
       component,
@@ -1866,6 +2206,8 @@ function rankComponents(params: {
       anchorScore,
       priorOverlapRatio,
       floorOverlapRatio,
+      constraintOverlapRatio,
+      constraintAffinity,
       compactness,
       wallTouchRatio,
     };
@@ -1894,6 +2236,7 @@ function rankComponents(params: {
       entry.priorOverlapRatio >= 0.015
       || entry.floorOverlapRatio >= 0.12
       || entry.anchorScore >= 0.22
+      || entry.constraintAffinity >= 0.08
     ) && entry.wallTouchRatio <= 0.55;
 
     const useBaseRetention = withinBaseLimit && entry.score > baseScoreThreshold;
@@ -1906,6 +2249,7 @@ function rankComponents(params: {
     const semanticallyAttachedSatellite = (
       entry.floorOverlapRatio >= 0.08
       || entry.priorOverlapRatio >= 0.012
+      || entry.constraintAffinity >= 0.06
       || (entry.anchorScore >= 0.18 && entry.compactness >= 0.08)
     ) && entry.wallTouchRatio <= 0.65;
 
@@ -1939,6 +2283,7 @@ function rankComponents(params: {
     ? accepted.reduce((sum, entry) => sum + entry.anchorScore, 0) / accepted.length
     : 0;
   const floorContactRatio = measureFloorContactRatio(acceptedMask, params.floorMask, params.width, params.height);
+  const constraintAffinityScore = computeMaskConstraintAffinity(acceptedMask, params.constraintMask, params.width, params.height);
   const compactnessScore = accepted.length
     ? accepted.reduce((sum, entry) => sum + entry.compactness, 0) / accepted.length
     : 0;
@@ -1953,6 +2298,8 @@ function rankComponents(params: {
         rejectedReason = "score_below_recovery_floor";
       } else if (entry.wallTouchRatio > 0.55) {
         rejectedReason = "wall_touch_too_high";
+      } else if (entry.constraintAffinity < 0.05) {
+        rejectedReason = "low_constraint_affinity";
       } else if (entry.priorOverlapRatio < 0.015 && entry.floorOverlapRatio < 0.12 && entry.anchorScore < 0.22) {
         rejectedReason = "weak_structural_support";
       } else {
@@ -1970,6 +2317,7 @@ function rankComponents(params: {
       anchorScore: entry.anchorScore,
       priorOverlapRatio: entry.priorOverlapRatio,
       floorOverlapRatio: entry.floorOverlapRatio,
+      constraintOverlapRatio: entry.constraintOverlapRatio,
       compactness: entry.compactness,
       wallTouchRatio: entry.wallTouchRatio,
       minX: entry.component.minX,
@@ -1987,6 +2335,7 @@ function rankComponents(params: {
     acceptedCount: accepted.length,
     anchorScore,
     floorContactRatio,
+    constraintAffinityScore,
     compactnessScore,
     decisions,
   };
@@ -2033,6 +2382,7 @@ function classifyFailureMode(params: {
   topRegionRatio: number;
   floorContactRatio: number;
   anchorScore: number;
+  constraintAffinityScore: number;
 }): AttemptFailureMode {
   if (params.occupancyAreaRatio < params.profile.minAreaRatio) return "too_sparse";
   if (params.occupancyAreaRatio > params.profile.maxAreaRatio) return "too_broad";
@@ -2041,6 +2391,7 @@ function classifyFailureMode(params: {
   if (params.wallTouchRatio > params.profile.maxWallTouchRatio) return "wall_heavy";
   if (params.floorContactRatio < params.profile.minFloorContactRatio) return "low_floor_contact";
   if (params.anchorScore < 0.35) return "low_anchor_relevance";
+  if (params.constraintAffinityScore < 0.2) return "low_constraint_affinity";
   return "none";
 }
 
@@ -2049,6 +2400,7 @@ function evaluateQuality(params: {
   connectedCount: number;
   floorContactRatio: number;
   anchorScore: number;
+  constraintAffinityScore: number;
   wallTouchRatio: number;
   topRegionRatio: number;
   compactnessScore: number;
@@ -2059,16 +2411,18 @@ function evaluateQuality(params: {
   const componentCoherenceScore = Math.max(0, 1 - ((params.connectedCount - 1) / Math.max(1, params.profile.maxComponents - 1)));
   const floorContactScore = Math.max(0, Math.min(1, params.floorContactRatio / Math.max(0.01, params.profile.minFloorContactRatio)));
   const anchorScore = Math.max(0, Math.min(1, params.anchorScore));
+  const constraintScore = Math.max(0, Math.min(1, params.constraintAffinityScore));
   const wallPenalty = Math.max(0, (params.wallTouchRatio - params.profile.maxWallTouchRatio) * 2.2);
   const topPenalty = Math.max(0, (params.topRegionRatio - params.profile.maxTopRegionRatio) * 2.2);
   const compactnessScore = Math.max(0, Math.min(1, params.compactnessScore));
 
   const score = Math.max(0,
-    (occupancyBandScore * 0.22)
-    + (componentCoherenceScore * 0.2)
-    + (floorContactScore * 0.2)
-    + (anchorScore * 0.2)
-    + (compactnessScore * 0.18)
+    (occupancyBandScore * 0.2)
+    + (componentCoherenceScore * 0.18)
+    + (floorContactScore * 0.18)
+    + (anchorScore * 0.16)
+    + (constraintScore * 0.16)
+    + (compactnessScore * 0.14)
     - (wallPenalty * 0.1)
     - (topPenalty * 0.1)
   );
@@ -2125,6 +2479,7 @@ function ensureSafetyOrThrow(params: {
   profile: RoomTypeBandProfile;
   floorMask: Buffer;
   anchorScore: number;
+  constraintAffinityScore: number;
   compactnessScore: number;
   continuityGroupId?: string | null;
   imageId: string;
@@ -2149,6 +2504,7 @@ function ensureSafetyOrThrow(params: {
     connectedComponentCount,
     floorContactRatio,
     anchorProximityScore: params.anchorScore,
+    constraintAffinityScore: params.constraintAffinityScore,
     topRegionOccupancyRatio,
     wallTouchOccupancyRatio,
     boundingAreaRatio,
@@ -2160,6 +2516,7 @@ function ensureSafetyOrThrow(params: {
     connectedCount: connectedComponentCount,
     floorContactRatio,
     anchorScore: params.anchorScore,
+    constraintAffinityScore: params.constraintAffinityScore,
     wallTouchRatio: wallTouchOccupancyRatio,
     topRegionRatio: topRegionOccupancyRatio,
     compactnessScore: params.compactnessScore,
@@ -2227,6 +2584,28 @@ async function writeMaskPng(mask: Buffer, width: number, height: number, outputP
   await sharp(mask, {
     raw: { width, height, channels: 1 },
   }).png().toFile(outputPath);
+}
+
+async function resizeBinaryMaskRaw(params: {
+  mask: Buffer;
+  sourceWidth: number;
+  sourceHeight: number;
+  targetWidth: number;
+  targetHeight: number;
+}): Promise<Buffer> {
+  if (params.sourceWidth === params.targetWidth && params.sourceHeight === params.targetHeight) {
+    return Buffer.from(params.mask);
+  }
+
+  return sharp(params.mask, {
+    raw: { width: params.sourceWidth, height: params.sourceHeight, channels: 1 },
+  })
+    .resize(params.targetWidth, params.targetHeight, { fit: "fill", kernel: sharp.kernel.nearest })
+    .removeAlpha()
+    .grayscale()
+    .threshold(1, { grayscale: true })
+    .raw()
+    .toBuffer();
 }
 
 async function writeOverlayImage(baseImagePath: string, rgba: Buffer, width: number, height: number, outputPath: string): Promise<void> {
@@ -2348,6 +2727,14 @@ export async function generateGeminiOccupancyMask(params: {
     : adaptiveFloorTarget.effectiveMinFloorContactRatio;
   const floorMask = await buildFloorPriorMask(params.plan, width, height);
   const supportSurfaceMask = await buildSupportSurfaceMask(params.plan, floorMask, width, height);
+  const deterministicConstraintMaskSource = await buildDeterministicConstraintMask(params.plan, sourceWidth, sourceHeight);
+  const deterministicConstraintMask = await resizeBinaryMaskRaw({
+    mask: deterministicConstraintMaskSource,
+    sourceWidth,
+    sourceHeight,
+    targetWidth: width,
+    targetHeight: height,
+  });
   const priorClusters = await buildPriorClusters(params.plan, width, height, floorMask);
   const adaptiveExpectation = computeAdaptiveOccupancyExpectation({
     profile,
@@ -2385,13 +2772,28 @@ export async function generateGeminiOccupancyMask(params: {
   const anchorDistanceHeatmapPath = path.join(outDir, "anchor-distance-heatmap.png");
   const floorContactVisualizationPath = path.join(outDir, "floor-contact-visualization.png");
   const acceptedRejectedOverlayPath = path.join(outDir, "accepted-vs-rejected-components.png");
+  const deterministicConstraintMaskPath = path.join(outDir, "deterministic-constraint-mask.png");
   const clusterMaskDir = path.join(outDir, "cluster-occupancy-masks");
   const stageDebugDir = path.join(outDir, "occupancy-stage-debug");
   await fs.mkdir(clusterMaskDir, { recursive: true });
   await fs.mkdir(stageDebugDir, { recursive: true });
+  await writeMaskPng(deterministicConstraintMask, width, height, deterministicConstraintMaskPath);
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_CONSTRAINT_AFFINITY]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    deterministicConstraintSourceAreaRatio: Number((countMaskPixels(deterministicConstraintMaskSource) / Math.max(1, sourceWidth * sourceHeight)).toFixed(4)),
+    deterministicConstraintAreaRatio: Number((countMaskPixels(deterministicConstraintMask) / Math.max(1, width * height)).toFixed(4)),
+    deterministicConstraintMaskPath,
+  });
 
   const secondaryImage = toBase64(params.secondaryImagePath);
   const masterImage = toBase64(params.masterImagePath);
+  const deterministicConstraintGuidePng = await sharp(deterministicConstraintMask, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
+  const deterministicConstraintGuideBase64 = deterministicConstraintGuidePng.toString("base64");
 
   logGeminiMaskMemory({
     enabled: memoryDebugEnabled,
@@ -2476,6 +2878,8 @@ export async function generateGeminiOccupancyMask(params: {
                 role: "user",
                 parts: [
                   { text: prompt },
+                  { text: "DETERMINISTIC_PROJECTION_GUIDE" },
+                  { inlineData: { mimeType: "image/png", data: deterministicConstraintGuideBase64 } },
                   { text: "TARGET_CLUSTER_PRIOR" },
                   { inlineData: { mimeType: "image/png", data: priorCluster.priorMaskPngBase64 } },
                   { text: "APPROVED_MASTER_STAGED_IMAGE" },
@@ -2539,6 +2943,7 @@ export async function generateGeminiOccupancyMask(params: {
           wallTouchRatio: 0,
           topRegionRatio: 0,
           anchorProximityScore: 0,
+          constraintAffinityScore: 0,
           selectedThreshold: 0,
           selectedInversion: false,
         });
@@ -2563,6 +2968,7 @@ export async function generateGeminiOccupancyMask(params: {
           wallTouchRatio: 0,
           topRegionRatio: 0,
           anchorProximityScore: 0,
+          constraintAffinityScore: 0,
           selectedThreshold: 0,
           selectedInversion: false,
         });
@@ -2688,6 +3094,7 @@ export async function generateGeminiOccupancyMask(params: {
           wallTouchRatio: 0,
           topRegionRatio: 0,
           anchorProximityScore: 0,
+          constraintAffinityScore: 0,
           selectedThreshold: 0,
           selectedInversion: false,
         });
@@ -2733,6 +3140,7 @@ export async function generateGeminiOccupancyMask(params: {
         candidateMask: componentFilteredMask,
         priorCluster,
         floorMask: supportSurfaceMask,
+        constraintMask: deterministicConstraintMask,
         width,
         height,
         maxRetainedComponents,
@@ -2746,6 +3154,7 @@ export async function generateGeminiOccupancyMask(params: {
       const topRegionRatio = measureTopRegionRatio(clusterMask, width, height);
       const floorContactRatio = ranked.floorContactRatio;
       const anchorScore = ranked.anchorScore;
+      const constraintAffinityScore = ranked.constraintAffinityScore;
 
       const failureMode = classifyFailureMode({
         occupancyAreaRatio,
@@ -2760,6 +3169,7 @@ export async function generateGeminiOccupancyMask(params: {
         topRegionRatio,
         floorContactRatio,
         anchorScore,
+        constraintAffinityScore,
       });
 
       const thresholdComparison = selected.thresholdScan;
@@ -2962,6 +3372,7 @@ export async function generateGeminiOccupancyMask(params: {
         connectedCount: connected,
         floorContactRatio,
         anchorScore,
+        constraintAffinityScore,
         wallTouchRatio,
         topRegionRatio,
         compactnessScore: ranked.compactnessScore,
@@ -2986,6 +3397,7 @@ export async function generateGeminiOccupancyMask(params: {
         wallTouchRatio,
         topRegionRatio,
         anchorProximityScore: anchorScore,
+        constraintAffinityScore,
         selectedThreshold: selected.threshold,
         selectedInversion: selected.inverted,
       });
@@ -3129,11 +3541,21 @@ export async function generateGeminiOccupancyMask(params: {
     0.006,
     Math.min(0.18, adaptiveExpectation.effectiveMinAreaRatio * topologyMinFinalAreaFactor),
   );
+  const topologyAnchorBlend = Math.max(0, Math.min(0.28, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_ANCHOR_BLEND", 0.16)));
+  const topologySupportBlend = Math.max(0.2, Math.min(0.5, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_SUPPORT_BLEND", 0.34)));
+  const topologyConstraintBlend = Math.max(0.08, Math.min(0.42, readNumberEnv("CONTINUITY_GEMINI_MASK_TOPOLOGY_CONSTRAINT_BLEND", 0.24)));
+  const topologyAnchorPoints = priorClusters.map((cluster) => ({
+    x: cluster.anchorX,
+    y: cluster.anchorY,
+    weight: cluster.required ? 1.2 : 0.9,
+  }));
   const preTopologyPixels = countMaskPixels(unionAccepted);
   const preTopologyAreaRatio = preTopologyPixels / Math.max(1, width * height);
   const topologyStabilized = await stabilizeFragmentedMask({
     mask: unionAccepted,
     supportMask: supportSurfaceMask,
+    constraintMask: deterministicConstraintMask,
+    anchors: topologyAnchorPoints,
     width,
     height,
     targetMaxComponents: profile.maxComponents,
@@ -3164,6 +3586,13 @@ export async function generateGeminiOccupancyMask(params: {
     satelliteIslandsRetained: topologyStabilized.satelliteIslandsRetained,
     minFinalAreaRatio: Number(topologyMinFinalAreaRatio.toFixed(4)),
     fallbackAreaRejected: topologyStabilized.fallbackAreaRejected,
+    constrainedMergeApplied: topologyStabilized.constrainedMergeApplied,
+    anchorBlend: Number(topologyAnchorBlend.toFixed(3)),
+    supportBlend: Number(topologySupportBlend.toFixed(3)),
+    constraintBlend: Number(topologyConstraintBlend.toFixed(3)),
+    anchorPointCount: topologyAnchorPoints.length,
+    beforeConstraintAffinity: Number(topologyStabilized.beforeConstraintAffinity.toFixed(4)),
+    afterConstraintAffinity: Number(topologyStabilized.afterConstraintAffinity.toFixed(4)),
   });
 
   let floorProjectionBeforePixels = postTopologyPixels;
@@ -3220,6 +3649,7 @@ export async function generateGeminiOccupancyMask(params: {
     floorProjectionAreaDeltaRatio: Number((finalAreaRatio - floorProjectionBeforeAreaRatio).toFixed(4)),
     floorProjectionBeforePixels,
     floorProjectionAfterPixels,
+    postFloorProjectionConstraintAffinity: Number(computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height).toFixed(4)),
   });
 
   const anchorProximityScore = priorClusters.length > 0
@@ -3244,6 +3674,7 @@ export async function generateGeminiOccupancyMask(params: {
     },
     floorMask: supportSurfaceMask,
     anchorScore: anchorProximityScore,
+    constraintAffinityScore: computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height),
     compactnessScore: compactness,
     continuityGroupId: params.continuityGroupId,
     imageId: params.imageId,
@@ -3262,16 +3693,33 @@ export async function generateGeminiOccupancyMask(params: {
     },
   });
 
-  const unionRawExport = (width === sourceWidth && height === sourceHeight)
-    ? unionRawBest
-    : await sharp(unionRawBest, {
-      raw: { width, height, channels: 1 },
-    }).resize(sourceWidth, sourceHeight, { fit: "fill", kernel: sharp.kernel.nearest }).raw().toBuffer();
-  const unionAcceptedExport = (width === sourceWidth && height === sourceHeight)
-    ? unionAccepted
-    : await sharp(unionAccepted, {
-      raw: { width, height, channels: 1 },
-    }).resize(sourceWidth, sourceHeight, { fit: "fill", kernel: sharp.kernel.nearest }).raw().toBuffer();
+  const unionRawExport = await resizeBinaryMaskRaw({
+    mask: unionRawBest,
+    sourceWidth: width,
+    sourceHeight: height,
+    targetWidth: sourceWidth,
+    targetHeight: sourceHeight,
+  });
+  const unionAcceptedExport = await resizeBinaryMaskRaw({
+    mask: unionAccepted,
+    sourceWidth: width,
+    sourceHeight: height,
+    targetWidth: sourceWidth,
+    targetHeight: sourceHeight,
+  });
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_EXPORT]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    processingOccupancyPixels: countMaskPixels(unionAccepted),
+    sourceExportOccupancyPixels: countMaskPixels(unionAcceptedExport),
+    sourceExportConstraintAffinity: Number(computeMaskConstraintAffinity(unionAcceptedExport, deterministicConstraintMaskSource, sourceWidth, sourceHeight).toFixed(4)),
+    processingWidth: width,
+    processingHeight: height,
+    sourceWidth,
+    sourceHeight,
+  });
 
   await writeMaskPng(unionRawExport, sourceWidth, sourceHeight, rawMaskPath);
   await writeMaskPng(unionAcceptedExport, sourceWidth, sourceHeight, cleanedMaskPath);
@@ -3540,6 +3988,7 @@ export async function generateGeminiOccupancyMask(params: {
     clusterApiCallCount,
     estimatedCallReductionRatio: Number(estimatedCallReductionRatio.toFixed(4)),
     usedConservativeFallback,
+    postSafetyConstraintAffinity: Number(computeMaskConstraintAffinity(unionAccepted, deterministicConstraintMask, width, height).toFixed(4)),
   });
 
   logGeminiMaskMemory({

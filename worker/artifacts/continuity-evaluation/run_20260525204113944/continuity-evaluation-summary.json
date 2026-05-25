@@ -1,0 +1,76 @@
+{
+  "generatedAt": "2026-05-25T20:43:26.409Z",
+  "runDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525204113944",
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "occupancy_only",
+  "sourceRunDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641",
+  "totalRooms": 5,
+  "totalSecondaryViews": 7,
+  "completedCases": 1,
+  "successCount": 1,
+  "failureCount": 0,
+  "skippedCount": 0,
+  "successRate": 1,
+  "plannerFailureRate": 0,
+  "occupancyFailureRate": 0,
+  "continuityPassRate": 0,
+  "averageOccupancyAreaRatio": 0.08013151135685932,
+  "averageUnionOccupancyRatio": 0.12899471020690778,
+  "averageRequiredClusterOccupancy": 0.12796118951612903,
+  "averageOptionalClusterOccupancy": 0.003110108137829912,
+  "averageRetryCount": 6,
+  "total429Count": 2,
+  "failureCategories": {},
+  "roomTypeBreakdown": {
+    "bedroom": {
+      "total": 1,
+      "success": 1,
+      "failures": 0,
+      "successRate": 1,
+      "averageOccupancyAreaRatio": 0.08013151135685932
+    }
+  },
+  "occupancyDistribution": {
+    "required": [
+      0.12796118951612903
+    ],
+    "optional": [
+      0.003110108137829912
+    ],
+    "union": [
+      0.12899471020690778
+    ],
+    "variance": 0
+  },
+  "cases": [
+    {
+      "roomKey": "bedroom_1",
+      "roomLabel": "Bedroom 1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+      "mode": "occupancy_only",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525204113944/bedroom_1/secondary_2",
+      "telemetry": {
+        "plannerLatencyMs": null,
+        "occupancyLatencyMs": 122436,
+        "renderLatencyMs": null,
+        "occupancyAreaRatio": 0.08013151135685932,
+        "finalAreaRatio": 0.07521081153481592,
+        "requiredClusterOccupancy": 0.12796118951612903,
+        "optionalClusterOccupancy": 0.003110108137829912,
+        "unionOccupancy": 0.12899471020690778,
+        "retryCount": 6,
+        "clusterApiCallCount": 6,
+        "rateLimit429Count": 2,
+        "validatorDriftPass": null
+      },
+      "status": "success",
+      "plannerMode": "replay",
+      "plannerPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641/bedroom_1/secondary_2/planner/planner.json",
+      "occupancyGenerationMode": "gemini_image_mask_v1",
+      "failureCategory": null,
+      "failureReason": null
+    }
+  ]
+}

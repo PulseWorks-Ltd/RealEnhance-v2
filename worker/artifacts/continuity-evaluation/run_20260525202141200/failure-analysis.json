@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-05-25T20:24:12.533Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "provider_failure",
+      "failureReason": "Occupancy mask is empty or covers the full frame",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202141200/bedroom_1/secondary_2"
+    }
+  ]
+}

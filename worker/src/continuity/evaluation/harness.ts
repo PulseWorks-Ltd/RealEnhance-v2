@@ -1120,13 +1120,18 @@ async function runCase(params: {
       statusBase.telemetry.validatorDriftPass = driftSummary.driftPass;
     }
 
+    const validationOverlayPath = path.join(continuityDir, "validation-overlay.png");
+    const resolvedValidationOverlayPath = await fs.access(validationOverlayPath)
+      .then(() => validationOverlayPath)
+      .catch(() => null);
+
     await createReviewSheet({
       masterPath: params.caseItem.masterImage,
       secondaryPath: params.caseItem.secondaryImage,
       occupancyMaskPath: path.join(occupancyDir, "occupancy-mask.png"),
       finalMaskPath: path.join(occupancyDir, "final-mask.png"),
       continuityOutputPath,
-      validationOverlayPath: path.join(continuityDir, "validation-overlay.png"),
+      validationOverlayPath: resolvedValidationOverlayPath,
       outputPath: path.join(caseOutputDir, "review-sheet.png"),
     });
 

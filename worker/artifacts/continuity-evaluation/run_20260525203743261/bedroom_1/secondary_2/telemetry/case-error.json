@@ -1,0 +1,5 @@
+{
+  "failureCategory": "provider_failure",
+  "failureReason": "Input file is missing: /workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525203743261/bedroom_1/secondary_2/continuity/validation-overlay.png",
+  "stack": "Error: Input file is missing: /workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525203743261/bedroom_1/secondary_2/continuity/validation-overlay.png\n    at Sharp.toBuffer (/workspaces/RealEnhance-v2/node_modules/.pnpm/sharp@0.34.5/node_modules/sharp/lib/output.js:163:17)\n    at createReviewSheet (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:683:8)\n    at async runCase (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1123:5)\n    at async runContinuityEvaluation (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:1358:22)\n    at async main (/workspaces/RealEnhance-v2/worker/src/scripts/run-continuity-evaluation.ts:237:18)"
+}

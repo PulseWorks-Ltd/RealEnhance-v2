@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T20:38:56.081Z",
+  "uptimeMs": 72809,
+  "rssMb": 535.1,
+  "heapTotalMb": 33.7,
+  "heapUsedMb": 25.9,
+  "externalMb": 75.3,
+  "arrayBuffersMb": 0.1,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_1",
+    "roomLabel": "Bedroom 1",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+    "status": "failure",
+    "failureCategory": "provider_failure",
+    "failureReason": "Input file is missing: /workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525203743261/bedroom_1/secondary_2/continuity/validation-overlay.png"
+  },
+  "completedCases": 1,
+  "failedCases": 1,
+  "skippedCases": 0,
+  "totalCases": 1,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "occupancy_only",
+  "sourceRunDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525134130641",
+  "useGeminiOccupancy": true,
+  "casesCompleted": 1,
+  "currentCaseStatus": "failure"
+}

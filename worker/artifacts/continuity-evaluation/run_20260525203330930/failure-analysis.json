@@ -1,0 +1,13 @@
+{
+  "generatedAt": "2026-05-25T20:35:15.952Z",
+  "failures": [
+    {
+      "roomKey": "bedroom_1",
+      "roomType": "bedroom",
+      "secondaryView": 2,
+      "failureCategory": "provider_failure",
+      "failureReason": "Gemini occupancy mask has too many disconnected regions (32 > 8)",
+      "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525203330930/bedroom_1/secondary_2"
+    }
+  ]
+}

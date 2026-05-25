@@ -1,0 +1,69 @@
+{
+  "roomTypeProfile": {
+    "minAreaRatio": 0.02,
+    "targetAreaRatio": 0.09,
+    "maxAreaRatio": 0.28,
+    "minFloorContactRatio": 0.6,
+    "maxComponents": 8,
+    "maxTopRegionRatio": 0.16,
+    "maxWallTouchRatio": 0.32
+  },
+  "safety": {
+    "occupancyAreaRatio": 0.0861487862495927,
+    "connectedComponentCount": 3,
+    "floorContactRatio": 0.7006896551724138,
+    "anchorProximityScore": 0.35823140010198473,
+    "constraintAffinityScore": 0,
+    "topRegionOccupancyRatio": 0,
+    "wallTouchOccupancyRatio": 0.0018320430234619704,
+    "boundingAreaRatio": 0.2902767595307918,
+    "boundingFillRatio": 0.29678154871525037
+  },
+  "quality": {
+    "score": 0.5988796166291983,
+    "occupancyBandScore": 0.9572087361065855,
+    "componentCoherenceScore": 0.7142857142857143,
+    "floorContactScore": 1,
+    "anchorScore": 0.35823140010198473,
+    "wallPenalty": 0,
+    "topPenalty": 0,
+    "compactnessScore": 0.29678154871525037
+  },
+  "usedConservativeFallback": false,
+  "priorClusterCount": 2,
+  "requiredClusterCount": 1,
+  "optionalClusterCount": 1,
+  "baselineObjectCallCount": 24,
+  "clusterApiCallCount": 6,
+  "estimatedCallReductionRatio": 0.75,
+  "perClusterMaskPaths": [
+    "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202629119/bedroom_1/secondary_2/occupancy/cluster-occupancy-masks/bedside_composition-gemini-mask.png",
+    "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525202629119/bedroom_1/secondary_2/occupancy/cluster-occupancy-masks/decor_group-gemini-mask.png"
+  ],
+  "requiredOccupancyRatio": 0.07825164446888237,
+  "optionalOccupancyRatio": 0.00789714178071033,
+  "adaptiveExpectation": {
+    "effectiveMinAreaRatio": 0.02,
+    "requiredTargetAreaRatio": 0.028700000000000003,
+    "optionalTargetAreaRatio": 0.0042,
+    "optionalWeight": 0.2
+  },
+  "clusterContributions": [
+    {
+      "clusterId": "bedside_composition",
+      "role": "required",
+      "contributionRatio": 0.07825164446888237,
+      "includedInFinalUnion": true,
+      "acceptedOccupancyRatio": 0.07825164446888237,
+      "mergedUnionRatioAfterCluster": 0.07825164446888237
+    },
+    {
+      "clusterId": "decor_group",
+      "role": "optional",
+      "contributionRatio": 0.00789714178071033,
+      "includedInFinalUnion": true,
+      "acceptedOccupancyRatio": 0.00789714178071033,
+      "mergedUnionRatioAfterCluster": 0.0861487862495927
+    }
+  ]
+}
