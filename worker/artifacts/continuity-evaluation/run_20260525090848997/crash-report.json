@@ -1,0 +1,33 @@
+{
+  "timestamp": "2026-05-25T09:11:15.994Z",
+  "uptimeMs": 146987,
+  "rssMb": 2711.9,
+  "heapTotalMb": 30.5,
+  "heapUsedMb": 20.5,
+  "externalMb": 2781.4,
+  "arrayBuffersMb": 2195.7,
+  "currentPhase": "occupancy",
+  "currentProviderCall": "eval-bedroom_1_v2",
+  "currentCase": {
+    "roomKey": "bedroom_1",
+    "roomLabel": "Bedroom 1",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+    "status": null,
+    "failureCategory": null,
+    "failureReason": null
+  },
+  "completedCases": 0,
+  "failedCases": 0,
+  "skippedCases": 0,
+  "totalCases": 7,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "signal": "SIGTERM",
+  "error": "Evaluation terminated by SIGTERM",
+  "stack": "Error: Evaluation terminated by SIGTERM\n    at <anonymous> (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:442:46)\n    at terminate (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:445:5)\n    at process.onSigterm (/workspaces/RealEnhance-v2/worker/src/continuity/evaluation/harness.ts:449:29)\n    at process.emit (node:events:530:35)\n    at process.emit (/workspaces/RealEnhance-v2/node_modules/.pnpm/tsx@4.20.6/node_modules/tsx/dist/suppress-warnings.cjs:1:472)",
+  "checkpointPath": "/workspaces/RealEnhance-v2/worker/artifacts/continuity-evaluation/run_20260525090848997/progress-checkpoint.json"
+}

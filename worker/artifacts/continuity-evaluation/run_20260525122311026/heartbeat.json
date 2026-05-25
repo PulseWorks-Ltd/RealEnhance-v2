@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T12:25:25.398Z",
+  "uptimeMs": 134343,
+  "rssMb": 1974.4,
+  "heapTotalMb": 26.5,
+  "heapUsedMb": 19.9,
+  "externalMb": 1630.5,
+  "arrayBuffersMb": 1202.9,
+  "currentPhase": "occupancy",
+  "currentProviderCall": "eval-bedroom_1_v2",
+  "currentCase": {
+    "roomKey": "bedroom_1",
+    "roomLabel": "Bedroom 1",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+    "status": null,
+    "failureCategory": null,
+    "failureReason": null
+  },
+  "completedCases": 0,
+  "failedCases": 0,
+  "skippedCases": 0,
+  "totalCases": 1,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "casesCompleted": 0,
+  "currentCaseStatus": null
+}

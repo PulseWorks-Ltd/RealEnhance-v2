@@ -18,6 +18,7 @@
     "test:publish": "tsx src/scripts/test-publish.ts",
     "probe:vertex-imagen-contract": "tsx src/scripts/vertex-imagen-contract-probe.ts",
     "eval:continuity": "tsx src/scripts/run-continuity-evaluation.ts",
+    "eval:continuity:health": "tsx src/scripts/check-continuity-eval-health.ts",
     "eval:continuity:replay-planner": "tsx src/scripts/run-continuity-evaluation.ts --mode replay_planner",
     "eval:continuity:occupancy-only": "tsx src/scripts/run-continuity-evaluation.ts --mode occupancy_only",
     "eval:continuity:continuity-only": "tsx src/scripts/run-continuity-evaluation.ts --mode continuity_only",

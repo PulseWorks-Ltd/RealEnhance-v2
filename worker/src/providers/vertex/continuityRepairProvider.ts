@@ -2,7 +2,7 @@ import { siblingOutPath } from "../../utils/images";
 import { logImageAttemptUrl } from "../../utils/debugImageUrls";
 import { nLog } from "../../logger";
 import { persistContinuityArtifacts } from "../../continuity/artifactStore";
-import { compileDeterministicMask } from "../../continuity/maskCompiler";
+import { buildDeterministicPlanConstraintMask, compileDeterministicMask } from "../../continuity/maskCompiler";
 import { validateCompiledMask } from "../../continuity/maskValidation";
 import { ensureLocalImagePath, persistMaskArtifact, persistRemoteImage } from "../imageTransport";
 import type { ImageReference } from "../types";
@@ -198,6 +198,28 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
       const occupancyMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-occupancy-mask", ".png");
       const exclusionMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-exclusion-mask", ".png");
       const finalMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-final-mask", ".png");
+      let effectiveOccupancyConstraintMaskPath = occupancyConstraintMaskPath;
+      if (!effectiveOccupancyConstraintMaskPath) {
+        const derivedConstraintMaskPath = siblingOutPath(request.outputPath, "-vertex-continuity-occupancy-constraint-derived", ".png");
+        const derivedConstraint = await buildDeterministicPlanConstraintMask({
+          plan: planner.plan,
+          secondaryImagePath: secondaryWorkingPath,
+          outputPath: derivedConstraintMaskPath,
+        });
+        effectiveOccupancyConstraintMaskPath = derivedConstraint.path;
+        nLog("[VERTEX_CONTINUITY_OCCUPANCY_MASK]", {
+          phase: "derived-constraint-mask",
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          renderMode: request.renderMode,
+          source: "deterministic_plan_projection",
+          occupancyConstraintMaskPath: derivedConstraint.path,
+          occupancyConstraintPixelCount: derivedConstraint.pixelCount,
+          width: derivedConstraint.width,
+          height: derivedConstraint.height,
+        });
+      }
       executionStage = "mask-compilation";
       nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
         phase: "start",
@@ -208,7 +230,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         plannerModel: planner.model,
         zoneCount: planner.plan.furnitureZones.length,
         secondaryImagePath: secondaryWorkingPath,
-        occupancyConstraintMaskPath: occupancyConstraintMaskPath || null,
+        occupancyConstraintMaskPath: effectiveOccupancyConstraintMaskPath || null,
         occupancyMaskPath,
         exclusionMaskPath,
         finalMaskPath,
@@ -220,7 +242,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         occupancyMaskPath,
         exclusionMaskPath,
         finalMaskPath,
-        occupancyConstraintMaskPath,
+        occupancyConstraintMaskPath: effectiveOccupancyConstraintMaskPath,
         continuityGroupId: request.continuityGroupId,
         jobId: request.jobId,
         imageId: request.imageId,
@@ -234,7 +256,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         occupancyMaskPath: compiledMask.occupancyMaskPath,
         exclusionMaskPath: compiledMask.exclusionMaskPath,
         finalMaskPath: compiledMask.finalMaskPath,
-        occupancyConstraintApplied: !!occupancyConstraintMaskPath,
+        occupancyConstraintApplied: !!effectiveOccupancyConstraintMaskPath,
         finalPixelCount: compiledMask.finalPixelCount,
         occupancyPixelCount: compiledMask.occupancyPixelCount,
       });

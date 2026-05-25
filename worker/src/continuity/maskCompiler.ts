@@ -87,6 +87,72 @@ function findMaskBoundingBox(buffer: Buffer, width: number, height: number) {
   };
 }
 
+export async function buildDeterministicPlanConstraintMask(params: {
+  plan: PlacementPlan;
+  secondaryImagePath: string;
+  outputPath: string;
+}): Promise<{ path: string; pixelCount: number; width: number; height: number }> {
+  const metadata = await sharp(params.secondaryImagePath).metadata();
+  const width = metadata.width || 0;
+  const height = metadata.height || 0;
+  if (!width || !height) {
+    throw new VertexSecondaryContinuityError(
+      "Unable to read secondary image dimensions for deterministic constraint mask",
+      "constraint_mask_missing_dimensions"
+    );
+  }
+
+  const polygons: string[] = [];
+  for (const zone of params.plan.furnitureZones) {
+    const projection = resolveDeterministicZoneProjection({
+      plan: params.plan,
+      zone,
+    });
+    const wallPolygon = projection.wallPolygon.length >= 3
+      ? projection.wallPolygon
+      : buildFallbackWallPolygon(zone);
+    const floorPolygon = projection.floorPolygon.length >= 3
+      ? projection.floorPolygon
+      : buildFallbackFloorPolygon(zone);
+    polygons.push(polygonSvg(wallPolygon, width, height));
+    polygons.push(polygonSvg(floorPolygon, width, height));
+  }
+
+  if (polygons.length === 0) {
+    throw new VertexSecondaryContinuityError(
+      "Constraint mask builder received no projected occupancy polygons",
+      "constraint_mask_empty_polygons"
+    );
+  }
+
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+      <rect width="100%" height="100%" fill="#000000" />
+      ${polygons.join("\n")}
+    </svg>
+  `;
+
+  const rawMask = await sharp(Buffer.from(svg))
+    .removeAlpha()
+    .grayscale()
+    .threshold(1, { grayscale: true })
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const maskBuffer = await sharp(Buffer.from(rawMask.data), {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
+
+  await sharp(maskBuffer).toFile(params.outputPath);
+
+  return {
+    path: params.outputPath,
+    pixelCount: countWhitePixels(rawMask.data),
+    width,
+    height,
+  };
+}
+
 export async function compileDeterministicMask(params: {
   plan: PlacementPlan;
   secondaryImagePath: string;

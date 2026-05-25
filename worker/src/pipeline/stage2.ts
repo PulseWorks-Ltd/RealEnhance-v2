@@ -1292,6 +1292,7 @@ export async function runStage2GenerationAttempt(
 
   let inputForStage2 = basePath;
   let stagingMaskBuffer: Buffer | null = null;
+  let occupancyConstraintMaskPath: string | undefined;
   if (opts.stagingRegion) {
     try {
       const meta = await sharp(basePath).metadata();
@@ -1332,6 +1333,7 @@ export async function runStage2GenerationAttempt(
         stagingMaskBuffer = maskBuf;
         const maskPath = siblingOutPath(basePath, "-staging-mask", ".png");
         await sharp(maskBuf).toFile(maskPath);
+        occupancyConstraintMaskPath = maskPath;
         await logImageAttemptUrl({
           ctx: {
             jobId: opts.jobId,
@@ -2047,12 +2049,23 @@ export async function runStage2(
       });
 
       try {
+        nLog("[CONTINUITY_CONSTRAINT_MASK_SOURCE]", {
+          continuityGroupId,
+          imageId: opts.imageId,
+          jobId: opts.jobId,
+          renderMode,
+          source: occupancyConstraintMaskPath ? "staging-region-mask" : "none",
+          occupancyConstraintMaskPath: occupancyConstraintMaskPath || null,
+          hasStagingRegion: !!opts.stagingRegion,
+          fallbackModeIfMissing: "planner-occupancy-without-constraint-mask",
+        });
         localReasons.push(`vertex_secondary_continuity_attempt:${attempt}`);
         return await runExperimentalSecondaryContinuity({
           secondaryImagePath: basePath,
           secondaryImageUri: opts.baseImageUri || null,
           masterImagePath: opts.referenceImagePath,
           masterImageUri: opts.roomConsistencyV1?.approvedMasterImageUrl || null,
+          occupancyConstraintMaskPath,
           outputPath,
           roomType: opts.roomType,
           stagingStyle: opts.stagingStyle,

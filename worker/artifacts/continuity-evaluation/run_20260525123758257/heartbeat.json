@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T12:41:20.312Z",
+  "uptimeMs": 202023,
+  "rssMb": 438,
+  "heapTotalMb": 38.2,
+  "heapUsedMb": 22.7,
+  "externalMb": 74.6,
+  "arrayBuffersMb": 0.1,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_1",
+    "roomLabel": "Bedroom 1",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+    "status": "failure",
+    "failureCategory": "provider_failure",
+    "failureReason": "Occupancy mask is empty or covers the full frame"
+  },
+  "completedCases": 1,
+  "failedCases": 1,
+  "skippedCases": 0,
+  "totalCases": 1,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "casesCompleted": 1,
+  "currentCaseStatus": "failure"
+}

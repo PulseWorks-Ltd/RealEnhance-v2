@@ -2,7 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { bootstrapGoogleCredentialsFromEnv } from "../../bootstrap/googleCredentials";
-import { compileDeterministicMask } from "../maskCompiler";
+import { buildDeterministicPlanConstraintMask, compileDeterministicMask } from "../maskCompiler";
 import { validateCompiledMask } from "../maskValidation";
 import type { CompiledMaskResult, PlacementPlan } from "../types";
 import { VertexSecondaryContinuityError } from "../types";
@@ -985,6 +985,14 @@ async function runCase(params: {
       process.env.CONTINUITY_USE_GEMINI_OCCUPANCY_MASK = params.useGeminiOccupancy ? "true" : "false";
       const caseJobId = `eval-${params.caseItem.roomKey}_v${params.caseItem.secondaryView}`;
       const caseImageId = `${params.caseItem.roomKey}-view-${params.caseItem.secondaryView}`;
+      const derivedConstraintMaskPath = path.join(occupancyDir, "occupancy-constraint-derived.png");
+      await withRuntimePhase(params.runtime, "occupancy", `${caseJobId}-derive-constraint`, () =>
+        buildDeterministicPlanConstraintMask({
+          plan: planner.plan,
+          secondaryImagePath: params.caseItem.secondaryImage,
+          outputPath: derivedConstraintMaskPath,
+        }),
+      );
       compiledMask = await withRuntimePhase(params.runtime, "occupancy", caseJobId, () => compileDeterministicMask({
         plan: planner.plan,
         secondaryImagePath: params.caseItem.secondaryImage,
@@ -992,6 +1000,7 @@ async function runCase(params: {
         occupancyMaskPath: path.join(occupancyDir, "occupancy-mask.png"),
         exclusionMaskPath: path.join(occupancyDir, "exclusion-mask.png"),
         finalMaskPath: path.join(occupancyDir, "final-mask.png"),
+        occupancyConstraintMaskPath: derivedConstraintMaskPath,
         continuityGroupId: params.caseItem.roomKey,
         jobId: caseJobId,
         imageId: caseImageId,

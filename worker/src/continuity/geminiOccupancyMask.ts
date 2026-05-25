@@ -150,6 +150,8 @@ type OccupancyQualityBreakdown = {
   compactnessScore: number;
 };
 
+const geminiOccupancyInvocationCounts = new Map<string, number>();
+
 type RoomTypeBandProfile = {
   minAreaRatio: number;
   targetAreaRatio: number;
@@ -212,9 +214,88 @@ function parseBooleanEnv(value: string | undefined): boolean {
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
+function getProcessMemorySnapshot() {
+  const usage = process.memoryUsage();
+  return {
+    rssMb: Number((usage.rss / (1024 * 1024)).toFixed(1)),
+    heapTotalMb: Number((usage.heapTotal / (1024 * 1024)).toFixed(1)),
+    heapUsedMb: Number((usage.heapUsed / (1024 * 1024)).toFixed(1)),
+    externalMb: Number((usage.external / (1024 * 1024)).toFixed(1)),
+    arrayBuffersMb: Number((usage.arrayBuffers / (1024 * 1024)).toFixed(1)),
+  };
+}
+
+function isGeminiMaskMemoryDebugEnabled(): boolean {
+  return parseBooleanEnv(process.env.CONTINUITY_GEMINI_MASK_MEMORY_DEBUG);
+}
+
+function estimateBytes(params: { width: number; height: number; channels: number }): number {
+  return Math.max(0, params.width) * Math.max(0, params.height) * Math.max(1, params.channels);
+}
+
+function releaseBuffer(buffer: Buffer | undefined): void {
+  if (!buffer || buffer.length === 0) {
+    return;
+  }
+  buffer.fill(0);
+}
+
+function logGeminiMaskMemory(params: {
+  enabled: boolean;
+  phase: string;
+  continuityGroupId?: string | null;
+  imageId: string;
+  jobId: string;
+  clusterId?: string;
+  attempt?: number;
+  extra?: Record<string, unknown>;
+}) {
+  if (!params.enabled) {
+    return;
+  }
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_MEMORY]", {
+    phase: params.phase,
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    clusterId: params.clusterId || null,
+    attempt: Number.isFinite(params.attempt) ? params.attempt : null,
+    ...getProcessMemorySnapshot(),
+    ...(params.extra || {}),
+  });
+}
+
 function readNumberEnv(name: string, fallback: number): number {
   const parsed = Number(process.env[name]);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function resolveOccupancyProcessingDimensions(params: {
+  sourceWidth: number;
+  sourceHeight: number;
+  requestedMaxEdge: number;
+}): { width: number; height: number; scale: number; maxEdge: number } {
+  const safeMaxEdge = Math.max(512, Math.min(2048, Math.floor(params.requestedMaxEdge)));
+  const longEdge = Math.max(params.sourceWidth, params.sourceHeight);
+  if (longEdge <= safeMaxEdge) {
+    return {
+      width: params.sourceWidth,
+      height: params.sourceHeight,
+      scale: 1,
+      maxEdge: safeMaxEdge,
+    };
+  }
+
+  const scale = safeMaxEdge / longEdge;
+  const width = Math.max(1, Math.round(params.sourceWidth * scale));
+  const height = Math.max(1, Math.round(params.sourceHeight * scale));
+  return {
+    width,
+    height,
+    scale,
+    maxEdge: safeMaxEdge,
+  };
 }
 
 function isRateLimitedError(error: unknown): boolean {
@@ -470,7 +551,7 @@ function estimateFloorY(floorJunctions: NormalizedPoint[], xNorm: number): numbe
   return sorted[sorted.length - 1].y;
 }
 
-function buildPriorClusters(plan: PlacementPlan, width: number, height: number, floorMask: Buffer): Promise<PriorCluster[]> {
+async function buildPriorClusters(plan: PlacementPlan, width: number, height: number, floorMask: Buffer): Promise<PriorCluster[]> {
   const floorJunctions = parsePoints(plan.structuralTopologyCage?.floorWallJunctions);
   const families = new Map<string, PlacementPlan["furnitureZones"]>();
   for (const zone of plan.furnitureZones) {
@@ -491,7 +572,8 @@ function buildPriorClusters(plan: PlacementPlan, width: number, height: number, 
     });
   }
 
-  return Promise.all(clustered.map(async (cluster) => {
+  const output: PriorCluster[] = [];
+  for (const cluster of clustered) {
     const zonePriorMasks: Buffer[] = [];
     const anchorPoints: Array<{ x: number; y: number }> = [];
     const areaBands: Array<{ min: number; target: number; max: number }> = [];
@@ -517,7 +599,7 @@ function buildPriorClusters(plan: PlacementPlan, width: number, height: number, 
     const anchorX = anchorPoints.reduce((sum, point) => sum + point.x, 0) / Math.max(1, anchorPoints.length);
     const anchorY = anchorPoints.reduce((sum, point) => sum + point.y, 0) / Math.max(1, anchorPoints.length);
 
-    return {
+    output.push({
       clusterId: cluster.clusterId,
       clusterLabel: cluster.clusterLabel,
       required: cluster.required,
@@ -530,8 +612,10 @@ function buildPriorClusters(plan: PlacementPlan, width: number, height: number, 
       expectedAreaRatioMax: mergedBand.max,
       priorMask,
       priorMaskPngBase64: priorMaskPng.toString("base64"),
-    };
-  }));
+    });
+  }
+
+  return output;
 }
 
 function buildAttemptInstruction(failureMode: AttemptFailureMode): string {
@@ -1602,6 +1686,7 @@ async function writeMaskPng(mask: Buffer, width: number, height: number, outputP
 
 async function writeOverlayImage(baseImagePath: string, rgba: Buffer, width: number, height: number, outputPath: string): Promise<void> {
   await sharp(baseImagePath)
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.lanczos3 })
     .composite([
       {
         input: rgba,
@@ -1628,16 +1713,74 @@ export async function generateGeminiOccupancyMask(params: {
   const morphologyRadius = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MORPH_RADIUS", 1)));
   const maxRetainedComponents = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MAX_RETAINED_COMPONENTS", 6)));
   const maxAttempts = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MAX_RETRIES", 3)));
+  const requestedMaxOccupancyEdge = readNumberEnv("CONTINUITY_GEMINI_MASK_MAX_EDGE", 1536);
+  const memoryDebugEnabled = isGeminiMaskMemoryDebugEnabled();
+  const invocationKey = `${params.jobId}:${params.imageId}`;
+  const invocationCount = (geminiOccupancyInvocationCounts.get(invocationKey) || 0) + 1;
+  geminiOccupancyInvocationCounts.set(invocationKey, invocationCount);
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_INVOCATION]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    invocationKey,
+    invocationCount,
+    pid: process.pid,
+    model,
+  });
+
+  logGeminiMaskMemory({
+    enabled: memoryDebugEnabled,
+    phase: "start",
+    continuityGroupId: params.continuityGroupId,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    extra: {
+      model,
+      maxAttempts,
+      maxRetainedComponents,
+      morphologyRadius,
+      minComponentPixels,
+    },
+  });
 
   const metadata = await sharp(params.secondaryImagePath).metadata();
-  const width = metadata.width || 0;
-  const height = metadata.height || 0;
-  if (!width || !height) {
+  const sourceWidth = metadata.width || 0;
+  const sourceHeight = metadata.height || 0;
+  if (!sourceWidth || !sourceHeight) {
     throw new VertexSecondaryContinuityError(
       "Unable to read secondary image dimensions for Gemini occupancy generation",
       "gemini_occupancy_mask_missing_dimensions"
     );
   }
+
+  const processingDims = resolveOccupancyProcessingDimensions({
+    sourceWidth,
+    sourceHeight,
+    requestedMaxEdge: requestedMaxOccupancyEdge,
+  });
+  const width = processingDims.width;
+  const height = processingDims.height;
+
+  // Reduce sharp cache pressure for high-frequency occupancy transforms.
+  sharp.cache({ memory: 0, files: 0, items: 0 });
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_DIMS]", {
+    phase: "source-metadata",
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    sourceWidth,
+    sourceHeight,
+    processingWidth: width,
+    processingHeight: height,
+    occupancyScale: Number(processingDims.scale.toFixed(4)),
+    maxOccupancyEdge: processingDims.maxEdge,
+    estimatedSourceSingleChannelBytes: estimateBytes({ width: sourceWidth, height: sourceHeight, channels: 1 }),
+    estimatedSourceRgbaBytes: estimateBytes({ width: sourceWidth, height: sourceHeight, channels: 4 }),
+    estimatedProcessingSingleChannelBytes: estimateBytes({ width, height, channels: 1 }),
+    estimatedProcessingRgbaBytes: estimateBytes({ width, height, channels: 4 }),
+  });
 
   const profile = getRoomTypeBandProfile(params.plan.roomType);
   const floorMask = await buildFloorPriorMask(params.plan, width, height);
@@ -1673,6 +1816,24 @@ export async function generateGeminiOccupancyMask(params: {
 
   const secondaryImage = toBase64(params.secondaryImagePath);
   const masterImage = toBase64(params.masterImagePath);
+
+  logGeminiMaskMemory({
+    enabled: memoryDebugEnabled,
+    phase: "inputs-encoded",
+    continuityGroupId: params.continuityGroupId,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    extra: {
+      width,
+      height,
+      sourceWidth,
+      sourceHeight,
+      occupancyScale: Number(processingDims.scale.toFixed(4)),
+      clusterCount: priorClusters.length,
+      secondaryBase64Length: secondaryImage.data.length,
+      masterBase64Length: masterImage.data.length,
+    },
+  });
 
   const ai = getVertexGenAiClient();
 
@@ -1718,6 +1879,15 @@ export async function generateGeminiOccupancyMask(params: {
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       const prompt = buildOccupancyPrompt(params.plan, priorCluster, clusterFailureMode);
       let run: Awaited<ReturnType<typeof runWithSelectedImageModel>>;
+      logGeminiMaskMemory({
+        enabled: memoryDebugEnabled,
+        phase: "cluster-attempt-before-model",
+        continuityGroupId: params.continuityGroupId,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        clusterId: priorCluster.clusterId,
+        attempt,
+      });
       try {
         clusterApiCallCount += 1;
         run = await runWithSelectedImageModel({
@@ -1754,6 +1924,15 @@ export async function generateGeminiOccupancyMask(params: {
             reason: `continuity_occupancy_mask_cluster_${priorCluster.clusterId}`,
             callType: "image_generation",
           },
+        });
+        logGeminiMaskMemory({
+          enabled: memoryDebugEnabled,
+          phase: "cluster-attempt-after-model",
+          continuityGroupId: params.continuityGroupId,
+          imageId: params.imageId,
+          jobId: params.jobId,
+          clusterId: priorCluster.clusterId,
+          attempt,
         });
       } catch (error) {
         if (!isRateLimitedError(error)) {
@@ -1816,6 +1995,18 @@ export async function generateGeminiOccupancyMask(params: {
       }
 
       const rawBuffer = Buffer.from(imagePart.data, "base64");
+      logGeminiMaskMemory({
+        enabled: memoryDebugEnabled,
+        phase: "cluster-attempt-after-base64-decode",
+        continuityGroupId: params.continuityGroupId,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        clusterId: priorCluster.clusterId,
+        attempt,
+        extra: {
+          rawBufferBytes: rawBuffer.length,
+        },
+      });
       const clusterStageDir = path.join(stageDebugDir, priorCluster.clusterId);
       await fs.mkdir(clusterStageDir, { recursive: true });
 
@@ -1838,32 +2029,54 @@ export async function generateGeminiOccupancyMask(params: {
         .toBuffer();
       await fs.writeFile(rawGeminiMaskPath, resizedRaw);
 
-      const resizedRgba = await sharp(rawBuffer)
-        .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
-        .ensureAlpha()
-        .raw()
-        .toBuffer();
-      const rawVisibleMask = Buffer.alloc(width * height, 0);
-      for (let i = 0; i < width * height; i += 1) {
-        const offset = i * 4;
-        if (resizedRgba[offset] > 0 || resizedRgba[offset + 1] > 0 || resizedRgba[offset + 2] > 0 || resizedRgba[offset + 3] > 0) {
-          rawVisibleMask[i] = 255;
-        }
-      }
-      const resizedRgbaSharp = sharp(resizedRgba, {
-        raw: { width, height, channels: 4 },
-      });
-      const gray = await resizedRgbaSharp
+      const rawNoAlpha = await sharp(resizedRaw)
         .removeAlpha()
         .grayscale()
         .raw()
         .toBuffer();
-      const alpha = await sharp(resizedRgba, {
-        raw: { width, height, channels: 4 },
-      })
+      const alpha = await sharp(resizedRaw)
+        .ensureAlpha()
         .extractChannel(3)
         .raw()
         .toBuffer();
+      const rawVisibleMask = Buffer.alloc(width * height, 0);
+      for (let i = 0; i < width * height; i += 1) {
+        if (rawNoAlpha[i] > 0 || alpha[i] > 0) {
+          rawVisibleMask[i] = 255;
+        }
+      }
+      const gray = rawNoAlpha;
+
+      nLog("[VERTEX_CONTINUITY_GEMINI_MASK_DIMS]", {
+        phase: "cluster-transform",
+        continuityGroupId: params.continuityGroupId || null,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        clusterId: priorCluster.clusterId,
+        attempt,
+        width,
+        height,
+        sourceWidth,
+        sourceHeight,
+        occupancyScale: Number(processingDims.scale.toFixed(4)),
+        rawBufferBytes: rawBuffer.length,
+        resizedPngBytes: resizedRaw.length,
+        resizedRgbaBytes: estimateBytes({ width, height, channels: 4 }),
+        grayBytes: gray.length,
+        alphaBytes: alpha.length,
+        expectedGrayBytes: estimateBytes({ width, height, channels: 1 }),
+        expectedRgbaBytes: estimateBytes({ width, height, channels: 4 }),
+      });
+
+      logGeminiMaskMemory({
+        enabled: memoryDebugEnabled,
+        phase: "cluster-attempt-after-channel-extraction",
+        continuityGroupId: params.continuityGroupId,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        clusterId: priorCluster.clusterId,
+        attempt,
+      });
 
       const alphaHistogram = buildAlphaHistogram(alpha);
       await fs.writeFile(alphaHistogramClusterPath, JSON.stringify(alphaHistogram, null, 2));
@@ -1880,6 +2093,11 @@ export async function generateGeminiOccupancyMask(params: {
       });
 
       if (!selected) {
+        releaseBuffer(rawBuffer);
+        releaseBuffer(resizedRaw);
+        releaseBuffer(rawNoAlpha);
+        releaseBuffer(alpha);
+        releaseBuffer(rawVisibleMask);
         clusterSummaries.push({
           clusterId: priorCluster.clusterId,
           required: priorCluster.required,
@@ -1899,6 +2117,21 @@ export async function generateGeminiOccupancyMask(params: {
         clusterFailureMode = "too_sparse";
         continue;
       }
+
+      logGeminiMaskMemory({
+        enabled: memoryDebugEnabled,
+        phase: "cluster-attempt-after-binarization",
+        continuityGroupId: params.continuityGroupId,
+        imageId: params.imageId,
+        jobId: params.jobId,
+        clusterId: priorCluster.clusterId,
+        attempt,
+        extra: {
+          selectedThreshold: selected.threshold,
+          selectedChannel: selected.sourceChannel,
+          selectedInverted: selected.inverted,
+        },
+      });
 
       await writeMaskPng(selected.thresholdedMask, width, height, thresholdedMaskPath);
       const alphaNormalizedMask = Buffer.alloc(alpha.length, 0);
@@ -2188,7 +2421,26 @@ export async function generateGeminiOccupancyMask(params: {
         bestClusterInversion = selected.inverted;
       }
 
+      releaseBuffer(rawBuffer);
+      releaseBuffer(resizedRaw);
+      releaseBuffer(rawNoAlpha);
+      releaseBuffer(alpha);
+      releaseBuffer(rawVisibleMask);
+
       if (failureMode === "none") {
+        logGeminiMaskMemory({
+          enabled: memoryDebugEnabled,
+          phase: "cluster-attempt-accepted",
+          continuityGroupId: params.continuityGroupId,
+          imageId: params.imageId,
+          jobId: params.jobId,
+          clusterId: priorCluster.clusterId,
+          attempt,
+          extra: {
+            qualityScore: Number(quality.score.toFixed(4)),
+            occupancyAreaRatio: Number(occupancyAreaRatio.toFixed(4)),
+          },
+        });
         break;
       }
       clusterFailureMode = failureMode;
@@ -2269,6 +2521,18 @@ export async function generateGeminiOccupancyMask(params: {
       selectedThreshold: bestClusterThreshold,
       selectedInversion: bestClusterInversion,
     });
+
+    logGeminiMaskMemory({
+      enabled: memoryDebugEnabled,
+      phase: "cluster-merged-into-union",
+      continuityGroupId: params.continuityGroupId,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      clusterId: priorCluster.clusterId,
+      extra: {
+        unionAcceptedPixels: countMaskPixels(unionAccepted),
+      },
+    });
   }
 
   let usedConservativeFallback = false;
@@ -2310,8 +2574,31 @@ export async function generateGeminiOccupancyMask(params: {
     jobId: params.jobId,
   });
 
-  await writeMaskPng(unionRawBest, width, height, rawMaskPath);
-  await writeMaskPng(unionAccepted, width, height, cleanedMaskPath);
+  logGeminiMaskMemory({
+    enabled: memoryDebugEnabled,
+    phase: "post-safety-evaluation",
+    continuityGroupId: params.continuityGroupId,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    extra: {
+      finalOccupancyPixels: countMaskPixels(unionAccepted),
+      usedConservativeFallback,
+    },
+  });
+
+  const unionRawExport = (width === sourceWidth && height === sourceHeight)
+    ? unionRawBest
+    : await sharp(unionRawBest, {
+      raw: { width, height, channels: 1 },
+    }).resize(sourceWidth, sourceHeight, { fit: "fill", kernel: sharp.kernel.nearest }).raw().toBuffer();
+  const unionAcceptedExport = (width === sourceWidth && height === sourceHeight)
+    ? unionAccepted
+    : await sharp(unionAccepted, {
+      raw: { width, height, channels: 1 },
+    }).resize(sourceWidth, sourceHeight, { fit: "fill", kernel: sharp.kernel.nearest }).raw().toBuffer();
+
+  await writeMaskPng(unionRawExport, sourceWidth, sourceHeight, rawMaskPath);
+  await writeMaskPng(unionAcceptedExport, sourceWidth, sourceHeight, cleanedMaskPath);
   await writeRgbaPng(
     buildBinaryMaskOverlay(unionAccepted, width, height, { r: 72, g: 210, b: 118, a: 180 }),
     width,
@@ -2410,7 +2697,7 @@ export async function generateGeminiOccupancyMask(params: {
     height,
     normalizationWidth: width,
     normalizationHeight: height,
-    normalizationSource: "secondary_image_dimensions",
+    normalizationSource: "occupancy_processing_dimensions",
     occupancyThresholdUsed: readNumberEnv("CONTINUITY_GEMINI_MASK_THRESHOLD", 170),
     alphaStatsPath: alphaHistogramPath,
     alphaHeatmapPath,
@@ -2505,7 +2792,32 @@ export async function generateGeminiOccupancyMask(params: {
       height * 6,
       occupancyStageGridPath,
     );
+
+    nLog("[VERTEX_CONTINUITY_GEMINI_MASK_DIMS]", {
+      phase: "stage-grid-materialization",
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      clusterId: representativeMetricCluster || null,
+      width,
+      height,
+      stageGridWidth: width,
+      stageGridHeight: height * 6,
+      expectedStageGridRgbaBytes: estimateBytes({ width, height: height * 6, channels: 4 }),
+    });
   }
+
+  logGeminiMaskMemory({
+    enabled: memoryDebugEnabled,
+    phase: "post-artifact-materialization",
+    continuityGroupId: params.continuityGroupId,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    extra: {
+      clusterApiCallCount,
+      clusterCount: priorClusters.length,
+    },
+  });
 
   const requiredClusterCount = priorClusters.filter((cluster) => cluster.required).length;
   const optionalClusterCount = Math.max(0, priorClusters.length - requiredClusterCount);
@@ -2554,6 +2866,19 @@ export async function generateGeminiOccupancyMask(params: {
     usedConservativeFallback,
   });
 
+  logGeminiMaskMemory({
+    enabled: memoryDebugEnabled,
+    phase: "complete",
+    continuityGroupId: params.continuityGroupId,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    extra: {
+      latencyMs: Date.now() - startedAt,
+      clusterApiCallCount,
+      clusterCount: priorClusters.length,
+    },
+  });
+
   return {
     rawGeminiMaskPath: representativeClusterArtifact?.rawGeminiMaskPath,
     thresholdedMaskPath: representativeClusterArtifact?.thresholdedMaskPath,
@@ -2577,8 +2902,8 @@ export async function generateGeminiOccupancyMask(params: {
     measurementThreshold: representativeClusterArtifact?.threshold,
     normalizationWidth: width,
     normalizationHeight: height,
-    normalizationSource: "secondary_image_dimensions",
-    cleanedMaskRaw: unionAccepted,
+    normalizationSource: "occupancy_processing_dimensions",
+    cleanedMaskRaw: unionAcceptedExport,
     rawMaskPath,
     cleanedMaskPath,
     componentsPath,

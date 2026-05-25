@@ -1,0 +1,31 @@
+{
+  "timestamp": "2026-05-25T12:44:49.294Z",
+  "uptimeMs": 200550,
+  "rssMb": 424.5,
+  "heapTotalMb": 35.9,
+  "heapUsedMb": 26,
+  "externalMb": 34.9,
+  "arrayBuffersMb": 25.6,
+  "currentPhase": "checkpoint",
+  "currentProviderCall": null,
+  "currentCase": {
+    "roomKey": "bedroom_1",
+    "roomLabel": "Bedroom 1",
+    "roomType": "bedroom",
+    "secondaryView": 2,
+    "secondaryImage": "/workspaces/RealEnhance-v2/MultiView Images/Bedroom 1.2.jpg",
+    "status": "failure",
+    "failureCategory": "provider_failure",
+    "failureReason": "Gemini occupancy mask has too many disconnected regions (25 > 8)"
+  },
+  "completedCases": 1,
+  "failedCases": 1,
+  "skippedCases": 0,
+  "totalCases": 1,
+  "datasetDir": "/workspaces/RealEnhance-v2/MultiView Images",
+  "mode": "full",
+  "sourceRunDir": null,
+  "useGeminiOccupancy": true,
+  "casesCompleted": 1,
+  "currentCaseStatus": "failure"
+}
