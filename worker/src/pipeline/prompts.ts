@@ -230,7 +230,7 @@ Use it to infer where the object should be placed, but reason globally about the
 
 ${STRUCTURE_LOCK}
 
-${buildModeSceneHint(sceneHint)}
+${buildModeSceneHint(params.sceneHint)}
 
 Full-image reasoning rules:
 - Consider the entire room when deciding object scale, angle, and relation to nearby furniture.
@@ -260,7 +260,7 @@ ${DESTRUCTIVE_REGENERATION_CLAUSE}
 
 ${NON_TARGET_PROTECTION_CLAUSE}
 
-Requested addition: ${userIntent?.trim() || "Add the requested content naturally within the region."}
+Requested addition: ${params.userIntent?.trim() || "Add the requested content naturally within the region."}
 `;
 }
 
@@ -491,7 +491,7 @@ export function buildRegionEditPrompt({
         user: buildSemanticAddPrompt({
           userIntent: userInstruction,
           sceneHint,
-          placementRegion,
+          placementGuidance: placementRegion ? { placementRegion } : undefined,
         }),
       }
     : buildEditPrompt({
