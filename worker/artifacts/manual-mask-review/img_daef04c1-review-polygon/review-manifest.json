@@ -1,0 +1,44 @@
+{
+  "jobId": "manual-mask-review-fe20cfb7",
+  "imageId": "img_daef04c1-review-polygon",
+  "continuityGroupId": "room-group-bedroom-f5a1dda0-review",
+  "roomType": "bedroom",
+  "stagingStyle": "nz_standard",
+  "secondaryUri": "gs://realenhance-vertex-continuity/vertex-secondary-continuity/job_fe20cfb7-a409-4038-ba57-a2dc8cf4e3af/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81/room-group-bedroom-f5a1dda0-eb34-48a8-ad26-773a2a52ffb1/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81-secondary-source1.jpg",
+  "masterUri": "gs://realenhance-vertex-continuity/vertex-secondary-continuity/job_fe20cfb7-a409-4038-ba57-a2dc8cf4e3af/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81/room-group-bedroom-f5a1dda0-eb34-48a8-ad26-773a2a52ffb1/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81-approved-master1.jpg",
+  "secondaryLocalPath": "/tmp/realenhance-manual-mask-review-fe20cfb7-secondary-continuity-source-1779682865214-lxwx809auj.jpg",
+  "masterLocalPath": "/tmp/realenhance-manual-mask-review-fe20cfb7-secondary-continuity-master-1779682867015-0rgfuplghi0p.jpg",
+  "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon",
+  "artifacts": {
+    "occupancyGenerationMode": "polygon_projection_v1",
+    "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/occupancy-mask.png",
+    "exclusionMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/exclusion-mask.png",
+    "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/final-mask.png",
+    "geminiRawMaskPath": null,
+    "geminiCleanedMaskPath": null,
+    "occupancyComponentsPath": null,
+    "occupancyOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/occupancy-overlay.png",
+    "exclusionOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/exclusion-overlay.png",
+    "finalMaskOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/final-mask-overlay.png",
+    "topologyOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/planner-topology-overlay.png",
+    "renderBoundaryPreviewPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/render-boundary-preview.png",
+    "insertionRegionPreviewPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/insertion-region-preview.png",
+    "zoneArtifactDir": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones",
+    "zoneManifestPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/zone-projection-manifest.json"
+  },
+  "summary": {
+    "zoneCount": 3,
+    "occupancyGenerationMode": "polygon_projection_v1",
+    "geminiMaskModel": null,
+    "occupancyPixelCount": 582376,
+    "finalPixelCount": 574259,
+    "occupancyAreaRatio": 0.20832474816849816,
+    "finalAreaRatio": 0.20542117387820513,
+    "insertionBounds": {
+      "x": 1065,
+      "y": 546,
+      "width": 942,
+      "height": 683
+    }
+  }
+}

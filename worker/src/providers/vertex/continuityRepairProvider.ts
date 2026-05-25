@@ -216,6 +216,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
       const compiledMask = await compileDeterministicMask({
         plan: planner.plan,
         secondaryImagePath: secondaryWorkingPath,
+        masterImagePath: masterWorkingPath,
         occupancyMaskPath,
         exclusionMaskPath,
         finalMaskPath,

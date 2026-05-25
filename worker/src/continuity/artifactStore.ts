@@ -36,6 +36,41 @@ async function copyIfPresent(sourcePath: string | undefined, targetPath: string)
   await fs.copyFile(sourcePath, targetPath);
 }
 
+async function writeMaskOverlayOnImage(params: {
+  imagePath: string;
+  maskBuffer: Buffer;
+  width: number;
+  height: number;
+  outputPath: string;
+}): Promise<void> {
+  const rgba = Buffer.alloc(params.width * params.height * 4, 0);
+  for (let index = 0; index < params.width * params.height; index += 1) {
+    const offset = index * 4;
+    if (params.maskBuffer[index] > 0) {
+      rgba[offset] = 72;
+      rgba[offset + 1] = 210;
+      rgba[offset + 2] = 118;
+      rgba[offset + 3] = 112;
+    } else {
+      rgba[offset] = 0;
+      rgba[offset + 1] = 0;
+      rgba[offset + 2] = 0;
+      rgba[offset + 3] = 0;
+    }
+  }
+
+  await sharp(params.imagePath)
+    .composite([
+      {
+        input: rgba,
+        raw: { width: params.width, height: params.height, channels: 4 },
+        blend: "over",
+      },
+    ])
+    .png()
+    .toFile(params.outputPath);
+}
+
 export async function persistContinuityArtifacts(params: {
   continuityGroupId?: string | null;
   imageId: string;
@@ -80,6 +115,16 @@ export async function persistContinuityArtifacts(params: {
   const exclusionMaskTarget = path.join(artifactDir, "exclusion-mask.png");
   const finalMaskTarget = path.join(artifactDir, "final-mask.png");
   const outputTarget = path.join(artifactDir, "imagen-output.png");
+  const renderedOccupancyOverlayPath = path.join(artifactDir, "rendered-occupancy-overlay.png");
+  const geminiRawMaskTarget = path.join(artifactDir, "gemini-occupancy-mask-raw.png");
+  const geminiCleanedMaskTarget = path.join(artifactDir, "gemini-occupancy-mask-cleaned.png");
+  const occupancyComponentsTarget = path.join(artifactDir, "occupancy-mask-components.png");
+  const occupancyQualityTarget = path.join(artifactDir, "occupancy-quality-report.json");
+  const occupancyRetryComparisonTarget = path.join(artifactDir, "occupancy-retry-comparison.json");
+  const anchorDistanceHeatmapTarget = path.join(artifactDir, "anchor-distance-heatmap.png");
+  const floorContactVisualizationTarget = path.join(artifactDir, "floor-contact-visualization.png");
+  const acceptedRejectedOverlayTarget = path.join(artifactDir, "accepted-vs-rejected-components.png");
+  const perObjectMaskDir = path.join(artifactDir, "per-object-masks");
 
   await fs.writeFile(plannerJsonPath, JSON.stringify(params.planner.plan, null, 2));
   await fs.writeFile(plannerRawPath, params.planner.rawText || "");
@@ -95,6 +140,8 @@ export async function persistContinuityArtifacts(params: {
       renderedImageUri: params.renderedImageUri || null,
       plannerModel: params.planner.model,
       rendererModel: params.render.model,
+      occupancyGenerationMode: params.masks.occupancyGenerationMode,
+      geminiMaskArtifacts: params.masks.geminiMaskArtifacts || null,
     }, null, 2)
   );
   await fs.writeFile(
@@ -114,11 +161,36 @@ export async function persistContinuityArtifacts(params: {
   await copyIfPresent(params.masks.exclusionMaskPath, exclusionMaskTarget);
   await copyIfPresent(params.masks.finalMaskPath, finalMaskTarget);
   await sharp(params.render.outputPath).png().toFile(outputTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.rawMaskPath, geminiRawMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.cleanedMaskPath, geminiCleanedMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.componentsPath, occupancyComponentsTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.qualityReportPath, occupancyQualityTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.retryComparisonPath, occupancyRetryComparisonTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.anchorDistanceHeatmapPath, anchorDistanceHeatmapTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.floorContactVisualizationPath, floorContactVisualizationTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.acceptedRejectedOverlayPath, acceptedRejectedOverlayTarget);
+
+  if (params.masks.geminiMaskArtifacts?.perObjectMaskPaths?.length) {
+    await fs.mkdir(perObjectMaskDir, { recursive: true });
+    for (const sourceMaskPath of params.masks.geminiMaskArtifacts.perObjectMaskPaths) {
+      const targetMaskPath = path.join(perObjectMaskDir, path.basename(sourceMaskPath));
+      await copyIfPresent(sourceMaskPath, targetMaskPath);
+    }
+  }
+
+  await writeMaskOverlayOnImage({
+    imagePath: outputTarget,
+    maskBuffer: await sharp(params.masks.occupancyMaskBuffer).raw().toBuffer(),
+    width: params.masks.width,
+    height: params.masks.height,
+    outputPath: renderedOccupancyOverlayPath,
+  });
 
   const debugArtifacts = await generateContinuityDebugArtifacts({
     sourceImagePath: params.sourceImagePath,
     artifactDir,
     masks: params.masks,
+    plan: params.planner.plan,
   });
 
   const artifactPaths = [
@@ -135,6 +207,21 @@ export async function persistContinuityArtifacts(params: {
     debugArtifacts.finalMaskOverlayPath,
     debugArtifacts.renderBoundaryPreviewPath,
     debugArtifacts.insertionRegionPreviewPath,
+    debugArtifacts.topologyOverlayPath,
+    debugArtifacts.zoneManifestPath,
+    renderedOccupancyOverlayPath,
+    ...(params.masks.geminiMaskArtifacts
+      ? [
+        geminiRawMaskTarget,
+        geminiCleanedMaskTarget,
+        occupancyComponentsTarget,
+        occupancyQualityTarget,
+        occupancyRetryComparisonTarget,
+        anchorDistanceHeatmapTarget,
+        floorContactVisualizationTarget,
+        acceptedRejectedOverlayTarget,
+      ]
+      : []),
     outputTarget,
   ];
 

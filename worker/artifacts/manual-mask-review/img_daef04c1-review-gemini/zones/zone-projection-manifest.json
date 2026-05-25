@@ -1,0 +1,87 @@
+{
+  "summary": {
+    "zoneCount": 3,
+    "coordinateSpace": "planner-provided normalized secondary-image coordinates",
+    "masterRegionCoordinatesAvailable": false,
+    "geometrySource": "deterministic_bbox_topology_v1"
+  },
+  "zones": [
+    {
+      "zoneId": "nightstand_zone_01",
+      "furnitureType": "nightstand",
+      "masterFurnitureId": "master_nightstand_01",
+      "normalizedBoundingBox": {
+        "x": 0.51,
+        "y": 0.51,
+        "width": 0.11,
+        "height": 0.2
+      },
+      "anchorPoint": {
+        "x": 0.565,
+        "y": 0.71
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 52125,
+      "finalPixelCount": 52125,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/nightstand_zone_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/nightstand_zone_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/nightstand_zone_01-final-mask.png",
+      "notes": []
+    },
+    {
+      "zoneId": "bed_zone_01",
+      "furnitureType": "bed",
+      "masterFurnitureId": "master_bed_01",
+      "normalizedBoundingBox": {
+        "x": 0.55,
+        "y": 0.42,
+        "width": 0.4,
+        "height": 0.56
+      },
+      "anchorPoint": {
+        "x": 0.75,
+        "y": 0.98
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 490711,
+      "finalPixelCount": 489197,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/bed_zone_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/bed_zone_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/bed_zone_01-final-mask.png",
+      "notes": []
+    },
+    {
+      "zoneId": "lamp_zone_01",
+      "furnitureType": "table_lamp",
+      "masterFurnitureId": "master_lamp_01",
+      "normalizedBoundingBox": {
+        "x": 0.54,
+        "y": 0.35,
+        "width": 0.06,
+        "height": 0.18
+      },
+      "anchorPoint": {
+        "x": 0.5700000000000001,
+        "y": 0.53
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 0,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 26311,
+      "finalPixelCount": 26293,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/lamp_zone_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/lamp_zone_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/lamp_zone_01-final-mask.png",
+      "notes": [
+        "Floor polygon missing or degenerate."
+      ]
+    }
+  ]
+}

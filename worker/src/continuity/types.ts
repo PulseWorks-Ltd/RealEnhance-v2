@@ -128,6 +128,7 @@ export type SpatialPlannerResult = {
 export type CompiledMaskResult = {
   occupancyMaskBuffer: Buffer;
   occupancyMaskPath: string;
+  occupancyGenerationMode: "polygon_projection_v1" | "gemini_image_mask_v1";
   exclusionMaskBuffer: Buffer;
   exclusionMaskPath: string;
   finalMaskBuffer: Buffer;
@@ -146,6 +147,28 @@ export type CompiledMaskResult = {
   overlapReductionRatio: number;
   insertionBounds: MaskBoundingBox | null;
   protectedEdgeStats: ProtectedEdgeStats;
+  geminiMaskArtifacts?: {
+    rawMaskPath: string;
+    cleanedMaskPath: string;
+    componentsPath: string;
+    qualityReportPath: string;
+    retryComparisonPath: string;
+    anchorDistanceHeatmapPath: string;
+    floorContactVisualizationPath: string;
+    acceptedRejectedOverlayPath: string;
+    perObjectMaskPaths: string[];
+    usedConservativeFallback: boolean;
+    retryCount: number;
+    qualityScore: number;
+    model: string;
+    latencyMs: number;
+    occupancyAreaRatio: number;
+    connectedComponentCount: number;
+    floorContactRatio: number;
+    anchorProximityScore: number;
+    topRegionOccupancyRatio: number;
+    wallTouchOccupancyRatio: number;
+  };
 };
 
 export type MaskValidationResult = {

@@ -1,0 +1,60 @@
+{
+  "summary": {
+    "zoneCount": 2,
+    "coordinateSpace": "planner-provided normalized secondary-image coordinates",
+    "masterRegionCoordinatesAvailable": false,
+    "geometrySource": "deterministic_bbox_topology_v1"
+  },
+  "zones": [
+    {
+      "zoneId": "fz_bed_01",
+      "furnitureType": "bed",
+      "masterFurnitureId": "bed_master_01",
+      "normalizedBoundingBox": {
+        "x": 0.35,
+        "y": 0.38,
+        "width": 0.44,
+        "height": 0.62
+      },
+      "anchorPoint": {
+        "x": 0.5700000000000001,
+        "y": 1
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 641729,
+      "finalPixelCount": 641544,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/fz_bed_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/fz_bed_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/fz_bed_01-final-mask.png",
+      "notes": []
+    },
+    {
+      "zoneId": "fz_bst_01",
+      "furnitureType": "bedside_table",
+      "masterFurnitureId": "bedside_table_master_01",
+      "normalizedBoundingBox": {
+        "x": 0.78,
+        "y": 0.65,
+        "width": 0.15,
+        "height": 0.25
+      },
+      "anchorPoint": {
+        "x": 0.855,
+        "y": 0.9
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 89331,
+      "finalPixelCount": 89117,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/fz_bst_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/fz_bst_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/fz_bst_01-final-mask.png",
+      "notes": []
+    }
+  ]
+}

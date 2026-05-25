@@ -3,6 +3,8 @@ import { nLog } from "../logger";
 import type { CompiledMaskResult, NormalizedPoint, PlacementPlan } from "./types";
 import { VertexSecondaryContinuityError } from "./types";
 import { buildArchitecturalExclusionMask } from "./exclusionMask";
+import { resolveDeterministicZoneProjection } from "./deterministicProjection";
+import { generateGeminiOccupancyMask, useGeminiOccupancyMaskMode } from "./geminiOccupancyMask";
 
 function toPixelPoint(point: NormalizedPoint, width: number, height: number): string {
   const x = Math.max(0, Math.min(width, Math.round(point.x * width)));
@@ -88,6 +90,7 @@ function findMaskBoundingBox(buffer: Buffer, width: number, height: number) {
 export async function compileDeterministicMask(params: {
   plan: PlacementPlan;
   secondaryImagePath: string;
+  masterImagePath: string;
   occupancyMaskPath: string;
   exclusionMaskPath: string;
   finalMaskPath: string;
@@ -116,39 +119,83 @@ export async function compileDeterministicMask(params: {
     );
   }
 
-  const polygons: string[] = [];
-  for (const zone of params.plan.furnitureZones) {
-    const wallPolygon = zone.maskProjection.wallProjectionPolygon.length >= 3
-      ? zone.maskProjection.wallProjectionPolygon
-      : buildFallbackWallPolygon(zone);
-    const floorPolygon = zone.maskProjection.floorPolygon.length >= 3
-      ? zone.maskProjection.floorPolygon
-      : buildFallbackFloorPolygon(zone);
-    polygons.push(polygonSvg(wallPolygon, width, height));
-    polygons.push(polygonSvg(floorPolygon, width, height));
+  let occupancyRaw: Buffer;
+  let occupancyGenerationMode: CompiledMaskResult["occupancyGenerationMode"] = "polygon_projection_v1";
+  let geminiMaskArtifacts: CompiledMaskResult["geminiMaskArtifacts"];
+
+  if (useGeminiOccupancyMaskMode()) {
+    const geminiMask = await generateGeminiOccupancyMask({
+      secondaryImagePath: params.secondaryImagePath,
+      masterImagePath: params.masterImagePath,
+      plan: params.plan,
+      occupancyMaskPath: params.occupancyMaskPath,
+      continuityGroupId: params.continuityGroupId,
+      jobId: params.jobId,
+      imageId: params.imageId,
+    });
+    occupancyRaw = Buffer.from(geminiMask.cleanedMaskRaw);
+    occupancyGenerationMode = "gemini_image_mask_v1";
+    geminiMaskArtifacts = {
+      rawMaskPath: geminiMask.rawMaskPath,
+      cleanedMaskPath: geminiMask.cleanedMaskPath,
+      componentsPath: geminiMask.componentsPath,
+      qualityReportPath: geminiMask.qualityReportPath,
+      retryComparisonPath: geminiMask.retryComparisonPath,
+      anchorDistanceHeatmapPath: geminiMask.anchorDistanceHeatmapPath,
+      floorContactVisualizationPath: geminiMask.floorContactVisualizationPath,
+      acceptedRejectedOverlayPath: geminiMask.acceptedRejectedOverlayPath,
+      perObjectMaskPaths: geminiMask.perObjectMaskPaths,
+      usedConservativeFallback: geminiMask.usedConservativeFallback,
+      retryCount: geminiMask.retryCount,
+      qualityScore: geminiMask.qualityScore,
+      model: geminiMask.model,
+      latencyMs: geminiMask.latencyMs,
+      occupancyAreaRatio: geminiMask.safety.occupancyAreaRatio,
+      connectedComponentCount: geminiMask.safety.connectedComponentCount,
+      floorContactRatio: geminiMask.safety.floorContactRatio,
+      anchorProximityScore: geminiMask.safety.anchorProximityScore,
+      topRegionOccupancyRatio: geminiMask.safety.topRegionOccupancyRatio,
+      wallTouchOccupancyRatio: geminiMask.safety.wallTouchOccupancyRatio,
+    };
+  } else {
+    const polygons: string[] = [];
+    for (const zone of params.plan.furnitureZones) {
+      const projection = resolveDeterministicZoneProjection({
+        plan: params.plan,
+        zone,
+      });
+      const wallPolygon = projection.wallPolygon.length >= 3
+        ? projection.wallPolygon
+        : buildFallbackWallPolygon(zone);
+      const floorPolygon = projection.floorPolygon.length >= 3
+        ? projection.floorPolygon
+        : buildFallbackFloorPolygon(zone);
+      polygons.push(polygonSvg(wallPolygon, width, height));
+      polygons.push(polygonSvg(floorPolygon, width, height));
+    }
+
+    if (polygons.length === 0) {
+      throw new VertexSecondaryContinuityError(
+        "Mask compiler received no projected occupancy polygons",
+        "mask_empty_polygons"
+      );
+    }
+
+    const svg = `
+      <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+        <rect width="100%" height="100%" fill="#000000" />
+        ${polygons.join("\n")}
+      </svg>
+    `;
+
+    const occupancyRaster = await sharp(Buffer.from(svg))
+      .removeAlpha()
+      .grayscale()
+      .threshold(1, { grayscale: true })
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    occupancyRaw = Buffer.from(occupancyRaster.data);
   }
-
-  if (polygons.length === 0) {
-    throw new VertexSecondaryContinuityError(
-      "Mask compiler received no projected occupancy polygons",
-      "mask_empty_polygons"
-    );
-  }
-
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
-      <rect width="100%" height="100%" fill="#000000" />
-      ${polygons.join("\n")}
-    </svg>
-  `;
-
-  const occupancyRaster = await sharp(Buffer.from(svg))
-    .removeAlpha()
-    .grayscale()
-    .threshold(1, { grayscale: true })
-    .raw()
-    .toBuffer({ resolveWithObject: true });
-  let occupancyRaw = Buffer.from(occupancyRaster.data);
 
   let occupancyConstraintApplied = false;
   let occupancyConstraintPixelCount = 0;
@@ -235,6 +282,8 @@ export async function compileDeterministicMask(params: {
     finalAreaRatio: Number(finalAreaRatio.toFixed(4)),
     occupancyConstraintApplied,
     occupancyConstraintPixelCount,
+    occupancyGenerationMode,
+    geminiMaskModel: geminiMaskArtifacts?.model || null,
     protectedEdgeStats: exclusionMask.protectedEdgeStats,
   });
 
@@ -252,6 +301,7 @@ export async function compileDeterministicMask(params: {
     finalAreaRatio: Number(finalAreaRatio.toFixed(4)),
     overlapReductionRatio: Number(overlapReductionRatio.toFixed(4)),
     insertionBounds,
+    occupancyGenerationMode,
     artifactPath: params.finalMaskPath,
   });
 
@@ -264,12 +314,14 @@ export async function compileDeterministicMask(params: {
     height,
     finalMaskPath: params.finalMaskPath,
     occupancyConstraintApplied: !!params.occupancyConstraintMaskPath,
+    occupancyGenerationMode,
     finalPixelCount,
   });
 
   return {
     occupancyMaskBuffer,
     occupancyMaskPath: params.occupancyMaskPath,
+    occupancyGenerationMode,
     exclusionMaskBuffer: exclusionMask.maskBuffer,
     exclusionMaskPath: params.exclusionMaskPath,
     finalMaskBuffer,
@@ -288,6 +340,7 @@ export async function compileDeterministicMask(params: {
     overlapReductionRatio,
     insertionBounds,
     protectedEdgeStats: exclusionMask.protectedEdgeStats,
+    geminiMaskArtifacts,
   };
   } catch (error: any) {
     nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {

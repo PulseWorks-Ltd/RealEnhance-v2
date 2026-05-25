@@ -1,0 +1,44 @@
+{
+  "jobId": "manual-mask-review-fe20cfb7",
+  "imageId": "img_daef04c1-review-gemini",
+  "continuityGroupId": "room-group-bedroom-f5a1dda0-review",
+  "roomType": "bedroom",
+  "stagingStyle": "nz_standard",
+  "secondaryUri": "gs://realenhance-vertex-continuity/vertex-secondary-continuity/job_fe20cfb7-a409-4038-ba57-a2dc8cf4e3af/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81/room-group-bedroom-f5a1dda0-eb34-48a8-ad26-773a2a52ffb1/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81-secondary-source1.jpg",
+  "masterUri": "gs://realenhance-vertex-continuity/vertex-secondary-continuity/job_fe20cfb7-a409-4038-ba57-a2dc8cf4e3af/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81/room-group-bedroom-f5a1dda0-eb34-48a8-ad26-773a2a52ffb1/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81-approved-master1.jpg",
+  "secondaryLocalPath": "/tmp/realenhance-manual-mask-review-fe20cfb7-secondary-continuity-source-1779683174874-lasn7z7hj1i.jpg",
+  "masterLocalPath": "/tmp/realenhance-manual-mask-review-fe20cfb7-secondary-continuity-master-1779683176629-q0gmfg3p3wm.jpg",
+  "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini",
+  "artifacts": {
+    "occupancyGenerationMode": "gemini_image_mask_v1",
+    "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/occupancy-mask.png",
+    "exclusionMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/exclusion-mask.png",
+    "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/final-mask.png",
+    "geminiRawMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/gemini-occupancy-mask-raw.png",
+    "geminiCleanedMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/gemini-occupancy-mask-cleaned.png",
+    "occupancyComponentsPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/occupancy-mask-components.png",
+    "occupancyOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/occupancy-overlay.png",
+    "exclusionOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/exclusion-overlay.png",
+    "finalMaskOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/final-mask-overlay.png",
+    "topologyOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/planner-topology-overlay.png",
+    "renderBoundaryPreviewPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/render-boundary-preview.png",
+    "insertionRegionPreviewPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/insertion-region-preview.png",
+    "zoneArtifactDir": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones",
+    "zoneManifestPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-gemini/zones/zone-projection-manifest.json"
+  },
+  "summary": {
+    "zoneCount": 3,
+    "occupancyGenerationMode": "gemini_image_mask_v1",
+    "geminiMaskModel": "gemini-2.5-flash-image",
+    "occupancyPixelCount": 8082,
+    "finalPixelCount": 7683,
+    "occupancyAreaRatio": 0.0028910542582417584,
+    "finalAreaRatio": 0.002748325892857143,
+    "insertionBounds": {
+      "x": 1005,
+      "y": 1241,
+      "width": 1002,
+      "height": 17
+    }
+  }
+}

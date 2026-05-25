@@ -1,0 +1,38 @@
+{
+  "jobId": "manual-mask-review-fe20cfb7",
+  "imageId": "img_daef04c1-review",
+  "continuityGroupId": "room-group-bedroom-f5a1dda0-review",
+  "roomType": "bedroom",
+  "stagingStyle": "nz_standard",
+  "secondaryUri": "gs://realenhance-vertex-continuity/vertex-secondary-continuity/job_fe20cfb7-a409-4038-ba57-a2dc8cf4e3af/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81/room-group-bedroom-f5a1dda0-eb34-48a8-ad26-773a2a52ffb1/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81-secondary-source1.jpg",
+  "masterUri": "gs://realenhance-vertex-continuity/vertex-secondary-continuity/job_fe20cfb7-a409-4038-ba57-a2dc8cf4e3af/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81/room-group-bedroom-f5a1dda0-eb34-48a8-ad26-773a2a52ffb1/img_daef04c1-6ee0-44be-ad0a-8a7376f17e81-approved-master1.jpg",
+  "secondaryLocalPath": "/tmp/realenhance-manual-mask-review-fe20cfb7-secondary-continuity-source-1779681568953-il5oyys5gb.jpg",
+  "masterLocalPath": "/tmp/realenhance-manual-mask-review-fe20cfb7-secondary-continuity-master-1779681571174-ram96pwkl6.jpg",
+  "outputDir": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review",
+  "artifacts": {
+    "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/occupancy-mask.png",
+    "exclusionMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/exclusion-mask.png",
+    "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/final-mask.png",
+    "occupancyOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/occupancy-overlay.png",
+    "exclusionOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/exclusion-overlay.png",
+    "finalMaskOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/final-mask-overlay.png",
+    "topologyOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/planner-topology-overlay.png",
+    "renderBoundaryPreviewPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/render-boundary-preview.png",
+    "insertionRegionPreviewPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/insertion-region-preview.png",
+    "zoneArtifactDir": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones",
+    "zoneManifestPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review/zones/zone-projection-manifest.json"
+  },
+  "summary": {
+    "zoneCount": 2,
+    "occupancyPixelCount": 731745,
+    "finalPixelCount": 662796,
+    "occupancyAreaRatio": 0.26175631009615385,
+    "finalAreaRatio": 0.23709220467032968,
+    "insertionBounds": {
+      "x": 753,
+      "y": 519,
+      "width": 1139,
+      "height": 764
+    }
+  }
+}

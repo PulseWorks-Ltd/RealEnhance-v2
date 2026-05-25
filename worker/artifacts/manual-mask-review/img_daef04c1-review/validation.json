@@ -1,0 +1,34 @@
+{
+  "width": 2048,
+  "height": 1365,
+  "totalPixelCount": 2795520,
+  "occupancyPixelCount": 731745,
+  "exclusionPixelCount": 350910,
+  "finalPixelCount": 662796,
+  "overlapPixelCount": 68949,
+  "occupancyAreaRatio": 0.26175631009615385,
+  "exclusionAreaRatio": 0.12552584134615385,
+  "finalAreaRatio": 0.23709220467032968,
+  "overlapReductionRatio": 0.09422544738945944,
+  "occupancyStrippedRatio": 0.09422544738945944,
+  "insertionBounds": {
+    "x": 753,
+    "y": 519,
+    "width": 1139,
+    "height": 764
+  },
+  "binaryIntegrity": {
+    "occupancy": true,
+    "exclusion": true,
+    "final": true
+  },
+  "guidanceCorrelation": {
+    "validatorFlow": "existing_stage2_pipeline",
+    "validatorPassRate": null,
+    "insertionRealismOutcome": null,
+    "edgeHarshnessReport": null,
+    "continuityQualityOutcome": null,
+    "localContrastAnalysis": "pending_instrumentation",
+    "edgeRealismEvaluation": "pending_instrumentation"
+  }
+}

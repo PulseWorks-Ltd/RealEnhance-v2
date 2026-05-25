@@ -1,0 +1,87 @@
+{
+  "summary": {
+    "zoneCount": 3,
+    "coordinateSpace": "planner-provided normalized secondary-image coordinates",
+    "masterRegionCoordinatesAvailable": false,
+    "geometrySource": "deterministic_bbox_topology_v1"
+  },
+  "zones": [
+    {
+      "zoneId": "bed_zone_01",
+      "furnitureType": "bed",
+      "masterFurnitureId": "bed",
+      "normalizedBoundingBox": {
+        "x": 0.5,
+        "y": 0.4,
+        "width": 0.5,
+        "height": 0.5
+      },
+      "anchorPoint": {
+        "x": 0.75,
+        "y": 0.9
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 582376,
+      "finalPixelCount": 568462,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/bed_zone_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/bed_zone_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/bed_zone_01-final-mask.png",
+      "notes": []
+    },
+    {
+      "zoneId": "bedsidetable_zone_01",
+      "furnitureType": "bedside_table",
+      "masterFurnitureId": "bedside_table",
+      "normalizedBoundingBox": {
+        "x": 0.65,
+        "y": 0.58,
+        "width": 0.15,
+        "height": 0.18
+      },
+      "anchorPoint": {
+        "x": 0.7250000000000001,
+        "y": 0.76
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 65230,
+      "finalPixelCount": 65203,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/bedsidetable_zone_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/bedsidetable_zone_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/bedsidetable_zone_01-final-mask.png",
+      "notes": []
+    },
+    {
+      "zoneId": "lamp_zone_01",
+      "furnitureType": "table_lamp",
+      "masterFurnitureId": "lamp",
+      "normalizedBoundingBox": {
+        "x": 0.7,
+        "y": 0.45,
+        "width": 0.1,
+        "height": 0.2
+      },
+      "anchorPoint": {
+        "x": 0.75,
+        "y": 0.65
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 0,
+      "occupancyPixelCount": 47843,
+      "finalPixelCount": 47843,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/lamp_zone_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/lamp_zone_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_daef04c1-review-polygon/zones/lamp_zone_01-final-mask.png",
+      "notes": [
+        "Wall polygon missing or degenerate."
+      ]
+    }
+  ]
+}
