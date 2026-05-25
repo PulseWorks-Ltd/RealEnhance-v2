@@ -1,0 +1,170 @@
+[
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 170,
+    "inverted": false,
+    "occupancyPixels": 7188195,
+    "occupancyAreaRatio": 2.5713266225961537
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 170,
+    "inverted": true,
+    "occupancyPixels": 1102530,
+    "occupancyAreaRatio": 0.39439174107142855
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 250,
+    "inverted": false,
+    "occupancyPixels": 1810017,
+    "occupancyAreaRatio": 0.6474705958104395
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 250,
+    "inverted": true,
+    "occupancyPixels": 6574437,
+    "occupancyAreaRatio": 2.3517760559752747
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 192,
+    "inverted": false,
+    "occupancyPixels": 5344704,
+    "occupancyAreaRatio": 1.9118818681318681
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 192,
+    "inverted": true,
+    "occupancyPixels": 2889480,
+    "occupancyAreaRatio": 1.0336109203296704
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 128,
+    "inverted": false,
+    "occupancyPixels": 8074263,
+    "occupancyAreaRatio": 2.888286615728022
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 128,
+    "inverted": true,
+    "occupancyPixels": 275478,
+    "occupancyAreaRatio": 0.09854266826923076
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 96,
+    "inverted": false,
+    "occupancyPixels": 8296509,
+    "occupancyAreaRatio": 2.967787388392857
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 96,
+    "inverted": true,
+    "occupancyPixels": 74277,
+    "occupancyAreaRatio": 0.02657001201923077
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 64,
+    "inverted": false,
+    "occupancyPixels": 8359977,
+    "occupancyAreaRatio": 2.9904908567994504
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 64,
+    "inverted": true,
+    "occupancyPixels": 17997,
+    "occupancyAreaRatio": 0.0064378004807692304
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 32,
+    "inverted": false,
+    "occupancyPixels": 8374959,
+    "occupancyAreaRatio": 2.995850145947802
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 32,
+    "inverted": true,
+    "occupancyPixels": 9990,
+    "occupancyAreaRatio": 0.0035735748626373625
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 16,
+    "inverted": false,
+    "occupancyPixels": 8381445,
+    "occupancyAreaRatio": 2.9981702867445055
+  },
+  {
+    "sourceChannel": "grayscale",
+    "threshold": 16,
+    "inverted": true,
+    "occupancyPixels": 3342,
+    "occupancyAreaRatio": 0.0011954842032967034
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 170,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 250,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 192,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 128,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 96,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 64,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 32,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  },
+  {
+    "sourceChannel": "alpha",
+    "threshold": 16,
+    "inverted": false,
+    "occupancyPixels": 8386560,
+    "occupancyAreaRatio": 3
+  }
+]

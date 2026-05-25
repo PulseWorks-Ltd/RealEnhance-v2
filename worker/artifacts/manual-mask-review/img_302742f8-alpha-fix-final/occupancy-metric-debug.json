@@ -1,0 +1,46 @@
+{
+  "width": 2048,
+  "height": 1365,
+  "normalizationWidth": 2048,
+  "normalizationHeight": 1365,
+  "normalizationSource": "secondary_image_dimensions",
+  "occupancyThresholdUsed": 170,
+  "alphaStatsPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/alpha-histogram.json",
+  "alphaHeatmapPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/alpha-heatmap.png",
+  "measurementStages": [
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 96,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 128,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 250,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    }
+  ],
+  "finalUnionMetric": {
+    "measurementStage": "final_union_mask",
+    "occupancyPixels": 302078,
+    "totalPixels": 2795520,
+    "occupancyAreaRatio": 0.10805789262820513,
+    "width": 2048,
+    "height": 1365,
+    "alphaAware": false,
+    "threshold": null,
+    "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/gemini-occupancy-mask-cleaned.png",
+    "componentCount": 3
+  },
+  "rejectionReason": null
+}

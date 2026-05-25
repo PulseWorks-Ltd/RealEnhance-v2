@@ -1,0 +1,7 @@
+{
+  "mode": "live",
+  "plannerModel": "gemini-2.5-pro",
+  "plannerLatencyMs": 67231,
+  "zoneCount": 6,
+  "roomType": "bedroom"
+}

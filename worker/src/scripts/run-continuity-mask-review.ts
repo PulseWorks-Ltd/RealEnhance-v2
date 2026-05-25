@@ -4,6 +4,7 @@ import { bootstrapGoogleCredentialsFromEnv } from "../bootstrap/googleCredential
 import { generateContinuityDebugArtifacts } from "../continuity/debug/visualizations";
 import { compileDeterministicMask } from "../continuity/maskCompiler";
 import { validateCompiledMask } from "../continuity/maskValidation";
+import type { PlacementPlan } from "../continuity/types";
 import type { ImageReference } from "../providers/types";
 import { ensureLocalImagePath } from "../providers/imageTransport";
 import { VertexSpatialPlannerProvider } from "../providers/vertex/spatialPlannerProvider";
@@ -11,12 +12,24 @@ import { VertexSpatialPlannerProvider } from "../providers/vertex/spatialPlanner
 type CliArgs = {
   secondaryUri: string;
   masterUri: string;
-  roomType: string;
+  roomType?: string;
   stagingStyle?: string;
   jobId: string;
   imageId: string;
   continuityGroupId: string;
   outputDir: string;
+  plannerJsonPath?: string;
+  replayManifestPath?: string;
+};
+
+type PlannerExecutionResult = {
+  plan: PlacementPlan;
+  prompt: string;
+  rawText: string;
+  model: string;
+  latencyMs: number;
+  replayMode: "live" | "saved_planner_json" | "saved_review_manifest";
+  replaySourcePath: string | null;
 };
 
 function readFlag(name: string): string | undefined {
@@ -44,6 +57,13 @@ function inferMimeTypeFromUri(uri: string): string {
 }
 
 function parseArgs(): CliArgs {
+  const plannerJsonPath = readFlag("planner-json");
+  const replayManifestPath = readFlag("replay-manifest");
+  const requestedRoomType = readFlag("room-type");
+  if (!requestedRoomType && !plannerJsonPath && !replayManifestPath) {
+    throw new Error("Missing required flag: --room-type (required unless --planner-json or --replay-manifest is provided)");
+  }
+
   const imageId = readFlag("image-id") || `mask-review-${Date.now()}`;
   const continuityGroupId = readFlag("continuity-group-id") || `manual-review-${imageId}`;
   const outputDir = readFlag("output-dir")
@@ -52,12 +72,115 @@ function parseArgs(): CliArgs {
   return {
     secondaryUri: requireFlag("secondary-uri"),
     masterUri: requireFlag("master-uri"),
-    roomType: requireFlag("room-type"),
+    roomType: requestedRoomType,
     stagingStyle: readFlag("staging-style"),
     jobId: readFlag("job-id") || `manual-mask-review-${Date.now()}`,
     imageId,
     continuityGroupId,
     outputDir,
+    plannerJsonPath,
+    replayManifestPath,
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isPlacementPlan(value: unknown): value is PlacementPlan {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (typeof value.roomType !== "string") {
+    return false;
+  }
+  if (!Array.isArray(value.furnitureZones)) {
+    return false;
+  }
+  return true;
+}
+
+async function loadPlacementPlanFromPath(filePath: string): Promise<PlacementPlan> {
+  const content = await fs.readFile(filePath, "utf8");
+  const parsed: unknown = JSON.parse(content);
+  if (!isPlacementPlan(parsed)) {
+    throw new Error(`Planner replay payload at ${filePath} is not a valid PlacementPlan JSON`);
+  }
+  return parsed;
+}
+
+async function resolvePlannerReplay(args: CliArgs): Promise<{ plan: PlacementPlan; replayMode: PlannerExecutionResult["replayMode"]; replaySourcePath: string }> {
+  if (args.plannerJsonPath) {
+    const replayPath = path.resolve(args.plannerJsonPath);
+    return {
+      plan: await loadPlacementPlanFromPath(replayPath),
+      replayMode: "saved_planner_json",
+      replaySourcePath: replayPath,
+    };
+  }
+
+  if (args.replayManifestPath) {
+    const manifestPath = path.resolve(args.replayManifestPath);
+    const manifestRaw = await fs.readFile(manifestPath, "utf8");
+    const manifestParsed: unknown = JSON.parse(manifestRaw);
+    if (!isRecord(manifestParsed)) {
+      throw new Error(`Replay manifest at ${manifestPath} is not a valid object`);
+    }
+    const outputDir = typeof manifestParsed.outputDir === "string"
+      ? manifestParsed.outputDir
+      : path.dirname(manifestPath);
+    const plannerPath = path.join(outputDir, "planner.json");
+    return {
+      plan: await loadPlacementPlanFromPath(plannerPath),
+      replayMode: "saved_review_manifest",
+      replaySourcePath: plannerPath,
+    };
+  }
+
+  throw new Error("Planner replay resolution requested without replay inputs");
+}
+
+async function getPlannerExecutionResult(params: {
+  args: CliArgs;
+  secondaryReference: ImageReference;
+  masterReference: ImageReference;
+  secondaryLocalPath: string;
+  masterLocalPath: string;
+}): Promise<PlannerExecutionResult> {
+  const replayRequested = !!params.args.plannerJsonPath || !!params.args.replayManifestPath;
+  if (replayRequested) {
+    const replay = await resolvePlannerReplay(params.args);
+    return {
+      plan: replay.plan,
+      prompt: `REPLAY_MODE=${replay.replayMode}`,
+      rawText: JSON.stringify(replay.plan, null, 2),
+      model: "planner_replay",
+      latencyMs: 0,
+      replayMode: replay.replayMode,
+      replaySourcePath: replay.replaySourcePath,
+    };
+  }
+
+  if (!params.args.roomType) {
+    throw new Error("Live planner mode requires --room-type");
+  }
+
+  const plannerProvider = new VertexSpatialPlannerProvider();
+  const planResult = await plannerProvider.plan({
+    secondaryImage: { ...params.secondaryReference, localPath: params.secondaryLocalPath },
+    masterImage: { ...params.masterReference, localPath: params.masterLocalPath },
+    roomType: params.args.roomType,
+    stagingStyle: params.args.stagingStyle,
+    continuityGroupId: params.args.continuityGroupId,
+    jobId: params.args.jobId,
+    imageId: params.args.imageId,
+    renderMode: "full_secondary_continuity",
+  });
+
+  return {
+    ...planResult,
+    replayMode: "live",
+    replaySourcePath: null,
   };
 }
 
@@ -198,16 +321,12 @@ async function main(): Promise<void> {
     continuityGroupId: args.continuityGroupId,
   });
 
-  const plannerProvider = new VertexSpatialPlannerProvider();
-  const planResult = await plannerProvider.plan({
-    secondaryImage: { ...secondaryReference, localPath: secondaryLocalPath },
-    masterImage: { ...masterReference, localPath: masterLocalPath },
-    roomType: args.roomType,
-    stagingStyle: args.stagingStyle,
-    continuityGroupId: args.continuityGroupId,
-    jobId: args.jobId,
-    imageId: args.imageId,
-    renderMode: "full_secondary_continuity",
+  const planResult = await getPlannerExecutionResult({
+    args,
+    secondaryReference,
+    masterReference,
+    secondaryLocalPath,
+    masterLocalPath,
   });
 
   const occupancyMaskPath = path.join(args.outputDir, "occupancy-mask.png");
@@ -249,8 +368,12 @@ async function main(): Promise<void> {
     jobId: args.jobId,
     imageId: args.imageId,
     continuityGroupId: args.continuityGroupId,
-    roomType: args.roomType,
+    roomType: args.roomType || planResult.plan.roomType,
     stagingStyle: args.stagingStyle || null,
+    plannerReplay: {
+      mode: planResult.replayMode,
+      sourcePath: planResult.replaySourcePath,
+    },
     secondaryUri: args.secondaryUri,
     masterUri: args.masterUri,
     secondaryLocalPath,
@@ -263,6 +386,23 @@ async function main(): Promise<void> {
       finalMaskPath,
       geminiRawMaskPath: compiledMask.geminiMaskArtifacts?.rawMaskPath || null,
       geminiCleanedMaskPath: compiledMask.geminiMaskArtifacts?.cleanedMaskPath || null,
+      geminiRawGeminiMaskPath: compiledMask.geminiMaskArtifacts?.rawGeminiMaskPath || null,
+      geminiThresholdedMaskPath: compiledMask.geminiMaskArtifacts?.thresholdedMaskPath || null,
+      geminiAlphaNormalizedMaskPath: compiledMask.geminiMaskArtifacts?.alphaNormalizedMaskPath || null,
+      geminiMorphologyCleanedMaskPath: compiledMask.geminiMaskArtifacts?.morphologyCleanedMaskPath || null,
+      geminiComponentFilteredMaskPath: compiledMask.geminiMaskArtifacts?.componentFilteredMaskPath || null,
+      geminiAcceptedClusterMaskPath: compiledMask.geminiMaskArtifacts?.acceptedClusterMaskPath || null,
+      geminiFinalUnionMaskPath: compiledMask.geminiMaskArtifacts?.finalUnionMaskPath || null,
+      geminiThresholdComparisonPath: compiledMask.geminiMaskArtifacts?.thresholdComparisonPath || null,
+      geminiAlphaHeatmapPath: compiledMask.geminiMaskArtifacts?.alphaHeatmapPath || null,
+      geminiAlphaHistogramPath: compiledMask.geminiMaskArtifacts?.alphaHistogramPath || null,
+      geminiOccupancyMetricDebugPath: compiledMask.geminiMaskArtifacts?.occupancyMetricDebugPath || null,
+      geminiOccupancyCollapseAnalysisPath: compiledMask.geminiMaskArtifacts?.occupancyCollapseAnalysisPath || null,
+      geminiOccupancyStageGridPath: compiledMask.geminiMaskArtifacts?.occupancyStageGridPath || null,
+      geminiComponentAnalysisPath: compiledMask.geminiMaskArtifacts?.componentAnalysisPath || null,
+      geminiComponentRetainedPath: compiledMask.geminiMaskArtifacts?.componentRetainedPath || null,
+      geminiComponentRemovedPath: compiledMask.geminiMaskArtifacts?.componentRemovedPath || null,
+      geminiStageComparisonPath: compiledMask.geminiMaskArtifacts?.stageComparisonPath || null,
       occupancyComponentsPath: compiledMask.geminiMaskArtifacts?.componentsPath || null,
       occupancyQualityReportPath: compiledMask.geminiMaskArtifacts?.qualityReportPath || null,
       occupancyRetryComparisonPath: compiledMask.geminiMaskArtifacts?.retryComparisonPath || null,
@@ -281,6 +421,8 @@ async function main(): Promise<void> {
     },
     summary: {
       zoneCount: planResult.plan.furnitureZones.length,
+      plannerMode: planResult.replayMode,
+      plannerReplaySourcePath: planResult.replaySourcePath,
       occupancyGenerationMode: compiledMask.occupancyGenerationMode,
       geminiMaskModel: compiledMask.geminiMaskArtifacts?.model || null,
       geminiQualityScore: compiledMask.geminiMaskArtifacts?.qualityScore || null,
@@ -301,6 +443,8 @@ async function main(): Promise<void> {
 
   console.log(JSON.stringify({
     outputDir: args.outputDir,
+    plannerMode: planResult.replayMode,
+    plannerReplaySourcePath: planResult.replaySourcePath,
     occupancyGenerationMode: compiledMask.occupancyGenerationMode,
     finalMaskOverlayPath: debugArtifacts.finalMaskOverlayPath,
     occupancyOverlayPath: debugArtifacts.occupancyOverlayPath,
@@ -308,6 +452,23 @@ async function main(): Promise<void> {
     zoneManifestPath: debugArtifacts.zoneManifestPath,
     geminiRawMaskPath: compiledMask.geminiMaskArtifacts?.rawMaskPath || null,
     geminiCleanedMaskPath: compiledMask.geminiMaskArtifacts?.cleanedMaskPath || null,
+    geminiRawGeminiMaskPath: compiledMask.geminiMaskArtifacts?.rawGeminiMaskPath || null,
+    geminiThresholdedMaskPath: compiledMask.geminiMaskArtifacts?.thresholdedMaskPath || null,
+    geminiAlphaNormalizedMaskPath: compiledMask.geminiMaskArtifacts?.alphaNormalizedMaskPath || null,
+    geminiMorphologyCleanedMaskPath: compiledMask.geminiMaskArtifacts?.morphologyCleanedMaskPath || null,
+    geminiComponentFilteredMaskPath: compiledMask.geminiMaskArtifacts?.componentFilteredMaskPath || null,
+    geminiAcceptedClusterMaskPath: compiledMask.geminiMaskArtifacts?.acceptedClusterMaskPath || null,
+    geminiFinalUnionMaskPath: compiledMask.geminiMaskArtifacts?.finalUnionMaskPath || null,
+    geminiThresholdComparisonPath: compiledMask.geminiMaskArtifacts?.thresholdComparisonPath || null,
+    geminiAlphaHeatmapPath: compiledMask.geminiMaskArtifacts?.alphaHeatmapPath || null,
+    geminiAlphaHistogramPath: compiledMask.geminiMaskArtifacts?.alphaHistogramPath || null,
+    geminiOccupancyMetricDebugPath: compiledMask.geminiMaskArtifacts?.occupancyMetricDebugPath || null,
+    geminiOccupancyCollapseAnalysisPath: compiledMask.geminiMaskArtifacts?.occupancyCollapseAnalysisPath || null,
+    geminiOccupancyStageGridPath: compiledMask.geminiMaskArtifacts?.occupancyStageGridPath || null,
+    geminiComponentAnalysisPath: compiledMask.geminiMaskArtifacts?.componentAnalysisPath || null,
+    geminiComponentRetainedPath: compiledMask.geminiMaskArtifacts?.componentRetainedPath || null,
+    geminiComponentRemovedPath: compiledMask.geminiMaskArtifacts?.componentRemovedPath || null,
+    geminiStageComparisonPath: compiledMask.geminiMaskArtifacts?.stageComparisonPath || null,
     occupancyComponentsPath: compiledMask.geminiMaskArtifacts?.componentsPath || null,
     occupancyQualityReportPath: compiledMask.geminiMaskArtifacts?.qualityReportPath || null,
     occupancyRetryComparisonPath: compiledMask.geminiMaskArtifacts?.retryComparisonPath || null,

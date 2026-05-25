@@ -1,0 +1,94 @@
+{
+  "width": 2048,
+  "height": 1365,
+  "clusters": [
+    {
+      "clusterId": "bedside_composition",
+      "clusterRole": "required",
+      "decisions": [
+        {
+          "componentId": 1,
+          "pixelCount": 363698,
+          "areaRatio": 0.13010030334249084,
+          "score": 0.444898291410337,
+          "accepted": true,
+          "rejectedReason": null,
+          "anchorScore": 0.41767117657512354,
+          "priorOverlapRatio": 0.23557457011036628,
+          "floorOverlapRatio": 0.7333089541322746,
+          "compactness": 0.5936182019977803,
+          "wallTouchRatio": 0,
+          "minX": 652,
+          "minY": 763,
+          "maxX": 1711,
+          "maxY": 1340,
+          "centroidX": 1039.8876787884453,
+          "centroidY": 1077.3656137784646
+        }
+      ]
+    },
+    {
+      "clusterId": "decor_group",
+      "clusterRole": "optional",
+      "decisions": [
+        {
+          "componentId": 4,
+          "pixelCount": 10565,
+          "areaRatio": 0.0037792611034798535,
+          "score": 0.17184612328079732,
+          "accepted": false,
+          "rejectedReason": "weak_structural_support",
+          "anchorScore": 0.0803472926621986,
+          "priorOverlapRatio": 0,
+          "floorOverlapRatio": 0,
+          "compactness": 0.9033002735978112,
+          "wallTouchRatio": 0,
+          "minX": 181,
+          "minY": 768,
+          "maxX": 316,
+          "maxY": 853,
+          "centroidX": 249.6220539517274,
+          "centroidY": 809.0944628490298
+        },
+        {
+          "componentId": 2,
+          "pixelCount": 7144,
+          "areaRatio": 0.0025555173992673993,
+          "score": 0.09838832755603849,
+          "accepted": false,
+          "rejectedReason": "score_below_recovery_floor",
+          "anchorScore": 0.1613544959479381,
+          "priorOverlapRatio": 0,
+          "floorOverlapRatio": 0,
+          "compactness": 0.27204874333587203,
+          "wallTouchRatio": 0,
+          "minX": 614,
+          "minY": 432,
+          "maxX": 743,
+          "maxY": 633,
+          "centroidX": 677.7558790593505,
+          "centroidY": 536.9193729003359
+        },
+        {
+          "componentId": 1,
+          "pixelCount": 10972,
+          "areaRatio": 0.00392485119047619,
+          "score": 0.07812634824258799,
+          "accepted": false,
+          "rejectedReason": "score_below_recovery_floor",
+          "anchorScore": 0.11141621188188708,
+          "priorOverlapRatio": 0,
+          "floorOverlapRatio": 0,
+          "compactness": 0.2515302262671649,
+          "wallTouchRatio": 0,
+          "minX": 404,
+          "minY": 386,
+          "maxX": 584,
+          "maxY": 626,
+          "centroidX": 488.8292016040831,
+          "centroidY": 512.3323004010208
+        }
+      ]
+    }
+  ]
+}

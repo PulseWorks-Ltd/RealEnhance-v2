@@ -1,0 +1,41 @@
+{
+  "roomTypeProfile": {
+    "minAreaRatio": 0.02,
+    "targetAreaRatio": 0.09,
+    "maxAreaRatio": 0.28,
+    "minFloorContactRatio": 0.6,
+    "maxComponents": 8,
+    "maxTopRegionRatio": 0.16,
+    "maxWallTouchRatio": 0.32
+  },
+  "safety": {
+    "occupancyAreaRatio": 0.10805789262820513,
+    "connectedComponentCount": 3,
+    "floorContactRatio": 0.6393216321612298,
+    "anchorProximityScore": 0.36082255013313325,
+    "topRegionOccupancyRatio": 0,
+    "wallTouchOccupancyRatio": 0,
+    "boundingAreaRatio": 0.18890582074175824,
+    "boundingFillRatio": 0.5720199208468254
+  },
+  "quality": {
+    "score": 0.6938437233228077,
+    "occupancyBandScore": 0.7993567485754985,
+    "componentCoherenceScore": 0.7142857142857143,
+    "floorContactScore": 1,
+    "anchorScore": 0.36082255013313325,
+    "wallPenalty": 0,
+    "topPenalty": 0,
+    "compactnessScore": 0.5720199208468254
+  },
+  "usedConservativeFallback": false,
+  "priorClusterCount": 2,
+  "requiredClusterCount": 1,
+  "optionalClusterCount": 1,
+  "baselineObjectCallCount": 18,
+  "clusterApiCallCount": 6,
+  "estimatedCallReductionRatio": 0.6666666666666667,
+  "perClusterMaskPaths": [
+    "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-final/cluster-occupancy-masks/bedside_composition-gemini-mask.png"
+  ]
+}

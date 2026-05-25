@@ -16,7 +16,12 @@
     "test:furnished-gate": "tsx src/scripts/test-furnished-gate.ts",
     "test:opening-occlusion-gate": "tsx src/scripts/test-opening-occlusion-gate.ts",
     "test:publish": "tsx src/scripts/test-publish.ts",
-    "probe:vertex-imagen-contract": "tsx src/scripts/vertex-imagen-contract-probe.ts"
+    "probe:vertex-imagen-contract": "tsx src/scripts/vertex-imagen-contract-probe.ts",
+    "eval:continuity": "tsx src/scripts/run-continuity-evaluation.ts",
+    "eval:continuity:replay-planner": "tsx src/scripts/run-continuity-evaluation.ts --mode replay_planner",
+    "eval:continuity:occupancy-only": "tsx src/scripts/run-continuity-evaluation.ts --mode occupancy_only",
+    "eval:continuity:continuity-only": "tsx src/scripts/run-continuity-evaluation.ts --mode continuity_only",
+    "eval:continuity:validator-only": "tsx src/scripts/run-continuity-evaluation.ts --mode validator_only"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.19.0",

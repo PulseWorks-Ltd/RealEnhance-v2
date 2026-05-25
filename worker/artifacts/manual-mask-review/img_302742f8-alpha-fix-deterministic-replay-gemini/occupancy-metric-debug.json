@@ -1,0 +1,52 @@
+{
+  "width": 2048,
+  "height": 1365,
+  "normalizationWidth": 2048,
+  "normalizationHeight": 1365,
+  "normalizationSource": "secondary_image_dimensions",
+  "occupancyThresholdUsed": 170,
+  "alphaStatsPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/alpha-histogram.json",
+  "alphaHeatmapPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/alpha-heatmap.png",
+  "measurementStages": [
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 96,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "bedside_composition",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 250,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/occupancy-stage-debug/bedside_composition/occupancy-metric-debug.json"
+    },
+    {
+      "clusterId": "decor_group",
+      "measurementStage": "thresholded_mask",
+      "alphaAware": false,
+      "threshold": 170,
+      "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/occupancy-stage-debug/decor_group/occupancy-metric-debug.json"
+    }
+  ],
+  "finalUnionMetric": {
+    "measurementStage": "final_union_mask",
+    "occupancyPixels": 363698,
+    "totalPixels": 2795520,
+    "occupancyAreaRatio": 0.13010030334249084,
+    "width": 2048,
+    "height": 1365,
+    "alphaAware": false,
+    "threshold": null,
+    "artifactPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/gemini-occupancy-mask-cleaned.png",
+    "componentCount": 1
+  },
+  "rejectionReason": null,
+  "adaptiveExpectation": {
+    "effectiveMinAreaRatio": 0.02,
+    "requiredTargetAreaRatio": 0.027650000000000004,
+    "optionalTargetAreaRatio": 0.004,
+    "optionalWeight": 0.2
+  }
+}

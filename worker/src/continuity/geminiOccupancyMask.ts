@@ -19,6 +19,73 @@ type ConnectedComponentStats = {
   centroidY: number;
 };
 
+type OccupancyStageKey =
+  | "raw_gemini_mask"
+  | "alpha_normalized_mask"
+  | "thresholded_mask"
+  | "morphology_cleaned_mask"
+  | "component_filtered_mask"
+  | "accepted_cluster_mask"
+  | "merged_union_mask"
+  | "final_safety_mask";
+
+type OccupancyStageMetric = {
+  clusterId: string;
+  clusterRole: "required" | "optional";
+  stage: OccupancyStageKey;
+  occupancyPixels: number;
+  occupancyAreaRatio: number;
+  componentCount: number;
+  rejectedReason: string | null;
+  includedInFinalUnion?: boolean;
+};
+
+type ComponentDecision = {
+  componentId: number;
+  pixelCount: number;
+  areaRatio: number;
+  score: number;
+  accepted: boolean;
+  rejectedReason: string | null;
+  anchorScore: number;
+  priorOverlapRatio: number;
+  floorOverlapRatio: number;
+  compactness: number;
+  wallTouchRatio: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  centroidX: number;
+  centroidY: number;
+};
+
+type RankedComponentResult = {
+  acceptedMask: Buffer;
+  rejectedMask: Buffer;
+  acceptedCount: number;
+  anchorScore: number;
+  floorContactRatio: number;
+  compactnessScore: number;
+  decisions: ComponentDecision[];
+};
+
+type ClusterContributionSummary = {
+  clusterId: string;
+  role: "required" | "optional";
+  contributionRatio: number;
+  includedInFinalUnion: boolean;
+  acceptedOccupancyRatio: number;
+  mergedUnionRatioAfterCluster: number;
+};
+
+type AdaptiveOccupancyExpectation = {
+  effectiveMinAreaRatio: number;
+  requiredTargetAreaRatio: number;
+  optionalTargetAreaRatio: number;
+  optionalWeight: number;
+};
+
 type PriorCluster = {
   clusterId: string;
   clusterLabel: string;
@@ -94,6 +161,29 @@ type RoomTypeBandProfile = {
 };
 
 export type GeminiOccupancyMaskResult = {
+  rawGeminiMaskPath?: string;
+  thresholdedMaskPath?: string;
+  alphaNormalizedMaskPath?: string;
+  morphologyCleanedMaskPath?: string;
+  componentFilteredMaskPath?: string;
+  acceptedClusterMaskPath?: string;
+  finalUnionMaskPath?: string;
+  occupancyCollapseAnalysisPath?: string;
+  occupancyStageGridPath?: string;
+  componentAnalysisPath?: string;
+  componentRetainedPath?: string;
+  componentRemovedPath?: string;
+  alphaHeatmapPath?: string;
+  alphaHistogramPath?: string;
+  occupancyMetricDebugPath?: string;
+  thresholdComparisonPath?: string;
+  stageComparisonPath?: string;
+  measurementStage?: string;
+  alphaAware?: boolean;
+  measurementThreshold?: number;
+  normalizationWidth?: number;
+  normalizationHeight?: number;
+  normalizationSource?: string;
   cleanedMaskRaw: Buffer;
   rawMaskPath: string;
   cleanedMaskPath: string;
@@ -619,6 +709,207 @@ function countMaskPixels(mask: Buffer): number {
   return count;
 }
 
+function buildAlphaHistogram(alpha: Buffer): { bins: number[]; min: number; max: number; mean: number; nonZeroPixels: number } {
+  const bins = new Array(256).fill(0);
+  let min = 255;
+  let max = 0;
+  let sum = 0;
+  let nonZeroPixels = 0;
+  for (const value of alpha) {
+    bins[value] += 1;
+    min = Math.min(min, value);
+    max = Math.max(max, value);
+    sum += value;
+    if (value > 0) {
+      nonZeroPixels += 1;
+    }
+  }
+  return {
+    bins,
+    min: alpha.length > 0 ? min : 0,
+    max: alpha.length > 0 ? max : 0,
+    mean: alpha.length > 0 ? sum / alpha.length : 0,
+    nonZeroPixels,
+  };
+}
+
+function countAlphaAwarePixels(alpha: Buffer): number {
+  return countMaskPixels(alpha);
+}
+
+async function writeRgbaPng(rgba: Buffer, width: number, height: number, outputPath: string): Promise<void> {
+  await sharp(rgba, {
+    raw: { width, height, channels: 4 },
+  }).png().toFile(outputPath);
+}
+
+function buildStageComparisonRgba(params: {
+  rawMask: Buffer;
+  thresholdedMask: Buffer;
+  alphaNormalizedMask: Buffer;
+  morphologyCleanedMask: Buffer;
+  componentFilteredMask: Buffer;
+  acceptedClusterMask: Buffer;
+  finalUnionMask: Buffer;
+  width: number;
+  height: number;
+}): Buffer {
+  const stages = [
+    { mask: params.rawMask, color: [255, 255, 255, 255] as const },
+    { mask: params.thresholdedMask, color: [255, 190, 64, 255] as const },
+    { mask: params.alphaNormalizedMask, color: [64, 210, 255, 255] as const },
+    { mask: params.morphologyCleanedMask, color: [168, 255, 64, 255] as const },
+    { mask: params.componentFilteredMask, color: [255, 96, 160, 255] as const },
+    { mask: params.acceptedClusterMask, color: [72, 210, 118, 255] as const },
+    { mask: params.finalUnionMask, color: [255, 255, 255, 255] as const },
+  ];
+  const tileWidth = params.width;
+  const tileHeight = params.height;
+  const canvas = Buffer.alloc(tileWidth * tileHeight * stages.length * 4, 0);
+  stages.forEach((stage, stageIndex) => {
+    for (let i = 0; i < stage.mask.length; i += 1) {
+      if (stage.mask[i] === 0) {
+        continue;
+      }
+      const x = i % params.width;
+      const y = Math.floor(i / params.width) + (stageIndex * tileHeight);
+      const offset = ((y * tileWidth) + x) * 4;
+      canvas[offset] = stage.color[0];
+      canvas[offset + 1] = stage.color[1];
+      canvas[offset + 2] = stage.color[2];
+      canvas[offset + 3] = stage.color[3];
+    }
+  });
+  return canvas;
+}
+
+function buildComponentOverlay(mask: Buffer, width: number, height: number): Buffer {
+  const components = analyzeConnectedComponents(mask, width, height, 1);
+  const componentRgba = Buffer.alloc(width * height * 4, 0);
+  const colorById = new Map<number, [number, number, number]>();
+  for (const comp of components.components) {
+    const seed = comp.id * 1103515245;
+    colorById.set(comp.id, [
+      60 + ((seed >>> 3) % 170),
+      60 + ((seed >>> 11) % 170),
+      60 + ((seed >>> 19) % 170),
+    ]);
+  }
+  for (let i = 0; i < components.labelMap.length; i += 1) {
+    const id = components.labelMap[i];
+    const offset = i * 4;
+    if (id === 0 || !colorById.has(id)) {
+      componentRgba[offset + 3] = 255;
+      continue;
+    }
+    const [r, g, b] = colorById.get(id)!;
+    componentRgba[offset] = r;
+    componentRgba[offset + 1] = g;
+    componentRgba[offset + 2] = b;
+    componentRgba[offset + 3] = 255;
+  }
+  return componentRgba;
+}
+
+function buildBinaryMaskOverlay(mask: Buffer, width: number, height: number, color: { r: number; g: number; b: number; a: number }): Buffer {
+  const rgba = Buffer.alloc(width * height * 4, 0);
+  for (let i = 0; i < mask.length; i += 1) {
+    if (mask[i] === 0) {
+      continue;
+    }
+    const offset = i * 4;
+    rgba[offset] = color.r;
+    rgba[offset + 1] = color.g;
+    rgba[offset + 2] = color.b;
+    rgba[offset + 3] = color.a;
+  }
+  return rgba;
+}
+
+function computeStageMetric(params: {
+  clusterId: string;
+  clusterRole: "required" | "optional";
+  stage: OccupancyStageKey;
+  mask: Buffer;
+  width: number;
+  height: number;
+  rejectedReason?: string | null;
+  includedInFinalUnion?: boolean;
+}): OccupancyStageMetric {
+  return {
+    clusterId: params.clusterId,
+    clusterRole: params.clusterRole,
+    stage: params.stage,
+    occupancyPixels: countMaskPixels(params.mask),
+    occupancyAreaRatio: countMaskPixels(params.mask) / Math.max(1, params.width * params.height),
+    componentCount: analyzeConnectedComponents(params.mask, params.width, params.height, 1).components.length,
+    rejectedReason: params.rejectedReason ?? null,
+    includedInFinalUnion: params.includedInFinalUnion,
+  };
+}
+
+function buildOccupancyStageGridRgba(params: {
+  rawMask: Buffer;
+  thresholdedMask: Buffer;
+  componentFilteredMask: Buffer;
+  acceptedMask: Buffer;
+  unionMask: Buffer;
+  finalMask: Buffer;
+  width: number;
+  height: number;
+}): Buffer {
+  const masks = [
+    params.rawMask,
+    params.thresholdedMask,
+    params.componentFilteredMask,
+    params.acceptedMask,
+    params.unionMask,
+    params.finalMask,
+  ];
+  const output = Buffer.alloc(params.width * params.height * 6 * 4, 0);
+  const colors = [
+    { r: 255, g: 177, b: 66, a: 255 },
+    { r: 64, g: 156, b: 255, a: 255 },
+    { r: 170, g: 120, b: 255, a: 255 },
+    { r: 72, g: 210, b: 118, a: 255 },
+    { r: 236, g: 194, b: 74, a: 255 },
+    { r: 255, g: 84, b: 84, a: 255 },
+  ];
+
+  for (let panel = 0; panel < masks.length; panel += 1) {
+    const mask = masks[panel];
+    const color = colors[panel];
+    const panelOffset = panel * params.width * params.height * 4;
+    for (let i = 0; i < mask.length; i += 1) {
+      const offset = panelOffset + (i * 4);
+      output[offset + 3] = 255;
+      if (mask[i] > 0) {
+        output[offset] = color.r;
+        output[offset + 1] = color.g;
+        output[offset + 2] = color.b;
+      } else {
+        output[offset] = 18;
+        output[offset + 1] = 18;
+        output[offset + 2] = 18;
+      }
+    }
+  }
+
+  return output;
+}
+
+function buildAlphaHeatmapRgba(alpha: Buffer, width: number, height: number): Buffer {
+  const rgba = Buffer.alloc(width * height * 4, 0);
+  for (let i = 0; i < alpha.length; i += 1) {
+    const offset = i * 4;
+    rgba[offset] = alpha[i];
+    rgba[offset + 1] = Math.round(alpha[i] * 0.7);
+    rgba[offset + 2] = Math.round(255 - alpha[i]);
+    rgba[offset + 3] = 180;
+  }
+  return rgba;
+}
+
 function computeBoundingBox(mask: Buffer, width: number, height: number): { minX: number; minY: number; maxX: number; maxY: number; pixelCount: number } | null {
   let minX = width;
   let minY = height;
@@ -784,6 +1075,7 @@ function buildAcceptedRejectedOverlay(params: {
 
 async function selectBinarizationCandidate(params: {
   grayscaleRaw: Buffer;
+  alphaRaw: Buffer;
   width: number;
   height: number;
   minComponentPixels: number;
@@ -792,53 +1084,83 @@ async function selectBinarizationCandidate(params: {
 }): Promise<{
   threshold: number;
   inverted: boolean;
+  sourceChannel: "grayscale" | "alpha";
+  thresholdedMask: Buffer;
   mask: Buffer;
   labelMap: Int32Array;
   components: ConnectedComponentStats[];
-} | null> {
-  const thresholdBase = Math.max(1, Math.min(254, Math.round(readNumberEnv("CONTINUITY_GEMINI_MASK_THRESHOLD", 170))));
-  const thresholdCandidates = Array.from(new Set([thresholdBase, 160, 144, 128, 112, 96, 80, 64]));
-
-  const candidates: Array<{
+  thresholdScan: Array<{
+    sourceChannel: "grayscale" | "alpha";
     threshold: number;
     inverted: boolean;
+    occupancyPixels: number;
+    occupancyAreaRatio: number;
+  }>;
+} | null> {
+  const thresholdBase = Math.max(1, Math.min(254, Math.round(readNumberEnv("CONTINUITY_GEMINI_MASK_THRESHOLD", 170))));
+  const thresholdCandidates = Array.from(new Set([thresholdBase, 250, 192, 128, 96, 64, 32, 16]));
+
+  const candidates: Array<{
+    sourceChannel: "grayscale" | "alpha";
+    threshold: number;
+    inverted: boolean;
+    thresholded: Buffer;
     mask: Buffer;
     labelMap: Int32Array;
     components: ConnectedComponentStats[];
     areaRatio: number;
   }> = [];
 
-  for (const threshold of thresholdCandidates) {
-    for (const inverted of [false, true]) {
-      const thresholded = Buffer.alloc(params.grayscaleRaw.length, 0);
-      for (let i = 0; i < params.grayscaleRaw.length; i += 1) {
-        const lit = params.grayscaleRaw[i] >= threshold;
-        const isWhite = inverted ? !lit : lit;
-        thresholded[i] = isWhite ? 255 : 0;
-      }
+  for (const sourceChannel of ["grayscale", "alpha"] as const) {
+    const sourceRaw = sourceChannel === "alpha" ? params.alphaRaw : params.grayscaleRaw;
+    for (const threshold of thresholdCandidates) {
+      for (const inverted of [false, true]) {
+        const thresholded = Buffer.alloc(sourceRaw.length, 0);
+        for (let i = 0; i < sourceRaw.length; i += 1) {
+          const lit = sourceRaw[i] >= threshold;
+          const isWhite = inverted ? !lit : lit;
+          thresholded[i] = isWhite ? 255 : 0;
+        }
 
-      let pipeline = sharp(thresholded, {
-        raw: { width: params.width, height: params.height, channels: 1 },
-      }).threshold(127, { grayscale: true });
+        let pipeline = sharp(thresholded, {
+          raw: { width: params.width, height: params.height, channels: 1 },
+        }).threshold(127, { grayscale: true });
 
-      if (params.morphologyRadius > 0) {
-        pipeline = pipeline.erode(params.morphologyRadius).dilate(params.morphologyRadius);
-      }
+        if (params.morphologyRadius > 0) {
+          pipeline = pipeline.erode(params.morphologyRadius).dilate(params.morphologyRadius);
+        }
 
-      const candidateMask = await pipeline.raw().toBuffer();
-      const analyzed = analyzeConnectedComponents(candidateMask, params.width, params.height, params.minComponentPixels);
-      const occupancyPixelCount = countMaskPixels(candidateMask);
-      if (occupancyPixelCount === 0) {
-        continue;
+        const candidateRaster = await pipeline.raw().toBuffer({ resolveWithObject: true });
+        let candidateMask: Buffer = Buffer.from(candidateRaster.data as Uint8Array);
+        if ((candidateRaster.info.channels || 1) !== 1) {
+          candidateMask = (await sharp(Buffer.from(candidateRaster.data as Uint8Array), {
+            raw: {
+              width: params.width,
+              height: params.height,
+              channels: candidateRaster.info.channels || 1,
+            },
+          })
+            .removeAlpha()
+            .grayscale()
+            .raw()
+            .toBuffer()) as Buffer;
+        }
+        const analyzed = analyzeConnectedComponents(candidateMask, params.width, params.height, params.minComponentPixels);
+        const occupancyPixelCount = countMaskPixels(candidateMask);
+        if (occupancyPixelCount === 0) {
+          continue;
+        }
+        candidates.push({
+          sourceChannel,
+          threshold,
+          inverted,
+          thresholded,
+          mask: candidateMask,
+          labelMap: analyzed.labelMap,
+          components: analyzed.components,
+          areaRatio: occupancyPixelCount / (params.width * params.height),
+        });
       }
-      candidates.push({
-        threshold,
-        inverted,
-        mask: candidateMask,
-        labelMap: analyzed.labelMap,
-        components: analyzed.components,
-        areaRatio: occupancyPixelCount / (params.width * params.height),
-      });
     }
   }
 
@@ -856,9 +1178,18 @@ async function selectBinarizationCandidate(params: {
   return {
     threshold: selected.threshold,
     inverted: selected.inverted,
+    sourceChannel: selected.sourceChannel,
+    thresholdedMask: selected.thresholded,
     mask: selected.mask,
     labelMap: selected.labelMap,
     components: selected.components,
+    thresholdScan: candidates.map((candidate) => ({
+      sourceChannel: candidate.sourceChannel,
+      threshold: candidate.threshold,
+      inverted: candidate.inverted,
+      occupancyPixels: countMaskPixels(candidate.mask),
+      occupancyAreaRatio: candidate.areaRatio,
+    })),
   };
 }
 
@@ -871,14 +1202,7 @@ function rankComponents(params: {
   width: number;
   height: number;
   maxRetainedComponents: number;
-}): {
-  acceptedMask: Buffer;
-  rejectedMask: Buffer;
-  acceptedCount: number;
-  anchorScore: number;
-  floorContactRatio: number;
-  compactnessScore: number;
-} {
+}): RankedComponentResult {
   const scored = params.components.map((component) => {
     const bboxArea = Math.max(1, (component.maxX - component.minX + 1) * (component.maxY - component.minY + 1));
     const compactness = component.pixelCount / bboxArea;
@@ -925,13 +1249,52 @@ function rankComponents(params: {
       component,
       score,
       anchorScore,
+      priorOverlapRatio,
       floorOverlapRatio,
       compactness,
       wallTouchRatio,
     };
   }).sort((left, right) => right.score - left.score);
 
-  const accepted = scored.slice(0, params.maxRetainedComponents).filter((entry) => entry.score > 0.18);
+  const totalPixelCount = Math.max(1, params.width * params.height);
+  const baseScoreThreshold = 0.18;
+  const recoveryScoreThreshold = params.priorCluster.required ? 0.08 : 0.12;
+  const desiredAreaRatio = params.priorCluster.required
+    ? params.priorCluster.expectedAreaRatioMin
+    : Math.min(params.priorCluster.expectedAreaRatioMin, params.priorCluster.expectedAreaRatioTarget * 0.8);
+  const expandedRetainedLimit = params.priorCluster.required
+    ? Math.max(params.maxRetainedComponents, params.maxRetainedComponents * 4)
+    : Math.max(params.maxRetainedComponents, params.maxRetainedComponents * 2);
+
+  const accepted: typeof scored = [];
+  let acceptedPixelCount = 0;
+
+  for (const entry of scored) {
+    const currentAreaRatio = acceptedPixelCount / totalPixelCount;
+    const underTarget = currentAreaRatio < desiredAreaRatio;
+    const withinBaseLimit = accepted.length < params.maxRetainedComponents;
+    const withinRecoveryLimit = accepted.length < expandedRetainedLimit;
+    const structurallySupported = (
+      entry.priorOverlapRatio >= 0.015
+      || entry.floorOverlapRatio >= 0.12
+      || entry.anchorScore >= 0.22
+    ) && entry.wallTouchRatio <= 0.55;
+
+    const useBaseRetention = withinBaseLimit && entry.score > baseScoreThreshold;
+    const useRecoveryRetention = !useBaseRetention
+      && underTarget
+      && withinRecoveryLimit
+      && entry.score > recoveryScoreThreshold
+      && structurallySupported;
+
+    if (!useBaseRetention && !useRecoveryRetention) {
+      continue;
+    }
+
+    accepted.push(entry);
+    acceptedPixelCount += entry.component.pixelCount;
+  }
+
   const acceptedIds = new Set(accepted.map((entry) => entry.component.id));
 
   const acceptedMask = keepAllowedComponents(params.candidateMask, params.labelMap, acceptedIds);
@@ -951,6 +1314,44 @@ function rankComponents(params: {
     ? accepted.reduce((sum, entry) => sum + entry.compactness, 0) / accepted.length
     : 0;
 
+  const acceptedAreaRatio = acceptedPixelCount / totalPixelCount;
+  const decisions: ComponentDecision[] = scored.map((entry) => {
+    let rejectedReason: string | null = null;
+    if (!acceptedIds.has(entry.component.id)) {
+      if (acceptedAreaRatio >= desiredAreaRatio) {
+        rejectedReason = "target_already_satisfied";
+      } else if (entry.score <= recoveryScoreThreshold) {
+        rejectedReason = "score_below_recovery_floor";
+      } else if (entry.wallTouchRatio > 0.55) {
+        rejectedReason = "wall_touch_too_high";
+      } else if (entry.priorOverlapRatio < 0.015 && entry.floorOverlapRatio < 0.12 && entry.anchorScore < 0.22) {
+        rejectedReason = "weak_structural_support";
+      } else {
+        rejectedReason = "recovery_limit_reached";
+      }
+    }
+
+    return {
+      componentId: entry.component.id,
+      pixelCount: entry.component.pixelCount,
+      areaRatio: entry.component.pixelCount / Math.max(1, params.width * params.height),
+      score: entry.score,
+      accepted: acceptedIds.has(entry.component.id),
+      rejectedReason,
+      anchorScore: entry.anchorScore,
+      priorOverlapRatio: entry.priorOverlapRatio,
+      floorOverlapRatio: entry.floorOverlapRatio,
+      compactness: entry.compactness,
+      wallTouchRatio: entry.wallTouchRatio,
+      minX: entry.component.minX,
+      minY: entry.component.minY,
+      maxX: entry.component.maxX,
+      maxY: entry.component.maxY,
+      centroidX: entry.component.centroidX,
+      centroidY: entry.component.centroidY,
+    };
+  });
+
   return {
     acceptedMask,
     rejectedMask,
@@ -958,6 +1359,40 @@ function rankComponents(params: {
     anchorScore,
     floorContactRatio,
     compactnessScore,
+    decisions,
+  };
+}
+
+function computeAdaptiveOccupancyExpectation(params: {
+  profile: RoomTypeBandProfile;
+  roomType: string;
+  priorClusters: PriorCluster[];
+}): AdaptiveOccupancyExpectation {
+  const normalizedRoomType = normalizeFurnitureType(params.roomType);
+  const requiredTargetAreaRatio = params.priorClusters
+    .filter((cluster) => cluster.required)
+    .reduce((sum, cluster) => sum + cluster.expectedAreaRatioMin, 0);
+  const optionalTargetAreaRatio = params.priorClusters
+    .filter((cluster) => !cluster.required)
+    .reduce((sum, cluster) => sum + cluster.expectedAreaRatioMin, 0);
+  const optionalWeight = params.priorClusters.filter((cluster) => !cluster.required).length <= 1 ? 0.2 : 0.35;
+
+  let adaptiveFloor = Math.max(requiredTargetAreaRatio * 0.7, requiredTargetAreaRatio + (optionalTargetAreaRatio * optionalWeight));
+  if (normalizedRoomType.includes("office") || normalizedRoomType.includes("study")) {
+    adaptiveFloor = Math.max(0.012, adaptiveFloor);
+  } else if (normalizedRoomType.includes("living")) {
+    adaptiveFloor = Math.max(0.018, adaptiveFloor);
+  } else if (normalizedRoomType.includes("bedroom")) {
+    adaptiveFloor = Math.max(0.02, adaptiveFloor);
+  } else {
+    adaptiveFloor = Math.max(0.015, adaptiveFloor);
+  }
+
+  return {
+    effectiveMinAreaRatio: Math.min(params.profile.minAreaRatio, adaptiveFloor),
+    requiredTargetAreaRatio,
+    optionalTargetAreaRatio,
+    optionalWeight,
   };
 }
 
@@ -1207,18 +1642,34 @@ export async function generateGeminiOccupancyMask(params: {
   const profile = getRoomTypeBandProfile(params.plan.roomType);
   const floorMask = await buildFloorPriorMask(params.plan, width, height);
   const priorClusters = await buildPriorClusters(params.plan, width, height, floorMask);
+  const adaptiveExpectation = computeAdaptiveOccupancyExpectation({
+    profile,
+    roomType: params.plan.roomType,
+    priorClusters,
+  });
 
   const outDir = path.dirname(params.occupancyMaskPath);
   const rawMaskPath = path.join(outDir, "gemini-occupancy-mask-raw.png");
   const cleanedMaskPath = path.join(outDir, "gemini-occupancy-mask-cleaned.png");
   const componentsPath = path.join(outDir, "occupancy-mask-components.png");
+  const alphaHeatmapPath = path.join(outDir, "alpha-heatmap.png");
+  const alphaHistogramPath = path.join(outDir, "alpha-histogram.json");
+  const occupancyMetricDebugPath = path.join(outDir, "occupancy-metric-debug.json");
+  const stageComparisonPath = path.join(outDir, "occupancy-stage-comparison.png");
+  const occupancyCollapseAnalysisPath = path.join(outDir, "occupancy-collapse-analysis.json");
+  const occupancyStageGridPath = path.join(outDir, "occupancy-stage-grid.png");
+  const componentAnalysisPath = path.join(outDir, "component-analysis.json");
+  const componentRetainedPath = path.join(outDir, "component-retained.png");
+  const componentRemovedPath = path.join(outDir, "component-removed.png");
   const qualityReportPath = path.join(outDir, "occupancy-quality-report.json");
   const retryComparisonPath = path.join(outDir, "occupancy-retry-comparison.json");
   const anchorDistanceHeatmapPath = path.join(outDir, "anchor-distance-heatmap.png");
   const floorContactVisualizationPath = path.join(outDir, "floor-contact-visualization.png");
   const acceptedRejectedOverlayPath = path.join(outDir, "accepted-vs-rejected-components.png");
   const clusterMaskDir = path.join(outDir, "cluster-occupancy-masks");
+  const stageDebugDir = path.join(outDir, "occupancy-stage-debug");
   await fs.mkdir(clusterMaskDir, { recursive: true });
+  await fs.mkdir(stageDebugDir, { recursive: true });
 
   const secondaryImage = toBase64(params.secondaryImagePath);
   const masterImage = toBase64(params.masterImagePath);
@@ -1226,7 +1677,30 @@ export async function generateGeminiOccupancyMask(params: {
   const ai = getVertexGenAiClient();
 
   const clusterSummaries: ClusterAttemptSummary[] = [];
+  const stageMetricsByCluster = new Map<string, OccupancyStageMetric[]>();
+  const componentAuditByCluster = new Map<string, {
+    clusterId: string;
+    clusterRole: "required" | "optional";
+    decisions: ComponentDecision[];
+  }>();
+  const clusterContributions: ClusterContributionSummary[] = [];
   const perClusterMaskPaths: string[] = [];
+  const clusterDebugArtifacts: Array<{
+    clusterId: string;
+    measurementStage: string;
+    alphaAware: boolean;
+    threshold: number;
+    artifactPath: string;
+    rawGeminiMaskPath: string;
+    thresholdedMaskPath: string;
+    alphaNormalizedMaskPath: string;
+    morphologyCleanedMaskPath: string;
+    componentFilteredMaskPath: string;
+    acceptedClusterMaskPath: string;
+    alphaHeatmapPath: string;
+    alphaHistogramPath: string;
+    stageComparisonPath: string;
+  }> = [];
   let unionAccepted = Buffer.alloc(width * height, 0);
   let unionRejected = Buffer.alloc(width * height, 0);
   let unionRawBest = Buffer.alloc(width * height, 0);
@@ -1342,15 +1816,62 @@ export async function generateGeminiOccupancyMask(params: {
       }
 
       const rawBuffer = Buffer.from(imagePart.data, "base64");
-      const gray = await sharp(rawBuffer)
+      const clusterStageDir = path.join(stageDebugDir, priorCluster.clusterId);
+      await fs.mkdir(clusterStageDir, { recursive: true });
+
+      const rawGeminiMaskPath = path.join(clusterStageDir, "raw-gemini-mask.png");
+      const thresholdedMaskPath = path.join(clusterStageDir, "thresholded-mask.png");
+      const alphaNormalizedMaskPath = path.join(clusterStageDir, "alpha-normalized-mask.png");
+      const morphologyCleanedMaskPath = path.join(clusterStageDir, "morphology-cleaned-mask.png");
+      const componentFilteredMaskPath = path.join(clusterStageDir, "component-filtered-mask.png");
+      const acceptedClusterMaskPath = path.join(clusterStageDir, "accepted-cluster-mask.png");
+      const alphaHeatmapClusterPath = path.join(clusterStageDir, "alpha-heatmap.png");
+      const alphaHistogramClusterPath = path.join(clusterStageDir, "alpha-histogram.json");
+      const thresholdComparisonClusterPath = path.join(clusterStageDir, "threshold-comparison.json");
+      const occupancyMetricDebugClusterPath = path.join(clusterStageDir, "occupancy-metric-debug.json");
+      const componentDebugOverlayPath = path.join(clusterStageDir, "component-debug-overlay.png");
+      const stageComparisonClusterPath = path.join(clusterStageDir, "stage-comparison.png");
+
+      const resizedRaw = await sharp(rawBuffer)
         .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+        .png()
+        .toBuffer();
+      await fs.writeFile(rawGeminiMaskPath, resizedRaw);
+
+      const resizedRgba = await sharp(rawBuffer)
+        .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+        .ensureAlpha()
+        .raw()
+        .toBuffer();
+      const rawVisibleMask = Buffer.alloc(width * height, 0);
+      for (let i = 0; i < width * height; i += 1) {
+        const offset = i * 4;
+        if (resizedRgba[offset] > 0 || resizedRgba[offset + 1] > 0 || resizedRgba[offset + 2] > 0 || resizedRgba[offset + 3] > 0) {
+          rawVisibleMask[i] = 255;
+        }
+      }
+      const resizedRgbaSharp = sharp(resizedRgba, {
+        raw: { width, height, channels: 4 },
+      });
+      const gray = await resizedRgbaSharp
         .removeAlpha()
         .grayscale()
         .raw()
         .toBuffer();
+      const alpha = await sharp(resizedRgba, {
+        raw: { width, height, channels: 4 },
+      })
+        .extractChannel(3)
+        .raw()
+        .toBuffer();
+
+      const alphaHistogram = buildAlphaHistogram(alpha);
+      await fs.writeFile(alphaHistogramClusterPath, JSON.stringify(alphaHistogram, null, 2));
+      await writeRgbaPng(buildAlphaHeatmapRgba(alpha, width, height), width, height, alphaHeatmapClusterPath);
 
       const selected = await selectBinarizationCandidate({
         grayscaleRaw: gray,
+        alphaRaw: alpha,
         width,
         height,
         minComponentPixels,
@@ -1379,10 +1900,27 @@ export async function generateGeminiOccupancyMask(params: {
         continue;
       }
 
+      await writeMaskPng(selected.thresholdedMask, width, height, thresholdedMaskPath);
+      const alphaNormalizedMask = Buffer.alloc(alpha.length, 0);
+      for (let i = 0; i < alpha.length; i += 1) {
+        alphaNormalizedMask[i] = alpha[i] > 0 ? 255 : 0;
+      }
+      await writeMaskPng(alphaNormalizedMask, width, height, alphaNormalizedMaskPath);
+      await writeMaskPng(selected.mask, width, height, morphologyCleanedMaskPath);
+
+      const preFilterAnalysis = analyzeConnectedComponents(selected.mask, width, height, 1);
+      const postFilterAnalysis = analyzeConnectedComponents(selected.mask, width, height, minComponentPixels);
+      const retainedIds = new Set(postFilterAnalysis.components.map((component) => component.id));
+      const componentFilteredMask = keepAllowedComponents(selected.mask, preFilterAnalysis.labelMap, retainedIds);
+      await writeMaskPng(componentFilteredMask, width, height, componentFilteredMaskPath);
+
+      const componentOverlay = buildComponentOverlay(componentFilteredMask, width, height);
+      await writeRgbaPng(componentOverlay, width, height, componentDebugOverlayPath);
+
       const ranked = rankComponents({
-        components: selected.components,
-        labelMap: selected.labelMap,
-        candidateMask: selected.mask,
+        components: postFilterAnalysis.components,
+        labelMap: postFilterAnalysis.labelMap,
+        candidateMask: componentFilteredMask,
         priorCluster,
         floorMask,
         width,
@@ -1391,6 +1929,7 @@ export async function generateGeminiOccupancyMask(params: {
       });
 
       const clusterMask = Buffer.from(ranked.acceptedMask);
+      await writeMaskPng(clusterMask, width, height, acceptedClusterMaskPath);
       const occupancyAreaRatio = countMaskPixels(clusterMask) / (width * height);
       const connected = analyzeConnectedComponents(clusterMask, width, height, 1).components.length;
       const wallTouchRatio = measureWallTouchRatio(clusterMask, width, height);
@@ -1412,6 +1951,201 @@ export async function generateGeminiOccupancyMask(params: {
         floorContactRatio,
         anchorScore,
       });
+
+      const thresholdComparison = selected.thresholdScan;
+      await fs.writeFile(thresholdComparisonClusterPath, JSON.stringify(thresholdComparison, null, 2));
+
+      const occupiedPixelCountRaw = countMaskPixels(selected.mask);
+      const occupiedPixelCountThresholded = countMaskPixels(selected.thresholdedMask);
+      const occupiedPixelCountAlpha = countMaskPixels(alphaNormalizedMask);
+      const occupiedPixelCountComponentFiltered = countMaskPixels(componentFilteredMask);
+      const occupiedPixelCountAccepted = countMaskPixels(clusterMask);
+
+      const measurementStage = selected.sourceChannel === "alpha" ? "alpha_normalized_mask" : "thresholded_mask";
+      const clusterRole = priorCluster.required ? "required" : "optional";
+      const stageMetrics: OccupancyStageMetric[] = [
+        computeStageMetric({
+          clusterId: priorCluster.clusterId,
+          clusterRole,
+          stage: "raw_gemini_mask",
+          mask: rawVisibleMask,
+          width,
+          height,
+        }),
+        computeStageMetric({
+          clusterId: priorCluster.clusterId,
+          clusterRole,
+          stage: "alpha_normalized_mask",
+          mask: alphaNormalizedMask,
+          width,
+          height,
+        }),
+        computeStageMetric({
+          clusterId: priorCluster.clusterId,
+          clusterRole,
+          stage: "thresholded_mask",
+          mask: selected.thresholdedMask,
+          width,
+          height,
+        }),
+        computeStageMetric({
+          clusterId: priorCluster.clusterId,
+          clusterRole,
+          stage: "morphology_cleaned_mask",
+          mask: selected.mask,
+          width,
+          height,
+        }),
+        computeStageMetric({
+          clusterId: priorCluster.clusterId,
+          clusterRole,
+          stage: "component_filtered_mask",
+          mask: componentFilteredMask,
+          width,
+          height,
+        }),
+        computeStageMetric({
+          clusterId: priorCluster.clusterId,
+          clusterRole,
+          stage: "accepted_cluster_mask",
+          mask: clusterMask,
+          width,
+          height,
+          rejectedReason: failureMode === "none" ? null : failureMode,
+        }),
+      ];
+      stageMetricsByCluster.set(priorCluster.clusterId, stageMetrics);
+      componentAuditByCluster.set(priorCluster.clusterId, {
+        clusterId: priorCluster.clusterId,
+        clusterRole,
+        decisions: ranked.decisions,
+      });
+
+      const clusterDebug = {
+        clusterId: priorCluster.clusterId,
+        clusterLabel: priorCluster.clusterLabel,
+        required: priorCluster.required,
+        measurementStage: "final_union_mask",
+        alphaAware: selected.sourceChannel === "alpha",
+        threshold: selected.threshold,
+        inversion: selected.inverted,
+        selectedSourceChannel: selected.sourceChannel,
+        width,
+        height,
+        normalizationWidth: width,
+        normalizationHeight: height,
+        normalizationSource: "gemini_resized_output",
+        alphaHistogram,
+        stageMetrics: [
+          {
+            measurementStage: "raw_gemini_mask",
+            occupancyPixels: countMaskPixels(rawVisibleMask),
+            totalPixels: width * height,
+            occupancyAreaRatio: countMaskPixels(rawVisibleMask) / (width * height),
+            width,
+            height,
+            alphaAware: true,
+            threshold: null,
+            artifactPath: rawGeminiMaskPath,
+            componentCount: preFilterAnalysis.components.length,
+          },
+          {
+            measurementStage: "alpha_normalized_mask",
+            occupancyPixels: occupiedPixelCountAlpha,
+            totalPixels: width * height,
+            occupancyAreaRatio: occupiedPixelCountAlpha / (width * height),
+            width,
+            height,
+            alphaAware: true,
+            threshold: 1,
+            artifactPath: alphaNormalizedMaskPath,
+            componentCount: preFilterAnalysis.components.length,
+          },
+          {
+            measurementStage: "thresholded_mask",
+            occupancyPixels: occupiedPixelCountThresholded,
+            totalPixels: width * height,
+            occupancyAreaRatio: occupiedPixelCountThresholded / (width * height),
+            width,
+            height,
+            alphaAware: selected.sourceChannel === "alpha",
+            threshold: selected.threshold,
+            artifactPath: thresholdedMaskPath,
+            componentCount: preFilterAnalysis.components.length,
+          },
+          {
+            measurementStage: "morphology_cleaned_mask",
+            occupancyPixels: occupiedPixelCountRaw,
+            totalPixels: width * height,
+            occupancyAreaRatio: occupiedPixelCountRaw / (width * height),
+            width,
+            height,
+            alphaAware: selected.sourceChannel === "alpha",
+            threshold: selected.threshold,
+            artifactPath: morphologyCleanedMaskPath,
+            componentCount: preFilterAnalysis.components.length,
+          },
+          {
+            measurementStage: "component_filtered_mask",
+            occupancyPixels: occupiedPixelCountComponentFiltered,
+            totalPixels: width * height,
+            occupancyAreaRatio: occupiedPixelCountComponentFiltered / (width * height),
+            width,
+            height,
+            alphaAware: selected.sourceChannel === "alpha",
+            threshold: selected.threshold,
+            artifactPath: componentFilteredMaskPath,
+            componentCount: postFilterAnalysis.components.length,
+          },
+          {
+            measurementStage: "accepted_cluster_mask",
+            occupancyPixels: occupiedPixelCountAccepted,
+            totalPixels: width * height,
+            occupancyAreaRatio: occupiedPixelCountAccepted / (width * height),
+            width,
+            height,
+            alphaAware: selected.sourceChannel === "alpha",
+            threshold: selected.threshold,
+            artifactPath: acceptedClusterMaskPath,
+            componentCount: analyzeConnectedComponents(clusterMask, width, height, 1).components.length,
+          },
+        ],
+        componentDecisionSummary: ranked.decisions,
+      };
+      await fs.writeFile(occupancyMetricDebugClusterPath, JSON.stringify(clusterDebug, null, 2));
+      clusterDebugArtifacts.push({
+        clusterId: priorCluster.clusterId,
+        measurementStage,
+        alphaAware: selected.sourceChannel === "alpha",
+        threshold: selected.threshold,
+        artifactPath: occupancyMetricDebugClusterPath,
+        rawGeminiMaskPath,
+        thresholdedMaskPath,
+        alphaNormalizedMaskPath,
+        morphologyCleanedMaskPath,
+        componentFilteredMaskPath,
+        acceptedClusterMaskPath,
+        alphaHeatmapPath: alphaHeatmapClusterPath,
+        alphaHistogramPath: alphaHistogramClusterPath,
+        stageComparisonPath: stageComparisonClusterPath,
+      });
+
+      await writeRgbaPng(
+        buildStageComparisonRgba({
+          rawMask: alphaNormalizedMask,
+          thresholdedMask: selected.thresholdedMask,
+          alphaNormalizedMask,
+          morphologyCleanedMask: selected.mask,
+          componentFilteredMask,
+          acceptedClusterMask: clusterMask,
+          finalUnionMask: unionAccepted,
+          width,
+          height,
+        }),
+        width,
+        height * 7,
+        stageComparisonClusterPath,
+      );
 
       const quality = evaluateQuality({
         occupancyAreaRatio,
@@ -1489,6 +2223,29 @@ export async function generateGeminiOccupancyMask(params: {
 
     unionAccepted = Buffer.from(safeMaskUnion(unionAccepted, bestClusterMask));
     unionRawBest = Buffer.from(safeMaskUnion(unionRawBest, bestClusterRawMask));
+    const contributionPixels = countMaskPixels(bestClusterMask);
+    clusterContributions.push({
+      clusterId: priorCluster.clusterId,
+      role: priorCluster.required ? "required" : "optional",
+      contributionRatio: contributionPixels / Math.max(1, width * height),
+      includedInFinalUnion: contributionPixels > 0,
+      acceptedOccupancyRatio: contributionPixels / Math.max(1, width * height),
+      mergedUnionRatioAfterCluster: countMaskPixels(unionAccepted) / Math.max(1, width * height),
+    });
+
+    const existingMetrics = stageMetricsByCluster.get(priorCluster.clusterId) || [];
+    existingMetrics.push(
+      computeStageMetric({
+        clusterId: priorCluster.clusterId,
+        clusterRole: priorCluster.required ? "required" : "optional",
+        stage: "merged_union_mask",
+        mask: unionAccepted,
+        width,
+        height,
+        includedInFinalUnion: contributionPixels > 0,
+      }),
+    );
+    stageMetricsByCluster.set(priorCluster.clusterId, existingMetrics);
 
     const rejectedForCluster = Buffer.alloc(bestClusterRawMask.length, 0);
     for (let i = 0; i < bestClusterRawMask.length; i += 1) {
@@ -1541,7 +2298,10 @@ export async function generateGeminiOccupancyMask(params: {
     mask: unionAccepted,
     width,
     height,
-    profile,
+    profile: {
+      ...profile,
+      minAreaRatio: adaptiveExpectation.effectiveMinAreaRatio,
+    },
     floorMask,
     anchorScore: anchorProximityScore,
     compactnessScore: compactness,
@@ -1552,6 +2312,18 @@ export async function generateGeminiOccupancyMask(params: {
 
   await writeMaskPng(unionRawBest, width, height, rawMaskPath);
   await writeMaskPng(unionAccepted, width, height, cleanedMaskPath);
+  await writeRgbaPng(
+    buildBinaryMaskOverlay(unionAccepted, width, height, { r: 72, g: 210, b: 118, a: 180 }),
+    width,
+    height,
+    componentRetainedPath,
+  );
+  await writeRgbaPng(
+    buildBinaryMaskOverlay(unionRejected, width, height, { r: 255, g: 84, b: 84, a: 180 }),
+    width,
+    height,
+    componentRemovedPath,
+  );
 
   const components = analyzeConnectedComponents(unionAccepted, width, height, 1);
   const componentRgba = Buffer.alloc(width * height * 4, 0);
@@ -1595,6 +2367,146 @@ export async function generateGeminiOccupancyMask(params: {
   });
   await writeOverlayImage(params.secondaryImagePath, acceptedRejected, width, height, acceptedRejectedOverlayPath);
 
+  if (clusterDebugArtifacts.length > 0) {
+    const representative = clusterDebugArtifacts[0];
+    await fs.copyFile(representative.alphaHeatmapPath, alphaHeatmapPath);
+    await fs.copyFile(representative.alphaHistogramPath, alphaHistogramPath);
+    await fs.copyFile(representative.stageComparisonPath, stageComparisonPath);
+  } else {
+    await fs.writeFile(alphaHistogramPath, JSON.stringify({ bins: [], min: 0, max: 0, mean: 0, nonZeroPixels: 0 }, null, 2));
+  }
+
+  const finalUnionMetric = {
+    measurementStage: "final_union_mask",
+    occupancyPixels: countMaskPixels(unionAccepted),
+    totalPixels: width * height,
+    occupancyAreaRatio: countMaskPixels(unionAccepted) / (width * height),
+    width,
+    height,
+    alphaAware: false,
+    threshold: null,
+    artifactPath: cleanedMaskPath,
+    componentCount: analyzeConnectedComponents(unionAccepted, width, height, 1).components.length,
+  };
+
+  for (const priorCluster of priorClusters) {
+    const existingMetrics = stageMetricsByCluster.get(priorCluster.clusterId) || [];
+    existingMetrics.push(
+      computeStageMetric({
+        clusterId: priorCluster.clusterId,
+        clusterRole: priorCluster.required ? "required" : "optional",
+        stage: "final_safety_mask",
+        mask: unionAccepted,
+        width,
+        height,
+        includedInFinalUnion: clusterContributions.some((item) => item.clusterId === priorCluster.clusterId && item.includedInFinalUnion),
+      }),
+    );
+    stageMetricsByCluster.set(priorCluster.clusterId, existingMetrics);
+  }
+
+  const occupancyMetricDebug = {
+    width,
+    height,
+    normalizationWidth: width,
+    normalizationHeight: height,
+    normalizationSource: "secondary_image_dimensions",
+    occupancyThresholdUsed: readNumberEnv("CONTINUITY_GEMINI_MASK_THRESHOLD", 170),
+    alphaStatsPath: alphaHistogramPath,
+    alphaHeatmapPath,
+    measurementStages: clusterDebugArtifacts.map((artifact) => ({
+      clusterId: artifact.clusterId,
+      measurementStage: artifact.measurementStage,
+      alphaAware: artifact.alphaAware,
+      threshold: artifact.threshold,
+      artifactPath: artifact.artifactPath,
+    })),
+    finalUnionMetric,
+    rejectionReason: finalUnionMetric.occupancyAreaRatio < adaptiveExpectation.effectiveMinAreaRatio ? "area_too_sparse" : null,
+    adaptiveExpectation,
+  };
+  nLog("[VERTEX_CONTINUITY_GEMINI_OCCUPANCY_METRIC_DEBUG]", occupancyMetricDebug);
+  await fs.writeFile(occupancyMetricDebugPath, JSON.stringify(occupancyMetricDebug, null, 2));
+
+  const occupancyLossByCluster = Array.from(stageMetricsByCluster.entries()).map(([clusterId, metrics]) => {
+    const morphology = metrics.find((metric) => metric.stage === "morphology_cleaned_mask");
+    const filtered = metrics.find((metric) => metric.stage === "component_filtered_mask");
+    const accepted = metrics.find((metric) => metric.stage === "accepted_cluster_mask");
+    const merged = metrics.find((metric) => metric.stage === "merged_union_mask");
+    const final = metrics.find((metric) => metric.stage === "final_safety_mask");
+    return {
+      clusterId,
+      clusterRole: metrics[0]?.clusterRole || "optional",
+      occupancyLossByStage: {
+        morphologyToComponentFiltered: Number((((morphology?.occupancyAreaRatio || 0) - (filtered?.occupancyAreaRatio || 0))).toFixed(6)),
+        componentFilteredToAccepted: Number((((filtered?.occupancyAreaRatio || 0) - (accepted?.occupancyAreaRatio || 0))).toFixed(6)),
+        acceptedToMergedUnion: Number((((accepted?.occupancyAreaRatio || 0) - (merged?.occupancyAreaRatio || 0))).toFixed(6)),
+        mergedUnionToFinalSafety: Number((((merged?.occupancyAreaRatio || 0) - (final?.occupancyAreaRatio || 0))).toFixed(6)),
+      },
+    };
+  });
+
+  const requiredClusterOccupancy = clusterContributions
+    .filter((item) => item.role === "required" && item.includedInFinalUnion)
+    .reduce((sum, item) => sum + item.contributionRatio, 0);
+  const optionalClusterOccupancy = clusterContributions
+    .filter((item) => item.role === "optional" && item.includedInFinalUnion)
+    .reduce((sum, item) => sum + item.contributionRatio, 0);
+  const skippedOptionalClusters = priorClusters
+    .filter((cluster) => !cluster.required && !clusterContributions.some((item) => item.clusterId === cluster.clusterId && item.includedInFinalUnion))
+    .map((cluster) => cluster.clusterId);
+
+  const occupancyCollapseAnalysis = {
+    rawOccupancyRatio: countMaskPixels(unionRawBest) / Math.max(1, width * height),
+    acceptedOccupancyRatio: finalUnionMetric.occupancyAreaRatio,
+    requiredClusterOccupancy,
+    optionalClusterOccupancy,
+    requiredOccupancyRatio: requiredClusterOccupancy,
+    optionalOccupancyRatio: optionalClusterOccupancy,
+    adaptiveExpectation,
+    occupancyLossByStage: {
+      rawToAccepted: Number(((countMaskPixels(unionRawBest) / Math.max(1, width * height)) - finalUnionMetric.occupancyAreaRatio).toFixed(6)),
+    },
+    occupancyLossByCluster,
+    skippedOptionalClusters,
+    finalThreshold: adaptiveExpectation.effectiveMinAreaRatio,
+    rejectionReason: finalUnionMetric.occupancyAreaRatio < adaptiveExpectation.effectiveMinAreaRatio ? "area_too_sparse" : null,
+    clusterContributions,
+    perClusterStageMetrics: Object.fromEntries(Array.from(stageMetricsByCluster.entries())),
+  };
+  await fs.writeFile(occupancyCollapseAnalysisPath, JSON.stringify(occupancyCollapseAnalysis, null, 2));
+
+  await fs.writeFile(componentAnalysisPath, JSON.stringify({
+    width,
+    height,
+    clusters: Array.from(componentAuditByCluster.values()),
+  }, null, 2));
+
+  const representativeMetricCluster = priorClusters.find((cluster) => stageMetricsByCluster.has(cluster.clusterId))?.clusterId;
+  const representativeMetrics = representativeMetricCluster ? stageMetricsByCluster.get(representativeMetricCluster) || [] : [];
+  const representativeRaw = representativeMetricCluster ? clusterDebugArtifacts.find((artifact) => artifact.clusterId === representativeMetricCluster) : null;
+  if (representativeRaw) {
+    const representativeClusterStages = representativeMetrics;
+    const thresholdedMask = representativeClusterStages.find((metric) => metric.stage === "thresholded_mask");
+    const componentFilteredMaskMetric = representativeClusterStages.find((metric) => metric.stage === "component_filtered_mask");
+    const acceptedMaskMetric = representativeClusterStages.find((metric) => metric.stage === "accepted_cluster_mask");
+    await writeRgbaPng(
+      buildOccupancyStageGridRgba({
+        rawMask: unionRawBest,
+        thresholdedMask: thresholdedMask ? await sharp(representativeRaw.thresholdedMaskPath).raw().toBuffer() as Buffer : unionRawBest,
+        componentFilteredMask: componentFilteredMaskMetric ? await sharp(representativeRaw.componentFilteredMaskPath).raw().toBuffer() as Buffer : unionAccepted,
+        acceptedMask: acceptedMaskMetric ? await sharp(representativeRaw.acceptedClusterMaskPath).raw().toBuffer() as Buffer : unionAccepted,
+        unionMask: unionAccepted,
+        finalMask: unionAccepted,
+        width,
+        height,
+      }),
+      width,
+      height * 6,
+      occupancyStageGridPath,
+    );
+  }
+
   const requiredClusterCount = priorClusters.filter((cluster) => cluster.required).length;
   const optionalClusterCount = Math.max(0, priorClusters.length - requiredClusterCount);
   const baselineObjectCallCount = Math.max(1, params.plan.furnitureZones.length * maxAttempts);
@@ -1612,9 +2524,15 @@ export async function generateGeminiOccupancyMask(params: {
     clusterApiCallCount,
     estimatedCallReductionRatio,
     perClusterMaskPaths,
+    requiredOccupancyRatio: requiredClusterOccupancy,
+    optionalOccupancyRatio: optionalClusterOccupancy,
+    adaptiveExpectation,
+    clusterContributions,
   };
   await fs.writeFile(qualityReportPath, JSON.stringify(qualityPayload, null, 2));
   await fs.writeFile(retryComparisonPath, JSON.stringify(clusterSummaries, null, 2));
+
+  const representativeClusterArtifact = clusterDebugArtifacts[0];
 
   nLog("[VERTEX_CONTINUITY_GEMINI_MASK]", {
     phase: "complete",
@@ -1637,6 +2555,29 @@ export async function generateGeminiOccupancyMask(params: {
   });
 
   return {
+    rawGeminiMaskPath: representativeClusterArtifact?.rawGeminiMaskPath,
+    thresholdedMaskPath: representativeClusterArtifact?.thresholdedMaskPath,
+    alphaNormalizedMaskPath: representativeClusterArtifact?.alphaNormalizedMaskPath,
+    morphologyCleanedMaskPath: representativeClusterArtifact?.morphologyCleanedMaskPath,
+    componentFilteredMaskPath: representativeClusterArtifact?.componentFilteredMaskPath,
+    acceptedClusterMaskPath: representativeClusterArtifact?.acceptedClusterMaskPath,
+    finalUnionMaskPath: cleanedMaskPath,
+    occupancyCollapseAnalysisPath,
+    occupancyStageGridPath,
+    componentAnalysisPath,
+    componentRetainedPath,
+    componentRemovedPath,
+    alphaHeatmapPath,
+    alphaHistogramPath,
+    occupancyMetricDebugPath,
+    thresholdComparisonPath: representativeClusterArtifact ? path.join(stageDebugDir, representativeClusterArtifact.clusterId, "threshold-comparison.json") : undefined,
+    stageComparisonPath,
+    measurementStage: "final_union_mask",
+    alphaAware: representativeClusterArtifact?.alphaAware,
+    measurementThreshold: representativeClusterArtifact?.threshold,
+    normalizationWidth: width,
+    normalizationHeight: height,
+    normalizationSource: "secondary_image_dimensions",
     cleanedMaskRaw: unionAccepted,
     rawMaskPath,
     cleanedMaskPath,

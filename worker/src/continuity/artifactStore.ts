@@ -116,8 +116,24 @@ export async function persistContinuityArtifacts(params: {
   const finalMaskTarget = path.join(artifactDir, "final-mask.png");
   const outputTarget = path.join(artifactDir, "imagen-output.png");
   const renderedOccupancyOverlayPath = path.join(artifactDir, "rendered-occupancy-overlay.png");
+  const alphaHeatmapTarget = path.join(artifactDir, "alpha-heatmap.png");
+  const alphaHistogramTarget = path.join(artifactDir, "alpha-histogram.json");
+  const occupancyMetricDebugTarget = path.join(artifactDir, "occupancy-metric-debug.json");
+  const occupancyCollapseAnalysisTarget = path.join(artifactDir, "occupancy-collapse-analysis.json");
+  const occupancyStageGridTarget = path.join(artifactDir, "occupancy-stage-grid.png");
+  const componentAnalysisTarget = path.join(artifactDir, "component-analysis.json");
+  const componentRetainedTarget = path.join(artifactDir, "component-retained.png");
+  const componentRemovedTarget = path.join(artifactDir, "component-removed.png");
+  const stageComparisonTarget = path.join(artifactDir, "occupancy-stage-comparison.png");
+  const stageDebugDir = path.join(artifactDir, "occupancy-stage-debug");
   const geminiRawMaskTarget = path.join(artifactDir, "gemini-occupancy-mask-raw.png");
   const geminiCleanedMaskTarget = path.join(artifactDir, "gemini-occupancy-mask-cleaned.png");
+  const geminiThresholdedMaskTarget = path.join(artifactDir, "thresholded-mask.png");
+  const geminiAlphaNormalizedMaskTarget = path.join(artifactDir, "alpha-normalized-mask.png");
+  const geminiMorphologyCleanedMaskTarget = path.join(artifactDir, "morphology-cleaned-mask.png");
+  const geminiComponentFilteredMaskTarget = path.join(artifactDir, "component-filtered-mask.png");
+  const geminiAcceptedClusterMaskTarget = path.join(artifactDir, "accepted-cluster-mask.png");
+  const geminiFinalUnionMaskTarget = path.join(artifactDir, "final-union-mask.png");
   const occupancyComponentsTarget = path.join(artifactDir, "occupancy-mask-components.png");
   const occupancyQualityTarget = path.join(artifactDir, "occupancy-quality-report.json");
   const occupancyRetryComparisonTarget = path.join(artifactDir, "occupancy-retry-comparison.json");
@@ -169,6 +185,22 @@ export async function persistContinuityArtifacts(params: {
   await copyIfPresent(params.masks.geminiMaskArtifacts?.anchorDistanceHeatmapPath, anchorDistanceHeatmapTarget);
   await copyIfPresent(params.masks.geminiMaskArtifacts?.floorContactVisualizationPath, floorContactVisualizationTarget);
   await copyIfPresent(params.masks.geminiMaskArtifacts?.acceptedRejectedOverlayPath, acceptedRejectedOverlayTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.alphaHeatmapPath, alphaHeatmapTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.alphaHistogramPath, alphaHistogramTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.occupancyMetricDebugPath, occupancyMetricDebugTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.occupancyCollapseAnalysisPath, occupancyCollapseAnalysisTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.occupancyStageGridPath, occupancyStageGridTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.componentAnalysisPath, componentAnalysisTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.componentRetainedPath, componentRetainedTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.componentRemovedPath, componentRemovedTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.stageComparisonPath, stageComparisonTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.rawGeminiMaskPath, geminiRawMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.thresholdedMaskPath, geminiThresholdedMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.alphaNormalizedMaskPath, geminiAlphaNormalizedMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.morphologyCleanedMaskPath, geminiMorphologyCleanedMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.componentFilteredMaskPath, geminiComponentFilteredMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.acceptedClusterMaskPath, geminiAcceptedClusterMaskTarget);
+  await copyIfPresent(params.masks.geminiMaskArtifacts?.finalUnionMaskPath, geminiFinalUnionMaskTarget);
 
   if (params.masks.geminiMaskArtifacts?.perClusterMaskPaths?.length) {
     await fs.mkdir(perClusterMaskDir, { recursive: true });
@@ -176,6 +208,11 @@ export async function persistContinuityArtifacts(params: {
       const targetMaskPath = path.join(perClusterMaskDir, path.basename(sourceMaskPath));
       await copyIfPresent(sourceMaskPath, targetMaskPath);
     }
+  }
+
+  if (params.masks.geminiMaskArtifacts?.thresholdComparisonPath) {
+    await fs.mkdir(stageDebugDir, { recursive: true });
+    await copyIfPresent(params.masks.geminiMaskArtifacts.thresholdComparisonPath, path.join(stageDebugDir, path.basename(params.masks.geminiMaskArtifacts.thresholdComparisonPath)));
   }
 
   await writeMaskOverlayOnImage({
@@ -217,6 +254,11 @@ export async function persistContinuityArtifacts(params: {
         occupancyComponentsTarget,
         occupancyQualityTarget,
         occupancyRetryComparisonTarget,
+        occupancyCollapseAnalysisTarget,
+        occupancyStageGridTarget,
+        componentAnalysisTarget,
+        componentRetainedTarget,
+        componentRemovedTarget,
         anchorDistanceHeatmapTarget,
         floorContactVisualizationTarget,
         acceptedRejectedOverlayTarget,

@@ -1,0 +1,168 @@
+{
+  "summary": {
+    "zoneCount": 6,
+    "coordinateSpace": "planner-provided normalized secondary-image coordinates",
+    "masterRegionCoordinatesAvailable": false,
+    "geometrySource": "deterministic_bbox_topology_v1"
+  },
+  "zones": [
+    {
+      "zoneId": "bed_01",
+      "furnitureType": "bed",
+      "masterFurnitureId": "bed",
+      "normalizedBoundingBox": {
+        "x": 0.58,
+        "y": 0.45,
+        "width": 0.42,
+        "height": 0.55
+      },
+      "anchorPoint": {
+        "x": 0.79,
+        "y": 1
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 0,
+      "occupancyPixelCount": 490767,
+      "finalPixelCount": 473648,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/bed_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/bed_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/bed_01-final-mask.png",
+      "notes": [
+        "Wall polygon missing or degenerate."
+      ]
+    },
+    {
+      "zoneId": "rug_01",
+      "furnitureType": "rug",
+      "masterFurnitureId": "rug",
+      "normalizedBoundingBox": {
+        "x": 0.4,
+        "y": 0.7,
+        "width": 0.6,
+        "height": 0.3
+      },
+      "anchorPoint": {
+        "x": 0.7,
+        "y": 1
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 0,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 0,
+      "occupancyPixelCount": 221603,
+      "finalPixelCount": 218492,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/rug_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/rug_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/rug_01-final-mask.png",
+      "notes": [
+        "Wall polygon missing or degenerate."
+      ]
+    },
+    {
+      "zoneId": "nightstand_01",
+      "furnitureType": "nightstand",
+      "masterFurnitureId": "nightstand_left",
+      "normalizedBoundingBox": {
+        "x": 0.5,
+        "y": 0.55,
+        "width": 0.15,
+        "height": 0.25
+      },
+      "anchorPoint": {
+        "x": 0.575,
+        "y": 0.8
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 84995,
+      "finalPixelCount": 84986,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/nightstand_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/nightstand_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/nightstand_01-final-mask.png",
+      "notes": []
+    },
+    {
+      "zoneId": "lamp_01",
+      "furnitureType": "lamp",
+      "masterFurnitureId": "lamp_left",
+      "normalizedBoundingBox": {
+        "x": 0.52,
+        "y": 0.4,
+        "width": 0.1,
+        "height": 0.2
+      },
+      "anchorPoint": {
+        "x": 0.5700000000000001,
+        "y": 0.6000000000000001
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 0,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 48088,
+      "finalPixelCount": 48043,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/lamp_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/lamp_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/lamp_01-final-mask.png",
+      "notes": [
+        "Floor polygon missing or degenerate."
+      ]
+    },
+    {
+      "zoneId": "artwork_01",
+      "furnitureType": "artwork",
+      "masterFurnitureId": "artwork_set",
+      "normalizedBoundingBox": {
+        "x": 0.6,
+        "y": 0.25,
+        "width": 0.25,
+        "height": 0.2
+      },
+      "anchorPoint": {
+        "x": 0.725,
+        "y": 0.45
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 0,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 119323,
+      "finalPixelCount": 119201,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/artwork_01-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/artwork_01-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/artwork_01-final-mask.png",
+      "notes": [
+        "Floor polygon missing or degenerate."
+      ]
+    },
+    {
+      "zoneId": "nightstand_02",
+      "furnitureType": "nightstand",
+      "masterFurnitureId": "nightstand_right",
+      "normalizedBoundingBox": {
+        "x": 0.9,
+        "y": 0.6,
+        "width": 0.09999999999999998,
+        "height": 0.25
+      },
+      "anchorPoint": {
+        "x": 0.95,
+        "y": 0.85
+      },
+      "floorPolygonPointCount": 4,
+      "wallPolygonPointCount": 4,
+      "plannerFloorPolygonPointCount": 4,
+      "plannerWallPolygonPointCount": 4,
+      "occupancyPixelCount": 46827,
+      "finalPixelCount": 36848,
+      "projectedOverlayPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/nightstand_02-projected-overlay.png",
+      "occupancyMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/nightstand_02-occupancy-mask.png",
+      "finalMaskPath": "/workspaces/RealEnhance-v2/worker/artifacts/manual-mask-review/img_302742f8-alpha-fix-deterministic-replay-gemini/zones/nightstand_02-final-mask.png",
+      "notes": []
+    }
+  ]
+}
