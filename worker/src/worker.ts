@@ -15498,6 +15498,8 @@ async function ensureEnhancedImagesCompletionTypeContractWithStartupPolicy(): Pr
       throw err;
     }
   }
+
+  throw new Error("[worker-startup] completion type contract check exhausted retries without terminal outcome");
 }
 
 const worker = new Worker(
