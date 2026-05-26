@@ -5,6 +5,7 @@ import { Storage } from "@google-cloud/storage";
 import { nLog } from "../../logger";
 
 const DEFAULT_DEBUG_BUCKET = "realenhance-vertex-continuity";
+const DEFAULT_DEBUG_BASE_PREFIX = "vertex-secondary-continuity";
 const DEBUG_RENDER_ROOT = "debug-renders";
 const DEBUG_MASK_EVOLUTION_ROOT = "debug-mask-evolution";
 
@@ -49,6 +50,11 @@ function getDebugBucketName(): string {
   return envBucket || DEFAULT_DEBUG_BUCKET;
 }
 
+function getDebugBasePrefix(): string {
+  const raw = String(process.env.VERTEX_CONTINUITY_DEBUG_BASE_PREFIX || DEFAULT_DEBUG_BASE_PREFIX).trim();
+  return raw.replace(/^\/+|\/+$/g, "");
+}
+
 function getSignedUrlTtlSeconds(): number {
   const configured = Number(process.env.VERTEX_CONTINUITY_DEBUG_SIGNED_URL_TTL_SECONDS || 86400);
   if (!Number.isFinite(configured)) {
@@ -58,7 +64,8 @@ function getSignedUrlTtlSeconds(): number {
 }
 
 async function maybeGenerateSignedUrl(bucketName: string, objectPath: string): Promise<string | null> {
-  if (String(process.env.VERTEX_CONTINUITY_DEBUG_SIGNED_URLS || "").trim().toLowerCase() !== "true") {
+  const signedUrlToggle = String(process.env.VERTEX_CONTINUITY_DEBUG_SIGNED_URLS || "true").trim().toLowerCase();
+  if (signedUrlToggle === "0" || signedUrlToggle === "false" || signedUrlToggle === "off") {
     return null;
   }
   try {
@@ -159,13 +166,15 @@ function buildRenderArtifactPath(params: {
   attempt: number;
   fileName: string;
 }): string {
+  const basePrefix = getDebugBasePrefix();
   return [
+    basePrefix,
     DEBUG_RENDER_ROOT,
     sanitizeSegment(params.jobId, "unknown-job"),
     sanitizeSegment(params.imageId, "unknown-image"),
     `attempt-${Math.max(1, params.attempt)}`,
     params.fileName,
-  ].join("/");
+  ].filter(Boolean).join("/");
 }
 
 function buildMaskEvolutionArtifactPath(params: {
@@ -173,12 +182,14 @@ function buildMaskEvolutionArtifactPath(params: {
   imageId: string;
   fileName: string;
 }): string {
+  const basePrefix = getDebugBasePrefix();
   return [
+    basePrefix,
     DEBUG_MASK_EVOLUTION_ROOT,
     sanitizeSegment(params.jobId, "unknown-job"),
     sanitizeSegment(params.imageId, "unknown-image"),
     params.fileName,
-  ].join("/");
+  ].filter(Boolean).join("/");
 }
 
 async function uploadAndLogRenderArtifact(params: {
@@ -406,11 +417,19 @@ export async function persistVertexRenderArtifacts(params: {
     }),
   }));
 
-  const rootGcsUri = `gs://${bucketName}/${DEBUG_RENDER_ROOT}/${sanitizeSegment(params.jobId, "unknown-job")}/${sanitizeSegment(params.imageId, "unknown-image")}/attempt-${Math.max(1, params.attempt)}`;
+  const basePrefix = getDebugBasePrefix();
+  const rootGcsUriWithPrefix = [
+    `gs://${bucketName}`,
+    basePrefix,
+    DEBUG_RENDER_ROOT,
+    sanitizeSegment(params.jobId, "unknown-job"),
+    sanitizeSegment(params.imageId, "unknown-image"),
+    `attempt-${Math.max(1, params.attempt)}`,
+  ].filter(Boolean).join("/");
 
   if (!params.validationPassed) {
     nLog("[VERTEX_RENDER_VALIDATION_FAILURE_ARTIFACTS]", {
-      gcsUri: rootGcsUri,
+      gcsUri: rootGcsUriWithPrefix,
       signedUrl: uploads.find((entry) => entry.artifactType === "raw-render")?.signedUrl || null,
       validationPassed: false,
       artifactType: "attempt-root",
@@ -421,7 +440,7 @@ export async function persistVertexRenderArtifacts(params: {
   }
 
   return {
-    rootGcsUri,
+    rootGcsUri: rootGcsUriWithPrefix,
     artifacts: uploads,
   };
 }
@@ -668,7 +687,14 @@ export async function persistMaskEvolutionArtifacts(params: {
     signedUrl: manifestUpload.signedUrl,
   });
 
-  const rootGcsUri = `gs://${bucketName}/${DEBUG_MASK_EVOLUTION_ROOT}/${sanitizeSegment(params.jobId, "unknown-job")}/${sanitizeSegment(params.imageId, "unknown-image")}`;
+  const basePrefix = getDebugBasePrefix();
+  const rootGcsUri = [
+    `gs://${bucketName}`,
+    basePrefix,
+    DEBUG_MASK_EVOLUTION_ROOT,
+    sanitizeSegment(params.jobId, "unknown-job"),
+    sanitizeSegment(params.imageId, "unknown-image"),
+  ].filter(Boolean).join("/");
   return {
     rootGcsUri,
     artifacts: uploads,
