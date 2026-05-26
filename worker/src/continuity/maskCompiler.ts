@@ -98,6 +98,11 @@ function resolveOccupancyPipelineMode(): "legacy_compiler" | "semantic_acquisiti
   return raw === "legacy_compiler" ? "legacy_compiler" : "semantic_acquisition_v1";
 }
 
+function isHardRevertOriginalExtractorEnabled(): boolean {
+  const raw = String(process.env.CONTINUITY_OCCUPANCY_HARD_REVERT || "1").trim().toLowerCase();
+  return raw !== "0" && raw !== "false" && raw !== "off";
+}
+
 function deriveMaskPath(basePath: string, stem: string): string {
   if (basePath.includes("-vertex-continuity-final-mask")) {
     return basePath.replace("-vertex-continuity-final-mask", `-vertex-continuity-${stem}`);
@@ -777,8 +782,24 @@ export async function compileDeterministicMask(params: {
 
   const renderMaskMode = resolveRenderMaskMode();
   const occupancyPipelineMode = resolveOccupancyPipelineMode();
+  const hardRevertOriginalExtractor = isHardRevertOriginalExtractorEnabled();
+  const effectiveOccupancyPipelineMode = hardRevertOriginalExtractor ? "legacy_compiler" : occupancyPipelineMode;
 
-  if (occupancyPipelineMode === "semantic_acquisition_v1" && !useGeminiOccupancyMaskMode()) {
+  if (hardRevertOriginalExtractor) {
+    nLog("[VERTEX_CONTINUITY_OCCUPANCY_HARD_REVERT_ACTIVE]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      configuredOccupancyPipelineMode: occupancyPipelineMode,
+      effectiveOccupancyPipelineMode,
+      semanticOccupancyBypassed: true,
+      supportSurfaceLogicDisabled: true,
+      topologyExpansionDisabled: true,
+      acquisitionFlow: "gemini_pass1_plus_pass2_or_merge_minimal_cleanup",
+    });
+  }
+
+  if (effectiveOccupancyPipelineMode === "semantic_acquisition_v1" && !useGeminiOccupancyMaskMode()) {
     throw new VertexSecondaryContinuityError(
       "Semantic acquisition pipeline requires Gemini occupancy mode; projection/topology fallback is forbidden in this mode",
       "semantic_pipeline_requires_gemini_occupancy"
@@ -971,7 +992,7 @@ export async function compileDeterministicMask(params: {
   let semanticRetainedComponents = 0;
   const semanticBase = Buffer.from(occupancyRaw);
 
-  if (renderMaskMode === "semantic_tight" && occupancyPipelineMode === "semantic_acquisition_v1") {
+  if (renderMaskMode === "semantic_tight" && effectiveOccupancyPipelineMode === "semantic_acquisition_v1") {
     const occupancyMergeStartedAt = Date.now();
     const semanticUnionResult = await buildSemanticUnionMask({
       width,
@@ -996,7 +1017,7 @@ export async function compileDeterministicMask(params: {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
       jobId: params.jobId,
-      pipelineMode: occupancyPipelineMode,
+      pipelineMode: effectiveOccupancyPipelineMode,
       passCount: semanticUnionResult.passCount,
       repairPassCount: semanticUnionResult.repairPassCount,
       semanticPass1MaskPath: semanticUnionResult.semanticArtifacts?.semanticPass1MaskPath || null,

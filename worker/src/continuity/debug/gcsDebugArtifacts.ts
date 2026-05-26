@@ -894,6 +894,28 @@ export async function persistMaskEvolutionArtifacts(params: {
           sourcePath: await firstExistingPath([params.rawGeminiMaskPath, params.occupancyMaskPath]),
         },
         {
+          fileName: "pass1-raw-mask.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass1-raw-mask.png"),
+            params.semanticPass1MaskPath,
+          ]),
+        },
+        {
+          fileName: "pass2-raw-mask.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass2-raw-mask.png"),
+            params.semanticPass2MaskPath,
+          ]),
+        },
+        {
+          fileName: "merged-mask.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "merged-mask.png"),
+            params.semanticMergedMaskPath,
+            params.occupancyMaskPath,
+          ]),
+        },
+        {
           fileName: "semantic-pass-1-mask.png",
           sourcePath: await firstExistingPath([params.semanticPass1MaskPath]),
         },
@@ -1011,6 +1033,9 @@ export async function persistMaskEvolutionArtifacts(params: {
 
   const stripTimelineCandidates = [
     "raw-gemini-mask.png",
+    "pass1-raw-mask.png",
+    "pass2-raw-mask.png",
+    "merged-mask.png",
     "semantic-pass-1-mask.png",
     "semantic-pass-2-mask.png",
     "merged-semantic-mask.png",

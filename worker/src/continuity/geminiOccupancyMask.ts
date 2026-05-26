@@ -3101,6 +3101,442 @@ async function writeOverlayImage(baseImagePath: string, rgba: Buffer, width: num
     .toFile(outputPath);
 }
 
+function shouldUseHardRevertOriginalExtractor(): boolean {
+  const raw = String(process.env.CONTINUITY_OCCUPANCY_HARD_REVERT || "1").trim().toLowerCase();
+  return raw !== "0" && raw !== "false" && raw !== "off";
+}
+
+function buildOriginalExtractorPassPrompt(roomType: string, objective: "pass1_primary" | "pass2_secondary"): string {
+  const pass1Targets = ["beds", "sofas", "dining tables", "major rugs", "major seating"].join(", ");
+  const pass2Targets = ["lamps", "bedside tables", "chairs", "artwork", "decor", "plants", "secondary furniture"].join(", ");
+  const passObjective = objective === "pass1_primary"
+    ? `Extract dominant visible furniture objects only: ${pass1Targets}.`
+    : `Extract visible secondary furniture and decor only: ${pass2Targets}.`;
+  return [
+    "Generate a binary object mask IMAGE.",
+    "Output IMAGE ONLY. No text, no JSON.",
+    "Mask semantics: WHITE=visible target objects, BLACK=everything else.",
+    passObjective,
+    "Strict rules:",
+    "- Segment visible objects only.",
+    "- No floors.",
+    "- No walls.",
+    "- No empty space.",
+    "- No support regions.",
+    "- No inferred placement zones.",
+    "- No occupancy expansion.",
+    "- No topology reasoning.",
+    "- False negatives are acceptable. False positives are not.",
+    `Room type: ${roomType}`,
+  ].join("\n");
+}
+
+async function runOriginalExtractorPass(params: {
+  passLabel: "pass1_primary" | "pass2_secondary";
+  roomType: string;
+  model: string;
+  ai: ReturnType<typeof getVertexGenAiClient>;
+  secondaryImage: { mime: string; data: string };
+  masterImage: { mime: string; data: string };
+  width: number;
+  height: number;
+  minComponentPixels: number;
+  closeRadius: number;
+  outPath: string;
+  jobId: string;
+  imageId: string;
+}): Promise<{ mask: Buffer; threshold: number | null; alphaAware: boolean }> {
+  const prompt = buildOriginalExtractorPassPrompt(params.roomType, params.passLabel);
+  const run = await runWithSelectedImageModel({
+    stageLabel: "2",
+    ai: params.ai as any,
+    model: params.model,
+    baseRequest: {
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: prompt },
+            { text: "APPROVED_MASTER_STAGED_IMAGE" },
+            { inlineData: { mimeType: params.masterImage.mime, data: params.masterImage.data } },
+            { text: "SECONDARY_TARGET_IMAGE" },
+            { inlineData: { mimeType: params.secondaryImage.mime, data: params.secondaryImage.data } },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        topP: 0.1,
+        candidateCount: 1,
+      },
+    } as any,
+    context: "continuity_gemini_occupancy_mask_original_extractor",
+    meta: {
+      jobId: params.jobId,
+      imageId: params.imageId,
+      stage: "2",
+      reason: `continuity_occupancy_original_${params.passLabel}`,
+      callType: "image_generation",
+    },
+  });
+
+  const parts: any[] = (run.resp as any)?.candidates?.[0]?.content?.parts || [];
+  const imagePart = findFirstInlineImagePart(parts);
+  if (!imagePart) {
+    throw new VertexSecondaryContinuityError(
+      `Original Gemini extractor returned no image for ${params.passLabel}`,
+      "gemini_occupancy_original_extractor_no_image"
+    );
+  }
+
+  const rawBuffer = Buffer.from(imagePart.data, "base64");
+  const resizedRaw = await sharp(rawBuffer)
+    .resize(params.width, params.height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .png()
+    .toBuffer();
+  await fs.writeFile(params.outPath, resizedRaw);
+
+  const grayscale = await sharp(resizedRaw)
+    .removeAlpha()
+    .grayscale()
+    .raw()
+    .toBuffer();
+  const alpha = await sharp(resizedRaw)
+    .ensureAlpha()
+    .extractChannel(3)
+    .raw()
+    .toBuffer();
+
+  const selected = await selectBinarizationCandidate({
+    grayscaleRaw: grayscale,
+    alphaRaw: alpha,
+    width: params.width,
+    height: params.height,
+    minComponentPixels: params.minComponentPixels,
+    morphologyCloseRadius: 0,
+    morphologyOpenRadius: 0,
+    areaTarget: params.passLabel === "pass1_primary" ? 0.09 : 0.05,
+  });
+
+  if (!selected) {
+    return {
+      mask: Buffer.alloc(params.width * params.height, 0),
+      threshold: null,
+      alphaAware: false,
+    };
+  }
+
+  let mask = Buffer.from(selected.mask);
+  if (params.closeRadius > 0) {
+    const closed = await sharp(mask, {
+      raw: { width: params.width, height: params.height, channels: 1 },
+    })
+      .dilate(params.closeRadius)
+      .erode(params.closeRadius)
+      .threshold(127, { grayscale: true })
+      .raw()
+      .toBuffer();
+    mask = Buffer.from(closed);
+  }
+
+  return {
+    mask,
+    threshold: selected.threshold,
+    alphaAware: selected.sourceChannel === "alpha",
+  };
+}
+
+function removeTinySpecks(mask: Buffer, width: number, height: number, minPixels: number): Buffer {
+  if (minPixels <= 1) {
+    return Buffer.from(mask);
+  }
+  const analyzed = analyzeConnectedComponents(mask, width, height, minPixels);
+  const allowed = new Set(analyzed.components.map((component) => component.id));
+  return keepAllowedComponents(mask, analyzed.labelMap, allowed);
+}
+
+function binaryOrMasks(a: Buffer, b: Buffer): Buffer {
+  const merged = Buffer.alloc(Math.max(a.length, b.length), 0);
+  for (let i = 0; i < merged.length; i += 1) {
+    merged[i] = (a[i] ?? 0) > 0 || (b[i] ?? 0) > 0 ? 255 : 0;
+  }
+  return merged;
+}
+
+async function generateHardRevertedOriginalMask(params: {
+  secondaryImagePath: string;
+  masterImagePath: string;
+  plan: PlacementPlan;
+  occupancyMaskPath: string;
+  continuityGroupId?: string | null;
+  jobId: string;
+  imageId: string;
+  model: string;
+  occupancyValidationMode: OccupancyValidationMode;
+}): Promise<GeminiOccupancyMaskResult> {
+  const startedAt = Date.now();
+  const metadata = await sharp(params.secondaryImagePath).metadata();
+  const sourceWidth = metadata.width || 0;
+  const sourceHeight = metadata.height || 0;
+  if (!sourceWidth || !sourceHeight) {
+    throw new VertexSecondaryContinuityError(
+      "Unable to read secondary image dimensions for reverted Gemini occupancy generation",
+      "gemini_occupancy_mask_missing_dimensions"
+    );
+  }
+
+  const outDir = path.dirname(params.occupancyMaskPath);
+  const pass1RawMaskPath = path.join(outDir, "pass1-raw-mask.png");
+  const pass2RawMaskPath = path.join(outDir, "pass2-raw-mask.png");
+  const mergedMaskPath = path.join(outDir, "merged-mask.png");
+  const rawMaskPath = path.join(outDir, "gemini-occupancy-mask-raw.png");
+  const cleanedMaskPath = path.join(outDir, "gemini-occupancy-mask-cleaned.png");
+  const componentsPath = path.join(outDir, "occupancy-mask-components.png");
+  const qualityReportPath = path.join(outDir, "occupancy-quality-report.json");
+  const retryComparisonPath = path.join(outDir, "occupancy-retry-comparison.json");
+  const anchorDistanceHeatmapPath = path.join(outDir, "anchor-distance-heatmap.png");
+  const floorContactVisualizationPath = path.join(outDir, "floor-contact-visualization.png");
+  const acceptedRejectedOverlayPath = path.join(outDir, "accepted-vs-rejected-components.png");
+
+  const minComponentPixels = Math.max(4, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_MIN_COMPONENT_PIXELS", 24)));
+  const tinySpeckPixels = Math.max(4, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_TINY_SPECK_PIXELS", 18)));
+  const closeRadius = Math.max(0, Math.min(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_CLOSE_RADIUS", 0))));
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_HARD_REVERT]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    model: params.model,
+    extractorPath: "original_dual_pass_raw",
+    semanticOccupancyBypassed: true,
+    supportSurfaceDisabled: true,
+    groundingProjectionDisabled: true,
+    topologyExpansionDisabled: true,
+    passExecution: "concurrent",
+    mergePolicy: "binary_or_only",
+    cleanupPolicy: "tiny_speck_only_optional_close",
+  });
+
+  const secondaryImage = toBase64(params.secondaryImagePath);
+  const masterImage = toBase64(params.masterImagePath);
+  const ai = getVertexGenAiClient();
+
+  const [pass1, pass2] = await Promise.all([
+    runOriginalExtractorPass({
+      passLabel: "pass1_primary",
+      roomType: params.plan.roomType,
+      model: params.model,
+      ai,
+      secondaryImage,
+      masterImage,
+      width: sourceWidth,
+      height: sourceHeight,
+      minComponentPixels,
+      closeRadius,
+      outPath: pass1RawMaskPath,
+      jobId: params.jobId,
+      imageId: params.imageId,
+    }),
+    runOriginalExtractorPass({
+      passLabel: "pass2_secondary",
+      roomType: params.plan.roomType,
+      model: params.model,
+      ai,
+      secondaryImage,
+      masterImage,
+      width: sourceWidth,
+      height: sourceHeight,
+      minComponentPixels,
+      closeRadius,
+      outPath: pass2RawMaskPath,
+      jobId: params.jobId,
+      imageId: params.imageId,
+    }),
+  ]);
+
+  const mergedRaw = binaryOrMasks(pass1.mask, pass2.mask);
+  await writeMaskPng(mergedRaw, sourceWidth, sourceHeight, mergedMaskPath);
+
+  const mergedCleaned = removeTinySpecks(mergedRaw, sourceWidth, sourceHeight, tinySpeckPixels);
+  await writeMaskPng(mergedRaw, sourceWidth, sourceHeight, rawMaskPath);
+  await writeMaskPng(mergedCleaned, sourceWidth, sourceHeight, cleanedMaskPath);
+
+  // Backward-compatible semantic artifact aliases now map directly to raw dual-pass outputs.
+  const semanticPass1MaskPath = path.join(outDir, "semantic-pass-1-mask.png");
+  const semanticPass2MaskPath = path.join(outDir, "semantic-pass-2-mask.png");
+  const semanticMergedMaskPath = path.join(outDir, "semantic-merged-mask.png");
+  await writeMaskPng(pass1.mask, sourceWidth, sourceHeight, semanticPass1MaskPath);
+  await writeMaskPng(pass2.mask, sourceWidth, sourceHeight, semanticPass2MaskPath);
+  await writeMaskPng(mergedCleaned, sourceWidth, sourceHeight, semanticMergedMaskPath);
+
+  const components = analyzeConnectedComponents(mergedCleaned, sourceWidth, sourceHeight, 1);
+  const componentRgba = Buffer.alloc(sourceWidth * sourceHeight * 4, 0);
+  const colorById = new Map<number, [number, number, number]>();
+  for (const component of components.components) {
+    const seed = component.id * 1103515245;
+    colorById.set(component.id, [
+      60 + ((seed >>> 3) % 170),
+      60 + ((seed >>> 11) % 170),
+      60 + ((seed >>> 19) % 170),
+    ]);
+  }
+  for (let i = 0; i < components.labelMap.length; i += 1) {
+    const id = components.labelMap[i];
+    const offset = i * 4;
+    if (id === 0 || !colorById.has(id)) {
+      componentRgba[offset + 3] = 255;
+      continue;
+    }
+    const [r, g, b] = colorById.get(id)!;
+    componentRgba[offset] = r;
+    componentRgba[offset + 1] = g;
+    componentRgba[offset + 2] = b;
+    componentRgba[offset + 3] = 255;
+  }
+  await sharp(componentRgba, {
+    raw: { width: sourceWidth, height: sourceHeight, channels: 4 },
+  }).png().toFile(componentsPath);
+
+  const acceptedOverlay = buildBinaryMaskOverlay(mergedCleaned, sourceWidth, sourceHeight, { r: 72, g: 210, b: 118, a: 120 });
+  await writeOverlayImage(params.secondaryImagePath, acceptedOverlay, sourceWidth, sourceHeight, anchorDistanceHeatmapPath);
+  await writeOverlayImage(params.secondaryImagePath, acceptedOverlay, sourceWidth, sourceHeight, floorContactVisualizationPath);
+  await writeOverlayImage(
+    params.secondaryImagePath,
+    buildAcceptedRejectedOverlay({
+      acceptedMask: mergedCleaned,
+      rejectedMask: Buffer.alloc(mergedCleaned.length, 0),
+      width: sourceWidth,
+      height: sourceHeight,
+    }),
+    sourceWidth,
+    sourceHeight,
+    acceptedRejectedOverlayPath,
+  );
+
+  const totalPixels = Math.max(1, sourceWidth * sourceHeight);
+  const occupancyPixelCount = countMaskPixels(mergedCleaned);
+  const bbox = computeBoundingBox(mergedCleaned, sourceWidth, sourceHeight);
+  const bboxArea = bbox ? Math.max(1, (bbox.maxX - bbox.minX + 1) * (bbox.maxY - bbox.minY + 1)) : 0;
+  const profile = getRoomTypeBandProfile(params.plan.roomType);
+  const safety: GeminiMaskSafetyTelemetry = {
+    occupancyAreaRatio: occupancyPixelCount / totalPixels,
+    connectedComponentCount: components.components.length,
+    floorContactRatio: 0,
+    anchorProximityScore: 1,
+    constraintAffinityScore: 1,
+    topRegionOccupancyRatio: measureTopRegionRatio(mergedCleaned, sourceWidth, sourceHeight),
+    wallTouchOccupancyRatio: measureWallTouchRatio(mergedCleaned, sourceWidth, sourceHeight),
+    boundingAreaRatio: bbox ? bboxArea / totalPixels : 0,
+    boundingFillRatio: bbox ? occupancyPixelCount / bboxArea : 0,
+  };
+
+  const qualityPayload = {
+    mode: "original_dual_pass_raw",
+    note: "Hard-reverted Gemini extractor path: concurrent pass1/pass2, binary OR, tiny cleanup only.",
+    pass1RawMaskPath,
+    pass2RawMaskPath,
+    mergedMaskPath,
+    semanticOccupancyBypassed: true,
+    supportSurfaceDisabled: true,
+    topologyExpansionDisabled: true,
+    floorProjectionDisabled: true,
+    passStats: {
+      pass1Pixels: countMaskPixels(pass1.mask),
+      pass2Pixels: countMaskPixels(pass2.mask),
+      mergedRawPixels: countMaskPixels(mergedRaw),
+      mergedCleanedPixels: occupancyPixelCount,
+      pass1Threshold: pass1.threshold,
+      pass2Threshold: pass2.threshold,
+      pass1AlphaAware: pass1.alphaAware,
+      pass2AlphaAware: pass2.alphaAware,
+      tinySpeckPixels,
+      closeRadius,
+    },
+  };
+  await fs.writeFile(qualityReportPath, JSON.stringify(qualityPayload, null, 2));
+  await fs.writeFile(retryComparisonPath, JSON.stringify([
+    {
+      pass: "pass1_primary",
+      threshold: pass1.threshold,
+      alphaAware: pass1.alphaAware,
+      occupancyPixels: countMaskPixels(pass1.mask),
+    },
+    {
+      pass: "pass2_secondary",
+      threshold: pass2.threshold,
+      alphaAware: pass2.alphaAware,
+      occupancyPixels: countMaskPixels(pass2.mask),
+    },
+  ], null, 2));
+
+  nLog("[VERTEX_CONTINUITY_GEMINI_MASK_HARD_REVERT_COMPLETE]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    pass1RawMaskPath,
+    pass2RawMaskPath,
+    mergedMaskPath,
+    cleanedMaskPath,
+    occupancyAreaRatio: Number(safety.occupancyAreaRatio.toFixed(4)),
+    connectedComponents: safety.connectedComponentCount,
+    latencyMs: Date.now() - startedAt,
+  });
+
+  return {
+    rawGeminiMaskPath: pass1RawMaskPath,
+    thresholdedMaskPath: undefined,
+    alphaNormalizedMaskPath: undefined,
+    morphologyCleanedMaskPath: mergedMaskPath,
+    componentFilteredMaskPath: cleanedMaskPath,
+    acceptedClusterMaskPath: cleanedMaskPath,
+    finalUnionMaskPath: mergedMaskPath,
+    semanticPass1MaskPath,
+    semanticPass2MaskPath,
+    semanticMergedMaskPath,
+    occupancyCollapseAnalysisPath: undefined,
+    occupancyStageGridPath: undefined,
+    componentAnalysisPath: undefined,
+    componentRetainedPath: undefined,
+    componentRemovedPath: undefined,
+    alphaHeatmapPath: undefined,
+    alphaHistogramPath: undefined,
+    occupancyMetricDebugPath: undefined,
+    thresholdComparisonPath: undefined,
+    stageComparisonPath: undefined,
+    measurementStage: "merged-mask",
+    alphaAware: pass1.alphaAware || pass2.alphaAware,
+    measurementThreshold: pass1.threshold ?? pass2.threshold ?? undefined,
+    normalizationWidth: sourceWidth,
+    normalizationHeight: sourceHeight,
+    normalizationSource: "source_dimensions",
+    cleanedMaskRaw: mergedCleaned,
+    rawMaskPath,
+    cleanedMaskPath,
+    componentsPath,
+    qualityReportPath,
+    retryComparisonPath,
+    anchorDistanceHeatmapPath,
+    floorContactVisualizationPath,
+    acceptedRejectedOverlayPath,
+    perClusterMaskPaths: [pass1RawMaskPath, pass2RawMaskPath],
+    usedConservativeFallback: false,
+    retryCount: 2,
+    clusterCount: 2,
+    requiredClusterCount: 1,
+    optionalClusterCount: 1,
+    clusterApiCallCount: 2,
+    estimatedCallReductionRatio: 0,
+    qualityScore: safety.occupancyAreaRatio,
+    model: params.model,
+    latencyMs: Date.now() - startedAt,
+    safety,
+    occupancyValidationMode: params.occupancyValidationMode,
+    effectiveMinFloorContactRatio: profile.minFloorContactRatio,
+    advisoryWarnings: [],
+    hardFailureReasons: [],
+  };
+}
+
 export async function generateGeminiOccupancyMask(params: {
   secondaryImagePath: string;
   masterImagePath: string;
@@ -3112,6 +3548,22 @@ export async function generateGeminiOccupancyMask(params: {
 }): Promise<GeminiOccupancyMaskResult> {
   const startedAt = Date.now();
   const model = String(process.env.CONTINUITY_GEMINI_OCCUPANCY_MODEL || "gemini-2.5-flash-image").trim();
+  const occupancyValidationMode = getOccupancyValidationMode();
+
+  if (shouldUseHardRevertOriginalExtractor()) {
+    return generateHardRevertedOriginalMask({
+      secondaryImagePath: params.secondaryImagePath,
+      masterImagePath: params.masterImagePath,
+      plan: params.plan,
+      occupancyMaskPath: params.occupancyMaskPath,
+      continuityGroupId: params.continuityGroupId,
+      jobId: params.jobId,
+      imageId: params.imageId,
+      model,
+      occupancyValidationMode,
+    });
+  }
+
   const minComponentPixels = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MIN_COMPONENT_PIXELS", 120)));
   const morphologyRadius = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MORPH_RADIUS", 1)));
   const morphologyCloseRadius = Math.max(0, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_MORPH_CLOSE_RADIUS", morphologyRadius || 1)));
@@ -4346,7 +4798,6 @@ export async function generateGeminiOccupancyMask(params: {
     return bbox.pixelCount / area;
   })();
 
-  const occupancyValidationMode = getOccupancyValidationMode();
   const evaluated = ensureSafetyOrThrow({
     mask: unionAccepted,
     width,
