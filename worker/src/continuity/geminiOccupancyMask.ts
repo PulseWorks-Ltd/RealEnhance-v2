@@ -145,6 +145,14 @@ type GeminiMaskSafetyTelemetry = {
   boundingFillRatio: number;
 };
 
+type OccupancyValidationMode = "strict_legacy" | "advisory_semantic";
+
+type OccupancySafetyIssue = {
+  reason: string;
+  code: string;
+  severity: "hard_fail" | "warning";
+};
+
 type OccupancyQualityBreakdown = {
   score: number;
   occupancyBandScore: number;
@@ -261,11 +269,20 @@ export type GeminiOccupancyMaskResult = {
   model: string;
   latencyMs: number;
   safety: GeminiMaskSafetyTelemetry;
+  occupancyValidationMode: OccupancyValidationMode;
+  effectiveMinFloorContactRatio: number;
+  advisoryWarnings: string[];
+  hardFailureReasons: string[];
 };
 
 function parseBooleanEnv(value: string | undefined): boolean {
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function getOccupancyValidationMode(): OccupancyValidationMode {
+  const normalized = String(process.env.CONTINUITY_OCCUPANCY_VALIDATION_MODE || "advisory_semantic").trim().toLowerCase();
+  return normalized === "strict_legacy" ? "strict_legacy" : "advisory_semantic";
 }
 
 function getProcessMemorySnapshot() {
@@ -2903,7 +2920,13 @@ function ensureSafetyOrThrow(params: {
   continuityGroupId?: string | null;
   imageId: string;
   jobId: string;
-}): { safety: GeminiMaskSafetyTelemetry; quality: OccupancyQualityBreakdown } {
+  validationMode: OccupancyValidationMode;
+}): {
+  safety: GeminiMaskSafetyTelemetry;
+  quality: OccupancyQualityBreakdown;
+  advisoryWarnings: string[];
+  hardFailureReasons: string[];
+} {
   const occupancyPixelCount = countMaskPixels(params.mask);
   const totalPixelCount = params.width * params.height;
   const occupancyAreaRatio = occupancyPixelCount / totalPixelCount;
@@ -2946,57 +2969,94 @@ function ensureSafetyOrThrow(params: {
     continuityGroupId: params.continuityGroupId || null,
     imageId: params.imageId,
     jobId: params.jobId,
+    validationMode: params.validationMode,
     ...Object.fromEntries(Object.entries(safety).map(([k, v]) => [k, Number(v.toFixed(4))])),
     qualityScore: Number(quality.score.toFixed(4)),
   });
 
+  const issues: OccupancySafetyIssue[] = [];
   if (occupancyPixelCount === 0) {
-    throw new VertexSecondaryContinuityError("Gemini occupancy mask is empty after cleanup", "gemini_occupancy_mask_empty");
+    issues.push({
+      reason: "Gemini occupancy mask is empty after cleanup",
+      code: "gemini_occupancy_mask_empty",
+      severity: "hard_fail",
+    });
   }
   if (occupancyAreaRatio < params.profile.minAreaRatio) {
-    throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask area too sparse (${occupancyAreaRatio.toFixed(3)} < ${params.profile.minAreaRatio.toFixed(3)})`,
-      "gemini_occupancy_mask_area_too_sparse"
-    );
+    issues.push({
+      reason: `Gemini occupancy mask area too sparse (${occupancyAreaRatio.toFixed(3)} < ${params.profile.minAreaRatio.toFixed(3)})`,
+      code: "gemini_occupancy_mask_area_too_sparse",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
   }
   if (occupancyAreaRatio > params.profile.maxAreaRatio) {
-    throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask area too large (${occupancyAreaRatio.toFixed(3)} > ${params.profile.maxAreaRatio.toFixed(3)})`,
-      "gemini_occupancy_mask_area_exceeded"
-    );
+    issues.push({
+      reason: `Gemini occupancy mask area too large (${occupancyAreaRatio.toFixed(3)} > ${params.profile.maxAreaRatio.toFixed(3)})`,
+      code: "gemini_occupancy_mask_area_exceeded",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
   }
   if (connectedComponentCount > params.profile.maxComponents) {
-    throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask has too many disconnected regions (${connectedComponentCount} > ${params.profile.maxComponents})`,
-      "gemini_occupancy_mask_components_exceeded"
-    );
+    issues.push({
+      reason: `Gemini occupancy mask has too many disconnected regions (${connectedComponentCount} > ${params.profile.maxComponents})`,
+      code: "gemini_occupancy_mask_components_exceeded",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
   }
   if (floorContactRatio < params.profile.minFloorContactRatio) {
-    throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask has insufficient floor contact (${floorContactRatio.toFixed(3)} < ${params.profile.minFloorContactRatio.toFixed(3)})`,
-      "gemini_occupancy_mask_floor_contact_low"
-    );
+    issues.push({
+      reason: `Gemini occupancy mask has insufficient floor contact (${floorContactRatio.toFixed(3)} < ${params.profile.minFloorContactRatio.toFixed(3)})`,
+      code: "gemini_occupancy_mask_floor_contact_low",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
   }
   if (topRegionOccupancyRatio > params.profile.maxTopRegionRatio) {
-    throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask touches excessive ceiling/wall-top area (${topRegionOccupancyRatio.toFixed(3)} > ${params.profile.maxTopRegionRatio.toFixed(3)})`,
-      "gemini_occupancy_mask_top_region_exceeded"
-    );
+    issues.push({
+      reason: `Gemini occupancy mask touches excessive ceiling/wall-top area (${topRegionOccupancyRatio.toFixed(3)} > ${params.profile.maxTopRegionRatio.toFixed(3)})`,
+      code: "gemini_occupancy_mask_top_region_exceeded",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
   }
   if (wallTouchOccupancyRatio > params.profile.maxWallTouchRatio) {
-    throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask touches excessive side-wall area (${wallTouchOccupancyRatio.toFixed(3)} > ${params.profile.maxWallTouchRatio.toFixed(3)})`,
-      "gemini_occupancy_mask_wall_touch_exceeded"
-    );
+    issues.push({
+      reason: `Gemini occupancy mask touches excessive side-wall area (${wallTouchOccupancyRatio.toFixed(3)} > ${params.profile.maxWallTouchRatio.toFixed(3)})`,
+      code: "gemini_occupancy_mask_wall_touch_exceeded",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
   }
   if (params.anchorScore < 0.28) {
+    issues.push({
+      reason: `Gemini occupancy mask has low anchor relevance (${params.anchorScore.toFixed(3)} < 0.280)`,
+      code: "gemini_occupancy_mask_anchor_relevance_low",
+      severity: params.validationMode === "strict_legacy" ? "hard_fail" : "warning",
+    });
+  }
+
+  const advisoryWarnings = issues.filter((issue) => issue.severity === "warning").map((issue) => issue.reason);
+  const hardFailureReasons = issues.filter((issue) => issue.severity === "hard_fail").map((issue) => issue.reason);
+
+  if (advisoryWarnings.length > 0) {
+    nLog("[PRE_RENDER_OCCUPANCY_WARNING]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      validationMode: params.validationMode,
+      floorContactRatio: Number(floorContactRatio.toFixed(4)),
+      occupancyAreaRatio: Number(occupancyAreaRatio.toFixed(4)),
+      connectedComponents: connectedComponentCount,
+      advisoryWarnings,
+    });
+  }
+
+  if (hardFailureReasons.length > 0) {
+    const firstHardFailure = issues.find((issue) => issue.severity === "hard_fail");
     throw new VertexSecondaryContinuityError(
-      `Gemini occupancy mask has low anchor relevance (${params.anchorScore.toFixed(3)} < 0.280)`,
-      "gemini_occupancy_mask_anchor_relevance_low"
+      hardFailureReasons[0],
+      firstHardFailure?.code || "gemini_occupancy_mask_invalid"
     );
   }
 
-  return { safety, quality };
+  return { safety, quality, advisoryWarnings, hardFailureReasons };
 }
 
 async function writeMaskPng(mask: Buffer, width: number, height: number, outputPath: string): Promise<void> {
@@ -4286,6 +4346,7 @@ export async function generateGeminiOccupancyMask(params: {
     return bbox.pixelCount / area;
   })();
 
+  const occupancyValidationMode = getOccupancyValidationMode();
   const evaluated = ensureSafetyOrThrow({
     mask: unionAccepted,
     width,
@@ -4302,6 +4363,7 @@ export async function generateGeminiOccupancyMask(params: {
     continuityGroupId: params.continuityGroupId,
     imageId: params.imageId,
     jobId: params.jobId,
+    validationMode: occupancyValidationMode,
   });
 
   logGeminiMaskMemory({
@@ -4599,6 +4661,8 @@ export async function generateGeminiOccupancyMask(params: {
     roomTypeProfile: profile,
     safety: evaluated.safety,
     quality: evaluated.quality,
+    occupancyValidationMode,
+    advisoryWarnings: evaluated.advisoryWarnings,
     usedConservativeFallback,
     priorClusterCount: priorClusters.length,
     requiredClusterCount,
@@ -4700,5 +4764,9 @@ export async function generateGeminiOccupancyMask(params: {
     model,
     latencyMs: Date.now() - startedAt,
     safety: evaluated.safety,
+    occupancyValidationMode,
+    effectiveMinFloorContactRatio: profile.minFloorContactRatio,
+    advisoryWarnings: evaluated.advisoryWarnings,
+    hardFailureReasons: evaluated.hardFailureReasons,
   };
 }

@@ -163,6 +163,20 @@ export type CompiledMaskResult = {
     diagonalBridgeLength: number;
     connectedComponentCount: number;
   };
+  occupancyValidationMode?: "strict_legacy" | "advisory_semantic";
+  preRenderOccupancyTelemetry?: {
+    floorContactRatio: number;
+    effectiveMinFloorContactRatio: number;
+    occupancyAreaRatio: number;
+    connectedComponents: number;
+    anchorProximityScore: number;
+    constraintAffinityScore: number;
+    topRegionOccupancyRatio: number;
+    wallTouchOccupancyRatio: number;
+    qualityScore: number;
+    advisoryWarnings: string[];
+    hardFailureReasons: string[];
+  };
   finalMaskBuffer: Buffer;
   finalMaskPath: string;
   width: number;
@@ -262,6 +276,15 @@ export type MaskValidationResult = {
     localContrastAnalysis: "pending_instrumentation";
     edgeRealismEvaluation: "pending_instrumentation";
   };
+  occupancyValidationMode?: "strict_legacy" | "advisory_semantic";
+  preRenderOccupancyTelemetry?: CompiledMaskResult["preRenderOccupancyTelemetry"];
+  postRenderContinuityEval?: {
+    outsideMaskDrift: number | null;
+    structuralConsistency: number | null;
+    groundingQuality: number | null;
+    continuityScore: number | null;
+    advisoryWarnings: string[];
+  } | null;
 };
 
 export type ImagenRenderInput = {

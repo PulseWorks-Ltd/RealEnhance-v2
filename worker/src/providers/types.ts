@@ -84,6 +84,16 @@ export type ImageRenderResponse = {
   mimeType: string;
   guidanceScale: number;
   payload: Record<string, unknown>;
+  postRenderContinuityEval?: {
+    validationPassed: boolean;
+    failureReason: string | null;
+    outsideMaskDrift: number | null;
+    structuralConsistency: number | null;
+    groundingQuality: number | null;
+    continuityScore: number | null;
+    advisoryWarnings: string[];
+    validatorMetrics: Record<string, unknown>;
+  };
 };
 
 export type ContinuityRepairRequest = {

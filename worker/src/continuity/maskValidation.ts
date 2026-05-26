@@ -156,6 +156,9 @@ export async function validateCompiledMask(params: {
       localContrastAnalysis: "pending_instrumentation",
       edgeRealismEvaluation: "pending_instrumentation",
     },
+    occupancyValidationMode: params.compiledMask.occupancyValidationMode,
+    preRenderOccupancyTelemetry: params.compiledMask.preRenderOccupancyTelemetry,
+    postRenderContinuityEval: null,
   };
 
   nLog("[CONTINUITY_MASK_VALIDATION]", {

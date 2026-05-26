@@ -6,6 +6,7 @@ import { persistContinuityArtifacts } from "../../continuity/artifactStore";
 import { persistMaskEvolutionArtifacts } from "../../continuity/debug/gcsDebugArtifacts";
 import { buildDeterministicPlanConstraintMask, compileDeterministicMask } from "../../continuity/maskCompiler";
 import { validateCompiledMask } from "../../continuity/maskValidation";
+import { VertexSecondaryContinuityError } from "../../continuity/types";
 import { ensureLocalImagePath, persistMaskArtifact, persistRemoteImage } from "../imageTransport";
 import type { ImageReference } from "../types";
 import type { ContinuityRepairProvider, ContinuityRepairRequest, ContinuityRepairResponse } from "../types";
@@ -384,6 +385,18 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         jobId: request.jobId,
         imageId: request.imageId,
       });
+      if (compiledMask.preRenderOccupancyTelemetry) {
+        nLog("[PRE_RENDER_OCCUPANCY_WARNING]", {
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          validationMode: compiledMask.occupancyValidationMode || "advisory_semantic",
+          floorContactRatio: Number(compiledMask.preRenderOccupancyTelemetry.floorContactRatio.toFixed(4)),
+          occupancyAreaRatio: Number(compiledMask.preRenderOccupancyTelemetry.occupancyAreaRatio.toFixed(4)),
+          connectedComponents: compiledMask.preRenderOccupancyTelemetry.connectedComponents,
+          advisoryWarnings: compiledMask.preRenderOccupancyTelemetry.advisoryWarnings,
+        });
+      }
       const maskImage = await persistMaskArtifact({
         maskPath: compiledMask.renderEditMaskPath,
         jobId: request.jobId,
@@ -521,6 +534,16 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         },
       });
       renderPayloadSummary = summarizeRenderPayload(render.payload);
+      nLog("[IMAGEN_RENDER_REQUEST_COMPLETE]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        outputPath: render.outputPath,
+        model: render.model,
+        latencyMs: render.latencyMs,
+        continuityEval: render.postRenderContinuityEval || null,
+      });
       nLog("[VERTEX_CONTINUITY_RENDER_PAYLOAD]", {
         phase: "complete",
         continuityGroupId: request.continuityGroupId || null,
@@ -529,7 +552,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         renderMode: request.renderMode,
         payloadSummary: renderPayloadSummary,
       });
-      await logImageAttemptUrl({
+      const rawRenderSigned = await logImageAttemptUrl({
         ctx: {
           jobId: request.jobId,
           imageId: request.imageId,
@@ -537,6 +560,17 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           attempt: request.attempt,
         },
         localPath: render.outputPath,
+      });
+      nLog("[IMAGEN_RENDER_OUTPUT_PERSISTED]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        outputPath: render.outputPath,
+        signedUrl: rawRenderSigned.signedUrl || null,
+        storageKey: rawRenderSigned.key || null,
+        mimeType: render.mimeType,
+        byteSize: await getFileSizeBytes(render.outputPath),
       });
       executionStage = "output-publication";
       nLog("[VERTEX_CONTINUITY_OUTPUT_PUBLICATION]", {
@@ -571,6 +605,15 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         renderedImageUri: renderedImage.uri || null,
         artifactName: renderedImage.artifactName || null,
       });
+      nLog("[IMAGEN_RENDER_SIGNED_URL_READY]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        renderedImageUri: renderedImage.uri || null,
+        rawRenderSignedUrl: rawRenderSigned.signedUrl || null,
+        rawRenderStorageKey: rawRenderSigned.key || null,
+      });
 
       executionStage = "artifact-persistence";
       const persistedArtifacts = await persistContinuityArtifacts({
@@ -588,6 +631,30 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         validation,
         render,
         renderedImageUri: renderedImage.uri || null,
+      });
+
+      validation.postRenderContinuityEval = render.postRenderContinuityEval
+        ? {
+            outsideMaskDrift: render.postRenderContinuityEval.outsideMaskDrift,
+            structuralConsistency: render.postRenderContinuityEval.structuralConsistency,
+            groundingQuality: render.postRenderContinuityEval.groundingQuality,
+            continuityScore: render.postRenderContinuityEval.continuityScore,
+            advisoryWarnings: render.postRenderContinuityEval.advisoryWarnings,
+          }
+        : null;
+
+      nLog("[POST_RENDER_CONTINUITY_EVAL]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        outsideMaskDrift: render.postRenderContinuityEval?.outsideMaskDrift ?? null,
+        structuralConsistency: render.postRenderContinuityEval?.structuralConsistency ?? null,
+        groundingQuality: render.postRenderContinuityEval?.groundingQuality ?? null,
+        continuityScore: render.postRenderContinuityEval?.continuityScore ?? null,
+        advisoryWarnings: render.postRenderContinuityEval?.advisoryWarnings || [],
+        validationPassed: render.postRenderContinuityEval?.validationPassed ?? true,
+        failureReason: render.postRenderContinuityEval?.failureReason || null,
       });
 
       nLog("[VERTEX_CONTINUITY_RESULT]", {
@@ -611,8 +678,15 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         queueName: request.queueName || null,
         workerIdentity: request.workerIdentity || null,
         renderedImageUri: renderedImage.uri || null,
-        result: "success",
+        result: render.postRenderContinuityEval?.validationPassed === false ? "post_render_validation_failed" : "success",
       });
+
+      if (render.postRenderContinuityEval?.validationPassed === false) {
+        throw new VertexSecondaryContinuityError(
+          render.postRenderContinuityEval.failureReason || "post_render_continuity_validation_failed",
+          render.postRenderContinuityEval.failureReason || "post_render_continuity_validation_failed"
+        );
+      }
 
       return {
         outputPath: render.outputPath,

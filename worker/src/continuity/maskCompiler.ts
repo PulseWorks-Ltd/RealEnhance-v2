@@ -891,6 +891,8 @@ export async function compileDeterministicMask(params: {
   let occupancyRaw: Buffer;
   let occupancyGenerationMode: CompiledMaskResult["occupancyGenerationMode"] = "polygon_projection_v1";
   let geminiMaskArtifacts: CompiledMaskResult["geminiMaskArtifacts"];
+  let occupancyValidationMode: CompiledMaskResult["occupancyValidationMode"];
+  let preRenderOccupancyTelemetry: CompiledMaskResult["preRenderOccupancyTelemetry"];
 
   if (useGeminiOccupancyMaskMode()) {
     const generationStartedAt = Date.now();
@@ -957,6 +959,20 @@ export async function compileDeterministicMask(params: {
       anchorProximityScore: geminiMask.safety.anchorProximityScore,
       topRegionOccupancyRatio: geminiMask.safety.topRegionOccupancyRatio,
       wallTouchOccupancyRatio: geminiMask.safety.wallTouchOccupancyRatio,
+    };
+    occupancyValidationMode = geminiMask.occupancyValidationMode;
+    preRenderOccupancyTelemetry = {
+      floorContactRatio: geminiMask.safety.floorContactRatio,
+      effectiveMinFloorContactRatio: geminiMask.effectiveMinFloorContactRatio,
+      occupancyAreaRatio: geminiMask.safety.occupancyAreaRatio,
+      connectedComponents: geminiMask.safety.connectedComponentCount,
+      anchorProximityScore: geminiMask.safety.anchorProximityScore,
+      constraintAffinityScore: geminiMask.safety.constraintAffinityScore,
+      topRegionOccupancyRatio: geminiMask.safety.topRegionOccupancyRatio,
+      wallTouchOccupancyRatio: geminiMask.safety.wallTouchOccupancyRatio,
+      qualityScore: geminiMask.qualityScore,
+      advisoryWarnings: geminiMask.advisoryWarnings,
+      hardFailureReasons: geminiMask.hardFailureReasons,
     };
     maskGenerationMs = Date.now() - generationStartedAt;
   } else {
@@ -1358,6 +1374,8 @@ export async function compileDeterministicMask(params: {
       diagonalBridgeLength,
       connectedComponentCount: semanticConnectedComponentCount,
     },
+    occupancyValidationMode,
+    preRenderOccupancyTelemetry,
     finalMaskBuffer,
     finalMaskPath: params.finalMaskPath,
     width,

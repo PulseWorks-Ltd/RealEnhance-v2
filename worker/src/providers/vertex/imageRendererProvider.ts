@@ -1776,6 +1776,17 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
       maskTransport: request.maskImage.kind,
     });
 
+    nLog("[IMAGEN_RENDER_REQUEST_BEGIN]", {
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      model,
+      outputPath: request.outputPath,
+      sourceTransport: request.sourceImage.kind,
+      maskTransport: request.maskImage.kind,
+    });
+
     nLog("[VERTEX_CONTINUITY_RENDER]", {
       phase: "start",
       continuityGroupId: request.continuityGroupId || null,
@@ -1935,12 +1946,24 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         });
       }
 
-      if (!driftValidation.validationPassed) {
-        throw new VertexSecondaryContinuityError(
-          `Outside-mask drift exceeded thresholds (mae=${driftValidation.mae}, ratio=${driftValidation.ratio})`,
-          "continuity_outside_mask_drift_exceeded"
-        );
-      }
+      const maxMae = typeof driftValidation.validatorMetrics.maxMae === "number"
+        ? driftValidation.validatorMetrics.maxMae
+        : null;
+      const maxChangedRatio = typeof driftValidation.validatorMetrics.maxChangedRatio === "number"
+        ? driftValidation.validatorMetrics.maxChangedRatio
+        : null;
+      const structuralConsistency = driftValidation.mae != null && maxMae != null && maxMae > 0
+        ? Number(Math.max(0, 1 - (driftValidation.mae / maxMae)).toFixed(4))
+        : null;
+      const groundingQuality = driftValidation.ratio != null && maxChangedRatio != null && maxChangedRatio > 0
+        ? Number(Math.max(0, 1 - (driftValidation.ratio / maxChangedRatio)).toFixed(4))
+        : null;
+      const continuityScore = structuralConsistency != null && groundingQuality != null
+        ? Number((((structuralConsistency + groundingQuality) / 2)).toFixed(4))
+        : structuralConsistency ?? groundingQuality;
+      const advisoryWarnings = driftValidation.validationPassed
+        ? []
+        : [`Outside-mask drift exceeded thresholds (mae=${driftValidation.mae}, ratio=${driftValidation.ratio})`];
 
       await fs.access(request.outputPath);
       const latencyMs = Date.now() - startedAt;
@@ -1981,6 +2004,16 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         mimeType: generated.mimeType,
         guidanceScale,
         payload: payload as unknown as Record<string, unknown>,
+        postRenderContinuityEval: {
+          validationPassed: driftValidation.validationPassed,
+          failureReason: driftValidation.failureReason,
+          outsideMaskDrift: driftValidation.ratio,
+          structuralConsistency,
+          groundingQuality,
+          continuityScore,
+          advisoryWarnings,
+          validatorMetrics: driftValidation.validatorMetrics,
+        },
       };
     } catch (error: any) {
       // Extract structured Vertex error body from the SDK ClientError message string
