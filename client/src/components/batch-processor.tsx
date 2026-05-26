@@ -590,6 +590,49 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
     .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
 }
 
+const STAGE2_TERMINAL_SIGNALS = new Set<string>([
+  "stage2_retry_failed",
+  "stage2_validation_failed",
+  "stage2_validation_exhausted",
+  "stage2_structural_exhausted",
+  "stage2_compliance_exhausted",
+  "composite_validation_exhausted",
+  "retry_exhausted",
+]);
+
+function tokenizeStage2Signals(parts: Array<unknown>): Set<string> {
+  const tokens = new Set<string>();
+  for (const part of parts) {
+    const normalized = String(part || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, "_")
+      .replace(/^_+|_+$/g, "");
+    if (!normalized) continue;
+    tokens.add(normalized);
+    for (const piece of normalized.split("_")) {
+      if (piece) tokens.add(piece);
+    }
+  }
+  return tokens;
+}
+
+function hasTerminalStage2FailureSignal(parts: Array<unknown>): boolean {
+  const tokens = tokenizeStage2Signals(parts);
+  for (const signal of STAGE2_TERMINAL_SIGNALS) {
+    if (tokens.has(signal)) return true;
+  }
+  return false;
+}
+
+function isRenderableFallbackArtifactUrl(url: string | null | undefined): boolean {
+  const normalized = toDisplayUrl(url);
+  if (!normalized) return false;
+  if (normalized === RESTORED_PLACEHOLDER) return false;
+  // Guard against known display-only placeholder labels accidentally surfacing as artifacts.
+  if (normalized.toLowerCase().includes("placeholder")) return false;
+  return true;
+}
+
 /**
  * FIX 3: Only show error messages for terminal failure states, not transient errors
  */
@@ -3629,6 +3672,30 @@ export default function BatchProcessor({
             uiStatus = 'error';
           }
 
+          const hasRenderableFallbackArtifact =
+            isRenderableFallbackArtifactUrl(stage1aUrl) ||
+            isRenderableFallbackArtifactUrl(stage1bUrl);
+          const hasFallbackOutputOnly = !stage2Url && hasRenderableFallbackArtifact;
+          const hasStage2FailureOrExhaustedSignal = hasTerminalStage2FailureSignal([
+            status,
+            normalizedStatus,
+            pipelineStatusRaw,
+            blockedStage,
+            fallbackStage,
+            validationNote,
+            ...(warningList || []),
+            ...(Array.isArray(it?.warnings) ? it.warnings : []),
+            it?.error,
+            it?.errorMessage,
+            it?.meta?.stage2BlockedReason,
+            it?.meta?.fallbackReason,
+          ]);
+          const derivedDisplayState: "fallback_available" | null = (
+            requestedStage2 === true &&
+            hasFallbackOutputOnly &&
+            hasStage2FailureOrExhaustedSignal
+          ) ? "fallback_available" : null;
+
           const hasAnyUrl = !!(displayUrl || stagePreview || it?.imageUrl || it?.image || extraResult?.imageUrl || extraResult?.url || resultUrlSafe);
           if (normalizedStatus === "processing" && hasAnyUrl && !statusHasUrlLoggedRef.current.has(String(resolvedJobKey || 'unknown'))) {
             statusHasUrlLoggedRef.current.add(String(resolvedJobKey || 'unknown'));
@@ -3661,7 +3728,7 @@ export default function BatchProcessor({
             if (!isTerminalNormalized) {
               nonTerminalIndices.push(idx);
             }
-            if (status === "failed" || completedFinal) {
+            if (status === "failed" || completedFinal || derivedDisplayState === "fallback_available") {
               reachedTargetOrFailedIndices.add(idx);
             }
             const filename = files[idx]?.name || `image-${idx + 1}`;
@@ -4254,6 +4321,7 @@ export default function BatchProcessor({
                 fallbackMessage: unifiedCompletion.fallbackMessage,
                 requestedFinalStage,
                 requestedStages: mergedRequestedStages,
+                displayState: derivedDisplayState || existing.displayState || null,
                 retryInfo: retryInfo || existing.retryInfo || existing.result?.retryInfo || undefined,
                 meta: mergedMeta,
                 // Preserve prior result object but refresh URLs and status fields
@@ -4276,6 +4344,7 @@ export default function BatchProcessor({
                   hardFail,
                   fallbackMessage: unifiedCompletion.fallbackMessage,
                   requestedFinalStage,
+                  displayState: derivedDisplayState || existing.result?.displayState || existing.displayState || null,
                   completionSource: (preserveExistingStage2Artifacts || preserveExistingEditArtifact)
                     ? (existing.result?.completionSource || existing.completionSource || completionSourceResolved)
                     : completionSourceResolved,
@@ -7082,6 +7151,8 @@ export default function BatchProcessor({
 
   const hasInFlightResults = results.some(r => {
     const st = String(r?.status || r?.result?.status || "").toLowerCase();
+    const isFallbackAvailableDisplay = r?.displayState === "fallback_available" || r?.result?.displayState === "fallback_available";
+    if (isFallbackAvailableDisplay) return false;
     return !r?.uiOverrideFailed && (st === "processing" || st === "queued" || st === "active");
   });
 
@@ -8177,11 +8248,36 @@ export default function BatchProcessor({
                           stage2Url,
                         });
                         const isSuccessStatus = ["completed", "complete", "done"].includes(status);
-                        const isError = status === "failed" && !hasCompletedEditArtifact;
+                        const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
+                        const resultWarnings = [
+                          ...(Array.isArray(result?.warnings) ? result.warnings : []),
+                          ...(Array.isArray(result?.result?.warnings) ? result.result.warnings : []),
+                        ];
+                        const hasStage2FailureOrExhaustedSignal = hasTerminalStage2FailureSignal([
+                          status,
+                          result?.pipelineStatusRaw,
+                          result?.result?.pipelineStatusRaw,
+                          blockedStage,
+                          result?.fallbackStage,
+                          result?.result?.fallbackStage,
+                          result?.validationNote,
+                          result?.result?.validationNote,
+                          ...resultWarnings,
+                          result?.error,
+                          result?.result?.error,
+                        ]);
+                        const isFallbackAvailableDisplay =
+                          result?.displayState === "fallback_available" ||
+                          (
+                            stage2Expected &&
+                            !stage2Url &&
+                            (isRenderableFallbackArtifactUrl(stage1AUrl) || isRenderableFallbackArtifactUrl(stage1BUrl)) &&
+                            hasStage2FailureOrExhaustedSignal
+                          );
+                        const isError = (status === "failed" || isFallbackAvailableDisplay) && !hasCompletedEditArtifact;
                         const targetStage: StageKey = requestedFinalStage;
                         const targetUrlPresent = unifiedCompletion.targetUrlPresent;
 
-                        const blockedStage = (result?.validation as any)?.blockedStage || (result?.result?.validation as any)?.blockedStage || result?.blockedStage || result?.result?.blockedStage || result?.meta?.blockedStage || null;
                         const resolvedFinalUrl = unifiedCompletion.displayImageUrl || finalResultUrl;
                         const isDone = isSuccessStatus && !!resolvedFinalUrl && !isError;
                         const isUiComplete = (!isError && isSuccessStatus && targetUrlPresent) || hasCompletedEditArtifact;
@@ -8190,7 +8286,7 @@ export default function BatchProcessor({
                         
                         const inFlightStatus = status === "processing" || status === "queued" || status === "active" || runState === 'running' || isUploading;
                         const isRetryActive = isRetrying || !!result?.retryInFlight;
-                        const isRetryStatusActive = status === "queued" || status === "processing" || status === "active" || isRetryActive;
+                        const isRetryStatusActive = !isFallbackAvailableDisplay && (status === "queued" || status === "processing" || status === "active" || isRetryActive);
                         const isRetryStatusTerminal =
                           result?.isTerminal === true ||
                           status === "completed" ||
@@ -8206,7 +8302,7 @@ export default function BatchProcessor({
                         }
                         const hasEditedOutput = hasEditedArtifact(result);
                         const canRetryThisImage = !isRetryStatusActive && !hasEditedOutput;
-                        const isProcessing = isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs);
+                        const isProcessing = !isFallbackAvailableDisplay && (isEditing || isRetryActive || (!isUiComplete && !isError && (inFlightStatus || isIntermediateProcessing)) || (status === "queued" && hasPreviewOutputs));
                         const isStrictRetry = strictRetryingIndices.has(i);
                         const attempts = (result?.attempts || result?.result?.attempts || 1) as number;
                         const improvingMessage = stage2Expected
@@ -8304,7 +8400,9 @@ export default function BatchProcessor({
                           declutterRequested: stage1BRequired,
                           furnitureReplacement,
                         });
-                        const displayStatus = isError
+                        const displayStatus = isFallbackAvailableDisplay
+                          ? "Sorry, we couldn't provide a staged image."
+                          : isError
                           ? "Enhancement Failed"
                           : result?.retryInFlight
                           ? getRetryStatusText(result?.retryStage)  // ✅ Show retry-specific message immediately
@@ -8329,7 +8427,9 @@ export default function BatchProcessor({
                           : isProcessing
                           ? baseProcessingMessage
                           : aiSteps[i] || "Waiting in queue...";
-                        const fallbackMessage = isUiComplete
+                        const fallbackMessage = isFallbackAvailableDisplay
+                          ? "Use Enhanced or Decluttered output, or retry Stage 2."
+                          : isUiComplete
                           ? unifiedCompletion.fallbackMessage
                           : null;
                         const hardFail = !!(result?.hardFail || result?.result?.hardFail);
