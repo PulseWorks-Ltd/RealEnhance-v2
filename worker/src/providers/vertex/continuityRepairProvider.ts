@@ -2,6 +2,7 @@ import { siblingOutPath } from "../../utils/images";
 import { logImageAttemptUrl } from "../../utils/debugImageUrls";
 import { nLog } from "../../logger";
 import { persistContinuityArtifacts } from "../../continuity/artifactStore";
+import { persistMaskEvolutionArtifacts } from "../../continuity/debug/gcsDebugArtifacts";
 import { buildDeterministicPlanConstraintMask, compileDeterministicMask } from "../../continuity/maskCompiler";
 import { validateCompiledMask } from "../../continuity/maskValidation";
 import { ensureLocalImagePath, persistMaskArtifact, persistRemoteImage } from "../imageTransport";
@@ -260,6 +261,44 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         finalPixelCount: compiledMask.finalPixelCount,
         occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
+
+      try {
+        const maskEvolutionUpload = await persistMaskEvolutionArtifacts({
+          jobId: request.jobId,
+          imageId: request.imageId,
+          continuityGroupId: request.continuityGroupId,
+          attempt: request.attempt,
+          width: compiledMask.width,
+          height: compiledMask.height,
+          rawGeminiMaskPath: compiledMask.geminiMaskArtifacts?.rawGeminiMaskPath || compiledMask.geminiMaskArtifacts?.rawMaskPath,
+          alphaNormalizedMaskPath: compiledMask.geminiMaskArtifacts?.alphaNormalizedMaskPath,
+          morphologyCleanedMaskPath: compiledMask.geminiMaskArtifacts?.morphologyCleanedMaskPath || compiledMask.geminiMaskArtifacts?.cleanedMaskPath,
+          componentFilteredMaskPath: compiledMask.geminiMaskArtifacts?.componentFilteredMaskPath,
+          floorContactVisualizationPath: compiledMask.geminiMaskArtifacts?.floorContactVisualizationPath,
+          acceptedClusterMaskPath: compiledMask.geminiMaskArtifacts?.acceptedClusterMaskPath,
+          occupancyConstraintMaskPath: effectiveOccupancyConstraintMaskPath,
+          occupancyMaskPath: compiledMask.occupancyMaskPath,
+          finalMaskPath: compiledMask.finalMaskPath,
+        });
+        nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS]", {
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          renderMode: request.renderMode,
+          gcsUri: maskEvolutionUpload.rootGcsUri,
+          artifactCount: maskEvolutionUpload.artifacts.length,
+          maskEvolutionStripPath: maskEvolutionUpload.maskEvolutionStripPath,
+        });
+      } catch (maskEvolutionError: any) {
+        nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS_FAILURE]", {
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          renderMode: request.renderMode,
+          error: maskEvolutionError?.message || String(maskEvolutionError),
+        });
+      }
+
       await logImageAttemptUrl({
         ctx: {
           jobId: request.jobId,
@@ -318,7 +357,13 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         renderMode: request.renderMode,
         intent: request.intent,
+        attempt: request.attempt,
         workerIdentity: request.workerIdentity,
+        debugMasks: {
+          occupancyMaskPath: compiledMask.occupancyMaskPath,
+          exclusionMaskPath: compiledMask.exclusionMaskPath,
+          finalMaskPath: compiledMask.finalMaskPath,
+        },
       });
       renderPayloadSummary = summarizeRenderPayload(render.payload);
       nLog("[VERTEX_CONTINUITY_RENDER_PAYLOAD]", {

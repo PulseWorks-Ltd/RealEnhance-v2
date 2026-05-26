@@ -2,6 +2,7 @@ import fs from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { nLog } from "../../logger";
+import { persistVertexRenderArtifacts } from "../../continuity/debug/gcsDebugArtifacts";
 import type { ContinuityRenderMode, PlacementPlan } from "../../continuity/types";
 import { VertexSecondaryContinuityError } from "../../continuity/types";
 import { toVertexImagePayload } from "../imageTransport";
@@ -1198,10 +1199,37 @@ async function buildVerifiedVertexImagePayload(
 }
 
 type OutsideMaskDriftMetrics = {
+  width: number;
+  height: number;
+  threshold: number;
   outsidePixelCount: number;
   meanAbsoluteDelta: number;
   changedPixelCount: number;
   changedPixelRatio: number;
+};
+
+type OutsideMaskDriftComputation = {
+  metrics: OutsideMaskDriftMetrics;
+  sourceRaw: Buffer;
+  candidateRaw: Buffer;
+  maskRaw: Buffer;
+};
+
+type OutsideMaskDriftVisualizations = {
+  outsideMaskDiffPng: Buffer;
+  outsideMaskHeatmapPng: Buffer;
+  overlayDebugPng: Buffer;
+};
+
+type OutsideMaskDriftValidationResult = {
+  skipped: boolean;
+  validationPassed: boolean;
+  failureReason: string | null;
+  mae: number | null;
+  ratio: number | null;
+  metrics: OutsideMaskDriftMetrics | null;
+  visualizations: OutsideMaskDriftVisualizations | null;
+  validatorMetrics: Record<string, unknown>;
 };
 
 async function measureOutsideMaskDrift(params: {
@@ -1209,7 +1237,7 @@ async function measureOutsideMaskDrift(params: {
   candidatePath: string;
   maskPath: string;
   changeThreshold: number;
-}): Promise<OutsideMaskDriftMetrics> {
+}): Promise<OutsideMaskDriftComputation> {
   const sourceMeta = await sharp(params.sourcePath).metadata();
   const width = Number(sourceMeta.width || 0);
   const height = Number(sourceMeta.height || 0);
@@ -1265,10 +1293,149 @@ async function measureOutsideMaskDrift(params: {
   const changedPixelRatio = outsidePixelCount > 0 ? changedPixelCount / outsidePixelCount : 0;
 
   return {
-    outsidePixelCount,
-    meanAbsoluteDelta,
-    changedPixelCount,
-    changedPixelRatio,
+    metrics: {
+      width,
+      height,
+      threshold,
+      outsidePixelCount,
+      meanAbsoluteDelta,
+      changedPixelCount,
+      changedPixelRatio,
+    },
+    sourceRaw,
+    candidateRaw,
+    maskRaw,
+  };
+}
+
+function blendChannel(base: number, overlay: number, alpha: number): number {
+  const clampedAlpha = Math.max(0, Math.min(1, alpha));
+  return Math.max(0, Math.min(255, Math.round((base * (1 - clampedAlpha)) + (overlay * clampedAlpha))));
+}
+
+function heatmapColor(intensity: number): [number, number, number] {
+  const value = Math.max(0, Math.min(1, intensity));
+  if (value < 0.33) {
+    const t = value / 0.33;
+    return [0, Math.round(255 * t), 255];
+  }
+  if (value < 0.66) {
+    const t = (value - 0.33) / 0.33;
+    return [Math.round(255 * t), 255, Math.round(255 * (1 - t))];
+  }
+  const t = (value - 0.66) / 0.34;
+  return [255, Math.round(255 * (1 - t)), 0];
+}
+
+async function loadOptionalMaskRaw(params: {
+  filePath?: string | null;
+  width: number;
+  height: number;
+}): Promise<Buffer | null> {
+  if (!params.filePath) {
+    return null;
+  }
+  try {
+    return await sharp(params.filePath)
+      .removeAlpha()
+      .grayscale()
+      .resize(params.width, params.height, { fit: "fill", kernel: sharp.kernel.nearest })
+      .raw()
+      .toBuffer();
+  } catch {
+    return null;
+  }
+}
+
+async function buildOutsideMaskDriftVisualizations(params: {
+  sourceRaw: Buffer;
+  candidateRaw: Buffer;
+  maskRaw: Buffer;
+  width: number;
+  height: number;
+  threshold: number;
+  occupancyMaskPath?: string | null;
+  exclusionMaskPath?: string | null;
+}): Promise<OutsideMaskDriftVisualizations> {
+  const pixelCount = params.width * params.height;
+  const diffRaw = Buffer.alloc(pixelCount * 3, 0);
+  const heatRaw = Buffer.alloc(pixelCount * 3, 0);
+  const overlayRaw = Buffer.alloc(pixelCount * 3, 0);
+  const occupancyRaw = await loadOptionalMaskRaw({
+    filePath: params.occupancyMaskPath,
+    width: params.width,
+    height: params.height,
+  });
+  const exclusionRaw = await loadOptionalMaskRaw({
+    filePath: params.exclusionMaskPath,
+    width: params.width,
+    height: params.height,
+  });
+
+  for (let index = 0; index < pixelCount; index += 1) {
+    const maskValue = params.maskRaw[index] ?? 0;
+    const pixelOffset = index * 3;
+
+    const sourceR = params.sourceRaw[pixelOffset] ?? 0;
+    const sourceG = params.sourceRaw[pixelOffset + 1] ?? 0;
+    const sourceB = params.sourceRaw[pixelOffset + 2] ?? 0;
+    const candR = params.candidateRaw[pixelOffset] ?? 0;
+    const candG = params.candidateRaw[pixelOffset + 1] ?? 0;
+    const candB = params.candidateRaw[pixelOffset + 2] ?? 0;
+
+    const dr = Math.abs(sourceR - candR);
+    const dg = Math.abs(sourceG - candG);
+    const db = Math.abs(sourceB - candB);
+    const outside = maskValue < 128;
+    const meanDelta = (dr + dg + db) / 3;
+    const normalized = Math.max(0, Math.min(1, (meanDelta * 3.6) / 255));
+    const [heatR, heatG, heatB] = heatmapColor(normalized);
+    const isOutsideDrift = outside && Math.max(dr, dg, db) >= params.threshold;
+
+    if (outside) {
+      diffRaw[pixelOffset] = dr;
+      diffRaw[pixelOffset + 1] = dg;
+      diffRaw[pixelOffset + 2] = db;
+      heatRaw[pixelOffset] = heatR;
+      heatRaw[pixelOffset + 1] = heatG;
+      heatRaw[pixelOffset + 2] = heatB;
+    }
+
+    let oR = sourceR;
+    let oG = sourceG;
+    let oB = sourceB;
+
+    if ((occupancyRaw?.[index] ?? 0) > 127) {
+      oR = blendChannel(oR, 72, 0.34);
+      oG = blendChannel(oG, 210, 0.34);
+      oB = blendChannel(oB, 118, 0.34);
+    }
+    if ((exclusionRaw?.[index] ?? 0) > 127) {
+      oR = blendChannel(oR, 48, 0.2);
+      oG = blendChannel(oG, 120, 0.2);
+      oB = blendChannel(oB, 232, 0.2);
+    }
+    if (isOutsideDrift) {
+      oR = blendChannel(oR, 255, 0.82);
+      oG = blendChannel(oG, 34, 0.82);
+      oB = blendChannel(oB, 34, 0.82);
+    }
+
+    overlayRaw[pixelOffset] = oR;
+    overlayRaw[pixelOffset + 1] = oG;
+    overlayRaw[pixelOffset + 2] = oB;
+  }
+
+  const [outsideMaskDiffPng, outsideMaskHeatmapPng, overlayDebugPng] = await Promise.all([
+    sharp(diffRaw, { raw: { width: params.width, height: params.height, channels: 3 } }).png().toBuffer(),
+    sharp(heatRaw, { raw: { width: params.width, height: params.height, channels: 3 } }).png().toBuffer(),
+    sharp(overlayRaw, { raw: { width: params.width, height: params.height, channels: 3 } }).png().toBuffer(),
+  ]);
+
+  return {
+    outsideMaskDiffPng,
+    outsideMaskHeatmapPng,
+    overlayDebugPng,
   };
 }
 
@@ -1278,7 +1445,7 @@ async function validateOutsideMaskDrift(params: {
   maskPath?: string;
   candidatePath: string;
   profile: ContinuityRendererProfile;
-}): Promise<void> {
+}): Promise<OutsideMaskDriftValidationResult> {
   if (!params.sourcePath || !params.maskPath) {
     nLog("[VERTEX_CONTINUITY_OUTSIDE_MASK_DRIFT]", {
       continuityGroupId: params.request.continuityGroupId || null,
@@ -1289,15 +1456,28 @@ async function validateOutsideMaskDrift(params: {
       skipped: true,
       reason: "missing_source_or_mask_local_path",
     });
-    return;
+    return {
+      skipped: true,
+      validationPassed: true,
+      failureReason: null,
+      mae: null,
+      ratio: null,
+      metrics: null,
+      visualizations: null,
+      validatorMetrics: {
+        skipped: true,
+        reason: "missing_source_or_mask_local_path",
+      },
+    };
   }
 
-  const metrics = await measureOutsideMaskDrift({
+  const measurement = await measureOutsideMaskDrift({
     sourcePath: params.sourcePath,
     candidatePath: params.candidatePath,
     maskPath: params.maskPath,
     changeThreshold: params.profile.outsideMaskChangeThreshold,
   });
+  const metrics = measurement.metrics;
 
   const meanAbsoluteDelta = Number(metrics.meanAbsoluteDelta.toFixed(4));
   const changedPixelRatio = Number(metrics.changedPixelRatio.toFixed(6));
@@ -1320,12 +1500,37 @@ async function validateOutsideMaskDrift(params: {
     status: exceedsMae || exceedsChangedRatio ? "failed" : "passed",
   });
 
-  if (exceedsMae || exceedsChangedRatio) {
-    throw new VertexSecondaryContinuityError(
-      `Outside-mask drift exceeded thresholds (mae=${meanAbsoluteDelta}, ratio=${changedPixelRatio})`,
-      "continuity_outside_mask_drift_exceeded"
-    );
-  }
+  const visualizations = await buildOutsideMaskDriftVisualizations({
+    sourceRaw: measurement.sourceRaw,
+    candidateRaw: measurement.candidateRaw,
+    maskRaw: measurement.maskRaw,
+    width: metrics.width,
+    height: metrics.height,
+    threshold: metrics.threshold,
+    occupancyMaskPath: params.request.debugMasks?.occupancyMaskPath,
+    exclusionMaskPath: params.request.debugMasks?.exclusionMaskPath,
+  });
+
+  return {
+    skipped: false,
+    validationPassed: !(exceedsMae || exceedsChangedRatio),
+    failureReason: exceedsMae || exceedsChangedRatio ? "continuity_outside_mask_drift_exceeded" : null,
+    mae: meanAbsoluteDelta,
+    ratio: changedPixelRatio,
+    metrics,
+    visualizations,
+    validatorMetrics: {
+      skipped: false,
+      outsidePixelCount: metrics.outsidePixelCount,
+      changedPixelCount: metrics.changedPixelCount,
+      meanAbsoluteDelta,
+      changedPixelRatio,
+      maxMae: params.profile.outsideMaskMaxMae,
+      maxChangedRatio: params.profile.outsideMaskMaxChangedRatio,
+      changeThreshold: params.profile.outsideMaskChangeThreshold,
+      status: exceedsMae || exceedsChangedRatio ? "failed" : "passed",
+    },
+  };
 }
 
 export class VertexImageRendererProvider implements ImageRendererProvider {
@@ -1593,13 +1798,53 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         });
       }
 
-      await validateOutsideMaskDrift({
+      const driftValidation = await validateOutsideMaskDrift({
         request,
         sourcePath: request.sourceImage.localPath,
         maskPath: request.maskImage.localPath,
         candidatePath: request.outputPath,
         profile: renderProfile,
       });
+
+      try {
+        await persistVertexRenderArtifacts({
+          jobId: request.jobId,
+          imageId: request.imageId,
+          attempt: Math.max(1, Number(request.attempt || 1)),
+          continuityGroupId: request.continuityGroupId,
+          renderMode: request.renderMode,
+          model,
+          validationPassed: driftValidation.validationPassed,
+          failureReason: driftValidation.failureReason,
+          mae: driftValidation.mae,
+          ratio: driftValidation.ratio,
+          sourceImagePath: sourceSnapshot.snapshotPath,
+          rawRenderPath: request.outputPath,
+          occupancyMaskPath: request.debugMasks?.occupancyMaskPath,
+          exclusionMaskPath: request.debugMasks?.exclusionMaskPath,
+          finalMaskPath: request.debugMasks?.finalMaskPath,
+          outsideMaskDiffPng: driftValidation.visualizations?.outsideMaskDiffPng,
+          outsideMaskHeatmapPng: driftValidation.visualizations?.outsideMaskHeatmapPng,
+          overlayDebugPng: driftValidation.visualizations?.overlayDebugPng,
+          validatorMetrics: driftValidation.validatorMetrics,
+        });
+      } catch (artifactError: any) {
+        nLog("[VERTEX_RENDER_ARTIFACT_PERSIST_FAILURE]", {
+          continuityGroupId: request.continuityGroupId || null,
+          imageId: request.imageId,
+          jobId: request.jobId,
+          renderMode: request.renderMode,
+          validationPassed: driftValidation.validationPassed,
+          error: artifactError?.message || String(artifactError),
+        });
+      }
+
+      if (!driftValidation.validationPassed) {
+        throw new VertexSecondaryContinuityError(
+          `Outside-mask drift exceeded thresholds (mae=${driftValidation.mae}, ratio=${driftValidation.ratio})`,
+          "continuity_outside_mask_drift_exceeded"
+        );
+      }
 
       await fs.access(request.outputPath);
       const latencyMs = Date.now() - startedAt;

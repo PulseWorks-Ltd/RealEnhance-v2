@@ -54,6 +54,7 @@ export type ImageRenderRequest = {
   maskImage: ImageReference;
   outputPath: string;
   prompt: string;
+  attempt?: number;
   continuityGroupId?: string | null;
   jobId: string;
   imageId: string;
@@ -61,6 +62,11 @@ export type ImageRenderRequest = {
   intent?: ContinuityIntentMetadata;
   guidanceScale?: number;
   workerIdentity?: string;
+  debugMasks?: {
+    occupancyMaskPath?: string | null;
+    exclusionMaskPath?: string | null;
+    finalMaskPath?: string | null;
+  };
 };
 
 export type ImageRenderResponse = {
