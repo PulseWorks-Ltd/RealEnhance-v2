@@ -505,7 +505,6 @@ function filterPass2BySemanticArbitration(params: {
     }
 
     const area = component.length;
-    const areaRatio = area / totalPixels;
     const centroidX = sumX / Math.max(1, area);
     const centroidY = sumY / Math.max(1, area);
     const groundingScore = maxY / Math.max(1, params.height - 1);
@@ -520,12 +519,19 @@ function filterPass2BySemanticArbitration(params: {
       anchorDistanceScore = 1 - Math.max(0, Math.min(1, distance / Math.max(1, diag)));
     }
 
+    // Keep arbitration intentionally light: this is semantic cleanup, not topology engineering.
+    const topPenalty = topHeavy ? 1 : 0;
+    const evidenceScore = (
+      (groundingScore * 0.35)
+      + (anchorDistanceScore * 0.25)
+      + (compactness * 0.25)
+      + ((1 - topPenalty) * 0.15)
+    );
+
     const keep = (
       area >= tinyAreaThreshold
-      && !topHeavy
-      && (groundingScore >= 0.44 || areaRatio >= 0.0025)
-      && (anchorDistanceScore >= 0.36 || areaRatio >= 0.004)
-      && compactness >= 0.14
+      && evidenceScore >= 0.46
+      && !(topHeavy && groundingScore < 0.5)
     );
 
     const target = keep ? filteredMask : suppressedMask;
@@ -1072,6 +1078,18 @@ export async function compileDeterministicMask(params: {
     semanticArtifacts = semanticComposition.semanticArtifacts;
 
     semanticComposition.mergedMask.copy(semanticBase);
+
+    nLog("[SEMANTIC_ARBITRATION_POLICY]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      policyVersion: "light_semantic_arbitration_v1",
+      featureCount: 4,
+      features: ["grounding", "top_heavy_penalty", "anchor_distance", "compactness"],
+      arbitrationSuppressedComponents: semanticArbitrationSuppressedComponents,
+      arbitrationRetainedComponents: semanticArbitrationRetainedComponents,
+      note: "bounded semantic cleanup; no support propagation, no topology bridge generation",
+    });
   }
 
   const semanticMergedPixelCount = countWhitePixels(semanticBase);

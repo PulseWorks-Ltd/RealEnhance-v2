@@ -1071,7 +1071,7 @@ function buildRoomTypeSemanticDirective(plan: PlacementPlan, priorCluster: Prior
       passLabel,
       includePriority: ["floor lamps", "dresser/chest", "accent chairs", "artwork near furniture"],
       suppressPriority: ["detached wall-only patterns", "ceiling-only objects", "background wall texture"],
-      objective: "Fill secondary furniture completeness without expanding anchor silhouettes or drifting into walls.",
+      objective: "Fill secondary furniture completeness using only clearly visible objects without expanding anchor silhouettes or drifting into walls.",
     };
   }
 
@@ -1088,7 +1088,7 @@ function buildRoomTypeSemanticDirective(plan: PlacementPlan, priorCluster: Prior
       passLabel,
       includePriority: ["tv unit", "chairs", "side tables", "floor lamps", "decor near floor"],
       suppressPriority: ["detached ceiling objects", "thin wall streaks"],
-      objective: "Add secondary furniture silhouettes while preserving seating geometry and room perspective.",
+      objective: "Add secondary furniture silhouettes from visible evidence only while preserving seating geometry and room perspective.",
     };
   }
 
@@ -1105,7 +1105,7 @@ function buildRoomTypeSemanticDirective(plan: PlacementPlan, priorCluster: Prior
       passLabel,
       includePriority: ["buffet", "sideboard", "artwork near furniture", "accent decor"],
       suppressPriority: ["ceiling pendant glow", "wall texture"],
-      objective: "Recover secondary dining objects without over-expanding beyond plausible grounded furniture.",
+      objective: "Recover secondary dining objects from visible evidence without over-expanding beyond grounded furniture.",
     };
   }
 
@@ -1121,7 +1121,7 @@ function buildRoomTypeSemanticDirective(plan: PlacementPlan, priorCluster: Prior
     passLabel,
     includePriority: ["secondary support furniture", "decor near anchored furniture"],
     suppressPriority: ["detached fragments", "ceiling/wall-only occupancy"],
-    objective: "Add completeness only where semantically plausible and grounded.",
+    objective: "Add completeness only where objects are visibly present, semantically plausible, and grounded.",
   };
 }
 
@@ -1141,6 +1141,13 @@ function buildOccupancyPrompt(plan: PlacementPlan, priorCluster: PriorCluster, f
     `Mission objective: ${directive.objective}`,
     `Include priority: ${directive.includePriority.join(", ")}`,
     `Suppress priority: ${directive.suppressPriority.join(", ")}`,
+    "Strict visible-only evidence policy:",
+    "- Segment only furniture that is clearly visible in SECONDARY_TARGET_IMAGE.",
+    "- Do NOT infer hidden, implied, stylistically likely, or occluded furniture.",
+    "- If evidence is uncertain, leave BLACK instead of guessing.",
+    "- Do NOT complete partially seen objects beyond visible silhouette evidence.",
+    "- Do NOT invent decor or architectural elements not visibly present.",
+    `Pass discipline: ${directive.passLabel === "pass_1_anchor" ? "focus on primary anchor mass only" : "focus on visible secondary/support objects only; do not duplicate or broaden anchor objects"}`,
     "Hard constraints:",
     "- Include only the specified furniture composition occupancy, perspective-aware.",
     "- Maintain relational coherence between the clustered furniture pieces.",
