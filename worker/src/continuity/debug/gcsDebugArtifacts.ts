@@ -884,83 +884,114 @@ export async function persistMaskEvolutionArtifacts(params: {
   );
   await fs.mkdir(tmpDir, { recursive: true });
 
-  const stageMap: Array<{ fileName: string; sourcePath: string | null; binary?: boolean }> = [
-    {
-      fileName: "raw-gemini-mask.png",
-      sourcePath: await firstExistingPath([params.rawGeminiMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "resized-source-mask.png",
-      sourcePath: await firstExistingPath([params.alphaNormalizedMaskPath, params.rawGeminiMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "topology-cleanup-mask.png",
-      sourcePath: await firstExistingPath([params.morphologyCleanedMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "morphology-close-mask.png",
-      sourcePath: await firstExistingPath([params.morphologyCleanedMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "morphology-open-mask.png",
-      sourcePath: await firstExistingPath([params.componentFilteredMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "floor-contact-projected-mask.png",
-      sourcePath: await firstExistingPath([params.floorContactVisualizationPath, params.componentFilteredMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "support-surface-mask.png",
-      sourcePath: await firstExistingPath([params.acceptedClusterMaskPath, params.componentFilteredMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "component-filtered-mask.png",
-      sourcePath: await firstExistingPath([params.componentFilteredMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "constraint-mask.png",
-      sourcePath: await firstExistingPath([params.occupancyConstraintMaskPath, params.occupancyMaskPath]),
-    },
-    {
-      fileName: "constraint-intersection-mask.png",
-      sourcePath: await firstExistingPath([params.occupancyMaskPath]),
-    },
-    {
-      fileName: "semantic-pass-1-mask.png",
-      sourcePath: await firstExistingPath([params.semanticPass1MaskPath]),
-    },
-    {
-      fileName: "semantic-pass-2-mask.png",
-      sourcePath: await firstExistingPath([params.semanticPass2MaskPath]),
-    },
-    {
-      fileName: "semantic-merged-mask.png",
-      sourcePath: await firstExistingPath([params.semanticMergedMaskPath]),
-    },
-    {
-      fileName: "final-occupancy-mask.png",
-      sourcePath: await firstExistingPath([params.occupancyMaskPath]),
-    },
-    {
-      fileName: "final-render-mask.png",
-      sourcePath: await firstExistingPath([params.finalMaskPath]),
-    },
-    {
-      fileName: "semantic-merge-conflicts-overlay.png",
-      sourcePath: await firstExistingPath([params.semanticMergeConflictsOverlayPath]),
-      binary: false,
-    },
-    {
-      fileName: "semantic-overlap-suppression-overlay.png",
-      sourcePath: await firstExistingPath([params.semanticOverlapSuppressionOverlayPath]),
-      binary: false,
-    },
-    {
-      fileName: "semantic-grounding-confidence-overlay.png",
-      sourcePath: await firstExistingPath([params.semanticGroundingConfidenceOverlayPath]),
-      binary: false,
-    },
-  ];
+  const occupancyPipelineMode = String(process.env.CONTINUITY_OCCUPANCY_PIPELINE_MODE || "semantic_acquisition_v1").trim().toLowerCase();
+  const semanticAcquisitionMode = occupancyPipelineMode !== "legacy_compiler";
+
+  const stageMap: Array<{ fileName: string; sourcePath: string | null; binary?: boolean }> = semanticAcquisitionMode
+    ? [
+        {
+          fileName: "raw-gemini-mask.png",
+          sourcePath: await firstExistingPath([params.rawGeminiMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "semantic-pass-1-mask.png",
+          sourcePath: await firstExistingPath([params.semanticPass1MaskPath]),
+        },
+        {
+          fileName: "semantic-pass-2-mask.png",
+          sourcePath: await firstExistingPath([params.semanticPass2MaskPath]),
+        },
+        {
+          fileName: "merged-semantic-mask.png",
+          sourcePath: await firstExistingPath([params.semanticMergedMaskPath]),
+        },
+        {
+          fileName: "cleaned-final-mask.png",
+          sourcePath: await firstExistingPath([params.finalMaskPath]),
+        },
+        {
+          fileName: "semantic-grounding-confidence-overlay.png",
+          sourcePath: await firstExistingPath([params.semanticGroundingConfidenceOverlayPath]),
+          binary: false,
+        },
+      ]
+    : [
+        {
+          fileName: "raw-gemini-mask.png",
+          sourcePath: await firstExistingPath([params.rawGeminiMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "resized-source-mask.png",
+          sourcePath: await firstExistingPath([params.alphaNormalizedMaskPath, params.rawGeminiMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "topology-cleanup-mask.png",
+          sourcePath: await firstExistingPath([params.morphologyCleanedMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "morphology-close-mask.png",
+          sourcePath: await firstExistingPath([params.morphologyCleanedMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "morphology-open-mask.png",
+          sourcePath: await firstExistingPath([params.componentFilteredMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "floor-contact-projected-mask.png",
+          sourcePath: await firstExistingPath([params.floorContactVisualizationPath, params.componentFilteredMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "support-surface-mask.png",
+          sourcePath: await firstExistingPath([params.acceptedClusterMaskPath, params.componentFilteredMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "component-filtered-mask.png",
+          sourcePath: await firstExistingPath([params.componentFilteredMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "constraint-mask.png",
+          sourcePath: await firstExistingPath([params.occupancyConstraintMaskPath, params.occupancyMaskPath]),
+        },
+        {
+          fileName: "constraint-intersection-mask.png",
+          sourcePath: await firstExistingPath([params.occupancyMaskPath]),
+        },
+        {
+          fileName: "semantic-pass-1-mask.png",
+          sourcePath: await firstExistingPath([params.semanticPass1MaskPath]),
+        },
+        {
+          fileName: "semantic-pass-2-mask.png",
+          sourcePath: await firstExistingPath([params.semanticPass2MaskPath]),
+        },
+        {
+          fileName: "semantic-merged-mask.png",
+          sourcePath: await firstExistingPath([params.semanticMergedMaskPath]),
+        },
+        {
+          fileName: "final-occupancy-mask.png",
+          sourcePath: await firstExistingPath([params.occupancyMaskPath]),
+        },
+        {
+          fileName: "final-render-mask.png",
+          sourcePath: await firstExistingPath([params.finalMaskPath]),
+        },
+        {
+          fileName: "semantic-merge-conflicts-overlay.png",
+          sourcePath: await firstExistingPath([params.semanticMergeConflictsOverlayPath]),
+          binary: false,
+        },
+        {
+          fileName: "semantic-overlap-suppression-overlay.png",
+          sourcePath: await firstExistingPath([params.semanticOverlapSuppressionOverlayPath]),
+          binary: false,
+        },
+        {
+          fileName: "semantic-grounding-confidence-overlay.png",
+          sourcePath: await firstExistingPath([params.semanticGroundingConfidenceOverlayPath]),
+          binary: false,
+        },
+      ];
 
   const normalizedStagePaths: Array<{ fileName: string; normalizedPath: string }> = [];
   for (const stage of stageMap) {
@@ -982,6 +1013,7 @@ export async function persistMaskEvolutionArtifacts(params: {
     "raw-gemini-mask.png",
     "semantic-pass-1-mask.png",
     "semantic-pass-2-mask.png",
+    "merged-semantic-mask.png",
     "semantic-merged-mask.png",
     "final-render-mask.png",
   ];

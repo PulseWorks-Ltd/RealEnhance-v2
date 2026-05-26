@@ -89,8 +89,13 @@ function findMaskBoundingBox(buffer: Buffer, width: number, height: number) {
 }
 
 function resolveRenderMaskMode(): "legacy" | "semantic_tight" {
-  const raw = String(process.env.CONTINUITY_RENDER_MASK_MODE || "legacy").trim().toLowerCase();
+  const raw = String(process.env.CONTINUITY_RENDER_MASK_MODE || "semantic_tight").trim().toLowerCase();
   return raw === "semantic_tight" ? "semantic_tight" : "legacy";
+}
+
+function resolveOccupancyPipelineMode(): "legacy_compiler" | "semantic_acquisition_v1" {
+  const raw = String(process.env.CONTINUITY_OCCUPANCY_PIPELINE_MODE || "semantic_acquisition_v1").trim().toLowerCase();
+  return raw === "legacy_compiler" ? "legacy_compiler" : "semantic_acquisition_v1";
 }
 
 function deriveMaskPath(basePath: string, stem: string): string {
@@ -352,16 +357,32 @@ function tinySemanticCleanup(mask: Buffer, width: number, height: number): Buffe
         }
       }
 
-      // Tight cleanup only: repair tiny pinholes and isolated specks.
-      if (!active && activeNeighborCount >= 7) {
-        cleaned[index] = 255;
-      } else if (active && activeNeighborCount === 0) {
+      // Strict invariant: semantic cleanup may only shrink occupancy, never grow.
+      // Remove isolated specks and tiny protrusions; do not fill holes.
+      if (active && activeNeighborCount <= 1) {
         cleaned[index] = 0;
       }
     }
   }
 
   return cleaned;
+}
+
+function assertMaskIsSubset(params: {
+  childMask: Buffer;
+  parentMask: Buffer;
+  errorCode: string;
+  stage: string;
+}): void {
+  const { childMask, parentMask, errorCode, stage } = params;
+  for (let i = 0; i < childMask.length; i += 1) {
+    if ((childMask[i] ?? 0) > 0 && (parentMask[i] ?? 0) === 0) {
+      throw new VertexSecondaryContinuityError(
+        `Semantic invariant violated at ${stage}: cleanup/merge introduced new occupancy pixels`,
+        errorCode
+      );
+    }
+  }
 }
 
 function buildMergeConflictOverlayRgba(pass1Mask: Buffer, pass2Mask: Buffer, width: number, height: number): Buffer {
@@ -434,151 +455,33 @@ function buildGroundingConfidenceOverlayRgba(params: {
   return rgba;
 }
 
-function filterPass2BySemanticArbitration(params: {
-  pass2Mask: Buffer;
-  pass1Mask: Buffer;
-  width: number;
-  height: number;
-}): {
-  filteredMask: Buffer;
-  suppressedMask: Buffer;
-  retainedComponents: number;
-  suppressedComponents: number;
-} {
-  const filteredMask = Buffer.alloc(params.pass2Mask.length, 0);
-  const suppressedMask = Buffer.alloc(params.pass2Mask.length, 0);
-  const visited = new Uint8Array(params.pass2Mask.length);
-  const offsets = [-1, 1, -params.width, params.width];
-  const pass1Bounds = findMaskBoundingBox(params.pass1Mask, params.width, params.height);
-  const pass1Center = pass1Bounds
-    ? {
-      x: pass1Bounds.x + (pass1Bounds.width / 2),
-      y: pass1Bounds.y + (pass1Bounds.height / 2),
-    }
-    : null;
-  const diag = Math.sqrt((params.width * params.width) + (params.height * params.height));
-  const totalPixels = Math.max(1, params.width * params.height);
-  const tinyAreaThreshold = Math.max(6, Math.floor(totalPixels * 0.000006));
-
-  let retainedComponents = 0;
-  let suppressedComponents = 0;
-
-  for (let index = 0; index < params.pass2Mask.length; index += 1) {
-    if ((params.pass2Mask[index] ?? 0) === 0 || visited[index] === 1) {
-      continue;
-    }
-
-    const component: number[] = [];
-    const queue: number[] = [index];
-    visited[index] = 1;
-    let minX = params.width;
-    let minY = params.height;
-    let maxX = -1;
-    let maxY = -1;
-    let sumX = 0;
-    let sumY = 0;
-
-    while (queue.length > 0) {
-      const current = queue.pop() as number;
-      component.push(current);
-      const x = current % params.width;
-      const y = Math.floor(current / params.width);
-      minX = Math.min(minX, x);
-      minY = Math.min(minY, y);
-      maxX = Math.max(maxX, x);
-      maxY = Math.max(maxY, y);
-      sumX += x;
-      sumY += y;
-
-      for (const offset of offsets) {
-        const next = current + offset;
-        if (next < 0 || next >= params.pass2Mask.length || visited[next] === 1 || (params.pass2Mask[next] ?? 0) === 0) {
-          continue;
-        }
-        const nx = next % params.width;
-        if (Math.abs(nx - x) > 1) {
-          continue;
-        }
-        visited[next] = 1;
-        queue.push(next);
-      }
-    }
-
-    const area = component.length;
-    const centroidX = sumX / Math.max(1, area);
-    const centroidY = sumY / Math.max(1, area);
-    const groundingScore = maxY / Math.max(1, params.height - 1);
-    const topHeavy = minY < Math.floor(params.height * 0.18);
-    const compactness = area / Math.max(1, (maxX - minX + 1) * (maxY - minY + 1));
-
-    let anchorDistanceScore = 1;
-    if (pass1Center) {
-      const dx = centroidX - pass1Center.x;
-      const dy = centroidY - pass1Center.y;
-      const distance = Math.sqrt((dx * dx) + (dy * dy));
-      anchorDistanceScore = 1 - Math.max(0, Math.min(1, distance / Math.max(1, diag)));
-    }
-
-    // Keep arbitration intentionally light: this is semantic cleanup, not topology engineering.
-    const topPenalty = topHeavy ? 1 : 0;
-    const evidenceScore = (
-      (groundingScore * 0.35)
-      + (anchorDistanceScore * 0.25)
-      + (compactness * 0.25)
-      + ((1 - topPenalty) * 0.15)
-    );
-
-    const keep = (
-      area >= tinyAreaThreshold
-      && evidenceScore >= 0.46
-      && !(topHeavy && groundingScore < 0.5)
-    );
-
-    const target = keep ? filteredMask : suppressedMask;
-    for (const pixelIndex of component) {
-      target[pixelIndex] = 255;
-    }
-    if (keep) {
-      retainedComponents += 1;
-    } else {
-      suppressedComponents += 1;
-    }
-  }
-
-  return {
-    filteredMask,
-    suppressedMask,
-    retainedComponents,
-    suppressedComponents,
-  };
-}
-
-type SemanticRenderComposition = {
+type SemanticUnionResult = {
   pass1Mask: Buffer;
   pass2Mask: Buffer;
   mergedMask: Buffer;
+  cleanedFinalMask: Buffer;
+  cleanedFinalMaskPath?: string;
   sourceStage: string;
   passCount: number;
   repairPassCount: number;
-  arbitrationSuppressedComponents: number;
-  arbitrationRetainedComponents: number;
+  suppressedComponents: number;
+  retainedComponents: number;
   sharpTransforms: number;
   semanticArtifacts?: CompiledMaskResult["semanticArtifacts"];
 };
 
-async function buildSemanticRenderComposition(params: {
+async function buildSemanticUnionMask(params: {
   width: number;
   height: number;
   geminiMaskArtifacts?: CompiledMaskResult["geminiMaskArtifacts"];
   fallbackMask: Buffer;
   finalMaskPath: string;
-}): Promise<SemanticRenderComposition> {
+}): Promise<SemanticUnionResult> {
   const debugArtifactsEnabled = isContinuityDebugArtifactsEnabled();
   const semanticPass1MaskPath = deriveMaskPath(params.finalMaskPath, "semantic-pass-1-mask");
   const semanticPass2MaskPath = deriveMaskPath(params.finalMaskPath, "semantic-pass-2-mask");
-  const semanticMergedMaskPath = deriveMaskPath(params.finalMaskPath, "semantic-merged-mask");
-  const semanticMergeConflictsOverlayPath = deriveMaskPath(params.finalMaskPath, "semantic-merge-conflicts-overlay");
-  const semanticOverlapSuppressionOverlayPath = deriveMaskPath(params.finalMaskPath, "semantic-overlap-suppression-overlay");
+  const semanticMergedMaskPath = deriveMaskPath(params.finalMaskPath, "merged-semantic-mask");
+  const cleanedFinalMaskPath = deriveMaskPath(params.finalMaskPath, "cleaned-final-mask");
   const semanticGroundingConfidenceOverlayPath = deriveMaskPath(params.finalMaskPath, "semantic-grounding-confidence-overlay");
 
   let sharpTransforms = 0;
@@ -619,54 +522,40 @@ async function buildSemanticRenderComposition(params: {
     sourceStage = `${semanticSeed.sourceStage}_fallback`;
   }
 
-  const pass2Suppressed = Buffer.alloc(pass2Mask.length, 0);
-  const pass2NoDup = Buffer.alloc(pass2Mask.length, 0);
-  for (let i = 0; i < pass2Mask.length; i += 1) {
-    if ((pass2Mask[i] ?? 0) === 0) {
-      continue;
-    }
-    if ((pass1Mask[i] ?? 0) > 0) {
-      pass2Suppressed[i] = 255;
-      continue;
-    }
-    pass2NoDup[i] = 255;
-  }
-
-  const pass2Arbitrated = filterPass2BySemanticArbitration({
-    pass2Mask: pass2NoDup,
-    pass1Mask,
-    width: params.width,
-    height: params.height,
-  });
   const tinyThreshold = Math.max(6, Math.floor((params.width * params.height) * 0.000006));
-  const pass2Filtered = removeTinyConnectedComponents(pass2Arbitrated.filteredMask, params.width, params.height, tinyThreshold);
-  for (let i = 0; i < pass2Suppressed.length; i += 1) {
-    if ((pass2Arbitrated.suppressedMask[i] ?? 0) > 0) {
-      pass2Suppressed[i] = 255;
-      continue;
-    }
-    if ((pass2Arbitrated.filteredMask[i] ?? 0) > 0 && (pass2Filtered[i] ?? 0) === 0) {
-      pass2Suppressed[i] = 255;
-    }
-  }
+  const pass2Filtered = removeTinyConnectedComponents(pass2Mask, params.width, params.height, tinyThreshold);
+  assertMaskIsSubset({
+    childMask: pass2Filtered,
+    parentMask: pass2Mask,
+    errorCode: "semantic_pass2_growth_forbidden",
+    stage: "pass2_tiny_fragment_cleanup",
+  });
 
-  let mergedMask = unionBinaryMasks(pass1Mask, pass2Filtered);
-  mergedMask = removeTinyConnectedComponents(mergedMask, params.width, params.height, tinyThreshold);
-  mergedMask = tinySemanticCleanup(mergedMask, params.width, params.height);
+  const strictUnionMask = unionBinaryMasks(pass1Mask, pass2Filtered);
+  let mergedMask = removeTinyConnectedComponents(strictUnionMask, params.width, params.height, tinyThreshold);
+  assertMaskIsSubset({
+    childMask: mergedMask,
+    parentMask: strictUnionMask,
+    errorCode: "semantic_merge_growth_forbidden",
+    stage: "post_union_tiny_cleanup",
+  });
+
+  const cleanedFinalMask = tinySemanticCleanup(mergedMask, params.width, params.height);
+  assertMaskIsSubset({
+    childMask: cleanedFinalMask,
+    parentMask: mergedMask,
+    errorCode: "semantic_cleanup_growth_forbidden",
+    stage: "shrink_only_cleanup",
+  });
 
   let semanticArtifacts: CompiledMaskResult["semanticArtifacts"] | undefined;
   if (debugArtifactsEnabled) {
     await sharp(pass1Mask, { raw: { width: params.width, height: params.height, channels: 1 } }).png().toFile(semanticPass1MaskPath);
     await sharp(pass2Filtered, { raw: { width: params.width, height: params.height, channels: 1 } }).png().toFile(semanticPass2MaskPath);
     await sharp(mergedMask, { raw: { width: params.width, height: params.height, channels: 1 } }).png().toFile(semanticMergedMaskPath);
-    await sharp(buildMergeConflictOverlayRgba(pass1Mask, pass2Filtered, params.width, params.height), {
-      raw: { width: params.width, height: params.height, channels: 4 },
-    }).png().toFile(semanticMergeConflictsOverlayPath);
-    await sharp(buildSuppressionOverlayRgba(pass2Suppressed, params.width, params.height), {
-      raw: { width: params.width, height: params.height, channels: 4 },
-    }).png().toFile(semanticOverlapSuppressionOverlayPath);
+    await sharp(cleanedFinalMask, { raw: { width: params.width, height: params.height, channels: 1 } }).png().toFile(cleanedFinalMaskPath);
     await sharp(buildGroundingConfidenceOverlayRgba({
-      mergedMask,
+      mergedMask: cleanedFinalMask,
       pass1Mask,
       pass2Mask: pass2Filtered,
       width: params.width,
@@ -678,8 +567,6 @@ async function buildSemanticRenderComposition(params: {
       semanticPass1MaskPath,
       semanticPass2MaskPath,
       semanticMergedMaskPath,
-      semanticMergeConflictsOverlayPath,
-      semanticOverlapSuppressionOverlayPath,
       semanticGroundingConfidenceOverlayPath,
     };
   }
@@ -688,11 +575,13 @@ async function buildSemanticRenderComposition(params: {
     pass1Mask,
     pass2Mask: pass2Filtered,
     mergedMask,
+    cleanedFinalMask,
+    cleanedFinalMaskPath,
     sourceStage,
     passCount: countWhitePixels(pass2Filtered) > 0 ? 2 : 1,
-    repairPassCount: 3,
-    arbitrationRetainedComponents: pass2Arbitrated.retainedComponents,
-    arbitrationSuppressedComponents: pass2Arbitrated.suppressedComponents,
+    repairPassCount: 1,
+    retainedComponents: 0,
+    suppressedComponents: 0,
     sharpTransforms,
     semanticArtifacts,
   };
@@ -887,6 +776,14 @@ export async function compileDeterministicMask(params: {
   }
 
   const renderMaskMode = resolveRenderMaskMode();
+  const occupancyPipelineMode = resolveOccupancyPipelineMode();
+
+  if (occupancyPipelineMode === "semantic_acquisition_v1" && !useGeminiOccupancyMaskMode()) {
+    throw new VertexSecondaryContinuityError(
+      "Semantic acquisition pipeline requires Gemini occupancy mode; projection/topology fallback is forbidden in this mode",
+      "semantic_pipeline_requires_gemini_occupancy"
+    );
+  }
 
   let occupancyRaw: Buffer;
   let occupancyGenerationMode: CompiledMaskResult["occupancyGenerationMode"] = "polygon_projection_v1";
@@ -1070,13 +967,13 @@ export async function compileDeterministicMask(params: {
   let semanticPassCount = 1;
   let occupancyRepairPassCount = 0;
   let semanticArtifacts: CompiledMaskResult["semanticArtifacts"];
-  let semanticArbitrationSuppressedComponents = 0;
-  let semanticArbitrationRetainedComponents = 0;
+  let semanticSuppressedComponents = 0;
+  let semanticRetainedComponents = 0;
   const semanticBase = Buffer.from(occupancyRaw);
 
-  if (renderMaskMode === "semantic_tight") {
+  if (renderMaskMode === "semantic_tight" && occupancyPipelineMode === "semantic_acquisition_v1") {
     const occupancyMergeStartedAt = Date.now();
-    const semanticComposition = await buildSemanticRenderComposition({
+    const semanticUnionResult = await buildSemanticUnionMask({
       width,
       height,
       geminiMaskArtifacts,
@@ -1084,27 +981,31 @@ export async function compileDeterministicMask(params: {
       finalMaskPath: params.finalMaskPath,
     });
     occupancyMergeMs = Date.now() - occupancyMergeStartedAt;
-    sharpTransformsFromSemanticSeed = semanticComposition.sharpTransforms;
-    renderMaskSourceStage = semanticComposition.sourceStage;
-    semanticConnectedComponentCount = countConnectedComponents(semanticComposition.mergedMask, width, height);
-    semanticPassCount = semanticComposition.passCount;
-    occupancyRepairPassCount = semanticComposition.repairPassCount;
-    semanticArbitrationSuppressedComponents = semanticComposition.arbitrationSuppressedComponents;
-    semanticArbitrationRetainedComponents = semanticComposition.arbitrationRetainedComponents;
-    semanticArtifacts = semanticComposition.semanticArtifacts;
+    sharpTransformsFromSemanticSeed = semanticUnionResult.sharpTransforms;
+    renderMaskSourceStage = semanticUnionResult.sourceStage;
+    semanticConnectedComponentCount = countConnectedComponents(semanticUnionResult.mergedMask, width, height);
+    semanticPassCount = semanticUnionResult.passCount;
+    occupancyRepairPassCount = semanticUnionResult.repairPassCount;
+    semanticSuppressedComponents = semanticUnionResult.suppressedComponents;
+    semanticRetainedComponents = semanticUnionResult.retainedComponents;
+    semanticArtifacts = semanticUnionResult.semanticArtifacts;
 
-    semanticComposition.mergedMask.copy(semanticBase);
+    semanticUnionResult.cleanedFinalMask.copy(semanticBase);
 
-    nLog("[SEMANTIC_ARBITRATION_POLICY]", {
+    nLog("[SEMANTIC_ACQUISITION_PIPELINE]", {
       continuityGroupId: params.continuityGroupId || null,
       imageId: params.imageId,
       jobId: params.jobId,
-      policyVersion: "light_semantic_arbitration_v1",
-      featureCount: 4,
-      features: ["grounding", "top_heavy_penalty", "anchor_distance", "compactness"],
-      arbitrationSuppressedComponents: semanticArbitrationSuppressedComponents,
-      arbitrationRetainedComponents: semanticArbitrationRetainedComponents,
-      note: "bounded semantic cleanup; no support propagation, no topology bridge generation",
+      pipelineMode: occupancyPipelineMode,
+      passCount: semanticUnionResult.passCount,
+      repairPassCount: semanticUnionResult.repairPassCount,
+      semanticPass1MaskPath: semanticUnionResult.semanticArtifacts?.semanticPass1MaskPath || null,
+      semanticPass2MaskPath: semanticUnionResult.semanticArtifacts?.semanticPass2MaskPath || null,
+      mergedSemanticMaskPath: semanticUnionResult.semanticArtifacts?.semanticMergedMaskPath || null,
+      cleanedFinalMaskPath: semanticUnionResult.cleanedFinalMaskPath || null,
+      mergePolicy: "binary_or_union",
+      cleanupPolicy: "shrink_only_no_growth",
+      note: "two-pass semantic acquisition with strict binary union and shrink-only cleanup",
     });
   }
 
@@ -1226,8 +1127,8 @@ export async function compileDeterministicMask(params: {
     renderExclusionClipLossRatio: Number(renderExclusionClipLossRatio.toFixed(6)),
     renderExclusionRetainedRatio: Number(renderExclusionRetainedRatio.toFixed(6)),
     exclusionGuardTriggered,
-    semanticArbitrationSuppressedComponents,
-    semanticArbitrationRetainedComponents,
+    semanticSuppressedComponents,
+    semanticRetainedComponents,
     semanticPassCount,
     occupancyMergeMs,
     occupancyRepairPassCount,
@@ -1276,7 +1177,8 @@ export async function compileDeterministicMask(params: {
       : [
         "semantic_pass_1",
         "semantic_pass_2",
-        "semantic_merge_arbitration",
+        "semantic_union_merge",
+        "tiny_cleanup",
         exclusionGuardTriggered ? "exclusion_guard_bypass" : "architectural_exclusion_intersection",
       ],
     continuityReasoningMaskLineage: [
@@ -1293,8 +1195,8 @@ export async function compileDeterministicMask(params: {
       ? "none"
       : (exclusionGuardTriggered ? "guarded_bypass" : "semantic_and_exclusion"),
     exclusionGuardTriggered,
-    semanticArbitrationSuppressedComponents,
-    semanticArbitrationRetainedComponents,
+    semanticSuppressedComponents,
+    semanticRetainedComponents,
   });
 
   const intermediateMaskCount = renderMaskMode === "semantic_tight" ? 10 : 5;
@@ -1310,6 +1212,7 @@ export async function compileDeterministicMask(params: {
     imageId: params.imageId,
     jobId: params.jobId,
     renderMaskMode,
+    occupancyPipelineMode,
     maskGenerationMs,
     topologyMs,
     morphologyMs,
