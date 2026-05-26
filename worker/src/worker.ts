@@ -15423,6 +15423,83 @@ async function ensureEnhancedImagesCompletionTypeContract(): Promise<void> {
   }
 }
 
+function isTransientDbConnectivityError(err: unknown): boolean {
+  const anyErr = err as any;
+  const code = String(anyErr?.code || "").toUpperCase();
+  const message = String(anyErr?.message || err || "").toLowerCase();
+
+  if (
+    code === "ETIMEDOUT" ||
+    code === "ECONNREFUSED" ||
+    code === "ECONNRESET" ||
+    code === "EHOSTUNREACH" ||
+    code === "ENETUNREACH" ||
+    // Postgres-side transient connection failures
+    code === "57P01" || // admin_shutdown
+    code === "57P02" || // crash_shutdown
+    code === "57P03"    // cannot_connect_now
+  ) {
+    return true;
+  }
+
+  return (
+    message.includes("connect etimedout") ||
+    message.includes("timeout") ||
+    message.includes("connection terminated") ||
+    message.includes("could not connect") ||
+    message.includes("cannot_connect_now")
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function ensureEnhancedImagesCompletionTypeContractWithStartupPolicy(): Promise<"confirmed" | "skipped"> {
+  const strict = String(process.env.WORKER_STRICT_CONTRACT_STARTUP || "0") === "1";
+  const maxRetriesRaw = Number(process.env.WORKER_CONTRACT_STARTUP_RETRIES || 3);
+  const retryDelayRaw = Number(process.env.WORKER_CONTRACT_STARTUP_RETRY_DELAY_MS || 5000);
+  const maxRetries = Number.isFinite(maxRetriesRaw) && maxRetriesRaw >= 0 ? Math.floor(maxRetriesRaw) : 3;
+  const retryDelayMs = Number.isFinite(retryDelayRaw) && retryDelayRaw >= 0 ? Math.floor(retryDelayRaw) : 5000;
+
+  let attempt = 0;
+  while (attempt <= maxRetries) {
+    attempt += 1;
+    try {
+      await ensureEnhancedImagesCompletionTypeContract();
+      if (attempt > 1) {
+        nLog(`[worker-startup] completion type contract confirmed after retry ${attempt}/${maxRetries + 1}`);
+      }
+      return "confirmed";
+    } catch (err) {
+      const transientConnectivity = isTransientDbConnectivityError(err);
+      const retriesRemaining = attempt <= maxRetries;
+
+      if (transientConnectivity && retriesRemaining) {
+        nLog("[worker-startup] completion type contract check transient DB error; retrying", {
+          attempt,
+          maxAttempts: maxRetries + 1,
+          delayMs: retryDelayMs,
+          error: (err as any)?.message || String(err),
+        });
+        await sleep(retryDelayMs);
+        continue;
+      }
+
+      if (transientConnectivity && !strict) {
+        nLog("[worker-startup] completion type contract check skipped after transient DB connectivity failures; continuing worker startup", {
+          attempts: attempt,
+          strictMode: strict,
+          error: (err as any)?.message || String(err),
+        });
+        return "skipped";
+      }
+
+      throw err;
+    }
+  }
+}
+
 const worker = new Worker(
   JOB_QUEUE_NAME,
   async (job: Job) => {
@@ -16335,8 +16412,10 @@ const worker = new Worker(
 
 void (async () => {
   try {
-    await ensureEnhancedImagesCompletionTypeContract();
-    nLog("[worker-startup] completion type contract confirmed");
+    const contractStartupState = await ensureEnhancedImagesCompletionTypeContractWithStartupPolicy();
+    if (contractStartupState === "confirmed") {
+      nLog("[worker-startup] completion type contract confirmed");
+    }
     await worker.run();
   } catch (err) {
     console.error("[worker-startup] completion type contract check failed", err);
