@@ -1197,6 +1197,150 @@ function findFirstInlineImagePart(parts: any[]): { mimeType: string; data: strin
   return null;
 }
 
+async function inspectInlineImageParts(parts: any[]): Promise<Array<{
+  index: number;
+  mimeType: string;
+  byteLength: number;
+  width: number | null;
+  height: number | null;
+  channels: number | null;
+  hasAlpha: boolean;
+}>> {
+  const images: Array<{
+    index: number;
+    mimeType: string;
+    byteLength: number;
+    width: number | null;
+    height: number | null;
+    channels: number | null;
+    hasAlpha: boolean;
+  }> = [];
+
+  for (let index = 0; index < parts.length; index += 1) {
+    const inlineData = parts[index]?.inlineData;
+    if (!inlineData?.data) {
+      continue;
+    }
+    const mimeType = String(inlineData.mimeType || "image/png").toLowerCase();
+    if (!mimeType.startsWith("image/")) {
+      continue;
+    }
+
+    const raw = Buffer.from(String(inlineData.data), "base64");
+    let width: number | null = null;
+    let height: number | null = null;
+    let channels: number | null = null;
+    let hasAlpha = false;
+    try {
+      const metadata = await sharp(raw).metadata();
+      width = metadata.width || null;
+      height = metadata.height || null;
+      channels = metadata.channels || null;
+      hasAlpha = metadata.hasAlpha === true;
+    } catch {
+      // Keep null metadata when the image cannot be decoded for inspection.
+    }
+
+    images.push({
+      index,
+      mimeType,
+      byteLength: raw.length,
+      width,
+      height,
+      channels,
+      hasAlpha,
+    });
+  }
+
+  return images;
+}
+
+async function selectInlineImagePartWithAudit(params: {
+  parts: any[];
+  passLogLabel: string;
+  continuityGroupId?: string | null;
+  imageId: string;
+  jobId: string;
+}): Promise<{
+  part: { mimeType: string; data: string } | null;
+  selectedIndex: number | null;
+}> {
+  const images = await inspectInlineImageParts(params.parts);
+  nLog("[GEMINI_INLINE_PARTS]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    pass: params.passLogLabel,
+    inlineImagePartCount: images.length,
+    parts: images,
+  });
+
+  const selected = images[0] || null;
+  if (!selected) {
+    nLog("[GEMINI_SELECTED_PART]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      pass: params.passLogLabel,
+      selectedIndex: null,
+      selectionReason: "no_inline_image_parts",
+    });
+    return { part: null, selectedIndex: null };
+  }
+
+  nLog("[GEMINI_SELECTED_PART]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    pass: params.passLogLabel,
+    selectedIndex: selected.index,
+    selectionReason: "first_inline_image_part_preserved_for_restore_audit",
+    mimeType: selected.mimeType,
+    width: selected.width,
+    height: selected.height,
+    channels: selected.channels,
+    hasAlpha: selected.hasAlpha,
+    byteLength: selected.byteLength,
+  });
+
+  const inlineData = params.parts[selected.index]?.inlineData;
+  return {
+    part: inlineData?.data
+      ? {
+          mimeType: String(inlineData.mimeType || "image/png").toLowerCase(),
+          data: String(inlineData.data),
+        }
+      : null,
+    selectedIndex: selected.index,
+  };
+}
+
+function bufferValueRange(buffer: Buffer): { min: number; max: number } {
+  let min = 255;
+  let max = 0;
+  for (const value of buffer) {
+    if (value < min) min = value;
+    if (value > max) max = value;
+  }
+  return { min, max };
+}
+
+function countPixelsByPredicate(buffer: Buffer, predicate: (value: number) => boolean): number {
+  let count = 0;
+  for (const value of buffer) {
+    if (predicate(value)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+async function writeRawChannelPng(channel: Buffer, width: number, height: number, outputPath: string): Promise<void> {
+  await sharp(channel, {
+    raw: { width, height, channels: 1 },
+  }).png().toFile(outputPath);
+}
+
 function analyzeConnectedComponents(mask: Buffer, width: number, height: number, minPixels: number): {
   labelMap: Int32Array;
   components: ConnectedComponentStats[];
@@ -3142,9 +3286,14 @@ async function runOriginalExtractorPass(params: {
   height: number;
   minComponentPixels: number;
   closeRadius: number;
-  outPath: string;
+  responseOriginalPath: string;
+  alphaPath: string;
+  grayscalePath: string;
+  thresholdedPath: string;
+  finalBinaryPath: string;
   jobId: string;
   imageId: string;
+  continuityGroupId?: string | null;
 }): Promise<{ mask: Buffer; threshold: number | null; alphaAware: boolean }> {
   const prompt = buildOriginalExtractorPassPrompt(params.roomType, params.passLabel);
   const run = await runWithSelectedImageModel({
@@ -3181,7 +3330,15 @@ async function runOriginalExtractorPass(params: {
   });
 
   const parts: any[] = (run.resp as any)?.candidates?.[0]?.content?.parts || [];
-  const imagePart = findFirstInlineImagePart(parts);
+  const passLogLabel = params.passLabel === "pass1_primary" ? "pass1" : "pass2";
+  const selectedPart = await selectInlineImagePartWithAudit({
+    parts,
+    passLogLabel,
+    continuityGroupId: params.continuityGroupId,
+    imageId: params.imageId,
+    jobId: params.jobId,
+  });
+  const imagePart = selectedPart.part;
   if (!imagePart) {
     throw new VertexSecondaryContinuityError(
       `Original Gemini extractor returned no image for ${params.passLabel}`,
@@ -3190,11 +3347,12 @@ async function runOriginalExtractorPass(params: {
   }
 
   const rawBuffer = Buffer.from(imagePart.data, "base64");
+  await fs.writeFile(params.responseOriginalPath, rawBuffer);
+  const responseMetadata = await sharp(rawBuffer).metadata();
   const resizedRaw = await sharp(rawBuffer)
     .resize(params.width, params.height, { fit: "fill", kernel: sharp.kernel.nearest })
     .png()
     .toBuffer();
-  await fs.writeFile(params.outPath, resizedRaw);
 
   const grayscale = await sharp(resizedRaw)
     .removeAlpha()
@@ -3206,6 +3364,9 @@ async function runOriginalExtractorPass(params: {
     .extractChannel(3)
     .raw()
     .toBuffer();
+
+  await writeRawChannelPng(alpha, params.width, params.height, params.alphaPath);
+  await writeRawChannelPng(grayscale, params.width, params.height, params.grayscalePath);
 
   const selected = await selectBinarizationCandidate({
     grayscaleRaw: grayscale,
@@ -3219,12 +3380,39 @@ async function runOriginalExtractorPass(params: {
   });
 
   if (!selected) {
+    await writeRawChannelPng(Buffer.alloc(params.width * params.height, 0), params.width, params.height, params.thresholdedPath);
+    await writeRawChannelPng(Buffer.alloc(params.width * params.height, 0), params.width, params.height, params.finalBinaryPath);
+    nLog(params.passLabel === "pass1_primary" ? "[PASS1_MASK_STATS]" : "[PASS2_MASK_STATS]", {
+      continuityGroupId: params.continuityGroupId || null,
+      imageId: params.imageId,
+      jobId: params.jobId,
+      width: params.width,
+      height: params.height,
+      responseWidth: responseMetadata.width || null,
+      responseHeight: responseMetadata.height || null,
+      responseChannels: responseMetadata.channels || null,
+      hasAlpha: responseMetadata.hasAlpha === true,
+      grayscaleMin: bufferValueRange(grayscale).min,
+      grayscaleMax: bufferValueRange(grayscale).max,
+      threshold: null,
+      inversionApplied: false,
+      polarityAssumption: null,
+      whiteRatio: 0,
+      blackRatio: 1,
+      transparentRatio: countPixelsByPredicate(alpha, (value) => value === 0) / Math.max(1, alpha.length),
+      occupancyPixelCount: 0,
+      occupancyPixelRatio: 0,
+      selectedInlineImageIndex: selectedPart.selectedIndex,
+      selectedInlineImageMimeType: imagePart.mimeType,
+    });
     return {
       mask: Buffer.alloc(params.width * params.height, 0),
       threshold: null,
       alphaAware: false,
     };
   }
+
+  await writeRawChannelPng(selected.thresholdedMask, params.width, params.height, params.thresholdedPath);
 
   let mask = Buffer.from(selected.mask);
   if (params.closeRadius > 0) {
@@ -3238,6 +3426,38 @@ async function runOriginalExtractorPass(params: {
       .toBuffer();
     mask = Buffer.from(closed);
   }
+
+  await writeRawChannelPng(mask, params.width, params.height, params.finalBinaryPath);
+
+  const occupancyPixelCount = countMaskPixels(mask);
+  const thresholdWhiteRatio = countPixelsByPredicate(selected.thresholdedMask, (value) => value > 0) / Math.max(1, selected.thresholdedMask.length);
+  const thresholdBlackRatio = 1 - thresholdWhiteRatio;
+  const transparentRatio = countPixelsByPredicate(alpha, (value) => value === 0) / Math.max(1, alpha.length);
+  const grayscaleRange = bufferValueRange(grayscale);
+  nLog(params.passLabel === "pass1_primary" ? "[PASS1_MASK_STATS]" : "[PASS2_MASK_STATS]", {
+    continuityGroupId: params.continuityGroupId || null,
+    imageId: params.imageId,
+    jobId: params.jobId,
+    width: params.width,
+    height: params.height,
+    responseWidth: responseMetadata.width || null,
+    responseHeight: responseMetadata.height || null,
+    responseChannels: responseMetadata.channels || null,
+    hasAlpha: responseMetadata.hasAlpha === true,
+    grayscaleMin: grayscaleRange.min,
+    grayscaleMax: grayscaleRange.max,
+    threshold: selected.threshold,
+    inversionApplied: selected.inverted,
+    polarityAssumption: selected.inverted ? "bright_background_dark_foreground" : "bright_foreground_dark_background",
+    whiteRatio: Number(thresholdWhiteRatio.toFixed(6)),
+    blackRatio: Number(thresholdBlackRatio.toFixed(6)),
+    transparentRatio: Number(transparentRatio.toFixed(6)),
+    occupancyPixelCount,
+    occupancyPixelRatio: Number((occupancyPixelCount / Math.max(1, mask.length)).toFixed(6)),
+    selectedInlineImageIndex: selectedPart.selectedIndex,
+    selectedInlineImageMimeType: imagePart.mimeType,
+    selectedSourceChannel: selected.sourceChannel,
+  });
 
   return {
     mask,
@@ -3289,6 +3509,18 @@ async function generateHardRevertedOriginalMask(params: {
   const pass1RawMaskPath = path.join(outDir, "pass1-raw-mask.png");
   const pass2RawMaskPath = path.join(outDir, "pass2-raw-mask.png");
   const mergedMaskPath = path.join(outDir, "merged-mask.png");
+  const mergedBeforeCleanupPath = path.join(outDir, "merged-mask-before-cleanup.png");
+  const mergedAfterCleanupPath = path.join(outDir, "merged-mask-after-cleanup.png");
+  const pass1ResponseOriginalPath = path.join(outDir, "pass1-response-original.png");
+  const pass1AlphaPath = path.join(outDir, "pass1-alpha.png");
+  const pass1GrayscalePath = path.join(outDir, "pass1-grayscale.png");
+  const pass1ThresholdedPath = path.join(outDir, "pass1-thresholded.png");
+  const pass1FinalBinaryPath = path.join(outDir, "pass1-final-binary.png");
+  const pass2ResponseOriginalPath = path.join(outDir, "pass2-response-original.png");
+  const pass2AlphaPath = path.join(outDir, "pass2-alpha.png");
+  const pass2GrayscalePath = path.join(outDir, "pass2-grayscale.png");
+  const pass2ThresholdedPath = path.join(outDir, "pass2-thresholded.png");
+  const pass2FinalBinaryPath = path.join(outDir, "pass2-final-binary.png");
   const rawMaskPath = path.join(outDir, "gemini-occupancy-mask-raw.png");
   const cleanedMaskPath = path.join(outDir, "gemini-occupancy-mask-cleaned.png");
   const componentsPath = path.join(outDir, "occupancy-mask-components.png");
@@ -3333,9 +3565,14 @@ async function generateHardRevertedOriginalMask(params: {
       height: sourceHeight,
       minComponentPixels,
       closeRadius,
-      outPath: pass1RawMaskPath,
+      responseOriginalPath: pass1ResponseOriginalPath,
+      alphaPath: pass1AlphaPath,
+      grayscalePath: pass1GrayscalePath,
+      thresholdedPath: pass1ThresholdedPath,
+      finalBinaryPath: pass1FinalBinaryPath,
       jobId: params.jobId,
       imageId: params.imageId,
+      continuityGroupId: params.continuityGroupId,
     }),
     runOriginalExtractorPass({
       passLabel: "pass2_secondary",
@@ -3348,16 +3585,26 @@ async function generateHardRevertedOriginalMask(params: {
       height: sourceHeight,
       minComponentPixels,
       closeRadius,
-      outPath: pass2RawMaskPath,
+      responseOriginalPath: pass2ResponseOriginalPath,
+      alphaPath: pass2AlphaPath,
+      grayscalePath: pass2GrayscalePath,
+      thresholdedPath: pass2ThresholdedPath,
+      finalBinaryPath: pass2FinalBinaryPath,
       jobId: params.jobId,
       imageId: params.imageId,
+      continuityGroupId: params.continuityGroupId,
     }),
   ]);
 
+  await writeMaskPng(pass1.mask, sourceWidth, sourceHeight, pass1RawMaskPath);
+  await writeMaskPng(pass2.mask, sourceWidth, sourceHeight, pass2RawMaskPath);
+
   const mergedRaw = binaryOrMasks(pass1.mask, pass2.mask);
   await writeMaskPng(mergedRaw, sourceWidth, sourceHeight, mergedMaskPath);
+  await writeMaskPng(mergedRaw, sourceWidth, sourceHeight, mergedBeforeCleanupPath);
 
   const mergedCleaned = removeTinySpecks(mergedRaw, sourceWidth, sourceHeight, tinySpeckPixels);
+  await writeMaskPng(mergedCleaned, sourceWidth, sourceHeight, mergedAfterCleanupPath);
   await writeMaskPng(mergedRaw, sourceWidth, sourceHeight, rawMaskPath);
   await writeMaskPng(mergedCleaned, sourceWidth, sourceHeight, cleanedMaskPath);
 
@@ -3436,6 +3683,8 @@ async function generateHardRevertedOriginalMask(params: {
     pass1RawMaskPath,
     pass2RawMaskPath,
     mergedMaskPath,
+    mergedBeforeCleanupPath,
+    mergedAfterCleanupPath,
     semanticOccupancyBypassed: true,
     supportSurfaceDisabled: true,
     topologyExpansionDisabled: true,

@@ -901,10 +901,72 @@ export async function persistMaskEvolutionArtifacts(params: {
           ]),
         },
         {
+          fileName: "pass1-response-original.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass1-response-original.png"),
+          ]),
+          binary: false,
+        },
+        {
+          fileName: "pass1-alpha.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass1-alpha.png"),
+          ]),
+        },
+        {
+          fileName: "pass1-grayscale.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass1-grayscale.png"),
+          ]),
+        },
+        {
+          fileName: "pass1-thresholded.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass1-thresholded.png"),
+          ]),
+        },
+        {
+          fileName: "pass1-final-binary.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass1-final-binary.png"),
+          ]),
+        },
+        {
           fileName: "pass2-raw-mask.png",
           sourcePath: await firstExistingPath([
             path.join(path.dirname(params.occupancyMaskPath), "pass2-raw-mask.png"),
             params.semanticPass2MaskPath,
+          ]),
+        },
+        {
+          fileName: "pass2-response-original.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass2-response-original.png"),
+          ]),
+          binary: false,
+        },
+        {
+          fileName: "pass2-alpha.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass2-alpha.png"),
+          ]),
+        },
+        {
+          fileName: "pass2-grayscale.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass2-grayscale.png"),
+          ]),
+        },
+        {
+          fileName: "pass2-thresholded.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass2-thresholded.png"),
+          ]),
+        },
+        {
+          fileName: "pass2-final-binary.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "pass2-final-binary.png"),
           ]),
         },
         {
@@ -913,6 +975,18 @@ export async function persistMaskEvolutionArtifacts(params: {
             path.join(path.dirname(params.occupancyMaskPath), "merged-mask.png"),
             params.semanticMergedMaskPath,
             params.occupancyMaskPath,
+          ]),
+        },
+        {
+          fileName: "merged-mask-before-cleanup.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "merged-mask-before-cleanup.png"),
+          ]),
+        },
+        {
+          fileName: "merged-mask-after-cleanup.png",
+          sourcePath: await firstExistingPath([
+            path.join(path.dirname(params.occupancyMaskPath), "merged-mask-after-cleanup.png"),
           ]),
         },
         {
@@ -1033,9 +1107,17 @@ export async function persistMaskEvolutionArtifacts(params: {
 
   const stripTimelineCandidates = [
     "raw-gemini-mask.png",
+    "pass1-response-original.png",
     "pass1-raw-mask.png",
+    "pass1-thresholded.png",
+    "pass1-final-binary.png",
+    "pass2-response-original.png",
     "pass2-raw-mask.png",
+    "pass2-thresholded.png",
+    "pass2-final-binary.png",
+    "merged-mask-before-cleanup.png",
     "merged-mask.png",
+    "merged-mask-after-cleanup.png",
     "semantic-pass-1-mask.png",
     "semantic-pass-2-mask.png",
     "merged-semantic-mask.png",
