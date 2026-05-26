@@ -68,6 +68,12 @@ export type ImageRenderRequest = {
     finalMaskPath?: string | null;
     renderEditMaskPath?: string | null;
     continuityReasoningMaskPath?: string | null;
+    semanticPass1MaskPath?: string | null;
+    semanticPass2MaskPath?: string | null;
+    semanticMergedMaskPath?: string | null;
+    semanticMergeConflictsOverlayPath?: string | null;
+    semanticOverlapSuppressionOverlayPath?: string | null;
+    semanticGroundingConfidenceOverlayPath?: string | null;
   };
 };
 

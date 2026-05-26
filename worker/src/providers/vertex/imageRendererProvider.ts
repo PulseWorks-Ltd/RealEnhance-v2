@@ -121,6 +121,18 @@ function parseFiniteEnvNumber(name: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
+function parseBooleanEnv(value: string | undefined): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function isContinuityDebugArtifactsEnabled(): boolean {
+  if (process.env.CONTINUITY_DEBUG_ARTIFACTS != null) {
+    return parseBooleanEnv(process.env.CONTINUITY_DEBUG_ARTIFACTS);
+  }
+  return String(process.env.NODE_ENV || "development").trim().toLowerCase() !== "production";
+}
+
 async function tryGetLocalFileSize(filePath: string | undefined): Promise<number | null> {
   if (!filePath) {
     return null;
@@ -1457,6 +1469,7 @@ async function validateOutsideMaskDrift(params: {
   maskPath?: string;
   candidatePath: string;
   profile: ContinuityRendererProfile;
+  includeVisualizations: boolean;
 }): Promise<OutsideMaskDriftValidationResult> {
   if (!params.sourcePath || !params.maskPath) {
     nLog("[VERTEX_CONTINUITY_OUTSIDE_MASK_DRIFT]", {
@@ -1512,16 +1525,18 @@ async function validateOutsideMaskDrift(params: {
     status: exceedsMae || exceedsChangedRatio ? "failed" : "passed",
   });
 
-  const visualizations = await buildOutsideMaskDriftVisualizations({
-    sourceRaw: measurement.sourceRaw,
-    candidateRaw: measurement.candidateRaw,
-    maskRaw: measurement.maskRaw,
-    width: metrics.width,
-    height: metrics.height,
-    threshold: metrics.threshold,
-    occupancyMaskPath: params.request.debugMasks?.occupancyMaskPath,
-    exclusionMaskPath: params.request.debugMasks?.exclusionMaskPath,
-  });
+  const visualizations = params.includeVisualizations
+    ? await buildOutsideMaskDriftVisualizations({
+      sourceRaw: measurement.sourceRaw,
+      candidateRaw: measurement.candidateRaw,
+      maskRaw: measurement.maskRaw,
+      width: metrics.width,
+      height: metrics.height,
+      threshold: metrics.threshold,
+      occupancyMaskPath: params.request.debugMasks?.occupancyMaskPath,
+      exclusionMaskPath: params.request.debugMasks?.exclusionMaskPath,
+    })
+    : null;
 
   return {
     skipped: false,
@@ -1570,14 +1585,15 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
     });
     const sourceReference = sourceSnapshot.reference;
     const maskReference = maskSnapshot.reference;
+    const debugArtifactsEnabled = isContinuityDebugArtifactsEnabled();
     nLog("[CONTINUITY_RUNTIME_FINGERPRINT]", {
       phase: "renderer-start",
       provider: "VertexContinuityRepairProvider",
       renderer: "VertexImageRendererProvider",
       planner: String(process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro").trim().toLowerCase(),
       occupancyPipelineVersion: "deterministic_mask_compiler_v2",
-      forensicArtifactsEnabled: true,
-      maskEvolutionEnabled: true,
+      forensicArtifactsEnabled: debugArtifactsEnabled,
+      maskEvolutionEnabled: debugArtifactsEnabled,
       continuityMode: request.renderMode,
       sourceFile: "worker/src/providers/vertex/imageRendererProvider.ts",
       gitCommit: String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || process.env.COMMIT_SHA || "").trim() || null,
@@ -1864,40 +1880,58 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
         maskPath: request.maskImage.localPath,
         candidatePath: request.outputPath,
         profile: renderProfile,
+        includeVisualizations: debugArtifactsEnabled,
       });
 
-      try {
-        await persistVertexRenderArtifacts({
-          jobId: request.jobId,
-          imageId: request.imageId,
-          attempt: Math.max(1, Number(request.attempt || 1)),
-          continuityGroupId: request.continuityGroupId,
-          renderMode: request.renderMode,
-          model,
-          validationPassed: driftValidation.validationPassed,
-          failureReason: driftValidation.failureReason,
-          mae: driftValidation.mae,
-          ratio: driftValidation.ratio,
-          sourceImagePath: sourceSnapshot.snapshotPath,
-          rawRenderPath: request.outputPath,
-          occupancyMaskPath: request.debugMasks?.occupancyMaskPath,
-          exclusionMaskPath: request.debugMasks?.exclusionMaskPath,
-          finalMaskPath: request.debugMasks?.finalMaskPath,
-          renderEditMaskPath: request.debugMasks?.renderEditMaskPath,
-          continuityReasoningMaskPath: request.debugMasks?.continuityReasoningMaskPath,
-          outsideMaskDiffPng: driftValidation.visualizations?.outsideMaskDiffPng,
-          outsideMaskHeatmapPng: driftValidation.visualizations?.outsideMaskHeatmapPng,
-          overlayDebugPng: driftValidation.visualizations?.overlayDebugPng,
-          validatorMetrics: driftValidation.validatorMetrics,
-        });
-      } catch (artifactError: any) {
-        nLog("[VERTEX_RENDER_ARTIFACT_PERSIST_FAILURE]", {
+      if (debugArtifactsEnabled) {
+        try {
+          await persistVertexRenderArtifacts({
+            jobId: request.jobId,
+            imageId: request.imageId,
+            attempt: Math.max(1, Number(request.attempt || 1)),
+            continuityGroupId: request.continuityGroupId,
+            renderMode: request.renderMode,
+            model,
+            validationPassed: driftValidation.validationPassed,
+            failureReason: driftValidation.failureReason,
+            mae: driftValidation.mae,
+            ratio: driftValidation.ratio,
+            sourceImagePath: sourceSnapshot.snapshotPath,
+            rawRenderPath: request.outputPath,
+            occupancyMaskPath: request.debugMasks?.occupancyMaskPath,
+            exclusionMaskPath: request.debugMasks?.exclusionMaskPath,
+            finalMaskPath: request.debugMasks?.finalMaskPath,
+            renderEditMaskPath: request.debugMasks?.renderEditMaskPath,
+            continuityReasoningMaskPath: request.debugMasks?.continuityReasoningMaskPath,
+            semanticPass1MaskPath: request.debugMasks?.semanticPass1MaskPath,
+            semanticPass2MaskPath: request.debugMasks?.semanticPass2MaskPath,
+            semanticMergedMaskPath: request.debugMasks?.semanticMergedMaskPath,
+            semanticMergeConflictsOverlayPath: request.debugMasks?.semanticMergeConflictsOverlayPath,
+            semanticOverlapSuppressionOverlayPath: request.debugMasks?.semanticOverlapSuppressionOverlayPath,
+            semanticGroundingConfidenceOverlayPath: request.debugMasks?.semanticGroundingConfidenceOverlayPath,
+            outsideMaskDiffPng: driftValidation.visualizations?.outsideMaskDiffPng,
+            outsideMaskHeatmapPng: driftValidation.visualizations?.outsideMaskHeatmapPng,
+            overlayDebugPng: driftValidation.visualizations?.overlayDebugPng,
+            validatorMetrics: driftValidation.validatorMetrics,
+          });
+        } catch (artifactError: any) {
+          nLog("[VERTEX_RENDER_ARTIFACT_PERSIST_FAILURE]", {
+            continuityGroupId: request.continuityGroupId || null,
+            imageId: request.imageId,
+            jobId: request.jobId,
+            renderMode: request.renderMode,
+            validationPassed: driftValidation.validationPassed,
+            error: artifactError?.message || String(artifactError),
+          });
+        }
+      } else {
+        nLog("[VERTEX_RENDER_ARTIFACT_PERSIST]", {
           continuityGroupId: request.continuityGroupId || null,
           imageId: request.imageId,
           jobId: request.jobId,
           renderMode: request.renderMode,
-          validationPassed: driftValidation.validationPassed,
-          error: artifactError?.message || String(artifactError),
+          skipped: true,
+          reason: "debug_artifacts_disabled",
         });
       }
 

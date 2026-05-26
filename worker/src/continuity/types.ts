@@ -128,6 +128,9 @@ export type SpatialPlannerResult = {
 export type CompiledMaskResult = {
   renderMaskMode: "legacy" | "semantic_tight";
   renderMaskSourceStage: string;
+  semanticPassCount: number;
+  occupancyMergeMs: number;
+  occupancyRepairPassCount: number;
   occupancyMaskBuffer: Buffer;
   occupancyMaskPath: string;
   occupancyGenerationMode: "polygon_projection_v1" | "gemini_image_mask_v1";
@@ -143,6 +146,14 @@ export type CompiledMaskResult = {
   continuityReasoningMaskPixelCount: number;
   continuityReasoningMaskAreaRatio: number;
   continuityReasoningMaskBounds: MaskBoundingBox | null;
+  semanticArtifacts?: {
+    semanticPass1MaskPath?: string;
+    semanticPass2MaskPath?: string;
+    semanticMergedMaskPath?: string;
+    semanticMergeConflictsOverlayPath?: string;
+    semanticOverlapSuppressionOverlayPath?: string;
+    semanticGroundingConfidenceOverlayPath?: string;
+  };
   maskComparisonMetrics: {
     floorCoverageRatio: number;
     supportCoverageRatio: number;
@@ -176,6 +187,9 @@ export type CompiledMaskResult = {
     componentFilteredMaskPath?: string;
     acceptedClusterMaskPath?: string;
     finalUnionMaskPath?: string;
+    semanticPass1MaskPath?: string;
+    semanticPass2MaskPath?: string;
+    semanticMergedMaskPath?: string;
     occupancyCollapseAnalysisPath?: string;
     occupancyStageGridPath?: string;
     componentAnalysisPath?: string;

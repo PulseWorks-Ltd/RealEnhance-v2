@@ -221,6 +221,9 @@ export type GeminiOccupancyMaskResult = {
   componentFilteredMaskPath?: string;
   acceptedClusterMaskPath?: string;
   finalUnionMaskPath?: string;
+  semanticPass1MaskPath?: string;
+  semanticPass2MaskPath?: string;
+  semanticMergedMaskPath?: string;
   occupancyCollapseAnalysisPath?: string;
   occupancyStageGridPath?: string;
   componentAnalysisPath?: string;
@@ -1046,6 +1049,82 @@ function buildAttemptInstruction(failureMode: AttemptFailureMode): string {
   }
 }
 
+function buildRoomTypeSemanticDirective(plan: PlacementPlan, priorCluster: PriorCluster): {
+  passLabel: "pass_1_anchor" | "pass_2_support";
+  includePriority: string[];
+  suppressPriority: string[];
+  objective: string;
+} {
+  const normalizedRoomType = normalizeFurnitureType(plan.roomType);
+  const passLabel = priorCluster.required ? "pass_1_anchor" : "pass_2_support";
+
+  if (normalizedRoomType.includes("bedroom")) {
+    if (passLabel === "pass_1_anchor") {
+      return {
+        passLabel,
+        includePriority: ["bed", "rug", "bedside tables", "nightstands"],
+        suppressPriority: ["wall decor", "small floating decor", "ceiling fixtures"],
+        objective: "Establish the primary grounded furniture mass and perspective anchor around the bed composition.",
+      };
+    }
+    return {
+      passLabel,
+      includePriority: ["floor lamps", "dresser/chest", "accent chairs", "artwork near furniture"],
+      suppressPriority: ["detached wall-only patterns", "ceiling-only objects", "background wall texture"],
+      objective: "Fill secondary furniture completeness without expanding anchor silhouettes or drifting into walls.",
+    };
+  }
+
+  if (normalizedRoomType.includes("living")) {
+    if (passLabel === "pass_1_anchor") {
+      return {
+        passLabel,
+        includePriority: ["sofa", "coffee table", "rug"],
+        suppressPriority: ["tiny decor fragments", "floating wall accents"],
+        objective: "Capture the central seating composition as the scene grounding anchor.",
+      };
+    }
+    return {
+      passLabel,
+      includePriority: ["tv unit", "chairs", "side tables", "floor lamps", "decor near floor"],
+      suppressPriority: ["detached ceiling objects", "thin wall streaks"],
+      objective: "Add secondary furniture silhouettes while preserving seating geometry and room perspective.",
+    };
+  }
+
+  if (normalizedRoomType.includes("dining")) {
+    if (passLabel === "pass_1_anchor") {
+      return {
+        passLabel,
+        includePriority: ["dining table", "dining chairs", "rug"],
+        suppressPriority: ["floating decor", "wall-only ornament"],
+        objective: "Anchor occupancy around the table-centered dining composition.",
+      };
+    }
+    return {
+      passLabel,
+      includePriority: ["buffet", "sideboard", "artwork near furniture", "accent decor"],
+      suppressPriority: ["ceiling pendant glow", "wall texture"],
+      objective: "Recover secondary dining objects without over-expanding beyond plausible grounded furniture.",
+    };
+  }
+
+  if (passLabel === "pass_1_anchor") {
+    return {
+      passLabel,
+      includePriority: ["primary furniture anchors", "main floor-contact mass"],
+      suppressPriority: ["isolated decor", "detached wall regions"],
+      objective: "Capture primary furniture anchors first to set scene grounding and perspective.",
+    };
+  }
+  return {
+    passLabel,
+    includePriority: ["secondary support furniture", "decor near anchored furniture"],
+    suppressPriority: ["detached fragments", "ceiling/wall-only occupancy"],
+    objective: "Add completeness only where semantically plausible and grounded.",
+  };
+}
+
 function buildOccupancyPrompt(plan: PlacementPlan, priorCluster: PriorCluster, failureMode: AttemptFailureMode): string {
   const zones = plan.furnitureZones.filter((item) => priorCluster.zoneIds.includes(item.id));
   const zoneHints = zones.map((zone) => {
@@ -1053,10 +1132,15 @@ function buildOccupancyPrompt(plan: PlacementPlan, priorCluster: PriorCluster, f
     return `${zone.id}:${zone.furnitureType}[x:${bbox.x.toFixed(3)},y:${bbox.y.toFixed(3)},w:${bbox.width.toFixed(3)},h:${bbox.height.toFixed(3)}]`;
   }).join(" | ");
   const clusterHint = `cluster_id=${priorCluster.clusterId}; label=${priorCluster.clusterLabel}; required=${priorCluster.required}; anchor_px=(${Math.round(priorCluster.anchorX)},${Math.round(priorCluster.anchorY)}); furniture=${priorCluster.furnitureTypes.join(",")}; zones=${zoneHints}; expected_area_band=[min:${priorCluster.expectedAreaRatioMin.toFixed(4)},target:${priorCluster.expectedAreaRatioTarget.toFixed(4)},max:${priorCluster.expectedAreaRatioMax.toFixed(4)}]`;
+  const directive = buildRoomTypeSemanticDirective(plan, priorCluster);
   return [
     "Generate a binary occupancy mask IMAGE for ONLY the target furniture cluster described below.",
     "Output IMAGE ONLY. No text, no JSON.",
     "Mask semantics: WHITE=editable projected furniture occupancy, BLACK=protected.",
+    `Semantic mission: ${directive.passLabel}`,
+    `Mission objective: ${directive.objective}`,
+    `Include priority: ${directive.includePriority.join(", ")}`,
+    `Suppress priority: ${directive.suppressPriority.join(", ")}`,
     "Hard constraints:",
     "- Include only the specified furniture composition occupancy, perspective-aware.",
     "- Maintain relational coherence between the clustered furniture pieces.",
@@ -3123,6 +3207,9 @@ export async function generateGeminiOccupancyMask(params: {
   const anchorDistanceHeatmapPath = path.join(outDir, "anchor-distance-heatmap.png");
   const floorContactVisualizationPath = path.join(outDir, "floor-contact-visualization.png");
   const acceptedRejectedOverlayPath = path.join(outDir, "accepted-vs-rejected-components.png");
+  const semanticPass1MaskPath = path.join(outDir, "semantic-pass-1-mask.png");
+  const semanticPass2MaskPath = path.join(outDir, "semantic-pass-2-mask.png");
+  const semanticMergedMaskPath = path.join(outDir, "semantic-merged-mask.png");
   const deterministicConstraintMaskPath = path.join(outDir, "deterministic-constraint-mask.png");
   const clusterMaskDir = path.join(outDir, "cluster-occupancy-masks");
   const stageDebugDir = path.join(outDir, "occupancy-stage-debug");
@@ -3195,6 +3282,8 @@ export async function generateGeminiOccupancyMask(params: {
   let unionAccepted = Buffer.alloc(width * height, 0);
   let unionRejected = Buffer.alloc(width * height, 0);
   let unionRawBest = Buffer.alloc(width * height, 0);
+  let unionRequired = Buffer.alloc(width * height, 0);
+  let unionOptional = Buffer.alloc(width * height, 0);
   let clusterApiCallCount = 0;
 
   for (const priorCluster of priorClusters) {
@@ -3816,6 +3905,11 @@ export async function generateGeminiOccupancyMask(params: {
 
     unionAccepted = Buffer.from(safeMaskUnion(unionAccepted, bestClusterMask));
     unionRawBest = Buffer.from(safeMaskUnion(unionRawBest, bestClusterRawMask));
+    if (priorCluster.required) {
+      unionRequired = Buffer.from(safeMaskUnion(unionRequired, bestClusterMask));
+    } else {
+      unionOptional = Buffer.from(safeMaskUnion(unionOptional, bestClusterMask));
+    }
     const contributionPixels = countMaskPixels(bestClusterMask);
     clusterContributions.push({
       clusterId: priorCluster.clusterId,
@@ -3895,6 +3989,8 @@ export async function generateGeminiOccupancyMask(params: {
     targetShortfallPixels: 0,
     maxSeedPixels: 0,
   };
+
+  const semanticMergedPreRepair = Buffer.from(unionAccepted);
 
   const topologyMinIslandPixels = Math.max(8, Math.floor(width * height * topologyMinIslandRatio));
   const topologyMinFinalAreaRatio = Math.max(
@@ -4220,6 +4316,27 @@ export async function generateGeminiOccupancyMask(params: {
     targetWidth: sourceWidth,
     targetHeight: sourceHeight,
   });
+  const unionRequiredExport = await resizeBinaryMaskRaw({
+    mask: unionRequired,
+    sourceWidth: width,
+    sourceHeight: height,
+    targetWidth: sourceWidth,
+    targetHeight: sourceHeight,
+  });
+  const unionOptionalExport = await resizeBinaryMaskRaw({
+    mask: unionOptional,
+    sourceWidth: width,
+    sourceHeight: height,
+    targetWidth: sourceWidth,
+    targetHeight: sourceHeight,
+  });
+  const semanticMergedExport = await resizeBinaryMaskRaw({
+    mask: semanticMergedPreRepair,
+    sourceWidth: width,
+    sourceHeight: height,
+    targetWidth: sourceWidth,
+    targetHeight: sourceHeight,
+  });
   const unionAcceptedExport = await resizeBinaryMaskRaw({
     mask: unionAccepted,
     sourceWidth: width,
@@ -4243,6 +4360,9 @@ export async function generateGeminiOccupancyMask(params: {
 
   await writeMaskPng(unionRawExport, sourceWidth, sourceHeight, rawMaskPath);
   await writeMaskPng(unionAcceptedExport, sourceWidth, sourceHeight, cleanedMaskPath);
+  await writeMaskPng(unionRequiredExport, sourceWidth, sourceHeight, semanticPass1MaskPath);
+  await writeMaskPng(unionOptionalExport, sourceWidth, sourceHeight, semanticPass2MaskPath);
+  await writeMaskPng(semanticMergedExport, sourceWidth, sourceHeight, semanticMergedMaskPath);
   await writeRgbaPng(
     buildBinaryMaskOverlay(unionAccepted, width, height, { r: 72, g: 210, b: 118, a: 180 }),
     width,
@@ -4533,6 +4653,9 @@ export async function generateGeminiOccupancyMask(params: {
     componentFilteredMaskPath: representativeClusterArtifact?.componentFilteredMaskPath,
     acceptedClusterMaskPath: representativeClusterArtifact?.acceptedClusterMaskPath,
     finalUnionMaskPath: cleanedMaskPath,
+    semanticPass1MaskPath,
+    semanticPass2MaskPath,
+    semanticMergedMaskPath,
     occupancyCollapseAnalysisPath,
     occupancyStageGridPath,
     componentAnalysisPath,

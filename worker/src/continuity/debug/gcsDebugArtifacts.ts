@@ -277,6 +277,12 @@ export async function persistVertexRenderArtifacts(params: {
   finalMaskPath?: string | null;
   renderEditMaskPath?: string | null;
   continuityReasoningMaskPath?: string | null;
+  semanticPass1MaskPath?: string | null;
+  semanticPass2MaskPath?: string | null;
+  semanticMergedMaskPath?: string | null;
+  semanticMergeConflictsOverlayPath?: string | null;
+  semanticOverlapSuppressionOverlayPath?: string | null;
+  semanticGroundingConfidenceOverlayPath?: string | null;
   outsideMaskDiffPng?: Buffer | null;
   outsideMaskHeatmapPng?: Buffer | null;
   overlayDebugPng?: Buffer | null;
@@ -446,6 +452,114 @@ export async function persistVertexRenderArtifacts(params: {
           fileName: "continuity-reasoning-mask.png",
         }),
         localPath: params.continuityReasoningMaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.semanticPass1MaskPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "semantic-pass-1-mask",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "semantic-pass-1-mask.png",
+        }),
+        localPath: params.semanticPass1MaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.semanticPass2MaskPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "semantic-pass-2-mask",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "semantic-pass-2-mask.png",
+        }),
+        localPath: params.semanticPass2MaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.semanticMergedMaskPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "semantic-merged-mask",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "semantic-merged-mask.png",
+        }),
+        localPath: params.semanticMergedMaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.semanticMergeConflictsOverlayPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "semantic-merge-conflicts-overlay",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "semantic-merge-conflicts-overlay.png",
+        }),
+        localPath: params.semanticMergeConflictsOverlayPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.semanticOverlapSuppressionOverlayPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "semantic-overlap-suppression-overlay",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "semantic-overlap-suppression-overlay.png",
+        }),
+        localPath: params.semanticOverlapSuppressionOverlayPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.semanticGroundingConfidenceOverlayPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "semantic-grounding-confidence-overlay",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "semantic-grounding-confidence-overlay.png",
+        }),
+        localPath: params.semanticGroundingConfidenceOverlayPath,
         metadata: encodedMetadata,
       }),
     }));
@@ -655,14 +769,15 @@ async function normalizeMaskStageAsPng(params: {
   outputPath: string;
   width: number;
   height: number;
+  binary?: boolean;
 }): Promise<void> {
-  await sharp(params.stagePath)
-    .removeAlpha()
-    .grayscale()
-    .resize(params.width, params.height, { fit: "fill", kernel: sharp.kernel.nearest })
-    .threshold(1, { grayscale: true })
-    .png()
-    .toFile(params.outputPath);
+  const binary = params.binary !== false;
+  let pipeline = sharp(params.stagePath)
+    .resize(params.width, params.height, { fit: "fill", kernel: sharp.kernel.nearest });
+  if (binary) {
+    pipeline = pipeline.removeAlpha().grayscale().threshold(1, { grayscale: true });
+  }
+  await pipeline.png().toFile(params.outputPath);
 }
 
 async function buildMaskEvolutionStrip(params: {
@@ -729,6 +844,12 @@ export async function persistMaskEvolutionArtifacts(params: {
   acceptedClusterMaskPath?: string | null;
   occupancyConstraintMaskPath?: string | null;
   occupancyMaskPath: string;
+  semanticPass1MaskPath?: string | null;
+  semanticPass2MaskPath?: string | null;
+  semanticMergedMaskPath?: string | null;
+  semanticMergeConflictsOverlayPath?: string | null;
+  semanticOverlapSuppressionOverlayPath?: string | null;
+  semanticGroundingConfidenceOverlayPath?: string | null;
   finalMaskPath: string;
 }): Promise<{ rootGcsUri: string; artifacts: UploadedArtifact[]; maskEvolutionStripPath: string | null }> {
   const bucketName = getDebugBucketName();
@@ -763,7 +884,7 @@ export async function persistMaskEvolutionArtifacts(params: {
   );
   await fs.mkdir(tmpDir, { recursive: true });
 
-  const stageMap: Array<{ fileName: string; sourcePath: string | null }> = [
+  const stageMap: Array<{ fileName: string; sourcePath: string | null; binary?: boolean }> = [
     {
       fileName: "raw-gemini-mask.png",
       sourcePath: await firstExistingPath([params.rawGeminiMaskPath, params.occupancyMaskPath]),
@@ -805,12 +926,39 @@ export async function persistMaskEvolutionArtifacts(params: {
       sourcePath: await firstExistingPath([params.occupancyMaskPath]),
     },
     {
+      fileName: "semantic-pass-1-mask.png",
+      sourcePath: await firstExistingPath([params.semanticPass1MaskPath]),
+    },
+    {
+      fileName: "semantic-pass-2-mask.png",
+      sourcePath: await firstExistingPath([params.semanticPass2MaskPath]),
+    },
+    {
+      fileName: "semantic-merged-mask.png",
+      sourcePath: await firstExistingPath([params.semanticMergedMaskPath]),
+    },
+    {
       fileName: "final-occupancy-mask.png",
       sourcePath: await firstExistingPath([params.occupancyMaskPath]),
     },
     {
       fileName: "final-render-mask.png",
       sourcePath: await firstExistingPath([params.finalMaskPath]),
+    },
+    {
+      fileName: "semantic-merge-conflicts-overlay.png",
+      sourcePath: await firstExistingPath([params.semanticMergeConflictsOverlayPath]),
+      binary: false,
+    },
+    {
+      fileName: "semantic-overlap-suppression-overlay.png",
+      sourcePath: await firstExistingPath([params.semanticOverlapSuppressionOverlayPath]),
+      binary: false,
+    },
+    {
+      fileName: "semantic-grounding-confidence-overlay.png",
+      sourcePath: await firstExistingPath([params.semanticGroundingConfidenceOverlayPath]),
+      binary: false,
     },
   ];
 
@@ -825,16 +973,16 @@ export async function persistMaskEvolutionArtifacts(params: {
       outputPath: normalizedPath,
       width: params.width,
       height: params.height,
+      binary: stage.binary,
     });
     normalizedStagePaths.push({ fileName: stage.fileName, normalizedPath });
   }
 
   const stripTimelineCandidates = [
     "raw-gemini-mask.png",
-    "topology-cleanup-mask.png",
-    "component-filtered-mask.png",
-    "support-surface-mask.png",
-    "constraint-intersection-mask.png",
+    "semantic-pass-1-mask.png",
+    "semantic-pass-2-mask.png",
+    "semantic-merged-mask.png",
     "final-render-mask.png",
   ];
   const stripTimelinePaths = stripTimelineCandidates

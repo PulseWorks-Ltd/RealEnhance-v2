@@ -100,6 +100,18 @@ async function getFileSizeBytes(filePath: string | null | undefined): Promise<nu
   }
 }
 
+function parseBooleanEnv(value: string | undefined): boolean {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function isContinuityDebugArtifactsEnabled(): boolean {
+  if (process.env.CONTINUITY_DEBUG_ARTIFACTS != null) {
+    return parseBooleanEnv(process.env.CONTINUITY_DEBUG_ARTIFACTS);
+  }
+  return String(process.env.NODE_ENV || "development").trim().toLowerCase() !== "production";
+}
+
 export class VertexContinuityRepairProvider implements ContinuityRepairProvider {
   constructor(
     private readonly plannerProvider = new VertexSpatialPlannerProvider(),
@@ -302,40 +314,57 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
 
-      try {
-        const maskEvolutionUpload = await persistMaskEvolutionArtifacts({
-          jobId: request.jobId,
-          imageId: request.imageId,
-          continuityGroupId: request.continuityGroupId,
-          attempt: request.attempt,
-          width: compiledMask.width,
-          height: compiledMask.height,
-          rawGeminiMaskPath: compiledMask.geminiMaskArtifacts?.rawGeminiMaskPath || compiledMask.geminiMaskArtifacts?.rawMaskPath,
-          alphaNormalizedMaskPath: compiledMask.geminiMaskArtifacts?.alphaNormalizedMaskPath,
-          morphologyCleanedMaskPath: compiledMask.geminiMaskArtifacts?.morphologyCleanedMaskPath || compiledMask.geminiMaskArtifacts?.cleanedMaskPath,
-          componentFilteredMaskPath: compiledMask.geminiMaskArtifacts?.componentFilteredMaskPath,
-          floorContactVisualizationPath: compiledMask.geminiMaskArtifacts?.floorContactVisualizationPath,
-          acceptedClusterMaskPath: compiledMask.geminiMaskArtifacts?.acceptedClusterMaskPath,
-          occupancyConstraintMaskPath: effectiveOccupancyConstraintMaskPath,
-          occupancyMaskPath: compiledMask.occupancyMaskPath,
-          finalMaskPath: compiledMask.renderEditMaskPath,
-        });
+      if (isContinuityDebugArtifactsEnabled()) {
+        try {
+          const maskEvolutionUpload = await persistMaskEvolutionArtifacts({
+            jobId: request.jobId,
+            imageId: request.imageId,
+            continuityGroupId: request.continuityGroupId,
+            attempt: request.attempt,
+            width: compiledMask.width,
+            height: compiledMask.height,
+            rawGeminiMaskPath: compiledMask.geminiMaskArtifacts?.rawGeminiMaskPath || compiledMask.geminiMaskArtifacts?.rawMaskPath,
+            alphaNormalizedMaskPath: compiledMask.geminiMaskArtifacts?.alphaNormalizedMaskPath,
+            morphologyCleanedMaskPath: compiledMask.geminiMaskArtifacts?.morphologyCleanedMaskPath || compiledMask.geminiMaskArtifacts?.cleanedMaskPath,
+            componentFilteredMaskPath: compiledMask.geminiMaskArtifacts?.componentFilteredMaskPath,
+            floorContactVisualizationPath: compiledMask.geminiMaskArtifacts?.floorContactVisualizationPath,
+            acceptedClusterMaskPath: compiledMask.geminiMaskArtifacts?.acceptedClusterMaskPath,
+            occupancyConstraintMaskPath: effectiveOccupancyConstraintMaskPath,
+            occupancyMaskPath: compiledMask.occupancyMaskPath,
+            semanticPass1MaskPath: compiledMask.semanticArtifacts?.semanticPass1MaskPath || compiledMask.geminiMaskArtifacts?.semanticPass1MaskPath,
+            semanticPass2MaskPath: compiledMask.semanticArtifacts?.semanticPass2MaskPath || compiledMask.geminiMaskArtifacts?.semanticPass2MaskPath,
+            semanticMergedMaskPath: compiledMask.semanticArtifacts?.semanticMergedMaskPath || compiledMask.geminiMaskArtifacts?.semanticMergedMaskPath,
+            semanticMergeConflictsOverlayPath: compiledMask.semanticArtifacts?.semanticMergeConflictsOverlayPath,
+            semanticOverlapSuppressionOverlayPath: compiledMask.semanticArtifacts?.semanticOverlapSuppressionOverlayPath,
+            semanticGroundingConfidenceOverlayPath: compiledMask.semanticArtifacts?.semanticGroundingConfidenceOverlayPath,
+            finalMaskPath: compiledMask.renderEditMaskPath,
+          });
+          nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS]", {
+            continuityGroupId: request.continuityGroupId || null,
+            imageId: request.imageId,
+            jobId: request.jobId,
+            renderMode: request.renderMode,
+            gcsUri: maskEvolutionUpload.rootGcsUri,
+            artifactCount: maskEvolutionUpload.artifacts.length,
+            maskEvolutionStripPath: maskEvolutionUpload.maskEvolutionStripPath,
+          });
+        } catch (maskEvolutionError: any) {
+          nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS_FAILURE]", {
+            continuityGroupId: request.continuityGroupId || null,
+            imageId: request.imageId,
+            jobId: request.jobId,
+            renderMode: request.renderMode,
+            error: maskEvolutionError?.message || String(maskEvolutionError),
+          });
+        }
+      } else {
         nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS]", {
           continuityGroupId: request.continuityGroupId || null,
           imageId: request.imageId,
           jobId: request.jobId,
           renderMode: request.renderMode,
-          gcsUri: maskEvolutionUpload.rootGcsUri,
-          artifactCount: maskEvolutionUpload.artifacts.length,
-          maskEvolutionStripPath: maskEvolutionUpload.maskEvolutionStripPath,
-        });
-      } catch (maskEvolutionError: any) {
-        nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS_FAILURE]", {
-          continuityGroupId: request.continuityGroupId || null,
-          imageId: request.imageId,
-          jobId: request.jobId,
-          renderMode: request.renderMode,
-          error: maskEvolutionError?.message || String(maskEvolutionError),
+          skipped: true,
+          reason: "debug_artifacts_disabled",
         });
       }
 
@@ -391,6 +420,12 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         occupancyPerimeterComplexity: Number(compiledMask.maskComparisonMetrics.occupancyPerimeterComplexity.toFixed(6)),
         diagonalBridgeLength: compiledMask.maskComparisonMetrics.diagonalBridgeLength,
         connectedComponentCount: compiledMask.maskComparisonMetrics.connectedComponentCount,
+        semanticPassCount: compiledMask.semanticPassCount,
+        occupancyMergeMs: compiledMask.occupancyMergeMs,
+        occupancyRepairPassCount: compiledMask.occupancyRepairPassCount,
+        semanticPass1MaskPath: compiledMask.semanticArtifacts?.semanticPass1MaskPath || null,
+        semanticPass2MaskPath: compiledMask.semanticArtifacts?.semanticPass2MaskPath || null,
+        semanticMergedMaskPath: compiledMask.semanticArtifacts?.semanticMergedMaskPath || null,
       });
       nLog("[RENDER_MASK_SOURCE]", {
         mode: compiledMask.renderMaskMode,
@@ -399,6 +434,9 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         floorCoverageRatio: Number(compiledMask.maskComparisonMetrics.floorCoverageRatio.toFixed(6)),
         supportCoverageRatio: Number(compiledMask.maskComparisonMetrics.supportCoverageRatio.toFixed(6)),
         connectedComponentCount: compiledMask.maskComparisonMetrics.connectedComponentCount,
+        semanticPassCount: compiledMask.semanticPassCount,
+        occupancyMergeMs: compiledMask.occupancyMergeMs,
+        occupancyRepairPassCount: compiledMask.occupancyRepairPassCount,
         continuityGroupId: request.continuityGroupId || null,
         imageId: request.imageId,
         jobId: request.jobId,
@@ -474,6 +512,12 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           finalMaskPath: compiledMask.finalMaskPath,
           renderEditMaskPath: compiledMask.renderEditMaskPath,
           continuityReasoningMaskPath: compiledMask.continuityReasoningMaskPath,
+          semanticPass1MaskPath: compiledMask.semanticArtifacts?.semanticPass1MaskPath || compiledMask.geminiMaskArtifacts?.semanticPass1MaskPath,
+          semanticPass2MaskPath: compiledMask.semanticArtifacts?.semanticPass2MaskPath || compiledMask.geminiMaskArtifacts?.semanticPass2MaskPath,
+          semanticMergedMaskPath: compiledMask.semanticArtifacts?.semanticMergedMaskPath || compiledMask.geminiMaskArtifacts?.semanticMergedMaskPath,
+          semanticMergeConflictsOverlayPath: compiledMask.semanticArtifacts?.semanticMergeConflictsOverlayPath,
+          semanticOverlapSuppressionOverlayPath: compiledMask.semanticArtifacts?.semanticOverlapSuppressionOverlayPath,
+          semanticGroundingConfidenceOverlayPath: compiledMask.semanticArtifacts?.semanticGroundingConfidenceOverlayPath,
         },
       });
       renderPayloadSummary = summarizeRenderPayload(render.payload);
