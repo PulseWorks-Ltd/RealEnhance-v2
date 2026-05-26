@@ -1,5 +1,6 @@
 import os from "os";
 import path from "path";
+import fs from "fs/promises";
 import { QueueEvents, Worker, type Job } from "bullmq";
 import { CONTINUITY_RENDER_QUEUE } from "../../shared/src/constants";
 import { nLog } from "./logger";
@@ -13,9 +14,70 @@ import type { ImageReference } from "./providers/types";
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
 const WORKER_IDENTITY = "worker-vertex-experimental";
 const EXECUTION_AUTHORITY = "vertex-worker";
+const OCCUPANCY_PIPELINE_VERSION = "deterministic_mask_compiler_v2";
+const FORENSIC_PIPELINE_SOURCE_FILE = "worker/src/continuity/debug/gcsDebugArtifacts.ts";
+
+let runtimeBuildInfoCache: {
+  packageVersion: string | null;
+  buildTimestamp: string | null;
+} | null = null;
 
 let queueEventsRef: QueueEvents | null = null;
 let workerRef: Worker | null = null;
+
+function resolveRuntimeCommit(): string | null {
+  return String(
+    process.env.RAILWAY_GIT_COMMIT_SHA
+    || process.env.GIT_COMMIT
+    || process.env.COMMIT_SHA
+    || ""
+  ).trim() || null;
+}
+
+function resolveDeploymentVersion(): string | null {
+  return String(
+    process.env.RAILWAY_DEPLOYMENT_ID
+    || process.env.RAILWAY_RELEASE_ID
+    || process.env.RELEASE_VERSION
+    || process.env.DEPLOYMENT_VERSION
+    || ""
+  ).trim() || null;
+}
+
+function resolveBranchName(): string | null {
+  return String(
+    process.env.RAILWAY_GIT_BRANCH
+    || process.env.GIT_BRANCH
+    || process.env.BRANCH_NAME
+    || ""
+  ).trim() || null;
+}
+
+async function getRuntimeBuildInfo(): Promise<{ packageVersion: string | null; buildTimestamp: string | null }> {
+  if (runtimeBuildInfoCache) {
+    return runtimeBuildInfoCache;
+  }
+
+  let packageVersion: string | null = null;
+  let buildTimestamp: string | null = null;
+  try {
+    const packageJsonPath = path.join(process.cwd(), "package.json");
+    const raw = await fs.readFile(packageJsonPath, "utf8");
+    const parsed = JSON.parse(raw) as { version?: string };
+    packageVersion = String(parsed?.version || "").trim() || null;
+    const stats = await fs.stat(packageJsonPath);
+    buildTimestamp = stats.mtime.toISOString();
+  } catch {
+    packageVersion = null;
+    buildTimestamp = null;
+  }
+
+  runtimeBuildInfoCache = {
+    packageVersion,
+    buildTimestamp,
+  };
+  return runtimeBuildInfoCache;
+}
 
 function isVertexExperimentalContinuityJobPayload(value: unknown): value is VertexExperimentalContinuityJobPayload {
   const payload = value as Partial<VertexExperimentalContinuityJobPayload> | null;
@@ -60,7 +122,10 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
 
   const queueName = job.data.queueName || CONTINUITY_RENDER_QUEUE;
   const providerName = String(process.env.SECONDARY_CONTINUITY_PROVIDER || "vertex").trim().toLowerCase();
+  const rendererName = String(process.env.SECONDARY_CONTINUITY_RENDERER || "imagen3").trim().toLowerCase();
+  const plannerName = String(process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro").trim().toLowerCase();
   const stage2Mode = job.data.intent?.promptScope || null;
+  const buildInfo = await getRuntimeBuildInfo();
 
   nLog("[SECONDARY_CONTINUITY_QUEUE]", {
     continuityGroupId: job.data.continuityGroupId || null,
@@ -86,6 +151,41 @@ async function processExperimentalJob(job: Job): Promise<Record<string, unknown>
     provider: providerName,
     stage2Mode,
     queueJobId: String(job.id || ""),
+  });
+
+  nLog("[CONTINUITY_JOB_ROUTING]", {
+    route: "vertex_experimental_queue_handler",
+    worker: WORKER_IDENTITY,
+    queue: queueName,
+    handler: "processExperimentalJob",
+    executionPath: "vertexExperimentalWorker -> createContinuityRepairProvider -> VertexContinuityRepairProvider.repair",
+    dispatchTarget: WORKER_IDENTITY,
+    provider: providerName,
+    renderer: rendererName,
+    planner: plannerName,
+    queueJobId: String(job.id || ""),
+    jobId: job.data.jobId,
+    imageId: job.data.imageId,
+  });
+
+  nLog("[CONTINUITY_RUNTIME_FINGERPRINT]", {
+    phase: "job-execution",
+    provider: providerName,
+    renderer: rendererName,
+    planner: plannerName,
+    occupancyPipelineVersion: OCCUPANCY_PIPELINE_VERSION,
+    forensicArtifactsEnabled: true,
+    maskEvolutionEnabled: true,
+    continuityMode: job.data.renderMode,
+    sourceFile: "worker/src/vertexExperimentalWorker.ts",
+    gitCommit: resolveRuntimeCommit(),
+    deploymentVersion: resolveDeploymentVersion(),
+    packageVersion: buildInfo.packageVersion,
+    buildTimestamp: buildInfo.buildTimestamp,
+    branchName: resolveBranchName(),
+    forensicPipelineSourceFile: FORENSIC_PIPELINE_SOURCE_FILE,
+    jobId: job.data.jobId,
+    imageId: job.data.imageId,
   });
 
   nLog("[CONTINUITY_INPUT_MANIFEST]", {
@@ -219,6 +319,35 @@ async function main(): Promise<void> {
   const gcsHealthcheck = await runGcsHealthcheck({
     project: env.googleCloudProject,
     bucket: env.vertexGcsBucket,
+  });
+  const buildInfo = await getRuntimeBuildInfo();
+
+  nLog("[GIT_RUNTIME_INFO]", {
+    gitCommit: resolveRuntimeCommit(),
+    buildTimestamp: buildInfo.buildTimestamp,
+    packageVersion: buildInfo.packageVersion,
+    branchName: resolveBranchName(),
+    deploymentVersion: resolveDeploymentVersion(),
+    workerIdentity: WORKER_IDENTITY,
+    sourceFile: "worker/src/vertexExperimentalWorker.ts",
+  });
+
+  nLog("[CONTINUITY_RUNTIME_FINGERPRINT]", {
+    phase: "startup",
+    provider: String(env.secondaryContinuityProvider || "vertex").trim().toLowerCase(),
+    renderer: String(env.secondaryContinuityRenderer || "imagen3").trim().toLowerCase(),
+    planner: String(env.secondaryContinuityPlanner || "gemini25pro").trim().toLowerCase(),
+    occupancyPipelineVersion: OCCUPANCY_PIPELINE_VERSION,
+    forensicArtifactsEnabled: true,
+    maskEvolutionEnabled: true,
+    continuityMode: "queue-consumer",
+    sourceFile: "worker/src/vertexExperimentalWorker.ts",
+    gitCommit: resolveRuntimeCommit(),
+    deploymentVersion: resolveDeploymentVersion(),
+    packageVersion: buildInfo.packageVersion,
+    buildTimestamp: buildInfo.buildTimestamp,
+    branchName: resolveBranchName(),
+    forensicPipelineSourceFile: FORENSIC_PIPELINE_SOURCE_FILE,
   });
 
   nLog("[VERTEX_QUEUE_BINDING]", {

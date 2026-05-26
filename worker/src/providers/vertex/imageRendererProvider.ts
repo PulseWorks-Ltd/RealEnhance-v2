@@ -121,6 +121,18 @@ function parseFiniteEnvNumber(name: string, fallback: number): number {
   return Number.isFinite(value) ? value : fallback;
 }
 
+async function tryGetLocalFileSize(filePath: string | undefined): Promise<number | null> {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const stats = await fs.stat(filePath);
+    return stats.size;
+  } catch {
+    return null;
+  }
+}
+
 function isContinuityStrictInsertionEnabled(): boolean {
   const raw = String(process.env[VERTEX_CONTINUITY_STRICT_INSERTION_ENV] || "").trim().toLowerCase();
   if (!raw) {
@@ -1558,6 +1570,33 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
     });
     const sourceReference = sourceSnapshot.reference;
     const maskReference = maskSnapshot.reference;
+    nLog("[CONTINUITY_RUNTIME_FINGERPRINT]", {
+      phase: "renderer-start",
+      provider: "VertexContinuityRepairProvider",
+      renderer: "VertexImageRendererProvider",
+      planner: String(process.env.SECONDARY_CONTINUITY_PLANNER || "gemini25pro").trim().toLowerCase(),
+      occupancyPipelineVersion: "deterministic_mask_compiler_v2",
+      forensicArtifactsEnabled: true,
+      maskEvolutionEnabled: true,
+      continuityMode: request.renderMode,
+      sourceFile: "worker/src/providers/vertex/imageRendererProvider.ts",
+      gitCommit: String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || process.env.COMMIT_SHA || "").trim() || null,
+      deploymentVersion: String(process.env.RAILWAY_DEPLOYMENT_ID || process.env.RAILWAY_RELEASE_ID || process.env.RELEASE_VERSION || "").trim() || null,
+      jobId: request.jobId,
+      imageId: request.imageId,
+    });
+    nLog("[OCCUPANCY_MASK_RECEIVED_BY_RENDERER]", {
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      localPath: maskReference.localPath || null,
+      gcsUri: maskReference.uri || null,
+      mimeType: maskReference.mimeType || null,
+      artifactName: maskReference.artifactName || null,
+      byteSize: await tryGetLocalFileSize(maskReference.localPath),
+      occupancyPixelCount: null,
+    });
     const aspectRatioNormalization = await maybeNormalizeVertexAspectRatio({
       request,
       sourceReference,
@@ -1573,6 +1612,27 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
     const payloadSchemaMode = resolveVertexPayloadSchemaMode();
     const sourcePayloadSummary = summarizeVertexImagePayload(sourcePayload);
     const maskPayloadSummary = summarizeVertexImagePayload(maskPayload);
+    nLog("[VERTEX_RENDER_PAYLOAD_MASK_STATUS]", {
+      continuityGroupId: request.continuityGroupId || null,
+      imageId: request.imageId,
+      jobId: request.jobId,
+      renderMode: request.renderMode,
+      sourceFile: "worker/src/providers/vertex/imageRendererProvider.ts",
+      maskReference: {
+        kind: maskReference.kind,
+        localPath: maskReference.localPath || null,
+        gcsUri: maskReference.uri || null,
+        mimeType: maskReference.mimeType || null,
+        artifactName: maskReference.artifactName || null,
+      },
+      payloadSchemaMode,
+      payloadMaskStatus: {
+        hasInlineBytes: maskPayloadSummary.hasInlineBytes,
+        hasGcsUri: maskPayloadSummary.hasGcsUri,
+        gcsUri: (maskPayload as VertexWireImagePayload).gcsUri || null,
+        mimeType: (maskPayload as VertexWireImagePayload).mimeType || null,
+      },
+    });
 
     if (!sourcePayloadSummary.hasInlineBytes && !sourcePayloadSummary.hasGcsUri) {
       throw new VertexSecondaryContinuityError(

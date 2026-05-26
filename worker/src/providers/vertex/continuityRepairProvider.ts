@@ -1,4 +1,5 @@
 import { siblingOutPath } from "../../utils/images";
+import fs from "fs/promises";
 import { logImageAttemptUrl } from "../../utils/debugImageUrls";
 import { nLog } from "../../logger";
 import { persistContinuityArtifacts } from "../../continuity/artifactStore";
@@ -87,6 +88,18 @@ function summarizeError(error: unknown): Record<string, unknown> {
   };
 }
 
+async function getFileSizeBytes(filePath: string | null | undefined): Promise<number | null> {
+  if (!filePath) {
+    return null;
+  }
+  try {
+    const stats = await fs.stat(filePath);
+    return stats.size;
+  } catch {
+    return null;
+  }
+}
+
 export class VertexContinuityRepairProvider implements ContinuityRepairProvider {
   constructor(
     private readonly plannerProvider = new VertexSpatialPlannerProvider(),
@@ -100,6 +113,22 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
     let artifactSummary: Record<string, unknown> | null = null;
 
     try {
+      nLog("[CONTINUITY_RUNTIME_FINGERPRINT]", {
+        phase: "repair-start",
+        provider: "VertexContinuityRepairProvider",
+        renderer: "VertexImageRendererProvider",
+        planner: "VertexSpatialPlannerProvider",
+        occupancyPipelineVersion: "deterministic_mask_compiler_v2",
+        forensicArtifactsEnabled: true,
+        maskEvolutionEnabled: true,
+        continuityMode: request.renderMode,
+        sourceFile: "worker/src/providers/vertex/continuityRepairProvider.ts",
+        gitCommit: String(process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_COMMIT || process.env.COMMIT_SHA || "").trim() || null,
+        deploymentVersion: String(process.env.RAILWAY_DEPLOYMENT_ID || process.env.RAILWAY_RELEASE_ID || process.env.RELEASE_VERSION || "").trim() || null,
+        jobId: request.jobId,
+        imageId: request.imageId,
+      });
+
       const secondaryImage = request.secondaryImage;
       const masterImage = request.masterImage;
       const secondaryWorkingPath = await ensureLocalImagePath({
@@ -261,6 +290,17 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         finalPixelCount: compiledMask.finalPixelCount,
         occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
+      nLog("[OCCUPANCY_MASK_COMPILED]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        localPath: compiledMask.finalMaskPath,
+        mimeType: "image/png",
+        artifactName: null,
+        byteSize: await getFileSizeBytes(compiledMask.finalMaskPath),
+        occupancyPixelCount: compiledMask.occupancyPixelCount,
+      });
 
       try {
         const maskEvolutionUpload = await persistMaskEvolutionArtifacts({
@@ -321,6 +361,18 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
       });
+      nLog("[OCCUPANCY_MASK_PERSISTED]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        localPath: compiledMask.finalMaskPath,
+        gcsUri: maskImage.uri || null,
+        mimeType: maskImage.mimeType || null,
+        artifactName: maskImage.artifactName || null,
+        byteSize: await getFileSizeBytes(compiledMask.finalMaskPath),
+        occupancyPixelCount: compiledMask.occupancyPixelCount,
+      });
       const renderSourceImage = asLocalRenderReference(secondaryImage, secondaryWorkingPath);
       const renderMaskImage = asLocalRenderReference(maskImage, compiledMask.finalMaskPath);
 
@@ -346,6 +398,18 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         promptLength: prompt.length,
         sourceImage: summarizeImageReference(renderSourceImage),
         maskImage: summarizeImageReference(renderMaskImage),
+      });
+      nLog("[OCCUPANCY_MASK_ATTACHED_TO_RENDER_REQUEST]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        localPath: renderMaskImage.localPath || null,
+        gcsUri: maskImage.uri || null,
+        mimeType: renderMaskImage.mimeType || null,
+        artifactName: maskImage.artifactName || null,
+        byteSize: await getFileSizeBytes(renderMaskImage.localPath),
+        occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
       const render = await this.rendererProvider.render({
         sourceImage: renderSourceImage,

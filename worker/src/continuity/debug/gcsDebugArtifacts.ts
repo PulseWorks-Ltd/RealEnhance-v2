@@ -95,21 +95,32 @@ async function uploadBuffer(params: {
   contentType: string;
   metadata?: Record<string, string>;
 }): Promise<{ gcsUri: string; signedUrl: string | null }> {
-  const bucket = getStorageClient().bucket(params.bucketName);
-  const file = bucket.file(params.objectPath);
-  await file.save(params.data, {
-    resumable: false,
-    contentType: params.contentType,
-    metadata: {
-      cacheControl: "private, max-age=86400",
-      metadata: params.metadata,
-    },
-  });
-  const signedUrl = await maybeGenerateSignedUrl(params.bucketName, params.objectPath);
-  return {
-    gcsUri: `gs://${params.bucketName}/${params.objectPath}`,
-    signedUrl,
-  };
+  try {
+    const bucket = getStorageClient().bucket(params.bucketName);
+    const file = bucket.file(params.objectPath);
+    await file.save(params.data, {
+      resumable: false,
+      contentType: params.contentType,
+      metadata: {
+        cacheControl: "private, max-age=86400",
+        metadata: params.metadata,
+      },
+    });
+    const signedUrl = await maybeGenerateSignedUrl(params.bucketName, params.objectPath);
+    return {
+      gcsUri: `gs://${params.bucketName}/${params.objectPath}`,
+      signedUrl,
+    };
+  } catch (error: any) {
+    nLog("[FORENSIC_UPLOAD_ERROR]", {
+      bucket: params.bucketName,
+      objectPath: params.objectPath,
+      contentType: params.contentType,
+      error: error?.message || String(error),
+      stack: error instanceof Error ? error.stack || null : null,
+    });
+    throw error;
+  }
 }
 
 async function uploadJson(params: {
@@ -233,6 +244,30 @@ export async function persistVertexRenderArtifacts(params: {
   validatorMetrics?: Record<string, unknown>;
 }): Promise<{ rootGcsUri: string; artifacts: UploadedArtifact[] }> {
   const bucketName = getDebugBucketName();
+  const basePrefix = getDebugBasePrefix();
+  const targetRootGcsPath = [
+    `gs://${bucketName}`,
+    basePrefix,
+    DEBUG_RENDER_ROOT,
+    sanitizeSegment(params.jobId, "unknown-job"),
+    sanitizeSegment(params.imageId, "unknown-image"),
+    `attempt-${Math.max(1, params.attempt)}`,
+  ].filter(Boolean).join("/");
+  nLog("[FORENSIC_ARTIFACT_PIPELINE_ACTIVE]", {
+    pipeline: "render-artifacts",
+    sourceFile: "worker/src/continuity/debug/gcsDebugArtifacts.ts",
+    jobId: params.jobId,
+    imageId: params.imageId,
+    targetGcsPath: targetRootGcsPath,
+  });
+  nLog("[FORENSIC_RENDER_UPLOAD_BEGIN]", {
+    jobId: params.jobId,
+    imageId: params.imageId,
+    targetGcsPath: targetRootGcsPath,
+    validationPassed: params.validationPassed,
+  });
+
+  try {
   const metadata: RenderArtifactMetadata = {
     validationPassed: params.validationPassed,
     failureReason: params.failureReason,
@@ -417,7 +452,6 @@ export async function persistVertexRenderArtifacts(params: {
     }),
   }));
 
-  const basePrefix = getDebugBasePrefix();
   const rootGcsUriWithPrefix = [
     `gs://${bucketName}`,
     basePrefix,
@@ -439,10 +473,29 @@ export async function persistVertexRenderArtifacts(params: {
     });
   }
 
+  nLog("[FORENSIC_RENDER_UPLOAD_COMPLETE]", {
+    jobId: params.jobId,
+    imageId: params.imageId,
+    artifactCount: uploads.length,
+    targetGcsPath: rootGcsUriWithPrefix,
+    validationPassed: params.validationPassed,
+  });
+
   return {
     rootGcsUri: rootGcsUriWithPrefix,
     artifacts: uploads,
   };
+  } catch (error: any) {
+    nLog("[FORENSIC_UPLOAD_ERROR]", {
+      pipeline: "render-artifacts",
+      jobId: params.jobId,
+      imageId: params.imageId,
+      targetGcsPath: targetRootGcsPath,
+      error: error?.message || String(error),
+      stack: error instanceof Error ? error.stack || null : null,
+    });
+    throw error;
+  }
 }
 
 async function uploadMaskEvolutionArtifact(params: {
@@ -556,6 +609,28 @@ export async function persistMaskEvolutionArtifacts(params: {
   finalMaskPath: string;
 }): Promise<{ rootGcsUri: string; artifacts: UploadedArtifact[]; maskEvolutionStripPath: string | null }> {
   const bucketName = getDebugBucketName();
+  const basePrefix = getDebugBasePrefix();
+  const targetRootGcsPath = [
+    `gs://${bucketName}`,
+    basePrefix,
+    DEBUG_MASK_EVOLUTION_ROOT,
+    sanitizeSegment(params.jobId, "unknown-job"),
+    sanitizeSegment(params.imageId, "unknown-image"),
+  ].filter(Boolean).join("/");
+  nLog("[FORENSIC_ARTIFACT_PIPELINE_ACTIVE]", {
+    pipeline: "mask-evolution",
+    sourceFile: "worker/src/continuity/debug/gcsDebugArtifacts.ts",
+    jobId: params.jobId,
+    imageId: params.imageId,
+    targetGcsPath: targetRootGcsPath,
+  });
+  nLog("[FORENSIC_MASK_EVOLUTION_UPLOAD_BEGIN]", {
+    jobId: params.jobId,
+    imageId: params.imageId,
+    targetGcsPath: targetRootGcsPath,
+  });
+
+  try {
   const tmpDir = path.join(
     "/tmp",
     "vertex-mask-evolution",
@@ -687,7 +762,6 @@ export async function persistMaskEvolutionArtifacts(params: {
     signedUrl: manifestUpload.signedUrl,
   });
 
-  const basePrefix = getDebugBasePrefix();
   const rootGcsUri = [
     `gs://${bucketName}`,
     basePrefix,
@@ -695,9 +769,26 @@ export async function persistMaskEvolutionArtifacts(params: {
     sanitizeSegment(params.jobId, "unknown-job"),
     sanitizeSegment(params.imageId, "unknown-image"),
   ].filter(Boolean).join("/");
+  nLog("[FORENSIC_MASK_EVOLUTION_UPLOAD_COMPLETE]", {
+    jobId: params.jobId,
+    imageId: params.imageId,
+    artifactCount: uploads.length,
+    targetGcsPath: rootGcsUri,
+  });
   return {
     rootGcsUri,
     artifacts: uploads,
     maskEvolutionStripPath: stripPath,
   };
+  } catch (error: any) {
+    nLog("[FORENSIC_UPLOAD_ERROR]", {
+      pipeline: "mask-evolution",
+      jobId: params.jobId,
+      imageId: params.imageId,
+      targetGcsPath: targetRootGcsPath,
+      error: error?.message || String(error),
+      stack: error instanceof Error ? error.stack || null : null,
+    });
+    throw error;
+  }
 }
