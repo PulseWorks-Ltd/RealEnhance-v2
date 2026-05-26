@@ -3253,24 +3253,28 @@ function shouldUseHardRevertOriginalExtractor(): boolean {
 function buildOriginalExtractorPassPrompt(roomType: string, objective: "pass1_primary" | "pass2_secondary"): string {
   const pass1Targets = ["beds", "sofas", "dining tables", "major rugs", "major seating"].join(", ");
   const pass2Targets = ["lamps", "bedside tables", "chairs", "artwork", "decor", "plants", "secondary furniture"].join(", ");
-  const passObjective = objective === "pass1_primary"
-    ? `Extract dominant visible furniture objects only: ${pass1Targets}.`
-    : `Extract visible secondary furniture and decor only: ${pass2Targets}.`;
+  const targetList = objective === "pass1_primary" ? pass1Targets : pass2Targets;
   return [
-    "Generate a binary object mask IMAGE.",
-    "Output IMAGE ONLY. No text, no JSON.",
-    "Mask semantics: WHITE=visible target objects, BLACK=everything else.",
-    passObjective,
-    "Strict rules:",
-    "- Segment visible objects only.",
-    "- No floors.",
-    "- No walls.",
-    "- No empty space.",
-    "- No support regions.",
-    "- No inferred placement zones.",
-    "- No occupancy expansion.",
-    "- No topology reasoning.",
-    "- False negatives are acceptable. False positives are not.",
+    "Generate a binary furniture placement mask IMAGE.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Mask rule: WHITE = regions in the secondary room where the master furniture would appear, BLACK = everything else.",
+    "",
+    "You are given two images:",
+    "1. APPROVED_MASTER_STAGED_IMAGE — a furnished reference room showing existing furniture placement.",
+    "2. SECONDARY_TARGET_IMAGE — the same room type, currently unfurnished, from a different camera angle.",
+    "",
+    "Task: Project the furniture positions from the master image onto the secondary room's viewpoint.",
+    "Generate a single black-and-white mask image that:",
+    `- Targets these object types: ${targetList}`,
+    "- Matches the perspective and dimensions of the SECONDARY TARGET IMAGE",
+    "- Shows WHITE where the master furniture objects would appear in the secondary room",
+    "- Shows BLACK everywhere else (walls, ceiling, floor outside furniture areas, windows)",
+    "",
+    "Critical rules:",
+    "- Output ONLY the binary placement mask — do NOT return the master image or secondary image",
+    "- The mask must be spatially aligned to the SECONDARY TARGET IMAGE coordinate space",
+    "- Mark the furniture silhouette and footprint regions as white",
+    "- Walls and floor outside furniture areas must be black",
     `Room type: ${roomType}`,
   ].join("\n");
 }
@@ -3286,6 +3290,7 @@ async function runOriginalExtractorPass(params: {
   height: number;
   minComponentPixels: number;
   closeRadius: number;
+  areaTarget: number;
   responseOriginalPath: string;
   alphaPath: string;
   grayscalePath: string;
@@ -3376,7 +3381,7 @@ async function runOriginalExtractorPass(params: {
     minComponentPixels: params.minComponentPixels,
     morphologyCloseRadius: 0,
     morphologyOpenRadius: 0,
-    areaTarget: params.passLabel === "pass1_primary" ? 0.09 : 0.05,
+    areaTarget: params.areaTarget,
   });
 
   if (!selected) {
@@ -3531,8 +3536,12 @@ async function generateHardRevertedOriginalMask(params: {
   const acceptedRejectedOverlayPath = path.join(outDir, "accepted-vs-rejected-components.png");
 
   const minComponentPixels = Math.max(4, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_MIN_COMPONENT_PIXELS", 24)));
-  const tinySpeckPixels = Math.max(4, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_TINY_SPECK_PIXELS", 18)));
+  // Default 3: removes only true isolated 1-2 pixel noise; thin lines, chair legs, lamp stems and
+  // narrow projected geometry must survive. Floor is 1 (<=1 bypasses removeTinySpecks entirely).
+  const tinySpeckPixels = Math.max(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_TINY_SPECK_PIXELS", 3)));
   const closeRadius = Math.max(0, Math.min(1, Math.floor(readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_CLOSE_RADIUS", 0))));
+  const areaTargetPass1 = Math.max(0.05, Math.min(0.95, readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_AREA_TARGET_PASS1", 0.35)));
+  const areaTargetPass2 = Math.max(0.05, Math.min(0.95, readNumberEnv("CONTINUITY_GEMINI_MASK_REVERT_AREA_TARGET_PASS2", 0.30)));
 
   nLog("[VERTEX_CONTINUITY_GEMINI_MASK_HARD_REVERT]", {
     continuityGroupId: params.continuityGroupId || null,
@@ -3565,6 +3574,7 @@ async function generateHardRevertedOriginalMask(params: {
       height: sourceHeight,
       minComponentPixels,
       closeRadius,
+      areaTarget: areaTargetPass1,
       responseOriginalPath: pass1ResponseOriginalPath,
       alphaPath: pass1AlphaPath,
       grayscalePath: pass1GrayscalePath,
@@ -3585,6 +3595,7 @@ async function generateHardRevertedOriginalMask(params: {
       height: sourceHeight,
       minComponentPixels,
       closeRadius,
+      areaTarget: areaTargetPass2,
       responseOriginalPath: pass2ResponseOriginalPath,
       alphaPath: pass2AlphaPath,
       grayscalePath: pass2GrayscalePath,
