@@ -1,0 +1,283 @@
+{
+  "results": [
+    {
+      "pair": {
+        "original": "Original - Lounge 1.0.jpg",
+        "staged": "Staged Lounge - 1.1.webp"
+      },
+      "status": "pass",
+      "hardFail": false,
+      "confidence": 0.6,
+      "reason": "opening_removed|opening_infilled|opening_sealed|opening_relocated_review|opening_resized|opening_size_reduction_ge_0.25:0.340|opening_band_mismatch",
+      "issueType": "opening_removed",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_resized_minor:0.340",
+        "opening_signature_mismatch",
+        "frame_boundary_truncation_advisory",
+        "light_anchor_veto_deterministic_hard_fail",
+        "light_anchor_veto_confidence:1.000",
+        "light_anchor_veto_analysis:The primary exterior light-source opening (kitchen window) remains unchanged and penetrative. No other openings were added, removed, or infilled."
+      ],
+      "findings": [
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the left side of the far wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "window_sill_shift_gt_0.10"
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "A1",
+          "openingType": "walkthrough",
+          "status": "infilled",
+          "location": "walk-through opening in the left side of the far wall",
+          "machineReasons": [
+            "opening_replaced_by_wall_continuity"
+          ],
+          "confidence": 0.99
+        }
+      ]
+    },
+    {
+      "pair": {
+        "original": "Original - Lounge 1.0.jpg",
+        "staged": "Staged Lounge - 1.2.webp"
+      },
+      "status": "pass",
+      "hardFail": false,
+      "confidence": 0.6,
+      "reason": "opening_infilled|opening_sealed|opening_relocated_review|opening_resized",
+      "issueType": "opening_infilled",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_signature_mismatch",
+        "light_anchor_veto_deterministic_hard_fail",
+        "light_anchor_veto_confidence:1.000",
+        "light_anchor_veto_analysis:The primary exterior light-source opening (kitchen window) in BEFORE remains penetrative and unchanged in AFTER. No other architectural openings were present in"
+      ],
+      "findings": [
+        {
+          "id": "A1",
+          "openingType": "walkthrough",
+          "status": "altered",
+          "location": "walk-through opening in the left side of the near wall",
+          "machineReasons": [
+            "wall_index_changed"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the left side of the left wall",
+          "machineReasons": [
+            "wall_coverage_band_changed_gt_one",
+            "pane_structure_changed",
+            "orientation_changed"
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "A2",
+          "openingType": "walkthrough",
+          "status": "altered",
+          "location": "walk-through opening in the left side of the left wall",
+          "machineReasons": [
+            "wall_coverage_band_changed_gt_one",
+            "aperture_expanded_gt_0.45"
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "pair": {
+        "original": "Original - Lounge 1.0.jpg",
+        "staged": "Staged Lounge - 1.3.webp"
+      },
+      "status": "pass",
+      "hardFail": false,
+      "confidence": 0.6,
+      "reason": "opening_relocated_review",
+      "issueType": "opening_relocated",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "frame_boundary_truncation_advisory"
+      ],
+      "findings": [
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the left side of the left wall",
+          "machineReasons": [
+            "wall_index_changed"
+          ],
+          "confidence": 0.98
+        }
+      ]
+    },
+    {
+      "pair": {
+        "original": "Original - Lounge 1.0.jpg",
+        "staged": "Staged Lounge - 1.4.webp"
+      },
+      "status": "pass",
+      "hardFail": false,
+      "confidence": 0.6,
+      "reason": "opening_infilled|opening_sealed|opening_added|opening_relocated_review|opening_resized|opening_size_reduction_ge_0.25:0.784|opening_band_mismatch",
+      "issueType": "opening_infilled",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_resized_minor:0.784",
+        "opening_signature_mismatch",
+        "door_or_closet_occluded_review",
+        "light_anchor_veto_deterministic_hard_fail",
+        "light_anchor_veto_confidence:1.000",
+        "light_anchor_veto_analysis:The primary exterior window in the kitchen remains unchanged. A subtle light source on the far right of the main wall in BEFORE is now covered by a curtain in A"
+      ],
+      "findings": [
+        {
+          "id": "A1",
+          "openingType": "walkthrough",
+          "status": "altered",
+          "location": "walk-through opening in the left side of the left wall",
+          "machineReasons": [
+            "aperture_expanded_gt_0.45"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "A2",
+          "openingType": "walkthrough",
+          "status": "altered",
+          "location": "walk-through opening in the left side of the far wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "vertical_band_changed",
+            "wall_coverage_band_changed_gt_one"
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "pair": {
+        "original": "Original - Lounge 2.0.jpg",
+        "staged": "Staged Lounge - 2.1.webp"
+      },
+      "status": "pass",
+      "hardFail": false,
+      "confidence": 0.6,
+      "reason": "opening_infilled|opening_sealed|opening_relocated_review|opening_resized|opening_size_reduction_ge_0.25:0.463|opening_band_mismatch",
+      "issueType": "opening_infilled",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_resized_minor:0.463",
+        "opening_signature_mismatch",
+        "light_anchor_veto_deterministic_hard_fail",
+        "light_anchor_veto_confidence:1.000",
+        "light_anchor_veto_analysis:The primary exterior window in the kitchen area remains unchanged and penetrative. No other architectural openings were identified, removed, or relocated."
+      ],
+      "findings": [
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the right side of the near wall",
+          "machineReasons": [
+            "pane_structure_changed"
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "A1",
+          "openingType": "walkthrough",
+          "status": "altered",
+          "location": "walk-through opening in the right side of the near wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "horizontal_band_changed"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "C1",
+          "openingType": "closet_door",
+          "status": "altered",
+          "location": "closet door opening in the right side of the right wall",
+          "machineReasons": [
+            "wall_index_changed"
+          ],
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "pair": {
+        "original": "Original - Lounge 2.0.jpg",
+        "staged": "Staged Lounge - 2.2.webp"
+      },
+      "status": "pass",
+      "hardFail": false,
+      "confidence": 0.6,
+      "reason": "opening_infilled|opening_sealed|opening_relocated_review|opening_resized|opening_band_mismatch",
+      "issueType": "opening_infilled",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_resized_minor:0.147",
+        "opening_signature_mismatch",
+        "light_anchor_veto_deterministic_hard_fail",
+        "light_anchor_veto_confidence:1.000",
+        "light_anchor_veto_analysis:The primary exterior light source (kitchen window) remains penetrative. All visible architectural openings (kitchen window, doorway behind shelving unit) are pr"
+      ],
+      "findings": [
+        {
+          "id": "A1",
+          "openingType": "walkthrough",
+          "status": "altered",
+          "location": "walk-through opening in the right side of the right wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "horizontal_band_changed"
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the right side of the right wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "pane_structure_changed"
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "C1",
+          "openingType": "closet_door",
+          "status": "altered",
+          "location": "closet door opening in the right side of the far wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "vertical_band_changed"
+          ],
+          "confidence": 0.9
+        }
+      ]
+    }
+  ]
+}
