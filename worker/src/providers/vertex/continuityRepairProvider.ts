@@ -295,10 +295,10 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         jobId: request.jobId,
         renderMode: request.renderMode,
-        localPath: compiledMask.finalMaskPath,
+        localPath: compiledMask.renderEditMaskPath,
         mimeType: "image/png",
         artifactName: null,
-        byteSize: await getFileSizeBytes(compiledMask.finalMaskPath),
+        byteSize: await getFileSizeBytes(compiledMask.renderEditMaskPath),
         occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
 
@@ -318,7 +318,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           acceptedClusterMaskPath: compiledMask.geminiMaskArtifacts?.acceptedClusterMaskPath,
           occupancyConstraintMaskPath: effectiveOccupancyConstraintMaskPath,
           occupancyMaskPath: compiledMask.occupancyMaskPath,
-          finalMaskPath: compiledMask.finalMaskPath,
+          finalMaskPath: compiledMask.renderEditMaskPath,
         });
         nLog("[VERTEX_CONTINUITY_MASK_EVOLUTION_ARTIFACTS]", {
           continuityGroupId: request.continuityGroupId || null,
@@ -346,7 +346,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           stage: "2",
           attempt: request.attempt,
         },
-        localPath: compiledMask.finalMaskPath,
+        localPath: compiledMask.renderEditMaskPath,
       });
       const validation = await validateCompiledMask({
         sourceImagePath: secondaryWorkingPath,
@@ -356,7 +356,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
       });
       const maskImage = await persistMaskArtifact({
-        maskPath: compiledMask.finalMaskPath,
+        maskPath: compiledMask.renderEditMaskPath,
         jobId: request.jobId,
         imageId: request.imageId,
         continuityGroupId: request.continuityGroupId,
@@ -366,15 +366,47 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         jobId: request.jobId,
         renderMode: request.renderMode,
-        localPath: compiledMask.finalMaskPath,
+        localPath: compiledMask.renderEditMaskPath,
         gcsUri: maskImage.uri || null,
         mimeType: maskImage.mimeType || null,
         artifactName: maskImage.artifactName || null,
-        byteSize: await getFileSizeBytes(compiledMask.finalMaskPath),
+        byteSize: await getFileSizeBytes(compiledMask.renderEditMaskPath),
         occupancyPixelCount: compiledMask.occupancyPixelCount,
       });
+      nLog("[RENDER_EDIT_MASK_SELECTED]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        sourceStage: compiledMask.renderMaskMode === "legacy" ? "legacy-continuity-reasoning-mask" : "component-filtered-mask",
+        mode: compiledMask.renderMaskMode,
+        path: compiledMask.renderEditMaskPath,
+        pixelCount: compiledMask.renderEditMaskPixelCount,
+        areaRatio: Number(compiledMask.renderEditMaskAreaRatio.toFixed(6)),
+        bbox: compiledMask.renderEditMaskBounds,
+        floorCoverage: Number(compiledMask.maskComparisonMetrics.floorCoverageRatio.toFixed(6)),
+        supportCoverage: Number(compiledMask.maskComparisonMetrics.supportCoverageRatio.toFixed(6)),
+        editableFloorRatio: Number(compiledMask.maskComparisonMetrics.editableFloorRatio.toFixed(6)),
+        occupancyCompactness: Number(compiledMask.maskComparisonMetrics.occupancyCompactness.toFixed(6)),
+        occupancyPerimeterComplexity: Number(compiledMask.maskComparisonMetrics.occupancyPerimeterComplexity.toFixed(6)),
+        diagonalBridgeLength: compiledMask.maskComparisonMetrics.diagonalBridgeLength,
+      });
+      nLog("[CONTINUITY_REASONING_MASK_SELECTED]", {
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
+        sourceStage: "support-floor-constraint-reasoning",
+        mode: compiledMask.renderMaskMode,
+        path: compiledMask.continuityReasoningMaskPath,
+        pixelCount: compiledMask.continuityReasoningMaskPixelCount,
+        areaRatio: Number(compiledMask.continuityReasoningMaskAreaRatio.toFixed(6)),
+        bbox: compiledMask.continuityReasoningMaskBounds,
+        floorCoverage: Number(compiledMask.maskComparisonMetrics.floorCoverageRatio.toFixed(6)),
+        supportCoverage: Number(compiledMask.maskComparisonMetrics.supportCoverageRatio.toFixed(6)),
+      });
       const renderSourceImage = asLocalRenderReference(secondaryImage, secondaryWorkingPath);
-      const renderMaskImage = asLocalRenderReference(maskImage, compiledMask.finalMaskPath);
+      const renderMaskImage = asLocalRenderReference(maskImage, compiledMask.renderEditMaskPath);
 
       const materialPalette = request.roomConsistency?.roomState?.furnitureMemory?.materialPalette || [];
       const lightingProfile = request.roomConsistency?.roomState?.lightingProfile;
@@ -427,6 +459,8 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
           occupancyMaskPath: compiledMask.occupancyMaskPath,
           exclusionMaskPath: compiledMask.exclusionMaskPath,
           finalMaskPath: compiledMask.finalMaskPath,
+          renderEditMaskPath: compiledMask.renderEditMaskPath,
+          continuityReasoningMaskPath: compiledMask.continuityReasoningMaskPath,
         },
       });
       renderPayloadSummary = summarizeRenderPayload(render.payload);

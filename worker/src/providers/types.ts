@@ -66,6 +66,8 @@ export type ImageRenderRequest = {
     occupancyMaskPath?: string | null;
     exclusionMaskPath?: string | null;
     finalMaskPath?: string | null;
+    renderEditMaskPath?: string | null;
+    continuityReasoningMaskPath?: string | null;
   };
 };
 

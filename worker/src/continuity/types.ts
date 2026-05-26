@@ -126,11 +126,30 @@ export type SpatialPlannerResult = {
 };
 
 export type CompiledMaskResult = {
+  renderMaskMode: "legacy" | "semantic_tight";
   occupancyMaskBuffer: Buffer;
   occupancyMaskPath: string;
   occupancyGenerationMode: "polygon_projection_v1" | "gemini_image_mask_v1";
   exclusionMaskBuffer: Buffer;
   exclusionMaskPath: string;
+  renderEditMaskBuffer: Buffer;
+  renderEditMaskPath: string;
+  renderEditMaskPixelCount: number;
+  renderEditMaskAreaRatio: number;
+  renderEditMaskBounds: MaskBoundingBox | null;
+  continuityReasoningMaskBuffer: Buffer;
+  continuityReasoningMaskPath: string;
+  continuityReasoningMaskPixelCount: number;
+  continuityReasoningMaskAreaRatio: number;
+  continuityReasoningMaskBounds: MaskBoundingBox | null;
+  maskComparisonMetrics: {
+    floorCoverageRatio: number;
+    supportCoverageRatio: number;
+    editableFloorRatio: number;
+    occupancyCompactness: number;
+    occupancyPerimeterComplexity: number;
+    diagonalBridgeLength: number;
+  };
   finalMaskBuffer: Buffer;
   finalMaskPath: string;
   width: number;

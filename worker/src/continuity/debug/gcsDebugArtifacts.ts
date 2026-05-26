@@ -171,6 +171,43 @@ async function uploadLocalImageAsJpeg(params: {
   });
 }
 
+async function buildMaskOverlayPng(params: {
+  sourceImagePath: string;
+  maskPath: string;
+  color: { red: number; green: number; blue: number; alpha: number };
+}): Promise<Buffer> {
+  const sourceMeta = await sharp(params.sourceImagePath).metadata();
+  const width = Number(sourceMeta.width || 0);
+  const height = Number(sourceMeta.height || 0);
+  if (!width || !height) {
+    throw new Error(`missing_source_dimensions:${params.sourceImagePath}`);
+  }
+
+  const maskRaw = await sharp(params.maskPath)
+    .removeAlpha()
+    .grayscale()
+    .resize(width, height, { fit: "fill", kernel: sharp.kernel.nearest })
+    .raw()
+    .toBuffer();
+
+  const rgba = Buffer.alloc(width * height * 4, 0);
+  for (let index = 0; index < width * height; index += 1) {
+    if ((maskRaw[index] ?? 0) <= 127) {
+      continue;
+    }
+    const offset = index * 4;
+    rgba[offset] = params.color.red;
+    rgba[offset + 1] = params.color.green;
+    rgba[offset + 2] = params.color.blue;
+    rgba[offset + 3] = params.color.alpha;
+  }
+
+  return sharp(params.sourceImagePath)
+    .composite([{ input: rgba, raw: { width, height, channels: 4 }, blend: "over" }])
+    .png()
+    .toBuffer();
+}
+
 function buildRenderArtifactPath(params: {
   jobId: string;
   imageId: string;
@@ -238,6 +275,8 @@ export async function persistVertexRenderArtifacts(params: {
   occupancyMaskPath?: string | null;
   exclusionMaskPath?: string | null;
   finalMaskPath?: string | null;
+  renderEditMaskPath?: string | null;
+  continuityReasoningMaskPath?: string | null;
   outsideMaskDiffPng?: Buffer | null;
   outsideMaskHeatmapPng?: Buffer | null;
   overlayDebugPng?: Buffer | null;
@@ -371,6 +410,90 @@ export async function persistVertexRenderArtifacts(params: {
           fileName: "final-mask.png",
         }),
         localPath: params.finalMaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.renderEditMaskPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "render-edit-mask",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "render-edit-mask.png",
+        }),
+        localPath: params.renderEditMaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.continuityReasoningMaskPath) {
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "continuity-reasoning-mask",
+      validationPassed: params.validationPassed,
+      upload: uploadLocalImageAsPng({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "continuity-reasoning-mask.png",
+        }),
+        localPath: params.continuityReasoningMaskPath,
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.sourceImagePath && params.renderEditMaskPath) {
+    const renderEditOverlayPng = await buildMaskOverlayPng({
+      sourceImagePath: params.sourceImagePath,
+      maskPath: params.renderEditMaskPath,
+      color: { red: 72, green: 210, blue: 118, alpha: 128 },
+    });
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "render-edit-mask-overlay",
+      validationPassed: params.validationPassed,
+      upload: uploadBuffer({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "render-edit-mask-overlay.png",
+        }),
+        data: renderEditOverlayPng,
+        contentType: "image/png",
+        metadata: encodedMetadata,
+      }),
+    }));
+  }
+
+  if (params.sourceImagePath && params.continuityReasoningMaskPath) {
+    const continuityReasoningOverlayPng = await buildMaskOverlayPng({
+      sourceImagePath: params.sourceImagePath,
+      maskPath: params.continuityReasoningMaskPath,
+      color: { red: 238, green: 127, blue: 40, alpha: 128 },
+    });
+    uploads.push(await uploadAndLogRenderArtifact({
+      artifactType: "continuity-reasoning-mask-overlay",
+      validationPassed: params.validationPassed,
+      upload: uploadBuffer({
+        bucketName,
+        objectPath: buildRenderArtifactPath({
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          fileName: "continuity-reasoning-mask-overlay.png",
+        }),
+        data: continuityReasoningOverlayPng,
+        contentType: "image/png",
         metadata: encodedMetadata,
       }),
     }));

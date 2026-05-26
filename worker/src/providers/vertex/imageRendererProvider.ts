@@ -1883,6 +1883,8 @@ export class VertexImageRendererProvider implements ImageRendererProvider {
           occupancyMaskPath: request.debugMasks?.occupancyMaskPath,
           exclusionMaskPath: request.debugMasks?.exclusionMaskPath,
           finalMaskPath: request.debugMasks?.finalMaskPath,
+          renderEditMaskPath: request.debugMasks?.renderEditMaskPath,
+          continuityReasoningMaskPath: request.debugMasks?.continuityReasoningMaskPath,
           outsideMaskDiffPng: driftValidation.visualizations?.outsideMaskDiffPng,
           outsideMaskHeatmapPng: driftValidation.visualizations?.outsideMaskHeatmapPng,
           overlayDebugPng: driftValidation.visualizations?.overlayDebugPng,

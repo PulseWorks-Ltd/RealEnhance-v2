@@ -87,6 +87,126 @@ function findMaskBoundingBox(buffer: Buffer, width: number, height: number) {
   };
 }
 
+function resolveRenderMaskMode(): "legacy" | "semantic_tight" {
+  const raw = String(process.env.CONTINUITY_RENDER_MASK_MODE || "legacy").trim().toLowerCase();
+  return raw === "semantic_tight" ? "semantic_tight" : "legacy";
+}
+
+function deriveMaskPath(basePath: string, stem: string): string {
+  if (basePath.includes("-vertex-continuity-final-mask")) {
+    return basePath.replace("-vertex-continuity-final-mask", `-vertex-continuity-${stem}`);
+  }
+  if (basePath.toLowerCase().endsWith(".png")) {
+    return `${basePath.slice(0, -4)}-${stem}.png`;
+  }
+  return `${basePath}-${stem}.png`;
+}
+
+function conservativeSemanticStabilization(mask: Buffer, width: number, height: number): Buffer {
+  const stabilized = Buffer.from(mask);
+  const neighbors = [
+    [-1, -1], [0, -1], [1, -1],
+    [-1, 0],           [1, 0],
+    [-1, 1],  [0, 1],  [1, 1],
+  ];
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      let activeNeighborCount = 0;
+      for (const [dx, dy] of neighbors) {
+        const nIndex = (y + dy) * width + (x + dx);
+        if ((mask[nIndex] ?? 0) > 0) {
+          activeNeighborCount += 1;
+        }
+      }
+
+      const isActive = (mask[index] ?? 0) > 0;
+      if (!isActive && activeNeighborCount >= 6) {
+        stabilized[index] = 255;
+      } else if (isActive && activeNeighborCount <= 1) {
+        stabilized[index] = 0;
+      }
+    }
+  }
+
+  return stabilized;
+}
+
+function computePerimeter(mask: Buffer, width: number, height: number): number {
+  let perimeter = 0;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = y * width + x;
+      if ((mask[index] ?? 0) === 0) {
+        continue;
+      }
+      const left = x > 0 ? mask[index - 1] : 0;
+      const right = x < width - 1 ? mask[index + 1] : 0;
+      const top = y > 0 ? mask[index - width] : 0;
+      const bottom = y < height - 1 ? mask[index + width] : 0;
+      if (left === 0 || right === 0 || top === 0 || bottom === 0) {
+        perimeter += 1;
+      }
+    }
+  }
+  return perimeter;
+}
+
+function computeDiagonalBridgeLength(mask: Buffer, width: number, height: number): number {
+  let diagonalBridgeLength = 0;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      if ((mask[index] ?? 0) === 0) {
+        continue;
+      }
+      const left = (mask[index - 1] ?? 0) > 0;
+      const right = (mask[index + 1] ?? 0) > 0;
+      const top = (mask[index - width] ?? 0) > 0;
+      const bottom = (mask[index + width] ?? 0) > 0;
+      const diagonal =
+        (mask[index - width - 1] ?? 0) > 0
+        || (mask[index - width + 1] ?? 0) > 0
+        || (mask[index + width - 1] ?? 0) > 0
+        || (mask[index + width + 1] ?? 0) > 0;
+      const orthogonalCount = Number(left) + Number(right) + Number(top) + Number(bottom);
+      if (diagonal && orthogonalCount <= 1) {
+        diagonalBridgeLength += 1;
+      }
+    }
+  }
+  return diagonalBridgeLength;
+}
+
+function computeBottomBandPixelCount(mask: Buffer, width: number, height: number, startRatio = 0.62): number {
+  const yStart = Math.max(0, Math.min(height - 1, Math.floor(height * startRatio)));
+  let count = 0;
+  for (let y = yStart; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if ((mask[y * width + x] ?? 0) > 0) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+function applyExclusionMask(baseMask: Buffer, exclusionRaw: Buffer): { masked: Buffer; overlapPixelCount: number } {
+  const masked = Buffer.alloc(baseMask.length);
+  let overlapPixelCount = 0;
+  for (let index = 0; index < baseMask.length; index += 1) {
+    if ((baseMask[index] ?? 0) > 0 && (exclusionRaw[index] ?? 0) > 0) {
+      overlapPixelCount += 1;
+    }
+    masked[index] = (baseMask[index] ?? 0) > 0 && (exclusionRaw[index] ?? 0) === 0 ? 255 : 0;
+  }
+  return {
+    masked,
+    overlapPixelCount,
+  };
+}
+
 export async function buildDeterministicPlanConstraintMask(params: {
   plan: PlacementPlan;
   secondaryImagePath: string;
@@ -184,6 +304,8 @@ export async function compileDeterministicMask(params: {
       "mask_missing_dimensions"
     );
   }
+
+  const renderMaskMode = resolveRenderMaskMode();
 
   let occupancyRaw: Buffer;
   let occupancyGenerationMode: CompiledMaskResult["occupancyGenerationMode"] = "polygon_projection_v1";
@@ -291,6 +413,8 @@ export async function compileDeterministicMask(params: {
     occupancyRaw = Buffer.from(occupancyRaster.data);
   }
 
+  const semanticOccupancyRaw = Buffer.from(occupancyRaw);
+
   let occupancyConstraintApplied = false;
   let occupancyConstraintPixelCount = 0;
   if (params.occupancyConstraintMaskPath) {
@@ -329,26 +453,72 @@ export async function compileDeterministicMask(params: {
     .raw()
     .toBuffer();
 
-  const finalRaw = Buffer.alloc(width * height);
-  let overlapPixelCount = 0;
-  for (let index = 0; index < finalRaw.length; index += 1) {
-    if (occupancyRaw[index] > 0 && exclusionRaw[index] > 0) {
-      overlapPixelCount += 1;
-    }
-    finalRaw[index] = occupancyRaw[index] > 0 && exclusionRaw[index] === 0 ? 255 : 0;
-  }
+  const continuityReasoningMask = applyExclusionMask(occupancyRaw, exclusionRaw);
+  const continuityReasoningRaw = continuityReasoningMask.masked;
+  const continuityReasoningPixelCount = countWhitePixels(continuityReasoningRaw);
+
+  const semanticBase = renderMaskMode === "semantic_tight"
+    ? conservativeSemanticStabilization(semanticOccupancyRaw, width, height)
+    : Buffer.from(occupancyRaw);
+  const renderEditMasked = applyExclusionMask(semanticBase, exclusionRaw);
+  const renderEditRaw = renderMaskMode === "legacy"
+    ? Buffer.from(continuityReasoningRaw)
+    : renderEditMasked.masked;
+
+  const renderEditMaskPath = deriveMaskPath(params.finalMaskPath, "render-edit-mask");
+  const continuityReasoningMaskPath = deriveMaskPath(params.finalMaskPath, "continuity-reasoning-mask");
+
+  const finalRaw = Buffer.from(continuityReasoningRaw);
+  const overlapPixelCount = continuityReasoningMask.overlapPixelCount;
   const finalPixelCount = countWhitePixels(finalRaw);
+  const renderEditMaskPixelCount = countWhitePixels(renderEditRaw);
   const totalPixelCount = width * height;
   const occupancyAreaRatio = occupancyPixelCount / totalPixelCount;
   const exclusionAreaRatio = exclusionMask.protectedPixelCount / totalPixelCount;
   const finalAreaRatio = finalPixelCount / totalPixelCount;
+  const continuityReasoningMaskAreaRatio = continuityReasoningPixelCount / totalPixelCount;
+  const renderEditMaskAreaRatio = renderEditMaskPixelCount / totalPixelCount;
   const overlapReductionRatio = occupancyPixelCount > 0
     ? overlapPixelCount / occupancyPixelCount
     : 1;
   const insertionBounds = findMaskBoundingBox(finalRaw, width, height);
+  const continuityReasoningMaskBounds = findMaskBoundingBox(continuityReasoningRaw, width, height);
+  const renderEditMaskBounds = findMaskBoundingBox(renderEditRaw, width, height);
+  const continuityReasoningFloorPixels = computeBottomBandPixelCount(continuityReasoningRaw, width, height);
+  const renderEditFloorPixels = computeBottomBandPixelCount(renderEditRaw, width, height);
+  const floorCoverageRatio = continuityReasoningPixelCount > 0
+    ? continuityReasoningFloorPixels / continuityReasoningPixelCount
+    : 0;
+  const editableFloorRatio = continuityReasoningFloorPixels > 0
+    ? renderEditFloorPixels / continuityReasoningFloorPixels
+    : 0;
+  const supportCoverageRatio = continuityReasoningPixelCount > 0
+    ? Math.max(0, continuityReasoningPixelCount - renderEditMaskPixelCount) / continuityReasoningPixelCount
+    : 0;
+  const renderEditPerimeter = computePerimeter(renderEditRaw, width, height);
+  const occupancyCompactness = (() => {
+    if (!renderEditMaskBounds || renderEditMaskPixelCount <= 0) {
+      return 0;
+    }
+    const boxArea = Math.max(1, renderEditMaskBounds.width * renderEditMaskBounds.height);
+    return renderEditMaskPixelCount / boxArea;
+  })();
+  const occupancyPerimeterComplexity = renderEditMaskPixelCount > 0
+    ? renderEditPerimeter / Math.sqrt(renderEditMaskPixelCount)
+    : 0;
+  const diagonalBridgeLength = computeDiagonalBridgeLength(renderEditRaw, width, height);
+
+  const renderEditMaskBuffer = await sharp(renderEditRaw, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
+  const continuityReasoningMaskBuffer = await sharp(continuityReasoningRaw, {
+    raw: { width, height, channels: 1 },
+  }).png().toBuffer();
   const finalMaskBuffer = await sharp(finalRaw, {
     raw: { width, height, channels: 1 },
   }).png().toBuffer();
+  await sharp(renderEditMaskBuffer).toFile(renderEditMaskPath);
+  await sharp(continuityReasoningMaskBuffer).toFile(continuityReasoningMaskPath);
   await sharp(finalMaskBuffer).toFile(params.finalMaskPath);
 
   nLog("[VERTEX_CONTINUITY_MASK]", {
@@ -377,6 +547,9 @@ export async function compileDeterministicMask(params: {
     occupancyConstraintApplied,
     occupancyConstraintPixelCount,
     occupancyGenerationMode,
+    renderMaskMode,
+    renderEditMaskPixelCount,
+    continuityReasoningMaskPixelCount: continuityReasoningPixelCount,
     geminiMaskModel: geminiMaskArtifacts?.model || null,
     protectedEdgeStats: exclusionMask.protectedEdgeStats,
   });
@@ -397,6 +570,8 @@ export async function compileDeterministicMask(params: {
     insertionBounds,
     occupancyGenerationMode,
     artifactPath: params.finalMaskPath,
+    renderEditMaskPath,
+    continuityReasoningMaskPath,
   });
 
   nLog("[VERTEX_CONTINUITY_MASK_COMPILATION]", {
@@ -410,14 +585,36 @@ export async function compileDeterministicMask(params: {
     occupancyConstraintApplied: !!params.occupancyConstraintMaskPath,
     occupancyGenerationMode,
     finalPixelCount,
+    renderMaskMode,
+    renderEditMaskPixelCount,
+    continuityReasoningMaskPixelCount: continuityReasoningPixelCount,
   });
 
   return {
+    renderMaskMode,
     occupancyMaskBuffer,
     occupancyMaskPath: params.occupancyMaskPath,
     occupancyGenerationMode,
     exclusionMaskBuffer: exclusionMask.maskBuffer,
     exclusionMaskPath: params.exclusionMaskPath,
+    renderEditMaskBuffer,
+    renderEditMaskPath,
+    renderEditMaskPixelCount,
+    renderEditMaskAreaRatio,
+    renderEditMaskBounds,
+    continuityReasoningMaskBuffer,
+    continuityReasoningMaskPath,
+    continuityReasoningMaskPixelCount: continuityReasoningPixelCount,
+    continuityReasoningMaskAreaRatio,
+    continuityReasoningMaskBounds,
+    maskComparisonMetrics: {
+      floorCoverageRatio,
+      supportCoverageRatio,
+      editableFloorRatio,
+      occupancyCompactness,
+      occupancyPerimeterComplexity,
+      diagonalBridgeLength,
+    },
     finalMaskBuffer,
     finalMaskPath: params.finalMaskPath,
     width,
