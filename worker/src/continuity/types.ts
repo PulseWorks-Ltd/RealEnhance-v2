@@ -127,6 +127,7 @@ export type SpatialPlannerResult = {
 
 export type CompiledMaskResult = {
   renderMaskMode: "legacy" | "semantic_tight";
+  renderMaskSourceStage: string;
   occupancyMaskBuffer: Buffer;
   occupancyMaskPath: string;
   occupancyGenerationMode: "polygon_projection_v1" | "gemini_image_mask_v1";
@@ -149,6 +150,7 @@ export type CompiledMaskResult = {
     occupancyCompactness: number;
     occupancyPerimeterComplexity: number;
     diagonalBridgeLength: number;
+    connectedComponentCount: number;
   };
   finalMaskBuffer: Buffer;
   finalMaskPath: string;

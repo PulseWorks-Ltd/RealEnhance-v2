@@ -378,7 +378,7 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         imageId: request.imageId,
         jobId: request.jobId,
         renderMode: request.renderMode,
-        sourceStage: compiledMask.renderMaskMode === "legacy" ? "legacy-continuity-reasoning-mask" : "component-filtered-mask",
+        sourceStage: compiledMask.renderMaskSourceStage,
         mode: compiledMask.renderMaskMode,
         path: compiledMask.renderEditMaskPath,
         pixelCount: compiledMask.renderEditMaskPixelCount,
@@ -390,6 +390,19 @@ export class VertexContinuityRepairProvider implements ContinuityRepairProvider 
         occupancyCompactness: Number(compiledMask.maskComparisonMetrics.occupancyCompactness.toFixed(6)),
         occupancyPerimeterComplexity: Number(compiledMask.maskComparisonMetrics.occupancyPerimeterComplexity.toFixed(6)),
         diagonalBridgeLength: compiledMask.maskComparisonMetrics.diagonalBridgeLength,
+        connectedComponentCount: compiledMask.maskComparisonMetrics.connectedComponentCount,
+      });
+      nLog("[RENDER_MASK_SOURCE]", {
+        mode: compiledMask.renderMaskMode,
+        sourceStage: compiledMask.renderMaskSourceStage,
+        areaRatio: Number(compiledMask.renderEditMaskAreaRatio.toFixed(6)),
+        floorCoverageRatio: Number(compiledMask.maskComparisonMetrics.floorCoverageRatio.toFixed(6)),
+        supportCoverageRatio: Number(compiledMask.maskComparisonMetrics.supportCoverageRatio.toFixed(6)),
+        connectedComponentCount: compiledMask.maskComparisonMetrics.connectedComponentCount,
+        continuityGroupId: request.continuityGroupId || null,
+        imageId: request.imageId,
+        jobId: request.jobId,
+        renderMode: request.renderMode,
       });
       nLog("[CONTINUITY_REASONING_MASK_SELECTED]", {
         continuityGroupId: request.continuityGroupId || null,
