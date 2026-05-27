@@ -10646,7 +10646,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ===== STAGE 2 UNIFIED STRUCTURAL RETRY CONTROLLER =====
   let unifiedValidation: any = undefined;
   let effectiveValidationMode: "log" | "enforce" | undefined = undefined;
-  const MAX_STAGE2_RETRIES = Math.max(1, stage2MaxAttempts || 1);
+  // Policy: Stage 2 validation always gets one bounded retry before terminal failure.
+  // This keeps retry behavior deterministic across all validation failure types.
+  const MAX_STAGE2_RETRIES = 2;
+  const STAGE2_RETRY_GRACE_MS = Math.max(
+    30000,
+    Number(process.env.STAGE2_RETRY_GRACE_MS || 180000)
+  );
   const tVal = Date.now();
   await safeWriteJobStatus(
     payload.jobId,
@@ -10817,6 +10823,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
     };
 
+    let stage2RetryGraceActivated = false;
     for (let attempt = 1; attempt <= MAX_STAGE2_RETRIES; attempt++) {
       logStage2AttemptAnchor(attempt);
       const emitStage2DecisionBreakdown = (params: {
@@ -10855,20 +10862,40 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       if (await stopIfCancelled("stage2_validation_loop")) return;
-      if (Date.now() - t2 > MAX_STAGE_RUNTIME_MS) {
-        logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: Date.now() - t2 });
-        stage2Blocked = true;
-        stage2BlockedReason = "stage2_runtime_exceeded";
-        await safeWriteJobStatus(
-          payload.jobId,
-          {
-            status: "failed",
-            errorMessage: "stage2_runtime_exceeded",
-            reason: "stage2_runtime_exceeded",
-          },
-          "stage2_runtime_exceeded_terminal"
-        );
-        return;
+      const stage2ElapsedMs = Date.now() - t2;
+      const stage2RetryGraceDeadlineMs = MAX_STAGE_RUNTIME_MS + STAGE2_RETRY_GRACE_MS;
+      if (stage2ElapsedMs > MAX_STAGE_RUNTIME_MS) {
+        // If attempt 2 was reached, allow a bounded grace window so retry generation can run.
+        // This avoids terminaling immediately after retry scheduling under heavy baseline/telemetry overhead.
+        if (attempt > 1 && !stage2RetryGraceActivated) {
+          stage2RetryGraceActivated = true;
+          const overrunMs = stage2ElapsedMs - MAX_STAGE_RUNTIME_MS;
+          nLog("[STAGE2_RUNTIME_RETRY_GRACE]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            maxRuntimeMs: MAX_STAGE_RUNTIME_MS,
+            overrunMs,
+            graceMs: STAGE2_RETRY_GRACE_MS,
+            action: "allow_retry_attempt_execution",
+          });
+        } else if (attempt > 1 && stage2RetryGraceActivated && stage2ElapsedMs <= stage2RetryGraceDeadlineMs) {
+          // Retry grace already activated and still within grace budget; continue execution.
+        } else {
+          logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: stage2ElapsedMs });
+          stage2Blocked = true;
+          stage2BlockedReason = "stage2_runtime_exceeded";
+          await safeWriteJobStatus(
+            payload.jobId,
+            {
+              status: "failed",
+              errorMessage: "stage2_runtime_exceeded",
+              reason: "stage2_runtime_exceeded",
+            },
+            "stage2_runtime_exceeded_terminal"
+          );
+          return;
+        }
       }
 
       if (attempt > 1) {
