@@ -1,0 +1,52 @@
+name: Worker Validator Regression
+
+on:
+  pull_request:
+    paths:
+      - "worker/**"
+      - "shared/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/worker-validator-regression.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "worker/**"
+      - "shared/**"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/workflows/worker-validator-regression.yml"
+  workflow_dispatch:
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build worker
+        run: pnpm --filter @realenhance/worker run build
+
+      - name: Run opening validator unit tests
+        run: pnpm --filter @realenhance/worker exec jest --config jest.config.cjs --no-coverage worker/tests/openingValidator.test.ts --runInBand
+
+      - name: Run opening regression snapshots
+        run: pnpm --filter @realenhance/worker run test:opening-regression-fixtures:ci

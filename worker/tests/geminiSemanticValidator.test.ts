@@ -40,8 +40,6 @@ describe("runGeminiSemanticValidator - stage2 opening identity lock", () => {
       },
     });
 
-    const logSpy = jest.spyOn(console, "log").mockImplementation(() => {});
-
     const verdict = await runGeminiSemanticValidator({
       basePath: "/tmp/base.webp",
       candidatePath: "/tmp/candidate.webp",
@@ -80,13 +78,12 @@ describe("runGeminiSemanticValidator - stage2 opening identity lock", () => {
     });
 
     expect(verdict.hardFail).toBe(true);
-
-    const decisionLog = logSpy.mock.calls
-      .map((call) => String(call[0]))
-      .find((line) => line.includes("[STRUCTURAL_GEMINI_DECISION]"));
-
-    expect(decisionLog).toContain("openingViolationDetected=true");
-    expect(decisionLog).toContain("hardFail=true");
-    expect(decisionLog).toContain("downgradeApplied=false");
+    expect(verdict.violationType).toBe("opening_change");
+    expect(verdict.category).toBe("structure");
+    expect(verdict.reasons).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Opening removed"),
+      ])
+    );
   });
 });
