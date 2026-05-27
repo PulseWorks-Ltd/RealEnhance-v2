@@ -778,6 +778,7 @@ function inferOpeningIssueType(params: {
   if (has("opening_sealed")) return ISSUE_TYPES.OPENING_SEALED;
   if (has("opening_type_changed") || has("opening_class_mismatch") || has("opening_added")) return ISSUE_TYPES.OPENING_ANOMALY;
   if (has("opening_relocated") || has("light_anchor_opening_relocated")) return ISSUE_TYPES.OPENING_RELOCATED;
+  if (has("opening_visibility_reduction")) return ISSUE_TYPES.OPENING_OCCLUSION;
   if (has("opening_size_reduction_ge") || has("opening_resize_ge_0_30")) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
   if (has("opening_resized")) return ISSUE_TYPES.OPENING_RESIZED_MINOR;
   if (has("window_occlusion") || has("door_or_closet_blocked") || has("occlusion")) return ISSUE_TYPES.OPENING_OCCLUSION;
@@ -1225,6 +1226,16 @@ export async function runOpeningValidator(
     const hasAddedOpenings =
       Number(deterministic.summary.openingCount?.after || 0) >
       Number(deterministic.summary.openingCount?.before || 0);
+    const baselineGraphStable = baseline.graphMeta?.graphStable === true;
+    const candidateGraphStable = Boolean(frozenCandidateGraph.graphMeta?.graphStable);
+    const baselineGraphConfidence = Number(baseline.graphMeta?.graphConfidence ?? baseline.graphMeta?.extractionAgreement ?? 0);
+    const candidateGraphConfidence = Number(frozenCandidateGraph.graphMeta?.graphConfidence ?? frozenCandidateGraph.graphMeta?.extractionAgreement ?? 0);
+    const openingGraphStable = baselineGraphStable && candidateGraphStable;
+    const openingGraphConfidence = Math.min(baselineGraphConfidence, candidateGraphConfidence);
+    const authoritativeAddedOpenings =
+      hasAddedOpenings &&
+      openingGraphStable &&
+      openingGraphConfidence >= Number(process.env.OPENING_ADDED_GRAPH_MIN_CONFIDENCE || 0.67);
 
     const firstPassContinuity = runStructuralContinuityPrecheck({
       baseline,
@@ -1233,7 +1244,7 @@ export async function runOpeningValidator(
     const firstPassAddedSignals = extractStrongDeterministicAddedOpeningSignals({
       baseline,
       detectedOpenings: deterministic.detectedOpenings || [],
-      hasAddedOpenings,
+      hasAddedOpenings: authoritativeAddedOpenings,
       wallRemap: firstPassContinuity.wallRemap,
       matchedDetectedIds: new Set((deterministic.reconciledMatches || []).map((entry) => String(entry.detectedId))),
       summary: deterministic.summary,
@@ -1241,7 +1252,7 @@ export async function runOpeningValidator(
     let deterministicStrongAddedOpening = false;
     let openingAddedConsensusUnstable = false;
     let openingAddedStructuralContinuityUnresolved = false;
-    if (hasAddedOpenings && firstPassAddedSignals.length > 0) {
+    if (authoritativeAddedOpenings && firstPassAddedSignals.length > 0) {
       const deterministicSecondPass = await validateOpeningPreservation(baseline, afterImageUrl, {
         jobId: options?.jobId,
         imageId: options?.imageId,
@@ -1307,7 +1318,7 @@ export async function runOpeningValidator(
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
       deterministic.summary.openingClassMismatch ||
-      hasAddedOpenings;
+      authoritativeAddedOpenings;
 
     let strictDoorOcclusionFail = false;
     let strictWindowOcclusionFail = false;
@@ -1356,23 +1367,102 @@ export async function runOpeningValidator(
     }
 
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
-    const deterministicHardFailIssue =
+    const rawDeterministicHardFailSignal =
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
       deterministic.summary.openingClassMismatch ||
-      hasAddedOpenings;
+      authoritativeAddedOpenings;
+
+    const findings = Array.isArray(deterministic.findings) ? deterministic.findings : [];
+    const missingOrInfilledFindings = findings.filter((finding) =>
+      finding.status === "missing" || finding.status === "infilled"
+    );
+    const persistentUnmatchedOpeningEvidence = missingOrInfilledFindings.some((finding) => finding.confidence >= 0.9);
+    const strongContinuityBreakEvidence = missingOrInfilledFindings.some((finding) =>
+      finding.machineReasons.includes("opening_replaced_by_wall_continuity") ||
+      finding.machineReasons.includes("missing_opening")
+    );
+    const strongFrameDestructionEvidence = missingOrInfilledFindings.some((finding) =>
+      finding.machineReasons.includes("opening_replaced_by_wall_continuity")
+    );
+    const strongCrossAnchorInconsistency =
+      deterministic.summary.openingSignatureMismatch === true &&
+      deterministic.summary.openingRelocated === true;
+    const strongBandCorroboration =
+      deterministic.summary.openingBandMismatch &&
+      (deterministic.summary.openingRelocated || deterministic.summary.openingApertureExpanded === true);
+    const strongTopologyBreakEvidence =
+      deterministic.summary.openingRemoved ||
+      deterministic.summary.openingClassMismatch ||
+      deterministic.summary.openingApertureExpanded === true ||
+      deterministic.summary.openingStateChanged === true ||
+      authoritativeAddedOpenings;
+    const deterministicStructuralCorroborated =
+      strongTopologyBreakEvidence ||
+      strongContinuityBreakEvidence ||
+      strongBandCorroboration ||
+      strongCrossAnchorInconsistency ||
+      strongFrameDestructionEvidence ||
+      persistentUnmatchedOpeningEvidence;
+
+    const deterministicHardFailIssue =
+      rawDeterministicHardFailSignal && deterministicStructuralCorroborated;
+
+    const deterministicHardFailButOcclusionSusceptible =
+      rawDeterministicHardFailSignal &&
+      !deterministicHardFailIssue &&
+      (
+        openingSizeReductionDetected ||
+        strictDoorOcclusionFail ||
+        strictWindowOcclusionFail ||
+        deterministic.summary.stagingOcclusionAdvisory === true ||
+        deterministic.summary.frameBoundaryTruncationAdvisory === true ||
+        deterministic.summary.semanticAnchorErosionAdvisory === true
+      );
 
     const reasonParts: string[] = [];
     const advisorySignals: string[] = [];
-    if (deterministic.summary.openingRemoved) reasonParts.push("opening_removed");
-    if (deterministic.summary.openingInfilled) reasonParts.push("opening_infilled");
-    if (deterministic.summary.openingSealed) reasonParts.push("opening_sealed");
+
+    const strongRemovedEvidence = deterministic.summary.openingRemoved && (
+      missingOrInfilledFindings.some((finding) => finding.status === "missing") ||
+      strongContinuityBreakEvidence
+    );
+    const strongInfilledEvidence = deterministic.summary.openingInfilled && (
+      missingOrInfilledFindings.some((finding) =>
+        finding.status === "infilled" && finding.machineReasons.includes("opening_replaced_by_wall_continuity")
+      ) ||
+      strongFrameDestructionEvidence
+    );
+
+    if (strongRemovedEvidence) {
+      reasonParts.push("opening_removed");
+    } else if (deterministic.summary.openingRemoved) {
+      advisorySignals.push("opening_loss_unconfirmed");
+    }
+
+    if (strongInfilledEvidence) {
+      reasonParts.push("opening_infilled");
+    } else if (deterministic.summary.openingInfilled) {
+      advisorySignals.push("opening_fill_unconfirmed");
+    }
+
+    if (deterministic.summary.openingSealed && (strongRemovedEvidence || strongInfilledEvidence)) {
+      reasonParts.push("opening_sealed");
+    } else if (deterministic.summary.openingSealed) {
+      advisorySignals.push("opening_seal_unconfirmed");
+    }
+
     if (deterministic.summary.openingClassMismatch) {
       reasonParts.push("opening_type_changed");
       reasonParts.push("opening_class_mismatch");
     }
     if (hasAddedOpenings) reasonParts.push("opening_added");
+    if (hasAddedOpenings && !authoritativeAddedOpenings) {
+      advisorySignals.push("opening_added_graph_stability_unconfirmed");
+      advisorySignals.push(`opening_added_graph_confidence:${openingGraphConfidence.toFixed(3)}`);
+      openingAddedConsensusUnstable = true;
+    }
     if (deterministic.summary.openingRelocated || relocationDetected) {
       advisorySignals.push("opening_relocated_review");
       reasonParts.push("opening_relocated_review");
@@ -1383,12 +1473,13 @@ export async function runOpeningValidator(
     if (openingAddedStructuralContinuityUnresolved) {
       advisorySignals.push("opening_added_structural_continuity_unresolved");
     }
-    if (openingSizeReductionDetected || deterministic.summary.openingResized) {
+    if (deterministic.summary.openingResized) {
       reasonParts.push("opening_resized");
-      if (openingSizeReductionDetected && maxSizeReductionDelta > 0) {
-        advisorySignals.push(`opening_resized_minor:${maxSizeReductionDelta.toFixed(3)}`);
-      }
-      if (maxSizeReductionDelta >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
+    }
+    if (openingSizeReductionDetected && maxSizeReductionDelta > 0) {
+      advisorySignals.push(`opening_visibility_reduction:${maxSizeReductionDelta.toFixed(3)}`);
+      advisorySignals.push(`opening_resized_minor:${maxSizeReductionDelta.toFixed(3)}`);
+      if (deterministic.summary.openingResized && maxSizeReductionDelta >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
         reasonParts.push(`opening_size_reduction_ge_${OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD.toFixed(2)}:${maxSizeReductionDelta.toFixed(3)}`);
       }
     }
@@ -1409,7 +1500,8 @@ export async function runOpeningValidator(
     if (strictWindowOcclusionFail) advisorySignals.push("window_occlusion_review");
 
     const microCheckRisk =
-      !deterministicHardFailIssue && (
+      (!deterministicHardFailIssue || deterministicHardFailButOcclusionSusceptible) && (
+        deterministicHardFailButOcclusionSusceptible ||
         deterministic.summary.openingResized ||
         areaDelta >= 0.25
       );
@@ -1458,6 +1550,24 @@ export async function runOpeningValidator(
           advisorySignals.push("light_anchor_opening_added_review");
         }
       }
+    }
+
+    if (deterministicHardFailButOcclusionSusceptible) {
+      advisorySignals.push("opening_occlusion_susceptible_requires_semantic_review");
+      console.log("[OPENING_OCCLUSION_SUSCEPTIBLE_PATH]", {
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        attempt: options?.attempt,
+        rawDeterministicHardFailSignal,
+        deterministicStructuralCorroborated,
+        openingSizeReductionDetected,
+        strictDoorOcclusionFail,
+        strictWindowOcclusionFail,
+        stagingOcclusionAdvisory: deterministic.summary.stagingOcclusionAdvisory === true,
+        frameBoundaryTruncationAdvisory: deterministic.summary.frameBoundaryTruncationAdvisory === true,
+        semanticAnchorErosionAdvisory: deterministic.summary.semanticAnchorErosionAdvisory === true,
+        action: "run_microcheck_before_non_vetoable_escalation",
+      });
     }
 
     const hasHighConfidenceMicroHardFailSignal = reasonParts.some((part) =>
@@ -1518,7 +1628,11 @@ export async function runOpeningValidator(
     });
     const signalCoherent = coherenceAnalysis.coherent || addedHardFailCorroborated;
 
-    hardFail = (deterministicHardFailIssue || hasHighConfidenceMicroHardFailSignal || addedHardFailCorroborated) &&
+    const deterministicEscalationEligible =
+      deterministicHardFailIssue &&
+      (deterministicStructuralCorroborated || hasHighConfidenceMicroHardFailSignal || addedHardFailCorroborated);
+
+    hardFail = (deterministicEscalationEligible || hasHighConfidenceMicroHardFailSignal || addedHardFailCorroborated) &&
       hardFailConfidence >= HARD_FAIL_CONFIDENCE_THRESHOLD &&
       signalCoherent;
 
@@ -1562,7 +1676,6 @@ export async function runOpeningValidator(
       reasonParts,
       advisorySignals,
     });
-    const findings = Array.isArray(deterministic.findings) ? deterministic.findings : [];
     const advisoryObservations = buildOpeningAdvisoryObservations(findings);
     const explanation = buildOpeningExplanation(findings, reason, deterministic.summary.analysis);
     const relocationOnly = !hardFail && (deterministic.summary.openingRelocated || relocationDetected);

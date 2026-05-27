@@ -11632,7 +11632,7 @@ All openings must remain identical in position and size to the original image.`;
         // When the opening validator explicitly hard-failed with opening_removed or opening_infilled
         // at high confidence and no occlusion evidence, preserve the hard-fail and skip the
         // sensor pass path that would otherwise log a misleading PASS.
-        const openingOcclusionIndicator = /\b(curtains?|blinds?|drapes?|window[\s_-]?coverings?)\b/i.test(
+        const openingOcclusionIndicator = /\b(curtains?|blinds?|drapes?|window[\s_-]?coverings?|beds?|headboards?|sofas?|couches?|chairs?|plants?|leaves?|lamps?|shel(?:f|ves)|decor|furniture|furnishings?|nightstands?|side[\s_-]?tables?)\b/i.test(
           [opRes.reason || "", ...(opRes.advisorySignals || [])].join(" ")
         );
         const isHighConfidenceOpeningRemoval =
@@ -12508,6 +12508,20 @@ All openings must remain identical in position and size to the original image.`;
         "window_coverings",
         "soft furnishing",
         "soft furnishings",
+        "bed",
+        "headboard",
+        "sofa",
+        "couch",
+        "chair",
+        "plant",
+        "leaf",
+        "lamp",
+        "shelf",
+        "shelving",
+        "decor",
+        "furniture",
+        "foreground",
+        "staging",
       ];
 
       const normalizeOcclusionGuardText = (value: string): string =>
