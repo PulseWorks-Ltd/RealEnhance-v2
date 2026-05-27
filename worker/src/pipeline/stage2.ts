@@ -1544,6 +1544,18 @@ Anchor visibility: ${relationalHint.anchorVisibility || "medium"}`;
   }
 
   if (opts.layoutPlan && !isReferenceViewWithMaster) {
+    const plannerInstructionMode: "exact" | "guided" = attemptNumber > 1 ? "guided" : "exact";
+    const plannerInstructionLine = plannerInstructionMode === "guided"
+      ? "Base the staging composition on the following layout plan while preserving architectural continuity and adhering to all staging prompt restrictions."
+      : "Use the following furniture placement plan exactly.";
+
+    nLog("[STAGE2_LAYOUT_PLAN_INSTRUCTION]", {
+      jobId: opts.jobId,
+      attemptNumber,
+      retryAttempt: Math.max(0, attemptNumber - 1),
+      plannerInstructionMode,
+      promptVariant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy",
+    });
     const anchorRegion = opts.layoutPlan.anchorRegion;
     if (anchorRegion) {
       textPrompt += `
@@ -1562,7 +1574,7 @@ Do NOT modify architecture, openings, or permanent fixtures to satisfy this guid
 
     textPrompt += `
 
-Use the following furniture placement plan exactly.
+${plannerInstructionLine}
 Do not place furniture outside the defined zones.
 
 ${formatStage2LayoutPlanForPrompt(opts.layoutPlan)}
