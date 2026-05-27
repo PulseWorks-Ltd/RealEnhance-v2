@@ -166,7 +166,7 @@ type StructuralBaselineCacheRecord = {
 const STRUCTURAL_BASELINE_CACHE_PREFIX = "opening:structural-baseline:v1:";
 const STRUCTURAL_BASELINE_STABILIZATION_PASSES = Math.max(
   2,
-  Number(process.env.OPENING_BASELINE_STABILIZATION_PASSES || 3)
+  Number(process.env.OPENING_BASELINE_STABILIZATION_PASSES || 2)
 );
 const STRUCTURAL_BASELINE_MIN_AGREEMENT = Math.min(
   1,
