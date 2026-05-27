@@ -3,6 +3,12 @@ import path from "path";
 import sharp from "sharp";
 import type { BaseArtifacts } from "./baseArtifacts";
 import { ensureBaseBlur } from "./baseArtifacts";
+import { resolveSectionConcurrency, withMemoryCriticalSection } from "../utils/memoryCriticalSection";
+
+const STRUCTURAL_MASK_MAX_CONCURRENCY = resolveSectionConcurrency(
+  "STRUCTURAL_MASK_MAX_CONCURRENCY",
+  2
+);
 
 // Loads mask from cache if present, else computes and saves for future reuse
 export async function loadOrComputeStructuralMask(
@@ -139,15 +145,27 @@ export async function computeStructuralEdgeMask(
   if (!isFinite(preBlur) || preBlur <= 0) preBlur = 0.6;
   preBlur = Math.max(0.3, Math.min(preBlur, 8));
   const edgeThr = Number(process.env.STAGE2_STRUCT_EDGE_THRESHOLD || 38);
-  if (baseArtifacts && baseArtifacts.path === imagePath) {
-    const blur = await ensureBaseBlur(baseArtifacts, preBlur);
-    const { width, height } = baseArtifacts;
-    const maps = sobelEdge(blur, width, height, edgeThr);
-    return buildStructuralMask(maps.edge, width, height);
-  }
-  const raw = await sharp(imagePath).greyscale().blur(preBlur).raw().toBuffer({ resolveWithObject: true });
-  const buf = new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength);
-  const { width, height } = raw.info;
-  const maps = sobelEdge(buf, width, height, edgeThr);
-  return buildStructuralMask(maps.edge, width, height);
+  return withMemoryCriticalSection(
+    {
+      section: "structural_mask_generation",
+      maxConcurrency: STRUCTURAL_MASK_MAX_CONCURRENCY,
+      metadata: {
+        imagePath,
+        fromBaseArtifacts: Boolean(baseArtifacts && baseArtifacts.path === imagePath),
+      },
+    },
+    async () => {
+      if (baseArtifacts && baseArtifacts.path === imagePath) {
+        const blur = await ensureBaseBlur(baseArtifacts, preBlur);
+        const { width, height } = baseArtifacts;
+        const maps = sobelEdge(blur, width, height, edgeThr);
+        return buildStructuralMask(maps.edge, width, height);
+      }
+      const raw = await sharp(imagePath).greyscale().blur(preBlur).raw().toBuffer({ resolveWithObject: true });
+      const buf = new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength);
+      const { width, height } = raw.info;
+      const maps = sobelEdge(buf, width, height, edgeThr);
+      return buildStructuralMask(maps.edge, width, height);
+    }
+  );
 }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
+import { resolveSectionConcurrency, withMemoryCriticalSection } from "../utils/memoryCriticalSection";
 import { getRedisJson, setRedisJson } from "../utils/persist";
 import type { StructuralSignal, SignalRegion } from "./structuralSignal";
 
@@ -186,13 +187,10 @@ const OPENING_BBOX_VARIANCE_THRESHOLD = Math.max(
   0.001,
   Math.min(0.25, Number(process.env.OPENING_BBOX_VARIANCE_THRESHOLD || 0.015))
 );
-const OPENING_EXTRACTION_MAX_CONCURRENCY = Math.max(
-  1,
-  Number(process.env.OPENING_EXTRACTION_MAX_CONCURRENCY || 1)
+const OPENING_IMAGE_MATERIALIZATION_MAX_CONCURRENCY = resolveSectionConcurrency(
+  "OPENING_IMAGE_MATERIALIZATION_MAX_CONCURRENCY",
+  Math.max(1, Number(process.env.OPENING_EXTRACTION_MAX_CONCURRENCY || 2))
 );
-
-let activeOpeningExtractionSessions = 0;
-const pendingOpeningExtractionResolvers: Array<() => void> = [];
 
 function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
   if (!Number.isFinite(value)) return 0;
@@ -363,50 +361,22 @@ function summarizeStructuralBaselineVariance(passTelemetry: StructuralBaselinePa
   };
 }
 
-async function withOpeningExtractionSession<T>(
-  options: { jobId?: string; imageId?: string; attempt?: number } | undefined,
-  operation: () => Promise<T>
-): Promise<T> {
-  const queuedAt = Date.now();
-
-  if (activeOpeningExtractionSessions >= OPENING_EXTRACTION_MAX_CONCURRENCY) {
-    await new Promise<void>((resolve) => {
-      pendingOpeningExtractionResolvers.push(resolve);
-    });
-  }
-
-  activeOpeningExtractionSessions += 1;
-  const acquiredAt = Date.now();
-  const memory = process.memoryUsage();
-  console.log("[STRUCTURAL_BASELINE_SESSION_ACQUIRED]", JSON.stringify({
-    jobId: options?.jobId,
-    imageId: options?.imageId,
-    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
-    maxConcurrency: OPENING_EXTRACTION_MAX_CONCURRENCY,
-    activeSessions: activeOpeningExtractionSessions,
-    queuedSessions: pendingOpeningExtractionResolvers.length,
-    waitMs: acquiredAt - queuedAt,
-    heapUsed: memory.heapUsed,
-    rss: memory.rss,
-  }));
-
-  try {
-    return await operation();
-  } finally {
-    activeOpeningExtractionSessions = Math.max(0, activeOpeningExtractionSessions - 1);
-    const next = pendingOpeningExtractionResolvers.shift();
-    if (next) next();
-    const releaseMemory = process.memoryUsage();
-    console.log("[STRUCTURAL_BASELINE_SESSION_RELEASED]", JSON.stringify({
-      jobId: options?.jobId,
-      imageId: options?.imageId,
-      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
-      activeSessions: activeOpeningExtractionSessions,
-      queuedSessions: pendingOpeningExtractionResolvers.length,
-      heapUsed: releaseMemory.heapUsed,
-      rss: releaseMemory.rss,
-    }));
-  }
+async function materializeOpeningExtractionImage(
+  imageUrl: string,
+  options?: { jobId?: string; imageId?: string; attempt?: number }
+): Promise<{ data: string; mime: string }> {
+  return withMemoryCriticalSection(
+    {
+      section: "opening_image_materialization",
+      maxConcurrency: OPENING_IMAGE_MATERIALIZATION_MAX_CONCURRENCY,
+      metadata: {
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+      },
+    },
+    async () => toBase64(imageUrl)
+  );
 }
 
 function stableSortObject(value: unknown): unknown {
@@ -1645,12 +1615,12 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
 }
 
 async function extractStructuralBaselineOnce(
-  imageUrl: string,
+  image: { data: string; mime: string },
   options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<StructuralBaseline> {
   const ai = getGeminiClient();
-  const image = toBase64(imageUrl);
 
+  const stageStartedAt = Date.now();
   const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: OPENING_VALIDATOR_MODEL,
@@ -1687,6 +1657,13 @@ async function extractStructuralBaselineOnce(
 
   const parsed = parseJsonResponse(response);
   const baseline = validateStructuralBaseline(parsed);
+  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+    stage: "gemini_structural_extraction",
+    durationMs: Date.now() - stageStartedAt,
+  }));
   console.log("[OPENING_BASELINE]", JSON.stringify({
     openings: baseline.openings.map((opening) => ({
       id: opening.id,
@@ -1717,7 +1694,15 @@ async function stabilizeStructuralBaseline(
   imageUrl: string,
   options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<StructuralBaseline> {
-  const image = toBase64(imageUrl);
+  const materializationStartedAt = Date.now();
+  const image = await materializeOpeningExtractionImage(imageUrl, options);
+  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+    stage: "image_materialization",
+    durationMs: Date.now() - materializationStartedAt,
+  }));
   const imageHash = hashStructuralImage(image.data);
   const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}${imageHash}`;
   const cached = await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
@@ -1746,131 +1731,132 @@ async function stabilizeStructuralBaseline(
     return { ...cached.graph, graphMeta };
   }
 
-  return withOpeningExtractionSession(options, async () => {
-    const passResults: StructuralBaseline[] = [];
-    const passHashes: string[] = [];
-    const maxPasses = STRUCTURAL_BASELINE_STABILIZATION_PASSES;
-    let lastError: unknown = null;
+  const passResults: StructuralBaseline[] = [];
+  const passHashes: string[] = [];
+  const maxPasses = STRUCTURAL_BASELINE_STABILIZATION_PASSES;
+  let lastError: unknown = null;
 
-    for (let passIndex = 0; passIndex < maxPasses; passIndex += 1) {
-      try {
-        const baseline = await extractStructuralBaselineOnce(imageUrl, {
-          jobId: options?.jobId,
-          imageId: options?.imageId,
-          attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + passIndex : passIndex + 1,
-        });
-        const graphHash = hashStructuralBaselineGraph(baseline);
-        passResults.push(baseline);
-        passHashes.push(graphHash);
-        console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
-          jobId: options?.jobId,
-          imageId: options?.imageId,
-          imageHash,
-          ...buildStructuralBaselinePassTelemetry(passIndex + 1, graphHash, baseline),
-        }));
-      } catch (err) {
-        lastError = err;
-        console.error("[STRUCTURAL_BASELINE_PASS_ERROR]", {
-          jobId: options?.jobId,
-          imageId: options?.imageId,
-          attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
-          passIndex: passIndex + 1,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
+  for (let passIndex = 0; passIndex < maxPasses; passIndex += 1) {
+    const passStartedAt = Date.now();
+    try {
+      const baseline = await extractStructuralBaselineOnce(image, {
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + passIndex : passIndex + 1,
+      });
+      const graphHash = hashStructuralBaselineGraph(baseline);
+      passResults.push(baseline);
+      passHashes.push(graphHash);
+      console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        imageHash,
+        durationMs: Date.now() - passStartedAt,
+        ...buildStructuralBaselinePassTelemetry(passIndex + 1, graphHash, baseline),
+      }));
+    } catch (err) {
+      lastError = err;
+      console.error("[STRUCTURAL_BASELINE_PASS_ERROR]", {
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+        passIndex: passIndex + 1,
+        durationMs: Date.now() - passStartedAt,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
+  }
 
-    if (passResults.length === 0) {
-      throw lastError instanceof Error ? lastError : new Error("STRUCTURAL_BASELINE_EXTRACTION_FAILED");
+  if (passResults.length === 0) {
+    throw lastError instanceof Error ? lastError : new Error("STRUCTURAL_BASELINE_EXTRACTION_FAILED");
+  }
+
+  const histogram = new Map<string, { count: number; graph: StructuralBaseline }>();
+  passResults.forEach((baseline, index) => {
+    const hash = passHashes[index];
+    const entry = histogram.get(hash);
+    if (entry) {
+      entry.count += 1;
+    } else {
+      histogram.set(hash, { count: 1, graph: baseline });
     }
+  });
 
-    const histogram = new Map<string, { count: number; graph: StructuralBaseline }>();
-    passResults.forEach((baseline, index) => {
-      const hash = passHashes[index];
-      const entry = histogram.get(hash);
-      if (entry) {
-        entry.count += 1;
-      } else {
-        histogram.set(hash, { count: 1, graph: baseline });
-      }
-    });
+  const ranked = Array.from(histogram.entries()).sort((left, right) => {
+    const countCmp = compareNumbers(right[1].count, left[1].count);
+    if (countCmp !== 0) return countCmp;
+    return compareStrings(left[0], right[0]);
+  });
+  const [graphHash, consensus] = ranked[0];
+  const { min, max, variance } = openingCountVariance(passResults);
+  const extractionAgreement = consensus.count / passResults.length;
+  const graphConfidence = extractionAgreement;
+  const graphStable = consensus.count >= Math.ceil(passResults.length / 2) && extractionAgreement >= STRUCTURAL_BASELINE_MIN_AGREEMENT && variance === 0;
+  const confirmedAt = new Date().toISOString();
+  const graphMeta = {
+    graphStable,
+    graphConfidence,
+    extractionAgreement,
+    passCount: passResults.length,
+    openingCountVariance: variance,
+    imageHash,
+    graphHash,
+    cacheStatus: graphStable ? "stabilized" as const : "unstable" as const,
+    candidateGraphHashes: ranked.map(([hash]) => hash),
+    openingCountRange: { min, max },
+    confirmedAt,
+  };
+  const varianceSummary = summarizeStructuralBaselineVariance(
+    passResults.map((baseline, index) => buildStructuralBaselinePassTelemetry(index + 1, passHashes[index], baseline))
+  );
 
-    const ranked = Array.from(histogram.entries()).sort((left, right) => {
-      const countCmp = compareNumbers(right[1].count, left[1].count);
-      if (countCmp !== 0) return countCmp;
-      return compareStrings(left[0], right[0]);
-    });
-    const [graphHash, consensus] = ranked[0];
-    const { min, max, variance } = openingCountVariance(passResults);
-    const extractionAgreement = consensus.count / passResults.length;
-    const graphConfidence = extractionAgreement;
-    const graphStable = consensus.count >= Math.ceil(passResults.length / 2) && extractionAgreement >= STRUCTURAL_BASELINE_MIN_AGREEMENT && variance === 0;
-    const confirmedAt = new Date().toISOString();
-    const graphMeta = {
-      graphStable,
+  console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    graphStable,
+    graphConfidence,
+    extractionAgreement: Number(extractionAgreement.toFixed(3)),
+    passCount: passResults.length,
+    openingCountVariance: variance,
+    candidateGraphHashes: graphMeta.candidateGraphHashes,
+    cacheStatus: graphMeta.cacheStatus,
+  }));
+  console.log("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    passCount: passResults.length,
+    openingCountVariance: variance,
+    graphHashVariance: varianceSummary.graphHashVariance,
+    signatureVariance: varianceSummary.signatureVariance,
+    bboxVariance: varianceSummary.bboxVariance,
+    wallIndexVariance: varianceSummary.wallIndexVariance,
+    verticalBandVariance: varianceSummary.verticalBandVariance,
+    confidenceVariance: varianceSummary.confidenceVariance,
+  }));
+
+  const stabilizedGraph = { ...consensus.graph, graphMeta };
+
+  if (graphStable) {
+    const cacheRecord: StructuralBaselineCacheRecord = {
+      imageHash,
+      graphHash,
+      graph: stabilizedGraph,
+      graphStable: true,
       graphConfidence,
       extractionAgreement,
       passCount: passResults.length,
       openingCountVariance: variance,
-      imageHash,
-      graphHash,
-      cacheStatus: graphStable ? "stabilized" as const : "unstable" as const,
-      candidateGraphHashes: ranked.map(([hash]) => hash),
       openingCountRange: { min, max },
-      confirmedAt,
-    };
-    const varianceSummary = summarizeStructuralBaselineVariance(
-      passResults.map((baseline, index) => buildStructuralBaselinePassTelemetry(index + 1, passHashes[index], baseline))
-    );
-
-    console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
-      jobId: options?.jobId,
-      imageId: options?.imageId,
-      imageHash,
-      graphStable,
-      graphConfidence,
-      extractionAgreement: Number(extractionAgreement.toFixed(3)),
-      passCount: passResults.length,
-      openingCountVariance: variance,
       candidateGraphHashes: graphMeta.candidateGraphHashes,
-      cacheStatus: graphMeta.cacheStatus,
-    }));
-    console.log("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
-      jobId: options?.jobId,
-      imageId: options?.imageId,
-      imageHash,
-      passCount: passResults.length,
-      openingCountVariance: variance,
-      graphHashVariance: varianceSummary.graphHashVariance,
-      signatureVariance: varianceSummary.signatureVariance,
-      bboxVariance: varianceSummary.bboxVariance,
-      wallIndexVariance: varianceSummary.wallIndexVariance,
-      verticalBandVariance: varianceSummary.verticalBandVariance,
-      confidenceVariance: varianceSummary.confidenceVariance,
-    }));
+      createdAt: confirmedAt,
+      updatedAt: confirmedAt,
+    };
+    await setRedisJson(cacheKey, cacheRecord);
+  }
 
-    const stabilizedGraph = { ...consensus.graph, graphMeta };
-
-    if (graphStable) {
-      const cacheRecord: StructuralBaselineCacheRecord = {
-        imageHash,
-        graphHash,
-        graph: stabilizedGraph,
-        graphStable: true,
-        graphConfidence,
-        extractionAgreement,
-        passCount: passResults.length,
-        openingCountVariance: variance,
-        openingCountRange: { min, max },
-        candidateGraphHashes: graphMeta.candidateGraphHashes,
-        createdAt: confirmedAt,
-        updatedAt: confirmedAt,
-      };
-      await setRedisJson(cacheKey, cacheRecord);
-    }
-
-    return stabilizedGraph;
-  });
+  return stabilizedGraph;
 }
 
 export async function extractStructuralBaseline(
