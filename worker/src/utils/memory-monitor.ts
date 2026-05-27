@@ -64,6 +64,9 @@ const jobResourceMap = new Map<string, Map<string, TrackedResource>>();
 const activePhaseMap = new Map<string, ActivePhase>();
 let phaseCounter = 0;
 const MEMORY_WARNING_THRESHOLD = 0.8; // 80% of available memory
+const PHASE_PEAK_WARNING_THRESHOLD = MEMORY_WARNING_THRESHOLD;
+const JOB_RETAINED_WARNING_THRESHOLD = MEMORY_WARNING_THRESHOLD;
+const PHASE_DELTA_WARNING_BYTES = 20 * 1024 * 1024; // 20MB
 
 function toFiniteNumber(value: number | undefined | null): number {
   if (!Number.isFinite(value)) return 0;
@@ -118,6 +121,11 @@ function stopPhaseSampler(phase: ActivePhase): void {
   if (!phase.interval) return;
   clearInterval(phase.interval);
   phase.interval = undefined;
+}
+
+function safeUsagePercent(used: number, total: number): number {
+  if (!Number.isFinite(used) || !Number.isFinite(total) || total <= 0) return 0;
+  return used / total;
 }
 
 /**
@@ -336,6 +344,27 @@ export function endMemoryPhase(
     metadata: report.metadata || null,
   });
 
+  const phasePeakHeapTotal = Math.max(report.before.heapTotal, report.after.heapTotal, 1);
+  const phasePeakUsagePercent = safeUsagePercent(report.peakHeapUsed, phasePeakHeapTotal);
+  if (
+    phasePeakUsagePercent > PHASE_PEAK_WARNING_THRESHOLD
+    && report.deltaHeapUsed >= PHASE_DELTA_WARNING_BYTES
+  ) {
+    console.warn("[MEMORY_PHASE_PEAK_WARNING]", {
+      kind: "phase_peak_pressure",
+      jobId: report.jobId,
+      phase: report.phase,
+      token: report.token,
+      peakHeap: formatBytes(report.peakHeapUsed),
+      beforeHeap: formatBytes(report.before.heapUsed),
+      afterHeap: formatBytes(report.after.heapUsed),
+      deltaHeap: formatBytes(report.deltaHeapUsed),
+      phasePeakUsagePercent: `${(phasePeakUsagePercent * 100).toFixed(1)}%`,
+      durationMs: report.durationMs,
+      note: "Transient phase pressure: peak during phase execution, not retained post-job pressure.",
+    });
+  }
+
   return report;
 }
 
@@ -371,9 +400,16 @@ export function endMemoryTracking(jobId: string): JobMemoryStats | null {
   });
   
   // Check if we're approaching memory limit
-  const memoryUsagePercent = snapshot.heapUsed / snapshot.heapTotal;
-  if (memoryUsagePercent > MEMORY_WARNING_THRESHOLD) {
-    console.warn(`[Memory] ⚠️  High memory usage: ${(memoryUsagePercent * 100).toFixed(1)}% of heap`);
+  const retainedUsagePercent = safeUsagePercent(snapshot.heapUsed, snapshot.heapTotal);
+  if (retainedUsagePercent > JOB_RETAINED_WARNING_THRESHOLD) {
+    console.warn("[MEMORY_RETAINED_PRESSURE_WARNING]", {
+      kind: "retained_post_job_pressure",
+      jobId,
+      retainedHeap: formatBytes(snapshot.heapUsed),
+      heapTotal: formatBytes(snapshot.heapTotal),
+      retainedUsagePercent: `${(retainedUsagePercent * 100).toFixed(1)}%`,
+      note: "Retained pressure after job completion. This is distinct from in-phase transient spikes.",
+    });
   }
   
   // Clean up
