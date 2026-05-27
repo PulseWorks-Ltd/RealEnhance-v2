@@ -80,6 +80,7 @@ describe("Stage-2 generation reliability", () => {
       runStage2GenerationAttempt(basePath, {
         roomType: "living_room",
         jobId: "job-test-no-image",
+        imageId: "img-test-no-image",
         outputPath,
         attempt: 1,
       })
@@ -110,6 +111,7 @@ describe("Stage-2 generation reliability", () => {
       runStage2GenerationAttempt(basePath, {
         roomType: "living_room",
         jobId: "job-test-retry-1",
+        imageId: "img-test-retry-1",
         outputPath: path.join(tempDir, "out-initial.webp"),
         attempt: 1,
       })
@@ -118,6 +120,7 @@ describe("Stage-2 generation reliability", () => {
     const generatedPath = await runStage2GenerationAttempt(basePath, {
       roomType: "living_room",
       jobId: "job-test-retry-2",
+      imageId: "img-test-retry-2",
       outputPath: retryOutputPath,
       attempt: 2,
     });
@@ -143,6 +146,7 @@ describe("Stage-2 generation reliability", () => {
       runStage2GenerationAttempt(basePath, {
         roomType: "living_room",
         jobId: "job-test-collapse",
+        imageId: "img-test-collapse",
         outputPath: basePath,
         attempt: 1,
       })

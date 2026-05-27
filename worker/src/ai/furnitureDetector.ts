@@ -53,8 +53,26 @@ export interface FurnitureAnalysis {
   suggestions: string[];
 }
 
-export type FurnitureDetectionSuccess = FurnitureAnalysis & { status: "success" };
-export type FurnitureDetectionFailure = { status: "failed" };
+export type FurnitureDetectionSuccess = FurnitureAnalysis & {
+  status: "success";
+  detectorLatencyMs?: number;
+};
+export type FurnitureDetectorFailureCode =
+  | "timeout"
+  | "rate_limit"
+  | "parse_failure"
+  | "empty_response"
+  | "unknown";
+
+export type FurnitureDetectionFailure = {
+  status: "failed";
+  detectorLatencyMs?: number;
+  failureCode?: FurnitureDetectorFailureCode;
+  retryable?: boolean;
+  statusCode?: number | null;
+  message?: string;
+  attempts?: number;
+};
 export type FurnitureDetectionResult = FurnitureDetectionSuccess | FurnitureDetectionFailure;
 export type RoomStateDetectionResult =
   | {
@@ -177,6 +195,31 @@ function isTimeoutError(err: any): boolean {
 
 function isRateLimitError(err: any): boolean {
   return parseErrorStatusCode(err) === 429;
+}
+
+function classifyFurnitureDetectorFailure(err: unknown): FurnitureDetectorFailureCode {
+  if (isTimeoutError(err)) {
+    return "timeout";
+  }
+
+  if (isRateLimitError(err)) {
+    return "rate_limit";
+  }
+
+  const message = String((err as any)?.message ?? "").toLowerCase();
+  if (message.includes("no json object found")) {
+    return "empty_response";
+  }
+
+  if (
+    message.includes("missing required schema") ||
+    message.includes("unexpected token") ||
+    message.includes("json")
+  ) {
+    return "parse_failure";
+  }
+
+  return "unknown";
 }
 
 function delay(ms: number): Promise<void> {
@@ -1016,6 +1059,8 @@ export async function detectFurnitureWithRetry(
   imageBase64: string,
   options?: { sceneType?: "interior" | "exterior"; timeoutMs?: number }
 ): Promise<FurnitureDetectionResult> {
+  let lastError: unknown = null;
+
   for (let attempt = 0; attempt < FURNITURE_DETECTOR_MAX_ATTEMPTS; attempt += 1) {
     try {
       const analysis = await detectorQueue.add(() =>
@@ -1029,6 +1074,7 @@ export async function detectFurnitureWithRetry(
         ...analysis,
       };
     } catch (error) {
+      lastError = error;
       const retryable = isRateLimitError(error) || isTimeoutError(error);
       const lastAttempt = attempt === FURNITURE_DETECTOR_MAX_ATTEMPTS - 1;
       console.warn("[FURNITURE DETECTOR] Detection attempt failed", {
@@ -1047,7 +1093,15 @@ export async function detectFurnitureWithRetry(
     }
   }
 
-  return { status: "failed" };
+  const failureCode = classifyFurnitureDetectorFailure(lastError);
+  return {
+    status: "failed",
+    failureCode,
+    retryable: lastError ? (isRateLimitError(lastError) || isTimeoutError(lastError)) : false,
+    statusCode: lastError ? parseErrorStatusCode(lastError) : null,
+    message: lastError instanceof Error ? lastError.message : (lastError ? String(lastError) : "DETECTION_FAILED_AFTER_RETRIES"),
+    attempts: FURNITURE_DETECTOR_MAX_ATTEMPTS,
+  };
 }
 
 /**

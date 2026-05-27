@@ -185,6 +185,10 @@ const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = (() => {
   const configured = Number(process.env.INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE || 1);
   return Number.isFinite(configured) ? Math.max(0, Math.floor(configured)) : 1;
 })();
+const FURNITURE_DETECTOR_PRESERVE_STRUCTURE_FALLBACK =
+  String(process.env.FURNITURE_DETECTOR_PRESERVE_STRUCTURE_FALLBACK ?? "true").toLowerCase() !== "false";
+const FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY =
+  String(process.env.FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY ?? "true").toLowerCase() !== "false";
 const ALLOWED_EXTERIOR_DECLUTTER_TYPES = new Set([
   "bicycle",
   "scooter",
@@ -249,6 +253,7 @@ async function runFurnitureDetectionOnce(params: {
   startedEvent: string;
   startedFields?: Record<string, any>;
 }): Promise<CachedFurnitureDetectionResult> {
+  const detectorStartedAtMs = Date.now();
   params.detectorCacheStats.requests += 1;
   const cacheKey = getFurnitureDetectionCacheKey({
     imagePath: params.imagePath,
@@ -292,8 +297,30 @@ async function runFurnitureDetectionOnce(params: {
     params.detectorCacheStats.hits += 1;
   }
 
-  params.detectorCache.set(cacheKey, response.result);
-  return response.result;
+  const detectorLatencyMs = Math.max(0, Date.now() - detectorStartedAtMs);
+  const resultWithMeta = response.result && typeof response.result === "object"
+    ? ({ ...response.result, detectorLatencyMs } as FurnitureDetectionResult)
+    : response.result;
+
+  if (response.result?.status === "success") {
+    const detectorConfidence = typeof response.result.confidence === "number"
+      ? response.result.confidence
+      : null;
+    if (detectorConfidence !== null && detectorConfidence < 0.65) {
+      logger.warn("FURNITURE_DETECTOR_LOW_CONFIDENCE", jobLogContext(params.payload, {
+        event: "FURNITURE_DETECTOR_LOW_CONFIDENCE",
+        detector: "furniture",
+        detectorLatencyMs,
+        detectorConfidence,
+        fallbackReason: "low_confidence",
+        fallbackSource: "detector_runtime",
+        stage1BForcedByFallback: null,
+      }));
+    }
+  }
+
+  params.detectorCache.set(cacheKey, resultWithMeta);
+  return resultWithMeta;
 }
 
 const FINAL_BLACK_EDGE_GUARD_ENABLED = String(process.env.FINAL_BLACK_EDGE_GUARD || "").toLowerCase() === "true";
@@ -8337,24 +8364,47 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const excessFurnitureCount = totalFurniture === null ? null : Math.max(0, totalFurniture - anchorCount);
           const anchorDetected = analysis ? analysis.hasFurniture === true : false;
           const detectorFallback = !analysis;
+          const detectorFailure = detectorFallback ? (geminiAnalysis as any) : null;
+          const detectorLatencyMs = Number((geminiAnalysis as any)?.detectorLatencyMs || 0) || null;
+          const fallbackReason = detectorFailure?.failureCode
+            || detectorFailure?.message
+            || "detector_failed_unknown";
+          const fallbackSource = "detector_runtime";
           const wantsStage2 = payload.options.virtualStage === true || isStage2Only === true;
+          const explicitDeclutterModeRequested = (payload.options as any).declutterMode === "light"
+            || (payload.options as any).declutterMode === "stage-ready";
+          const explicitDeclutterRequested = originalUserDeclutter === true || explicitDeclutterModeRequested;
+          const requestedDeclutterIntensity = String((payload.options as any).declutterIntensity || "").toLowerCase();
+          const overwhelmingClutterSignals = requestedDeclutterIntensity === "heavy";
+          const preserveStructureFallbackEnabled = detectorFallback && FURNITURE_DETECTOR_PRESERVE_STRUCTURE_FALLBACK;
+          const fallbackForcingByDeclutterSignals =
+            FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY
+              ? explicitDeclutterRequested
+              : (explicitDeclutterRequested || overwhelmingClutterSignals);
+          const stage1BForcedByFallback = detectorFallback
+            ? (!preserveStructureFallbackEnabled || fallbackForcingByDeclutterSignals)
+            : false;
           const stage1BRequired = detectorFallback
-            ? true
+            ? stage1BForcedByFallback
             : gateDecision?.requiresStage1B === true;
           const skipStage1B = !stage1BRequired;
           const resolvedDeclutterMode: "light" | "stage-ready" | null = detectorFallback
-            ? "light"
+            ? (stage1BRequired ? (wantsStage2 ? "stage-ready" : "light") : null)
             : stage1BRequired
               ? (wantsStage2 ? "stage-ready" : "light")
               : null;
           const resolvedStage2Mode: "FROM_EMPTY" | "REFRESH" | null = detectorFallback
-            ? "REFRESH"
+            ? (wantsStage2 ? "REFRESH" : null)
             : gateDecision?.stage2ModeCandidate ?? (roomState === "EMPTY" ? "FROM_EMPTY" : roomState ? "REFRESH" : null);
           const sourceStagePolicy: "1A" | "1B-light" | "1B-stage-ready" | null = stage1BRequired
             ? (resolvedDeclutterMode === "light" ? "1B-light" : "1B-stage-ready")
             : (resolvedStage2Mode === "FROM_EMPTY" ? "1A" : "1A");
           const routingDecisionSource = detectorFallback
-            ? "detector_failed_safe_fallback"
+            ? (stage1BForcedByFallback
+              ? (preserveStructureFallbackEnabled
+                ? "detector_failed_fallback_forced_stage1b"
+                : "detector_failed_legacy_force_stage1b")
+              : "detector_failed_preserve_structure_skip_stage1b")
             : gateDecision?.reason || "gemini";
 
           const failRoutingInvariant = (code: string, details: Record<string, unknown>): void => {
@@ -8418,14 +8468,33 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               finalSkipStage1B: skipStage1B,
             }));
           } else {
+            logger.warn("FURNITURE_DETECTOR_FALLBACK_TRIGGERED", jobLogContext(payload, {
+              event: "FURNITURE_DETECTOR_FALLBACK_TRIGGERED",
+              detector: "furniture",
+              fallbackReason,
+              fallbackSource,
+              detectorLatencyMs,
+              detectorConfidence: null,
+              stage1BForcedByFallback,
+              preserveStructureFallbackEnabled,
+              preserveStructureExplicitDeclutterOnly: FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY,
+              stage1BRequired,
+              skipStage1B,
+            }));
             logger.warn("DETECTOR_FAILED", jobLogContext(payload, {
               event: "DETECTOR_FAILED",
               detector: "furniture",
               detectorModel: "gemini-2.0-flash",
               confidence: null,
               detectionStatus: geminiAnalysis?.status || null,
-              finalSkipStage1B: false,
-              fallback: "run_stage1b",
+              finalSkipStage1B: skipStage1B,
+              fallback: stage1BForcedByFallback ? "run_stage1b" : "skip_stage1b_preserve_structure",
+              fallbackReason,
+              fallbackSource,
+              detectorLatencyMs,
+              stage1BForcedByFallback,
+              preserveStructureFallbackEnabled,
+              preserveStructureExplicitDeclutterOnly: FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY,
             }));
           }
 
