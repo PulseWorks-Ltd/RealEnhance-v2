@@ -1,5 +1,8 @@
 import { createClient } from 'redis';
 import crypto from "crypto";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import {
   JobRecord,
   JobId,
@@ -20,7 +23,13 @@ function logMergedStageUrls(jobId: JobId, stageUrls: Record<string, string | nul
 }
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
-const redisClient = createClient({ url: REDIS_URL });
+const redisClient = createClient({
+  url: REDIS_URL,
+  socket: {
+    reconnectStrategy: false,
+  },
+});
+const LOCAL_CACHE_DIR = process.env.REALENHANCE_CACHE_DIR || path.join(os.tmpdir(), "realenhance-worker-cache");
 
 // CRITICAL: Handle Redis connection errors properly
 redisClient.on('error', (err) => {
@@ -186,6 +195,56 @@ export async function updateJobIf(
   }
 
   throw new Error(`updateJobIf failed for job ${jobId}: exceeded retry budget`);
+}
+
+export async function getRedisJson<T = unknown>(key: string): Promise<T | undefined> {
+  if (!redisClient.isOpen || !redisClient.isReady) {
+    return readLocalCacheJson<T>(key);
+  }
+  try {
+    const val = await redisClient.get(key);
+    if (!val) return undefined;
+    return JSON.parse(val) as T;
+  } catch (err) {
+    console.error(`[getRedisJson] Failed to read ${key}:`, err);
+    return readLocalCacheJson<T>(key);
+  }
+}
+
+export async function setRedisJson(key: string, value: unknown): Promise<void> {
+  if (!redisClient.isOpen || !redisClient.isReady) {
+    await writeLocalCacheJson(key, value);
+    return;
+  }
+  try {
+    await redisClient.set(key, JSON.stringify(value));
+  } catch (err) {
+    console.error(`[setRedisJson] Failed to write ${key}:`, err);
+    await writeLocalCacheJson(key, value);
+  }
+}
+
+function localCachePath(key: string): string {
+  const safeKey = key.replace(/[^a-zA-Z0-9._-]+/g, "_");
+  return path.join(LOCAL_CACHE_DIR, `${safeKey}.json`);
+}
+
+async function readLocalCacheJson<T = unknown>(key: string): Promise<T | undefined> {
+  try {
+    const raw = await fs.readFile(localCachePath(key), "utf8");
+    return JSON.parse(raw) as T;
+  } catch {
+    return undefined;
+  }
+}
+
+async function writeLocalCacheJson(key: string, value: unknown): Promise<void> {
+  try {
+    await fs.mkdir(LOCAL_CACHE_DIR, { recursive: true });
+    await fs.writeFile(localCachePath(key), JSON.stringify(value), "utf8");
+  } catch (err) {
+    console.error(`[writeLocalCacheJson] Failed to write ${key}:`, err);
+  }
 }
 
 // Get job record from Redis
