@@ -14,6 +14,9 @@ Do NOT:
 - alter built-in footprints or fixed fixture geometry
 - repaint/retile/re-floor to conceal structural edits
 
+Maintain all existing installed ceiling lighting and fixtures unchanged.
+Do not introduce new ceiling-mounted or hanging light fixtures.
+
 🔒 Architectural Priority Clarification
 
 Do NOT modify wall returns, wall angles, corner geometry, window side margins, or window height for aesthetic balance.
