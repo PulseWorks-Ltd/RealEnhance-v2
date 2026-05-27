@@ -238,7 +238,7 @@ ${context.staging_risk_flags.length > 0 ? `Staging Risk Flags:\n${context.stagin
 INSTRUCTION TO STAGING MODEL:
 Use layout context as spatial guidance only.
 Do not restyle architectural anchors.
-Place furniture in harmony with detected zones and focal points.
+Place furniture in harmony with detected zones, balanced room flow, and circulation.
 Respect occlusion risk when adding items.
 
 ────────────────────────────────

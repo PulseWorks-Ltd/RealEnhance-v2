@@ -49,6 +49,9 @@ export type Stage2LayoutPlan = {
   furnitureVisibilityRules?: FurnitureVisibilityRules;
 };
 
+const PLANNER_SEMANTIC_GUIDANCE_ENABLED = true;
+const PLANNER_PROMPT_TAG = "stage2_layout_semantic_guard_v1";
+
 const LAYOUT_PLANNER_PROMPT = `Analyze this empty room and produce a structured furniture layout plan suitable for real estate staging.
 
 Return strict JSON with this shape:
@@ -76,7 +79,15 @@ Rules:
 - Add a tv_unit anchor only when a clearly suitable uninterrupted wall area exists with no conflicting openings.
 - For dining room use dining_table anchor.
 - AnchorRegion values must be normalized 0..1.
-- If uncertain, still return layout with conservative anchorConfidence.`;
+- If uncertain, still return layout with conservative anchorConfidence.
+
+SEMANTIC LANGUAGE CONSTRAINTS (MANDATORY):
+- Use neutral spatial language focused on circulation, room flow, zoning, spatial balance, and architectural continuity.
+- Do not use wording that implies overhead or ceiling-centered composition.
+- Do not imply pendant-light, chandelier, hanging-fixture, or ceiling focal placement.
+- Avoid terms such as overhead focal zone, centered under ceiling area, statement lighting, and vertical focal completion.
+- Describe furniture placement as realistic, floor-plane, circulation-safe positioning within visible architecture.
+- Maintain realistic proportional relationships: describe furniture sizing appropriate to visible room scale, preserve practical circulation spacing, and keep natural spatial balance without exact measurements.`;
 
 function normalizeText(value: unknown): string {
   const text = String(value ?? "").trim();
@@ -629,6 +640,12 @@ export async function planStage2Layout(
       },
     });
 
+    focusLog("LAYOUT_PLANNER", "[pipeline/layoutPlanner] semantic guidance", {
+      jobId: opts?.jobId,
+      enabled: PLANNER_SEMANTIC_GUIDANCE_ENABLED,
+      promptTag: PLANNER_PROMPT_TAG,
+    });
+
     const response = await model.generateContent([
       {
         inlineData: {
@@ -702,7 +719,7 @@ export function formatStage2LayoutPlanForPrompt(plan: Stage2LayoutPlan): string 
   const anchorDirective = plan.anchorItem
     ? [
         "ANCHOR DIRECTIVE (MANDATORY):",
-        `- Primary focal element: ${plan.anchorItem}`,
+        `- Primary anchor element: ${plan.anchorItem}`,
         plan.anchorWall ? `- Anchor wall: ${plan.anchorWall}` : null,
         plan.anchorOrientation ? `- Anchor orientation: ${plan.anchorOrientation}` : null,
         plan.anchorConstraints?.mountMode ? `- Placement mode: ${plan.anchorConstraints.mountMode}` : null,
