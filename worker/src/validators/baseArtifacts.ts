@@ -86,16 +86,17 @@ export async function buildBaseArtifacts(
   const width = meta.width;
   const height = meta.height;
 
-  const grayPromise = baseSharp.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
-  const smallPromise = baseSharp
+  const gray = await baseSharp.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
+  const small = await baseSharp
     .clone()
     .greyscale()
     .resize(smallSize, smallSize, { fit: "inside" })
     .raw()
     .toBuffer({ resolveWithObject: true });
 
-  const rgbPromise = includeRgb
-    ? Promise.resolve().then(async () => {
+  let rgb: any = null;
+  if (includeRgb) {
+    rgb = await Promise.resolve().then(async () => {
         const rgbMeta = toTransformDiagnosticMeta(meta);
         if (!isRgbCompatible(rgbMeta)) {
           console.warn("[baseArtifacts] Skipping RGB conversion due to unsupported metadata", {
@@ -128,19 +129,12 @@ export async function buildBaseArtifacts(
           message: (err as any)?.message || String(err),
         });
         return null;
-      })
-    : null;
+      });
+  }
 
-  const blurPromise = buildBlur
-    ? baseSharp.clone().greyscale().blur(blurSigma).raw().toBuffer({ resolveWithObject: true })
+  const blur = buildBlur
+    ? await baseSharp.clone().greyscale().blur(blurSigma).raw().toBuffer({ resolveWithObject: true })
     : null;
-
-  const [gray, small, rgb, blur] = await Promise.all([
-    grayPromise,
-    smallPromise,
-    rgbPromise,
-    blurPromise,
-  ]);
 
   baseSharp.destroy();
 

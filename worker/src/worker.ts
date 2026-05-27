@@ -226,7 +226,18 @@ import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from
 import { finalizeReservationFromWorker, startStaleCommittedReservationSweepLoop } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
 import { generateAuditRef, generateTraceId } from "./utils/audit.js";
-import { startMemoryTracking, endMemoryTracking, updatePeakMemory, isMemoryCritical, forceGC } from "./utils/memory-monitor.js";
+import {
+  startMemoryTracking,
+  endMemoryTracking,
+  updatePeakMemory,
+  isMemoryCritical,
+  forceGC,
+  beginMemoryPhase,
+  endMemoryPhase,
+  markMemoryPhasePeak,
+  trackJobImage,
+  getJobResourceSnapshot,
+} from "./utils/memory-monitor.js";
 import { VALIDATION_FOCUS_MODE } from "./utils/logFocus";
 import { buildRetryMeta, type RetryMeta } from "./utils/retryMeta";
 import { finalizeImageChargeFromWorker, startBillingFinalizationRetryLoop } from "./utils/billingFinalization.js";
@@ -5608,6 +5619,56 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stageEntry.committed = true;
     logStageOutput(stage, outputPath);
   };
+
+  const withMemoryPhase = async <T>(
+    phase: string,
+    metadata: Record<string, unknown>,
+    run: () => Promise<T>
+  ): Promise<T> => {
+    const token = beginMemoryPhase(payload.jobId, phase, metadata);
+    try {
+      const result = await run();
+      markMemoryPhasePeak(token);
+      endMemoryPhase(token, "ok", {
+        ...metadata,
+        resources: getJobResourceSnapshot(payload.jobId),
+      });
+      return result;
+    } catch (error: any) {
+      markMemoryPhasePeak(token);
+      endMemoryPhase(token, "error", {
+        ...metadata,
+        error: error?.message || String(error),
+        resources: getJobResourceSnapshot(payload.jobId),
+      });
+      throw error;
+    }
+  };
+
+  const trackImageResource = async (key: string, imagePath: string, label: string) => {
+    try {
+      const stat = fs.statSync(imagePath);
+      let width = 0;
+      let height = 0;
+      try {
+        const meta = await sharp(imagePath).metadata();
+        width = Number(meta?.width || 0);
+        height = Number(meta?.height || 0);
+      } catch {
+        width = 0;
+        height = 0;
+      }
+      trackJobImage(payload.jobId, key, {
+        estimatedBytes: stat.size,
+        width,
+        height,
+        label,
+      });
+    } catch {
+      // Best-effort forensic telemetry should never block job flow.
+    }
+  };
+
   // Strict boolean normalization to avoid truthy string issues (e.g. "false" becoming true)
   const strictBool = (v: any): boolean => {
     if (typeof v === 'boolean') return v;
@@ -5626,6 +5687,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   if (typeof rawDeclutter !== 'boolean') {
     nLog(`[WORKER] Normalized declutter '${rawDeclutter}' → ${payload.options.declutter}`);
   }
+
   if (typeof rawVirtualStage !== 'boolean') {
     nLog(`[WORKER] Normalized virtualStage '${rawVirtualStage}' → ${payload.options.virtualStage}`);
   }
@@ -5739,6 +5801,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return;
     }
   }
+
+  await trackImageResource("source:orig", origPath, "source-original");
 
   // Track primary scene detection (interior/exterior) confidence across all flows
   let scenePrimary: any = undefined;
@@ -7616,11 +7680,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // CANONICAL PREPROCESS (new) for structural baseline
   let canonicalPath = origPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-canonical.webp");
   try {
-    const baseArtifacts = await preprocessToCanonical(origPath, canonicalPath, sceneLabel, {
-      buildArtifacts: true,
-      smallSize: 512,
-      jobId: payload.jobId,
-    });
+    const baseArtifacts = await withMemoryPhase(
+      "canonical_preprocess",
+      { sceneLabel, source: "orig" },
+      () => preprocessToCanonical(origPath, canonicalPath, sceneLabel, {
+        buildArtifacts: true,
+        smallSize: 512,
+        jobId: payload.jobId,
+      })
+    );
     if (baseArtifacts) {
       jobContext.baseArtifacts = baseArtifacts;
       jobContext.baseArtifactsCache.set(canonicalPath, baseArtifacts);
@@ -7628,6 +7696,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stageLineage.baseArtifacts = baseArtifacts;
     }
     jobContext.canonicalPath = canonicalPath;
+    await trackImageResource("source:canonical", canonicalPath, "canonical-preprocess");
     // Precompute structural mask (architecture only) from canonical
     try {
       const mask = await computeStructuralEdgeMask(canonicalPath, baseArtifacts);
@@ -7825,23 +7894,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     },
     "stage1a_start"
   );
-  path1A = await runStage1A(canonicalPath, {
-    replaceSky: safeReplaceSky,
-    declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
-    sceneType: stage1ASceneLabel,
-    interiorProfile: ((): any => {
-      const p = (payload.options as any)?.interiorProfile;
-      if (p === 'nz_high_end' || p === 'nz_standard') return p;
-      return undefined;
-    })(),
-    skyMode: skyModeForStage1A,
-    jobId: payload.jobId,
-    imageId: payload.imageId,
-    roomType: payload.options.roomType,
-    baseArtifacts: jobContext.baseArtifacts,
-    baseArtifactsCache: jobContext.baseArtifactsCache,
-    jobSampling: jobContext.jobSampling,
-  });
+  path1A = await withMemoryPhase(
+    "stage1a_generation",
+    {
+      sceneType: stage1ASceneLabel,
+      replaceSky: safeReplaceSky,
+      skyMode: skyModeForStage1A,
+    },
+    () => runStage1A(canonicalPath, {
+      replaceSky: safeReplaceSky,
+      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
+      sceneType: stage1ASceneLabel,
+      interiorProfile: ((): any => {
+        const p = (payload.options as any)?.interiorProfile;
+        if (p === 'nz_high_end' || p === 'nz_standard') return p;
+        return undefined;
+      })(),
+      skyMode: skyModeForStage1A,
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      roomType: payload.options.roomType,
+      baseArtifacts: jobContext.baseArtifacts,
+      baseArtifactsCache: jobContext.baseArtifactsCache,
+      jobSampling: jobContext.jobSampling,
+    })
+  );
 
   if (exteriorLightingDecision?.shouldRelight) {
     path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
@@ -7852,11 +7929,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   } else if (process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY) {
     structuralBaselinePromise = (async () => {
       try {
-        const extractedBaseline = await extractStructuralBaseline(path1A, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt: 1,
-        });
+        const extractedBaseline = await withMemoryPhase(
+          "stage1a_structural_baseline",
+          { attempt: 1 },
+          () => extractStructuralBaseline(path1A, {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt: 1,
+          })
+        );
         structuralBaseline = extractedBaseline;
         jobContext.structuralBaseline = extractedBaseline;
         await updateJob(payload.jobId, {
@@ -7894,6 +7975,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   logIfNotFocusMode(`[stage1a] Gemini validation skipped by design (local-only sanity checks)`);
   
   commitStageOutput("1A", path1A);
+  await trackImageResource("stage:1A", path1A, "stage1a-output");
   // Track memory after Stage 1A
   updatePeakMemory(payload.jobId);
   if (isMemoryCritical()) {
@@ -9015,23 +9097,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const geminiConfig = getStage1BGeminiConfig(attempt);
       nLog(`[STAGE1B_DECAY_CONFIG] temp=${geminiConfig.temperature} topP=${geminiConfig.topP.toFixed(2)} topK=${geminiConfig.topK}`);
 
-      const candidate = await runStage1B(path1A, {
-        replaceSky: exteriorLightingDecision?.shouldReplaceSky === true,
-        sceneType: sceneLabel,
-        roomType: payload.options.roomType,
-        declutterMode,
-        jobId: payload.jobId,
-        imageId: payload.imageId,
-        attempt,
-        canonicalPath: jobContext.canonicalPath,
-        baseArtifacts: jobContext.baseArtifacts,
-        curtainRailLikely: jobContext.curtainRailLikely,
-        jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
-        jobSampling: {
-          ...(jobContext.jobSampling || {}),
-          ...geminiConfig,
-        },
-      });
+      const candidate = await withMemoryPhase(
+        "stage1b_generation_attempt",
+        { attempt: attempt + 1, declutterMode },
+        () => runStage1B(path1A, {
+          replaceSky: exteriorLightingDecision?.shouldReplaceSky === true,
+          sceneType: sceneLabel,
+          roomType: payload.options.roomType,
+          declutterMode,
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          canonicalPath: jobContext.canonicalPath,
+          baseArtifacts: jobContext.baseArtifacts,
+          curtainRailLikely: jobContext.curtainRailLikely,
+          jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
+          jobSampling: {
+            ...(jobContext.jobSampling || {}),
+            ...geminiConfig,
+          },
+        })
+      );
       await consumeManualRetryAttemptIfNeeded("stage1b", true);
 
       nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attempt} using=${candidate}`);
@@ -9532,6 +9618,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
 
     commitStageOutput("1B", path1B);
+    await trackImageResource("stage:1B", path1B, "stage1b-output");
     (sceneMeta as any).stage1BMode = declutterMode;
     nLog(`[WORKER] ✅ Recorded stage1BMode in metadata: ${declutterMode}`);
 
@@ -10127,7 +10214,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       if (await stopIfCancelled("pre_stage2")) return;
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
-        ? runStage2(stage2InputResolved, stage2BaseStage, {
+        ? withMemoryPhase(
+            "stage2_generation_main",
+            { stage2BaseStage, promptMode: stage2PromptMode },
+            () => runStage2(stage2InputResolved, stage2BaseStage, {
             roomType: (
               !payload.options.roomType ||
               ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -10172,6 +10262,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               stage2AttemptId = nextAttemptId;
             }
           })
+        )
         : (stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A);
       if (payload.options.virtualStage && !stage2Blocked) {
         nLog("[STAGE2_PROMPT_SOURCE]", {
@@ -10228,10 +10319,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (typeof stage2Outcome === "string") {
         path2 = stage2Outcome;
         commitStageOutput("2", stage2Outcome);
+        await trackImageResource("stage:2", stage2Outcome, "stage2-output");
       } else {
         await consumeManualRetryAttemptIfNeeded("stage2", Number(stage2Outcome?.attempts || 0) > 0);
         path2 = stage2Outcome.outputPath;
         commitStageOutput("2", stage2Outcome.outputPath);
+        await trackImageResource("stage:2", stage2Outcome.outputPath, "stage2-output");
         recordStage2AttemptsFromResult(stage2InputResolved, stage2Outcome.attempts);
         const generatedAttempts = Math.max(1, Number(stage2Outcome.attempts || 1));
         for (let attemptIndex = 0; attemptIndex < generatedAttempts; attemptIndex++) {
@@ -10840,7 +10933,10 @@ All openings must remain identical in position and size to the original image.`;
         });
         let retryStage2Path: string;
         try {
-          retryStage2Path = await runStage2GenerationAttempt(stage2InputResolved, {
+          retryStage2Path = await withMemoryPhase(
+            "stage2_generation_retry_attempt",
+            { attempt, strategy: useReinforcedRetry ? "reinforced" : "normal" },
+            () => runStage2GenerationAttempt(stage2InputResolved, {
             roomType: payload.options.roomType,
             sceneType: sceneLabel as any,
             profile,
@@ -10862,7 +10958,8 @@ All openings must remain identical in position and size to the original image.`;
             layoutPlan: stage2LayoutPlan,
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
-          });
+          })
+        );
           await consumeManualRetryAttemptIfNeeded("stage2_retry_generation", true);
         } catch (retryGenerationErr: any) {
           if (!isStage2RetryableGenerationError(retryGenerationErr)) {
@@ -10905,6 +11002,7 @@ All openings must remain identical in position and size to the original image.`;
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
         commitStageOutput("2", retryStage2Path);
+        await trackImageResource("stage:2", retryStage2Path, `stage2-retry-${attempt - 1}`);
       }
 
       logStage2Candidate(attempt, path2);
@@ -11266,21 +11364,27 @@ All openings must remain identical in position and size to the original image.`;
 
       try {
         if (LOCAL_VALIDATORS_FULL) {
-          const [semanticSignals, maskedSignals] = await Promise.all([
-            runSemanticStructureValidator({
+          const semanticSignals = await withMemoryPhase(
+            "stage2_semantic_validator",
+            { attempt, validator: "semantic_structure" },
+            () => runSemanticStructureValidator({
               originalImagePath: validationBasePath,
               enhancedImagePath: path2,
               scene: sceneLabel as any,
               mode: "log",
-            }),
-            runMaskedEdgeValidator({
+            })
+          );
+          const maskedSignals = await withMemoryPhase(
+            "stage2_masked_edge_validator",
+            { attempt, validator: "masked_edge" },
+            () => runMaskedEdgeValidator({
               originalImagePath: validationBasePath,
               enhancedImagePath: path2,
               scene: sceneLabel as any,
               mode: "log",
               jobId: payload.jobId,
-            }),
-          ]);
+            })
+          );
 
           semanticWallDriftNorm = clamp01(Number(semanticSignals?.walls?.driftRatio ?? 0));
           semanticOpeningsDeltaNorm = clamp01(

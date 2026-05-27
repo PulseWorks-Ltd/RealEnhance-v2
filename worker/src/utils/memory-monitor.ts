@@ -19,8 +19,106 @@ interface JobMemoryStats {
   delta: number;
 }
 
+interface TrackedResource {
+  kind: "buffer" | "image";
+  bytes: number;
+  pixelFootprint: number;
+  label: string;
+}
+
+export interface JobResourceSnapshot {
+  activeImageCount: number;
+  activeBufferCount: number;
+  trackedBytes: number;
+  trackedPixelFootprint: number;
+}
+
+export interface MemoryPhaseReport {
+  token: string;
+  jobId: string;
+  phase: string;
+  startedAt: number;
+  endedAt: number;
+  durationMs: number;
+  before: MemorySnapshot;
+  after: MemorySnapshot;
+  peakHeapUsed: number;
+  deltaHeapUsed: number;
+  outcome: "ok" | "error";
+  resources: JobResourceSnapshot;
+  metadata?: Record<string, unknown>;
+}
+
+interface ActivePhase {
+  token: string;
+  jobId: string;
+  phase: string;
+  before: MemorySnapshot;
+  startedAt: number;
+  peakHeapUsed: number;
+  interval?: NodeJS.Timeout;
+}
+
 const jobMemoryMap = new Map<string, JobMemoryStats>();
+const jobResourceMap = new Map<string, Map<string, TrackedResource>>();
+const activePhaseMap = new Map<string, ActivePhase>();
+let phaseCounter = 0;
 const MEMORY_WARNING_THRESHOLD = 0.8; // 80% of available memory
+
+function toFiniteNumber(value: number | undefined | null): number {
+  if (!Number.isFinite(value)) return 0;
+  return Number(value);
+}
+
+function getOrCreateJobResources(jobId: string): Map<string, TrackedResource> {
+  const existing = jobResourceMap.get(jobId);
+  if (existing) return existing;
+  const created = new Map<string, TrackedResource>();
+  jobResourceMap.set(jobId, created);
+  return created;
+}
+
+function collectJobResources(jobId: string): JobResourceSnapshot {
+  const entries = jobResourceMap.get(jobId);
+  if (!entries) {
+    return {
+      activeImageCount: 0,
+      activeBufferCount: 0,
+      trackedBytes: 0,
+      trackedPixelFootprint: 0,
+    };
+  }
+
+  let activeImageCount = 0;
+  let activeBufferCount = 0;
+  let trackedBytes = 0;
+  let trackedPixelFootprint = 0;
+
+  for (const value of entries.values()) {
+    if (value.kind === "image") activeImageCount += 1;
+    if (value.kind === "buffer") activeBufferCount += 1;
+    trackedBytes += value.bytes;
+    trackedPixelFootprint += value.pixelFootprint;
+  }
+
+  return {
+    activeImageCount,
+    activeBufferCount,
+    trackedBytes,
+    trackedPixelFootprint,
+  };
+}
+
+function buildPhaseToken(jobId: string, phase: string): string {
+  phaseCounter += 1;
+  return `${jobId}:${phase}:${phaseCounter}`;
+}
+
+function stopPhaseSampler(phase: ActivePhase): void {
+  if (!phase.interval) return;
+  clearInterval(phase.interval);
+  phase.interval = undefined;
+}
 
 /**
  * Get current memory usage snapshot
@@ -57,6 +155,7 @@ export function formatBytes(bytes: number): string {
  */
 export function startMemoryTracking(jobId: string): void {
   const snapshot = getMemorySnapshot();
+  jobResourceMap.delete(jobId);
   jobMemoryMap.set(jobId, {
     jobId,
     start: snapshot,
@@ -78,6 +177,166 @@ export function updatePeakMemory(jobId: string): void {
   if (current > stats.peak) {
     stats.peak = current;
   }
+
+  for (const phase of activePhaseMap.values()) {
+    if (phase.jobId !== jobId) continue;
+    if (current > phase.peakHeapUsed) {
+      phase.peakHeapUsed = current;
+    }
+  }
+}
+
+/**
+ * Track a buffer-like resource for memory forensics.
+ */
+export function trackJobBuffer(jobId: string, key: string, bytes: number, label?: string): void {
+  if (!jobId || !key) return;
+  const resources = getOrCreateJobResources(jobId);
+  resources.set(key, {
+    kind: "buffer",
+    bytes: Math.max(0, Math.floor(toFiniteNumber(bytes))),
+    pixelFootprint: 0,
+    label: label || key,
+  });
+}
+
+/**
+ * Track an image-like resource for memory forensics.
+ */
+export function trackJobImage(
+  jobId: string,
+  key: string,
+  options?: { estimatedBytes?: number; width?: number; height?: number; label?: string }
+): void {
+  if (!jobId || !key) return;
+  const resources = getOrCreateJobResources(jobId);
+  const width = Math.max(0, Math.floor(toFiniteNumber(options?.width)));
+  const height = Math.max(0, Math.floor(toFiniteNumber(options?.height)));
+  resources.set(key, {
+    kind: "image",
+    bytes: Math.max(0, Math.floor(toFiniteNumber(options?.estimatedBytes))),
+    pixelFootprint: width > 0 && height > 0 ? width * height : 0,
+    label: options?.label || key,
+  });
+}
+
+/**
+ * Release a tracked resource once it is no longer needed by the job.
+ */
+export function releaseJobResource(jobId: string, key: string): void {
+  const resources = jobResourceMap.get(jobId);
+  if (!resources) return;
+  resources.delete(key);
+}
+
+/**
+ * Read current tracked resource counters for a job.
+ */
+export function getJobResourceSnapshot(jobId: string): JobResourceSnapshot {
+  return collectJobResources(jobId);
+}
+
+/**
+ * Begin a phase-level memory telemetry window.
+ */
+export function beginMemoryPhase(
+  jobId: string,
+  phase: string,
+  metadata?: Record<string, unknown>
+): string {
+  const before = getMemorySnapshot();
+  const token = buildPhaseToken(jobId, phase);
+  const active: ActivePhase = {
+    token,
+    jobId,
+    phase,
+    before,
+    startedAt: before.timestamp,
+    peakHeapUsed: before.heapUsed,
+  };
+
+  active.interval = setInterval(() => {
+    const heapUsed = process.memoryUsage().heapUsed;
+    if (heapUsed > active.peakHeapUsed) {
+      active.peakHeapUsed = heapUsed;
+    }
+  }, 250);
+  active.interval.unref?.();
+
+  activePhaseMap.set(token, active);
+  console.log("[MEM_PHASE_START]", {
+    token,
+    jobId,
+    phase,
+    heapUsed: formatBytes(before.heapUsed),
+    rss: formatBytes(before.rss),
+    activeJobs: jobMemoryMap.size,
+    metadata: metadata || null,
+    resources: collectJobResources(jobId),
+  });
+
+  return token;
+}
+
+/**
+ * Opportunistically update a phase peak without closing the phase.
+ */
+export function markMemoryPhasePeak(token: string): void {
+  const active = activePhaseMap.get(token);
+  if (!active) return;
+  const heapUsed = process.memoryUsage().heapUsed;
+  if (heapUsed > active.peakHeapUsed) {
+    active.peakHeapUsed = heapUsed;
+  }
+}
+
+/**
+ * End a phase-level telemetry window and emit structured report.
+ */
+export function endMemoryPhase(
+  token: string,
+  outcome: "ok" | "error" = "ok",
+  metadata?: Record<string, unknown>
+): MemoryPhaseReport | null {
+  const active = activePhaseMap.get(token);
+  if (!active) return null;
+  activePhaseMap.delete(token);
+  stopPhaseSampler(active);
+
+  const after = getMemorySnapshot();
+  const report: MemoryPhaseReport = {
+    token: active.token,
+    jobId: active.jobId,
+    phase: active.phase,
+    startedAt: active.startedAt,
+    endedAt: after.timestamp,
+    durationMs: Math.max(0, after.timestamp - active.startedAt),
+    before: active.before,
+    after,
+    peakHeapUsed: Math.max(active.peakHeapUsed, after.heapUsed),
+    deltaHeapUsed: after.heapUsed - active.before.heapUsed,
+    outcome,
+    resources: collectJobResources(active.jobId),
+    metadata,
+  };
+
+  console.log("[MEM_PHASE_END]", {
+    token: report.token,
+    jobId: report.jobId,
+    phase: report.phase,
+    outcome: report.outcome,
+    durationMs: report.durationMs,
+    beforeHeap: formatBytes(report.before.heapUsed),
+    afterHeap: formatBytes(report.after.heapUsed),
+    deltaHeap: formatBytes(report.deltaHeapUsed),
+    peakHeap: formatBytes(report.peakHeapUsed),
+    beforeRss: formatBytes(report.before.rss),
+    afterRss: formatBytes(report.after.rss),
+    resources: report.resources,
+    metadata: report.metadata || null,
+  });
+
+  return report;
 }
 
 /**
@@ -90,13 +349,25 @@ export function endMemoryTracking(jobId: string): JobMemoryStats | null {
   const snapshot = getMemorySnapshot();
   stats.end = snapshot;
   stats.delta = snapshot.heapUsed - stats.start.heapUsed;
+
+  const openPhaseTokens: string[] = [];
+  for (const [token, phase] of activePhaseMap.entries()) {
+    if (phase.jobId !== jobId) continue;
+    openPhaseTokens.push(token);
+  }
+  for (const token of openPhaseTokens) {
+    endMemoryPhase(token, "error", { reason: "job_end_cleanup" });
+  }
+
+  const resources = collectJobResources(jobId);
   
   console.log(`[Memory] Job ${jobId} completed:`, {
     start: formatBytes(stats.start.heapUsed),
     end: formatBytes(snapshot.heapUsed),
     peak: formatBytes(stats.peak),
     delta: formatBytes(stats.delta),
-    duration: `${((snapshot.timestamp - stats.start.timestamp) / 1000).toFixed(2)}s`
+    duration: `${((snapshot.timestamp - stats.start.timestamp) / 1000).toFixed(2)}s`,
+    resources,
   });
   
   // Check if we're approaching memory limit
@@ -107,6 +378,7 @@ export function endMemoryTracking(jobId: string): JobMemoryStats | null {
   
   // Clean up
   jobMemoryMap.delete(jobId);
+  jobResourceMap.delete(jobId);
   
   return stats;
 }
