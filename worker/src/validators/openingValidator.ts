@@ -43,6 +43,7 @@ const OPENING_ADDED_STRONG_DETERMINISTIC_CONFIDENCE = Number(process.env.OPENING
 const OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE = Number(process.env.OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE || 0.9);
 const OPENING_ADDED_CONSENSUS_MIN_IOU = Number(process.env.OPENING_ADDED_CONSENSUS_MIN_IOU || 0.2);
 const OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES = Number(process.env.OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES || 1);
+const OPENING_RELOCATION_HARDFail_SIZE_REDUCTION_MIN = Number(process.env.OPENING_RELOCATION_HARDFail_SIZE_REDUCTION_MIN || 0.45);
 
 type BaselineOpenings = {
   openings: Array<{
@@ -279,6 +280,52 @@ type DeterministicAddedOpeningSignal = {
   confidence: number;
 };
 
+function extractContinuityReinforcedAddedOpeningSignals(params: {
+  baseline: StructuralBaseline;
+  detectedOpenings: StructuralBaseline["openings"];
+  matchedDetectedIds?: Set<string>;
+  summary?: {
+    openingSignatureMismatch?: boolean;
+    openingBandMismatch?: boolean;
+    openingRelocated?: boolean;
+  };
+  wallRemap?: Map<number, number>;
+}): DeterministicAddedOpeningSignal[] {
+  const hasTopologyChangeSignal =
+    params.summary?.openingSignatureMismatch === true ||
+    params.summary?.openingBandMismatch === true ||
+    params.summary?.openingRelocated === true;
+  if (!hasTopologyChangeSignal) return [];
+
+  const baselineOpenings = Array.isArray(params.baseline?.openings) ? params.baseline.openings : [];
+  return (params.detectedOpenings || [])
+    .filter((opening) => !params.matchedDetectedIds?.has(String(opening.id)))
+    .filter((opening) =>
+      opening.type === "window" ||
+      opening.type === "door" ||
+      opening.type === "closet_door" ||
+      opening.type === "walkthrough"
+    )
+    .filter((opening) => Number(opening.confidence || 0) >= OPENING_ADDED_STRONG_DETERMINISTIC_CONFIDENCE)
+    .filter((opening) => Number(opening.area_pct || 0) >= 2)
+    .filter((opening) => {
+      const openingBox = normalizeBbox01(opening.bbox);
+      const maxIoUWithBaseline = baselineOpenings.reduce((acc, base) => {
+        const iou = bboxIoU(openingBox, normalizeBbox01(base.bbox));
+        return Math.max(acc, iou);
+      }, 0);
+      return maxIoUWithBaseline <= 0.12;
+    })
+    .map((opening) => ({
+      type: opening.type,
+      wallIndex: opening.wallIndex,
+      canonicalWallIndex: (params.wallRemap?.get(opening.wallIndex) ?? opening.wallIndex) as StructuralBaseline["openings"][number]["wallIndex"],
+      horizontalBand: opening.horizontalBand,
+      bbox: normalizeBbox01(opening.bbox),
+      confidence: Number(opening.confidence || 0),
+    }));
+}
+
 type StructuralContinuityPrecheckResult = {
   passed: boolean;
   matchedReferenceOpenings: number;
@@ -374,6 +421,7 @@ export function extractStrongDeterministicAddedOpeningSignals(params: {
   detectedOpenings: StructuralBaseline["openings"];
   hasAddedOpenings: boolean;
   wallRemap?: Map<number, number>;
+  matchedDetectedIds?: Set<string>;
 }): DeterministicAddedOpeningSignal[] {
   if (!params.hasAddedOpenings) return [];
   if (!Array.isArray(params.detectedOpenings) || params.detectedOpenings.length === 0) return [];
@@ -381,6 +429,8 @@ export function extractStrongDeterministicAddedOpeningSignals(params: {
   const baselineOpenings = Array.isArray(params.baseline?.openings) ? params.baseline.openings : [];
 
   return params.detectedOpenings.flatMap((candidate) => {
+    if (params.matchedDetectedIds?.has(String(candidate.id))) return [];
+
     const hasDirectIdMatch = baselineOpenings.some((base) => String(base.id) === String(candidate.id));
     if (hasDirectIdMatch) return [];
 
@@ -389,7 +439,21 @@ export function extractStrongDeterministicAddedOpeningSignals(params: {
       base.wallIndex === candidate.wallIndex &&
       base.horizontalBand === candidate.horizontalBand
     );
-    if (hasLegacySpatialMatch) return [];
+    const hasRichGraphAnchorMatch = baselineOpenings.some((base) => {
+      const paneComparable = base.paneStructure !== "unknown" && candidate.paneStructure !== "unknown";
+      const paneCompatible = !paneComparable || base.paneStructure === candidate.paneStructure;
+      const wallCoverageCompatible =
+        Math.abs((base.wallCoverageBand === "5-10" ? 0 : base.wallCoverageBand === "10-20" ? 1 : base.wallCoverageBand === "20-40" ? 2 : base.wallCoverageBand === "40-60" ? 3 : 4) -
+          (candidate.wallCoverageBand === "5-10" ? 0 : candidate.wallCoverageBand === "10-20" ? 1 : candidate.wallCoverageBand === "20-40" ? 2 : candidate.wallCoverageBand === "40-60" ? 3 : 4)) <= 1;
+      return base.type === candidate.type &&
+        base.wallIndex === candidate.wallIndex &&
+        base.horizontalBand === candidate.horizontalBand &&
+        base.verticalBand === candidate.verticalBand &&
+        base.heightClass === candidate.heightClass &&
+        paneCompatible &&
+        wallCoverageCompatible;
+    });
+    if (hasLegacySpatialMatch || hasRichGraphAnchorMatch) return [];
 
     const candidateBbox = normalizeBbox01(candidate.bbox);
     const maxIoUWithBaseline = baselineOpenings.reduce((acc, base) => {
@@ -836,6 +900,7 @@ async function runOpeningLightAnchorMicroCheck(
   jobId?: string,
   imageId?: string,
   attempt?: number,
+  modelOverride?: string,
 ): Promise<OpeningLightAnchorVerdict | null> {
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
@@ -890,7 +955,7 @@ Return JSON only:
 
   const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
-    model: OPENING_LIGHT_ANCHOR_MODEL,
+    model: modelOverride || OPENING_LIGHT_ANCHOR_MODEL,
     contents: [
       {
         role: "user",
@@ -917,7 +982,7 @@ Return JSON only:
       stage: "validator",
       attempt: Number.isFinite(attempt) ? Number(attempt) : 1,
     },
-    model: OPENING_LIGHT_ANCHOR_MODEL,
+    model: modelOverride || OPENING_LIGHT_ANCHOR_MODEL,
     callType: "validator",
     response,
     latencyMs: Date.now() - requestStartedAt,
@@ -940,6 +1005,8 @@ export async function runOpeningValidator(
     attempt?: number;
     /** Pre-extracted structural baseline. When provided, skips re-extraction (saves a Gemini call). */
     baseline?: StructuralBaseline;
+    /** Pre-extracted candidate graph. When provided, skips AFTER re-extraction and freezes graph inputs. */
+    detectedBaseline?: StructuralBaseline;
   }
 ): Promise<OpeningValidatorResult> {
   if (!String(beforeImageUrl || "").trim() || !String(afterImageUrl || "").trim()) {
@@ -955,10 +1022,16 @@ export async function runOpeningValidator(
   console.log("[OPENINGS_BASELINE]", baselineOpenings);
 
   if (Array.isArray(baseline.openings) && baseline.openings.length > 0) {
+    const frozenCandidateGraph = options?.detectedBaseline ?? await extractStructuralBaseline(afterImageUrl, {
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      attempt: options?.attempt,
+    });
     const deterministic = await validateOpeningPreservation(baseline, afterImageUrl, {
       jobId: options?.jobId,
       imageId: options?.imageId,
       attempt: options?.attempt,
+      detectedBaseline: frozenCandidateGraph,
     });
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
     const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
@@ -982,44 +1055,33 @@ export async function runOpeningValidator(
       detectedOpenings: deterministic.detectedOpenings || [],
       hasAddedOpenings,
       wallRemap: firstPassContinuity.wallRemap,
+      matchedDetectedIds: new Set((deterministic.reconciledMatches || []).map((entry) => String(entry.detectedId))),
     });
     let deterministicStrongAddedOpening = false;
     let openingAddedConsensusUnstable = false;
     let openingAddedStructuralContinuityUnresolved = false;
     if (hasAddedOpenings && firstPassAddedSignals.length > 0) {
-      const deterministicSecondPass = await validateOpeningPreservation(baseline, afterImageUrl, {
-        jobId: options?.jobId,
-        imageId: options?.imageId,
-        attempt: options?.attempt,
-      });
-      const secondPassContinuity = runStructuralContinuityPrecheck({
+      const continuityReinforcementSignals = extractContinuityReinforcedAddedOpeningSignals({
         baseline,
-        detectedOpenings: deterministicSecondPass.detectedOpenings || [],
+        detectedOpenings: deterministic.detectedOpenings || [],
+        matchedDetectedIds: new Set((deterministic.reconciledMatches || []).map((entry) => String(entry.detectedId))),
+        summary: deterministic.summary,
+        wallRemap: firstPassContinuity.wallRemap,
       });
-      const secondPassAddedSignals = extractStrongDeterministicAddedOpeningSignals({
-        baseline,
-        detectedOpenings: deterministicSecondPass.detectedOpenings || [],
-        hasAddedOpenings:
-          Number(deterministicSecondPass.summary.openingCount?.after || 0) >
-          Number(deterministicSecondPass.summary.openingCount?.before || 0),
-        wallRemap: secondPassContinuity.wallRemap,
-      });
-      const structuralContinuityPassed = firstPassContinuity.passed && secondPassContinuity.passed;
+      const structuralContinuityPassed = firstPassContinuity.passed;
       if (!structuralContinuityPassed) {
         openingAddedStructuralContinuityUnresolved = true;
         console.log("[OPENING_ADDED_PRECHECK_UNRESOLVED]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           firstPassMatchedReferenceOpenings: firstPassContinuity.matchedReferenceOpenings,
-          secondPassMatchedReferenceOpenings: secondPassContinuity.matchedReferenceOpenings,
           firstPassWallRemapSize: firstPassContinuity.wallRemap.size,
-          secondPassWallRemapSize: secondPassContinuity.wallRemap.size,
           action: "added_opening_advisory_only",
         });
       }
       deterministicStrongAddedOpening = structuralContinuityPassed && hasStableAddedOpeningConsensus(
         firstPassAddedSignals,
-        secondPassAddedSignals,
+        continuityReinforcementSignals,
       );
       if (!deterministicStrongAddedOpening) {
         openingAddedConsensusUnstable = true;
@@ -1027,7 +1089,7 @@ export async function runOpeningValidator(
           jobId: options?.jobId,
           imageId: options?.imageId,
           firstPassCandidates: firstPassAddedSignals.length,
-          secondPassCandidates: secondPassAddedSignals.length,
+          secondPassCandidates: continuityReinforcementSignals.length,
           action: "added_opening_advisory_only",
         });
       } else {
@@ -1035,7 +1097,7 @@ export async function runOpeningValidator(
           jobId: options?.jobId,
           imageId: options?.imageId,
           firstPassCandidates: firstPassAddedSignals.length,
-          secondPassCandidates: secondPassAddedSignals.length,
+          secondPassCandidates: continuityReinforcementSignals.length,
           action: "eligible_for_gemini_corroboration",
         });
       }
@@ -1204,6 +1266,86 @@ export async function runOpeningValidator(
       part === "light_anchor_opening_infilled" || part === "light_anchor_opening_removed"
     );
 
+    const severeRelocationTopologyBreak =
+      (deterministic.summary.openingRelocated || relocationDetected) &&
+      deterministic.summary.openingBandMismatch &&
+      maxSizeReductionDelta >= OPENING_RELOCATION_HARDFail_SIZE_REDUCTION_MIN &&
+      (
+        (deterministic.summary as any).openingSignatureMismatch === true ||
+        deterministic.summary.openingClassMismatch
+      );
+
+    if (!hardFail && severeRelocationTopologyBreak) {
+      const relocationCorroboration = await getMicroCheck();
+      if (
+        relocationCorroboration &&
+        Number.isFinite(relocationCorroboration.confidence) &&
+        relocationCorroboration.confidence >= OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE &&
+        relocationCorroboration.openingRelocated
+      ) {
+        hardFail = true;
+        hardFailConfidence = Math.max(hardFailConfidence, Number(relocationCorroboration.confidence));
+        reasonParts.push("light_anchor_opening_relocated_confirmed");
+        advisorySignals.push(`light_anchor_relocation_corroboration_confidence:${relocationCorroboration.confidence.toFixed(3)}`);
+        if (relocationCorroboration.analysis) {
+          advisorySignals.push(`light_anchor_relocation_corroboration_analysis:${relocationCorroboration.analysis.replace(/\|/g, "/")}`);
+        }
+        console.log("[OPENING_RELOCATION_HARD_FAIL_CORROBORATED]", {
+          jobId: options?.jobId,
+          imageId: options?.imageId,
+          severeRelocationTopologyBreak,
+          corroborationConfidence: relocationCorroboration.confidence,
+          action: "hard_fail_relocation_topology_break",
+        });
+      }
+    }
+
+    const severeAddedTopologyBreak =
+      reasonParts.includes("opening_added") &&
+      (deterministic.summary.openingRelocated || relocationDetected) &&
+      deterministic.summary.openingBandMismatch &&
+      maxSizeReductionDelta >= OPENING_RELOCATION_HARDFail_SIZE_REDUCTION_MIN;
+
+    if (!hardFail && severeAddedTopologyBreak) {
+      let topologyCorroboration = await getMicroCheck();
+      const topologyCorroborated = (verdict: OpeningLightAnchorVerdict | null): boolean =>
+        !!verdict &&
+        Number.isFinite(verdict.confidence) &&
+        verdict.confidence >= OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE &&
+        (verdict.openingAdded || verdict.openingRelocated || verdict.openingRemoved || verdict.openingInfilled);
+
+      if (!topologyCorroborated(topologyCorroboration) && OPENING_MODEL_ESCALATION !== OPENING_LIGHT_ANCHOR_MODEL) {
+        const proTopologyCorroboration = await runOpeningLightAnchorMicroCheck(
+          beforeImageUrl,
+          afterImageUrl,
+          options?.jobId,
+          options?.imageId,
+          options?.attempt,
+          OPENING_MODEL_ESCALATION,
+        );
+        if (topologyCorroborated(proTopologyCorroboration)) {
+          topologyCorroboration = proTopologyCorroboration;
+        }
+      }
+
+      if (topologyCorroborated(topologyCorroboration)) {
+        hardFail = true;
+        hardFailConfidence = Math.max(hardFailConfidence, Number(topologyCorroboration!.confidence));
+        reasonParts.push("light_anchor_opening_added_topology_confirmed");
+        advisorySignals.push(`light_anchor_added_topology_corroboration_confidence:${topologyCorroboration!.confidence.toFixed(3)}`);
+        if (topologyCorroboration?.analysis) {
+          advisorySignals.push(`light_anchor_added_topology_corroboration_analysis:${topologyCorroboration.analysis.replace(/\|/g, "/")}`);
+        }
+        console.log("[OPENING_ADDED_TOPOLOGY_HARD_FAIL_CORROBORATED]", {
+          jobId: options?.jobId,
+          imageId: options?.imageId,
+          severeAddedTopologyBreak,
+          corroborationConfidence: topologyCorroboration?.confidence,
+          action: "hard_fail_added_topology_break",
+        });
+      }
+    }
+
     // ── COHERENCE GATE: only hard-fail when signals are internally consistent ──
     const primaryIssueType = deterministic.summary.openingRemoved
       ? "opening_removed"
@@ -1231,25 +1373,43 @@ export async function runOpeningValidator(
     // - Gemini can only corroborate that signal.
     // - Gemini-only added-opening claims are advisory and never blocking.
     if (!hardFail && deterministicStrongAddedOpening) {
-      const addedCorroboration = await getMicroCheck();
-      if (
-        addedCorroboration &&
-        Number.isFinite(addedCorroboration.confidence) &&
-        addedCorroboration.confidence >= OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE &&
-        addedCorroboration.openingAdded
-      ) {
+      let addedCorroboration = await getMicroCheck();
+
+      const hasStrongAddedCorroboration = (verdict: OpeningLightAnchorVerdict | null): boolean =>
+        !!verdict &&
+        Number.isFinite(verdict.confidence) &&
+        verdict.confidence >= OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE &&
+        verdict.openingAdded;
+
+      // Escalate added-opening corroboration to Pro when Flash cannot confirm.
+      // This remains corroborative only; deterministic strong-added evidence is still mandatory.
+      if (!hasStrongAddedCorroboration(addedCorroboration) && OPENING_MODEL_ESCALATION !== OPENING_LIGHT_ANCHOR_MODEL) {
+        const proAddedCorroboration = await runOpeningLightAnchorMicroCheck(
+          beforeImageUrl,
+          afterImageUrl,
+          options?.jobId,
+          options?.imageId,
+          options?.attempt,
+          OPENING_MODEL_ESCALATION,
+        );
+        if (hasStrongAddedCorroboration(proAddedCorroboration)) {
+          addedCorroboration = proAddedCorroboration;
+        }
+      }
+
+      if (hasStrongAddedCorroboration(addedCorroboration)) {
         hardFail = true;
-        hardFailConfidence = Math.max(hardFailConfidence, Number(addedCorroboration.confidence));
+        hardFailConfidence = Math.max(hardFailConfidence, Number(addedCorroboration!.confidence));
         reasonParts.push("light_anchor_opening_added_confirmed");
-        advisorySignals.push(`light_anchor_added_corroboration_confidence:${addedCorroboration.confidence.toFixed(3)}`);
-        if (addedCorroboration.analysis) {
+        advisorySignals.push(`light_anchor_added_corroboration_confidence:${addedCorroboration!.confidence.toFixed(3)}`);
+        if (addedCorroboration?.analysis) {
           advisorySignals.push(`light_anchor_added_corroboration_analysis:${addedCorroboration.analysis.replace(/\|/g, "/")}`);
         }
         console.log("[OPENING_ADDED_HARD_FAIL_CORROBORATED]", {
           jobId: options?.jobId,
           imageId: options?.imageId,
           deterministicStrongAddedOpening,
-          corroborationConfidence: addedCorroboration.confidence,
+          corroborationConfidence: addedCorroboration?.confidence,
           action: "hard_fail_added_opening",
         });
       } else if (addedCorroboration?.openingAdded) {
@@ -1300,15 +1460,36 @@ export async function runOpeningValidator(
     // check (not already confirmed by the micro-check), run the light anchor as
     // a direct before/after sanity check. A high-confidence "preserved" verdict
     // overrides the deterministic hard-fail and downgrades it to advisory.
-    if (hardFail && !hasHighConfidenceMicroHardFailSignal && !deterministicStrongAddedOpening) {
+    const addedHardFailCorroborated = reasonParts.includes("light_anchor_opening_added_confirmed");
+    const deterministicSevereInfillAddedBreak =
+      deterministicStrongAddedOpening &&
+      deterministic.summary.openingInfilled &&
+      maxSizeReductionDelta >= 0.4;
+    const deterministicSevereInfillTopologyBreak =
+      deterministic.summary.openingInfilled &&
+      deterministic.summary.openingSealed &&
+      deterministic.summary.openingBandMismatch &&
+      maxSizeReductionDelta >= 0.7 &&
+      (
+        (deterministic.summary as any).openingSignatureMismatch === true ||
+        deterministic.summary.openingClassMismatch
+      );
+    if (
+      hardFail &&
+      !hasHighConfidenceMicroHardFailSignal &&
+      !addedHardFailCorroborated &&
+      !deterministicSevereInfillAddedBreak &&
+      !deterministicSevereInfillTopologyBreak
+    ) {
       const vetoCheck = await getMicroCheck();
+      const microCorroboratesDeterministicDestruction =
+        vetoCheck !== null &&
+        (vetoCheck.openingInfilled || vetoCheck.openingRemoved);
       if (
         vetoCheck !== null &&
         Number.isFinite(vetoCheck.confidence) &&
         vetoCheck.confidence >= 0.8 &&
-        !vetoCheck.openingAdded &&
-        !vetoCheck.openingInfilled &&
-        !vetoCheck.openingRemoved
+        !microCorroboratesDeterministicDestruction
       ) {
         hardFail = false;
         advisorySignals.push("light_anchor_veto_deterministic_hard_fail");
@@ -1323,7 +1504,7 @@ export async function runOpeningValidator(
           deterministicIssue: primaryIssueType,
           action: "downgrade_hard_fail_to_advisory",
         });
-      } else if (vetoCheck !== null) {
+      } else if (microCorroboratesDeterministicDestruction) {
         // Micro-check corroborates the hard fail — reinforce with its confidence.
         if (Number.isFinite(vetoCheck.confidence)) {
           hardFailConfidence = Math.max(hardFailConfidence, Number(vetoCheck.confidence));

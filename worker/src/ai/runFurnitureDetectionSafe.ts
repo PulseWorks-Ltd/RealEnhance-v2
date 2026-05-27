@@ -73,8 +73,9 @@ export async function runFurnitureDetectionSafe(
   }
 
   const promise = (async (): Promise<FurnitureDetectionSafeResponse> => {
+    const detectorStartedAtMs = Date.now();
     try {
-      const startedEvent = params.logContext?.sourceEvent || "DETECTOR_STARTED";
+      const startedEvent = "FURNITURE_DETECTOR_START";
       console.info(startedEvent, {
         ...buildLogPayload(params, startedEvent),
         ...(params.logContext?.startedFields || {}),
@@ -88,14 +89,45 @@ export async function runFurnitureDetectionSafe(
           timeoutMs: params.timeoutMs,
         }
       );
+
+      const detectorLatencyMs = Math.max(0, Date.now() - detectorStartedAtMs);
+      if (result?.status === "success") {
+        console.info("FURNITURE_DETECTOR_SUCCESS", {
+          ...buildLogPayload(params, "FURNITURE_DETECTOR_SUCCESS"),
+          detectorLatencyMs,
+          detectorConfidence: typeof result.confidence === "number" ? result.confidence : null,
+        });
+      } else {
+        const eventByFailureCode: Record<string, string> = {
+          timeout: "FURNITURE_DETECTOR_TIMEOUT",
+          rate_limit: "FURNITURE_DETECTOR_RATE_LIMIT",
+          parse_failure: "FURNITURE_DETECTOR_PARSE_FAILURE",
+          empty_response: "FURNITURE_DETECTOR_EMPTY_RESPONSE",
+        };
+        const failureEvent = eventByFailureCode[result?.failureCode || ""] || "FURNITURE_DETECTOR_PARSE_FAILURE";
+        console.warn(failureEvent, {
+          ...buildLogPayload(params, failureEvent),
+          detectorLatencyMs,
+          detectorConfidence: null,
+          fallbackReason: result?.failureCode || "unknown",
+          fallbackSource: "detector_runtime",
+          detectorStatusCode: result?.statusCode ?? null,
+          detectorRetryable: result?.retryable ?? false,
+          detectorMessage: result?.message || null,
+          stage1BForcedByFallback: null,
+        });
+      }
+
       resultCache.set(cacheKey, result);
       return {
         result,
         source: "fresh",
       };
     } catch (error) {
+      const detectorLatencyMs = Math.max(0, Date.now() - detectorStartedAtMs);
       console.warn("DETECTOR_FAILED", {
         ...buildLogPayload(params, "DETECTOR_FAILED"),
+        detectorLatencyMs,
         message: error instanceof Error ? error.message : String(error),
       });
       resultCache.set(cacheKey, null);

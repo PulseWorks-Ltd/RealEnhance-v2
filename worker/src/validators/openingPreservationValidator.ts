@@ -73,6 +73,12 @@ export type OpeningValidationResult = {
   results: OpeningResult[];
   findings: OpeningDiagnosticFinding[];
   structuralSignals: StructuralSignal[];
+  reconciledMatches?: Array<{
+    baselineId: string;
+    detectedId: string;
+    matchSource: "id" | "graph_reconcile";
+    score: number;
+  }>;
   summary: {
     openingRemoved: boolean;
     openingInfilled: boolean;
@@ -556,6 +562,130 @@ function bboxIntersectionArea(
   const y2 = Math.min(a[3], b[3]);
   if (x2 <= x1 || y2 <= y1) return 0;
   return (x2 - x1) * (y2 - y1);
+}
+
+function wallCoverageBandDistance(a: WallCoverageBand, b: WallCoverageBand): number {
+  return Math.abs(wallCoverageBandIndex(a) - wallCoverageBandIndex(b));
+}
+
+function buildDetectedToBaselineWallRemap(
+  baselineOpenings: StructuralOpening[],
+  detectedOpenings: StructuralOpening[]
+): Map<number, number> {
+  const votes = new Map<number, Map<number, number>>();
+  const safeVote = (detectedWall: number, baselineWall: number): void => {
+    const bucket = votes.get(detectedWall) ?? new Map<number, number>();
+    bucket.set(baselineWall, (bucket.get(baselineWall) ?? 0) + 1);
+    votes.set(detectedWall, bucket);
+  };
+
+  for (const candidate of detectedOpenings) {
+    const direct = baselineOpenings.find((base) => String(base.id) === String(candidate.id));
+    if (direct) {
+      safeVote(candidate.wallIndex, direct.wallIndex);
+    }
+  }
+
+  const remap = new Map<number, number>();
+  votes.forEach((bucket, detectedWall) => {
+    let topWall: number | null = null;
+    let topCount = 0;
+    let tied = false;
+    bucket.forEach((count, baselineWall) => {
+      if (count > topCount) {
+        topWall = baselineWall;
+        topCount = count;
+        tied = false;
+      } else if (count === topCount) {
+        tied = true;
+      }
+    });
+    if (!tied && topWall !== null) {
+      remap.set(detectedWall, topWall);
+    }
+  });
+  return remap;
+}
+
+function reconcileOpeningMatches(
+  baselineOpenings: StructuralOpening[],
+  detectedOpenings: StructuralOpening[]
+): {
+  matches: Map<string, { opening: StructuralOpening; source: "id" | "graph_reconcile"; score: number }>;
+  matchedDetectedIds: Set<string>;
+  debug: Array<{ baselineId: string; detectedId: string; matchSource: "id" | "graph_reconcile"; score: number }>;
+} {
+  const matches = new Map<string, { opening: StructuralOpening; source: "id" | "graph_reconcile"; score: number }>();
+  const matchedDetectedIds = new Set<string>();
+  const debug: Array<{ baselineId: string; detectedId: string; matchSource: "id" | "graph_reconcile"; score: number }> = [];
+
+  const wallRemap = buildDetectedToBaselineWallRemap(baselineOpenings, detectedOpenings);
+
+  for (const base of baselineOpenings) {
+    const direct = detectedOpenings.find((candidate) =>
+      String(candidate.id) === String(base.id) && !matchedDetectedIds.has(String(candidate.id))
+    );
+    if (!direct) continue;
+    matches.set(base.id, { opening: direct, source: "id", score: 999 });
+    matchedDetectedIds.add(String(direct.id));
+    debug.push({ baselineId: base.id, detectedId: String(direct.id), matchSource: "id", score: 999 });
+  }
+
+  const unmatchedBaseline = baselineOpenings.filter((base) => !matches.has(base.id));
+
+  for (const base of unmatchedBaseline) {
+    const scoredCandidates = detectedOpenings
+      .filter((candidate) => !matchedDetectedIds.has(String(candidate.id)))
+      .map((candidate) => {
+        const canonicalWall = wallRemap.get(candidate.wallIndex) ?? candidate.wallIndex;
+        let score = 0;
+
+        if (candidate.type === base.type) score += 4;
+        if (canonicalWall === base.wallIndex) score += 3;
+        if (candidate.horizontalBand === base.horizontalBand) score += 2;
+        if (candidate.verticalBand === base.verticalBand) score += 1;
+        if (candidate.heightClass === base.heightClass) score += 1;
+        if (candidate.orientation === base.orientation) score += 0.5;
+
+        const paneComparable = candidate.paneStructure !== "unknown" && base.paneStructure !== "unknown";
+        if (!paneComparable || candidate.paneStructure === base.paneStructure) score += 1;
+
+        const wallCoverageDistance = wallCoverageBandDistance(candidate.wallCoverageBand, base.wallCoverageBand);
+        if (wallCoverageDistance === 0) score += 1;
+        else if (wallCoverageDistance === 1) score += 0.5;
+
+        const iou = bboxIntersectionArea(base.bbox, candidate.bbox) /
+          Math.max(0.0001, (base.bbox[2] - base.bbox[0]) * (base.bbox[3] - base.bbox[1]));
+        score += Math.max(0, Math.min(2, iou * 2));
+
+        return { candidate, score };
+      })
+      .sort((a, b) => b.score - a.score);
+
+    const top = scoredCandidates[0];
+    const second = scoredCandidates[1];
+    const hasUniqueWinner =
+      !!top &&
+      top.score >= 7 &&
+      (top.score - (second?.score ?? 0) >= 1.25);
+
+    if (!hasUniqueWinner || !top) continue;
+
+    matches.set(base.id, {
+      opening: top.candidate,
+      source: "graph_reconcile",
+      score: Number(top.score.toFixed(3)),
+    });
+    matchedDetectedIds.add(String(top.candidate.id));
+    debug.push({
+      baselineId: base.id,
+      detectedId: String(top.candidate.id),
+      matchSource: "graph_reconcile",
+      score: Number(top.score.toFixed(3)),
+    });
+  }
+
+  return { matches, matchedDetectedIds, debug };
 }
 
 export function classifyNonWindowOpeningAreaLoss(params: {
@@ -1252,14 +1382,17 @@ export async function validateOpeningPreservation(
     jobId?: string;
     imageId?: string;
     attempt?: number;
+    detectedBaseline?: StructuralBaseline;
   }
 ): Promise<OpeningValidationResult> {
-  const detected = await extractStructuralBaseline(newImageUrl, {
+  const detected = options?.detectedBaseline ?? await extractStructuralBaseline(newImageUrl, {
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
   });
   const isEditMode = options?.mode === "edit";
+
+  const reconciliation = reconcileOpeningMatches(baseline.openings, detected.openings);
 
   const openingResults: OpeningResult[] = [];
   const findings: OpeningDiagnosticFinding[] = [];
@@ -1283,15 +1416,8 @@ export async function validateOpeningPreservation(
   const analysisNotes: string[] = [];
 
   for (const baseOpening of baseline.openings) {
-    const directMatch = detected.openings.find((candidate) => candidate.id === baseOpening.id);
-    const fallbackMatch = detected.openings.find(
-      (candidate) =>
-        candidate.type === baseOpening.type &&
-        candidate.wallIndex === baseOpening.wallIndex &&
-        candidate.horizontalBand === baseOpening.horizontalBand
-    );
-
-    const match = directMatch || fallbackMatch;
+    const matchEntry = reconciliation.matches.get(baseOpening.id);
+    const match = matchEntry?.opening;
 
     if (!match) {
       const edgeOfFrame = isEdgeOfFrameOpening(baseOpening);
@@ -1599,18 +1725,7 @@ export async function validateOpeningPreservation(
   }
 
   // Emit opening_added signals for detected openings that have no baseline match.
-  const baselineIds = new Set(baseline.openings.map((o) => o.id));
-  const matchedDetectedIds = new Set(
-    baseline.openings
-      .map((base) => {
-        const direct = detected.openings.find((c) => c.id === base.id);
-        const fallback = detected.openings.find(
-          (c) => c.type === base.type && c.wallIndex === base.wallIndex && c.horizontalBand === base.horizontalBand,
-        );
-        return (direct || fallback)?.id;
-      })
-      .filter(Boolean) as string[],
-  );
+  const matchedDetectedIds = reconciliation.matchedDetectedIds;
   for (const det of detected.openings) {
     if (matchedDetectedIds.has(det.id)) continue;
     // Gate 1: high confidence required
@@ -1720,6 +1835,7 @@ export async function validateOpeningPreservation(
     results: openingResults,
     findings,
     structuralSignals,
+    reconciledMatches: reconciliation.debug,
     summary,
     detectedOpenings: detected.openings,
   };

@@ -1,0 +1,1511 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-27T00:21:42.055Z",
+  "fixtures": [
+    {
+      "original": "Original - Lounge 1.0.jpg",
+      "staged": "Staged Lounge - 1.1.webp",
+      "baseline": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.181,
+              0,
+              0.475,
+              0.925
+            ],
+            "area_pct": 27.04,
+            "aspect_ratio": 0.47,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.47,
+            "confidence": 0.95,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.194,
+              0.323,
+              0.312,
+              0.528
+            ],
+            "area_pct": 2.42,
+            "aspect_ratio": 0.86,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.86,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A2",
+            "type": "walkthrough",
+            "bbox": [
+              0,
+              0.45,
+              0.18,
+              1
+            ],
+            "area_pct": 9.9,
+            "aspect_ratio": 0.49,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "floor_zone",
+            "widthBand": "double",
+            "wallCoverageBand": "60+",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.49,
+            "confidence": 0.9,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AF1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.665,
+              0.165,
+              0.898,
+              0.268
+            ],
+            "confidence": 1
+          },
+          {
+            "id": "AF2",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0,
+              0.4,
+              0.18,
+              0.9
+            ],
+            "confidence": 0.9
+          }
+        ],
+        "wallCount": 4
+      },
+      "candidate": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0,
+              0,
+              0.453,
+              1
+            ],
+            "area_pct": 45.3,
+            "aspect_ratio": 0.453,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "60+",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.453,
+            "confidence": 0.92,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.103,
+              0.353,
+              0.198,
+              0.504
+            ],
+            "area_pct": 1.43,
+            "aspect_ratio": 0.629,
+            "structuralClass": "exterior",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "single_fixed",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.629,
+            "confidence": 0.98,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AC1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.655,
+              0.104,
+              0.85,
+              0.221
+            ],
+            "confidence": 0.99
+          },
+          {
+            "id": "BC1",
+            "type": "built_in_cabinet",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0.088,
+              0.459,
+              0.437,
+              0.652
+            ],
+            "confidence": 0.95
+          }
+        ],
+        "wallCount": 4
+      },
+      "expected": {
+        "status": "pass",
+        "hardFail": false
+      },
+      "hashes": {
+        "baseline": "43a11f10178de29b5d3d7e1270a9c2c8b92d3cb75a46da207340a9d654c63515",
+        "candidate": "aef54857b9c8de1379f3c587338470a8c2e9a01568165f72d6669710569b4af8"
+      }
+    },
+    {
+      "original": "Original - Lounge 1.0.jpg",
+      "staged": "Staged Lounge - 1.2.webp",
+      "baseline": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.181,
+              0,
+              0.475,
+              0.925
+            ],
+            "area_pct": 27.04,
+            "aspect_ratio": 0.47,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.47,
+            "confidence": 0.95,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.194,
+              0.323,
+              0.312,
+              0.528
+            ],
+            "area_pct": 2.42,
+            "aspect_ratio": 0.86,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.86,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A2",
+            "type": "walkthrough",
+            "bbox": [
+              0,
+              0.45,
+              0.18,
+              1
+            ],
+            "area_pct": 9.9,
+            "aspect_ratio": 0.49,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "floor_zone",
+            "widthBand": "double",
+            "wallCoverageBand": "60+",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.49,
+            "confidence": 0.9,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AF1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.665,
+              0.165,
+              0.898,
+              0.268
+            ],
+            "confidence": 1
+          },
+          {
+            "id": "AF2",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0,
+              0.4,
+              0.18,
+              0.9
+            ],
+            "confidence": 0.9
+          }
+        ],
+        "wallCount": 4
+      },
+      "candidate": {
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.1125,
+              0.456,
+              0.199,
+              0.6125
+            ],
+            "area_pct": 1.35,
+            "aspect_ratio": 0.83,
+            "structuralClass": "exterior",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "narrow",
+            "wallCoverageBand": "5-10",
+            "orientation": "portrait",
+            "paneStructure": "single_fixed",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.83,
+            "confidence": 0.98,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.283,
+              0.1125,
+              0.5,
+              1
+            ],
+            "area_pct": 19.26,
+            "aspect_ratio": 0.24,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "center_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "40-60",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.24,
+            "confidence": 0.75,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "center",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "S1",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0,
+              0,
+              0.283,
+              1
+            ],
+            "confidence": 0.9
+          },
+          {
+            "id": "BC1",
+            "type": "built_in_cabinet",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0.1,
+              0.618,
+              0.458,
+              0.7625
+            ],
+            "confidence": 0.9
+          },
+          {
+            "id": "AC1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.6375,
+              0.181,
+              0.841,
+              0.268
+            ],
+            "confidence": 0.99
+          }
+        ],
+        "wallCount": 4
+      },
+      "expected": {
+        "status": "pass",
+        "hardFail": false
+      },
+      "hashes": {
+        "baseline": "43a11f10178de29b5d3d7e1270a9c2c8b92d3cb75a46da207340a9d654c63515",
+        "candidate": "e47524997f4d80870aaabbb69a37aba539d12210975b53f4af114537bfa06363"
+      }
+    },
+    {
+      "original": "Original - Lounge 1.0.jpg",
+      "staged": "Staged Lounge - 1.3.webp",
+      "baseline": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.181,
+              0,
+              0.475,
+              0.925
+            ],
+            "area_pct": 27.04,
+            "aspect_ratio": 0.47,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.47,
+            "confidence": 0.95,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.194,
+              0.323,
+              0.312,
+              0.528
+            ],
+            "area_pct": 2.42,
+            "aspect_ratio": 0.86,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.86,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A2",
+            "type": "walkthrough",
+            "bbox": [
+              0,
+              0.45,
+              0.18,
+              1
+            ],
+            "area_pct": 9.9,
+            "aspect_ratio": 0.49,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "floor_zone",
+            "widthBand": "double",
+            "wallCoverageBand": "60+",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.49,
+            "confidence": 0.9,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AF1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.665,
+              0.165,
+              0.898,
+              0.268
+            ],
+            "confidence": 1
+          },
+          {
+            "id": "AF2",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0,
+              0.4,
+              0.18,
+              0.9
+            ],
+            "confidence": 0.9
+          }
+        ],
+        "wallCount": 4
+      },
+      "candidate": {
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.262,
+              0.443,
+              0.379,
+              0.653
+            ],
+            "area_pct": 2.45,
+            "aspect_ratio": 0.557,
+            "structuralClass": "exterior",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "5-10",
+            "orientation": "landscape",
+            "paneStructure": "single_fixed",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.557,
+            "confidence": 0.98,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W2",
+            "type": "window",
+            "bbox": [
+              0.51,
+              0.33,
+              0.605,
+              0.85
+            ],
+            "area_pct": 4.94,
+            "aspect_ratio": 0.183,
+            "structuralClass": "exterior",
+            "wallIndex": 3,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "5-10",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.183,
+            "confidence": 0.75,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "center",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0,
+              0.66,
+              0.185,
+              1
+            ],
+            "area_pct": 6.29,
+            "aspect_ratio": 0.544,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.544,
+            "confidence": 0.9,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "F1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.643,
+              0.163,
+              0.88,
+              0.263
+            ],
+            "confidence": 1
+          }
+        ],
+        "wallCount": 2
+      },
+      "expected": {
+        "status": "fail",
+        "hardFail": true
+      },
+      "hashes": {
+        "baseline": "43a11f10178de29b5d3d7e1270a9c2c8b92d3cb75a46da207340a9d654c63515",
+        "candidate": "2118a4799e8535e6a6805d2aff4c6783c0c9eabccde67f9be9384d627c4b36b9"
+      }
+    },
+    {
+      "original": "Original - Lounge 1.0.jpg",
+      "staged": "Staged Lounge - 1.4.webp",
+      "baseline": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.181,
+              0,
+              0.475,
+              0.925
+            ],
+            "area_pct": 27.04,
+            "aspect_ratio": 0.47,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.47,
+            "confidence": 0.95,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.194,
+              0.323,
+              0.312,
+              0.528
+            ],
+            "area_pct": 2.42,
+            "aspect_ratio": 0.86,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.86,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A2",
+            "type": "walkthrough",
+            "bbox": [
+              0,
+              0.45,
+              0.18,
+              1
+            ],
+            "area_pct": 9.9,
+            "aspect_ratio": 0.49,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "verticalBand": "floor_zone",
+            "widthBand": "double",
+            "wallCoverageBand": "60+",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.49,
+            "confidence": 0.9,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AF1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.665,
+              0.165,
+              0.898,
+              0.268
+            ],
+            "confidence": 1
+          },
+          {
+            "id": "AF2",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0,
+              0.4,
+              0.18,
+              0.9
+            ],
+            "confidence": 0.9
+          }
+        ],
+        "wallCount": 4
+      },
+      "candidate": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.246,
+              0.211,
+              0.48,
+              0.999
+            ],
+            "area_pct": 18.51,
+            "aspect_ratio": 0.297,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "widthBand": "double",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.297,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.292,
+              0.369,
+              0.371,
+              0.582
+            ],
+            "area_pct": 1.69,
+            "aspect_ratio": 0.371,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "single_fixed",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.371,
+            "confidence": 0.99,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "left_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W2",
+            "type": "window",
+            "bbox": [
+              0.875,
+              0.118,
+              1,
+              0.912
+            ],
+            "area_pct": 9.92,
+            "aspect_ratio": 0.157,
+            "structuralClass": "exterior",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "double",
+            "wallCoverageBand": "60+",
+            "orientation": "portrait",
+            "paneStructure": "sliding_panel",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.157,
+            "confidence": 0.85,
+            "wallPosition": "right_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "F1",
+            "type": "ac_unit",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.651,
+              0.141,
+              0.86,
+              0.252
+            ],
+            "confidence": 1
+          },
+          {
+            "id": "F2",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "left_third",
+            "bbox": [
+              0,
+              0.523,
+              0.245,
+              1
+            ],
+            "confidence": 0.95
+          }
+        ],
+        "wallCount": 4
+      },
+      "expected": {
+        "status": "pass",
+        "hardFail": false
+      },
+      "hashes": {
+        "baseline": "43a11f10178de29b5d3d7e1270a9c2c8b92d3cb75a46da207340a9d654c63515",
+        "candidate": "1f626e4a593a40ecd5a7551e86b27b122bad9a395e6c65da20c1f1af6c583b00"
+      }
+    },
+    {
+      "original": "Original - Lounge 2.0.jpg",
+      "staged": "Staged Lounge - 2.1.webp",
+      "baseline": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.681,
+              0.201,
+              0.73,
+              0.965
+            ],
+            "area_pct": 3.74,
+            "aspect_ratio": 0.063,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.063,
+            "confidence": 0.92,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.754,
+              0.423,
+              0.902,
+              0.597
+            ],
+            "area_pct": 2.57,
+            "aspect_ratio": 0.851,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "wide",
+            "wallCoverageBand": "40-60",
+            "orientation": "landscape",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.851,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "C1",
+            "type": "closet_door",
+            "bbox": [
+              0.73,
+              0.283,
+              0.792,
+              0.881
+            ],
+            "area_pct": 3.7,
+            "aspect_ratio": 0.104,
+            "structuralClass": "storage",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "closed",
+            "approxAspectRatio": 0.104,
+            "confidence": 0.95,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "closet_door",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "F1",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "center_third",
+            "bbox": [
+              0.34,
+              0.201,
+              0.681,
+              0.97
+            ],
+            "confidence": 0.98
+          },
+          {
+            "id": "F2",
+            "type": "kitchen_island",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.7,
+              0.61,
+              1,
+              0.97
+            ],
+            "confidence": 0.95
+          }
+        ],
+        "wallCount": 4
+      },
+      "candidate": {
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.771,
+              0.401,
+              0.902,
+              0.543
+            ],
+            "area_pct": 1.86,
+            "aspect_ratio": 1.4,
+            "structuralClass": "exterior",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "double",
+            "wallCoverageBand": "20-40",
+            "orientation": "landscape",
+            "paneStructure": "sliding_panel",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 1.4,
+            "confidence": 0.95,
+            "wallPosition": "right_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "D1",
+            "type": "door",
+            "bbox": [
+              0.704,
+              0.432,
+              0.761,
+              0.852
+            ],
+            "area_pct": 2.39,
+            "aspect_ratio": 0.2,
+            "structuralClass": "storage",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "closed",
+            "approxAspectRatio": 0.2,
+            "confidence": 0.9,
+            "wallPosition": "right_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "door",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.451,
+              0.203,
+              0.573,
+              0.978
+            ],
+            "area_pct": 9.47,
+            "aspect_ratio": 0.23,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "center_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.23,
+            "confidence": 0.85,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "center",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A2",
+            "type": "walkthrough",
+            "bbox": [
+              0.574,
+              0.13,
+              0.98,
+              0.98
+            ],
+            "area_pct": 34.51,
+            "aspect_ratio": 0.68,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "wide",
+            "wallCoverageBand": "40-60",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.68,
+            "confidence": 0.9,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AF1",
+            "type": "built_in_cabinet",
+            "wallIndex": 0,
+            "horizontalBand": "center_third",
+            "bbox": [
+              0.573,
+              0.13,
+              0.695,
+              0.98
+            ],
+            "confidence": 0.95
+          }
+        ],
+        "wallCount": 4
+      },
+      "expected": {
+        "status": "pass",
+        "hardFail": false
+      },
+      "hashes": {
+        "baseline": "aaaae369a0d3947f086ce336eb14b39a5bc2c532cf36fe148b3782f284f3dd31",
+        "candidate": "5b3c3d9071a247ae3697e034945b4a6e476b3bf93d831595a6d4c4637fd59ae4"
+      }
+    },
+    {
+      "original": "Original - Lounge 2.0.jpg",
+      "staged": "Staged Lounge - 2.2.webp",
+      "baseline": {
+        "openings": [
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.681,
+              0.201,
+              0.73,
+              0.965
+            ],
+            "area_pct": 3.74,
+            "aspect_ratio": 0.063,
+            "structuralClass": "circulation",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.063,
+            "confidence": 0.92,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.754,
+              0.423,
+              0.902,
+              0.597
+            ],
+            "area_pct": 2.57,
+            "aspect_ratio": 0.851,
+            "structuralClass": "exterior",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "wide",
+            "wallCoverageBand": "40-60",
+            "orientation": "landscape",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 0.851,
+            "confidence": 0.98,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "C1",
+            "type": "closet_door",
+            "bbox": [
+              0.73,
+              0.283,
+              0.792,
+              0.881
+            ],
+            "area_pct": 3.7,
+            "aspect_ratio": 0.104,
+            "structuralClass": "storage",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "floor_to_ceiling",
+            "doorLeafState": "closed",
+            "approxAspectRatio": 0.104,
+            "confidence": 0.95,
+            "wallPosition": "near_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "closet_door",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "F1",
+            "type": "staircase",
+            "wallIndex": 3,
+            "horizontalBand": "center_third",
+            "bbox": [
+              0.34,
+              0.201,
+              0.681,
+              0.97
+            ],
+            "confidence": 0.98
+          },
+          {
+            "id": "F2",
+            "type": "kitchen_island",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.7,
+              0.61,
+              1,
+              0.97
+            ],
+            "confidence": 0.95
+          }
+        ],
+        "wallCount": 4
+      },
+      "candidate": {
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "bbox": [
+              0.7383,
+              0.3853,
+              0.9163,
+              0.5702
+            ],
+            "area_pct": 3.3,
+            "aspect_ratio": 1.44,
+            "structuralClass": "exterior",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "verticalBand": "mid_zone",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "landscape",
+            "paneStructure": "fixed_plus_opening",
+            "heightClass": "standard",
+            "doorLeafState": "unknown",
+            "approxAspectRatio": 1.44,
+            "confidence": 1,
+            "wallPosition": "right_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "window",
+            "touchesFloor": false,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "C1",
+            "type": "closet_door",
+            "bbox": [
+              0.6552,
+              0.4103,
+              0.7182,
+              0.8651
+            ],
+            "area_pct": 2.87,
+            "aspect_ratio": 0.21,
+            "structuralClass": "storage",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "verticalBand": "full_height",
+            "widthBand": "narrow",
+            "wallCoverageBand": "10-20",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "closed",
+            "approxAspectRatio": 0.21,
+            "confidence": 0.95,
+            "wallPosition": "right_wall",
+            "relativeHorizontalPosition": "right_third",
+            "shape": "closet_door",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          },
+          {
+            "id": "A1",
+            "type": "walkthrough",
+            "bbox": [
+              0.508,
+              0.301,
+              0.59,
+              0.923
+            ],
+            "area_pct": 5.1,
+            "aspect_ratio": 0.2,
+            "structuralClass": "circulation",
+            "wallIndex": 3,
+            "horizontalBand": "center_third",
+            "verticalBand": "full_height",
+            "widthBand": "single",
+            "wallCoverageBand": "20-40",
+            "orientation": "portrait",
+            "paneStructure": "unknown",
+            "heightClass": "standard",
+            "doorLeafState": "open",
+            "approxAspectRatio": 0.2,
+            "confidence": 0.9,
+            "wallPosition": "left_wall",
+            "relativeHorizontalPosition": "center",
+            "shape": "walkthrough",
+            "touchesFloor": true,
+            "touchesCeiling": false,
+            "approxCount": 1
+          }
+        ],
+        "anchorFixtures": [
+          {
+            "id": "AF1",
+            "type": "built_in_cabinet",
+            "wallIndex": 3,
+            "horizontalBand": "center_third",
+            "bbox": [
+              0.59,
+              0.33,
+              0.68,
+              0.93
+            ],
+            "confidence": 0.9
+          },
+          {
+            "id": "AF2",
+            "type": "built_in_cabinet",
+            "wallIndex": 1,
+            "horizontalBand": "right_third",
+            "bbox": [
+              0.69,
+              0.57,
+              1,
+              0.9
+            ],
+            "confidence": 1
+          }
+        ],
+        "wallCount": 4
+      },
+      "expected": {
+        "status": "pass",
+        "hardFail": false
+      },
+      "hashes": {
+        "baseline": "aaaae369a0d3947f086ce336eb14b39a5bc2c532cf36fe148b3782f284f3dd31",
+        "candidate": "a2fc196477b69e5e9a8bfb762866d7a9f61106ccd4f2a8670c7b6766b78687e3"
+      }
+    }
+  ]
+}
