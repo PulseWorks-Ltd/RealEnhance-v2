@@ -12,7 +12,7 @@
         "pnpm-workspace.yaml",
         "railway.json"
       ],
-      "buildCommand": "CI=true NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/server run build",
+      "buildCommand": "CI=true NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline --prod=false && CI=true NODE_ENV=development pnpm --filter @realenhance/shared run build && CI=true NODE_ENV=development pnpm --filter @realenhance/server run build",
       "startCommand": "pnpm --filter @realenhance/server run start",
       "deploy": {
         "healthcheckPath": "/healthz",
@@ -34,7 +34,7 @@
         "pnpm-workspace.yaml",
         "railway.json"
       ],
-      "buildCommand": "CI=true NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline && NODE_ENV=development pnpm --filter @realenhance/shared run build && NODE_ENV=development pnpm --filter @realenhance/worker run build",
+      "buildCommand": "CI=true NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline --prod=false && CI=true NODE_ENV=development pnpm --filter @realenhance/shared run build && CI=true NODE_ENV=development pnpm --filter @realenhance/worker run build",
       "startCommand": "pnpm --filter @realenhance/worker run start",
       "deploy": {
         "restartPolicyType": "ON_FAILURE",
@@ -72,7 +72,7 @@
         "pnpm-workspace.yaml",
         "railway.json"
       ],
-      "buildCommand": "pnpm install --no-frozen-lockfile --prefer-offline && pnpm run build",
+      "buildCommand": "CI=true NODE_ENV=development pnpm install --no-frozen-lockfile --prefer-offline --prod=false && CI=true NODE_ENV=development pnpm run build",
       "startCommand": "node server.js",
       "deploy": {
         "healthcheckPath": "/health",

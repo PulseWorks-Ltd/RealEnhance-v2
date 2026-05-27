@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "NODE_ENV=development tsx src/worker.ts",
     "dev:vertex-experimental": "NODE_ENV=development tsx src/vertexExperimentalWorker.ts",
-    "build": "pnpm --filter @realenhance/shared run build && tsc -p tsconfig.json",
+    "build": "pnpm --filter @realenhance/shared run build && pnpm exec tsc -p tsconfig.json",
     "prestart": "pnpm run build",
     "start": "NODE_ENV=production node dist/worker/src/worker.js",
     "start:vertex-experimental": "NODE_ENV=production node dist/worker/src/vertexExperimentalWorker.js",
