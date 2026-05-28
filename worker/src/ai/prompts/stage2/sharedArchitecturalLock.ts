@@ -16,8 +16,6 @@ Do NOT:
 
 Maintain all existing installed ceiling lighting and fixtures unchanged.
 Do not introduce new ceiling-mounted or hanging light fixtures.
-Do NOT introduce new pendant, suspended, or decorative feature lights above dining tables or kitchen islands unless the same fixed fixture already exists in that position in the source image.
-Portable staged lighting decor (for example floor lamps and table lamps) is allowed.
 
 🔒 Architectural Priority Clarification
 
