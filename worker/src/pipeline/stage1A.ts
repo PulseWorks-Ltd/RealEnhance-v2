@@ -1383,14 +1383,10 @@ export async function runStage1A(
     try {
       const base = img.clone();
       const meta = await base.metadata();
-      // Build derivative buffers sequentially to reduce transient peak memory.
-      const gray = await base.clone().greyscale().raw().toBuffer({ resolveWithObject: true });
-      const small = await base
-        .clone()
-        .greyscale()
-        .resize(512, 512, { fit: "inside" })
-        .raw()
-        .toBuffer({ resolveWithObject: true });
+      const [gray, small] = await Promise.all([
+        base.clone().greyscale().raw().toBuffer({ resolveWithObject: true }),
+        base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true }),
+      ]);
 
       const rgbNoAlpha = base.clone().removeAlpha();
       const rgbMeta = toTransformDiagnosticMeta(await rgbNoAlpha.metadata().catch(() => null));

@@ -47,14 +47,19 @@ export async function buildValidationBuffers(
 
   const candNormalized = candSharp.clone().resize(resolvedWidth, resolvedHeight, { fit: "fill" });
 
-  // Build candidate buffers sequentially to avoid holding three large raw buffers at once.
-  const candGray = await candNormalized.clone().raw().toBuffer({ resolveWithObject: true });
-  const candBlur = await candNormalized.clone().blur(blurSigma).raw().toBuffer({ resolveWithObject: true });
-  const candSmall = await candNormalized
+  const candGrayPromise = candNormalized.clone().raw().toBuffer({ resolveWithObject: true });
+  const candBlurPromise = candNormalized.clone().blur(blurSigma).raw().toBuffer({ resolveWithObject: true });
+  const candSmallPromise = candNormalized
     .clone()
     .resize(smallSize, smallSize, { fit: "inside" })
     .raw()
     .toBuffer({ resolveWithObject: true });
+
+  const [candGray, candBlur, candSmall] = await Promise.all([
+    candGrayPromise,
+    candBlurPromise,
+    candSmallPromise,
+  ]);
 
   candSharp.destroy();
 

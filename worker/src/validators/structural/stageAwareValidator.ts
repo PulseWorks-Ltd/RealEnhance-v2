@@ -26,12 +26,6 @@ import { loadOrComputeStructuralMask, StructuralMask } from "../structuralMask";
 import { runGlobalEdgeMetrics } from "../globalStructuralValidator";
 import { normalizeImagePairForValidator } from "../dimensionUtils";
 import { focusLog } from "../../utils/logFocus";
-import { resolveSectionConcurrency, withMemoryCriticalSection } from "../../utils/memoryCriticalSection";
-
-const CONTINUITY_PREPROCESS_MAX_CONCURRENCY = resolveSectionConcurrency(
-  "CONTINUITY_PREPROCESS_MAX_CONCURRENCY",
-  2
-);
 
 /**
  * Sobel edge detection with binary threshold
@@ -336,22 +330,7 @@ export async function validateStructureStageAware(params: ValidateParams): Promi
         .toBuffer({ resolveWithObject: true })
         .then((raw) => new Uint8Array(raw.data.buffer, raw.data.byteOffset, raw.data.byteLength));
 
-      const { baseGray, candGray } = await withMemoryCriticalSection(
-        {
-          section: "continuity_preprocess_decode",
-          maxConcurrency: CONTINUITY_PREPROCESS_MAX_CONCURRENCY,
-          metadata: {
-            jobId: params.jobId,
-            stage: params.stage,
-            width: baseW,
-            height: baseH,
-          },
-        },
-        async () => {
-          const [baseGray, candGray] = await Promise.all([baseGrayPromise, candGrayPromise]);
-          return { baseGray, candGray };
-        }
-      );
+      const [baseGray, candGray] = await Promise.all([baseGrayPromise, candGrayPromise]);
 
       const edgeThreshold = Number(process.env.STRUCT_EDGE_THRESHOLD || 50);
         const baseEdge = sobelBinary(baseGray, baseW, baseH, edgeThreshold);

@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
-import { resolveSectionConcurrency, withMemoryCriticalSection } from "../utils/memoryCriticalSection";
 import { getRedisJson, setRedisJson } from "../utils/persist";
 import type { StructuralSignal, SignalRegion } from "./structuralSignal";
 
@@ -187,10 +186,6 @@ const OPENING_BBOX_VARIANCE_THRESHOLD = Math.max(
   0.001,
   Math.min(0.25, Number(process.env.OPENING_BBOX_VARIANCE_THRESHOLD || 0.015))
 );
-const OPENING_IMAGE_MATERIALIZATION_MAX_CONCURRENCY = resolveSectionConcurrency(
-  "OPENING_IMAGE_MATERIALIZATION_MAX_CONCURRENCY",
-  Math.max(1, Number(process.env.OPENING_EXTRACTION_MAX_CONCURRENCY || 2))
-);
 
 function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
   if (!Number.isFinite(value)) return 0;
@@ -365,18 +360,7 @@ async function materializeOpeningExtractionImage(
   imageUrl: string,
   options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<{ data: string; mime: string }> {
-  return withMemoryCriticalSection(
-    {
-      section: "opening_image_materialization",
-      maxConcurrency: OPENING_IMAGE_MATERIALIZATION_MAX_CONCURRENCY,
-      metadata: {
-        jobId: options?.jobId,
-        imageId: options?.imageId,
-        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
-      },
-    },
-    async () => toBase64(imageUrl)
-  );
+  return toBase64(imageUrl);
 }
 
 function stableSortObject(value: unknown): unknown {
