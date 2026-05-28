@@ -176,6 +176,187 @@ const STRUCTURAL_BASELINE_AUTHORITY_MIN_CONFIDENCE = Math.min(
   1,
   Math.max(0.6, Number(process.env.OPENING_BASELINE_AUTHORITY_MIN_CONFIDENCE || STRUCTURAL_BASELINE_MIN_AGREEMENT))
 );
+const OPENING_COORDINATE_PRECISION = Math.max(
+  2,
+  Math.min(6, Number(process.env.OPENING_COORDINATE_PRECISION || 4))
+);
+const OPENING_CONFIDENCE_VARIANCE_THRESHOLD = Math.max(
+  0,
+  Math.min(1, Number(process.env.OPENING_CONFIDENCE_VARIANCE_THRESHOLD || 0.05))
+);
+const OPENING_BBOX_VARIANCE_THRESHOLD = Math.max(
+  0.001,
+  Math.min(0.25, Number(process.env.OPENING_BBOX_VARIANCE_THRESHOLD || 0.015))
+);
+
+function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
+  if (!Number.isFinite(value)) return 0;
+  const factor = 10 ** precision;
+  return Math.round((value + Number.EPSILON) * factor) / factor;
+}
+
+function quantizeBbox(
+  bbox: [number, number, number, number]
+): [number, number, number, number] {
+  return [
+    roundDeterministic(clamp01(bbox[0])),
+    roundDeterministic(clamp01(bbox[1])),
+    roundDeterministic(clamp01(bbox[2])),
+    roundDeterministic(clamp01(bbox[3])),
+  ];
+}
+
+function bboxKey(bbox: [number, number, number, number]): string {
+  return quantizeBbox(bbox).join(":");
+}
+
+function compareNumbers(left: number, right: number, epsilon = 1e-6): number {
+  const delta = left - right;
+  if (Math.abs(delta) <= epsilon) return 0;
+  return delta < 0 ? -1 : 1;
+}
+
+function compareStrings(left: string, right: string): number {
+  return left.localeCompare(right);
+}
+
+function compareStructuralOpenings(left: StructuralOpening, right: StructuralOpening): number {
+  return (
+    compareNumbers(left.wallIndex, right.wallIndex) ||
+    compareStrings(left.horizontalBand, right.horizontalBand) ||
+    compareStrings(left.verticalBand, right.verticalBand) ||
+    compareNumbers(bboxCenterX(left.bbox), bboxCenterX(right.bbox), 1e-4) ||
+    compareNumbers((left.bbox[1] + left.bbox[3]) / 2, (right.bbox[1] + right.bbox[3]) / 2, 1e-4) ||
+    compareStrings(left.type, right.type) ||
+    compareStrings(left.widthBand, right.widthBand) ||
+    compareStrings(left.heightClass, right.heightClass) ||
+    compareStrings(left.paneStructure, right.paneStructure) ||
+    compareStrings(bboxKey(left.bbox), bboxKey(right.bbox)) ||
+    compareStrings(String(left.id), String(right.id))
+  );
+}
+
+function compareAnchorFixtures(left: AnchorFixture, right: AnchorFixture): number {
+  return (
+    compareNumbers(left.wallIndex, right.wallIndex) ||
+    compareStrings(left.horizontalBand, right.horizontalBand) ||
+    compareNumbers(bboxCenterX(left.bbox), bboxCenterX(right.bbox), 1e-4) ||
+    compareStrings(left.type, right.type) ||
+    compareStrings(bboxKey(left.bbox), bboxKey(right.bbox)) ||
+    compareStrings(String(left.id), String(right.id))
+  );
+}
+
+function structuralOpeningTelemetrySignature(opening: StructuralOpening): string {
+  return [
+    opening.type,
+    String(opening.wallIndex),
+    opening.horizontalBand,
+    opening.verticalBand,
+    opening.widthBand,
+    opening.heightClass,
+    bboxKey(opening.bbox),
+  ].join("|");
+}
+
+type StructuralBaselinePassTelemetry = {
+  passIndex: number;
+  graphHash: string;
+  openingCount: number;
+  openings: Array<{
+    id: string;
+    signature: string;
+    wallIndex: number;
+    verticalBand: VerticalBand;
+    bbox: [number, number, number, number];
+    confidence: number;
+  }>;
+};
+
+function buildStructuralBaselinePassTelemetry(
+  passIndex: number,
+  graphHash: string,
+  baseline: StructuralBaseline
+): StructuralBaselinePassTelemetry {
+  return {
+    passIndex,
+    graphHash,
+    openingCount: baseline.openings.length,
+    openings: [...baseline.openings]
+      .sort(compareStructuralOpenings)
+      .map((opening) => ({
+        id: String(opening.id),
+        signature: structuralOpeningTelemetrySignature(opening),
+        wallIndex: opening.wallIndex,
+        verticalBand: opening.verticalBand,
+        bbox: quantizeBbox(opening.bbox),
+        confidence: roundDeterministic(opening.confidence, 3),
+      })),
+  };
+}
+
+function summarizeStructuralBaselineVariance(passTelemetry: StructuralBaselinePassTelemetry[]): {
+  graphHashVariance: number;
+  signatureVariance: number;
+  bboxVariance: number;
+  wallIndexVariance: number;
+  verticalBandVariance: number;
+  confidenceVariance: number;
+} {
+  if (passTelemetry.length <= 1) {
+    return {
+      graphHashVariance: 0,
+      signatureVariance: 0,
+      bboxVariance: 0,
+      wallIndexVariance: 0,
+      verticalBandVariance: 0,
+      confidenceVariance: 0,
+    };
+  }
+
+  const reference = passTelemetry[0];
+  let graphHashVariance = 0;
+  let signatureVariance = 0;
+  let bboxVariance = 0;
+  let wallIndexVariance = 0;
+  let verticalBandVariance = 0;
+  let confidenceVariance = 0;
+
+  for (const candidate of passTelemetry.slice(1)) {
+    if (candidate.graphHash !== reference.graphHash) graphHashVariance += 1;
+    const overlap = Math.min(reference.openings.length, candidate.openings.length);
+    for (let index = 0; index < overlap; index += 1) {
+      const left = reference.openings[index];
+      const right = candidate.openings[index];
+      if (left.signature !== right.signature) signatureVariance += 1;
+      if (left.wallIndex !== right.wallIndex) wallIndexVariance += 1;
+      if (left.verticalBand !== right.verticalBand) verticalBandVariance += 1;
+      if (
+        Math.max(
+          Math.abs(left.bbox[0] - right.bbox[0]),
+          Math.abs(left.bbox[1] - right.bbox[1]),
+          Math.abs(left.bbox[2] - right.bbox[2]),
+          Math.abs(left.bbox[3] - right.bbox[3])
+        ) >= OPENING_BBOX_VARIANCE_THRESHOLD
+      ) {
+        bboxVariance += 1;
+      }
+      if (Math.abs(left.confidence - right.confidence) >= OPENING_CONFIDENCE_VARIANCE_THRESHOLD) {
+        confidenceVariance += 1;
+      }
+    }
+    signatureVariance += Math.abs(reference.openings.length - candidate.openings.length);
+  }
+
+  return {
+    graphHashVariance,
+    signatureVariance,
+    bboxVariance,
+    wallIndexVariance,
+    verticalBandVariance,
+    confidenceVariance,
+  };
+}
 
 function stableSortObject(value: unknown): unknown {
   if (Array.isArray(value)) {
@@ -197,6 +378,7 @@ function stableSortObject(value: unknown): unknown {
 function structuralOpeningSignature(opening: StructuralOpening): Record<string, unknown> {
   return {
     type: opening.type,
+    bbox: quantizeBbox(opening.bbox),
     structuralClass: opening.structuralClass,
     wallIndex: opening.wallIndex,
     horizontalBand: opening.horizontalBand,
@@ -237,6 +419,10 @@ function hashStructuralBaselineGraph(baseline: StructuralBaseline): string {
   });
 
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+
+export function getStructuralBaselineGraphHash(baseline: StructuralBaseline): string {
+  return hashStructuralBaselineGraph(baseline);
 }
 
 function hashStructuralImage(imageData: string): string {
@@ -780,7 +966,11 @@ function reconcileOpeningMatches(
 
         return { candidate, score };
       })
-      .sort((a, b) => b.score - a.score);
+      .sort((left, right) => {
+        const scoreCmp = compareNumbers(right.score, left.score, 1e-9);
+        if (scoreCmp !== 0) return scoreCmp;
+        return compareStructuralOpenings(left.candidate, right.candidate);
+      });
 
     const top = scoredCandidates[0];
     const second = scoredCandidates[1];
@@ -950,7 +1140,7 @@ function normalizeBbox(
     if (y2 < y1) [y1, y2] = [y2, y1];
     if (x2 - x1 < 0.01) x2 = clamp01(x1 + 0.01);
     if (y2 - y1 < 0.01) y2 = clamp01(y1 + 0.01);
-    return [x1, y1, x2, y2];
+    return quantizeBbox([x1, y1, x2, y2]);
   }
 
   const [x1, x2] = horizontalBand === "left_third"
@@ -967,7 +1157,7 @@ function normalizeBbox(
         ? [0.02, 0.98]
         : [0.22, 0.80];
 
-  return [x1, y1, x2, y2];
+  return quantizeBbox([x1, y1, x2, y2]);
 }
 
 function normalizeAreaPct(input: any, bbox: [number, number, number, number]): number {
@@ -1192,6 +1382,9 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     ? Math.max(1, Math.min(4, Math.round(input.wallCount)))
     : uniqueWalls.size;
 
+  openings.sort(compareStructuralOpenings);
+  anchorFixtures.sort(compareAnchorFixtures);
+
   return {
     cameraOrientation: typeof input.cameraOrientation === "string" ? input.cameraOrientation : undefined,
     openings,
@@ -1234,14 +1427,18 @@ function buildWallSequenceContext(
   const all = [...openingItems, ...fixtureItems]
     .sort((a, b) => {
       if (Math.abs(a.x - b.x) > 1e-4) return a.x - b.x;
-      if (a.kind === b.kind) return 0;
+      if (a.kind === b.kind) return compareStrings(a.token, b.token);
       return a.kind === "fixture" ? -1 : 1;
     })
     .map((item) => item.token);
 
   return {
-    openingTokens: openingItems.sort((a, b) => a.x - b.x).map((item) => item.token),
-    fixtureTokens: fixtureItems.sort((a, b) => a.x - b.x).map((item) => item.token),
+    openingTokens: openingItems
+      .sort((a, b) => compareNumbers(a.x, b.x, 1e-4) || compareStrings(a.token, b.token))
+      .map((item) => item.token),
+    fixtureTokens: fixtureItems
+      .sort((a, b) => compareNumbers(a.x, b.x, 1e-4) || compareStrings(a.token, b.token))
+      .map((item) => item.token),
     allTokens: all,
   };
 }
@@ -1542,6 +1739,12 @@ async function stabilizeStructuralBaseline(
       const graphHash = hashStructuralBaselineGraph(baseline);
       passResults.push(baseline);
       passHashes.push(graphHash);
+      console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        imageHash,
+        ...buildStructuralBaselinePassTelemetry(passIndex + 1, graphHash, baseline),
+      }));
     } catch (err) {
       lastError = err;
       console.error("[STRUCTURAL_BASELINE_PASS_ERROR]", {
@@ -1569,7 +1772,11 @@ async function stabilizeStructuralBaseline(
     }
   });
 
-  const ranked = Array.from(histogram.entries()).sort((left, right) => right[1].count - left[1].count);
+  const ranked = Array.from(histogram.entries()).sort((left, right) => {
+    const countCmp = compareNumbers(right[1].count, left[1].count);
+    if (countCmp !== 0) return countCmp;
+    return compareStrings(left[0], right[0]);
+  });
   const [graphHash, consensus] = ranked[0];
   const { min, max, variance } = openingCountVariance(passResults);
   const extractionAgreement = consensus.count / passResults.length;
@@ -1589,6 +1796,9 @@ async function stabilizeStructuralBaseline(
     openingCountRange: { min, max },
     confirmedAt,
   };
+  const varianceSummary = summarizeStructuralBaselineVariance(
+    passResults.map((baseline, index) => buildStructuralBaselinePassTelemetry(index + 1, passHashes[index], baseline))
+  );
 
   console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
     jobId: options?.jobId,
@@ -1601,6 +1811,19 @@ async function stabilizeStructuralBaseline(
     openingCountVariance: variance,
     candidateGraphHashes: graphMeta.candidateGraphHashes,
     cacheStatus: graphMeta.cacheStatus,
+  }));
+  console.log("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    passCount: passResults.length,
+    openingCountVariance: variance,
+    graphHashVariance: varianceSummary.graphHashVariance,
+    signatureVariance: varianceSummary.signatureVariance,
+    bboxVariance: varianceSummary.bboxVariance,
+    wallIndexVariance: varianceSummary.wallIndexVariance,
+    verticalBandVariance: varianceSummary.verticalBandVariance,
+    confidenceVariance: varianceSummary.confidenceVariance,
   }));
 
   const stabilizedGraph = { ...consensus.graph, graphMeta };
@@ -1652,6 +1875,37 @@ export async function validateOpeningPreservation(
   const isEditMode = options?.mode === "edit";
 
   const reconciliation = reconcileOpeningMatches(baseline.openings, detected.openings);
+  const reconciliationHash = createHash("sha256")
+    .update(
+      JSON.stringify(
+        stableSortObject(
+          reconciliation.debug.map((entry) => ({
+            baselineId: entry.baselineId,
+            detectedId: entry.detectedId,
+            matchSource: entry.matchSource,
+            score: roundDeterministic(entry.score, 3),
+          }))
+        )
+      )
+    )
+    .digest("hex");
+  console.log("[OPENING_RECONCILIATION_TRACE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: options?.attempt,
+    reconciliationHash,
+    baselineOpeningCount: baseline.openings.length,
+    detectedOpeningCount: detected.openings.length,
+    matchedCount: reconciliation.debug.length,
+    idMatchCount: reconciliation.debug.filter((entry) => entry.matchSource === "id").length,
+    graphMatchCount: reconciliation.debug.filter((entry) => entry.matchSource === "graph_reconcile").length,
+    unmatchedBaselineIds: baseline.openings
+      .map((opening) => opening.id)
+      .filter((openingId) => !reconciliation.matches.has(openingId)),
+    unmatchedDetectedIds: detected.openings
+      .map((opening) => opening.id)
+      .filter((openingId) => !reconciliation.matchedDetectedIds.has(openingId)),
+  }));
 
   const openingResults: OpeningResult[] = [];
   const findings: OpeningDiagnosticFinding[] = [];
