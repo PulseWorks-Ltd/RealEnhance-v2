@@ -15205,8 +15205,8 @@ const worker = new Worker(
           } else {
             const lowerMode = String(rawMode || "").toLowerCase();
             const isAddMode = lowerMode === "add";
-            const runEditOpeningsValidation = mode === "Reinstate";
-            openingsValidationRequiredForPublish = mode === "Reinstate";
+            const runEditOpeningsValidation = mode !== "Reinstate";
+            openingsValidationRequiredForPublish = false;
             let attempt = 1;
             const maxAttempts = (isStrictEditMode || isDeterministicBaselineMode) ? 1 : 2;
             let lastSummary: any = null;
@@ -15300,7 +15300,9 @@ const worker = new Worker(
                   passed: true,
                   comparedAgainst: "edit_input",
                   bypassed: true,
-                  reason: "non_reinstate_mode_skip_opening_validation",
+                  reason: mode === "Reinstate"
+                    ? "reinstate_validation_skipped"
+                    : "non_reinstate_mode_skip_opening_validation",
                   mode,
                 };
                 openingsValidationPassedForPublish = true;
@@ -15395,9 +15397,6 @@ const worker = new Worker(
 
             if (runEditOpeningsValidation) {
               openingsValidationSummary = openingsValidationSummary || lastSummary;
-            }
-            if (mode === "Reinstate") {
-              openingsValidationPassedForPublish = openingsValidationSummary?.passed === true;
             }
           }
 
