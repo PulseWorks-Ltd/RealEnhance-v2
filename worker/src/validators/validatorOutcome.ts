@@ -21,4 +21,18 @@ export type ValidatorOutcome = {
     bbox: [number, number, number, number];
     type: "window" | "door";
   }>;
+  fixtureRepair?: {
+    supported: boolean;
+    repairType?:
+      | "PENDANT_LIGHT_ADDED"
+      | "HANGING_LIGHT_ADDED"
+      | "SUSPENDED_CEILING_FIXTURE_ADDED"
+      | "DECORATIVE_CEILING_FEATURE_LIGHT_ADDED"
+      | "HVAC_VENT_ADDED"
+      | "HVAC_VENT_REMOVED"
+      | "HVAC_VENT_MODIFIED";
+    action?: "added" | "removed" | "modified" | "unknown";
+    localizationMode?: "diff_zone_ceiling" | "diff_zone_hvac";
+    reasonTokens?: string[];
+  };
 };

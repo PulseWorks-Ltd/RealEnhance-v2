@@ -13,6 +13,114 @@ const FIXTURE_TARGET_REGEX = /\b(pendant|chandelier|ceiling fan|recessed light|r
 
 export type FixtureValidatorResult = ValidatorOutcome;
 
+function inferFixtureRepairMetadata(reason: string, advisorySignals: string[], structuredIssues: StructuredIssue[]): NonNullable<FixtureValidatorResult["fixtureRepair"]> {
+  const tokens = splitIssueTokens(reason, advisorySignals);
+  const normalizedSignals = buildNormalizedSignals(reason, advisorySignals);
+  const joinedTokens = tokens.join("|");
+  const joinedSignals = normalizedSignals.join(" ");
+
+  const hasAdded = /(^|_)(add|added|addition|inserted|introduced|install|installed|installation)(_|$)/.test(joinedTokens)
+    || /\b(add|added|addition|inserted|introduced|install|installed|installation)\b/.test(joinedSignals);
+  const hasRemoved = /(^|_)(remove|removed|removal|missing)(_|$)/.test(joinedTokens)
+    || /\b(remove|removed|removal|missing)\b/.test(joinedSignals);
+  const hasModified = /(^|_)(replace|replaced|replacement|change|changed|modified)(_|$)/.test(joinedTokens)
+    || /\b(replace|replaced|replacement|change|changed|modified)\b/.test(joinedSignals);
+
+  const action: "added" | "removed" | "modified" | "unknown" = hasAdded
+    ? "added"
+    : hasRemoved
+      ? "removed"
+      : hasModified
+        ? "modified"
+        : "unknown";
+
+  const structuredObject = String(structuredIssues[0]?.object || "").toLowerCase();
+  const isHvac = structuredObject === "hvac_unit"
+    || /\bhvac\b|air[\s_-]?conditioner|ac[\s_-]?unit|split[\s_-]?unit|ceiling[\s_-]?vent/.test(joinedSignals);
+  const isPendant = structuredObject === "pendant_light" || /\bpendant\b/.test(joinedSignals);
+  const isHanging = /\bhanging\b/.test(joinedSignals);
+  const isSuspended = /\bsuspended\b/.test(joinedSignals);
+  const isDecorativeCeilingFeature = /decorative\s+ceiling\s+feature\s+light/.test(joinedSignals);
+
+  if (isHvac && action === "added") {
+    return {
+      supported: true,
+      repairType: "HVAC_VENT_ADDED",
+      action,
+      localizationMode: "diff_zone_hvac",
+      reasonTokens: tokens,
+    };
+  }
+
+  if (isHvac && action === "removed") {
+    return {
+      supported: true,
+      repairType: "HVAC_VENT_REMOVED",
+      action,
+      localizationMode: "diff_zone_hvac",
+      reasonTokens: tokens,
+    };
+  }
+
+  if (isHvac && action === "modified") {
+    return {
+      supported: true,
+      repairType: "HVAC_VENT_MODIFIED",
+      action,
+      localizationMode: "diff_zone_hvac",
+      reasonTokens: tokens,
+    };
+  }
+
+  if (action === "added") {
+    if (isPendant) {
+      return {
+        supported: true,
+        repairType: "PENDANT_LIGHT_ADDED",
+        action,
+        localizationMode: "diff_zone_ceiling",
+        reasonTokens: tokens,
+      };
+    }
+
+    if (isHanging) {
+      return {
+        supported: true,
+        repairType: "HANGING_LIGHT_ADDED",
+        action,
+        localizationMode: "diff_zone_ceiling",
+        reasonTokens: tokens,
+      };
+    }
+
+    if (isSuspended) {
+      return {
+        supported: true,
+        repairType: "SUSPENDED_CEILING_FIXTURE_ADDED",
+        action,
+        localizationMode: "diff_zone_ceiling",
+        reasonTokens: tokens,
+      };
+    }
+
+    if (isDecorativeCeilingFeature) {
+      return {
+        supported: true,
+        repairType: "DECORATIVE_CEILING_FEATURE_LIGHT_ADDED",
+        action,
+        localizationMode: "diff_zone_ceiling",
+        reasonTokens: tokens,
+      };
+    }
+  }
+
+  return {
+    supported: false,
+    action,
+    reasonTokens: tokens,
+  };
+}
+
 function buildNormalizedSignals(reason: string, advisorySignals: string[]): string[] {
   const signals = [reason, ...advisorySignals]
     .map((value) => normalizeReason(String(value || "")))
@@ -130,6 +238,7 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     reason,
     advisorySignals,
   });
+  const fixtureRepair = inferFixtureRepairMetadata(reason, advisorySignals, structuredIssues);
 
   console.log("[SPECIALIST_REVIEW][FIXTURE]", {
     ok: parsed.ok,
@@ -149,6 +258,7 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     advisorySignals,
     primaryStructuredIssue: structuredIssues[0],
     structuredIssues,
+    fixtureRepair,
   };
 }
 

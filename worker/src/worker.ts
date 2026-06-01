@@ -38,6 +38,7 @@ import { classifyStructuralFailure, type StructuralFailureType } from "./pipelin
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
+import { runFixtureRepairAttempt, type FixtureRepairHint } from "./pipeline/fixtureRepair";
 import type { EditContext } from "./pipeline/prompts";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
@@ -11253,6 +11254,7 @@ All openings must remain identical in position and size to the original image.`;
       };
 
       const HIGH_CONFIDENCE_THRESHOLD = 0.9;
+      const FIXTURE_REPAIR_CONFIDENCE_THRESHOLD = 0.93;
 
       const normalizeSpecialistResult = (params: {
         validator: "opening" | "fixture" | "envelope" | "floor";
@@ -11551,6 +11553,7 @@ All openings must remain identical in position and size to the original image.`;
         confidence?: number;
         subtype?: string;
         advisorySignals?: string[];
+        fixtureRepair?: FixtureRepairHint;
         primaryStructuredIssue?: StructuredIssue;
         structuredIssues?: StructuredIssue[];
       };
@@ -11622,6 +11625,7 @@ All openings must remain identical in position and size to the original image.`;
           confidence?: number;
           advisorySignals?: string[];
           subtype?: string;
+          fixtureRepair?: FixtureRepairHint;
           primaryStructuredIssue?: StructuredIssue;
           structuredIssues?: StructuredIssue[];
         }
@@ -11636,6 +11640,7 @@ All openings must remain identical in position and size to the original image.`;
           confidence: Number.isFinite(Number(raw.confidence)) ? Number(raw.confidence) : undefined,
           subtype: raw.subtype,
           advisorySignals: Array.isArray(raw.advisorySignals) ? raw.advisorySignals : undefined,
+          fixtureRepair: raw.fixtureRepair,
           primaryStructuredIssue: raw.primaryStructuredIssue,
           structuredIssues: Array.isArray(raw.structuredIssues) ? raw.structuredIssues : undefined,
         });
@@ -11908,6 +11913,7 @@ All openings must remain identical in position and size to the original image.`;
           confidence: fixRes.confidence,
           advisorySignals: fixRes.advisorySignals,
           subtype: (fixRes as any).subtype,
+          fixtureRepair: (fixRes as any).fixtureRepair,
         });
         appendAdvisories("fixtures", fixRes.advisorySignals || []);
         const fixtureHardFail = fixRes.hardFail === true;
@@ -12826,6 +12832,16 @@ All openings must remain identical in position and size to the original image.`;
             confidence: categoricalBlock.confidence,
             advisorySignals: specialistAdvisorySignals,
           });
+        } else if (blockedIssueType === ISSUE_TYPES.FIXTURE_CHANGED || blockedIssueType === ISSUE_TYPES.HVAC_CHANGED) {
+          nLog("[STAGE2_ISSUETYPE_FIXTURE_DEFER_TO_UNIFIED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType: blockedIssueType,
+            reason: categoricalBlock.reason,
+            confidence: categoricalBlock.confidence,
+            action: "defer_to_unified_for_fixture_repair_eligibility",
+          });
         } else {
           const blockedReason = normalizeValidatorReason(categoricalBlock.reason || "issue_type_gate_block");
           const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
@@ -12943,45 +12959,220 @@ All openings must remain identical in position and size to the original image.`;
           reason: unifiedReason,
         });
 
-        const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
-        setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
-        if (attempt < MAX_STAGE2_RETRIES) {
+        const fixtureSignal = specialistIssueSignals.find((signal) => signal.validator === "fixtures");
+        const fixtureRepairHint = fixtureSignal?.fixtureRepair;
+        const fixtureFailureDetected = specialistResults.fixture.hardFail === true;
+        const fixtureConfidence = Number.isFinite(specialistResults.fixture.confidence)
+          ? specialistResults.fixture.confidence
+          : 0;
+        const unifiedFixtureIssue = unifiedIssueType === ISSUE_TYPES.FIXTURE_CHANGED || unifiedIssueType === ISSUE_TYPES.HVAC_CHANGED;
+        const hasNonFixtureBlockingSpecialist =
+          specialistResults.opening.hardFail === true ||
+          specialistResults.floor.hardFail === true ||
+          specialistResults.envelope.hardFail === true;
+        const normalizedUnifiedReason = normalizeReason(unifiedReason);
+        const unifiedMentionsBroaderSceneIssues = /\b(opening|window|door|wall|floor|layout|camera|envelope|room)\b/.test(normalizedUnifiedReason);
+        const unifiedPassesAllOtherChecks =
+          unifiedValidation.blockSource === "gemini" &&
+          unifiedFixtureIssue &&
+          !hasNonFixtureBlockingSpecialist;
+        const fixtureIssueIsOnlyBlockingFailure =
+          unifiedFixtureIssue &&
+          !hasNonFixtureBlockingSpecialist &&
+          !unifiedMentionsBroaderSceneIssues;
+        const repairEligible =
+          fixtureFailureDetected &&
+          fixtureConfidence >= FIXTURE_REPAIR_CONFIDENCE_THRESHOLD &&
+          unifiedPassesAllOtherChecks &&
+          fixtureIssueIsOnlyBlockingFailure &&
+          fixtureRepairHint?.supported === true &&
+          !!fixtureRepairHint.repairType;
+
+        let repairRecovered = false;
+        if (repairEligible && fixtureRepairHint) {
+          nLog("[FIXTURE_REPAIR_ELIGIBLE]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType: unifiedIssueType,
+            confidence: fixtureConfidence,
+            repairType: fixtureRepairHint.repairType,
+            reason: unifiedReason,
+            beforeValidation: {
+              unifiedIssueType,
+              unifiedReason,
+              unifiedHardFail: unifiedValidation.hardFail === true,
+              fixtureHardFail: specialistResults.fixture.hardFail,
+            },
+          });
+
+          try {
+            nLog("[FIXTURE_REPAIR_STARTED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              issueType: unifiedIssueType,
+              confidence: fixtureConfidence,
+              repairType: fixtureRepairHint.repairType,
+            });
+
+            const repairResult = await runFixtureRepairAttempt({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              stage1ABasePath: validationBasePath,
+              stage2CandidatePath: path2,
+              hint: fixtureRepairHint,
+            });
+
+            const repairedFixture = await (await import("./validators/fixtureValidator.js")).runFixtureValidator(
+              validationBasePath,
+              repairResult.repairedPath,
+              {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              }
+            );
+
+            const repairedUnified = await runUnifiedValidation({
+              originalPath: validationBasePath,
+              enhancedPath: repairResult.repairedPath,
+              stage: "2",
+              sceneType: sceneLabel as any,
+              roomType: payload.options.roomType,
+              mode: "enforce",
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              stagingStyle: payload.options.stagingStyle,
+              stage1APath: validationBasePath,
+              sourceStage: stage2SourceStage,
+              validationMode: stage2SelectedValidationMode,
+              geminiPolicy: stage2GeminiPolicy,
+              specialistAdvisorySignals: [],
+              specialistAdvisoryObservations: [],
+              specialistStructuredIssues: [],
+            });
+
+            const repairUnifiedPass = repairedUnified.passed === true && repairedUnified.hardFail !== true;
+            const repairFixturePass = repairedFixture.hardFail !== true;
+
+            if (repairUnifiedPass && repairFixturePass) {
+              repairRecovered = true;
+              path2 = repairResult.repairedPath;
+              stage2CandidatePath = repairResult.repairedPath;
+              unifiedValidation = repairedUnified;
+              nLog("[FIXTURE_REPAIR_SUCCESS]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                issueType: unifiedIssueType,
+                confidence: fixtureConfidence,
+                repairType: fixtureRepairHint.repairType,
+                repairDurationMs: repairResult.durationMs,
+                repairMaskChangedPixels: repairResult.changedPixels,
+                repairMaskCoverageRatio: Number(repairResult.maskCoverageRatio.toFixed(6)),
+                afterValidation: {
+                  unifiedPassed: repairedUnified.passed === true,
+                  unifiedHardFail: repairedUnified.hardFail === true,
+                  fixtureHardFail: repairedFixture.hardFail === true,
+                  unifiedIssueType: repairedUnified.issueType || ISSUE_TYPES.NONE,
+                },
+              });
+            } else {
+              nLog("[FIXTURE_REPAIR_FAILED]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                issueType: unifiedIssueType,
+                confidence: fixtureConfidence,
+                repairType: fixtureRepairHint.repairType,
+                repairDurationMs: repairResult.durationMs,
+                repairMaskChangedPixels: repairResult.changedPixels,
+                repairMaskCoverageRatio: Number(repairResult.maskCoverageRatio.toFixed(6)),
+                afterValidation: {
+                  unifiedPassed: repairedUnified.passed === true,
+                  unifiedHardFail: repairedUnified.hardFail === true,
+                  unifiedIssueType: repairedUnified.issueType || ISSUE_TYPES.NONE,
+                  unifiedReason: repairedUnified.reasons?.[0] || "none",
+                  fixtureHardFail: repairedFixture.hardFail === true,
+                  fixtureReason: repairedFixture.reason || "none",
+                },
+              });
+            }
+          } catch (repairErr: any) {
+            nLog("[FIXTURE_REPAIR_FAILED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              issueType: unifiedIssueType,
+              confidence: fixtureConfidence,
+              repairType: fixtureRepairHint.repairType,
+              reason: unifiedReason,
+              error: repairErr?.message || String(repairErr),
+            });
+          }
+        }
+
+        if (repairRecovered) {
+          nLog("[STAGE2_REPAIR_RECOVERED_CONTINUE]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            action: "continue_with_repaired_stage2_candidate",
+          });
+        } else {
+          if (repairEligible) {
+            nLog("[FIXTURE_REPAIR_FALLBACK_TO_RETRY]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              issueType: unifiedIssueType,
+              confidence: fixtureConfidence,
+              reason: unifiedReason,
+            });
+          }
+
+          const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
+          setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
+          if (attempt < MAX_STAGE2_RETRIES) {
+            logRefreshValidationTrace({
+              specialistHardFail: false,
+              geminiDecision: "FAIL",
+              finalDecision: "RETRY",
+              reason: unifiedDecisionReason,
+            });
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: normalizeValidatorReason(unifiedDecisionReason),
+            });
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
           logRefreshValidationTrace({
             specialistHardFail: false,
             geminiDecision: "FAIL",
             finalDecision: "RETRY",
             reason: unifiedDecisionReason,
           });
-          logValidateFinal(attempt, "retry", attempt);
-          logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
-          logEvent("STAGE_RETRY", {
-            jobId: payload.jobId,
-            stage: "2",
-            retry: attempt + 1,
-            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-            reason: normalizeValidatorReason(unifiedDecisionReason),
-          });
-          continue;
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
         }
-
-        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-          ? stageLineage.stage1B.output
-          : path1A;
-        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-        stage2Blocked = true;
-        stage2FallbackStage = fallbackStage;
-        stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
-        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-        path2 = fallbackPath;
-        stage2CandidatePath = fallbackPath;
-        logRefreshValidationTrace({
-          specialistHardFail: false,
-          geminiDecision: "FAIL",
-          finalDecision: "RETRY",
-          reason: unifiedDecisionReason,
-        });
-        logValidateFinal(attempt, "reject", attempt - 1);
-        break;
       }
 
       let compositeDecision = "pass";
