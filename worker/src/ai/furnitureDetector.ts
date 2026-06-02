@@ -40,6 +40,8 @@ export interface FurnitureAnalysis {
   hasFurniture: boolean;
   detectedAnchors: string[];
   detectedItems?: DetectedItem[];
+  hasBuiltInFixtures?: boolean;
+  builtInFixtureTypes?: string[];
   confidence: number;
   hasMovableSeating: boolean;
   hasCounterClutter: boolean;
@@ -97,6 +99,10 @@ export interface FurnishedGateDecision {
   reason: string;
   confidence: number;
   anchors: string[];
+  movableAnchors?: string[];
+  movableFurnitureDetected?: boolean;
+  hasBuiltInFixtures?: boolean;
+  builtInFixtureTypes?: string[];
   roomState: "EMPTY" | "FURNISHED_TIDY" | "FURNISHED_CLUTTERED";
   hasClutter: boolean;
   minorPortableClutterOnly?: boolean;
@@ -114,6 +120,7 @@ export const CORE_ANCHOR_CLASSES = [
   "bed",
   "sofa",
   "dining_table",
+  "chair",
   "desk",
   "coffee_table",
   "tv",
@@ -122,6 +129,176 @@ export const CORE_ANCHOR_CLASSES = [
 ] as const;
 
 const CORE_ANCHOR_SET = new Set<string>(CORE_ANCHOR_CLASSES);
+const ALWAYS_MOVABLE_ANCHOR_SET = new Set<string>([
+  "bed",
+  "sofa",
+  "dining_table",
+  "chair",
+  "desk",
+  "coffee_table",
+  "tv",
+]);
+
+const CONDITIONAL_MOVABLE_ANCHOR_SET = new Set<string>([
+  "freestanding_wardrobe",
+  "large_freestanding_cabinet",
+]);
+
+const BUILT_IN_FIXTURE_TOKEN_SET = new Set<string>([
+  "built_in",
+  "builtin",
+  "closet",
+  "cabinetry",
+  "shelving",
+  "fixed_storage",
+  "fixed_storage_unit",
+  "wall_integrated_storage",
+  "permanent_storage",
+]);
+
+const BUILT_IN_INDICATOR_TOKENS = [
+  "built_in",
+  "builtin",
+  "fixed",
+  "integrated",
+  "permanent",
+  "wall",
+  "closet",
+  "cabinet",
+  "cabinetry",
+  "shelv",
+  "storage",
+];
+
+function normalizeToken(value: unknown): string {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, "_");
+}
+
+function isBuiltInFixtureText(value: unknown): boolean {
+  const token = normalizeToken(value);
+  if (!token) return false;
+  if (BUILT_IN_FIXTURE_TOKEN_SET.has(token)) return true;
+  return BUILT_IN_INDICATOR_TOKENS.some((indicator) => token.includes(indicator));
+}
+
+function normalizeFixtureType(value: unknown): string | null {
+  const token = normalizeToken(value);
+  if (!token) return null;
+
+  if (token.includes("wardrobe")) return "wardrobe";
+  if (token.includes("closet")) return "closet";
+  if (token.includes("cabinet") || token.includes("cabinetry")) return "cabinetry";
+  if (token.includes("shelv")) return "shelving";
+  if (token.includes("wall") && token.includes("integrated")) return "wall_integrated_storage";
+  if (token.includes("permanent")) return "permanent_storage";
+  if (token.includes("storage")) return "fixed_storage";
+
+  return null;
+}
+
+function collectBuiltInFixtureTypes(analysis: FurnitureDetectionSuccess): string[] {
+  const fixtureTypes = new Set<string>();
+
+  const inspectValue = (value: unknown): void => {
+    if (!isBuiltInFixtureText(value)) return;
+    const normalized = normalizeFixtureType(value);
+    if (normalized) fixtureTypes.add(normalized);
+  };
+
+  for (const item of Array.isArray(analysis.detectedItems) ? analysis.detectedItems : []) {
+    inspectValue(item?.type);
+  }
+
+  for (const item of Array.isArray(analysis.furnitureItems) ? analysis.furnitureItems : []) {
+    inspectValue(item?.legacyType);
+    inspectValue(item?.type);
+    inspectValue(item?.label);
+  }
+
+  for (const fixture of Array.isArray(analysis.builtInFixtureTypes) ? analysis.builtInFixtureTypes : []) {
+    inspectValue(fixture);
+  }
+
+  return Array.from(fixtureTypes);
+}
+
+function hasFreestandingEvidence(
+  analysis: FurnitureDetectionSuccess,
+  anchor: "freestanding_wardrobe" | "large_freestanding_cabinet"
+): boolean {
+  for (const item of Array.isArray(analysis.furnitureItems) ? analysis.furnitureItems : []) {
+    const rawType = normalizeToken(item?.legacyType || item?.type);
+    const label = normalizeToken(item?.label);
+    const confidence = typeof item?.confidence === "number" ? item.confidence : 0;
+
+    if (confidence < 0.6) continue;
+    if (isBuiltInFixtureText(rawType) || isBuiltInFixtureText(label)) continue;
+
+    if (anchor === "freestanding_wardrobe") {
+      const matchesWardrobe = rawType.includes("wardrobe") || label.includes("wardrobe");
+      const mentionsFreestanding = rawType.includes("freestanding") || label.includes("freestanding") || label.includes("armoire");
+      if (matchesWardrobe && mentionsFreestanding) return true;
+    }
+
+    if (anchor === "large_freestanding_cabinet") {
+      const matchesCabinet = rawType.includes("cabinet") || label.includes("cabinet");
+      const mentionsFreestanding = rawType.includes("freestanding") || label.includes("freestanding");
+      if (matchesCabinet && mentionsFreestanding) return true;
+    }
+  }
+
+  return false;
+}
+
+function resolveMovableAnchors(analysis: FurnitureDetectionSuccess): string[] {
+  const rawAnchors = Array.isArray(analysis.detectedAnchors)
+    ? analysis.detectedAnchors
+    : [];
+
+  return rawAnchors
+    .map((anchor) => normalizeToken(anchor))
+    .filter((anchor) => {
+      if (!CORE_ANCHOR_SET.has(anchor)) return false;
+      if (ALWAYS_MOVABLE_ANCHOR_SET.has(anchor)) return true;
+      if (!CONDITIONAL_MOVABLE_ANCHOR_SET.has(anchor)) return false;
+      if (anchor === "freestanding_wardrobe") return hasFreestandingEvidence(analysis, "freestanding_wardrobe");
+      if (anchor === "large_freestanding_cabinet") return hasFreestandingEvidence(analysis, "large_freestanding_cabinet");
+      return false;
+    });
+}
+
+function isMovableFurnitureItem(item: FurnitureItem): boolean {
+  const rawType = normalizeToken(item?.legacyType || item?.type);
+  const label = normalizeToken(item?.label);
+  const confidence = typeof item?.confidence === "number" ? item.confidence : 0;
+  const normalizedType = normalizeToken(item?.type);
+
+  if (confidence < 0.55) return false;
+  if (isBuiltInFixtureText(rawType) || isBuiltInFixtureText(label)) return false;
+
+  return (
+    rawType.includes("freestanding")
+    || normalizedType === "bed"
+    || normalizedType === "sofa"
+    || normalizedType === "chair"
+    || normalizedType === "table"
+    || normalizedType === "desk"
+    || normalizedType === "nightstand"
+    || normalizedType === "dresser"
+    || normalizedType === "tv"
+    || rawType === "bed"
+    || rawType === "sofa"
+    || rawType === "chair"
+    || rawType === "table"
+    || rawType === "desk"
+    || rawType === "nightstand"
+    || rawType === "dresser"
+    || rawType === "tv"
+  );
+}
 
 export const FURNITURE_DETECTOR_PROVIDER = "google-genai" as const;
 export const FURNITURE_DETECTOR_RUNTIME_MODEL = "gemini-2.5-flash" as const;
@@ -340,6 +517,12 @@ function normalizeFurnitureAnalysis(
     hasFurniture: Boolean(parsed.hasFurniture),
     detectedAnchors: normalizedAnchors,
     detectedItems: normalizeDetectedItems((parsed as any).detectedItems),
+    hasBuiltInFixtures: toBool((parsed as any).hasBuiltInFixtures),
+    builtInFixtureTypes: Array.isArray((parsed as any).builtInFixtureTypes)
+      ? (parsed as any).builtInFixtureTypes
+        .map((fixture: unknown) => normalizeToken(fixture))
+        .filter((fixture: string) => fixture.length > 0)
+      : [],
     confidence: normalizedConfidence,
     hasMovableSeating: toBool((parsed as any).hasMovableSeating),
     hasCounterClutter: toBool((parsed as any).hasCounterClutter),
@@ -676,18 +859,19 @@ export function resolveFurnishedGateDecision(params: {
 
   const analysis = params.analysis;
 
-  const anchors = Array.isArray(analysis.detectedAnchors)
-    ? analysis.detectedAnchors
-      .map((anchor) => String(anchor || "").toLowerCase().trim().replace(/\s+/g, "_"))
-      .filter((anchor) => CORE_ANCHOR_SET.has(anchor))
-    : [];
+  const movableAnchors = resolveMovableAnchors(analysis);
+  const anchors = movableAnchors;
+  const builtInFixtureTypes = collectBuiltInFixtureTypes(analysis);
+  const hasBuiltInFixtures = builtInFixtureTypes.length > 0 || analysis.hasBuiltInFixtures === true;
 
   const hasTvAnchor = anchors.includes("tv");
   const hasNonTvAnchor = anchors.some((anchor) => anchor !== "tv");
   const hasEligibleAnchor = hasNonTvAnchor || (livingRoomLike && hasTvAnchor);
   const tvOnlyAnchor = hasTvAnchor && !hasNonTvAnchor;
-  const hasEligibleFurnitureSignal =
-    analysis.hasFurniture === true && (!tvOnlyAnchor || livingRoomLike);
+  const movableFurnitureDetected =
+    (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some(isMovableFurnitureItem))
+    || toBool(analysis.hasMovableSeating);
+  const hasEligibleFurnitureSignal = movableFurnitureDetected && (!tvOnlyAnchor || livingRoomLike);
 
   const confidence = typeof analysis.confidence === "number"
     ? Math.max(0, Math.min(1, analysis.confidence))
@@ -716,10 +900,16 @@ export function resolveFurnishedGateDecision(params: {
   const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || materialPortableClutter;
   const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
   const userRequestedDeclutter = params.userSelectedDeclutter === true;
+  const routingFurnitureSignals = {
+    movableAnchors,
+    movableFurnitureDetected,
+    hasBuiltInFixtures,
+    builtInFixtureTypes,
+  };
 
   if (minorPortableClutterOnly && !userRequestedDeclutter) {
     const nuisanceRoomState: RoutingRoomState =
-      hasEligibleAnchor || hasEligibleFurnitureSignal || analysis.isStageReady === true
+      hasEligibleAnchor || hasEligibleFurnitureSignal
         ? "FURNISHED_TIDY"
         : "EMPTY";
 
@@ -732,6 +922,7 @@ export function resolveFurnishedGateDecision(params: {
       reason: "minor_portable_nuisance_ignored",
       confidence,
       anchors,
+      ...routingFurnitureSignals,
       roomState: nuisanceRoomState,
       hasClutter: false,
       minorPortableClutterOnly: true,
@@ -742,7 +933,7 @@ export function resolveFurnishedGateDecision(params: {
   }
 
   const roomState: RoutingRoomState = (() => {
-    if (!analysis.hasFurniture && !hasClutterSignals) {
+    if (!hasEligibleAnchor && !hasEligibleFurnitureSignal && !hasClutterSignals) {
       return "EMPTY";
     }
 
@@ -750,7 +941,7 @@ export function resolveFurnishedGateDecision(params: {
       return "FURNISHED_CLUTTERED";
     }
 
-    if (hasEligibleAnchor || hasEligibleFurnitureSignal || analysis.isStageReady === true) {
+    if (hasEligibleAnchor || hasEligibleFurnitureSignal) {
       return "FURNISHED_TIDY";
     }
 
@@ -767,6 +958,7 @@ export function resolveFurnishedGateDecision(params: {
       reason: "low_confidence_fail_safe",
       confidence,
       anchors,
+      ...routingFurnitureSignals,
       roomState: "FURNISHED_CLUTTERED",
       hasClutter: true,
       minorPortableClutterOnly,
@@ -782,6 +974,7 @@ export function resolveFurnishedGateDecision(params: {
       reason: hasEligibleAnchor || hasEligibleFurnitureSignal ? "anchor_or_furniture_detected" : "stage_ready_no_signals",
       confidence,
       anchors,
+      ...routingFurnitureSignals,
       roomState,
       hasClutter: false,
       minorPortableClutterOnly,
@@ -799,6 +992,7 @@ export function resolveFurnishedGateDecision(params: {
         : (isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter"),
       confidence,
       anchors,
+      ...routingFurnitureSignals,
       roomState: "FURNISHED_CLUTTERED",
       hasClutter: true,
       minorPortableClutterOnly,
@@ -814,6 +1008,7 @@ export function resolveFurnishedGateDecision(params: {
       reason: "stage_ready_no_signals",
       confidence,
       anchors,
+      ...routingFurnitureSignals,
       roomState: "EMPTY",
       hasClutter: false,
       minorPortableClutterOnly,
@@ -828,6 +1023,7 @@ export function resolveFurnishedGateDecision(params: {
     reason: "default_empty_no_signals",
     confidence,
     anchors,
+    ...routingFurnitureSignals,
     roomState: roomState === "EMPTY" ? "EMPTY" : roomState,
     hasClutter: roomState === "FURNISHED_CLUTTERED",
     minorPortableClutterOnly,
@@ -1063,11 +1259,12 @@ A room is considered FURNISHED only if at least one clearly visible anchor exist
 - bed
 - sofa
 - dining_table
+- chair
 - coffee_table
 - desk
 - tv (living rooms only)
-- freestanding_wardrobe
-- large_freestanding_cabinet
+- freestanding_wardrobe (ONLY when clearly movable and not built-in)
+- large_freestanding_cabinet (ONLY when clearly movable and not built-in)
 
 Ignore all of the following when deciding furnished status:
 - curtains
@@ -1076,10 +1273,11 @@ Ignore all of the following when deciding furnished status:
 - ceiling fixtures
 - HVAC units
 - built-in cabinetry/counters/islands/vanities
+- built-in wardrobes, closets, built-in shelving, fixed storage, wall-integrated storage
 - soft decor
 - rugs alone
 
-If only curtains, blinds, rugs, or built-in cabinetry are visible, return hasFurniture=false.
+If only curtains, blinds, rugs, or built-in fixtures are visible, return hasFurniture=false.
 Curtains or wall decor alone do NOT count.
 
 Return JSON only with this exact structure:
@@ -1087,6 +1285,8 @@ Return JSON only with this exact structure:
   "hasFurniture": boolean,
   "detectedAnchors": string[],
   "detectedItems": [{ "type": string, "confidence": number }],
+  "hasBuiltInFixtures": boolean,
+  "builtInFixtureTypes": string[],
   "confidence": number,
   "hasMovableSeating": boolean,
   "hasCounterClutter": boolean,
@@ -1097,6 +1297,9 @@ Return JSON only with this exact structure:
 
 Rules:
 - detectedAnchors must only contain canonical values from the allowed anchor list above.
+- built-in fixture labels MUST NOT be included in detectedAnchors.
+- hasBuiltInFixtures=true when built-in storage/fixtures are visible.
+- builtInFixtureTypes should use canonical labels like wardrobe, closet, cabinetry, shelving, fixed_storage.
 - detectedItems should usually be [] for interior scenes unless you are highly confident about a clearly identifiable portable clutter object.
 - furnitureItems must contain a complete list of visible furniture in the room, including both anchor furniture and secondary items.
 - Include ALL visible furniture items. If unsure, include your best guess with a lower confidence rather than omitting the item.
@@ -1108,6 +1311,7 @@ Rules:
 - hasLoosePortableItems=true for visible loose bags/boxes/portable objects.
 - isStageReady=true only when room appears clean and ready for direct staging.
 - If no valid anchor is clearly visible, set detectedAnchors to [] and hasFurniture=false.
+- Built-ins alone must not set hasFurniture=true.
 `;
 
   try {
