@@ -2,18 +2,15 @@ import sharp from "sharp";
 
 import { applyEdit } from "./editApply";
 
-export type FixtureRepairType =
-  | "PENDANT_LIGHT_ADDED"
-  | "HANGING_LIGHT_ADDED"
-  | "SUSPENDED_CEILING_FIXTURE_ADDED"
-  | "DECORATIVE_CEILING_FEATURE_LIGHT_ADDED"
-  | "HVAC_VENT_ADDED"
-  | "HVAC_VENT_REMOVED"
-  | "HVAC_VENT_MODIFIED";
+export type FixtureRepairType = "FIXTURE_ADDED" | "FIXTURE_REMOVED" | "FIXTURE_MODIFIED";
+export type FixtureClass = "LIGHTING" | "HVAC" | "UNKNOWN";
+export type FixtureStateChange = "ADDED" | "REMOVED" | "MODIFIED" | "UNKNOWN";
 
 export type FixtureRepairHint = {
   supported: boolean;
   repairType?: FixtureRepairType;
+  fixtureClass?: FixtureClass;
+  fixtureStateChange?: FixtureStateChange;
   action?: "added" | "removed" | "modified" | "unknown";
   localizationMode?: "diff_zone_ceiling" | "diff_zone_hvac";
   reasonTokens?: string[];
@@ -34,13 +31,8 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function getRepairZones(repairType: FixtureRepairType): RepairZone[] {
-  const isCeilingLightRepair = repairType === "PENDANT_LIGHT_ADDED"
-    || repairType === "HANGING_LIGHT_ADDED"
-    || repairType === "SUSPENDED_CEILING_FIXTURE_ADDED"
-    || repairType === "DECORATIVE_CEILING_FEATURE_LIGHT_ADDED";
-
-  if (isCeilingLightRepair) {
+function getRepairZones(fixtureClass: FixtureClass): RepairZone[] {
+  if (fixtureClass === "LIGHTING") {
     return [
       { x0: 0.0, y0: 0.0, x1: 1.0, y1: 0.36 },
       { x0: 0.1, y0: 0.0, x1: 0.9, y1: 0.42 },
@@ -87,7 +79,7 @@ async function loadRgb(imagePath: string, width: number, height: number): Promis
 async function buildLocalizedFixtureMask(params: {
   baselinePath: string;
   candidatePath: string;
-  repairType: FixtureRepairType;
+  fixtureClass: FixtureClass;
 }): Promise<{ maskPng: Buffer; changedPixels: number; maskCoverageRatio: number }> {
   const candidateMeta = await sharp(params.candidatePath).metadata();
   if (!candidateMeta.width || !candidateMeta.height) {
@@ -101,7 +93,7 @@ async function buildLocalizedFixtureMask(params: {
     loadRgb(params.candidatePath, width, height),
   ]);
 
-  const zoneMask = createZoneMask(width, height, getRepairZones(params.repairType));
+  const zoneMask = createZoneMask(width, height, getRepairZones(params.fixtureClass));
   const diffMaskRaw = new Uint8Array(width * height);
   let changedPixels = 0;
 
@@ -149,13 +141,14 @@ async function buildLocalizedFixtureMask(params: {
   };
 }
 
-function buildReinstateInstruction(repairType: FixtureRepairType): string {
-  const target = repairType.startsWith("HVAC")
-    ? "HVAC vent/fixture"
-    : "ceiling light fixture";
+function buildReinstateInstruction(fixtureClass: FixtureClass, fixtureStateChange: FixtureStateChange): string {
+  const target = fixtureClass === "HVAC"
+    ? "HVAC fixture state"
+    : "lighting fixture state";
+  const changeHint = fixtureStateChange.toLowerCase();
 
   return [
-    `Restore the original ${target} state in the masked area using the Stage 1A reference.`,
+    `Restore the original ${target} (pre-change baseline) in the masked area using the Stage 1A reference. Detected change: ${changeHint}.`,
     "Preserve all furniture, decor, and staging outside the mask.",
     "Do not alter walls, openings, flooring, cabinetry, appliances, or room layout.",
   ].join(" ");
@@ -175,14 +168,14 @@ export async function runFixtureRepairAttempt(params: {
   durationMs: number;
 }> {
   const startedAt = Date.now();
-  if (!params.hint.supported || !params.hint.repairType) {
+  if (!params.hint.supported || !params.hint.repairType || !params.hint.fixtureClass || !params.hint.fixtureStateChange) {
     throw new Error("fixture_repair_not_supported");
   }
 
   const { maskPng, changedPixels, maskCoverageRatio } = await buildLocalizedFixtureMask({
     baselinePath: params.stage1ABasePath,
     candidatePath: params.stage2CandidatePath,
-    repairType: params.hint.repairType,
+    fixtureClass: params.hint.fixtureClass,
   });
 
   const repairedPath = await applyEdit({
@@ -191,7 +184,7 @@ export async function runFixtureRepairAttempt(params: {
     baseImagePath: params.stage2CandidatePath,
     mask: maskPng,
     mode: "Reinstate",
-    instruction: buildReinstateInstruction(params.hint.repairType),
+    instruction: buildReinstateInstruction(params.hint.fixtureClass, params.hint.fixtureStateChange),
     stage1AReferencePath: params.stage1ABasePath,
     sceneType: "interior",
   });

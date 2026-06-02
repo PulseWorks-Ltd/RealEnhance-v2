@@ -10,6 +10,7 @@ const FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
 const FIXTURE_MUTATION_REGEX = /\b(add|added|addition|inserted|introduced|install|installed|installation|replace|replaced|replacement|remove|removed|removal|missing)\b/;
 const HVAC_TARGET_REGEX = /\b(hvac|air conditioner|ac unit|split unit|fixed ac unit|wall mounted split unit)\b/;
 const FIXTURE_TARGET_REGEX = /\b(pendant|chandelier|ceiling fan|recessed light|recessed lights|downlight|downlights|ceiling vent|ceiling vents|smoke detector|smoke detectors|light fixture|light fixtures)\b/;
+const LIGHTING_TARGET_REGEX = /\b(light|lights|lighting|light fixture|light fixtures|pendant|chandelier|track light|track lighting|feature light|suspended light|spot rail|rail light|ceiling fixture|ceiling mounted fixture|ceiling fan|recessed light|downlight|decorative ceiling)\b/;
 
 export type FixtureValidatorResult = ValidatorOutcome;
 
@@ -33,89 +34,48 @@ function inferFixtureRepairMetadata(reason: string, advisorySignals: string[], s
       : hasModified
         ? "modified"
         : "unknown";
+  const fixtureStateChange: "ADDED" | "REMOVED" | "MODIFIED" | "UNKNOWN" = action === "added"
+    ? "ADDED"
+    : action === "removed"
+      ? "REMOVED"
+      : action === "modified"
+        ? "MODIFIED"
+        : "UNKNOWN";
 
   const structuredObject = String(structuredIssues[0]?.object || "").toLowerCase();
   const isHvac = structuredObject === "hvac_unit"
     || /\bhvac\b|air[\s_-]?conditioner|ac[\s_-]?unit|split[\s_-]?unit|ceiling[\s_-]?vent/.test(joinedSignals);
-  const isPendant = structuredObject === "pendant_light" || /\bpendant\b/.test(joinedSignals);
-  const isHanging = /\bhanging\b/.test(joinedSignals);
-  const isSuspended = /\bsuspended\b/.test(joinedSignals);
-  const isDecorativeCeilingFeature = /decorative\s+ceiling\s+feature\s+light/.test(joinedSignals);
+  const isLighting = ["lighting_fixture", "light_fixture", "pendant_light", "chandelier", "ceiling_fan"].includes(structuredObject)
+    || LIGHTING_TARGET_REGEX.test(joinedSignals);
+  const fixtureClass: "LIGHTING" | "HVAC" | "UNKNOWN" = isHvac
+    ? "HVAC"
+    : isLighting
+      ? "LIGHTING"
+      : "UNKNOWN";
+  const supportedStateChange = fixtureStateChange === "ADDED" || fixtureStateChange === "REMOVED" || fixtureStateChange === "MODIFIED";
 
-  if (isHvac && action === "added") {
+  if ((fixtureClass === "LIGHTING" || fixtureClass === "HVAC") && supportedStateChange) {
+    const repairType: "FIXTURE_ADDED" | "FIXTURE_REMOVED" | "FIXTURE_MODIFIED" = fixtureStateChange === "ADDED"
+      ? "FIXTURE_ADDED"
+      : fixtureStateChange === "REMOVED"
+        ? "FIXTURE_REMOVED"
+        : "FIXTURE_MODIFIED";
+
     return {
       supported: true,
-      repairType: "HVAC_VENT_ADDED",
+      repairType,
+      fixtureClass,
+      fixtureStateChange,
       action,
-      localizationMode: "diff_zone_hvac",
+      localizationMode: fixtureClass === "HVAC" ? "diff_zone_hvac" : "diff_zone_ceiling",
       reasonTokens: tokens,
     };
-  }
-
-  if (isHvac && action === "removed") {
-    return {
-      supported: true,
-      repairType: "HVAC_VENT_REMOVED",
-      action,
-      localizationMode: "diff_zone_hvac",
-      reasonTokens: tokens,
-    };
-  }
-
-  if (isHvac && action === "modified") {
-    return {
-      supported: true,
-      repairType: "HVAC_VENT_MODIFIED",
-      action,
-      localizationMode: "diff_zone_hvac",
-      reasonTokens: tokens,
-    };
-  }
-
-  if (action === "added") {
-    if (isPendant) {
-      return {
-        supported: true,
-        repairType: "PENDANT_LIGHT_ADDED",
-        action,
-        localizationMode: "diff_zone_ceiling",
-        reasonTokens: tokens,
-      };
-    }
-
-    if (isHanging) {
-      return {
-        supported: true,
-        repairType: "HANGING_LIGHT_ADDED",
-        action,
-        localizationMode: "diff_zone_ceiling",
-        reasonTokens: tokens,
-      };
-    }
-
-    if (isSuspended) {
-      return {
-        supported: true,
-        repairType: "SUSPENDED_CEILING_FIXTURE_ADDED",
-        action,
-        localizationMode: "diff_zone_ceiling",
-        reasonTokens: tokens,
-      };
-    }
-
-    if (isDecorativeCeilingFeature) {
-      return {
-        supported: true,
-        repairType: "DECORATIVE_CEILING_FEATURE_LIGHT_ADDED",
-        action,
-        localizationMode: "diff_zone_ceiling",
-        reasonTokens: tokens,
-      };
-    }
   }
 
   return {
     supported: false,
+    fixtureClass,
+    fixtureStateChange,
     action,
     reasonTokens: tokens,
   };
@@ -180,13 +140,9 @@ function buildFixtureStructuredIssues(params: {
 
   const object = /(^|_)hvac(_|$)|air_conditioner|ac_unit|split_unit/.test(joined)
     ? "hvac_unit"
-    : /(^|_)pendant(_|$)/.test(joined)
-      ? "pendant_light"
-      : /(^|_)chandelier(_|$)/.test(joined)
-        ? "chandelier"
-        : /light_fixture|downlight|recessed_light|ceiling_fan/.test(joined)
-          ? "light_fixture"
-          : "fixture";
+    : /track_light|track_lighting|feature_light|spot_rail|rail_light|pendant|chandelier|light_fixture|downlight|recessed_light|ceiling_fan/.test(joined)
+      ? "lighting_fixture"
+      : "fixture";
 
   const action = /(^|_)(add|added|addition|inserted|introduced|install|installed|installation)(_|$)/.test(joined)
     ? "added"
@@ -362,9 +318,9 @@ Return JSON only:
   prompt += `
 
 HARD-FAIL ELIGIBILITY RULE:
-- Only chandelier or pendant light addition/removal can independently hard-fail.
-- If you detect that case, state it explicitly in reason using wording like "pendant_light_added", "pendant_light_removed", "chandelier_added", or "chandelier_removed".
-- Other fixed fixture changes should still return ok=false when appropriate, but remain advisory/non-blocking upstream.`;
+- High-confidence fixed fixture state changes can hard-fail when evidence is clear.
+- Prefer categorical reason wording that includes fixture class and state change (examples: "lighting_fixture_added", "track_light_fixture_added", "hvac_unit_removed", "lighting_fixture_modified").
+- Keep the reason concise and specific to the fixture state change.`;
 
   if (materialSignal.suspiciousMaterialChange) {
     prompt += `

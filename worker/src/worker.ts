@@ -12983,11 +12983,20 @@ All openings must remain identical in position and size to the original image.`;
           unifiedFixtureIssue &&
           !hasNonFixtureBlockingSpecialist &&
           !unifiedMentionsBroaderSceneIssues;
+        const fixtureClass = fixtureRepairHint?.fixtureClass;
+        const fixtureStateChange = fixtureRepairHint?.fixtureStateChange;
+        const fixtureClassEligible = fixtureClass === "LIGHTING" || fixtureClass === "HVAC";
+        const fixtureStateChangeEligible =
+          fixtureStateChange === "ADDED"
+          || fixtureStateChange === "REMOVED"
+          || fixtureStateChange === "MODIFIED";
         const repairEligible =
           fixtureFailureDetected &&
           fixtureConfidence >= FIXTURE_REPAIR_CONFIDENCE_THRESHOLD &&
           unifiedPassesAllOtherChecks &&
           fixtureIssueIsOnlyBlockingFailure &&
+          fixtureClassEligible &&
+          fixtureStateChangeEligible &&
           fixtureRepairHint?.supported === true &&
           !!fixtureRepairHint.repairType;
 
@@ -13000,6 +13009,8 @@ All openings must remain identical in position and size to the original image.`;
             issueType: unifiedIssueType,
             confidence: fixtureConfidence,
             repairType: fixtureRepairHint.repairType,
+            fixtureClass,
+            fixtureStateChange,
             reason: unifiedReason,
             beforeValidation: {
               unifiedIssueType,
@@ -13017,6 +13028,8 @@ All openings must remain identical in position and size to the original image.`;
               issueType: unifiedIssueType,
               confidence: fixtureConfidence,
               repairType: fixtureRepairHint.repairType,
+              fixtureClass,
+              fixtureStateChange,
             });
 
             const repairResult = await runFixtureRepairAttempt({
@@ -13072,6 +13085,8 @@ All openings must remain identical in position and size to the original image.`;
                 issueType: unifiedIssueType,
                 confidence: fixtureConfidence,
                 repairType: fixtureRepairHint.repairType,
+                fixtureClass,
+                fixtureStateChange,
                 repairDurationMs: repairResult.durationMs,
                 repairMaskChangedPixels: repairResult.changedPixels,
                 repairMaskCoverageRatio: Number(repairResult.maskCoverageRatio.toFixed(6)),
@@ -13090,6 +13105,8 @@ All openings must remain identical in position and size to the original image.`;
                 issueType: unifiedIssueType,
                 confidence: fixtureConfidence,
                 repairType: fixtureRepairHint.repairType,
+                fixtureClass,
+                fixtureStateChange,
                 repairDurationMs: repairResult.durationMs,
                 repairMaskChangedPixels: repairResult.changedPixels,
                 repairMaskCoverageRatio: Number(repairResult.maskCoverageRatio.toFixed(6)),
@@ -13111,6 +13128,8 @@ All openings must remain identical in position and size to the original image.`;
               issueType: unifiedIssueType,
               confidence: fixtureConfidence,
               repairType: fixtureRepairHint.repairType,
+              fixtureClass,
+              fixtureStateChange,
               reason: unifiedReason,
               error: repairErr?.message || String(repairErr),
             });
