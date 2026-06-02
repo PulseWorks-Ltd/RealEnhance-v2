@@ -289,7 +289,6 @@ async function runFurnitureDetectionOnce(params: {
       sourceEvent: params.startedEvent,
       startedFields: {
         detector: "furniture",
-        detectorModel: "gemini-2.0-flash",
         sceneType: params.sceneType === "exterior" ? "exterior" : "interior",
         ...(params.startedFields || {}),
       },
@@ -8444,6 +8443,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const detectorFallback = !analysis;
           const detectorFailure = detectorFallback ? (geminiAnalysis as any) : null;
           const detectorLatencyMs = Number((geminiAnalysis as any)?.detectorLatencyMs || 0) || null;
+          const detectorModel = typeof (geminiAnalysis as any)?.detectorModel === "string"
+            ? String((geminiAnalysis as any).detectorModel)
+            : null;
+          const detectorProvider = typeof (geminiAnalysis as any)?.detectorProvider === "string"
+            ? String((geminiAnalysis as any).detectorProvider)
+            : null;
           const fallbackReason = detectorFailure?.failureCode
             || detectorFailure?.message
             || "detector_failed_unknown";
@@ -8542,11 +8547,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           (payload.options as any).furnishedState = roomState === "EMPTY" ? "empty" : "furnished";
           declutterMode = resolvedDeclutterMode;
 
+          if (gateDecision?.minorPortableClutterOnly === true) {
+            logger.info("[FURNITURE_DETECTOR_NUISANCE]", jobLogContext(payload, {
+              event: "FURNITURE_DETECTOR_NUISANCE",
+              detector: "furniture",
+              detectedItems: Array.isArray(analysis?.detectedItems)
+                ? analysis.detectedItems.map((item) => ({
+                    type: (item as any)?.type || "unknown",
+                    confidence: typeof (item as any)?.confidence === "number" ? (item as any).confidence : null,
+                  }))
+                : [],
+              minorPortableClutterOnly: true,
+              reason: gateDecision.reason,
+              requiresStage1B: stage1BRequired,
+            }));
+          }
+
           if (analysis) {
             logger.info("DETECTOR_SUCCESS", jobLogContext(payload, {
               event: "DETECTOR_SUCCESS",
               detector: "furniture",
-              detectorModel: "gemini-2.0-flash",
+              detectorModel,
+              detectorProvider,
               confidence: analysis.confidence,
               anchorDetected,
               hasClutter,
@@ -8570,7 +8592,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             logger.warn("DETECTOR_FAILED", jobLogContext(payload, {
               event: "DETECTOR_FAILED",
               detector: "furniture",
-              detectorModel: "gemini-2.0-flash",
+              detectorModel,
+              detectorProvider,
               confidence: null,
               detectionStatus: geminiAnalysis?.status || null,
               finalSkipStage1B: skipStage1B,
@@ -8586,6 +8609,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           logger.info("DETECTOR_RESULT", jobLogContext(payload, {
             event: "DETECTOR_RESULT",
             detector: "furniture",
+            detectorModel,
+            detectorProvider,
             confidence: analysis?.confidence ?? null,
             anchorDetected: analysis ? anchorDetected : null,
             hasClutter: analysis ? hasClutter : null,
@@ -8593,6 +8618,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             anchors: detectedAnchors,
             gateDecision: gateDecision?.decision || "needs_declutter_light",
             gateReason: routingDecisionSource,
+            minorPortableClutterOnly: gateDecision?.minorPortableClutterOnly === true,
             finalSkipStage1B: skipStage1B,
           }));
 

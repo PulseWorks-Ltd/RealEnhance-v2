@@ -56,6 +56,8 @@ export interface FurnitureAnalysis {
 export type FurnitureDetectionSuccess = FurnitureAnalysis & {
   status: "success";
   detectorLatencyMs?: number;
+  detectorModel?: string;
+  detectorProvider?: string;
 };
 export type FurnitureDetectorFailureCode =
   | "timeout"
@@ -67,6 +69,8 @@ export type FurnitureDetectorFailureCode =
 export type FurnitureDetectionFailure = {
   status: "failed";
   detectorLatencyMs?: number;
+  detectorModel?: string;
+  detectorProvider?: string;
   failureCode?: FurnitureDetectorFailureCode;
   retryable?: boolean;
   statusCode?: number | null;
@@ -95,6 +99,7 @@ export interface FurnishedGateDecision {
   anchors: string[];
   roomState: "EMPTY" | "FURNISHED_TIDY" | "FURNISHED_CLUTTERED";
   hasClutter: boolean;
+  minorPortableClutterOnly?: boolean;
   directRefreshEligible: boolean;
   requiresStage1B: boolean;
   stage2ModeCandidate: "FROM_EMPTY" | "REFRESH" | null;
@@ -117,6 +122,45 @@ export const CORE_ANCHOR_CLASSES = [
 ] as const;
 
 const CORE_ANCHOR_SET = new Set<string>(CORE_ANCHOR_CLASSES);
+
+export const FURNITURE_DETECTOR_PROVIDER = "google-genai" as const;
+export const FURNITURE_DETECTOR_RUNTIME_MODEL = "gemini-2.5-flash" as const;
+type FurnitureDetectorRuntimeModel = typeof FURNITURE_DETECTOR_RUNTIME_MODEL;
+
+export function resolveFurnitureDetectorModel(_sceneType?: "interior" | "exterior"): FurnitureDetectorRuntimeModel {
+  return FURNITURE_DETECTOR_RUNTIME_MODEL;
+}
+
+const MINOR_PORTABLE_NUISANCE_TOKEN_SET = new Set<string>([
+  "cable",
+  "cord",
+  "wire",
+  "wall_lead",
+  "wall_protrusion",
+  "minor_wall_protrusion",
+  "small_item",
+  "tiny_item",
+]);
+
+function isMinorPortableNuisanceItem(item: DetectedItem): boolean {
+  const normalizedType = String(item?.type || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[\s-]+/g, "_");
+
+  if (!normalizedType) return false;
+  if (MINOR_PORTABLE_NUISANCE_TOKEN_SET.has(normalizedType)) return true;
+
+  return (
+    normalizedType.includes("cable")
+    || normalizedType.includes("cord")
+    || normalizedType.includes("wire")
+    || normalizedType.includes("lead")
+    || normalizedType.includes("protrusion")
+    || normalizedType.includes("tiny")
+    || normalizedType.includes("small")
+  );
+}
 
 /**
  * Returns true when an item type is a natural supporting companion for the present anchors
@@ -653,16 +697,49 @@ export function resolveFurnishedGateDecision(params: {
   const hasSurfaceClutter = toBool(analysis.hasSurfaceClutter);
   const hasLoosePortableItems = toBool(analysis.hasLoosePortableItems);
   const hasMovableSeating = toBool(analysis.hasMovableSeating);
-  const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems;
-  const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
   const detectedItems = Array.isArray(analysis.detectedItems) ? analysis.detectedItems : [];
+  const maxDetectedItemConfidence = detectedItems.reduce(
+    (maxConfidence, item) => Math.max(maxConfidence, Number(item?.confidence) || 0),
+    0
+  );
 
   const minorPortableClutterOnly =
     !hasCounterClutter
     && !hasSurfaceClutter
     && hasLoosePortableItems
     && detectedItems.length > 0
-    && detectedItems.length <= 2;
+    && detectedItems.length <= 2
+    && detectedItems.every(isMinorPortableNuisanceItem)
+    && maxDetectedItemConfidence <= 0.72;
+
+  const materialPortableClutter = hasLoosePortableItems && !minorPortableClutterOnly;
+  const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || materialPortableClutter;
+  const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
+  const userRequestedDeclutter = params.userSelectedDeclutter === true;
+
+  if (minorPortableClutterOnly && !userRequestedDeclutter) {
+    const nuisanceRoomState: RoutingRoomState =
+      hasEligibleAnchor || hasEligibleFurnitureSignal || analysis.isStageReady === true
+        ? "FURNISHED_TIDY"
+        : "EMPTY";
+
+    const nuisanceStage2ModeCandidate: "FROM_EMPTY" | "REFRESH" = nuisanceRoomState === "EMPTY"
+      ? "FROM_EMPTY"
+      : "REFRESH";
+
+    return buildDecision({
+      decision: nuisanceRoomState === "FURNISHED_TIDY" ? "furnished_refresh" : "empty_full_stage",
+      reason: "minor_portable_nuisance_ignored",
+      confidence,
+      anchors,
+      roomState: nuisanceRoomState,
+      hasClutter: false,
+      minorPortableClutterOnly: true,
+      directRefreshEligible: nuisanceRoomState === "FURNISHED_TIDY",
+      requiresStage1B: false,
+      stage2ModeCandidate: nuisanceStage2ModeCandidate,
+    });
+  }
 
   const roomState: RoutingRoomState = (() => {
     if (!analysis.hasFurniture && !hasClutterSignals) {
@@ -692,6 +769,7 @@ export function resolveFurnishedGateDecision(params: {
       anchors,
       roomState: "FURNISHED_CLUTTERED",
       hasClutter: true,
+      minorPortableClutterOnly,
       directRefreshEligible: false,
       requiresStage1B: true,
       stage2ModeCandidate: "REFRESH",
@@ -706,6 +784,7 @@ export function resolveFurnishedGateDecision(params: {
       anchors,
       roomState,
       hasClutter: false,
+      minorPortableClutterOnly,
       directRefreshEligible,
       requiresStage1B: false,
       stage2ModeCandidate: "REFRESH",
@@ -716,12 +795,13 @@ export function resolveFurnishedGateDecision(params: {
     return buildDecision({
       decision: "needs_declutter_light",
       reason: minorPortableClutterOnly
-        ? "minor_portable_clutter_requires_declutter"
+        ? "minor_portable_clutter_user_requested_declutter"
         : (isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter"),
       confidence,
       anchors,
       roomState: "FURNISHED_CLUTTERED",
       hasClutter: true,
+      minorPortableClutterOnly,
       directRefreshEligible: false,
       requiresStage1B: true,
       stage2ModeCandidate: "REFRESH",
@@ -736,6 +816,7 @@ export function resolveFurnishedGateDecision(params: {
       anchors,
       roomState: "EMPTY",
       hasClutter: false,
+      minorPortableClutterOnly,
       directRefreshEligible: false,
       requiresStage1B: false,
       stage2ModeCandidate: "FROM_EMPTY",
@@ -749,6 +830,7 @@ export function resolveFurnishedGateDecision(params: {
     anchors,
     roomState: roomState === "EMPTY" ? "EMPTY" : roomState,
     hasClutter: roomState === "FURNISHED_CLUTTERED",
+    minorPortableClutterOnly,
     directRefreshEligible,
     requiresStage1B,
     stage2ModeCandidate,
@@ -907,9 +989,10 @@ export async function detectFurniture(
 async function detectFurnitureOnce(
   ai: GoogleGenAI,
   imageBase64: string,
-  options?: { sceneType?: "interior" | "exterior"; timeoutMs?: number }
+  options?: { sceneType?: "interior" | "exterior"; timeoutMs?: number; model?: FurnitureDetectorRuntimeModel }
 ): Promise<FurnitureAnalysis> {
   const sceneType = options?.sceneType === "exterior" ? "exterior" : "interior";
+  const resolvedModel = options?.model || resolveFurnitureDetectorModel(sceneType);
   const system = sceneType === "exterior" ? `
 You are determining whether this EXTERIOR real estate image contains clearly identifiable, removable clutter.
 
@@ -1029,7 +1112,7 @@ Rules:
 
   try {
     const resp = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: resolvedModel,
       contents: [{
         role: "user",
         parts: [
@@ -1065,17 +1148,21 @@ export async function detectFurnitureWithRetry(
   options?: { sceneType?: "interior" | "exterior"; timeoutMs?: number }
 ): Promise<FurnitureDetectionResult> {
   let lastError: unknown = null;
+  const resolvedModel = resolveFurnitureDetectorModel(options?.sceneType);
 
   for (let attempt = 0; attempt < FURNITURE_DETECTOR_MAX_ATTEMPTS; attempt += 1) {
     try {
       const analysis = await detectorQueue.add(() =>
         detectFurnitureOnce(ai, imageBase64, {
           ...options,
+          model: resolvedModel,
           timeoutMs: options?.timeoutMs ?? FURNITURE_DETECTOR_TIMEOUT_MS,
         })
       );
       return {
         status: "success",
+        detectorModel: resolvedModel,
+        detectorProvider: FURNITURE_DETECTOR_PROVIDER,
         ...analysis,
       };
     } catch (error) {
@@ -1109,6 +1196,8 @@ export async function detectFurnitureWithRetry(
   const failureCode = classifyFurnitureDetectorFailure(lastError);
   return {
     status: "failed",
+    detectorModel: resolvedModel,
+    detectorProvider: FURNITURE_DETECTOR_PROVIDER,
     failureCode,
     retryable: lastError ? (isRateLimitError(lastError) || isTimeoutError(lastError)) : false,
     statusCode: lastError ? parseErrorStatusCode(lastError) : null,
