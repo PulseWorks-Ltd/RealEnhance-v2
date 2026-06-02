@@ -186,10 +186,6 @@ const INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE = (() => {
   const configured = Number(process.env.INTERIOR_SKIP_STAGE1B_MAX_EXCESS_FURNITURE || 1);
   return Number.isFinite(configured) ? Math.max(0, Math.floor(configured)) : 1;
 })();
-const FURNITURE_DETECTOR_PRESERVE_STRUCTURE_FALLBACK =
-  String(process.env.FURNITURE_DETECTOR_PRESERVE_STRUCTURE_FALLBACK ?? "true").toLowerCase() !== "false";
-const FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY =
-  String(process.env.FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY ?? "true").toLowerCase() !== "false";
 const ALLOWED_EXTERIOR_DECLUTTER_TYPES = new Set([
   "bicycle",
   "scooter",
@@ -8454,41 +8450,50 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             || "detector_failed_unknown";
           const fallbackSource = "detector_runtime";
           const wantsStage2 = payload.options.virtualStage === true || isStage2Only === true;
-          const explicitDeclutterModeRequested = (payload.options as any).declutterMode === "light"
-            || (payload.options as any).declutterMode === "stage-ready";
-          const explicitDeclutterRequested = originalUserDeclutter === true || explicitDeclutterModeRequested;
-          const requestedDeclutterIntensity = String((payload.options as any).declutterIntensity || "").toLowerCase();
-          const overwhelmingClutterSignals = requestedDeclutterIntensity === "heavy";
-          const preserveStructureFallbackEnabled = detectorFallback && FURNITURE_DETECTOR_PRESERVE_STRUCTURE_FALLBACK;
-          const fallbackForcingByDeclutterSignals =
-            FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY
-              ? explicitDeclutterRequested
-              : (explicitDeclutterRequested || overwhelmingClutterSignals);
+          const userGoal: "stageOnly" | "declutterAndStage" | "declutterOnly" | "enhanceOnly" = stage2Requested
+            ? (stage1BRequestedByUser ? "declutterAndStage" : "stageOnly")
+            : (stage1BRequestedByUser ? "declutterOnly" : "enhanceOnly");
           const stage1BForcedByFallback = detectorFallback
-            ? (!preserveStructureFallbackEnabled || fallbackForcingByDeclutterSignals)
+            ? (userGoal === "declutterAndStage" || userGoal === "declutterOnly")
             : false;
           const stage1BRequired = detectorFallback
             ? stage1BForcedByFallback
             : gateDecision?.requiresStage1B === true;
           const skipStage1B = !stage1BRequired;
           const resolvedDeclutterMode: "light" | "stage-ready" | null = detectorFallback
-            ? (stage1BRequired ? (wantsStage2 ? "stage-ready" : "light") : null)
+            ? (stage1BRequired ? (userGoal === "declutterAndStage" ? "stage-ready" : "light") : null)
             : stage1BRequired
               ? (wantsStage2 ? "stage-ready" : "light")
               : null;
           const resolvedStage2Mode: "FROM_EMPTY" | "REFRESH" | null = detectorFallback
-            ? (wantsStage2 ? "REFRESH" : null)
+            ? (userGoal === "stageOnly"
+              ? "FROM_EMPTY"
+              : (userGoal === "declutterAndStage" ? "REFRESH" : null))
             : gateDecision?.stage2ModeCandidate ?? (roomState === "EMPTY" ? "FROM_EMPTY" : roomState ? "REFRESH" : null);
           const sourceStagePolicy: "1A" | "1B-light" | "1B-stage-ready" | null = stage1BRequired
             ? (resolvedDeclutterMode === "light" ? "1B-light" : "1B-stage-ready")
             : (resolvedStage2Mode === "FROM_EMPTY" ? "1A" : "1A");
           const routingDecisionSource = detectorFallback
-            ? (stage1BForcedByFallback
-              ? (preserveStructureFallbackEnabled
-                ? "detector_failed_fallback_forced_stage1b"
-                : "detector_failed_legacy_force_stage1b")
-              : "detector_failed_preserve_structure_skip_stage1b")
+            ? `detector_failed_follow_user_intent_${userGoal}`
             : gateDecision?.reason || "gemini";
+
+          if (detectorFallback) {
+            const selectedPath = userGoal === "stageOnly"
+              ? "Stage2"
+              : (userGoal === "declutterAndStage"
+                ? "Stage1B→Stage2"
+                : (userGoal === "declutterOnly" ? "Stage1B" : "Stage1A"));
+            nLog("[DETECTOR_FAILURE_ROUTING]", {
+              job: payload.jobId,
+              userGoal,
+              detectorFallback: true,
+              selectedPath,
+              stage2Mode: resolvedStage2Mode,
+              stage1BRequired,
+              skipStage1B,
+              reason: "following user intent",
+            });
+          }
 
           const failRoutingInvariant = (code: string, details: Record<string, unknown>): void => {
             logger.error("ROUTING_INVARIANT_VIOLATION", jobLogContext(payload, {
@@ -8559,8 +8564,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               detectorLatencyMs,
               detectorConfidence: null,
               stage1BForcedByFallback,
-              preserveStructureFallbackEnabled,
-              preserveStructureExplicitDeclutterOnly: FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY,
+              userGoal,
               stage1BRequired,
               skipStage1B,
             }));
@@ -8576,8 +8580,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               fallbackSource,
               detectorLatencyMs,
               stage1BForcedByFallback,
-              preserveStructureFallbackEnabled,
-              preserveStructureExplicitDeclutterOnly: FURNITURE_DETECTOR_PRESERVE_STRUCTURE_EXPLICIT_DECLUTTER_ONLY,
+              userGoal,
             }));
           }
 
