@@ -8436,11 +8436,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const detectedAnchors = Array.isArray(analysis?.detectedAnchors)
             ? analysis.detectedAnchors
             : [];
+          const movableAnchors = Array.isArray(gateDecision?.movableAnchors)
+            ? gateDecision.movableAnchors
+            : detectedAnchors;
+          const movableFurnitureDetected = gateDecision?.movableFurnitureDetected === true;
+          const hasBuiltInFixtures = gateDecision?.hasBuiltInFixtures === true;
+          const builtInFixtureTypes = Array.isArray(gateDecision?.builtInFixtureTypes)
+            ? gateDecision?.builtInFixtureTypes
+            : [];
           const furnitureItems = analysis?.furnitureItems;
-          const anchorCount = detectedAnchors.length;
+          const anchorCount = movableAnchors.length;
           const totalFurniture = Array.isArray(furnitureItems) ? furnitureItems.length : null;
           const excessFurnitureCount = totalFurniture === null ? null : Math.max(0, totalFurniture - anchorCount);
-          const anchorDetected = analysis ? analysis.hasFurniture === true : false;
+          const anchorDetected = analysis
+            ? (movableAnchors.length > 0 || movableFurnitureDetected)
+            : false;
           const detectorFallback = !analysis;
           const detectorFailure = detectorFallback ? (geminiAnalysis as any) : null;
           const detectorLatencyMs = Number((geminiAnalysis as any)?.detectorLatencyMs || 0) || null;
@@ -8565,6 +8575,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           }
 
           if (analysis) {
+            logger.info("[FURNITURE_DETECTOR_FIXTURES]", jobLogContext(payload, {
+              event: "FURNITURE_DETECTOR_FIXTURES",
+              jobId: payload.jobId,
+              builtInFixtureTypes,
+              hasBuiltInFixtures,
+              movableAnchors,
+              movableFurnitureDetected,
+              hasFurniture: analysis.hasFurniture === true,
+              roomState,
+              stage2ModeCandidate: resolvedStage2Mode,
+            }));
+          }
+
+          if (analysis) {
             logger.info("DETECTOR_SUCCESS", jobLogContext(payload, {
               event: "DETECTOR_SUCCESS",
               detector: "furniture",
@@ -8574,7 +8598,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               anchorDetected,
               hasClutter,
               roomState,
-              anchors: detectedAnchors,
+              anchors: movableAnchors,
+              movableFurnitureDetected,
+              hasBuiltInFixtures,
+              builtInFixtureTypes,
               finalSkipStage1B: skipStage1B,
             }));
           } else {
@@ -8616,7 +8643,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             anchorDetected: analysis ? anchorDetected : null,
             hasClutter: analysis ? hasClutter : null,
             roomState,
-            anchors: detectedAnchors,
+            anchors: movableAnchors,
+            movableFurnitureDetected: analysis ? movableFurnitureDetected : null,
+            hasBuiltInFixtures: analysis ? hasBuiltInFixtures : null,
+            builtInFixtureTypes: analysis ? builtInFixtureTypes : [],
             gateDecision: gateDecision?.decision || "needs_declutter_light",
             gateReason: routingDecisionSource,
             minorPortableClutterOnly: gateDecision?.minorPortableClutterOnly === true,
@@ -8639,7 +8669,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             anchorDetected,
             hasClutter: detectorFallback ? null : hasClutter,
             roomState,
-            anchors: detectedAnchors,
+            anchors: movableAnchors,
+            movableFurnitureDetected: detectorFallback ? null : movableFurnitureDetected,
+            hasBuiltInFixtures: detectorFallback ? null : hasBuiltInFixtures,
+            builtInFixtureTypes: detectorFallback ? [] : builtInFixtureTypes,
             skipStage1B,
             detectorFallback,
           }));
