@@ -182,11 +182,16 @@ function parseErrorStatusCode(err: any): number | null {
 
 function isTimeoutError(err: any): boolean {
   const code = String((err as any)?.code ?? "").toLowerCase();
+  const name = String((err as any)?.name ?? "").toLowerCase();
   const msg = String((err as any)?.message ?? "").toLowerCase();
   return (
-    code.includes("timeout")
+    name === "aborterror"
+    || code.includes("timeout")
     || code === "etimedout"
+    || code === "abort_err"
     || code === "aborted"
+    || msg.includes("aborted sending request")
+    || msg.includes("this operation was aborted")
     || msg.includes("timeout")
     || msg.includes("timed out")
     || msg.includes("deadline exceeded")
@@ -232,7 +237,7 @@ const FURNITURE_DETECTOR_MAX_CONCURRENCY = Math.max(
 );
 const FURNITURE_DETECTOR_TIMEOUT_MS = Math.max(
   1000,
-  Number(process.env.FURNITURE_DETECTOR_TIMEOUT_MS || 8000)
+  Number(process.env.FURNITURE_DETECTOR_TIMEOUT_MS || 15000)
 );
 const FURNITURE_DETECTOR_MAX_ATTEMPTS = 2;
 
@@ -1083,6 +1088,14 @@ export async function detectFurnitureWithRetry(
         statusCode: parseErrorStatusCode(error),
         message: error instanceof Error ? error.message : String(error),
       });
+
+      if (isTimeoutError(error)) {
+        console.warn("[FURNITURE_DETECTOR_TIMEOUT]", {
+          retryable: true,
+          attempt: attempt + 1,
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
 
       if (retryable && !lastAttempt) {
         await delay(getFurnitureDetectorRetryDelayMs(attempt));
