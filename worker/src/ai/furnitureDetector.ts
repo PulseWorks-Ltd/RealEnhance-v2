@@ -880,26 +880,32 @@ export function resolveFurnishedGateDecision(params: {
   const hasCounterClutter = toBool(analysis.hasCounterClutter);
   const hasSurfaceClutter = toBool(analysis.hasSurfaceClutter);
   const hasLoosePortableItems = toBool(analysis.hasLoosePortableItems);
-  const hasMovableSeating = toBool(analysis.hasMovableSeating);
   const detectedItems = Array.isArray(analysis.detectedItems) ? analysis.detectedItems : [];
-  const maxDetectedItemConfidence = detectedItems.reduce(
-    (maxConfidence, item) => Math.max(maxConfidence, Number(item?.confidence) || 0),
-    0
-  );
+  const nuisancePortableItems = detectedItems.filter(isMinorPortableNuisanceItem);
+  const nonNuisancePortableItems = detectedItems.filter((item) => !isMinorPortableNuisanceItem(item));
+  const hasNuisanceOnlyPortableItems =
+    detectedItems.length > 0
+    && detectedItems.length <= 2
+    && nuisancePortableItems.length === detectedItems.length;
 
   const minorPortableClutterOnly =
     !hasCounterClutter
     && !hasSurfaceClutter
     && hasLoosePortableItems
-    && detectedItems.length > 0
-    && detectedItems.length <= 2
-    && detectedItems.every(isMinorPortableNuisanceItem)
-    && maxDetectedItemConfidence <= 0.72;
+    && (detectedItems.length === 0 || hasNuisanceOnlyPortableItems);
 
-  const materialPortableClutter = hasLoosePortableItems && !minorPortableClutterOnly;
+  const nonNuisancePortableItemsWithConfidence = nonNuisancePortableItems.filter(
+    (item) => Number(item?.confidence) >= 0.55
+  );
+  const materialPortableClutter =
+    hasLoosePortableItems
+    && !minorPortableClutterOnly
+    && (
+      nonNuisancePortableItemsWithConfidence.length >= 1
+      || nonNuisancePortableItems.length >= 2
+      || detectedItems.length >= 3
+    );
   const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || materialPortableClutter;
-  const hasKitchenDeclutterSignals = hasMovableSeating || hasClutterSignals;
-  const userRequestedDeclutter = params.userSelectedDeclutter === true;
   const routingFurnitureSignals = {
     movableAnchors,
     movableFurnitureDetected,
@@ -907,7 +913,7 @@ export function resolveFurnishedGateDecision(params: {
     builtInFixtureTypes,
   };
 
-  if (minorPortableClutterOnly && !userRequestedDeclutter) {
+  if (minorPortableClutterOnly) {
     const nuisanceRoomState: RoutingRoomState =
       hasEligibleAnchor || hasEligibleFurnitureSignal
         ? "FURNISHED_TIDY"
@@ -937,7 +943,7 @@ export function resolveFurnishedGateDecision(params: {
       return "EMPTY";
     }
 
-    if (hasClutterSignals || minorPortableClutterOnly || (isKitchenLike && hasKitchenDeclutterSignals)) {
+    if (hasClutterSignals) {
       return "FURNISHED_CLUTTERED";
     }
 
@@ -984,12 +990,10 @@ export function resolveFurnishedGateDecision(params: {
     });
   }
 
-  if ((isKitchenLike && hasKitchenDeclutterSignals) || hasClutterSignals || minorPortableClutterOnly) {
+  if (hasClutterSignals) {
     return buildDecision({
       decision: "needs_declutter_light",
-      reason: minorPortableClutterOnly
-        ? "minor_portable_clutter_user_requested_declutter"
-        : (isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter"),
+      reason: isKitchenLike ? "kitchen_signals_require_light_declutter" : "clutter_signals_require_light_declutter",
       confidence,
       anchors,
       ...routingFurnitureSignals,
