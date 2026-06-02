@@ -2,6 +2,8 @@ import path from "path";
 
 import {
   detectFurnitureWithRetry,
+  FURNITURE_DETECTOR_PROVIDER,
+  resolveFurnitureDetectorModel,
   type FurnitureDetectionResult,
 } from "./furnitureDetector";
 import { getGeminiClient } from "./gemini";
@@ -74,10 +76,19 @@ export async function runFurnitureDetectionSafe(
 
   const promise = (async (): Promise<FurnitureDetectionSafeResponse> => {
     const detectorStartedAtMs = Date.now();
+    const resolvedModel = resolveFurnitureDetectorModel(params.sceneType);
     try {
+      console.info("[FURNITURE_DETECTOR_MODEL]", {
+        ...buildLogPayload(params, "FURNITURE_DETECTOR_MODEL"),
+        provider: FURNITURE_DETECTOR_PROVIDER,
+        resolvedModel,
+      });
+
       const startedEvent = "FURNITURE_DETECTOR_START";
       console.info(startedEvent, {
         ...buildLogPayload(params, startedEvent),
+        detectorProvider: FURNITURE_DETECTOR_PROVIDER,
+        detectorModel: resolvedModel,
         ...(params.logContext?.startedFields || {}),
       });
 
@@ -96,6 +107,8 @@ export async function runFurnitureDetectionSafe(
           ...buildLogPayload(params, "FURNITURE_DETECTOR_SUCCESS"),
           detectorLatencyMs,
           detectorConfidence: typeof result.confidence === "number" ? result.confidence : null,
+          detectorProvider: result.detectorProvider || FURNITURE_DETECTOR_PROVIDER,
+          detectorModel: result.detectorModel || resolvedModel,
         });
       } else {
         const eventByFailureCode: Record<string, string> = {
@@ -114,6 +127,8 @@ export async function runFurnitureDetectionSafe(
           detectorStatusCode: result?.statusCode ?? null,
           detectorRetryable: result?.retryable ?? false,
           detectorMessage: result?.message || null,
+          detectorProvider: result?.detectorProvider || FURNITURE_DETECTOR_PROVIDER,
+          detectorModel: result?.detectorModel || resolvedModel,
           stage1BForcedByFallback: null,
         });
       }
