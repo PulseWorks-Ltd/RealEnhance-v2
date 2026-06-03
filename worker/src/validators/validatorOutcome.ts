@@ -21,4 +21,13 @@ export type ValidatorOutcome = {
     bbox: [number, number, number, number];
     type: "window" | "door";
   }>;
+  fixtureRepair?: {
+    supported: boolean;
+    repairType?: "FIXTURE_ADDED" | "FIXTURE_REMOVED" | "FIXTURE_MODIFIED";
+    fixtureClass?: "LIGHTING" | "HVAC" | "UNKNOWN";
+    fixtureStateChange?: "ADDED" | "REMOVED" | "MODIFIED" | "UNKNOWN";
+    action?: "added" | "removed" | "modified" | "unknown";
+    localizationMode?: "diff_zone_ceiling" | "diff_zone_hvac";
+    reasonTokens?: string[];
+  };
 };

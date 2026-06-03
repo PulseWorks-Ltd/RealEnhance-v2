@@ -925,8 +925,8 @@ export async function runUnifiedValidation(
             : (await runGlobalEdgeMetrics(originalPath, enhancedPath)).edgeIoU)
         : 1;
 
-        // Thresholds by stage
-        const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
+        // Thresholds by stage (stage !== "1B" here; 1B is handled by skipStage1BLocalStructural branch above)
+        const minEdgeIoU = stage === "1A" ? 0.70 : 0.60;
         const passed = disableIouDecisionSignals ? true : edgeIoU >= minEdgeIoU;
         const score = disableIouDecisionSignals ? 1.0 : edgeIoU;
         const message = disableIouDecisionSignals
