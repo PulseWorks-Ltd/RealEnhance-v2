@@ -4686,6 +4686,15 @@ async function runPostStage1BAnchorValidator(params: {
   }
 }
 
+function normalizeValidatorReason(reason: string): string {
+  const normalized = String(reason || "unknown")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return normalized || "unknown";
+}
+
 // handle "enhance" pipeline
 async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // Start memory tracking for this job
@@ -11302,15 +11311,6 @@ All openings must remain identical in position and size to the original image.`;
           error: (signErr as any)?.message || String(signErr),
         });
       }
-
-      const normalizeValidatorReason = (reason: string): string => {
-        const normalized = String(reason || "unknown")
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, "_")
-          .replace(/^_+|_+$/g, "");
-        return normalized || "unknown";
-      };
 
       const detectMaterialOpeningFromSignals = (result: {
         status?: string;
