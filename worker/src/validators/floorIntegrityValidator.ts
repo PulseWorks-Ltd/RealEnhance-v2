@@ -6,6 +6,20 @@ import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type FloorIntegrityValidatorResult = ValidatorOutcome;
 
+function logFloorEvent(event: string, payload: Record<string, unknown>): void {
+  console.log(JSON.stringify({ event, ...payload }));
+}
+
+function logFloorPhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  logFloorEvent("FLOOR_PHASE_END", {
+    jobId: jobId || "unknown",
+    validator: "floor",
+    phase,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ...extra,
+  });
+}
+
 type NormalizedFloorMaterialClass = "carpet" | "wood" | "tile" | "stone" | "concrete" | "mixed" | "unknown";
 
 const FLOOR_ADVISORY_CONFIDENCE_THRESHOLD = Math.max(
@@ -228,10 +242,21 @@ export async function runFloorIntegrityValidator(
   afterImageUrl: string,
   options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<FloorIntegrityValidatorResult> {
+  const validatorStartedAt = Date.now();
+  logFloorEvent("FLOOR_VALIDATOR_START", {
+    jobId: options?.jobId || "unknown",
+    validator: "floor",
+    phase: "validator_total",
+    durationMs: 0,
+  });
   const ai = getGeminiClient();
+  const imageDecodeStartedAt = Date.now();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
+  logFloorPhaseEnd(options?.jobId, "image_decode", Date.now() - imageDecodeStartedAt);
+  logFloorPhaseEnd(options?.jobId, "image_prepare", 0);
 
+  const promptBuildStartedAt = Date.now();
   const prompt = `You are validating floor structural integrity between a baseline room image and a staged room image.
 
 GLOBAL RULE
@@ -263,6 +288,7 @@ Ignore non-structural differences:
 
 Return JSON only:
 {"baseline_material":"carpet|wood|tile|stone|concrete|mixed|unknown","staged_material":"carpet|wood|tile|stone|concrete|mixed|unknown","baseline_material_visible":true|false,"staged_material_visible":true|false,"staged_floor_fully_covered_by_movable_items":true|false,"material_changed":true|false,"ok":true|false,"reason":"short explanation","confidence":0.0-1.0}`;
+  logFloorPhaseEnd(options?.jobId, "prompt_build", Date.now() - promptBuildStartedAt);
 
   const model = process.env.FLOOR_VALIDATOR_MODEL || "gemini-2.5-pro";
 
@@ -287,6 +313,9 @@ Return JSON only:
         responseMimeType: "application/json",
       },
     });
+    logFloorPhaseEnd(options?.jobId, "gemini_request", Date.now() - requestStartedAt, {
+      model,
+    });
     logGeminiUsage({
       ctx: {
         jobId: options?.jobId || "",
@@ -301,8 +330,19 @@ Return JSON only:
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseFloorIntegrityResult(text);
+    const parseStartedAt = Date.now();
+    const parsed = parseFloorIntegrityResult(text);
+    logFloorPhaseEnd(options?.jobId, "response_parse", Date.now() - parseStartedAt);
+    logFloorPhaseEnd(options?.jobId, "final_decision", 0);
+    return parsed;
   } catch (error: any) {
     throw new Error(`validator_error_floor_integrity:${error?.message || String(error)}`);
+  } finally {
+    logFloorEvent("FLOOR_VALIDATOR_END", {
+      jobId: options?.jobId || "unknown",
+      validator: "floor",
+      phase: "validator_total",
+      durationMs: Math.max(0, Math.round(Date.now() - validatorStartedAt)),
+    });
   }
 }

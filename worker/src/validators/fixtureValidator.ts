@@ -14,6 +14,20 @@ const LIGHTING_TARGET_REGEX = /\b(light|lights|lighting|light fixture|light fixt
 
 export type FixtureValidatorResult = ValidatorOutcome;
 
+function logFixtureEvent(event: string, payload: Record<string, unknown>): void {
+  console.log(JSON.stringify({ event, ...payload }));
+}
+
+function logFixturePhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  logFixtureEvent("FIXTURE_PHASE_END", {
+    jobId: jobId || "unknown",
+    validator: "fixture",
+    phase,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ...extra,
+  });
+}
+
 function inferFixtureRepairMetadata(reason: string, advisorySignals: string[], structuredIssues: StructuredIssue[]): NonNullable<FixtureValidatorResult["fixtureRepair"]> {
   const tokens = splitIssueTokens(reason, advisorySignals);
   const normalizedSignals = buildNormalizedSignals(reason, advisorySignals);
@@ -232,22 +246,35 @@ export async function runFixtureValidator(
     };
   }
 ): Promise<FixtureValidatorResult> {
+  const validatorStartedAt = Date.now();
+  logFixtureEvent("FIXTURE_VALIDATOR_START", {
+    jobId: options?.jobId || "unknown",
+    validator: "fixture",
+    phase: "validator_total",
+    durationMs: 0,
+  });
   const ai = getGeminiClient();
+  const imageDecodeStartedAt = Date.now();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
   const jobId = options?.jobId;
+  logFixturePhaseEnd(jobId, "image_decode", Date.now() - imageDecodeStartedAt);
 
+  const materialSignalStartedAt = Date.now();
   const materialSignal = await computeMaterialSignal(before, after).catch(() => ({
     colorShift: 0,
     textureShift: 0,
     suspiciousMaterialChange: false,
   }));
+  logFixturePhaseEnd(jobId, "computeMaterialSignal", Date.now() - materialSignalStartedAt);
 
+  const openingGeometryStartedAt = Date.now();
   const openingSignal = await computeOpeningGeometrySignal(before, after).catch(() => ({
     openingAreaDelta: 0,
     aspectRatioDelta: 0,
     suspiciousOpeningGeometry: false,
   }));
+  logFixturePhaseEnd(jobId, "computeOpeningGeometrySignal", Date.now() - openingGeometryStartedAt);
 
   const localSignals = options?.localSignals ?? {
     maskedEdgeDrift: openingSignal.openingAreaDelta,
@@ -285,6 +312,7 @@ export async function runFixtureValidator(
     materialSignal: materialSignal?.suspiciousMaterialChange === true,
   });
 
+  const promptBuildStartedAt = Date.now();
   let prompt = `You are validating whether two images represent the exact same physical room architecture and fixed installed fixtures.
 
 Compare the BASELINE image and the STAGED image.
@@ -363,6 +391,7 @@ If the model has revealed or invented space behind an occlusion → hardFail = t
 
 This is NOT a stylistic check. It is a structural integrity check.`;
   }
+  logFixturePhaseEnd(jobId, "prompt_build", Date.now() - promptBuildStartedAt);
 
   const selectedModel = (occlusionRiskFinal || materialSignal.suspiciousMaterialChange)
     ? "gemini-2.5-pro"
@@ -389,6 +418,9 @@ This is NOT a stylistic check. It is a structural integrity check.`;
         responseMimeType: "application/json",
       },
     });
+    logFixturePhaseEnd(jobId, "gemini_request", Date.now() - requestStartedAt, {
+      model: selectedModel,
+    });
     logGeminiUsage({
       ctx: {
         jobId: jobId || "",
@@ -403,8 +435,19 @@ This is NOT a stylistic check. It is a structural integrity check.`;
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseFixtureResult(text);
+    const parseStartedAt = Date.now();
+    const parsed = parseFixtureResult(text);
+    logFixturePhaseEnd(jobId, "result_parse", Date.now() - parseStartedAt);
+    logFixturePhaseEnd(jobId, "final_decision", 0);
+    return parsed;
   } catch (error: any) {
     throw new Error(`validator_error_fixture:${error?.message || String(error)}`);
+  } finally {
+    logFixtureEvent("FIXTURE_VALIDATOR_END", {
+      jobId: options?.jobId || "unknown",
+      validator: "fixture",
+      phase: "validator_total",
+      durationMs: Math.max(0, Math.round(Date.now() - validatorStartedAt)),
+    });
   }
 }

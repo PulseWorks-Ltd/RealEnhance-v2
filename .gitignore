@@ -30,3 +30,4 @@ audit_*
 signed_review_urls*
 stage2_signed_report*
 routing_overrides_*
+.worktrees/main

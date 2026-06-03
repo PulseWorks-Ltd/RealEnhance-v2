@@ -99,6 +99,7 @@ import {
   type UnifiedValidationResult,
   type AdvisoryObservation,
 } from "./validators/runValidation";
+import { runStage1BUnifiedGate } from "./validators/stage1BUnifiedGate";
 import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
 import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
 import { isEvidenceGatingEnabledForJob } from "./validators/evidenceGating";
@@ -6795,11 +6796,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               }
             };
 
+            const openingBlockStartedAt = Date.now();
             const opRes = await runOpeningValidator(validationBaseline, path2, {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt: stage2OnlyAttemptNo,
             });
+            logValidatorBlockEnd("opening", Date.now() - openingBlockStartedAt, { source: "stage2_only_retry" });
             const opHardFail = opRes?.hardFail === true;
             specialistResults.openings = opRes;
             if (opHardFail) {
@@ -6807,11 +6810,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("openings", opRes?.advisorySignals);
 
+            const fixtureBlockStartedAt = Date.now();
             const fixRes = await runFixtureValidator(validationBaseline, path2, {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt: stage2OnlyAttemptNo,
             });
+            logValidatorBlockEnd("fixture", Date.now() - fixtureBlockStartedAt, { source: "stage2_only_retry" });
             const fixHardFail = fixRes?.hardFail === true;
             specialistResults.fixtures = fixRes;
             if (fixHardFail) {
@@ -6819,11 +6824,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("fixtures", fixRes?.advisorySignals);
 
+            const floorBlockStartedAt = Date.now();
             const floorRes = await runFloorIntegrityValidator(validationBaseline, path2, {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt: stage2OnlyAttemptNo,
             });
+            logValidatorBlockEnd("floor", Date.now() - floorBlockStartedAt, { source: "stage2_only_retry" });
             const floorHardFail = floorRes?.hardFail === true;
             specialistResults.floor = floorRes;
             if (floorHardFail) {
@@ -6831,11 +6838,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("floor", floorRes?.advisorySignals);
 
+            const envelopeBlockStartedAt = Date.now();
             const envRes = await runEnvelopeValidator(validationBaseline, path2, {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt: stage2OnlyAttemptNo,
             });
+            logValidatorBlockEnd("envelope", Date.now() - envelopeBlockStartedAt, { source: "stage2_only_retry" });
             const envHardFail = envRes?.hardFail === true;
             specialistResults.envelope = envRes;
             if (envHardFail) {
@@ -6887,6 +6896,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           try {
             // SINGLE-AUTHORITY: always enforce, always run Gemini
             nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════`);
+            const unifiedBlockStartedAt = Date.now();
             unifiedRetryValidation = await runUnifiedValidation({
               originalPath: validationBaseline,
               enhancedPath: path2,
@@ -6903,6 +6913,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               validationMode: stage2OnlySelectedValidationMode,
               specialistAdvisorySignals,
             });
+            logValidatorBlockEnd("unified", Date.now() - unifiedBlockStartedAt, { source: "stage2_only_retry" });
             nLog("[UNIFIED_RESULT]", {
               jobId: payload.jobId,
               imageId: payload.imageId,
@@ -6966,12 +6977,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               const ai = getGeminiClient();
               const baseRef = toBase64(validationBaseline);
               const enhanced = toBase64(path2);
+              const complianceBlockStartedAt = Date.now();
               const s2oCompliance = await checkCompliance(ai as any, baseRef.data, enhanced.data, {
                 validationMode: stage2OnlySelectedValidationMode,
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt: stage2OnlyAttemptNo,
               });
+              logValidatorBlockEnd("compliance", Date.now() - complianceBlockStartedAt, { source: "stage2_only_retry" });
               if (s2oCompliance && s2oCompliance.ok === false) {
                 const confidence = s2oCompliance.confidence ?? 0.6;
                 const tier = Number.isFinite((s2oCompliance as any).tier)
@@ -9495,6 +9508,44 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[STAGE1B_STRUCTURE_RESULT] hardFail=true violationType=wall_plane_expansion`);
       }
 
+      let stage1BUnifiedGateResult: Awaited<ReturnType<typeof runStage1BUnifiedGate>> | null = null;
+      if (!effectiveHardFail) {
+        const stage1BValidationMode =
+          stage1BPolicyMode === "DECLUTTER" ? "LIGHT_DECLUTTER" : "STRUCTURED_RETAIN";
+        stage1BUnifiedGateResult = await runStage1BUnifiedGate({
+          baselinePath: path1A,
+          candidatePath: candidate,
+          sceneType: sceneLabel === "exterior" ? "exterior" : "interior",
+          roomType: payload.options.roomType,
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          stagingStyle: payload.options.stagingStyle,
+          stage1BValidationMode,
+        });
+
+        nLog("[STAGE1B_UNIFIED_GATE]", {
+          jobId: payload.jobId,
+          attempt: stage1BAttemptNo,
+          passed: stage1BUnifiedGateResult.passed,
+          hardFail: stage1BUnifiedGateResult.hardFail,
+          issueType: stage1BUnifiedGateResult.issueType || null,
+          durationMs: stage1BUnifiedGateResult.durationMs,
+          reasons: stage1BUnifiedGateResult.reasons,
+        });
+
+        if (!stage1BUnifiedGateResult.passed) {
+          const unifiedReason =
+            stage1BUnifiedGateResult.reasons[0] ||
+            (stage1BUnifiedGateResult.issueType ? `issue_type:${stage1BUnifiedGateResult.issueType}` : "unified_gate_failed");
+          effectiveHardFail = true;
+          effectiveViolationType = "stage1b_unified_failure";
+          effectiveReasons = [
+            ...effectiveReasons,
+            `stage1b_unified_failure:${normalizeValidatorReason(unifiedReason)}`,
+          ];
+        }
+      }
+
       if (VALIDATOR_AUDIT_ENABLED) {
         const finalDecision = effectiveHardFail ? "BLOCK" : "PASS";
         const finalReason = effectiveViolationType || "none";
@@ -9532,7 +9583,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           builtInLowConfidence: false,
           builtInDowngradeAllowed: false,
         },
-        confirm: null,
+        confirm: stage1BUnifiedGateResult
+          ? {
+              hardFail: !stage1BUnifiedGateResult.passed,
+              issueType: stage1BUnifiedGateResult.issueType || null,
+              reasons: stage1BUnifiedGateResult.reasons,
+              confidence: stage1BUnifiedGateResult.result.score,
+              source: "stage1b_unified_gate",
+            } as any
+          : null,
       });
 
       annotateAttemptSignedUrl("1B", stage1BAttemptNo, stage1BSigned);
@@ -10716,6 +10775,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     30000,
     Number(process.env.STAGE2_RETRY_GRACE_MS || 180000)
   );
+  const logValidatorBlockEnd = (validator: string, durationMs: number, extra: Record<string, unknown> = {}) => {
+    console.log(JSON.stringify({
+      event: "VALIDATOR_BLOCK_END",
+      jobId: payload.jobId,
+      validator,
+      phase: "validator_block",
+      durationMs: Math.max(0, Math.round(durationMs)),
+      ...extra,
+    }));
+  };
+  const logPostCompliancePhaseEnd = (phase: string, durationMs: number, extra: Record<string, unknown> = {}) => {
+    console.log(JSON.stringify({
+      event: "POST_COMPLIANCE_PHASE_END",
+      jobId: payload.jobId,
+      validator: "post_compliance",
+      phase,
+      durationMs: Math.max(0, Math.round(durationMs)),
+      ...extra,
+    }));
+  };
   const tVal = Date.now();
   await safeWriteJobStatus(
     payload.jobId,
@@ -11714,12 +11793,14 @@ All openings must remain identical in position and size to the original image.`;
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
+        const openingBlockStartedAt = Date.now();
         const opRes = await runOpeningValidator(validationBasePath, path2, {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
           baseline: structuralBaseline || undefined,
         });
+        logValidatorBlockEnd("opening", Date.now() - openingBlockStartedAt);
         if (Array.isArray(opRes.structuralSignals)) {
           collectedStructuralSignals.push(...opRes.structuralSignals);
         }
@@ -11945,11 +12026,13 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
+        const fixtureBlockStartedAt = Date.now();
         const fixRes = await runFixtureValidator(validationBasePath, path2, {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
         });
+        logValidatorBlockEnd("fixture", Date.now() - fixtureBlockStartedAt);
         specialistResults.fixture = normalizeSpecialistResult({
           validator: "fixture",
           status: fixRes.status,
@@ -12025,11 +12108,13 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
+        const floorBlockStartedAt = Date.now();
         const floorRes = await runFloorIntegrityValidator(validationBasePath, path2, {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
         });
+        logValidatorBlockEnd("floor", Date.now() - floorBlockStartedAt);
         specialistResults.floor = normalizeSpecialistResult({
           validator: "floor",
           status: floorRes.status,
@@ -12104,11 +12189,13 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
+        const envelopeBlockStartedAt = Date.now();
         const envRes = await runEnvelopeValidator(validationBasePath, path2, {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
         });
+        logValidatorBlockEnd("envelope", Date.now() - envelopeBlockStartedAt);
         if (Array.isArray(envRes.structuralSignals)) {
           collectedStructuralSignals.push(...envRes.structuralSignals);
         }
@@ -12973,6 +13060,7 @@ All openings must remain identical in position and size to the original image.`;
         }
       }
 
+      const unifiedBlockStartedAt = Date.now();
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
         enhancedPath: path2,
@@ -12992,6 +13080,7 @@ All openings must remain identical in position and size to the original image.`;
         specialistStructuredIssues,
         structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
       });
+      logValidatorBlockEnd("unified", Date.now() - unifiedBlockStartedAt);
 
       nLog("[UNIFIED_RESULT]", {
         jobId: payload.jobId,
@@ -13304,6 +13393,7 @@ All openings must remain identical in position and size to the original image.`;
                 maskedDriftRegions: complianceMaskedDriftRegions,
                 openingRegions: complianceOpeningRegions,
               });
+              const complianceBlockStartedAt = Date.now();
               compliance = await checkCompliance(ai as any, base1A.data, baseFinal.data, {
                 validationMode: stage2SelectedValidationMode,
                 advisorySignals: complianceAdvisorySignals,
@@ -13316,6 +13406,7 @@ All openings must remain identical in position and size to the original image.`;
                 attempt,
                 modelOverride: "gemini-2.5-pro",
               });
+              logValidatorBlockEnd("compliance", Date.now() - complianceBlockStartedAt);
 
               if (compliance && compliance.ok === false) {
                 const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
@@ -13674,6 +13765,7 @@ All openings must remain identical in position and size to the original image.`;
         }
       }
 
+      const postComplianceValidationResultProcessingStartedAt = Date.now();
       nLog(`[STAGE2_UNIFIED_SUCCESS] attempt=${attempt}`);
       mergeAttemptValidation("2", attempt, {
         final: {
@@ -13710,12 +13802,16 @@ All openings must remain identical in position and size to the original image.`;
         reason: "accepted",
       });
       logValidateFinal(attempt, "accept", attempt - 1);
+      logPostCompliancePhaseEnd("validation_result_processing", Date.now() - postComplianceValidationResultProcessingStartedAt);
+      logPostCompliancePhaseEnd("final_decision", 0, { decision: "accept" });
       break;
     }
   }
 
+  const postCompliancePublishPrepStartedAt = Date.now();
   timings.validateMs = Date.now() - tVal;
   nLog(`[AUDIT FIX] Compliance evaluated in retry flow — proceeding to publish Stage 2 image or fallback`);
+  logPostCompliancePhaseEnd("publish_prep", Date.now() - postCompliancePublishPrepStartedAt);
 
   if (payload.options.virtualStage && stage2Blocked && stage2BlockedReason === "composite_validation_exhausted") {
     const fallbackStage: "1A" | "1B" = path1B ? "1B" : "1A";
@@ -13790,11 +13886,13 @@ All openings must remain identical in position and size to the original image.`;
       }
       
       if (!(await ensureStage2AttemptOwner("stage2_publish_reuse_status"))) return;
+      const postComplianceStatusUpdateStartedAt = Date.now();
       await safeWriteJobStatus(
         payload.jobId,
         { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url },
         "stage2_publish_reuse"
       );
+      logPostCompliancePhaseEnd("status_update", Date.now() - postComplianceStatusUpdateStartedAt, { source: "stage2_publish_reuse" });
       vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url} (reused 1B)`);
     } else {
       let v2: any = null;
@@ -13829,11 +13927,13 @@ All openings must remain identical in position and size to the original image.`;
           }
         }
         if (!(await ensureStage2AttemptOwner("stage2_publish_status"))) return;
+        const postComplianceStatusUpdateStartedAt = Date.now();
         await safeWriteJobStatus(
           payload.jobId,
           { status: "processing", currentStage: "2", stage: "2", progress: 85, stageUrls: { "2": pub2Url }, imageUrl: pub2Url },
           "stage2_publish"
         );
+        logPostCompliancePhaseEnd("status_update", Date.now() - postComplianceStatusUpdateStartedAt, { source: "stage2_publish" });
         // VALIDATOR FOCUS: Log Stage 2 URL
         vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
         nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
@@ -14084,11 +14184,13 @@ All openings must remain identical in position and size to the original image.`;
   if (shouldRunFinalValidation && pubFinalUrl && publishedOriginal?.url) {
     try {
       nLog(`[worker] ═══════════ Running final structural validation for stage ${finalStageLabel} ═══════════`);
+      const postComplianceStructuralCheckStartedAt = Date.now();
       structuralValidationResult = await runStructuralCheck(
         publishedOriginal.url,
         pubFinalUrl,
         { stage: finalStageLabel, jobId: payload.jobId }
       );
+      logPostCompliancePhaseEnd("structural_check", Date.now() - postComplianceStructuralCheckStartedAt, { stage: finalStageLabel });
       nLog(`[worker] ═══════════ Final structural validation completed for stage ${finalStageLabel} ═══════════`);
       // Validation result is logged inside runStructuralCheck
       // If mode="block" and isSuspicious=true, it will throw and abort the job
@@ -14360,11 +14462,13 @@ All openings must remain identical in position and size to the original image.`;
   if (hasStage2 && !(await canCompleteStage2(true, "stage2_final_complete"))) return;
 
   // Completion guard — full pipeline
+  const postComplianceCompletionGuardStartedAt = Date.now();
   const mainGuard = canMarkJobComplete(latestJobBeforeCompletion as any, unifiedValidation as any, {
     outputUrl: committedResultUrl || pubFinalUrl,
     finalStageRan: committedFinalStageLabel,
     expectedFinalStage: hasStage2 ? "2" : (payload.options.declutter ? "1B" : "1A"),
   });
+  logPostCompliancePhaseEnd("completion_guard", Date.now() - postComplianceCompletionGuardStartedAt, { ok: mainGuard.ok });
   logCompletionGuard(payload.jobId, mainGuard);
   if (!mainGuard.ok) {
     await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${mainGuard.reason}` }, "completion_guard_block");
