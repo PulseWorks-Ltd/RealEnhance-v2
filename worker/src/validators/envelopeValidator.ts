@@ -10,6 +10,20 @@ export type EnvelopeValidatorResult = ValidatorOutcome & {
   verticalEdgeDelta?: VerticalEdgeDeltaResult;
 };
 
+function logEnvelopeEvent(event: string, payload: Record<string, unknown>): void {
+  console.log(JSON.stringify({ event, ...payload }));
+}
+
+function logEnvelopePhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  logEnvelopeEvent("ENVELOPE_PHASE_END", {
+    jobId: jobId || "unknown",
+    validator: "envelope",
+    phase,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ...extra,
+  });
+}
+
 const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
 const ENVELOPE_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
@@ -153,9 +167,18 @@ export async function runEnvelopeValidator(
   afterImageUrl: string,
   options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<EnvelopeValidatorResult> {
+  const validatorStartedAt = Date.now();
+  logEnvelopeEvent("ENVELOPE_VALIDATOR_START", {
+    jobId: options?.jobId || "unknown",
+    validator: "envelope",
+    phase: "validator_total",
+    durationMs: 0,
+  });
   const ai = getGeminiClient();
+  const imagePrepareStartedAt = Date.now();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
+  logEnvelopePhaseEnd(options?.jobId, "image_prepare", Date.now() - imagePrepareStartedAt);
 
   const prompt = `You are validating whether two images represent the exact same physical room architecture.
 
@@ -258,7 +281,10 @@ Non-fail certainty guard:
 - If lighting, shadow loss, or smoothing can explain flattening, do not claim certainty.
 - If geometry is ambiguous, set visualAmbiguity=true and do not claim certainty.`;
 
-  const runWithModel = async (model: string): Promise<EnvelopeValidatorResult> => {
+  const runWithModel = async (
+    model: string,
+    phaseLabel: "flash" | "pro"
+  ): Promise<EnvelopeValidatorResult> => {
     const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
@@ -281,6 +307,9 @@ Non-fail certainty guard:
         responseMimeType: "application/json",
       },
     });
+    logEnvelopePhaseEnd(options?.jobId, phaseLabel === "flash" ? "flash_call" : "pro_escalation", Date.now() - requestStartedAt, {
+      model,
+    });
     logGeminiUsage({
       ctx: {
         jobId: options?.jobId || "",
@@ -295,36 +324,58 @@ Non-fail certainty guard:
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseEnvelopeResult(text);
+    const parseStartedAt = Date.now();
+    const parsed = parseEnvelopeResult(text);
+    logEnvelopePhaseEnd(options?.jobId, phaseLabel === "flash" ? "flash_parse" : "pro_parse", Date.now() - parseStartedAt, {
+      model,
+    });
+    return parsed;
   };
 
   try {
+    const verticalEdgeStartedAt = Date.now();
     // Run vertical-edge delta detection in parallel with Gemini calls.
     // It is non-blocking – if it fails we fall through to Gemini-only result.
     const verticalEdgeDeltaPromise = computeVerticalEdgeDelta(beforeImageUrl, afterImageUrl)
+      .then((result) => {
+        logEnvelopePhaseEnd(options?.jobId, "verticalEdgeDelta", Date.now() - verticalEdgeStartedAt, {
+          success: true,
+        });
+        return result;
+      })
       .catch((err) => {
         console.warn("[ENVELOPE_VERTICAL_EDGE_DELTA] local analysis failed (non-blocking):", err?.message || err);
+        logEnvelopePhaseEnd(options?.jobId, "verticalEdgeDelta", Date.now() - verticalEdgeStartedAt, {
+          success: false,
+          error: err?.message || String(err),
+        });
         return undefined;
       });
 
     // Gemini semantic analysis
     let geminiResult: EnvelopeValidatorResult;
-    const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY);
+    const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY, "flash");
     if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
       geminiResult = flashResult;
+      logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true });
+      logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true });
     } else {
       try {
-        const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION);
+        const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION, "pro");
         geminiResult = (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE)
           ? proResult
           : flashResult;
       } catch {
         geminiResult = flashResult;
+        logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, error: "pro_call_failed" });
       }
     }
 
     // Merge vertical edge delta signals into the envelope outcome
+    const joinWaitStartedAt = Date.now();
     const vedResult = await verticalEdgeDeltaPromise;
+    logEnvelopePhaseEnd(options?.jobId, "join_wait", Date.now() - joinWaitStartedAt);
+    const finalMergeStartedAt = Date.now();
     if (vedResult) {
       (geminiResult as EnvelopeValidatorResult).verticalEdgeDelta = vedResult;
 
@@ -436,8 +487,21 @@ Non-fail certainty guard:
       geminiResult.structuralSignals = envelopeStructuralSignals;
     }
 
+    logEnvelopePhaseEnd(options?.jobId, "final_merge", Date.now() - finalMergeStartedAt);
+    logEnvelopePhaseEnd(options?.jobId, "final_decision", 0, {
+      status: geminiResult.status,
+      issueType: geminiResult.issueType,
+    });
+
     return geminiResult;
   } catch (error: any) {
     throw new Error(`validator_error_envelope:${error?.message || String(error)}`);
+  } finally {
+    logEnvelopeEvent("ENVELOPE_VALIDATOR_END", {
+      jobId: options?.jobId || "unknown",
+      validator: "envelope",
+      phase: "validator_total",
+      durationMs: Math.max(0, Math.round(Date.now() - validatorStartedAt)),
+    });
   }
 }

@@ -10,8 +10,90 @@ const FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
 const FIXTURE_MUTATION_REGEX = /\b(add|added|addition|inserted|introduced|install|installed|installation|replace|replaced|replacement|remove|removed|removal|missing)\b/;
 const HVAC_TARGET_REGEX = /\b(hvac|air conditioner|ac unit|split unit|fixed ac unit|wall mounted split unit)\b/;
 const FIXTURE_TARGET_REGEX = /\b(pendant|chandelier|ceiling fan|recessed light|recessed lights|downlight|downlights|ceiling vent|ceiling vents|smoke detector|smoke detectors|light fixture|light fixtures)\b/;
+const LIGHTING_TARGET_REGEX = /\b(light|lights|lighting|light fixture|light fixtures|pendant|chandelier|track light|track lighting|feature light|suspended light|spot rail|rail light|ceiling fixture|ceiling mounted fixture|ceiling fan|recessed light|downlight|decorative ceiling)\b/;
 
 export type FixtureValidatorResult = ValidatorOutcome;
+
+function logFixtureEvent(event: string, payload: Record<string, unknown>): void {
+  console.log(JSON.stringify({ event, ...payload }));
+}
+
+function logFixturePhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  logFixtureEvent("FIXTURE_PHASE_END", {
+    jobId: jobId || "unknown",
+    validator: "fixture",
+    phase,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ...extra,
+  });
+}
+
+function inferFixtureRepairMetadata(reason: string, advisorySignals: string[], structuredIssues: StructuredIssue[]): NonNullable<FixtureValidatorResult["fixtureRepair"]> {
+  const tokens = splitIssueTokens(reason, advisorySignals);
+  const normalizedSignals = buildNormalizedSignals(reason, advisorySignals);
+  const joinedTokens = tokens.join("|");
+  const joinedSignals = normalizedSignals.join(" ");
+
+  const hasAdded = /(^|_)(add|added|addition|inserted|introduced|install|installed|installation)(_|$)/.test(joinedTokens)
+    || /\b(add|added|addition|inserted|introduced|install|installed|installation)\b/.test(joinedSignals);
+  const hasRemoved = /(^|_)(remove|removed|removal|missing)(_|$)/.test(joinedTokens)
+    || /\b(remove|removed|removal|missing)\b/.test(joinedSignals);
+  const hasModified = /(^|_)(replace|replaced|replacement|change|changed|modified)(_|$)/.test(joinedTokens)
+    || /\b(replace|replaced|replacement|change|changed|modified)\b/.test(joinedSignals);
+
+  const action: "added" | "removed" | "modified" | "unknown" = hasAdded
+    ? "added"
+    : hasRemoved
+      ? "removed"
+      : hasModified
+        ? "modified"
+        : "unknown";
+  const fixtureStateChange: "ADDED" | "REMOVED" | "MODIFIED" | "UNKNOWN" = action === "added"
+    ? "ADDED"
+    : action === "removed"
+      ? "REMOVED"
+      : action === "modified"
+        ? "MODIFIED"
+        : "UNKNOWN";
+
+  const structuredObject = String(structuredIssues[0]?.object || "").toLowerCase();
+  const isHvac = structuredObject === "hvac_unit"
+    || /\bhvac\b|air[\s_-]?conditioner|ac[\s_-]?unit|split[\s_-]?unit|ceiling[\s_-]?vent/.test(joinedSignals);
+  const isLighting = ["lighting_fixture", "light_fixture", "pendant_light", "chandelier", "ceiling_fan"].includes(structuredObject)
+    || LIGHTING_TARGET_REGEX.test(joinedSignals);
+  const fixtureClass: "LIGHTING" | "HVAC" | "UNKNOWN" = isHvac
+    ? "HVAC"
+    : isLighting
+      ? "LIGHTING"
+      : "UNKNOWN";
+  const supportedStateChange = fixtureStateChange === "ADDED" || fixtureStateChange === "REMOVED" || fixtureStateChange === "MODIFIED";
+
+  if ((fixtureClass === "LIGHTING" || fixtureClass === "HVAC") && supportedStateChange) {
+    const repairType: "FIXTURE_ADDED" | "FIXTURE_REMOVED" | "FIXTURE_MODIFIED" = fixtureStateChange === "ADDED"
+      ? "FIXTURE_ADDED"
+      : fixtureStateChange === "REMOVED"
+        ? "FIXTURE_REMOVED"
+        : "FIXTURE_MODIFIED";
+
+    return {
+      supported: true,
+      repairType,
+      fixtureClass,
+      fixtureStateChange,
+      action,
+      localizationMode: fixtureClass === "HVAC" ? "diff_zone_hvac" : "diff_zone_ceiling",
+      reasonTokens: tokens,
+    };
+  }
+
+  return {
+    supported: false,
+    fixtureClass,
+    fixtureStateChange,
+    action,
+    reasonTokens: tokens,
+  };
+}
 
 function buildNormalizedSignals(reason: string, advisorySignals: string[]): string[] {
   const signals = [reason, ...advisorySignals]
@@ -72,13 +154,9 @@ function buildFixtureStructuredIssues(params: {
 
   const object = /(^|_)hvac(_|$)|air_conditioner|ac_unit|split_unit/.test(joined)
     ? "hvac_unit"
-    : /(^|_)pendant(_|$)/.test(joined)
-      ? "pendant_light"
-      : /(^|_)chandelier(_|$)/.test(joined)
-        ? "chandelier"
-        : /light_fixture|downlight|recessed_light|ceiling_fan/.test(joined)
-          ? "light_fixture"
-          : "fixture";
+    : /track_light|track_lighting|feature_light|spot_rail|rail_light|pendant|chandelier|light_fixture|downlight|recessed_light|ceiling_fan/.test(joined)
+      ? "lighting_fixture"
+      : "fixture";
 
   const action = /(^|_)(add|added|addition|inserted|introduced|install|installed|installation)(_|$)/.test(joined)
     ? "added"
@@ -130,6 +208,7 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     reason,
     advisorySignals,
   });
+  const fixtureRepair = inferFixtureRepairMetadata(reason, advisorySignals, structuredIssues);
 
   console.log("[SPECIALIST_REVIEW][FIXTURE]", {
     ok: parsed.ok,
@@ -149,6 +228,7 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     advisorySignals,
     primaryStructuredIssue: structuredIssues[0],
     structuredIssues,
+    fixtureRepair,
   };
 }
 
@@ -166,22 +246,35 @@ export async function runFixtureValidator(
     };
   }
 ): Promise<FixtureValidatorResult> {
+  const validatorStartedAt = Date.now();
+  logFixtureEvent("FIXTURE_VALIDATOR_START", {
+    jobId: options?.jobId || "unknown",
+    validator: "fixture",
+    phase: "validator_total",
+    durationMs: 0,
+  });
   const ai = getGeminiClient();
+  const imageDecodeStartedAt = Date.now();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
   const jobId = options?.jobId;
+  logFixturePhaseEnd(jobId, "image_decode", Date.now() - imageDecodeStartedAt);
 
+  const materialSignalStartedAt = Date.now();
   const materialSignal = await computeMaterialSignal(before, after).catch(() => ({
     colorShift: 0,
     textureShift: 0,
     suspiciousMaterialChange: false,
   }));
+  logFixturePhaseEnd(jobId, "computeMaterialSignal", Date.now() - materialSignalStartedAt);
 
+  const openingGeometryStartedAt = Date.now();
   const openingSignal = await computeOpeningGeometrySignal(before, after).catch(() => ({
     openingAreaDelta: 0,
     aspectRatioDelta: 0,
     suspiciousOpeningGeometry: false,
   }));
+  logFixturePhaseEnd(jobId, "computeOpeningGeometrySignal", Date.now() - openingGeometryStartedAt);
 
   const localSignals = options?.localSignals ?? {
     maskedEdgeDrift: openingSignal.openingAreaDelta,
@@ -219,6 +312,7 @@ export async function runFixtureValidator(
     materialSignal: materialSignal?.suspiciousMaterialChange === true,
   });
 
+  const promptBuildStartedAt = Date.now();
   let prompt = `You are validating whether two images represent the exact same physical room architecture and fixed installed fixtures.
 
 Compare the BASELINE image and the STAGED image.
@@ -252,9 +346,9 @@ Return JSON only:
   prompt += `
 
 HARD-FAIL ELIGIBILITY RULE:
-- Only chandelier or pendant light addition/removal can independently hard-fail.
-- If you detect that case, state it explicitly in reason using wording like "pendant_light_added", "pendant_light_removed", "chandelier_added", or "chandelier_removed".
-- Other fixed fixture changes should still return ok=false when appropriate, but remain advisory/non-blocking upstream.`;
+- High-confidence fixed fixture state changes can hard-fail when evidence is clear.
+- Prefer categorical reason wording that includes fixture class and state change (examples: "lighting_fixture_added", "track_light_fixture_added", "hvac_unit_removed", "lighting_fixture_modified").
+- Keep the reason concise and specific to the fixture state change.`;
 
   if (materialSignal.suspiciousMaterialChange) {
     prompt += `
@@ -297,6 +391,7 @@ If the model has revealed or invented space behind an occlusion → hardFail = t
 
 This is NOT a stylistic check. It is a structural integrity check.`;
   }
+  logFixturePhaseEnd(jobId, "prompt_build", Date.now() - promptBuildStartedAt);
 
   const selectedModel = (occlusionRiskFinal || materialSignal.suspiciousMaterialChange)
     ? "gemini-2.5-pro"
@@ -323,6 +418,9 @@ This is NOT a stylistic check. It is a structural integrity check.`;
         responseMimeType: "application/json",
       },
     });
+    logFixturePhaseEnd(jobId, "gemini_request", Date.now() - requestStartedAt, {
+      model: selectedModel,
+    });
     logGeminiUsage({
       ctx: {
         jobId: jobId || "",
@@ -337,8 +435,19 @@ This is NOT a stylistic check. It is a structural integrity check.`;
     });
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseFixtureResult(text);
+    const parseStartedAt = Date.now();
+    const parsed = parseFixtureResult(text);
+    logFixturePhaseEnd(jobId, "result_parse", Date.now() - parseStartedAt);
+    logFixturePhaseEnd(jobId, "final_decision", 0);
+    return parsed;
   } catch (error: any) {
     throw new Error(`validator_error_fixture:${error?.message || String(error)}`);
+  } finally {
+    logFixtureEvent("FIXTURE_VALIDATOR_END", {
+      jobId: options?.jobId || "unknown",
+      validator: "fixture",
+      phase: "validator_total",
+      durationMs: Math.max(0, Math.round(Date.now() - validatorStartedAt)),
+    });
   }
 }

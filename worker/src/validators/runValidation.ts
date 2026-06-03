@@ -87,6 +87,17 @@ export type UnifiedValidationResult = {
   adjudicatedClaims?: import("./structuralSignal").AdjudicatedClaim[];
 };
 
+function logUnifiedPhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  console.log(JSON.stringify({
+    event: "UNIFIED_PHASE_END",
+    jobId: jobId || "unknown",
+    validator: "unified",
+    phase,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ...extra,
+  }));
+}
+
 export function summarizeGeminiSemantic(verdict: GeminiSemanticVerdict) {
   const category = verdict.category || "unknown";
   const reasonsList = (verdict.reasons && verdict.reasons.length ? verdict.reasons : [category]).map(String);
@@ -141,6 +152,7 @@ function inferUnifiedIssueType(params: {
   if (verdict?.violationType === "opening_change") return ISSUE_TYPES.OPENING_REMOVED;
   if (verdict?.violationType === "wall_change") return ISSUE_TYPES.WALL_CHANGED;
   if (verdict?.violationType === "camera_shift") return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
+  if (verdict?.violationType === "floor_identity_change") return ISSUE_TYPES.FLOOR_CHANGED;
   if (
     verdict?.violationType === "fixture_change" ||
     verdict?.violationType === "ceiling_fixture_change" ||
@@ -535,6 +547,8 @@ function isSoftGeometryScene(meta: {
 export async function runUnifiedValidation(
   params: UnifiedValidationParams
 ): Promise<UnifiedValidationResult> {
+  const unifiedValidatorStartedAt = Date.now();
+  const localChecksStartedAt = Date.now();
   const {
     originalPath,
     enhancedPath,
@@ -573,6 +587,7 @@ export async function runUnifiedValidation(
   let stage2AnchorDirectEvents: Array<{ source: "anchor"; confidence: number; reasonCode: string }> = [];
   let stage2LightingAnchorChanged = false;
   const disableIouDecisionSignals = stage === "2" && validationMode === "REFRESH_OR_DIRECT";
+  const skipStage1BLocalStructural = stage === "1B";
   const normalizedStagingStyle = normalizeStagingStyleToken(stagingStyle);
 
   // VALIDATOR SAFETY TIE-IN: NZ Standard gets strictest protection
@@ -787,8 +802,18 @@ export async function runUnifiedValidation(
     // We'll collect metadata as we run validators, then determine soft/strict mode
 
     // ===== 1. WINDOW VALIDATION =====
-    // Critical for real estate: windows must not be blocked or altered
-    if (stage === "1B" || stage === "2") {
+    // Stage1B window checks are intentionally disabled.
+    // Stage2 keeps strict window validation.
+    if (stage === "1B") {
+      results.windows = {
+        name: "windows",
+        passed: true,
+        score: 1,
+        message: "Window validation disabled for Stage1B",
+        details: { skipped: true, stage, reason: "stage1b_window_validator_disabled" },
+      };
+      nLog("[unified-validator] Window validation disabled for Stage1B");
+    } else if (stage === "2") {
       try {
         const windowResult = await validateWindows(
           originalPath,
@@ -829,7 +854,16 @@ export async function runUnifiedValidation(
 
     // ===== 2. WALL VALIDATION =====
     // Validates wall structure and openings
-    if (localValidatorsFull) {
+    if (skipStage1BLocalStructural) {
+      results.walls = {
+        name: "walls",
+        passed: true,
+        score: 1,
+        message: "Wall validation disabled for Stage1B",
+        details: { skipped: true, stage, reason: "stage1b_local_structural_disabled" },
+      };
+      nLog("[unified-validator] Wall validation disabled for Stage1B");
+    } else if (localValidatorsFull) {
       try {
         const wallResult = await validateWallStructure(originalPath, enhancedPath);
         const passed = wallResult.ok;
@@ -867,8 +901,19 @@ export async function runUnifiedValidation(
 
     // ===== 3. GLOBAL EDGE IoU =====
     // Overall geometry consistency check
+    const edgeMetricsStartedAt = Date.now();
     try {
-      const edgeIoU = localValidatorsFull
+      if (skipStage1BLocalStructural) {
+        results.globalEdge = {
+          name: "globalEdge",
+          passed: true,
+          score: 1,
+          message: "Global edge validation disabled for Stage1B",
+          details: { skipped: true, stage, reason: "stage1b_local_structural_disabled" },
+        };
+        nLog("[unified-validator] Global edge validation disabled for Stage1B");
+      } else {
+        const edgeIoU = localValidatorsFull
         ? (buffers
             ? runGlobalEdgeMetricsFromBuffers(
                 buffers.baseBlur,
@@ -880,33 +925,34 @@ export async function runUnifiedValidation(
             : (await runGlobalEdgeMetrics(originalPath, enhancedPath)).edgeIoU)
         : 1;
 
-      // Thresholds by stage
-      const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
-      const passed = disableIouDecisionSignals ? true : edgeIoU >= minEdgeIoU;
-      const score = disableIouDecisionSignals ? 1.0 : edgeIoU;
-      const message = disableIouDecisionSignals
-        ? `Edge IoU telemetry: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`
-        : `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`;
+        // Thresholds by stage
+        const minEdgeIoU = stage === "1A" ? 0.70 : stage === "1B" ? 0.65 : 0.60;
+        const passed = disableIouDecisionSignals ? true : edgeIoU >= minEdgeIoU;
+        const score = disableIouDecisionSignals ? 1.0 : edgeIoU;
+        const message = disableIouDecisionSignals
+          ? `Edge IoU telemetry: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`
+          : `Edge IoU: ${edgeIoU.toFixed(3)} (threshold: ${minEdgeIoU})`;
 
-      results.globalEdge = {
-        name: "globalEdge",
-        passed,
-        score,
-        message,
-        details: { edgeIoU, minEdgeIoU, skipped: !localValidatorsFull, tier: LOCAL_VALIDATOR_TIER },
-      };
-      nLog("[IOU_TELEMETRY]", {
-        stage,
-        metric: "edgeIoU",
-        value: edgeIoU,
-        threshold: minEdgeIoU,
-        decisionInfluence: disableIouDecisionSignals ? "none" : "active",
-      });
-      if (!passed && !disableIouDecisionSignals) {
-        reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
-      }
-      if (!localValidatorsFull) {
-        nLog(`[unified-validator] Global edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
+        results.globalEdge = {
+          name: "globalEdge",
+          passed,
+          score,
+          message,
+          details: { edgeIoU, minEdgeIoU, skipped: !localValidatorsFull, tier: LOCAL_VALIDATOR_TIER },
+        };
+        nLog("[IOU_TELEMETRY]", {
+          stage,
+          metric: "edgeIoU",
+          value: edgeIoU,
+          threshold: minEdgeIoU,
+          decisionInfluence: disableIouDecisionSignals ? "none" : "active",
+        });
+        if (!passed && !disableIouDecisionSignals) {
+          reasons.push(`Global edge IoU too low: ${edgeIoU.toFixed(3)} < ${minEdgeIoU}`);
+        }
+        if (!localValidatorsFull) {
+          nLog(`[unified-validator] Global edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
+        }
       }
     } catch (err) {
       if (disableIouDecisionSignals) {
@@ -929,11 +975,14 @@ export async function runUnifiedValidation(
         };
         reasons.push("Global edge validation error");
       }
+    } finally {
+      logUnifiedPhaseEnd(jobId, "edge_metrics", Date.now() - edgeMetricsStartedAt);
     }
 
     // ===== 4. STRUCTURAL IoU WITH MASK (Stage 2 only) =====
     // Focused check on architectural elements during staging
     if (stage === "2") {
+      const maskedEdgeMetricsStartedAt = Date.now();
       try {
         const baseDimTolerance = 8;
         const dimThreshold = Math.round(baseDimTolerance * 1.2);
@@ -1068,17 +1117,29 @@ export async function runUnifiedValidation(
           };
           reasons.push("Structural mask validation error");
         }
+      } finally {
+        logUnifiedPhaseEnd(jobId, "masked_edge_metrics", Date.now() - maskedEdgeMetricsStartedAt);
       }
     }
 
     // ===== 5. LINE/EDGE DETECTION (Sharp-based Hough) =====
     // Detects line shifts using Hough transform
     try {
-      const baseLineSensitivity = 0.70;
-      const lineDriftThreshold = stage === "2"
-        ? baseLineSensitivity * 0.75
-        : baseLineSensitivity;
-      const lineResult = localValidatorsFull
+      if (skipStage1BLocalStructural) {
+        results.lineEdge = {
+          name: "lineEdge",
+          passed: true,
+          score: 1,
+          message: "Line/edge validation disabled for Stage1B",
+          details: { skipped: true, stage, reason: "stage1b_local_structural_disabled" },
+        };
+        nLog("[unified-validator] Line/edge validation disabled for Stage1B");
+      } else {
+        const baseLineSensitivity = 0.70;
+        const lineDriftThreshold = stage === "2"
+          ? baseLineSensitivity * 0.75
+          : baseLineSensitivity;
+        const lineResult = localValidatorsFull
         ? await validateLineStructure({
             originalPath,
             enhancedPath,
@@ -1103,42 +1164,43 @@ export async function runUnifiedValidation(
             details: { skipped: true, tier: LOCAL_VALIDATOR_TIER },
           };
 
-      // Capture line counts for soft geometry detection
-      if (
-        lineResult.details &&
-        typeof lineResult.details === "object" &&
-        "originalEdgeCount" in lineResult.details &&
-        typeof (lineResult.details as any).originalEdgeCount === "number"
-      ) {
-        originalLineCount = (lineResult.details as any).originalEdgeCount;
-      }
-      if (
-        lineResult.details &&
-        typeof lineResult.details === "object" &&
-        "enhancedEdgeCount" in lineResult.details &&
-        typeof (lineResult.details as any).enhancedEdgeCount === "number"
-      ) {
-        enhancedLineCount = (lineResult.details as any).enhancedEdgeCount;
-      }
+        // Capture line counts for soft geometry detection
+        if (
+          lineResult.details &&
+          typeof lineResult.details === "object" &&
+          "originalEdgeCount" in lineResult.details &&
+          typeof (lineResult.details as any).originalEdgeCount === "number"
+        ) {
+          originalLineCount = (lineResult.details as any).originalEdgeCount;
+        }
+        if (
+          lineResult.details &&
+          typeof lineResult.details === "object" &&
+          "enhancedEdgeCount" in lineResult.details &&
+          typeof (lineResult.details as any).enhancedEdgeCount === "number"
+        ) {
+          enhancedLineCount = (lineResult.details as any).enhancedEdgeCount;
+        }
 
-      results.lineEdge = {
-        name: "lineEdge",
-        passed: lineResult.passed,
-        score: lineResult.score,
-        message: lineResult.message,
-        details: {
-          edgeLoss: lineResult.edgeLoss,
-          edgeShift: lineResult.edgeShift,
-          verticalDeviation: lineResult.verticalDeviation,
-          horizontalDeviation: lineResult.horizontalDeviation,
-          ...lineResult.details,
-        },
-      };
-      if (!lineResult.passed) {
-        reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
-      }
-      if (!localValidatorsFull) {
-        nLog(`[unified-validator] Line/edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
+        results.lineEdge = {
+          name: "lineEdge",
+          passed: lineResult.passed,
+          score: lineResult.score,
+          message: lineResult.message,
+          details: {
+            edgeLoss: lineResult.edgeLoss,
+            edgeShift: lineResult.edgeShift,
+            verticalDeviation: lineResult.verticalDeviation,
+            horizontalDeviation: lineResult.horizontalDeviation,
+            ...lineResult.details,
+          },
+        };
+        if (!lineResult.passed) {
+          reasons.push(`Line/edge validation failed: score ${lineResult.score.toFixed(3)}`);
+        }
+        if (!localValidatorsFull) {
+          nLog(`[unified-validator] Line/edge validation skipped (tier=${LOCAL_VALIDATOR_TIER})`);
+        }
       }
     } catch (err) {
       console.warn("[unified-validator] Line/edge validation error (fail-closed):", err);
@@ -1159,7 +1221,16 @@ export async function runUnifiedValidation(
   // ===== ANCHOR REGION VALIDATORS =====
   // Binary flag detectors for high-value structural anchors
   // ALWAYS run — these are critical evidence signals
-  if (stage === "1B" || stage === "2") {
+  if (stage === "1B") {
+    results.anchors = {
+      name: "anchors",
+      passed: true,
+      score: 1,
+      message: "Anchor validation disabled for Stage1B",
+      details: { skipped: true, stage, reason: "stage1b_local_structural_disabled" } as any,
+    };
+    nLog("[unified-validator] Anchor region validation disabled for Stage1B");
+  } else if (stage === "2") {
     try {
       nLog(`[unified-validator] Running anchor region validators...`);
       const anchorResult = await runAnchorRegionValidators({
@@ -1458,6 +1529,8 @@ export async function runUnifiedValidation(
     }
   }
 
+  logUnifiedPhaseEnd(jobId, "local_checks_total", Date.now() - localChecksStartedAt);
+
   // Drift from wall validator
   if (results.walls?.details) {
     const wallDetails = results.walls.details;
@@ -1507,6 +1580,7 @@ export async function runUnifiedValidation(
 
   let escalated = false;
   let geminiModelUsed: string | undefined;
+  const semanticStructureStartedAt = Date.now();
   if (!shouldRunGemini) {
     nLog(`[unified-validator] [Gemini] skipped (policy=${geminiPolicy}, heuristicFailed=${heuristicFailed})`);
   } else {
@@ -1514,6 +1588,7 @@ export async function runUnifiedValidation(
     try {
       const geminiEvidence = STRUCTURAL_SIGNALS_ACTIVE ? evidence : undefined;
       const geminiRiskLevel = STRUCTURAL_SIGNALS_ACTIVE ? riskLevel : undefined;
+      const promptBuildStartedAt = Date.now();
       const stage2SpecialistAdvisoriesEnabled =
         STAGE2_ENABLE_SPECIALIST_ADVISORY && stage === "2";
       const hasStructuredObservations = stage2SpecialistAdvisoriesEnabled
@@ -1560,6 +1635,10 @@ export async function runUnifiedValidation(
           });
         }
       }
+      logUnifiedPhaseEnd(jobId, "prompt_build", Date.now() - promptBuildStartedAt, {
+        advisories: specialistObservationHints.length,
+        semanticContext: specialistSemanticContext.length,
+      });
       // IMPORTANT:
       // "local" refers ONLY to heuristic validators (OpenCV/Sharp).
       // Specialist validators (Gemini-based) must NOT be treated as local.
@@ -1568,6 +1647,7 @@ export async function runUnifiedValidation(
       // IMPORTANT:
       // Stage2 specialist advisory visibility is feature-flagged and non-binding.
       // Decision logic and thresholds remain unchanged.
+      const geminiStartedAt = Date.now();
       const geminiConsensus = await runGeminiWithConsensus({
         basePath: originalPath,
         candidatePath: enhancedPath,
@@ -1580,6 +1660,10 @@ export async function runUnifiedValidation(
         specialistSemanticContext,
         structuralSignals: structuralSignals as import("./structuralSignal").StructuralSignal[] | undefined,
       }, consensusDerivedWarnings);
+      logUnifiedPhaseEnd(jobId, "gemini_semantic", Date.now() - geminiStartedAt, {
+        consensus: geminiConsensus.consensusEnabled,
+        model: geminiConsensus.finalModelUsed,
+      });
       const geminiResult = geminiConsensus.verdict;
       geminiVerdict = geminiResult;
       escalated = geminiConsensus.consensusEnabled;
@@ -1640,6 +1724,9 @@ export async function runUnifiedValidation(
       reasons.push("Gemini semantic validation unavailable");
     }
   }
+  logUnifiedPhaseEnd(jobId, "semantic_structure_validator", Date.now() - semanticStructureStartedAt, {
+    shouldRunGemini,
+  });
 
   // ===== FINAL AGGREGATE RESULTS (including Gemini) =====
   const weights: Record<string, number> = {
@@ -1651,6 +1738,7 @@ export async function runUnifiedValidation(
     anchors: 0.05,
   };
 
+  const aggregationStartedAt = Date.now();
   let totalScore = 0;
   let totalWeight = 0;
 
@@ -1662,6 +1750,9 @@ export async function runUnifiedValidation(
   }
 
   const aggregateScore = totalWeight > 0 ? totalScore / totalWeight : 1.0;
+  logUnifiedPhaseEnd(jobId, "aggregation", Date.now() - aggregationStartedAt, {
+    checks: Object.keys(results).length,
+  });
 
   const failedValidators = Object.values(results).filter(r => !r.passed && r.name !== "perceptualDiff");
   const allPassed = failedValidators.length === 0;
@@ -1797,6 +1888,7 @@ export async function runUnifiedValidation(
     }
   }
 
+  const finalDecisionStartedAt = Date.now();
   let blockSource: "local" | "gemini" | null = geminiHardFail ? "gemini" : null;
 
   // ── Step 3: Structural claim enforcement ──────────────────────────
@@ -1973,6 +2065,12 @@ export async function runUnifiedValidation(
   if (earlyExit) console.log(`[validator] early_exit=true`);
   if (escalated) console.log(`[validator] escalated=true`);
   console.log(`[validator] verdict=${finalResult.passed ? "PASS" : "FAIL"} score=${finalResult.score.toFixed(3)} jobId=${jobId ?? "unknown"}`);
+
+  logUnifiedPhaseEnd(jobId, "final_decision", Date.now() - finalDecisionStartedAt, {
+    passed: finalResult.passed,
+    hardFail: finalResult.hardFail,
+  });
+  logUnifiedPhaseEnd(jobId, "validator_total", Date.now() - unifiedValidatorStartedAt);
 
   return finalResult;
 }

@@ -405,7 +405,7 @@ Return JSON only. No text outside JSON.
   "structuralClaims": [{ "claim": "<type>", "result": "CONFIRMED"|"NOT_PRESENT"|"UNCERTAIN", "detail": "<brief>" }],
   "reasons": [string],
   "confidence": number,
-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"fixture_change"|"ceiling_fixture_change"|"plumbing_change"|"faucet_change"|"layout_only"|"other",
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"floor_identity_change"|"fixture_change"|"ceiling_fixture_change"|"plumbing_change"|"faucet_change"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }
@@ -421,7 +421,7 @@ export type GeminiSemanticVerdict = {
   openingRemoved?: boolean;
   openingRelocated?: boolean;
   openingInfilled?: boolean;
-  violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "fixture_change" | "ceiling_fixture_change" | "plumbing_change" | "faucet_change" | "layout_only" | "other";
+  violationType?: "opening_change" | "wall_change" | "camera_shift" | "built_in_moved" | "floor_identity_change" | "fixture_change" | "ceiling_fixture_change" | "plumbing_change" | "faucet_change" | "layout_only" | "other";
   builtInDetected?: boolean;
   structuralAnchorCount?: number;
   beforeOpeningCount?: number;
@@ -799,6 +799,69 @@ function hasOpeningIdentityViolationSignal(
   ];
 
   return openingIdentityTokens.some((token) => reasonText.includes(token));
+}
+
+function hasFloorIdentityStructuralSignal(reasonText: string): boolean {
+  const floorContextTokens = [
+    "floor",
+    "flooring",
+    "carpet",
+    "tile",
+    "plank",
+    "timber",
+    "laminate",
+    "vinyl",
+  ];
+  const floorIdentityTokens = [
+    "material changed",
+    "material replacement",
+    "replaced",
+    "replacement",
+    "renovation",
+    "resurfaced",
+    "retiled",
+    "recarpeted",
+    "texture changed",
+    "pattern changed",
+    "plank pattern",
+    "tile pattern",
+    "grout layout",
+    "layout changed",
+    "geometry changed",
+    "floor boundary",
+  ];
+
+  if (!floorContextTokens.some((token) => reasonText.includes(token))) return false;
+  return floorIdentityTokens.some((token) => reasonText.includes(token));
+}
+
+function isFloorAppearanceOnlySignal(reasonText: string): boolean {
+  const floorContextTokens = [
+    "floor",
+    "flooring",
+    "carpet",
+    "tile",
+    "plank",
+  ];
+  const appearanceTokens = [
+    "brightness",
+    "exposure",
+    "white balance",
+    "color temperature",
+    "color cast",
+    "saturation",
+    "shadow",
+    "shading",
+    "hue",
+    "tint",
+    "yellow",
+    "green",
+  ];
+
+  if (!floorContextTokens.some((token) => reasonText.includes(token))) return false;
+  if (!appearanceTokens.some((token) => reasonText.includes(token))) return false;
+
+  return !hasFloorIdentityStructuralSignal(reasonText);
 }
 
 export function buildFinalFixtureConfirmPrompt(input: {
@@ -1346,7 +1409,7 @@ If ANY structural drift detected:
 {
   "hardFail": true,
   "category": "structure",
-  "violationType": "wall_change" | "opening_change" | "camera_shift",
+  "violationType": "wall_change" | "opening_change" | "camera_shift" | "floor_identity_change",
   "reasons": [string],
   "confidence": number
 }
@@ -1515,9 +1578,12 @@ export async function validateStage1BStructure(
     const category = parsed.category === "structure" ? "structure" : "unknown";
     const baseHardFail = parsed.hardFail === true && category === "structure";
     const parsedViolationType =
-      parsed.violationType === "wall_change" || parsed.violationType === "opening_change" || parsed.violationType === "camera_shift"
+      parsed.violationType === "wall_change" ||
+      parsed.violationType === "opening_change" ||
+      parsed.violationType === "camera_shift" ||
+      parsed.violationType === "floor_identity_change"
         ? parsed.violationType
-        : "wall_change";
+        : "other";
 
     let openingChangeSignificant = true;
     let openingToleranceReason: "opening_minor_drift" | undefined;
@@ -2102,11 +2168,19 @@ Curtain fabric is decor.
 Rails/tracks/blind systems are structure.
 
 FLOOR COLOR/MATERIAL LOCK
-• Floor material AND color must match
-• Carpet color must match
-• No floor recoloring allowed
+• Hard fail ONLY when floor identity changes:
+  - floor material replacement
+  - texture class change
+  - plank/tile pattern change
+  - layout or geometry change
+  - regenerated or renovated flooring
+• Do NOT hard fail for floor appearance-only drift when identity is intact:
+  - brightness / exposure shifts
+  - white-balance / color-temperature shifts
+  - color cast / saturation drift
+  - shadow removal or lighting normalization
 
-Any violation → structure hardFail true
+If floor identity changed → category: structure, violationType: floor_identity_change, hardFail: true
 
 ${STAGE1B_LIGHT_DECLUTTER_FURNITURE_RULE_BLOCK}
 
@@ -2142,6 +2216,7 @@ Choose exactly one:
 - wall_change = wall added/removed/shifted
 - camera_shift = viewpoint or perspective changed
 - built_in_moved = built-in cabinetry or anchored fixture changed
+- floor_identity_change = flooring material/pattern/layout identity changed
 - layout_only = furniture/layout/staging only
 - other = none of the above
 
@@ -2155,7 +2230,7 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number,
-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"floor_identity_change"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }`;
@@ -2334,11 +2409,19 @@ Curtain fabric is decor.
 Rails/tracks/blind systems are structure.
 
 FLOOR COLOR/MATERIAL LOCK
-• Floor material AND color must match
-• Carpet color must match
-• No floor recoloring allowed
+• Hard fail ONLY when floor identity changes:
+  - floor material replacement
+  - texture class change
+  - plank/tile pattern change
+  - layout or geometry change
+  - regenerated or renovated flooring
+• Do NOT hard fail for floor appearance-only drift when identity is intact:
+  - brightness / exposure shifts
+  - white-balance / color-temperature shifts
+  - color cast / saturation drift
+  - shadow removal or lighting normalization
 
-Any violation → structure hardFail true
+If floor identity changed → category: structure, violationType: floor_identity_change, hardFail: true
 
 ${STAGE1B_STRUCTURED_RETAIN_FURNITURE_RULE_BLOCK}
 
@@ -2363,6 +2446,7 @@ Choose exactly one:
 - wall_change = wall added/removed/shifted
 - camera_shift = viewpoint or perspective changed
 - built_in_moved = built-in cabinetry or anchored fixture changed
+- floor_identity_change = flooring material/pattern/layout identity changed
 - layout_only = furniture/layout/staging only
 - other = none of the above
 
@@ -2376,7 +2460,7 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number,
-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"floor_identity_change"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }`;
@@ -2430,7 +2514,7 @@ Return JSON only:
   "category": "structure"|"opening_blocked"|"furniture_change"|"style_only"|"unknown",
   "reasons": [string],
   "confidence": number,
-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"floor_identity_change"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }
@@ -2792,7 +2876,7 @@ structuralAnchorCount = number of built-in criteria matched (0-8).
     "or 'Doorway blocked by fixed wardrobe'"
   ],
   "confidence": number,
-  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"layout_only"|"other",
+  "violationType": "opening_change"|"wall_change"|"camera_shift"|"built_in_moved"|"floor_identity_change"|"layout_only"|"other",
   "builtInDetected": boolean,
   "structuralAnchorCount": number
 }
@@ -2898,6 +2982,7 @@ export function parseGeminiSemanticText(text: string): GeminiSemanticVerdict {
       violationType === "wall_change" ||
       violationType === "camera_shift" ||
       violationType === "built_in_moved" ||
+      violationType === "floor_identity_change" ||
       violationType === "fixture_change" ||
       violationType === "ceiling_fixture_change" ||
       violationType === "plumbing_change" ||
@@ -3060,6 +3145,32 @@ export async function runGeminiSemanticValidator(opts: {
       ],
     },
   ];
+  const semanticStartedAt = Date.now();
+  const imageCount = contents.reduce((total, content) => {
+    const parts = Array.isArray((content as any)?.parts) ? (content as any).parts : [];
+    return total + parts.filter((part: any) => part?.inlineData?.data).length;
+  }, 0);
+  const emitSemanticEnd = (durationMs: number, extra: Record<string, unknown> = {}) => {
+    console.log(JSON.stringify({
+      event: "GEMINI_SEMANTIC_END",
+      jobId: opts.jobId || "unknown",
+      validator: "gemini_semantic",
+      phase: "gemini_semantic",
+      model,
+      imageCount,
+      durationMs: Math.max(0, Math.round(durationMs)),
+      ...extra,
+    }));
+  };
+  console.log(JSON.stringify({
+    event: "GEMINI_SEMANTIC_START",
+    jobId: opts.jobId || "unknown",
+    validator: "gemini_semantic",
+    phase: "gemini_semantic",
+    model,
+    imageCount,
+    durationMs: 0,
+  }));
   const stageForPostProcessing: "1A" | "1B" | "2" = opts.stage;
 
   try {
@@ -3159,6 +3270,7 @@ export async function runGeminiSemanticValidator(opts: {
 
       const ms = Date.now() - start;
       debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} stage=2 authority=gemini_raw (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
+      emitSemanticEnd(Date.now() - semanticStartedAt, { hardFail: verdict.hardFail, category: verdict.category });
       return verdict;
     }
 
@@ -3190,6 +3302,8 @@ export async function runGeminiSemanticValidator(opts: {
       "frame edge",
       "glass panel edge",
     ].some((token) => reasonText.includes(token));
+    const floorAppearanceOnlySignal = isFloorAppearanceOnlySignal(reasonText);
+    const floorIdentityStructuralSignal = hasFloorIdentityStructuralSignal(reasonText);
     const alwaysHardFail = violationType === "opening_change" ||
       violationType === "wall_change" ||
       violationType === "camera_shift" ||
@@ -3311,9 +3425,14 @@ export async function runGeminiSemanticValidator(opts: {
     if (category === "structure") {
       const builtInViolation = violationType === "built_in_moved" || builtInDetected;
       const builtInHardFail = builtInViolation && structuralAnchorCount >= 2 && parsed.confidence >= BUILTIN_HARDFAIL_CONFIDENCE;
+      const floorIdentityHardFail =
+        violationType === "floor_identity_change" &&
+        parsed.hardFail === true &&
+        floorIdentityStructuralSignal &&
+        !floorAppearanceOnlySignal;
       hardFail = stageForPostProcessing === "2"
         ? primaryStructuralViolationDetected
-        : (alwaysHardFail || builtInHardFail);
+        : (alwaysHardFail || builtInHardFail || floorIdentityHardFail);
     }
     else if (category === "opening_blocked") hardFail = parsed.hardFail;
     else if (category === "furniture_change" || category === "style_only") hardFail = false;
@@ -3384,7 +3503,11 @@ export async function runGeminiSemanticValidator(opts: {
         violationType === "wall_change" ||
         violationType === "camera_shift" ||
         violationType === "opening_change";
-      if (geometricViolation) {
+      const floorIdentityViolation =
+        violationType === "floor_identity_change" &&
+        floorIdentityStructuralSignal &&
+        !floorAppearanceOnlySignal;
+      if (geometricViolation || floorIdentityViolation) {
         hardFail = true;
         debugLog(`[STRUCTURAL_ENFORCEMENT_APPLIED] stage1b_geometric_lock=true violationType=${violationType}`);
       } else {
@@ -3396,6 +3519,8 @@ export async function runGeminiSemanticValidator(opts: {
         if (builtInLowConfidence) hardFail = false;
         // D4: boundary-adjacent furniture (Structured Retain only) → allow through
         if (structuredRetainFurnitureDowngrade) hardFail = false;
+        // D5: floor appearance-only drift is non-structural in Stage 1B
+        if (violationType === "floor_identity_change" && floorAppearanceOnlySignal) hardFail = false;
       }
     }
 
@@ -3444,9 +3569,11 @@ export async function runGeminiSemanticValidator(opts: {
 
     const ms = Date.now() - start;
     debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} risk=${opts.riskLevel || "N/A"} (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
+    emitSemanticEnd(Date.now() - semanticStartedAt, { hardFail: verdict.hardFail, category: verdict.category });
     return verdict;
   } catch (err: any) {
     console.warn("[gemini-semantic] error (fail-open):", err?.message || err);
+    emitSemanticEnd(Date.now() - semanticStartedAt, { error: err?.message || String(err) });
     return {
       hardFail: false,
       category: "unknown",

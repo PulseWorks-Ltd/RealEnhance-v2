@@ -57,6 +57,55 @@ const OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE = Number(process.env.OPENING_
 const OPENING_ADDED_CONSENSUS_MIN_IOU = Number(process.env.OPENING_ADDED_CONSENSUS_MIN_IOU || 0.2);
 const OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES = Number(process.env.OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES || 1);
 
+function logOpeningInstrumentation(event: string, payload: Record<string, unknown>): void {
+  console.log(JSON.stringify({
+    event,
+    ...payload,
+  }));
+}
+
+function logOpeningPhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
+  logOpeningInstrumentation("OPENING_PHASE_END", {
+    jobId: jobId || "unknown",
+    validator: "opening",
+    phase,
+    durationMs: Math.max(0, Math.round(durationMs)),
+    ...extra,
+  });
+}
+
+function logOpeningPhaseStart(jobId: string | undefined, phase: string, extra: Record<string, unknown> = {}): void {
+  logOpeningInstrumentation("OPENING_PHASE_START", {
+    jobId: jobId || "unknown",
+    validator: "opening",
+    phase,
+    durationMs: 0,
+    ...extra,
+  });
+}
+
+function logOpeningGeminiStart(jobId: string | undefined, model: string, promptType: string): void {
+  logOpeningInstrumentation("OPENING_GEMINI_START", {
+    jobId: jobId || "unknown",
+    validator: "opening",
+    phase: "gemini",
+    durationMs: 0,
+    model,
+    promptType,
+  });
+}
+
+function logOpeningGeminiEnd(jobId: string | undefined, model: string, promptType: string, durationMs: number): void {
+  logOpeningInstrumentation("OPENING_GEMINI_END", {
+    jobId: jobId || "unknown",
+    validator: "opening",
+    phase: "gemini",
+    model,
+    promptType,
+    durationMs: Math.max(0, Math.round(durationMs)),
+  });
+}
+
 type BaselineOpenings = {
   openings: Array<{
     id: string;
@@ -1189,30 +1238,65 @@ export async function runOpeningValidator(
     detectedBaseline?: StructuralBaseline;
   }
 ): Promise<OpeningValidatorResult> {
+  const openingValidatorStartedAt = Date.now();
+  logOpeningInstrumentation("OPENING_VALIDATOR_START", {
+    jobId: options?.jobId || "unknown",
+    validator: "opening",
+    phase: "validator_total",
+    durationMs: 0,
+  });
   if (!String(beforeImageUrl || "").trim() || !String(afterImageUrl || "").trim()) {
     throw new Error("VALIDATION_INPUT_MISSING");
   }
 
+  logOpeningPhaseStart(options?.jobId, "baseline_retrieval");
+  const baselineStartedAt = Date.now();
   const baseline = options?.baseline ?? await extractStructuralBaseline(beforeImageUrl, {
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
   });
+  logOpeningPhaseEnd(options?.jobId, "baseline_retrieval", Date.now() - baselineStartedAt, {
+    skipped: options?.baseline ? true : false,
+  });
   const baselineOpenings = extractBaselineOpenings(baseline);
   console.log("[OPENINGS_BASELINE]", baselineOpenings);
 
+  try {
   if (Array.isArray(baseline.openings) && baseline.openings.length > 0) {
+    logOpeningPhaseStart(options?.jobId, "image_load", { skipped: true });
+    logOpeningPhaseEnd(options?.jobId, "image_load", 0, { skipped: true });
+    logOpeningPhaseStart(options?.jobId, "image_decode", { skipped: true });
+    logOpeningPhaseEnd(options?.jobId, "image_decode", 0, { skipped: true });
+    logOpeningPhaseStart(options?.jobId, "image_resize", { skipped: true });
+    logOpeningPhaseEnd(options?.jobId, "image_resize", 0, { skipped: true });
+
+    logOpeningPhaseStart(options?.jobId, "opening_extraction");
+    const openingExtractionStartedAt = Date.now();
+    logOpeningGeminiStart(options?.jobId, "opening-baseline-extraction", "opening_extraction");
     const frozenCandidateGraph = options?.detectedBaseline ?? await extractStructuralBaseline(afterImageUrl, {
       jobId: options?.jobId,
       imageId: options?.imageId,
       attempt: options?.attempt,
     });
+    logOpeningGeminiEnd(options?.jobId, "opening-baseline-extraction", "opening_extraction", Date.now() - openingExtractionStartedAt);
+    logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - openingExtractionStartedAt, {
+      skipped: options?.detectedBaseline ? true : false,
+    });
+
+    logOpeningPhaseStart(options?.jobId, "structural_extraction");
+    logOpeningPhaseStart(options?.jobId, "reconciliation");
+    const reconciliationStartedAt = Date.now();
+    logOpeningGeminiStart(options?.jobId, "opening-structural-validate", "structural_extraction");
     const deterministic = await validateOpeningPreservation(baseline, afterImageUrl, {
       jobId: options?.jobId,
       imageId: options?.imageId,
       attempt: options?.attempt,
       detectedBaseline: frozenCandidateGraph,
     });
+    logOpeningGeminiEnd(options?.jobId, "opening-structural-validate", "structural_extraction", Date.now() - reconciliationStartedAt);
+    logOpeningPhaseEnd(options?.jobId, "structural_extraction", Date.now() - reconciliationStartedAt);
+    logOpeningPhaseEnd(options?.jobId, "reconciliation", Date.now() - reconciliationStartedAt);
     const relocationDetected = detectRelocation(baseline, deterministic.detectedOpenings || []);
     const detectedById = new Map((deterministic.detectedOpenings || []).map((opening) => [String(opening.id), opening]));
 
@@ -1323,6 +1407,8 @@ export async function runOpeningValidator(
     let strictDoorOcclusionFail = false;
     let strictWindowOcclusionFail = false;
 
+    logOpeningPhaseStart(options?.jobId, "geometry_comparison");
+    const geometryComparisonStartedAt = Date.now();
     for (const baseOpening of baseline.openings || []) {
       const matchedOpening =
         detectedById.get(String(baseOpening.id)) ||
@@ -1365,6 +1451,8 @@ export async function runOpeningValidator(
         }
       }
     }
+
+    logOpeningPhaseEnd(options?.jobId, "geometry_comparison", Date.now() - geometryComparisonStartedAt);
 
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
     const rawDeterministicHardFailSignal =
@@ -1516,6 +1604,8 @@ export async function runOpeningValidator(
         microCheck = null;
         return microCheck;
       }
+      const microCheckStartedAt = Date.now();
+      logOpeningGeminiStart(options?.jobId, OPENING_LIGHT_ANCHOR_MODEL, "micro_check");
       microCheck = await runOpeningLightAnchorMicroCheck(
         beforeImageUrl,
         afterImageUrl,
@@ -1523,6 +1613,7 @@ export async function runOpeningValidator(
         options?.imageId,
         options?.attempt,
       );
+      logOpeningGeminiEnd(options?.jobId, OPENING_LIGHT_ANCHOR_MODEL, "micro_check", Date.now() - microCheckStartedAt);
       return microCheck;
     };
 
@@ -1747,8 +1838,10 @@ export async function runOpeningValidator(
       structuralSignalCount: deterministic.structuralSignals?.length ?? 0,
     });
 
-    return {
-      status: hardFail ? "fail" : "pass",
+    logOpeningPhaseStart(options?.jobId, "decision_generation");
+    const decisionGenerationStartedAt = Date.now();
+    const decisionResult: OpeningValidatorResult = {
+      status: hardFail ? "fail" as const : "pass" as const,
       reason,
       confidence: comparisonResult.confidence,
       hardFail,
@@ -1765,18 +1858,32 @@ export async function runOpeningValidator(
       primaryStructuredIssue: structuredIssues[0],
       structuredIssues,
     };
+    logOpeningPhaseEnd(options?.jobId, "decision_generation", Date.now() - decisionGenerationStartedAt);
+    return decisionResult;
   }
 
+  logOpeningPhaseStart(options?.jobId, "image_load");
+  const imageLoadStartedAt = Date.now();
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
+  logOpeningPhaseEnd(options?.jobId, "image_load", Date.now() - imageLoadStartedAt);
+  logOpeningPhaseStart(options?.jobId, "image_decode");
+  logOpeningPhaseEnd(options?.jobId, "image_decode", Date.now() - imageLoadStartedAt);
+  logOpeningPhaseStart(options?.jobId, "image_resize", { skipped: true });
+  logOpeningPhaseEnd(options?.jobId, "image_resize", 0, { skipped: true });
 
+  logOpeningPhaseStart(options?.jobId, "geometry_comparison");
+  const geometrySignalStartedAt = Date.now();
   const openingSignal = await computeOpeningGeometrySignal(before, after).catch(() => ({
     openingAreaDelta: 0,
     aspectRatioDelta: 0,
     suspiciousOpeningGeometry: false,
   }));
+  logOpeningPhaseEnd(options?.jobId, "geometry_comparison", Date.now() - geometrySignalStartedAt);
 
+  logOpeningPhaseStart(options?.jobId, "decision_generation", { section: "prompt_build" });
+  const promptBuildStartedAt = Date.now();
   let prompt = `You are a structural validation system.
 
 Your task is to verify that ALL architectural openings from a baseline image are preserved in a staged image.
@@ -1853,8 +1960,12 @@ If any opening appears reduced, expanded, or reshaped:
 → set pass=false
 → set issueType="opening_altered"`;
   }
+  logOpeningPhaseEnd(options?.jobId, "decision_generation", Date.now() - promptBuildStartedAt, {
+    section: "prompt_build",
+  });
 
   const runWithModel = async (model: string): Promise<OpeningValidatorResult> => {
+    logOpeningGeminiStart(options?.jobId, model, "opening_validator");
     const requestStartedAt = Date.now();
     const response = await (ai as any).models.generateContent({
       model,
@@ -1889,21 +2000,38 @@ If any opening appears reduced, expanded, or reshaped:
       response,
       latencyMs: Date.now() - requestStartedAt,
     });
+    logOpeningGeminiEnd(options?.jobId, model, "opening_validator", Date.now() - requestStartedAt);
 
     const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return parseOpeningResult(text);
+    logOpeningPhaseStart(options?.jobId, "reconciliation", { section: "parse_input" });
+    const parseStartedAt = Date.now();
+    const parsed = parseOpeningResult(text);
+    logOpeningPhaseEnd(options?.jobId, "reconciliation", Date.now() - parseStartedAt, {
+      section: "parse_input",
+    });
+    return parsed;
   };
 
   try {
     if (openingSignal.suspiciousOpeningGeometry) {
+      logOpeningPhaseStart(options?.jobId, "structural_extraction", { promptType: "escalation_only" });
+      logOpeningPhaseStart(options?.jobId, "opening_extraction", { promptType: "escalation_only" });
+      const structuralExtractionStartedAt = Date.now();
       const result = await runWithModel(OPENING_MODEL_ESCALATION);
+      logOpeningPhaseEnd(options?.jobId, "structural_extraction", Date.now() - structuralExtractionStartedAt);
+      logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - structuralExtractionStartedAt, { promptType: "escalation_only" });
       return {
         ...attachStructuredDecision(result),
         openingRegions: [],
       };
     }
 
+    logOpeningPhaseStart(options?.jobId, "opening_extraction", { promptType: "flash" });
+    logOpeningPhaseStart(options?.jobId, "structural_extraction", { promptType: "flash" });
+    const flashStartedAt = Date.now();
     const flashResult = await runWithModel(OPENING_MODEL_PRIMARY);
+    logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - flashStartedAt, { promptType: "flash" });
+    logOpeningPhaseEnd(options?.jobId, "structural_extraction", Date.now() - flashStartedAt, { promptType: "flash" });
     /*
     Flash FAIL is trusted immediately because it normally
     indicates an obvious architectural violation.
@@ -1920,12 +2048,25 @@ If any opening appears reduced, expanded, or reshaped:
     can miss subtle geometry changes (window shrink,
     opening boundary movement, etc.)
     */
+    logOpeningPhaseStart(options?.jobId, "opening_extraction", { promptType: "pro" });
+    logOpeningPhaseStart(options?.jobId, "structural_extraction", { promptType: "pro" });
+    const proStartedAt = Date.now();
     const proResult = await runWithModel(OPENING_MODEL_ESCALATION);
+    logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - proStartedAt, { promptType: "pro" });
+    logOpeningPhaseEnd(options?.jobId, "structural_extraction", Date.now() - proStartedAt, { promptType: "pro" });
     return {
       ...attachStructuredDecision(proResult),
       openingRegions: [],
     };
   } catch (error: any) {
     throw new Error(`validator_error_opening:${error?.message || String(error)}`);
+  }
+  } finally {
+    logOpeningInstrumentation("OPENING_VALIDATOR_END", {
+      jobId: options?.jobId || "unknown",
+      validator: "opening",
+      phase: "validator_total",
+      durationMs: Math.max(0, Math.round(Date.now() - openingValidatorStartedAt)),
+    });
   }
 }
