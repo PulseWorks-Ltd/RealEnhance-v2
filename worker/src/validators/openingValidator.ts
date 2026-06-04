@@ -1239,6 +1239,7 @@ export async function runOpeningValidator(
   }
 ): Promise<OpeningValidatorResult> {
   const openingValidatorStartedAt = Date.now();
+  let finalResult: OpeningValidatorResult | null = null;
   logOpeningInstrumentation("OPENING_VALIDATOR_START", {
     jobId: options?.jobId || "unknown",
     validator: "opening",
@@ -1868,7 +1869,8 @@ export async function runOpeningValidator(
       structuredIssues,
     };
     logOpeningPhaseEnd(options?.jobId, "decision_generation", Date.now() - decisionGenerationStartedAt);
-    return decisionResult;
+    finalResult = decisionResult;
+    return finalResult;
   }
 
   logOpeningPhaseStart(options?.jobId, "image_load");
@@ -2029,10 +2031,11 @@ If any opening appears reduced, expanded, or reshaped:
       const result = await runWithModel(OPENING_MODEL_ESCALATION);
       logOpeningPhaseEnd(options?.jobId, "structural_extraction", Date.now() - structuralExtractionStartedAt);
       logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - structuralExtractionStartedAt, { promptType: "escalation_only" });
-      return {
+      finalResult = {
         ...attachStructuredDecision(result),
         openingRegions: [],
       };
+      return finalResult;
     }
 
     logOpeningPhaseStart(options?.jobId, "opening_extraction", { promptType: "flash" });
@@ -2046,10 +2049,11 @@ If any opening appears reduced, expanded, or reshaped:
     indicates an obvious architectural violation.
     */
     if (flashResult.status === "fail") {
-      return {
+      finalResult = {
         ...attachStructuredDecision(flashResult),
         openingRegions: [],
       };
+      return finalResult;
     }
 
     /*
@@ -2063,14 +2067,28 @@ If any opening appears reduced, expanded, or reshaped:
     const proResult = await runWithModel(OPENING_MODEL_ESCALATION);
     logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - proStartedAt, { promptType: "pro" });
     logOpeningPhaseEnd(options?.jobId, "structural_extraction", Date.now() - proStartedAt, { promptType: "pro" });
-    return {
+    finalResult = {
       ...attachStructuredDecision(proResult),
       openingRegions: [],
     };
+    return finalResult;
   } catch (error: any) {
     throw new Error(`validator_error_opening:${error?.message || String(error)}`);
   }
   } finally {
+    if (finalResult) {
+      logOpeningInstrumentation("OPENING_VALIDATOR_METRICS", {
+        jobId: options?.jobId || "unknown",
+        imageId: options?.imageId || "unknown",
+        validator: "opening",
+        durationMs: Math.max(0, Math.round(Date.now() - openingValidatorStartedAt)),
+        finalVerdict: finalResult.status,
+        finalIssueType: finalResult.issueType || "none",
+        finalConfidence: Number.isFinite(Number(finalResult.confidence))
+          ? Number(finalResult.confidence)
+          : 0,
+      });
+    }
     logOpeningInstrumentation("OPENING_VALIDATOR_END", {
       jobId: options?.jobId || "unknown",
       validator: "opening",

@@ -251,6 +251,9 @@ const OPENING_BASELINE_VERIFICATION_EXPERIMENT = ["1", "true", "on", "yes"].incl
 const OPENING_BASELINE_VERIFICATION_MODEL = String(
   process.env.OPENING_BASELINE_VERIFICATION_MODEL || ""
 );
+const OPENING_BASELINE_SINGLE_PASS = ["1", "true", "on", "yes"].includes(
+  String(process.env.OPENING_BASELINE_SINGLE_PASS || "").trim().toLowerCase()
+);
 
 function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
   if (!Number.isFinite(value)) return 0;
@@ -2112,6 +2115,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   imageHash: string,
   options?: BaselineExtractionOptions
 ): Promise<StructuralBaseline> {
+  const modeStartedAt = Date.now();
   const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}${imageHash}`;
   const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
@@ -2153,6 +2157,20 @@ async function stabilizeStructuralBaselineGraphConsensus(
       passCount: cached.passCount,
       openingCountVariance: cached.openingCountVariance,
       baselineMethod: "graph_consensus",
+    }));
+    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      extractionCalls: 0,
+      cacheStatus: "hit",
+    }));
+    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      baselineExtractionDurationMs: Date.now() - modeStartedAt,
+      totalGeminiCalls: 0,
     }));
     return { ...cached.graph, graphMeta };
   }
@@ -2282,6 +2300,21 @@ async function stabilizeStructuralBaselineGraphConsensus(
 
   const stabilizedGraph = { ...consensus.graph, graphMeta };
 
+  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    extractionCalls: passResults.length,
+    cacheStatus: graphMeta.cacheStatus,
+  }));
+  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    baselineExtractionDurationMs: Date.now() - modeStartedAt,
+    totalGeminiCalls: passResults.length,
+  }));
+
   if (graphStable && !options?.disableCache) {
     const cacheRecord: StructuralBaselineCacheRecord = {
       imageHash,
@@ -2308,10 +2341,25 @@ async function stabilizeStructuralBaselineWithVerification(
   imageHash: string,
   options?: BaselineExtractionOptions
 ): Promise<StructuralBaseline> {
+  const modeStartedAt = Date.now();
   const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}verify:${imageHash}`;
   const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
   if (cached?.graphStable && cached.graph) {
+    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      extractionCalls: 0,
+      cacheStatus: "hit",
+    }));
+    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      baselineExtractionDurationMs: Date.now() - modeStartedAt,
+      totalGeminiCalls: 0,
+    }));
     return {
       ...cached.graph,
       graphMeta: {
@@ -2441,6 +2489,20 @@ async function stabilizeStructuralBaselineWithVerification(
       ...primaryBaseline,
       graphMeta,
     };
+    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      extractionCalls: 2,
+      cacheStatus: graphMeta.cacheStatus,
+    }));
+    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      baselineExtractionDurationMs: Date.now() - modeStartedAt,
+      totalGeminiCalls: 2,
+    }));
     console.log("[BASELINE_VERIFICATION_ACCEPTED]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
@@ -2538,6 +2600,21 @@ async function stabilizeStructuralBaselineWithVerification(
     },
   };
 
+  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    extractionCalls: 3,
+    cacheStatus: result.graphMeta?.cacheStatus,
+  }));
+  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    baselineExtractionDurationMs: Date.now() - modeStartedAt,
+    totalGeminiCalls: 3,
+  }));
+
   console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
@@ -2554,6 +2631,84 @@ async function stabilizeStructuralBaselineWithVerification(
   return result;
 }
 
+async function stabilizeStructuralBaselineSinglePass(
+  image: { data: string; mime: string },
+  imageHash: string,
+  options?: BaselineExtractionOptions
+): Promise<StructuralBaseline> {
+  const modeStartedAt = Date.now();
+  const baseline = await extractStructuralBaselineOnce(image, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+  });
+  const graphHash = hashStructuralBaselineGraph(baseline);
+  const confirmedAt = new Date().toISOString();
+  const resolvedMode = resolveBaselineMode(options);
+
+  const singlePassBaseline: StructuralBaseline = {
+    ...baseline,
+    graphMeta: {
+      graphStable: false,
+      graphConfidence: 0.5,
+      extractionAgreement: 0.5,
+      passCount: 1,
+      openingCountVariance: 0,
+      imageHash,
+      graphHash,
+      cacheStatus: "unstable",
+      candidateGraphHashes: [graphHash],
+      openingCountRange: {
+        min: baseline.openings.length,
+        max: baseline.openings.length,
+      },
+      confirmedAt,
+      baselineMethod: resolvedMode,
+      geminiCalls: 1,
+      verification: {
+        attempted: false,
+        accepted: true,
+        modelAccepted: true,
+        additionalOpeningCount: 0,
+        missingOpeningCount: 0,
+        materiallyDifferentCount: 0,
+        notPresentCount: 0,
+        minorDifferenceCount: 0,
+        rejectedReasonCodes: [],
+        openingStatuses: [],
+        additionalOpenings: [],
+        missingOpenings: [],
+        analysis: undefined,
+      },
+    },
+  };
+
+  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "single_pass",
+    extractionCalls: 1,
+  }));
+  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    baselineMode: "single_pass",
+    extractionPass: 1,
+    graphHash,
+    openingCount: baseline.openings.length,
+  }));
+  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "single_pass",
+    baselineExtractionDurationMs: Date.now() - modeStartedAt,
+    totalGeminiCalls: 1,
+  }));
+
+  return singlePassBaseline;
+}
+
 async function stabilizeStructuralBaseline(
   imageUrl: string,
   options?: BaselineExtractionOptions
@@ -2568,6 +2723,9 @@ async function stabilizeStructuralBaseline(
     durationMs: Date.now() - materializationStartedAt,
   }));
   const imageHash = hashStructuralImage(image.data);
+  if (OPENING_BASELINE_SINGLE_PASS) {
+    return stabilizeStructuralBaselineSinglePass(image, imageHash, options);
+  }
   const mode = resolveBaselineMode(options);
   if (mode === "extraction_verification") {
     return stabilizeStructuralBaselineWithVerification(image, imageHash, options);
