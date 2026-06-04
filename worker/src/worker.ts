@@ -5140,6 +5140,61 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog("[STAGE_OUTPUT_COMMITTED]", { jobId: payload.jobId, stage, path: path.substring(path.length - 40) });
   };
 
+  const resolveStructuralBaselineForValidation = async (source: string): Promise<StructuralBaseline | null> => {
+    if (structuralBaseline) {
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: "ready",
+        openings: structuralBaseline.openings.length,
+      });
+      return structuralBaseline;
+    }
+    if (!structuralBaselinePromise) {
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: "missing",
+      });
+      return null;
+    }
+    const waitStartedAt = Date.now();
+    nLog("[OPENING_BASELINE_REUSE]", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      source,
+      baselineStatus: "waiting",
+    });
+    try {
+      const resolved = await structuralBaselinePromise;
+      if (resolved) {
+        structuralBaseline = resolved;
+        jobContext.structuralBaseline = resolved;
+      }
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: resolved ? "resolved" : "null",
+        waitMs: Date.now() - waitStartedAt,
+        openings: resolved?.openings?.length || 0,
+      });
+      return resolved || null;
+    } catch (err: any) {
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: "error",
+        waitMs: Date.now() - waitStartedAt,
+        error: err?.message || String(err),
+      });
+      return null;
+    }
+  };
+
   const recordStage2AttemptOutput = (attempt: number, localPath: string) => {
     if (!Number.isFinite(attempt) || attempt < 0) return;
     if (stage2AttemptOutputs.some((entry) => entry.localPath === localPath)) return;
@@ -6862,10 +6917,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             };
 
             const openingBlockStartedAt = Date.now();
+            const stage2OnlyBaseline = await resolveStructuralBaselineForValidation("stage2_only_retry_opening_validator");
             const opRes = await runOpeningValidator(validationBaseline, path2, {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt: stage2OnlyAttemptNo,
+              baseline: stage2OnlyBaseline || undefined,
             });
             logValidatorBlockEnd("opening", Date.now() - openingBlockStartedAt, { source: "stage2_only_retry" });
             const opHardFail = opRes?.hardFail === true;
@@ -7942,6 +7999,83 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     },
     "stage1a_start"
   );
+
+  const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
+  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent;
+  const shouldTriggerBaselineDuringStage1A = canRunParallelBaseline && !structuralBaseline && !structuralBaselinePromise;
+  const baselineTriggerReason = !stage2Requested
+    ? "stage2_not_required"
+    : !baselineApiKeyPresent
+      ? "missing_gemini_key"
+      : structuralBaseline
+        ? "already_hydrated"
+        : structuralBaselinePromise
+          ? "already_in_progress"
+          : "stage2_required_parallel_stage1a";
+  nLog("[OPENING_BASELINE_TRIGGER]", {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    stage2Required: stage2Requested,
+    baselineStarted: shouldTriggerBaselineDuringStage1A,
+    reason: baselineTriggerReason,
+  });
+
+  if (shouldTriggerBaselineDuringStage1A) {
+    const baselineStartedAt = Date.now();
+    structuralBaselinePromise = (async () => {
+      try {
+        const extractedBaseline = await withMemoryPhase(
+          "stage1a_structural_baseline",
+          { attempt: 1, startedDuringStage1A: true },
+          () => extractStructuralBaseline(canonicalPath, {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt: 1,
+          })
+        );
+        structuralBaseline = extractedBaseline;
+        jobContext.structuralBaseline = extractedBaseline;
+
+        const persistenceStartedAt = Date.now();
+        await updateJob(payload.jobId, {
+          structuralBaseline: extractedBaseline as any,
+          meta: {
+            structuralBaseline: extractedBaseline as any,
+          } as any,
+        });
+        const persistenceMs = Date.now() - persistenceStartedAt;
+        const baselineCompletedAt = Date.now();
+        const totalMs = Math.max(0, baselineCompletedAt - baselineStartedAt);
+        const extractionCalls = Number(extractedBaseline?.graphMeta?.passCount || 1);
+        const totalGeminiCalls = Number(extractedBaseline?.graphMeta?.geminiCalls || extractionCalls || 1);
+        const mode = Number(extractedBaseline?.graphMeta?.geminiCalls || 0) === 1
+          ? "single_pass"
+          : String(extractedBaseline?.graphMeta?.baselineMethod || "consensus");
+        const completedBeforeStage1AFinished = timestamps.stage1AEnd === null
+          ? true
+          : baselineCompletedAt <= Number(timestamps.stage1AEnd);
+
+        nLog("[OPENING_BASELINE_METRICS]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          mode,
+          extractionCalls,
+          totalGeminiCalls,
+          totalMs,
+          startedDuringStage1A: true,
+          completedBeforeStage1AFinished,
+          persistenceMs,
+        });
+        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length}`);
+        return extractedBaseline;
+      } catch (baselineErr: any) {
+        nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);
+        return null;
+      }
+    })();
+    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId} source=canonical startedDuringStage1A=true`);
+  }
+
   path1A = await withMemoryPhase(
     "stage1a_generation",
     {
@@ -7970,40 +8104,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   if (exteriorLightingDecision?.shouldRelight) {
     path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
-  }
-
-  if (structuralBaseline) {
-    nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=already_hydrated`);
-  } else if (process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY) {
-    structuralBaselinePromise = (async () => {
-      try {
-        const extractedBaseline = await withMemoryPhase(
-          "stage1a_structural_baseline",
-          { attempt: 1 },
-          () => extractStructuralBaseline(path1A, {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt: 1,
-          })
-        );
-        structuralBaseline = extractedBaseline;
-        jobContext.structuralBaseline = extractedBaseline;
-        await updateJob(payload.jobId, {
-          structuralBaseline: extractedBaseline as any,
-          meta: {
-            structuralBaseline: extractedBaseline as any,
-          } as any,
-        });
-        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length}`);
-        return extractedBaseline;
-      } catch (baselineErr: any) {
-        nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);
-        return null;
-      }
-    })();
-    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId}`);
-  } else {
-    nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=missing_gemini_key`);
   }
 
   try {
@@ -11824,11 +11924,12 @@ All openings must remain identical in position and size to the original image.`;
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
         const openingBlockStartedAt = Date.now();
+        const resolvedOpeningBaseline = await resolveStructuralBaselineForValidation("stage2_opening_validator");
         const opRes = await runOpeningValidator(validationBasePath, path2, {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          baseline: structuralBaseline || undefined,
+          baseline: resolvedOpeningBaseline || undefined,
         });
         logValidatorBlockEnd("opening", Date.now() - openingBlockStartedAt);
         if (Array.isArray(opRes.structuralSignals)) {

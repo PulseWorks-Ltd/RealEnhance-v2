@@ -142,6 +142,49 @@ type BaselineExtractionOptions = {
   disableCache?: boolean;
 };
 
+type BaselineExtractionTimingBreakdown = {
+  imageDownloadMs: number;
+  imageMaterializationMs: number;
+  imageResizeMs: number;
+  promptBuildMs: number;
+  geminiRequestMs: number;
+  responseReceiveMs: number;
+  jsonParseMs: number;
+  normalizationMs: number;
+  graphBuildMs: number;
+  persistenceMs: number;
+};
+
+function createBaselineTimingBreakdown(): BaselineExtractionTimingBreakdown {
+  return {
+    imageDownloadMs: 0,
+    imageMaterializationMs: 0,
+    imageResizeMs: 0,
+    promptBuildMs: 0,
+    geminiRequestMs: 0,
+    responseReceiveMs: 0,
+    jsonParseMs: 0,
+    normalizationMs: 0,
+    graphBuildMs: 0,
+    persistenceMs: 0,
+  };
+}
+
+function sumBaselineTimingBreakdown(timing: BaselineExtractionTimingBreakdown): number {
+  return (
+    timing.imageDownloadMs +
+    timing.imageMaterializationMs +
+    timing.imageResizeMs +
+    timing.promptBuildMs +
+    timing.geminiRequestMs +
+    timing.responseReceiveMs +
+    timing.jsonParseMs +
+    timing.normalizationMs +
+    timing.graphBuildMs +
+    timing.persistenceMs
+  );
+}
+
 export type OpeningValidationResult = {
   results: OpeningResult[];
   findings: OpeningDiagnosticFinding[];
@@ -426,9 +469,17 @@ function summarizeStructuralBaselineVariance(passTelemetry: StructuralBaselinePa
 
 async function materializeOpeningExtractionImage(
   imageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
 ): Promise<{ data: string; mime: string }> {
-  return toBase64(imageUrl);
+  const materializeStartedAt = Date.now();
+  const materialized = toBase64(imageUrl);
+  const elapsedMs = Date.now() - materializeStartedAt;
+  if (options?.timing) {
+    options.timing.imageDownloadMs += elapsedMs;
+    options.timing.imageMaterializationMs += 0;
+    options.timing.imageResizeMs += 0;
+  }
+  return materialized;
 }
 
 function stableSortObject(value: unknown): unknown {
@@ -1968,22 +2019,27 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
 
 async function extractStructuralBaselineOnce(
   image: { data: string; mime: string },
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
 ): Promise<StructuralBaseline> {
   const ai = getGeminiClient();
 
   const stageStartedAt = Date.now();
+  const promptBuildStartedAt = Date.now();
+  const promptParts = [
+    { text: BASELINE_SYSTEM_INSTRUCTION },
+    { text: BASELINE_USER_PROMPT },
+    { inlineData: { mimeType: image.mime, data: image.data } },
+  ];
+  if (options?.timing) {
+    options.timing.promptBuildMs += Date.now() - promptBuildStartedAt;
+  }
   const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: OPENING_VALIDATOR_MODEL,
     contents: [
       {
         role: "user",
-        parts: [
-          { text: BASELINE_SYSTEM_INSTRUCTION },
-          { text: BASELINE_USER_PROMPT },
-          { inlineData: { mimeType: image.mime, data: image.data } },
-        ],
+        parts: promptParts,
       },
     ],
     generationConfig: {
@@ -1994,6 +2050,10 @@ async function extractStructuralBaselineOnce(
       responseMimeType: "application/json",
     },
   } as any);
+  if (options?.timing) {
+    options.timing.geminiRequestMs += 0;
+    options.timing.responseReceiveMs += Date.now() - requestStartedAt;
+  }
   logGeminiUsage({
     ctx: {
       jobId: options?.jobId || "",
@@ -2007,8 +2067,16 @@ async function extractStructuralBaselineOnce(
     latencyMs: Date.now() - requestStartedAt,
   });
 
+  const parseStartedAt = Date.now();
   const parsed = parseJsonResponse(response);
+  if (options?.timing) {
+    options.timing.jsonParseMs += Date.now() - parseStartedAt;
+  }
+  const normalizationStartedAt = Date.now();
   const baseline = validateStructuralBaseline(parsed);
+  if (options?.timing) {
+    options.timing.normalizationMs += Date.now() - normalizationStartedAt;
+  }
   console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
@@ -2045,9 +2113,10 @@ async function extractStructuralBaselineOnce(
 async function verifyStructuralBaselineOnce(
   image: { data: string; mime: string },
   baseline: StructuralBaseline,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
 ): Promise<BaselineVerificationResult> {
   const ai = getGeminiClient();
+  const promptBuildStartedAt = Date.now();
   const verificationPayload = {
     wallCount: baseline.wallCount,
     openings: baseline.openings.map((opening) => ({
@@ -2060,6 +2129,9 @@ async function verifyStructuralBaselineOnce(
       confidence: roundDeterministic(opening.confidence, 3),
     })),
   };
+  if (options?.timing) {
+    options.timing.promptBuildMs += Date.now() - promptBuildStartedAt;
+  }
 
   const stageStartedAt = Date.now();
   const requestStartedAt = Date.now();
@@ -2084,6 +2156,10 @@ async function verifyStructuralBaselineOnce(
       responseMimeType: "application/json",
     },
   } as any);
+  if (options?.timing) {
+    options.timing.geminiRequestMs += 0;
+    options.timing.responseReceiveMs += Date.now() - requestStartedAt;
+  }
 
   logGeminiUsage({
     ctx: {
@@ -2098,8 +2174,16 @@ async function verifyStructuralBaselineOnce(
     latencyMs: Date.now() - requestStartedAt,
   });
 
+  const parseStartedAt = Date.now();
   const parsed = parseJsonResponse(response);
+  if (options?.timing) {
+    options.timing.jsonParseMs += Date.now() - parseStartedAt;
+  }
+  const normalizationStartedAt = Date.now();
   const verification = validateBaselineVerificationResult(parsed, baseline);
+  if (options?.timing) {
+    options.timing.normalizationMs += Date.now() - normalizationStartedAt;
+  }
   console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
@@ -2113,9 +2197,11 @@ async function verifyStructuralBaselineOnce(
 async function stabilizeStructuralBaselineGraphConsensus(
   image: { data: string; mime: string },
   imageHash: string,
-  options?: BaselineExtractionOptions
+  options?: BaselineExtractionOptions,
+  timingInput?: BaselineExtractionTimingBreakdown
 ): Promise<StructuralBaseline> {
   const modeStartedAt = Date.now();
+  const timing = timingInput || createBaselineTimingBreakdown();
   const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}${imageHash}`;
   const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
@@ -2172,6 +2258,22 @@ async function stabilizeStructuralBaselineGraphConsensus(
       baselineExtractionDurationMs: Date.now() - modeStartedAt,
       totalGeminiCalls: 0,
     }));
+    const totalMs = sumBaselineTimingBreakdown(timing);
+    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageDownloadMs: timing.imageDownloadMs,
+      imageMaterializationMs: timing.imageMaterializationMs,
+      imageResizeMs: timing.imageResizeMs,
+      promptBuildMs: timing.promptBuildMs,
+      geminiRequestMs: timing.geminiRequestMs,
+      responseReceiveMs: timing.responseReceiveMs,
+      jsonParseMs: timing.jsonParseMs,
+      normalizationMs: timing.normalizationMs,
+      graphBuildMs: timing.graphBuildMs,
+      persistenceMs: timing.persistenceMs,
+      totalMs,
+    }));
     return { ...cached.graph, graphMeta };
   }
 
@@ -2187,8 +2289,11 @@ async function stabilizeStructuralBaselineGraphConsensus(
         jobId: options?.jobId,
         imageId: options?.imageId,
         attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + passIndex : passIndex + 1,
+        timing,
       });
+      const hashStartedAt = Date.now();
       const graphHash = hashStructuralBaselineGraph(baseline);
+      timing.graphBuildMs += Date.now() - hashStartedAt;
       passResults.push(baseline);
       passHashes.push(graphHash);
       console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
@@ -2215,6 +2320,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
     throw lastError instanceof Error ? lastError : new Error("STRUCTURAL_BASELINE_EXTRACTION_FAILED");
   }
 
+  const graphBuildStartedAt = Date.now();
   const histogram = new Map<string, { count: number; graph: StructuralBaseline }>();
   passResults.forEach((baseline, index) => {
     const hash = passHashes[index];
@@ -2270,6 +2376,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   const varianceSummary = summarizeStructuralBaselineVariance(
     passResults.map((baseline, index) => buildStructuralBaselinePassTelemetry(index + 1, passHashes[index], baseline))
   );
+  timing.graphBuildMs += Date.now() - graphBuildStartedAt;
 
   console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
     jobId: options?.jobId,
@@ -2316,6 +2423,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   }));
 
   if (graphStable && !options?.disableCache) {
+    const persistenceStartedAt = Date.now();
     const cacheRecord: StructuralBaselineCacheRecord = {
       imageHash,
       graphHash,
@@ -2331,7 +2439,25 @@ async function stabilizeStructuralBaselineGraphConsensus(
       updatedAt: confirmedAt,
     };
     await setRedisJson(cacheKey, cacheRecord);
+    timing.persistenceMs += Date.now() - persistenceStartedAt;
   }
+
+  const totalMs = sumBaselineTimingBreakdown(timing);
+  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageDownloadMs: timing.imageDownloadMs,
+    imageMaterializationMs: timing.imageMaterializationMs,
+    imageResizeMs: timing.imageResizeMs,
+    promptBuildMs: timing.promptBuildMs,
+    geminiRequestMs: timing.geminiRequestMs,
+    responseReceiveMs: timing.responseReceiveMs,
+    jsonParseMs: timing.jsonParseMs,
+    normalizationMs: timing.normalizationMs,
+    graphBuildMs: timing.graphBuildMs,
+    persistenceMs: timing.persistenceMs,
+    totalMs,
+  }));
 
   return stabilizedGraph;
 }
@@ -2339,9 +2465,11 @@ async function stabilizeStructuralBaselineGraphConsensus(
 async function stabilizeStructuralBaselineWithVerification(
   image: { data: string; mime: string },
   imageHash: string,
-  options?: BaselineExtractionOptions
+  options?: BaselineExtractionOptions,
+  timingInput?: BaselineExtractionTimingBreakdown
 ): Promise<StructuralBaseline> {
   const modeStartedAt = Date.now();
+  const timing = timingInput || createBaselineTimingBreakdown();
   const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}verify:${imageHash}`;
   const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
@@ -2359,6 +2487,22 @@ async function stabilizeStructuralBaselineWithVerification(
       mode: "consensus",
       baselineExtractionDurationMs: Date.now() - modeStartedAt,
       totalGeminiCalls: 0,
+    }));
+    const totalMs = sumBaselineTimingBreakdown(timing);
+    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageDownloadMs: timing.imageDownloadMs,
+      imageMaterializationMs: timing.imageMaterializationMs,
+      imageResizeMs: timing.imageResizeMs,
+      promptBuildMs: timing.promptBuildMs,
+      geminiRequestMs: timing.geminiRequestMs,
+      responseReceiveMs: timing.responseReceiveMs,
+      jsonParseMs: timing.jsonParseMs,
+      normalizationMs: timing.normalizationMs,
+      graphBuildMs: timing.graphBuildMs,
+      persistenceMs: timing.persistenceMs,
+      totalMs,
     }));
     return {
       ...cached.graph,
@@ -2384,8 +2528,11 @@ async function stabilizeStructuralBaselineWithVerification(
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    timing,
   });
+  const primaryHashStartedAt = Date.now();
   const primaryHash = hashStructuralBaselineGraph(primaryBaseline);
+  timing.graphBuildMs += Date.now() - primaryHashStartedAt;
   console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
@@ -2400,6 +2547,7 @@ async function stabilizeStructuralBaselineWithVerification(
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + 1 : 2,
+    timing,
   });
 
   const materiallyDifferentCount = verification.openings.filter((entry) => entry.status === "materially_different").length;
@@ -2514,6 +2662,7 @@ async function stabilizeStructuralBaselineWithVerification(
     }));
 
     if (!options?.disableCache) {
+      const persistenceStartedAt = Date.now();
       const cacheRecord: StructuralBaselineCacheRecord = {
         imageHash,
         graphHash,
@@ -2529,7 +2678,25 @@ async function stabilizeStructuralBaselineWithVerification(
         updatedAt: confirmedAt,
       };
       await setRedisJson(cacheKey, cacheRecord);
+      timing.persistenceMs += Date.now() - persistenceStartedAt;
     }
+
+    const totalMs = sumBaselineTimingBreakdown(timing);
+    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageDownloadMs: timing.imageDownloadMs,
+      imageMaterializationMs: timing.imageMaterializationMs,
+      imageResizeMs: timing.imageResizeMs,
+      promptBuildMs: timing.promptBuildMs,
+      geminiRequestMs: timing.geminiRequestMs,
+      responseReceiveMs: timing.responseReceiveMs,
+      jsonParseMs: timing.jsonParseMs,
+      normalizationMs: timing.normalizationMs,
+      graphBuildMs: timing.graphBuildMs,
+      persistenceMs: timing.persistenceMs,
+      totalMs,
+    }));
 
     return acceptedBaseline;
   }
@@ -2546,8 +2713,11 @@ async function stabilizeStructuralBaselineWithVerification(
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + 2 : 3,
+    timing,
   });
+  const fallbackHashStartedAt = Date.now();
   const fallbackHash = hashStructuralBaselineGraph(fallbackBaseline);
+  timing.graphBuildMs += Date.now() - fallbackHashStartedAt;
 
   const primaryInventory = openingInventorySignature(primaryBaseline);
   const fallbackInventory = openingInventorySignature(fallbackBaseline);
@@ -2556,7 +2726,9 @@ async function stabilizeStructuralBaselineWithVerification(
   const canonical = inventoryAgreement
     ? primaryBaseline
     : mergeCanonicalBaselineFromFallback(primaryBaseline, fallbackBaseline);
+  const canonicalHashStartedAt = Date.now();
   const canonicalHash = hashStructuralBaselineGraph(canonical);
+  timing.graphBuildMs += Date.now() - canonicalHashStartedAt;
   const { min, max, variance } = openingCountVariance([primaryBaseline, fallbackBaseline]);
   const confirmedAt = new Date().toISOString();
 
@@ -2614,6 +2786,22 @@ async function stabilizeStructuralBaselineWithVerification(
     baselineExtractionDurationMs: Date.now() - modeStartedAt,
     totalGeminiCalls: 3,
   }));
+  const totalMs = sumBaselineTimingBreakdown(timing);
+  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageDownloadMs: timing.imageDownloadMs,
+    imageMaterializationMs: timing.imageMaterializationMs,
+    imageResizeMs: timing.imageResizeMs,
+    promptBuildMs: timing.promptBuildMs,
+    geminiRequestMs: timing.geminiRequestMs,
+    responseReceiveMs: timing.responseReceiveMs,
+    jsonParseMs: timing.jsonParseMs,
+    normalizationMs: timing.normalizationMs,
+    graphBuildMs: timing.graphBuildMs,
+    persistenceMs: timing.persistenceMs,
+    totalMs,
+  }));
 
   console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
@@ -2634,15 +2822,20 @@ async function stabilizeStructuralBaselineWithVerification(
 async function stabilizeStructuralBaselineSinglePass(
   image: { data: string; mime: string },
   imageHash: string,
-  options?: BaselineExtractionOptions
+  options?: BaselineExtractionOptions,
+  timingInput?: BaselineExtractionTimingBreakdown
 ): Promise<StructuralBaseline> {
   const modeStartedAt = Date.now();
+  const timing = timingInput || createBaselineTimingBreakdown();
   const baseline = await extractStructuralBaselineOnce(image, {
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    timing,
   });
+  const graphBuildStartedAt = Date.now();
   const graphHash = hashStructuralBaselineGraph(baseline);
+  timing.graphBuildMs += Date.now() - graphBuildStartedAt;
   const confirmedAt = new Date().toISOString();
   const resolvedMode = resolveBaselineMode(options);
 
@@ -2705,6 +2898,22 @@ async function stabilizeStructuralBaselineSinglePass(
     baselineExtractionDurationMs: Date.now() - modeStartedAt,
     totalGeminiCalls: 1,
   }));
+  const totalMs = sumBaselineTimingBreakdown(timing);
+  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageDownloadMs: timing.imageDownloadMs,
+    imageMaterializationMs: timing.imageMaterializationMs,
+    imageResizeMs: timing.imageResizeMs,
+    promptBuildMs: timing.promptBuildMs,
+    geminiRequestMs: timing.geminiRequestMs,
+    responseReceiveMs: timing.responseReceiveMs,
+    jsonParseMs: timing.jsonParseMs,
+    normalizationMs: timing.normalizationMs,
+    graphBuildMs: timing.graphBuildMs,
+    persistenceMs: timing.persistenceMs,
+    totalMs,
+  }));
 
   return singlePassBaseline;
 }
@@ -2713,8 +2922,12 @@ async function stabilizeStructuralBaseline(
   imageUrl: string,
   options?: BaselineExtractionOptions
 ): Promise<StructuralBaseline> {
+  const timing = createBaselineTimingBreakdown();
   const materializationStartedAt = Date.now();
-  const image = await materializeOpeningExtractionImage(imageUrl, options);
+  const image = await materializeOpeningExtractionImage(imageUrl, {
+    ...options,
+    timing,
+  });
   console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
@@ -2724,13 +2937,13 @@ async function stabilizeStructuralBaseline(
   }));
   const imageHash = hashStructuralImage(image.data);
   if (OPENING_BASELINE_SINGLE_PASS) {
-    return stabilizeStructuralBaselineSinglePass(image, imageHash, options);
+    return stabilizeStructuralBaselineSinglePass(image, imageHash, options, timing);
   }
   const mode = resolveBaselineMode(options);
   if (mode === "extraction_verification") {
-    return stabilizeStructuralBaselineWithVerification(image, imageHash, options);
+    return stabilizeStructuralBaselineWithVerification(image, imageHash, options, timing);
   }
-  return stabilizeStructuralBaselineGraphConsensus(image, imageHash, options);
+  return stabilizeStructuralBaselineGraphConsensus(image, imageHash, options, timing);
 }
 
 export async function extractStructuralBaseline(
