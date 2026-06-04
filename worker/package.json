@@ -19,6 +19,9 @@
     "test:opening-regression-fixtures:live:telemetry": "tsx src/scripts/run-opening-regression-fixtures.ts --mode live --report-divergence",
     "test:opening-regression-fixtures:live:enforce": "tsx src/scripts/run-opening-regression-fixtures.ts --mode live --report-divergence --enforce-live",
     "test:opening-regression-fixtures:live:update": "tsx src/scripts/run-opening-regression-fixtures.ts --mode live --update-snapshots",
+    "benchmark:opening-baseline-architecture": "tsx src/scripts/run-opening-baseline-architecture-benchmark.ts --mode both --runs 20",
+    "benchmark:opening-baseline-architecture:graph": "tsx src/scripts/run-opening-baseline-architecture-benchmark.ts --mode graph_consensus --runs 20",
+    "benchmark:opening-baseline-architecture:verify": "tsx src/scripts/run-opening-baseline-architecture-benchmark.ts --mode extraction_verification --runs 20",
     "test:publish": "tsx src/scripts/test-publish.ts"
   },
   "dependencies": {

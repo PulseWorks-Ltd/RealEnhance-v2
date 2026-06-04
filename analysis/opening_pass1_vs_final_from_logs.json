@@ -1,0 +1,785 @@
+{
+  "summary": {
+    "totalBaselineSessions": 47,
+    "sessionsWithPass1AndFinal": 34,
+    "pass1EqualsFinalGraph": 10,
+    "pass1DiffersFromFinalGraph": 24,
+    "avgExtractionPasses": 2.404255319148936,
+    "sessionsWithLinkedOpeningValidatorOutcome": 28,
+    "finalBaselineOpeningValidatorPass": 21,
+    "finalBaselineOpeningValidatorFail": 7
+  },
+  "sessions": [
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3376,
+      "jobId": "job_8f9de2f1-addc-45c2-9f79-1ef169760aab",
+      "imageId": "img_c619d936-1028-43d0-8461-4c877327f939",
+      "imageHash": "36f9815dd9a07faced08bd447d68bfbf7875c3f1080b634730dbdc0f2092b19e",
+      "passCount": 3,
+      "finalGraph": "55bfab607cf050496216686fc0737be9a0372a7a60971968fc14a75dc1804090",
+      "candidateGraphHashes": [
+        "55bfab607cf050496216686fc0737be9a0372a7a60971968fc14a75dc1804090",
+        "cc007bbcdb2ec8a02bba516a7145a369d3944c127331c231a70e953db293fbbe",
+        "7f999c2067cfff1cc9156a3141fb9a1eba706cf86d0e330fb37890712b88cc99"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3380,
+      "jobId": "job_3b0821b7-2b64-493d-987f-69666e214bbc",
+      "imageId": "img_52fca29f-a163-44a8-8cec-6e3f624aa28a",
+      "imageHash": "f7ea5fde528eb3bd0bd473ea94c10ea9fcdc023ecbb823db619865dc8d7d151f",
+      "passCount": 3,
+      "finalGraph": "acfdda0c15a4521ba279d99fe0bb43bfc17083822faf0803009732a72a7f3841",
+      "candidateGraphHashes": [
+        "acfdda0c15a4521ba279d99fe0bb43bfc17083822faf0803009732a72a7f3841",
+        "ba7af8fe9c09dc581ce4fa4e65e55d38dcf08b210ad8f9c89a34f4e2c290ecd1",
+        "ad449a6761531f37f57fafb63c2b65434f5a1c35ce2673664b385b5204d04f6a"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3384,
+      "jobId": "job_9ccb639a-7f91-452e-911d-6416055472bf",
+      "imageId": "img_8d0c4e0c-8e34-4279-9053-a3d230672fb3",
+      "imageHash": "f89f4f9758994ea5fbacd85cf0f0e646f7cd9993265c68714c91e7d15d208557",
+      "passCount": 3,
+      "finalGraph": "4d46f9aafcdb18fefdaa40edb350c5eed5bcacb80ce938e87e9ef3c6d727a6c2",
+      "candidateGraphHashes": [
+        "4d46f9aafcdb18fefdaa40edb350c5eed5bcacb80ce938e87e9ef3c6d727a6c2",
+        "63759d4ccb95c5fdf40b5d28a19bfcc86b8bc7f25c14611477d1439fac32f33a",
+        "66326c83eef2fb13f580cc0717972cced9ffd20f13547322a2dc93b885e0677e"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": true,
+      "validatorLine": 3620
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3391,
+      "jobId": "job_9ccb639a-7f91-452e-911d-6416055472bf",
+      "imageId": "img_8d0c4e0c-8e34-4279-9053-a3d230672fb3",
+      "imageHash": "f89f4f9758994ea5fbacd85cf0f0e646f7cd9993265c68714c91e7d15d208557",
+      "passCount": 3,
+      "finalGraph": "713a506088296a6d0ecea85f88b5c50a10efe21052a5527986da6b49d2594c1b",
+      "candidateGraphHashes": [
+        "713a506088296a6d0ecea85f88b5c50a10efe21052a5527986da6b49d2594c1b",
+        "4249bbff8ce741b4ff6ee4fc5b2af663c14a67af065b2fa7728f72a54ffc7a80",
+        "a4f6833b35b9090a0d2f4ba4333b0b93d34ae9d7fde989162e53aba264222ec0"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": true,
+      "validatorLine": 3620
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3419,
+      "jobId": "job_3b0821b7-2b64-493d-987f-69666e214bbc",
+      "imageId": "img_52fca29f-a163-44a8-8cec-6e3f624aa28a",
+      "imageHash": "f7ea5fde528eb3bd0bd473ea94c10ea9fcdc023ecbb823db619865dc8d7d151f",
+      "passCount": 3,
+      "finalGraph": "7f8911e0502336e7b144091457fdf4454e71dc204741e526ace3f2ca1639539d",
+      "candidateGraphHashes": [
+        "7f8911e0502336e7b144091457fdf4454e71dc204741e526ace3f2ca1639539d",
+        "64e5ef7cad9424fd7e04906c9770fa3fe7bf76eaa4350fc81e9e801dee5a925b",
+        "f583504a8afdb88942fc9adec9111758a2c542bd8064f3da8c458e3b80f6ca6c"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3432,
+      "jobId": "job_87f04af2-d3ac-4ef1-be31-167ee5df9579",
+      "imageId": "img_e35f9a18-e534-43de-97cf-13cd06cf35de",
+      "imageHash": "1a2aaa70c3904dba28a9710031b1bd7753252d608d9acf818e676b07cce6c70c",
+      "passCount": 3,
+      "finalGraph": "c4e93c154668b8d1e62ad0decf2efbc72a9e68bdb2804da261994e38ca494107",
+      "candidateGraphHashes": [
+        "c4e93c154668b8d1e62ad0decf2efbc72a9e68bdb2804da261994e38ca494107",
+        "1ef80bb044161581deeac222d982ee0332d640dc4137695a9e4355c174ffb8a3",
+        "3374aa83e63a3df3b533ef06eb0b3905852157df1267a56fe53d334bd779ac62"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": true,
+      "validatorLine": 4960
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3438,
+      "jobId": "job_87f04af2-d3ac-4ef1-be31-167ee5df9579",
+      "imageId": "img_e35f9a18-e534-43de-97cf-13cd06cf35de",
+      "imageHash": "1a2aaa70c3904dba28a9710031b1bd7753252d608d9acf818e676b07cce6c70c",
+      "passCount": 3,
+      "finalGraph": "e7ea35d100ecb1d344ab0327ca01111c7cf689847f768a34eec2f44976e7a230",
+      "candidateGraphHashes": [
+        "e7ea35d100ecb1d344ab0327ca01111c7cf689847f768a34eec2f44976e7a230",
+        "759f77a01f5b1a8d8659f7540369ea0f35d1d72a826e4e3004c87d78582184c4",
+        "32cbbe6089a8da098b4a8955f125fd0979d66df8d63b6221505b15e0a849b9d8"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": true,
+      "validatorLine": 4960
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3477,
+      "jobId": "job_8f9de2f1-addc-45c2-9f79-1ef169760aab",
+      "imageId": "img_c619d936-1028-43d0-8461-4c877327f939",
+      "imageHash": "36f9815dd9a07faced08bd447d68bfbf7875c3f1080b634730dbdc0f2092b19e",
+      "passCount": 3,
+      "finalGraph": "b7b07289cf4d4f6d949678e0d9cac0cbb0a9134430a4be0346a4b9d17a3a6be5",
+      "candidateGraphHashes": [
+        "b7b07289cf4d4f6d949678e0d9cac0cbb0a9134430a4be0346a4b9d17a3a6be5",
+        "42a442cccf93618b769898c042ad510faed93530821f36a35ad4e42370bedf29",
+        "aa46d72cf925f8f1e5037cc0afe1a0502ce8a0e28097e2490f83965bf7b0a2d4"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3515,
+      "jobId": "job_3b0821b7-2b64-493d-987f-69666e214bbc",
+      "imageId": "img_52fca29f-a163-44a8-8cec-6e3f624aa28a",
+      "imageHash": "784657db92cf90ca7772c19f040452758035726ff3d288fefc21ff27c11a3f69",
+      "passCount": 3,
+      "finalGraph": "97e41f99f89aa83cec97585f8b4902d4da34782ec568d16813e6d0700c1f9516",
+      "candidateGraphHashes": [
+        "97e41f99f89aa83cec97585f8b4902d4da34782ec568d16813e6d0700c1f9516",
+        "288a7ba398e9db2f987820d14e569247f63bdfb9e951ec43e41a5ebf7340f47c",
+        "6d9ad61cbff92ece764b556e54a1d58e362184adb19a4ff504df01cff3be86e6"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 3520,
+      "jobId": "job_9ccb639a-7f91-452e-911d-6416055472bf",
+      "imageId": "img_8d0c4e0c-8e34-4279-9053-a3d230672fb3",
+      "imageHash": "9c9af8e3c1ad0a76db30af74a526dcdc9a452bfafd5ae5e5961d9b2fc04ca4e3",
+      "passCount": 3,
+      "finalGraph": "b81fc8aa422f0e3bcc4775c68dfdc84bbc66c50f82471c34e0b468a740f4d160",
+      "candidateGraphHashes": [
+        "b81fc8aa422f0e3bcc4775c68dfdc84bbc66c50f82471c34e0b468a740f4d160",
+        "b1bf5d84632b0cf53d61a8d5d310d1baa860e85f5ee21e27aa69234cd684634f",
+        "557ee97ec56c62324b521442ea0231abbda4e8385304da8ead1fb25ec9834d9e"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": true,
+      "validatorLine": 3620
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 4553,
+      "jobId": "job_8f9de2f1-addc-45c2-9f79-1ef169760aab",
+      "imageId": "img_c619d936-1028-43d0-8461-4c877327f939",
+      "imageHash": "0021e339537af723ca0f87b671b127e098506a0847e45e39ead42cb19264c37f",
+      "passCount": 3,
+      "finalGraph": "93e3530a30e4377b5ac8def4cc00f9d41e74fdb24090251ca55ab99adb1bbac0",
+      "candidateGraphHashes": [
+        "93e3530a30e4377b5ac8def4cc00f9d41e74fdb24090251ca55ab99adb1bbac0",
+        "38b1f07df0eff7bcd9d36c6ec5cc31b43a75224ec9043d28d577af7ec9909da0",
+        "4a187fc902a87e655bad190c57739b08aabc0f891767afcae7a533b75e8d3bfd"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 4816,
+      "jobId": "job_87f04af2-d3ac-4ef1-be31-167ee5df9579",
+      "imageId": "img_e35f9a18-e534-43de-97cf-13cd06cf35de",
+      "imageHash": "1cb4ef219c9a3df2f7490abdafcef2cae648302500ced0000f7fd79562a719d6",
+      "passCount": 3,
+      "finalGraph": "aeb8f0a2ea8bb3226af7b1af44b9899028d158cd7d2dc1fe263bbc9425bdd324",
+      "candidateGraphHashes": [
+        "aeb8f0a2ea8bb3226af7b1af44b9899028d158cd7d2dc1fe263bbc9425bdd324",
+        "26d255bc41ddd2b5fdf32488a546c2f5ae59fa8a57f9c5be9199f1b33e322c9a",
+        "53c7b44bd3928396fe19f6b06de89c1673274dcc696814765ed415a6a00a1730"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": true,
+      "validatorLine": 4960
+    },
+    {
+      "file": "logs.1779868236323.log",
+      "line": 6875,
+      "jobId": "job_9ccb639a-7f91-452e-911d-6416055472bf",
+      "imageId": "img_8d0c4e0c-8e34-4279-9053-a3d230672fb3",
+      "imageHash": "ab08c5243621d78f16e4d45ed5a911185ab7ef31e560918eba6b3a2495aef103",
+      "passCount": 3,
+      "finalGraph": "65987e2f6259a85c79a696f4d3cddd7b1f4016d124a952060362663a1d3dab26",
+      "candidateGraphHashes": [
+        "65987e2f6259a85c79a696f4d3cddd7b1f4016d124a952060362663a1d3dab26",
+        "b8f791dc749d034eb0a239995497ad7d3bcb43e636ab4affe6d4ac9961796692",
+        "4bfdc3328b2ad2c45bff0e0142217eab74fde9d333a839e1942d4d31a21136ce"
+      ],
+      "pass1Graph": null,
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779880406107.log",
+      "line": 2171,
+      "jobId": "job_e12f0bb3-47a9-40a4-ac62-ef9045fa06c2",
+      "imageId": "img_fdd7aa7d-ab55-4191-b098-0f2a192aa44c",
+      "imageHash": "23407d4e3243fa6074bc21b798f58f919ce4f79694bfd025a322ef06d62bfff1",
+      "passCount": 3,
+      "finalGraph": "625f9d5a7782ea50213fe192b207f2fc2cc4ab1e8bb8a3f081cc59713e62e597",
+      "candidateGraphHashes": [
+        "625f9d5a7782ea50213fe192b207f2fc2cc4ab1e8bb8a3f081cc59713e62e597",
+        "72b216c41ed6357b083118ae3de098fcee0b16345b0aeaa0afc1bd07d055a423",
+        "a6e488020bac652d7c4e5eeca1ae2ff562b6a7437c79978f16c9ef3219ca20db"
+      ],
+      "pass1Graph": "625f9d5a7782ea50213fe192b207f2fc2cc4ab1e8bb8a3f081cc59713e62e597",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779880406107.log",
+      "line": 2207,
+      "jobId": "job_ca61004e-0955-41f4-944b-375c979f5ee2",
+      "imageId": "img_cbd288a8-9d38-402b-8696-0c6dc2905cf2",
+      "imageHash": "44940eedc0390dd01a51dfc59495567e182dee71ef347914be799a15868ea5da",
+      "passCount": 3,
+      "finalGraph": "3a6a506662ce928b44d8946647e4520ad3185faaa62c78d8442a4dad9a38bc1b",
+      "candidateGraphHashes": [
+        "3a6a506662ce928b44d8946647e4520ad3185faaa62c78d8442a4dad9a38bc1b",
+        "535ab45e02091726b60b384c0d62ed63bcbc7a8b30c45ed44312988007c2547d",
+        "bff3955d721cedfc3f006cb3238328b5a24ef634ae60918090e0ca60ba865efc"
+      ],
+      "pass1Graph": "bff3955d721cedfc3f006cb3238328b5a24ef634ae60918090e0ca60ba865efc",
+      "openingValidatorPassed": true,
+      "validatorLine": 2969
+    },
+    {
+      "file": "logs.1779880406107.log",
+      "line": 2252,
+      "jobId": "job_e12f0bb3-47a9-40a4-ac62-ef9045fa06c2",
+      "imageId": "img_fdd7aa7d-ab55-4191-b098-0f2a192aa44c",
+      "imageHash": "23407d4e3243fa6074bc21b798f58f919ce4f79694bfd025a322ef06d62bfff1",
+      "passCount": 3,
+      "finalGraph": "2ae713bae0ce350da1b6b2390b1a15b5b4a616050f8509f0a73e12aac64f0815",
+      "candidateGraphHashes": [
+        "2ae713bae0ce350da1b6b2390b1a15b5b4a616050f8509f0a73e12aac64f0815",
+        "6e59199c9c5a14be15bed056c6cb50e688aa0aa5e641d18f27f141d79c416aa5",
+        "de8e85b8474c5f3ad46a8883c133196d6614b536219837279bbcba6a53c213b8"
+      ],
+      "pass1Graph": "de8e85b8474c5f3ad46a8883c133196d6614b536219837279bbcba6a53c213b8",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779880406107.log",
+      "line": 2283,
+      "jobId": "job_ca61004e-0955-41f4-944b-375c979f5ee2",
+      "imageId": "img_cbd288a8-9d38-402b-8696-0c6dc2905cf2",
+      "imageHash": "44940eedc0390dd01a51dfc59495567e182dee71ef347914be799a15868ea5da",
+      "passCount": 3,
+      "finalGraph": "1d1c596cacf957831be3a1cab6ac813e12a551ac4855d1a063fcdc037e8320d1",
+      "candidateGraphHashes": [
+        "1d1c596cacf957831be3a1cab6ac813e12a551ac4855d1a063fcdc037e8320d1",
+        "4761d0842a3e9a66ffd29e879c9b8d3e052792faaa7e3a4c8da14dc7992d2327",
+        "6a2abcaf6a49acfc4862d5fca9faa10af373451ce58563eaa011c7b9a4ccf7ef"
+      ],
+      "pass1Graph": "4761d0842a3e9a66ffd29e879c9b8d3e052792faaa7e3a4c8da14dc7992d2327",
+      "openingValidatorPassed": true,
+      "validatorLine": 2969
+    },
+    {
+      "file": "logs.1779880406107.log",
+      "line": 2307,
+      "jobId": "job_e12f0bb3-47a9-40a4-ac62-ef9045fa06c2",
+      "imageId": "img_fdd7aa7d-ab55-4191-b098-0f2a192aa44c",
+      "imageHash": "11265cd0c664371d37ddd391189e96e05d7083740c57177cfdd99bbc238c6277",
+      "passCount": 3,
+      "finalGraph": "3cee3aca0431d0f0a3f4a97e678d1db41490951d47c4f492ba78627d3910b239",
+      "candidateGraphHashes": [
+        "3cee3aca0431d0f0a3f4a97e678d1db41490951d47c4f492ba78627d3910b239",
+        "68d32d144d3221227be55a3ce1b51f9b8a0054b7a46f8d312bf0df3a336193eb",
+        "f94fad1bdfae953515b2c3edc750e4cd145774a7c75ea46f807162fcf129a13b"
+      ],
+      "pass1Graph": "f94fad1bdfae953515b2c3edc750e4cd145774a7c75ea46f807162fcf129a13b",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779880406107.log",
+      "line": 2541,
+      "jobId": "job_ca61004e-0955-41f4-944b-375c979f5ee2",
+      "imageId": "img_cbd288a8-9d38-402b-8696-0c6dc2905cf2",
+      "imageHash": "0340bd9e4ee4786f24045bdab57f46b152848b6cfbaabe97dcac6c9b0e2a4ae8",
+      "passCount": 3,
+      "finalGraph": "1f329220e737a1e9105196bd1fff41c848adefe6e5f5e689cce5b68a5de7da72",
+      "candidateGraphHashes": [
+        "1f329220e737a1e9105196bd1fff41c848adefe6e5f5e689cce5b68a5de7da72",
+        "860e454a3367a4d4e62eda4a78b00bb62e2e98bc1c0c27e0ed0375b045abfdf4",
+        "920a9425c17f7c607178e089c4eba427d1d8046ebaa9206114ec816345574f77"
+      ],
+      "pass1Graph": "920a9425c17f7c607178e089c4eba427d1d8046ebaa9206114ec816345574f77",
+      "openingValidatorPassed": true,
+      "validatorLine": 2969
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2842,
+      "jobId": "job_cd012b45-0470-47a7-9e9a-07f5a363817a",
+      "imageId": "img_1b1e3814-3517-434f-a78f-bc0b1530d2a3",
+      "imageHash": "34add9d5e0483a11356ba6318ba1febebff8e3213afc99376db6e74e5447d4fa",
+      "passCount": 2,
+      "finalGraph": "a499827c286f5111c316c3c89438bc6956c66519dc24cf1cd26b3285931cd128",
+      "candidateGraphHashes": [
+        "a499827c286f5111c316c3c89438bc6956c66519dc24cf1cd26b3285931cd128",
+        "cda03bb01479839344cad09a5a75f70adc9d1e38c0a6da5f81a1fcb8e0308915"
+      ],
+      "pass1Graph": "102cf55c39cfc18fe7420b83299f31a8ec4c22920123d17aaf1a2ee5afef8a50",
+      "openingValidatorPassed": false,
+      "validatorLine": 4730
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2858,
+      "jobId": "job_cd012b45-0470-47a7-9e9a-07f5a363817a",
+      "imageId": "img_1b1e3814-3517-434f-a78f-bc0b1530d2a3",
+      "imageHash": "34add9d5e0483a11356ba6318ba1febebff8e3213afc99376db6e74e5447d4fa",
+      "passCount": 2,
+      "finalGraph": "102cf55c39cfc18fe7420b83299f31a8ec4c22920123d17aaf1a2ee5afef8a50",
+      "candidateGraphHashes": [
+        "102cf55c39cfc18fe7420b83299f31a8ec4c22920123d17aaf1a2ee5afef8a50",
+        "c426709a7e2346f2cdbced8f2119ba321f8959881752d9d11435a86ac74cefa3"
+      ],
+      "pass1Graph": "102cf55c39cfc18fe7420b83299f31a8ec4c22920123d17aaf1a2ee5afef8a50",
+      "openingValidatorPassed": false,
+      "validatorLine": 4730
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2881,
+      "jobId": "job_7a89b04e-1ef9-498b-8771-e051cad576b1",
+      "imageId": "img_8d9d0101-b8c9-42bf-8016-92247fe893c6",
+      "imageHash": "5fd3a64c208cdd3db8343e8b6c6a1ae5bd26bb86e95d03b052544d984f0efb44",
+      "passCount": 2,
+      "finalGraph": "5b124c3b8200dce2cb3ab0ee676205ecc92592c712c569a7b1d7f52b0576e8ee",
+      "candidateGraphHashes": [
+        "5b124c3b8200dce2cb3ab0ee676205ecc92592c712c569a7b1d7f52b0576e8ee",
+        "7a9a661d067080752078586c3db8f9817d04b48832bd000f02471f2a46f7a2f2"
+      ],
+      "pass1Graph": "221764932d8ac7376a6d88bdbba7868e485b54e0a5fdc59b0a3fa05700a7dfe4",
+      "openingValidatorPassed": true,
+      "validatorLine": 3591
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2887,
+      "jobId": "job_c8a08fb7-56ff-431c-9b21-efcfa570094e",
+      "imageId": "img_fd8b820f-11cd-49c3-8434-92e697d2205b",
+      "imageHash": "aa8228c5579e647dc45002e3e570a31c2d7e5b8cd52e308be669c47d3f3c93c6",
+      "passCount": 2,
+      "finalGraph": "51963248d642047f351e604fa038c50dd442a0116f2faaeef73dcf6bda3d7392",
+      "candidateGraphHashes": [
+        "51963248d642047f351e604fa038c50dd442a0116f2faaeef73dcf6bda3d7392",
+        "d7911fb92f43b8aa0b3116d9feccf07f94bb0ed17916c2f84265b66ce9ccf41a"
+      ],
+      "pass1Graph": "92cf1e6361f54df3108116059d898c362047cc3eb528a8810a6e94a51c654959",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2893,
+      "jobId": "job_c8a08fb7-56ff-431c-9b21-efcfa570094e",
+      "imageId": "img_fd8b820f-11cd-49c3-8434-92e697d2205b",
+      "imageHash": "aa8228c5579e647dc45002e3e570a31c2d7e5b8cd52e308be669c47d3f3c93c6",
+      "passCount": 2,
+      "finalGraph": "39e58559de98034dddf03841da7cc938a814e6171db887ada9c769e9959cd22c",
+      "candidateGraphHashes": [
+        "39e58559de98034dddf03841da7cc938a814e6171db887ada9c769e9959cd22c",
+        "92cf1e6361f54df3108116059d898c362047cc3eb528a8810a6e94a51c654959"
+      ],
+      "pass1Graph": "92cf1e6361f54df3108116059d898c362047cc3eb528a8810a6e94a51c654959",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2923,
+      "jobId": "job_7a89b04e-1ef9-498b-8771-e051cad576b1",
+      "imageId": "img_8d9d0101-b8c9-42bf-8016-92247fe893c6",
+      "imageHash": "5fd3a64c208cdd3db8343e8b6c6a1ae5bd26bb86e95d03b052544d984f0efb44",
+      "passCount": 2,
+      "finalGraph": "174069da66eae01c4320c458428907dfd64bb39db8dc6e296d23544f9da08fcd",
+      "candidateGraphHashes": [
+        "174069da66eae01c4320c458428907dfd64bb39db8dc6e296d23544f9da08fcd",
+        "221764932d8ac7376a6d88bdbba7868e485b54e0a5fdc59b0a3fa05700a7dfe4"
+      ],
+      "pass1Graph": "221764932d8ac7376a6d88bdbba7868e485b54e0a5fdc59b0a3fa05700a7dfe4",
+      "openingValidatorPassed": true,
+      "validatorLine": 3591
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 2982,
+      "jobId": "job_cd012b45-0470-47a7-9e9a-07f5a363817a",
+      "imageId": "img_1b1e3814-3517-434f-a78f-bc0b1530d2a3",
+      "imageHash": "7e84d3f7dce0c46cc3c504663ab71c6068bc9513ccf5b297e63f62ebaa5b01da",
+      "passCount": 2,
+      "finalGraph": "0e0f9b0e8739fd461e687e93b0daa875c80c05f0caf772601f78e8db55e4106c",
+      "candidateGraphHashes": [
+        "0e0f9b0e8739fd461e687e93b0daa875c80c05f0caf772601f78e8db55e4106c",
+        "cf864b719ae17ae23e32c02231b8d8b1187644b3ce5f721266da228f72925e77"
+      ],
+      "pass1Graph": "0e0f9b0e8739fd461e687e93b0daa875c80c05f0caf772601f78e8db55e4106c",
+      "openingValidatorPassed": false,
+      "validatorLine": 4730
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 3457,
+      "jobId": "job_7a89b04e-1ef9-498b-8771-e051cad576b1",
+      "imageId": "img_8d9d0101-b8c9-42bf-8016-92247fe893c6",
+      "imageHash": "909da2a8ae0f2b24ac0a64cd37724dc9bb832970d2529ff9a7b31faedee895c5",
+      "passCount": 2,
+      "finalGraph": "8a37e1949e24e1e93cbe59566578111f0d5a0f53e3c255caa76ba0653b8e4b8d",
+      "candidateGraphHashes": [
+        "8a37e1949e24e1e93cbe59566578111f0d5a0f53e3c255caa76ba0653b8e4b8d",
+        "c335a4f44d60a331cc1e2e3a86cfe84e2aef3fd087e2b7b6099115103434cb65"
+      ],
+      "pass1Graph": "c335a4f44d60a331cc1e2e3a86cfe84e2aef3fd087e2b7b6099115103434cb65",
+      "openingValidatorPassed": true,
+      "validatorLine": 3591
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 3704,
+      "jobId": "job_c8a08fb7-56ff-431c-9b21-efcfa570094e",
+      "imageId": "img_fd8b820f-11cd-49c3-8434-92e697d2205b",
+      "imageHash": "09aa903d0165839c3b9bd1316a0247ab049ce3ca31b2f19f816c6f40878a1a83",
+      "passCount": 2,
+      "finalGraph": "2b0166e37ea77a5bfabe009161e59990a4f88a6cce4f03cb4dfd8d6e4c8ccedd",
+      "candidateGraphHashes": [
+        "2b0166e37ea77a5bfabe009161e59990a4f88a6cce4f03cb4dfd8d6e4c8ccedd",
+        "9cf096191cd05a2a516984b8a407a3c7507d58baa99214ac2367024efe9cad97"
+      ],
+      "pass1Graph": "9cf096191cd05a2a516984b8a407a3c7507d58baa99214ac2367024efe9cad97",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 4624,
+      "jobId": "job_cd012b45-0470-47a7-9e9a-07f5a363817a",
+      "imageId": "img_1b1e3814-3517-434f-a78f-bc0b1530d2a3",
+      "imageHash": "5f9367bc6038a1269557e4b285234d7307bfa779e0a75a0965ca9d4137c217d3",
+      "passCount": 2,
+      "finalGraph": "11b58b1ac4040672ca0c041fa6c86140e74cffab24d05fc6c4bd8f33bdf89af9",
+      "candidateGraphHashes": [
+        "11b58b1ac4040672ca0c041fa6c86140e74cffab24d05fc6c4bd8f33bdf89af9",
+        "a5bf07dfac01f5d1de565c9a832ee3a08ec99503e1f9d41b91ce81b7f6345bdf"
+      ],
+      "pass1Graph": "11b58b1ac4040672ca0c041fa6c86140e74cffab24d05fc6c4bd8f33bdf89af9",
+      "openingValidatorPassed": false,
+      "validatorLine": 4730
+    },
+    {
+      "file": "logs.1779954006410.log",
+      "line": 5840,
+      "jobId": "job_c8a08fb7-56ff-431c-9b21-efcfa570094e",
+      "imageId": "img_fd8b820f-11cd-49c3-8434-92e697d2205b",
+      "imageHash": "4aaea9bcb38a45c615e5c1490dc878853016d5333c44fe664f2359a34d04636c",
+      "passCount": 2,
+      "finalGraph": "a5cb8c4cc7ca163a59952a8fadedc081749f51168293f85b2995fd57e15936e9",
+      "candidateGraphHashes": [
+        "a5cb8c4cc7ca163a59952a8fadedc081749f51168293f85b2995fd57e15936e9",
+        "b1f8a83c452ca884e812e46c0c2e626d1a8f646e0428deafda38f54847c7e67f"
+      ],
+      "pass1Graph": "a5cb8c4cc7ca163a59952a8fadedc081749f51168293f85b2995fd57e15936e9",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 2564,
+      "jobId": "job_eb439f06-88f5-4926-9e7f-f809a833d64a",
+      "imageId": "img_ccdc4b02-c1a4-45f2-933e-331e48707a64",
+      "imageHash": "b9c000772584092d46bed803e58749c2e13e8e4cfe49cad04551bff2a173d7da",
+      "passCount": 2,
+      "finalGraph": "41f30793eeadf1fd34124f7c25a4cd628302880c24a34e8fea808e3476dadb74",
+      "candidateGraphHashes": [
+        "41f30793eeadf1fd34124f7c25a4cd628302880c24a34e8fea808e3476dadb74",
+        "acc5c4ce5197d4dba7553e3f584c4e0f5365c949851833b9532201c4850eec6f"
+      ],
+      "pass1Graph": "fb018fce9e6d17b123d26ececc1f9bf7bbacd9f2e1cb1f1cce1273ce10afcc09",
+      "openingValidatorPassed": true,
+      "validatorLine": 2735
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 2599,
+      "jobId": "job_eb439f06-88f5-4926-9e7f-f809a833d64a",
+      "imageId": "img_ccdc4b02-c1a4-45f2-933e-331e48707a64",
+      "imageHash": "b9c000772584092d46bed803e58749c2e13e8e4cfe49cad04551bff2a173d7da",
+      "passCount": 2,
+      "finalGraph": "c789f87091fca38154786cbe5783b7a005029f0fcc48e3c547aac86281424c86",
+      "candidateGraphHashes": [
+        "c789f87091fca38154786cbe5783b7a005029f0fcc48e3c547aac86281424c86",
+        "fb018fce9e6d17b123d26ececc1f9bf7bbacd9f2e1cb1f1cce1273ce10afcc09"
+      ],
+      "pass1Graph": "fb018fce9e6d17b123d26ececc1f9bf7bbacd9f2e1cb1f1cce1273ce10afcc09",
+      "openingValidatorPassed": true,
+      "validatorLine": 2735
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 2628,
+      "jobId": "job_23ef83e0-eff5-4545-a031-080241005d6e",
+      "imageId": "img_f8201070-f446-4016-817a-62be0bdfef45",
+      "imageHash": "7e9f807339ca54ebc83e166764bc36ce3401c122d88490cce85cbe79f2cc6f40",
+      "passCount": 2,
+      "finalGraph": "025d3ffaa104566e38c345763279d7929996740faabaf39d98cbb2d210cb7d88",
+      "candidateGraphHashes": [
+        "025d3ffaa104566e38c345763279d7929996740faabaf39d98cbb2d210cb7d88",
+        "cdac5796a19dbbf000c871b50088bd96970afb233a601175405fbfd8e69feeeb"
+      ],
+      "pass1Graph": "025d3ffaa104566e38c345763279d7929996740faabaf39d98cbb2d210cb7d88",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 2635,
+      "jobId": "job_eb439f06-88f5-4926-9e7f-f809a833d64a",
+      "imageId": "img_ccdc4b02-c1a4-45f2-933e-331e48707a64",
+      "imageHash": "da93e6ec32ef35e4914ee81cca984f37c64a535c882fdf24481d0111850922a1",
+      "passCount": 2,
+      "finalGraph": "0e17cdef61c4a1befed490736fae4c076a560c6a4eab07f627f878a85fc4364a",
+      "candidateGraphHashes": [
+        "0e17cdef61c4a1befed490736fae4c076a560c6a4eab07f627f878a85fc4364a",
+        "1512b59945d0bfe3b7efce14509f98494187361a3349447dd0bc2b8ec3cae447"
+      ],
+      "pass1Graph": "1512b59945d0bfe3b7efce14509f98494187361a3349447dd0bc2b8ec3cae447",
+      "openingValidatorPassed": true,
+      "validatorLine": 2735
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 5091,
+      "jobId": "job_936bbccd-2d06-4815-909a-dfbb996519d8",
+      "imageId": "img_b3eeb43f-10af-452a-af29-072ef836adf1",
+      "imageHash": "e8bda3b0210deaf84a7b005cc6afad368f4bd1eb25499718eb72d26b60456f77",
+      "passCount": 2,
+      "finalGraph": "3d22cec511818f0b122e4d844a938ffc5725ae98fac792a046be9d7821b6a099",
+      "candidateGraphHashes": [
+        "3d22cec511818f0b122e4d844a938ffc5725ae98fac792a046be9d7821b6a099",
+        "66d0814ad064237c946f0fe2368280b328a280e05a646ecb9c2bda582d989152"
+      ],
+      "pass1Graph": "3d22cec511818f0b122e4d844a938ffc5725ae98fac792a046be9d7821b6a099",
+      "openingValidatorPassed": true,
+      "validatorLine": 5259
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 5130,
+      "jobId": "job_936bbccd-2d06-4815-909a-dfbb996519d8",
+      "imageId": "img_b3eeb43f-10af-452a-af29-072ef836adf1",
+      "imageHash": "e8bda3b0210deaf84a7b005cc6afad368f4bd1eb25499718eb72d26b60456f77",
+      "passCount": 2,
+      "finalGraph": "1a1a863ccdac0c3d37e3d85d826f8759a62ae8ec4b2ae197963eb4560734870a",
+      "candidateGraphHashes": [
+        "1a1a863ccdac0c3d37e3d85d826f8759a62ae8ec4b2ae197963eb4560734870a",
+        "efb6c3223e4c00a1b1612b9accc2c8d32762846f88901d30fc9336eae16bea16"
+      ],
+      "pass1Graph": "1a1a863ccdac0c3d37e3d85d826f8759a62ae8ec4b2ae197963eb4560734870a",
+      "openingValidatorPassed": true,
+      "validatorLine": 5259
+    },
+    {
+      "file": "logs.1780359504093.log",
+      "line": 5159,
+      "jobId": "job_936bbccd-2d06-4815-909a-dfbb996519d8",
+      "imageId": "img_b3eeb43f-10af-452a-af29-072ef836adf1",
+      "imageHash": "998ba0142563f87e5e46d8c70a1825dc6d076f571dafc9c5442eea95e9a7895a",
+      "passCount": 2,
+      "finalGraph": "0a368a1e03c0121d3969ea39eaa6dd5838a4228551054154d40d34bd01043317",
+      "candidateGraphHashes": [
+        "0a368a1e03c0121d3969ea39eaa6dd5838a4228551054154d40d34bd01043317",
+        "21e666f33bd11d5660b81894a9a6f5d5aaca8ca675dda30fb39b7e50fadd9bd2"
+      ],
+      "pass1Graph": "21e666f33bd11d5660b81894a9a6f5d5aaca8ca675dda30fb39b7e50fadd9bd2",
+      "openingValidatorPassed": true,
+      "validatorLine": 5259
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 2118,
+      "jobId": "job_f8490b26-2e7e-4e8d-82f2-1dcf33a71634",
+      "imageId": "img_9eb9ae95-f3cb-4270-9e6e-dbd56e534ba6",
+      "imageHash": "6a6f43ac1f241f616f7e5ee7f34265f6c08bf7a0486e1ae1245d29172d4d06bf",
+      "passCount": 2,
+      "finalGraph": "e542e644fe31e79c5fa663450de563732b050e1f815ad34768e055d4896b3235",
+      "candidateGraphHashes": [
+        "e542e644fe31e79c5fa663450de563732b050e1f815ad34768e055d4896b3235",
+        "f8353aeb6e0de60eb4091fa7c7bf98fda29e7be140aa27e7892e47a5725346f1"
+      ],
+      "pass1Graph": "aeceab2c2d77f4b06b35638ba74e7f85814e909ad6ad3a7c2f97e9eaaf6148ca",
+      "openingValidatorPassed": true,
+      "validatorLine": 2276
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 2153,
+      "jobId": "job_f8490b26-2e7e-4e8d-82f2-1dcf33a71634",
+      "imageId": "img_9eb9ae95-f3cb-4270-9e6e-dbd56e534ba6",
+      "imageHash": "6a6f43ac1f241f616f7e5ee7f34265f6c08bf7a0486e1ae1245d29172d4d06bf",
+      "passCount": 2,
+      "finalGraph": "2451ed7dda61fc0fdd5a790b47ac863faef455c7ea0765a81f26f850f4b7256b",
+      "candidateGraphHashes": [
+        "2451ed7dda61fc0fdd5a790b47ac863faef455c7ea0765a81f26f850f4b7256b",
+        "aeceab2c2d77f4b06b35638ba74e7f85814e909ad6ad3a7c2f97e9eaaf6148ca"
+      ],
+      "pass1Graph": "aeceab2c2d77f4b06b35638ba74e7f85814e909ad6ad3a7c2f97e9eaaf6148ca",
+      "openingValidatorPassed": true,
+      "validatorLine": 2276
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 2186,
+      "jobId": "job_f8490b26-2e7e-4e8d-82f2-1dcf33a71634",
+      "imageId": "img_9eb9ae95-f3cb-4270-9e6e-dbd56e534ba6",
+      "imageHash": "1b5929c5fd6569355dd3611ba636ee7be4bb83e012b1f908f0774d1ebeccf292",
+      "passCount": 2,
+      "finalGraph": "3dd8297f7ef078a1c6ad26f8452ffe7e076b65848be71a8e750d8af91996f83c",
+      "candidateGraphHashes": [
+        "3dd8297f7ef078a1c6ad26f8452ffe7e076b65848be71a8e750d8af91996f83c",
+        "5d0491464624919f5d6ef0db2eefb0870e46424335329127f5c43f0a460b8696"
+      ],
+      "pass1Graph": "5d0491464624919f5d6ef0db2eefb0870e46424335329127f5c43f0a460b8696",
+      "openingValidatorPassed": true,
+      "validatorLine": 2276
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 2379,
+      "jobId": "job_c9cccfeb-d210-47a6-a714-0f690a08a5ca",
+      "imageId": "img_7075e1a6-c935-44a8-8cce-01eb7c2c5295",
+      "imageHash": "7edc795e941de04d9d108d956d5627976c90ca9d1f968c13243fbdd7780f53bb",
+      "passCount": 2,
+      "finalGraph": "48fa6a8c0d34410e25b184ee6c8bbacdbd731d7e19f6904237670878a9af56e4",
+      "candidateGraphHashes": [
+        "48fa6a8c0d34410e25b184ee6c8bbacdbd731d7e19f6904237670878a9af56e4",
+        "b0c6c9984eeabc82e957ccc8fd88c51a858a6f1482af3888462bcb28d5b66191"
+      ],
+      "pass1Graph": "b0c6c9984eeabc82e957ccc8fd88c51a858a6f1482af3888462bcb28d5b66191",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 6382,
+      "jobId": "job_fc1cd128-6914-45b8-9dcf-6e9292f64e53",
+      "imageId": "img_69dd6fc2-92df-4e29-906a-2283f1592f99",
+      "imageHash": "0bc733eeb15cdd5e014f6616a38aa2910c537f7472b1248c8bc58c70b0656a2e",
+      "passCount": 2,
+      "finalGraph": "1ce8e943cae6371ce12999346a3e4d37e239064429abc9d5f260b1776b74a844",
+      "candidateGraphHashes": [
+        "1ce8e943cae6371ce12999346a3e4d37e239064429abc9d5f260b1776b74a844",
+        "68760495eee7acddaa22b4f5cc74919f3c06f72a7d009dcc5f50ed49ebfc1e49"
+      ],
+      "pass1Graph": "68760495eee7acddaa22b4f5cc74919f3c06f72a7d009dcc5f50ed49ebfc1e49",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 6991,
+      "jobId": "job_b552eca9-1e44-414e-b710-3a565b13058d",
+      "imageId": "img_2087570f-a1b3-434d-9552-6861cf1f0f21",
+      "imageHash": "861148451ddebb54d589012783f5a9bfa3e7ad1cc20ff59aefa84d4e0f3ef586",
+      "passCount": 2,
+      "finalGraph": "06ea9ca4323a220e61165855054723b0748a536a1f062f3ef425af62f92403dc",
+      "candidateGraphHashes": [
+        "06ea9ca4323a220e61165855054723b0748a536a1f062f3ef425af62f92403dc",
+        "9e8ae058d1967baf8a0f1f29696cf111930e43dfeb0e414f319bea5c547850f4"
+      ],
+      "pass1Graph": "06ea9ca4323a220e61165855054723b0748a536a1f062f3ef425af62f92403dc",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1780451338286.log",
+      "line": 6998,
+      "jobId": "job_8991e637-a09d-41f0-8402-13c3c3c184ea",
+      "imageId": "img_a3849dab-e879-4dbb-b7db-b2f3ac1bae9b",
+      "imageHash": "18af0460481c33a9c06a2fa9f8f00726230dc9c42fbe6d3ecf86da74b8c94980",
+      "passCount": 2,
+      "finalGraph": "0d853f33c5c36c1eea8ab025fd7090c6e957a664090cd4fd826ecad7e92c9d43",
+      "candidateGraphHashes": [
+        "0d853f33c5c36c1eea8ab025fd7090c6e957a664090cd4fd826ecad7e92c9d43",
+        "7a5e7cbb26db345d0f7004e240691185dbf081e32c2210a5d40ec5ba552e6764"
+      ],
+      "pass1Graph": "0d853f33c5c36c1eea8ab025fd7090c6e957a664090cd4fd826ecad7e92c9d43",
+      "openingValidatorPassed": null,
+      "validatorLine": null
+    },
+    {
+      "file": "logs.1780475965355.log",
+      "line": 1839,
+      "jobId": "job_a54cb97f-3e46-4508-a555-6ad5f450de4d",
+      "imageId": "img_3877f3f5-9439-4cce-b0a9-dc4886b23976",
+      "imageHash": "ec0b816b3a108338f1d7765145f483ff4a7a5e90ea0a1ca0d257a4d9cca5a55e",
+      "passCount": 2,
+      "finalGraph": "96425352073823799eb8b3a6e926457cedaeb123e9602d29ffff03292f500e28",
+      "candidateGraphHashes": [
+        "96425352073823799eb8b3a6e926457cedaeb123e9602d29ffff03292f500e28",
+        "e9b55cd5341ce806b5faefbd8ca92a999bc847a81c136f28daba34b4d881c681"
+      ],
+      "pass1Graph": "7b8ec20c0079262df2e426988943adfe48bfb6f0f9456fd364c4be7227c27718",
+      "openingValidatorPassed": false,
+      "validatorLine": 2025
+    },
+    {
+      "file": "logs.1780475965355.log",
+      "line": 1874,
+      "jobId": "job_a54cb97f-3e46-4508-a555-6ad5f450de4d",
+      "imageId": "img_3877f3f5-9439-4cce-b0a9-dc4886b23976",
+      "imageHash": "ec0b816b3a108338f1d7765145f483ff4a7a5e90ea0a1ca0d257a4d9cca5a55e",
+      "passCount": 2,
+      "finalGraph": "4e67a77d7f74ac6c23f2d05c0644284708409c546073af0ece17f2cba2b8c4d2",
+      "candidateGraphHashes": [
+        "4e67a77d7f74ac6c23f2d05c0644284708409c546073af0ece17f2cba2b8c4d2",
+        "7b8ec20c0079262df2e426988943adfe48bfb6f0f9456fd364c4be7227c27718"
+      ],
+      "pass1Graph": "7b8ec20c0079262df2e426988943adfe48bfb6f0f9456fd364c4be7227c27718",
+      "openingValidatorPassed": false,
+      "validatorLine": 2025
+    },
+    {
+      "file": "logs.1780475965355.log",
+      "line": 1919,
+      "jobId": "job_a54cb97f-3e46-4508-a555-6ad5f450de4d",
+      "imageId": "img_3877f3f5-9439-4cce-b0a9-dc4886b23976",
+      "imageHash": "d7518971b8bddb9284e805e444868bdf48cebe69b814bd8790cd6253c1776180",
+      "passCount": 2,
+      "finalGraph": "65147af2479eed5558f78b49e19a4220e2e524b8f69d728d5c5de17ed8182f8a",
+      "candidateGraphHashes": [
+        "65147af2479eed5558f78b49e19a4220e2e524b8f69d728d5c5de17ed8182f8a",
+        "a9b6008178993b147531368df82f1b748e5acdf1eff29a0cf5f26ca60e632859"
+      ],
+      "pass1Graph": "a9b6008178993b147531368df82f1b748e5acdf1eff29a0cf5f26ca60e632859",
+      "openingValidatorPassed": false,
+      "validatorLine": 2025
+    }
+  ]
+}

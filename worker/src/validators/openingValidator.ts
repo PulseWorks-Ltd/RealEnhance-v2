@@ -1395,13 +1395,14 @@ export async function runOpeningValidator(
     }
 
     // Partial occlusion from staging (furniture, decor, camera angle)
-    // is allowed. Only fail when the opening is functionally or
-    // structurally lost, changed into another opening type, or newly added.
+    // is allowed. Structural preservation hard-fails only when the opening is
+    // removed, infilled, sealed, or a new opening is authoritatively added.
+    // Class mismatch remains visible for diagnostics and Unified context, but
+    // does not independently trigger authoritative failure.
     const hasStrongStructuralOpeningEvidence =
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
-      deterministic.summary.openingClassMismatch ||
       authoritativeAddedOpenings;
 
     let strictDoorOcclusionFail = false;
@@ -1459,7 +1460,6 @@ export async function runOpeningValidator(
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
-      deterministic.summary.openingClassMismatch ||
       authoritativeAddedOpenings;
 
     const findings = Array.isArray(deterministic.findings) ? deterministic.findings : [];
@@ -1482,7 +1482,6 @@ export async function runOpeningValidator(
       (deterministic.summary.openingRelocated || deterministic.summary.openingApertureExpanded === true);
     const strongTopologyBreakEvidence =
       deterministic.summary.openingRemoved ||
-      deterministic.summary.openingClassMismatch ||
       deterministic.summary.openingApertureExpanded === true ||
       deterministic.summary.openingStateChanged === true ||
       authoritativeAddedOpenings;
@@ -1542,6 +1541,8 @@ export async function runOpeningValidator(
     }
 
     if (deterministic.summary.openingClassMismatch) {
+      advisorySignals.push("opening_class_mismatch_advisory");
+      advisorySignals.push(`opening_class_mismatch_enforcement:${deterministic.summary.openingClassMismatchEnforcement}`);
       reasonParts.push("opening_type_changed");
       reasonParts.push("opening_class_mismatch");
     }
@@ -1788,6 +1789,10 @@ export async function runOpeningValidator(
         ? Math.min(baseConfidence, 0.6)
         : hardFailConfidence,
       reason,
+      openingClassMismatchTelemetry: {
+        value: deterministic.summary.openingClassMismatch === true,
+        enforcement: deterministic.summary.openingClassMismatchEnforcement,
+      },
       details: baselineOpenings.openings.map((opening) => ({
         id: opening.id,
         classification: findingById.has(opening.id)
@@ -1836,6 +1841,10 @@ export async function runOpeningValidator(
       hasHighConfidenceMicroHardFailSignal,
       reason,
       structuralSignalCount: deterministic.structuralSignals?.length ?? 0,
+      openingClassMismatchTelemetry: {
+        value: deterministic.summary.openingClassMismatch === true,
+        enforcement: deterministic.summary.openingClassMismatchEnforcement,
+      },
     });
 
     logOpeningPhaseStart(options?.jobId, "decision_generation");

@@ -6804,6 +6804,62 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 specialistAdvisorySignals.push(`${validator}:${normalized}`);
               }
             };
+            const finalizeStage2OnlySpecialists = (blockedAfter?: "opening" | "fixture" | "floor" | "envelope") => {
+              nLog("[STAGE2_ONLY_SPECIALIST_SIGNALS]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                opening: {
+                  status: specialistResults.openings?.status || "skipped",
+                  hardFail: specialistResults.openings?.hardFail === true,
+                  reason: specialistResults.openings?.reason || "none",
+                },
+                fixture: {
+                  status: specialistResults.fixtures?.status || "skipped",
+                  hardFail: specialistResults.fixtures?.hardFail === true,
+                  reason: specialistResults.fixtures?.reason || "none",
+                },
+                floor: {
+                  status: specialistResults.floor?.status || "skipped",
+                  hardFail: specialistResults.floor?.hardFail === true,
+                  reason: specialistResults.floor?.reason || "none",
+                },
+                envelope: {
+                  status: specialistResults.envelope?.status || "skipped",
+                  hardFail: specialistResults.envelope?.hardFail === true,
+                  reason: specialistResults.envelope?.reason || "none",
+                },
+                advisorySignals: specialistAdvisorySignals,
+                blockedAfter: blockedAfter || null,
+              });
+
+              if (specialistHardFailReasons.length > 0) {
+                stage2ValidationPassed = false;
+                if (!stage2OnlyBlockedReason) {
+                  const normalizedStage2OnlyReason = String(specialistHardFailReasons[0] || "specialist_hard_fail")
+                    .trim()
+                    .toLowerCase()
+                    .replace(/\s+/g, "_")
+                    .replace(/[^a-z0-9:_-]+/g, "_")
+                    .replace(/_+/g, "_")
+                    .replace(/^_+|_+$/g, "");
+                  stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${normalizedStage2OnlyReason || "specialist_hard_fail"}`;
+                }
+                nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                  reasons: specialistHardFailReasons,
+                  blockedAfter: blockedAfter || null,
+                  action: "block_stage2_retry",
+                });
+              }
+
+              return {
+                specialistResults,
+                specialistAdvisorySignals,
+              };
+            };
 
             const openingBlockStartedAt = Date.now();
             const opRes = await runOpeningValidator(validationBaseline, path2, {
@@ -6816,6 +6872,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.openings = opRes;
             if (opHardFail) {
               specialistHardFailReasons.push(`openings:${String(opRes?.reason || "opening_hard_fail").trim()}`);
+              return finalizeStage2OnlySpecialists("opening");
             }
             appendAdvisories("openings", opRes?.advisorySignals);
 
@@ -6830,6 +6887,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.fixtures = fixRes;
             if (fixHardFail) {
               specialistHardFailReasons.push(`fixtures:${String(fixRes?.reason || "fixture_hard_fail").trim()}`);
+              return finalizeStage2OnlySpecialists("fixture");
             }
             appendAdvisories("fixtures", fixRes?.advisorySignals);
 
@@ -6844,6 +6902,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.floor = floorRes;
             if (floorHardFail) {
               specialistHardFailReasons.push(`floor:${String(floorRes?.reason || "floor_hard_fail").trim()}`);
+              return finalizeStage2OnlySpecialists("floor");
             }
             appendAdvisories("floor", floorRes?.advisorySignals);
 
@@ -6858,40 +6917,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.envelope = envRes;
             if (envHardFail) {
               specialistHardFailReasons.push(`envelope:${String(envRes?.reason || "envelope_hard_fail").trim()}`);
+              return finalizeStage2OnlySpecialists("envelope");
             }
             appendAdvisories("envelope", envRes?.advisorySignals);
 
-            nLog("[STAGE2_ONLY_SPECIALIST_SIGNALS]", {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-              opening: { status: opRes?.status || "unknown", hardFail: opHardFail, reason: opRes?.reason || "none" },
-              fixture: { status: fixRes?.status || "unknown", hardFail: fixHardFail, reason: fixRes?.reason || "none" },
-              floor: { status: floorRes?.status || "unknown", hardFail: floorHardFail, reason: floorRes?.reason || "none" },
-              envelope: { status: envRes?.status || "unknown", hardFail: envHardFail, reason: envRes?.reason || "none" },
-              advisorySignals: specialistAdvisorySignals,
-            });
-
-            if (specialistHardFailReasons.length > 0) {
-              stage2ValidationPassed = false;
-              if (!stage2OnlyBlockedReason) {
-                const normalizedStage2OnlyReason = String(specialistHardFailReasons[0] || "specialist_hard_fail")
-                  .trim()
-                  .toLowerCase()
-                  .replace(/\s+/g, "_")
-                  .replace(/[^a-z0-9:_-]+/g, "_")
-                  .replace(/_+/g, "_")
-                  .replace(/^_+|_+$/g, "");
-                stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${normalizedStage2OnlyReason || "specialist_hard_fail"}`;
-              }
-              nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt: stage2OnlyAttemptNo,
-                reasons: specialistHardFailReasons,
-                action: "block_stage2_retry",
-              });
-            }
+            return finalizeStage2OnlySpecialists();
           } catch (specialistErr: any) {
             nLog("[worker] Specialist validation error (stage2-only, non-fatal):", specialistErr?.message || specialistErr);
           }
@@ -12187,6 +12217,84 @@ All openings must remain identical in position and size to the original image.`;
             result: "PASS",
             reason: "none",
           });
+        }
+
+        if (floorHardFail && specialistResults.floor.issueType === ISSUE_TYPES.FLOOR_CHANGED) {
+          const blockedIssueType = ISSUE_TYPES.FLOOR_CHANGED as ValidationIssueType;
+          const blockedReason = normalizeValidatorReason(floorRes.reason || "issue_type_gate_block");
+          const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
+
+          nLog("[STAGE2_EARLY_AUTHORITATIVE_EXIT]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            blockedAfter: "floor",
+            issueType: blockedIssueType,
+            reason: floorRes.reason,
+            confidence: floorRes.confidence,
+            skippedValidators: ["envelope", "unified"],
+          });
+          nLog("[STAGE2_ISSUETYPE_HARDFAIL]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            issueType: blockedIssueType,
+            reason: floorRes.reason,
+            confidence: floorRes.confidence,
+            source: "critical_issues_gate",
+            action: "blocked_pre_unified",
+          });
+
+          unifiedValidation = {
+            passed: false,
+            hardFail: true,
+            blockSource: "critical_issues_gate" as any,
+            reasons: [decisionReason],
+            warnings: [decisionReason],
+            issueType: blockedIssueType,
+            issueTier: classifyIssueTier(blockedIssueType),
+            score: 0,
+          } as any;
+
+          setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+
+          if (attempt < MAX_STAGE2_RETRIES) {
+            logRefreshValidationTrace({
+              specialistHardFail: true,
+              geminiDecision: "FAIL",
+              finalDecision: "RETRY",
+              reason: decisionReason,
+            });
+            logValidateFinal(attempt, "retry", attempt);
+            logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
+            logEvent("STAGE_RETRY", {
+              jobId: payload.jobId,
+              stage: "2",
+              retry: attempt + 1,
+              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+              reason: normalizeValidatorReason(decisionReason),
+            });
+            continue;
+          }
+
+          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+            ? stageLineage.stage1B.output
+            : path1A;
+          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `critical_issues_gate_exhausted:${normalizeValidatorReason(decisionReason)}`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+          path2 = fallbackPath;
+          stage2CandidatePath = fallbackPath;
+          logRefreshValidationTrace({
+            specialistHardFail: true,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: decisionReason,
+          });
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
         }
 
         const envelopeBlockStartedAt = Date.now();

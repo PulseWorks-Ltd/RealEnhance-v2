@@ -6,6 +6,7 @@ import {
   parseOpeningResult,
   runStructuralContinuityPrecheck,
 } from "../src/validators/openingValidator";
+import { shouldHardFailOpening } from "../src/validators/openingPreservationValidator";
 
 describe("opening validator structured issue emission", () => {
   it("emits structured issue for removed opening result", () => {
@@ -49,6 +50,60 @@ describe("opening validator structured issue emission", () => {
     );
     expect(analysis.supportiveModifiers).toContain("opening_resized");
     expect(analysis.contradictions).toEqual([]);
+  });
+
+  it("keeps opening class mismatch advisory-only in hard-fail enforcement", () => {
+    expect(shouldHardFailOpening({
+      openingRemoved: true,
+      openingInfilled: false,
+      openingSealed: false,
+      openingRelocated: false,
+      openingResized: false,
+      openingClassMismatch: false,
+      openingClassMismatchEnforcement: "advisory",
+      openingBandMismatch: false,
+      outOfFrameOpenings: [],
+      confidence: 0.95,
+    })).toBe(true);
+
+    expect(shouldHardFailOpening({
+      openingRemoved: false,
+      openingInfilled: true,
+      openingSealed: false,
+      openingRelocated: false,
+      openingResized: false,
+      openingClassMismatch: false,
+      openingClassMismatchEnforcement: "advisory",
+      openingBandMismatch: false,
+      outOfFrameOpenings: [],
+      confidence: 0.95,
+    })).toBe(true);
+
+    expect(shouldHardFailOpening({
+      openingRemoved: false,
+      openingInfilled: false,
+      openingSealed: true,
+      openingRelocated: false,
+      openingResized: false,
+      openingClassMismatch: false,
+      openingClassMismatchEnforcement: "advisory",
+      openingBandMismatch: false,
+      outOfFrameOpenings: [],
+      confidence: 0.95,
+    })).toBe(true);
+
+    expect(shouldHardFailOpening({
+      openingRemoved: false,
+      openingInfilled: false,
+      openingSealed: false,
+      openingRelocated: false,
+      openingResized: false,
+      openingClassMismatch: true,
+      openingClassMismatchEnforcement: "advisory",
+      openingBandMismatch: false,
+      outOfFrameOpenings: [],
+      confidence: 0.95,
+    })).toBe(false);
   });
 
   it("downgrades only true contradiction bundles", () => {

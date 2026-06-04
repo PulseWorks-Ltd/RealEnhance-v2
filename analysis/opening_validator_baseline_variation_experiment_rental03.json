@@ -1,0 +1,685 @@
+{
+  "generatedAt": "2026-06-04T01:49:04.965Z",
+  "baselineVariantCount": 20,
+  "sources": {
+    "benchmarkArtifact": "/workspaces/RealEnhance-v2/worker/artifacts/opening_baseline_architecture_benchmark_20runs.json",
+    "benchmarkDetailLog": "/workspaces/RealEnhance-v2/worker/artifacts/opening_baseline_architecture_benchmark_20runs_detailed.log"
+  },
+  "scenarios": [
+    {
+      "id": "A",
+      "name": "Test A: Same Image Against Itself",
+      "baselineImagePath": "/workspaces/RealEnhance-v2/worker/test-data/Rental 03.jpg",
+      "comparisonImagePath": "/workspaces/RealEnhance-v2/worker/test-data/Rental 03.jpg",
+      "rows": [
+        {
+          "baselineNumber": 1,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 2,
+          "verdict": "PASS",
+          "issueType": "opening_resized_minor",
+          "confidence": 0.87,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 3,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 4,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 5,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 6,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 7,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 8,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 9,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 10,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 11,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 12,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 13,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 14,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 15,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 16,
+          "verdict": "PASS",
+          "issueType": "opening_resized_minor",
+          "confidence": 0.863,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 17,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 18,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 19,
+          "verdict": "PASS",
+          "issueType": "opening_relocated",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 20,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        }
+      ],
+      "summary": {
+        "totalRuns": 20,
+        "passCount": 20,
+        "failCount": 0,
+        "passRate": 1,
+        "failRate": 0,
+        "verdictConsistencyRate": 1,
+        "uniqueVerdictCount": 1,
+        "confidenceMean": 0.6266,
+        "confidenceVariance": 0.0064,
+        "confidenceStdDev": 0.08
+      }
+    },
+    {
+      "id": "B",
+      "name": "Test B: Known Good Stage 2 Output",
+      "baselineImagePath": "/workspaces/RealEnhance-v2/worker/test-data/Rental 03.jpg",
+      "comparisonImagePath": "/workspaces/RealEnhance-v2/tmp/rental03-stage2-1780536305731.png",
+      "rows": [
+        {
+          "baselineNumber": 1,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.905,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 2,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 3,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.922,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 4,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 5,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.943,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 6,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 7,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 8,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 9,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.948,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 10,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.922,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 11,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 12,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 13,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.91,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 14,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.923,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 15,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 16,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.93,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 17,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.905,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 18,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.93,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 19,
+          "verdict": "FAIL",
+          "issueType": "opening_removed",
+          "confidence": 0.948,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        },
+        {
+          "baselineNumber": 20,
+          "verdict": "PASS",
+          "issueType": "opening_removed",
+          "confidence": 0.6,
+          "matchedOpenings": 3,
+          "missingOpenings": 1,
+          "additionalOpenings": 0,
+          "reconciliationScore": 0.75
+        }
+      ],
+      "summary": {
+        "totalRuns": 20,
+        "passCount": 9,
+        "failCount": 11,
+        "passRate": 0.45,
+        "failRate": 0.55,
+        "verdictConsistencyRate": 0.55,
+        "uniqueVerdictCount": 2,
+        "confidenceMean": 0.7793,
+        "confidenceVariance": 0.0264,
+        "confidenceStdDev": 0.1626
+      }
+    },
+    {
+      "id": "C",
+      "name": "Test C: Known Opening Failure Fixture",
+      "baselineImagePath": "/workspaces/RealEnhance-v2/worker/test-data/Rental 03.jpg",
+      "comparisonImagePath": "/workspaces/RealEnhance-v2/Test Images/Declutter Validator Testing/Rental 03 - Opening Covered.jpg",
+      "rows": [
+        {
+          "baselineNumber": 1,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 2,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 3,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 4,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 5,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 6,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 7,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 8,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.788,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 9,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 10,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 11,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 12,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.813,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 13,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 14,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 15,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.825,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 16,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 17,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 18,
+          "verdict": "PASS",
+          "issueType": "opening_resized_minor",
+          "confidence": 0.825,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 19,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.6,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        },
+        {
+          "baselineNumber": 20,
+          "verdict": "PASS",
+          "issueType": "opening_anomaly",
+          "confidence": 0.8,
+          "matchedOpenings": 4,
+          "missingOpenings": 0,
+          "additionalOpenings": 0,
+          "reconciliationScore": 1
+        }
+      ],
+      "summary": {
+        "totalRuns": 20,
+        "passCount": 20,
+        "failCount": 0,
+        "passRate": 1,
+        "failRate": 0,
+        "verdictConsistencyRate": 1,
+        "uniqueVerdictCount": 1,
+        "confidenceMean": 0.6525,
+        "confidenceVariance": 0.0083,
+        "confidenceStdDev": 0.0913
+      }
+    }
+  ],
+  "finalAnswers": {
+    "baselineVariationChangedVerdicts": true,
+    "stabilizationNeededForConsistentOutcomes": true,
+    "confidenceVarianceByTest": {
+      "A": 0.0064,
+      "B": 0.0264,
+      "C": 0.0083
+    },
+    "latencyImprovementEstimate": {
+      "benchmarkAvgLatencyMs": 87931.05,
+      "instabilityRateAcrossTests": 0.15,
+      "estimatedLatencyContributingToOutcomeMs": 13189.66,
+      "note": "Estimated as benchmark avg baseline stabilization latency multiplied by observed verdict instability rate across Tests A/B/C."
+    }
+  }
+}

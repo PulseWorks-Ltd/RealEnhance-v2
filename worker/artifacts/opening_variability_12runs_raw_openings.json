@@ -1,0 +1,690 @@
+{
+  "model": "gemini-2.5-pro",
+  "image": "Rental 03.jpg",
+  "runs": [
+    {
+      "run": 1,
+      "ms": 42669,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.873,
+            0.183,
+            0.998,
+            0.933
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.548,
+            0.111,
+            0.873,
+            0.952
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.101,
+            0.178,
+            0.485,
+            0.536
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.598,
+            0.316,
+            0.763,
+            0.448
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "run": 2,
+      "ms": 52206,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.972,
+            0.422,
+            1,
+            0.825
+          ],
+          "confidence": 0.7
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.621,
+            0.148,
+            0.975,
+            1
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.181,
+            0.201,
+            0.652,
+            0.605
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.69,
+            0.33,
+            0.852,
+            0.453
+          ],
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "run": 3,
+      "ms": 58808,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.95,
+            0.42,
+            1,
+            0.9
+          ],
+          "confidence": 0.7
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.63,
+            0.1,
+            1,
+            0.97
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.17,
+            0.17,
+            0.63,
+            0.6
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.69,
+            0.36,
+            0.84,
+            0.55
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "run": 4,
+      "ms": 45038,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.895,
+            0.448,
+            0.962,
+            0.693
+          ],
+          "confidence": 0.7
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.551,
+            0.091,
+            0.842,
+            0.952
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.152,
+            0.133,
+            0.528,
+            0.561
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.603,
+            0.354,
+            0.758,
+            0.501
+          ],
+          "confidence": 0.9
+        }
+      ]
+    },
+    {
+      "run": 5,
+      "ms": 47514,
+      "windowCount": 3,
+      "doorLikeCount": 1,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 1,
+          "bbox": [
+            0.67,
+            0.403,
+            0.922,
+            0.757
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.159,
+            0.234,
+            0.585,
+            0.75
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.694,
+            0.45,
+            0.835,
+            0.658
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "W3",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.942,
+            0.511,
+            1,
+            0.985
+          ],
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "run": 6,
+      "ms": 52923,
+      "windowCount": 3,
+      "doorLikeCount": 1,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.64,
+            0.082,
+            0.855,
+            0.472
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.17,
+            0.157,
+            0.525,
+            0.622
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.66,
+            0.292,
+            0.83,
+            0.45
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "W3",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.89,
+            0.33,
+            0.99,
+            0.6
+          ],
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "run": 7,
+      "ms": 41440,
+      "windowCount": 3,
+      "doorLikeCount": 1,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 1,
+          "bbox": [
+            0.595,
+            0.05,
+            0.99,
+            0.95
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.081,
+            0.13,
+            0.543,
+            0.524
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.651,
+            0.303,
+            0.838,
+            0.441
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "W3",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.915,
+            0.413,
+            0.985,
+            0.701
+          ],
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "run": 8,
+      "ms": 44165,
+      "windowCount": 3,
+      "doorLikeCount": 1,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.638,
+            0.088,
+            0.983,
+            0.458
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.101,
+            0.15,
+            0.635,
+            0.557
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.68,
+            0.306,
+            0.854,
+            0.436
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W3",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.963,
+            0.354,
+            1,
+            0.704
+          ],
+          "confidence": 0.75
+        }
+      ]
+    },
+    {
+      "run": 9,
+      "ms": 33918,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.94,
+            0.33,
+            1,
+            0.73
+          ],
+          "confidence": 0.75
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.55,
+            0.13,
+            0.88,
+            1
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.01,
+            0.18,
+            0.53,
+            0.65
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.63,
+            0.34,
+            0.8,
+            0.47
+          ],
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "run": 10,
+      "ms": 36983,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.969,
+            0.347,
+            1,
+            0.627
+          ],
+          "confidence": 0.75
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 1,
+          "bbox": [
+            0.642,
+            0.118,
+            0.928,
+            0.93
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.155,
+            0.138,
+            0.67,
+            0.541
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.681,
+            0.322,
+            0.838,
+            0.435
+          ],
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "run": 11,
+      "ms": 55905,
+      "windowCount": 2,
+      "doorLikeCount": 2,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "bbox": [
+            0.95,
+            0.285,
+            1,
+            0.81
+          ],
+          "confidence": 0.7
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.66,
+            0.127,
+            0.915,
+            0.959
+          ],
+          "confidence": 0.9
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.145,
+            0.18,
+            0.645,
+            0.689
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.68,
+            0.33,
+            0.8,
+            0.435
+          ],
+          "confidence": 0.85
+        }
+      ]
+    },
+    {
+      "run": 12,
+      "ms": 31343,
+      "windowCount": 3,
+      "doorLikeCount": 1,
+      "openingCount": 4,
+      "openings": [
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "bbox": [
+            0.545,
+            0.198,
+            0.923,
+            0.887
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "bbox": [
+            0.088,
+            0.229,
+            0.543,
+            0.658
+          ],
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "bbox": [
+            0.672,
+            0.34,
+            0.86,
+            0.479
+          ],
+          "confidence": 0.85
+        },
+        {
+          "id": "W3",
+          "type": "window",
+          "wallIndex": 1,
+          "bbox": [
+            0.916,
+            0.37,
+            1,
+            0.751
+          ],
+          "confidence": 0.8
+        }
+      ]
+    }
+  ]
+}

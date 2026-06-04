@@ -80,6 +80,35 @@ describe("opening preservation determinism", () => {
     expect(getStructuralBaselineGraphHash(baselineA)).not.toBe(getStructuralBaselineGraphHash(baselineB));
   });
 
+  it("keeps graph hash stable when an equivalent opening drifts between window and door subtype", () => {
+    const baselineA = makeBaseline([
+      makeOpening({
+        id: "A1",
+        type: "window",
+        bbox: [0.64, 0.16, 0.9, 0.84],
+        wallIndex: 3,
+        horizontalBand: "right_third",
+        verticalBand: "mid_zone",
+        wallCoverageBand: "20-40",
+        touchesFloor: false,
+      }),
+    ]);
+    const baselineB = makeBaseline([
+      makeOpening({
+        id: "A1",
+        type: "door",
+        bbox: [0.64, 0.16, 0.9, 0.84],
+        wallIndex: 3,
+        horizontalBand: "right_third",
+        verticalBand: "mid_zone",
+        wallCoverageBand: "20-40",
+        touchesFloor: false,
+      }),
+    ]);
+
+    expect(getStructuralBaselineGraphHash(baselineA)).toBe(getStructuralBaselineGraphHash(baselineB));
+  });
+
   it("does not emit sequence drift when identical openings arrive in reversed equal-x order", async () => {
     const baseline = makeBaseline([
       makeOpening({
@@ -137,5 +166,48 @@ describe("opening preservation determinism", () => {
     expect(result.summary.openingSignatureMismatch).toBe(false);
     expect(result.summary.openingRemoved).toBe(false);
     expect(result.summary.openingRelocated).toBe(false);
+  });
+
+  it("preserves downstream subtype mismatch semantics after canonical hash normalization", async () => {
+    const baseline = makeBaseline([
+      makeOpening({
+        id: "opening-base",
+        type: "window",
+        bbox: [0.64, 0.16, 0.9, 0.84],
+        wallIndex: 3,
+        horizontalBand: "right_third",
+        verticalBand: "mid_zone",
+        wallCoverageBand: "20-40",
+      }),
+    ]);
+
+    const detected = makeBaseline([
+      makeOpening({
+        id: "opening-detected",
+        type: "door",
+        bbox: [0.64, 0.16, 0.9, 0.84],
+        wallIndex: 3,
+        horizontalBand: "right_third",
+        verticalBand: "mid_zone",
+        wallCoverageBand: "20-40",
+      }),
+    ]);
+
+    const result = await validateOpeningPreservation(baseline, "unused", {
+      detectedBaseline: detected,
+      jobId: "job-det-2",
+      imageId: "img-det-2",
+      attempt: 1,
+    });
+
+    expect(result.summary.openingRemoved).toBe(false);
+    expect(result.summary.openingClassMismatch).toBe(true);
+    expect(result.reconciledMatches).toEqual([
+      expect.objectContaining({
+        baselineId: "opening-base",
+        detectedId: "opening-detected",
+        matchSource: "graph_reconcile",
+      }),
+    ]);
   });
 });

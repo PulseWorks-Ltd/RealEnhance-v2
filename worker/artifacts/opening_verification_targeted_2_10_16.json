@@ -1,0 +1,360 @@
+{
+  "generatedAt": "2026-06-04T00:08:15.422Z",
+  "runs": [
+    {
+      "run": 2,
+      "extractionOpenings": [
+        {
+          "id": "W3",
+          "type": "window",
+          "wallIndex": 1,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.871,
+            0.406,
+            0.921,
+            0.731
+          ]
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 2,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.617,
+            0.388,
+            0.742,
+            0.519
+          ]
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 2,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.579,
+            0.113,
+            0.85,
+            0.463
+          ]
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.171,
+            0.15,
+            0.538,
+            0.588
+          ]
+        }
+      ],
+      "verification": {
+        "attempted": true,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [
+          {
+            "id": "A1",
+            "status": "confirmed",
+            "notes": "Walkthrough opening into the kitchen area is correctly identified."
+          },
+          {
+            "id": "W1",
+            "status": "confirmed",
+            "notes": "Large window on the main, front-facing wall is correctly identified."
+          },
+          {
+            "id": "W2",
+            "status": "confirmed",
+            "notes": "Window within the kitchen area is correctly identified."
+          },
+          {
+            "id": "W3",
+            "status": "confirmed",
+            "notes": "Window on the far right wall is correctly identified."
+          }
+        ],
+        "additionalOpenings": [],
+        "missingOpenings": [],
+        "analysis": "The baseline extraction is a perfect match with the image. All four openings are correctly identified by type and location. There are no additional or missing openings."
+      }
+    },
+    {
+      "run": 10,
+      "extractionOpenings": [
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "verticalBand": "full_height",
+          "bbox": [
+            0.627,
+            0.28,
+            0.91,
+            0.88
+          ]
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 0,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.17,
+            0.16,
+            0.55,
+            0.56
+          ]
+        },
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 0,
+          "verticalBand": "full_height",
+          "bbox": [
+            0.912,
+            0.421,
+            0.998,
+            0.87
+          ]
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 1,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.63,
+            0.3,
+            0.85,
+            0.4
+          ]
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 1,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.6,
+            0.1,
+            0.89,
+            0.45
+          ]
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.174,
+            0.228,
+            0.627,
+            0.613
+          ]
+        }
+      ],
+      "verification": {
+        "attempted": true,
+        "accepted": false,
+        "modelAccepted": false,
+        "additionalOpeningCount": 1,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 1,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [
+          "additional_openings_detected",
+          "material_opening_mismatch"
+        ],
+        "openingStatuses": [
+          {
+            "id": "A1",
+            "status": "confirmed",
+            "notes": "Large walkthrough opening into the kitchen area is correctly identified."
+          },
+          {
+            "id": "W1",
+            "status": "confirmed",
+            "notes": "Large window on the left wall is correctly identified."
+          },
+          {
+            "id": "W2",
+            "status": "confirmed",
+            "notes": "Window within the kitchen area is correctly identified."
+          },
+          {
+            "id": "W3",
+            "status": "materially_different",
+            "notes": "This opening is a walkthrough/doorway, not a window. It leads to another interior space."
+          }
+        ],
+        "additionalOpenings": [
+          {
+            "id": "A2",
+            "type": "walkthrough",
+            "location": "On the back wall (wall 1), at the far right edge.",
+            "notes": "This is the opening that was incorrectly identified as window W3 in the baseline."
+          }
+        ],
+        "missingOpenings": [],
+        "analysis": "The baseline correctly identifies three of the four openings. However, it materially misclassifies the opening on the far right (W3) as a window when it is clearly a walkthrough or doorway to another interior room. This constitutes a material difference, rendering the baseline not acceptable."
+      }
+    },
+    {
+      "run": 16,
+      "extractionOpenings": [
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 0,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.165,
+            0.141,
+            0.521,
+            0.51
+          ]
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 0,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.683,
+            0.388,
+            0.833,
+            0.519
+          ]
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 0,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.625,
+            0.144,
+            0.958,
+            0.55
+          ]
+        },
+        {
+          "id": "W2",
+          "type": "window",
+          "wallIndex": 1,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.671,
+            0.289,
+            0.801,
+            0.449
+          ]
+        },
+        {
+          "id": "A1",
+          "type": "walkthrough",
+          "wallIndex": 1,
+          "verticalBand": "full_height",
+          "bbox": [
+            0.64,
+            0.08,
+            0.87,
+            0.9
+          ]
+        },
+        {
+          "id": "D1",
+          "type": "door",
+          "wallIndex": 1,
+          "verticalBand": "full_height",
+          "bbox": [
+            0.967,
+            0.188,
+            1,
+            0.963
+          ]
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "wallIndex": 3,
+          "verticalBand": "mid_zone",
+          "bbox": [
+            0.175,
+            0.181,
+            0.575,
+            0.625
+          ]
+        }
+      ],
+      "verification": {
+        "attempted": true,
+        "accepted": false,
+        "modelAccepted": false,
+        "additionalOpeningCount": 1,
+        "missingOpeningCount": 1,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 1,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [
+          "additional_openings_detected",
+          "missing_openings_detected",
+          "material_opening_mismatch"
+        ],
+        "openingStatuses": [
+          {
+            "id": "A1",
+            "status": "confirmed",
+            "notes": "The large walkthrough opening from the living room into the kitchen on the right wall is correctly identified."
+          },
+          {
+            "id": "D1",
+            "status": "confirmed",
+            "notes": "There is a full-height opening on the far right of the image, consistent with a door or sliding door leading outside."
+          },
+          {
+            "id": "W1",
+            "status": "confirmed",
+            "notes": "The large window on the left wall is correctly identified."
+          },
+          {
+            "id": "W2",
+            "status": "not_present",
+            "notes": "This opening describes a window on the right wall (wallIndex 0). However, the window is actually on the back wall of the kitchen, visible *through* the walkthrough A1. There is no window directly on wall 0."
+          }
+        ],
+        "additionalOpenings": [
+          {
+            "id": "ADD-1",
+            "type": "window",
+            "location": "On the back wall of the kitchen area, visible through opening A1.",
+            "notes": "This is the window the baseline likely intended to capture with W2, but it was assigned to the wrong wall."
+          }
+        ],
+        "missingOpenings": [
+          {
+            "id": "W2",
+            "type": "window",
+            "location": "wallIndex: 0, horizontalBand: right_third",
+            "notes": "No window exists on wall 0. The baseline incorrectly placed a window from a background room onto this wall."
+          }
+        ],
+        "analysis": "The baseline correctly identified the walkthrough (A1), the left-side window (W1), and the door-like opening on the far right (D1). However, it made a material error by placing a window (W2) on the right wall of the living room. This window is actually in the kitchen, a separate area visible through the walkthrough. This misplacement of an opening constitutes a significant error in the inventory."
+      }
+    }
+  ]
+}
