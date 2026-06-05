@@ -2322,7 +2322,6 @@ type ClosetRegionDescriptor = {
   wallPosition: string;
   horizontalBand: string;
   verticalBand: string;
-  widthBand: string;
   bboxText?: string;
 };
 
@@ -2792,7 +2791,6 @@ function collectClosetRegionDescriptors(baseline: StructuralBaseline | null | un
         wallPosition: String(opening.wallPosition || opening.wallIndex || "unknown"),
         horizontalBand: String(opening.horizontalBand || opening.relativeHorizontalPosition || "unknown"),
         verticalBand: String(opening.verticalBand || "unknown"),
-        widthBand: String(opening.widthBand || "unknown"),
         bboxText,
       };
     });
@@ -2807,7 +2805,7 @@ function buildClosetSurfaceExclusionConstraintBlock(
 
   const regionLines = regions.map((region) => {
     const bboxSuffix = region.bboxText ? `, ${region.bboxText}` : "";
-    return `- ${region.id}: wall=${region.wallPosition}, horizontal=${region.horizontalBand}, vertical=${region.verticalBand}, width=${region.widthBand}${bboxSuffix}`;
+    return `- ${region.id}: wall=${region.wallPosition}, horizontal=${region.horizontalBand}, vertical=${region.verticalBand}${bboxSuffix}`;
   });
 
   const modeRules = mode === "soft"

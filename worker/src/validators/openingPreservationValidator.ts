@@ -6,17 +6,14 @@ import { getRedisJson, setRedisJson } from "../utils/persist";
 import type { StructuralSignal, SignalRegion } from "./structuralSignal";
 
 export type StructuralOpeningType = "window" | "door" | "closet_door" | "walkthrough";
-export type StructuralClass = "circulation" | "storage" | "exterior" | "unknown";
 export type WallPosition = "left_wall" | "right_wall" | "far_wall" | "near_wall";
 export type RelativeHorizontalPosition = "left_third" | "center" | "right_third";
 export type WallIndex = 0 | 1 | 2 | 3;
 export type HorizontalBand = "left_third" | "center_third" | "right_third";
 export type VerticalBand = "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height";
-export type WidthBand = "narrow" | "single" | "double" | "wide";
 export type WallCoverageBand = "5-10" | "10-20" | "20-40" | "40-60" | "60+";
 export type OpeningOrientation = "portrait" | "landscape" | "square";
 export type PaneStructure = "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown";
-export type HeightClass = "standard" | "floor_to_ceiling" | "transom";
 export type DoorLeafState = "closed" | "open" | "ajar" | "unknown";
 
 export type AnchorFixtureType =
@@ -41,18 +38,13 @@ export type StructuralOpening = {
   type: StructuralOpeningType;
   bbox: [number, number, number, number];
   area_pct: number;
-  aspect_ratio: number;
-  structuralClass: StructuralClass;
   wallIndex: WallIndex;
   horizontalBand: HorizontalBand;
   verticalBand: VerticalBand;
-  widthBand: WidthBand;
   wallCoverageBand: WallCoverageBand;
   orientation: OpeningOrientation;
   paneStructure: PaneStructure;
-  heightClass: HeightClass;
   doorLeafState: DoorLeafState;
-  approxAspectRatio: number;
   confidence: number;
 
   // Legacy compatibility fields used by existing downstream systems
@@ -68,7 +60,6 @@ export type StructuralBaseline = {
   cameraOrientation?: string;
   openings: StructuralOpening[];
   anchorFixtures?: AnchorFixture[];
-  wallCount: number;
   graphMeta?: {
     graphStable: boolean;
     graphConfidence: number;
@@ -337,8 +328,6 @@ function compareStructuralOpenings(left: StructuralOpening, right: StructuralOpe
     compareNumbers(bboxCenterX(left.bbox), bboxCenterX(right.bbox), 1e-4) ||
     compareNumbers((left.bbox[1] + left.bbox[3]) / 2, (right.bbox[1] + right.bbox[3]) / 2, 1e-4) ||
     compareStrings(left.type, right.type) ||
-    compareStrings(left.widthBand, right.widthBand) ||
-    compareStrings(left.heightClass, right.heightClass) ||
     compareStrings(left.paneStructure, right.paneStructure) ||
     compareStrings(bboxKey(left.bbox), bboxKey(right.bbox)) ||
     compareStrings(String(left.id), String(right.id))
@@ -362,8 +351,6 @@ function structuralOpeningTelemetrySignature(opening: StructuralOpening): string
     String(opening.wallIndex),
     opening.horizontalBand,
     opening.verticalBand,
-    opening.widthBand,
-    opening.heightClass,
     bboxKey(opening.bbox),
   ].join("|");
 }
@@ -571,15 +558,12 @@ function structuralOpeningSignature(opening: StructuralOpening): Record<string, 
   return {
     canonicalIdentity,
     bbox: quantizeBbox(opening.bbox),
-    structuralClass: subtypeNeutralIdentity ? CANONICAL_APERTURE_IDENTITY : opening.structuralClass,
     wallIndex: opening.wallIndex,
     horizontalBand: opening.horizontalBand,
     verticalBand: opening.verticalBand,
-    widthBand: opening.widthBand,
     wallCoverageBand: opening.wallCoverageBand,
     orientation: opening.orientation,
     paneStructure: subtypeNeutralIdentity ? undefined : opening.paneStructure,
-    heightClass: subtypeNeutralIdentity ? undefined : opening.heightClass,
     doorLeafState: subtypeNeutralIdentity ? undefined : opening.doorLeafState,
     wallPosition: opening.wallPosition,
     relativeHorizontalPosition: opening.relativeHorizontalPosition,
@@ -601,7 +585,6 @@ function structuralFixtureSignature(fixture: AnchorFixture): Record<string, unkn
 function hashStructuralBaselineGraph(baseline: StructuralBaseline): string {
   const canonical = stableSortObject({
     cameraOrientation: baseline.cameraOrientation ?? null,
-    wallCount: baseline.wallCount,
     openings: (baseline.openings || [])
       .map((opening) => structuralOpeningSignature(opening))
       .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
@@ -692,18 +675,13 @@ Return JSON in this exact schema:
       "type": "window" | "door" | "closet_door" | "walkthrough",
       "bbox": [x1, y1, x2, y2],
       "area_pct": number,
-      "aspect_ratio": number,
-      "structuralClass": "circulation" | "storage" | "exterior" | "unknown",
       "wallIndex": 0 | 1 | 2 | 3,
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "verticalBand": "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height",
-      "widthBand": "narrow" | "single" | "double" | "wide",
       "wallCoverageBand": "5-10" | "10-20" | "20-40" | "40-60" | "60+",
       "orientation": "portrait" | "landscape" | "square",
       "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
-      "heightClass": "standard" | "floor_to_ceiling" | "transom",
       "doorLeafState": "closed" | "open" | "ajar" | "unknown",
-      "approxAspectRatio": number,
       "confidence": number
     }
   ],
@@ -716,8 +694,7 @@ Return JSON in this exact schema:
       "bbox": [x1, y1, x2, y2],
       "confidence": number
     }
-  ],
-  "wallCount": number
+  ]
 }
 
 Rules:
@@ -725,13 +702,10 @@ Rules:
 - wallIndex mapping: 0=front wall (camera facing), 1=right wall, 2=back wall, 3=left wall.
 - bbox must be normalized to image dimensions (0..1).
 - area_pct must represent % of image area occupied by the opening (0..100).
-- aspect_ratio must be width/height for the opening geometry.
 - horizontalBand and verticalBand should be stable under mild reframing.
-- widthBand reflects approximate opening width class.
 - wallCoverageBand is approximate percent of the wall occupied by the opening (not image area).
 - orientation should be derived from opening shape (portrait, landscape, square).
 - paneStructure should describe visible pane layout; if uncertain return "unknown".
-- heightClass should describe vertical extent as standard, floor_to_ceiling, or transom.
 - doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
@@ -954,7 +928,6 @@ function mergeCanonicalBaselineFromFallback(
     cameraOrientation: primary.cameraOrientation || secondary.cameraOrientation,
     openings: mergedOpenings,
     anchorFixtures: mergedAnchorFixtures,
-    wallCount: Math.max(primary.wallCount || 0, secondary.wallCount || 0, 1),
   };
 }
 
@@ -1041,10 +1014,6 @@ function isVerticalBand(value: string): value is VerticalBand {
   return value === "floor_zone" || value === "mid_zone" || value === "ceiling_zone" || value === "full_height";
 }
 
-function isWidthBand(value: string): value is WidthBand {
-  return value === "narrow" || value === "single" || value === "double" || value === "wide";
-}
-
 function isWallCoverageBand(value: string): value is WallCoverageBand {
   return value === "5-10" || value === "10-20" || value === "20-40" || value === "40-60" || value === "60+";
 }
@@ -1062,10 +1031,6 @@ function isPaneStructure(value: string): value is PaneStructure {
     value === "multi_pane_grid" ||
     value === "unknown"
   );
-}
-
-function isHeightClass(value: string): value is HeightClass {
-  return value === "standard" || value === "floor_to_ceiling" || value === "transom";
 }
 
 function isDoorLeafState(value: string): value is DoorLeafState {
@@ -1107,12 +1072,6 @@ function deriveWallCoverageBand(areaPct: number): WallCoverageBand {
   if (area < 40) return "20-40";
   if (area < 60) return "40-60";
   return "60+";
-}
-
-function deriveHeightClass(verticalBand: VerticalBand): HeightClass {
-  if (verticalBand === "full_height") return "floor_to_ceiling";
-  if (verticalBand === "ceiling_zone") return "transom";
-  return "standard";
 }
 
 function wallCoverageBandIndex(value: WallCoverageBand): number {
@@ -1230,30 +1189,6 @@ function deriveVerticalBand(opening: Pick<StructuralOpening, "touchesFloor" | "t
   return "mid_zone";
 }
 
-function deriveWidthBand(opening: Pick<StructuralOpening, "type" | "shape" | "approxCount">): WidthBand {
-  const shape = (opening.shape || "").toLowerCase();
-  if (opening.approxCount >= 2 || shape.includes("double")) return "double";
-  if (shape.includes("wide") || shape.includes("panorama")) return "wide";
-  if (shape.includes("narrow") || opening.type === "closet_door") return "narrow";
-  return "single";
-}
-
-function deriveApproxAspectRatio(opening: Pick<StructuralOpening, "type" | "shape">): number {
-  const shape = (opening.shape || "").toLowerCase();
-  if (shape.includes("square")) return 1;
-  if (opening.type === "window") return 1.4;
-  if (opening.type === "door" || opening.type === "closet_door") return 0.5;
-  if (opening.type === "walkthrough") return 0.8;
-  return 1;
-}
-
-export function deriveStructuralClass(opening: Pick<StructuralOpening, "type" | "touchesFloor" | "touchesCeiling">): StructuralClass {
-  if (opening.type === "window") return "exterior";
-  if (opening.type === "closet_door") return "storage";
-  if (opening.type === "door" || opening.type === "walkthrough") return "circulation";
-  return "unknown";
-}
-
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -1357,7 +1292,6 @@ function reconcileOpeningMatches(
         if (canonicalWall === base.wallIndex) score += 3;
         if (candidate.horizontalBand === base.horizontalBand) score += 2;
         if (candidate.verticalBand === base.verticalBand) score += 1;
-        if (candidate.heightClass === base.heightClass) score += 1;
         if (candidate.orientation === base.orientation) score += 0.5;
 
         const paneComparable = candidate.paneStructure !== "unknown" && base.paneStructure !== "unknown";
@@ -1573,17 +1507,6 @@ function normalizeAreaPct(input: any, bbox: [number, number, number, number]): n
   return Math.max(0, Math.min(100, bboxArea));
 }
 
-function normalizeAspectRatio(input: any, bbox: [number, number, number, number], fallback: number): number {
-  const raw = input?.aspect_ratio ?? input?.aspectRatio ?? input?.approxAspectRatio;
-  if (Number.isFinite(Number(raw)) && Number(raw) > 0) {
-    return Number(raw);
-  }
-  const width = Math.max(0.01, bbox[2] - bbox[0]);
-  const height = Math.max(0.01, bbox[3] - bbox[1]);
-  const derived = width / height;
-  return Number.isFinite(derived) && derived > 0 ? derived : fallback;
-}
-
 function validateStructuralBaseline(input: any): StructuralBaseline {
   if (!input || typeof input !== "object") {
     throw new Error("Structural baseline must be an object");
@@ -1645,18 +1568,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         ? opening.approxCount
         : 1;
 
-    const structuralClassCandidate =
-      opening.structuralClass === "circulation" ||
-      opening.structuralClass === "storage" ||
-      opening.structuralClass === "exterior" ||
-      opening.structuralClass === "unknown"
-        ? opening.structuralClass
-        : deriveStructuralClass({
-            type: normalizedType,
-            touchesFloor: touchesFloorCandidate,
-            touchesCeiling: touchesCeilingCandidate,
-          });
-
     const verticalBandCandidate =
       typeof opening.verticalBand === "string" && isVerticalBand(opening.verticalBand)
         ? opening.verticalBand
@@ -1665,26 +1576,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
             touchesCeiling: touchesCeilingCandidate,
           });
 
-    const widthBandCandidate =
-      typeof opening.widthBand === "string" && isWidthBand(opening.widthBand)
-        ? opening.widthBand
-        : deriveWidthBand({
-            type: normalizedType,
-            shape: shapeCandidate,
-            approxCount: approxCountCandidate,
-          });
-
-    const approxAspectRatioCandidate =
-      typeof opening.approxAspectRatio === "number" && Number.isFinite(opening.approxAspectRatio)
-        ? opening.approxAspectRatio
-        : deriveApproxAspectRatio({
-            type: normalizedType,
-            shape: shapeCandidate,
-          });
-
     const bboxCandidate = normalizeBbox(opening, horizontalBandCandidate, verticalBandCandidate);
     const areaPctCandidate = normalizeAreaPct(opening, bboxCandidate);
-    const aspectRatioCandidate = normalizeAspectRatio(opening, bboxCandidate, approxAspectRatioCandidate);
+    const bboxWidth = Math.max(0.01, bboxCandidate[2] - bboxCandidate[0]);
+    const bboxHeight = Math.max(0.01, bboxCandidate[3] - bboxCandidate[1]);
+    const bboxAspectRatio = bboxWidth / bboxHeight;
 
     const confidenceCandidate =
       typeof opening.confidence === "number" && Number.isFinite(opening.confidence)
@@ -1699,17 +1595,12 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     const orientationCandidate =
       typeof opening.orientation === "string" && isOpeningOrientation(opening.orientation)
         ? opening.orientation
-        : deriveOrientation(aspectRatioCandidate);
+        : deriveOrientation(bboxAspectRatio);
 
     const paneStructureCandidate =
       typeof opening.paneStructure === "string" && isPaneStructure(opening.paneStructure)
         ? opening.paneStructure
         : normalizePaneStructure(opening.paneStructure);
-
-    const heightClassCandidate =
-      typeof opening.heightClass === "string" && isHeightClass(opening.heightClass)
-        ? opening.heightClass
-        : deriveHeightClass(verticalBandCandidate);
 
     const doorLeafStateCandidate =
       typeof opening.doorLeafState === "string" && isDoorLeafState(opening.doorLeafState)
@@ -1721,18 +1612,13 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       type: normalizedType,
       bbox: bboxCandidate,
       area_pct: areaPctCandidate,
-      aspect_ratio: aspectRatioCandidate,
-      structuralClass: structuralClassCandidate,
       wallIndex: wallIndexCandidate,
       horizontalBand: horizontalBandCandidate,
       verticalBand: verticalBandCandidate,
-      widthBand: widthBandCandidate,
       wallCoverageBand: wallCoverageBandCandidate,
       orientation: orientationCandidate,
       paneStructure: paneStructureCandidate,
-      heightClass: heightClassCandidate,
       doorLeafState: doorLeafStateCandidate,
-      approxAspectRatio: aspectRatioCandidate,
       confidence: confidenceCandidate,
 
       wallPosition: wallPositionCandidate,
@@ -1744,7 +1630,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     };
   });
 
-  const uniqueWalls = new Set<number>(openings.map((o) => o.wallIndex));
   const anchorFixtures: AnchorFixture[] = Array.isArray(input.anchorFixtures)
     ? input.anchorFixtures
         .map((fixture: any, index: number) => {
@@ -1780,10 +1665,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         })
         .filter((item: AnchorFixture | null): item is AnchorFixture => item !== null)
     : [];
-  const wallCountFromInput = typeof input.wallCount === "number" && Number.isFinite(input.wallCount)
-    ? Math.max(1, Math.min(4, Math.round(input.wallCount)))
-    : uniqueWalls.size;
-
   openings.sort(compareStructuralOpenings);
   anchorFixtures.sort(compareAnchorFixtures);
 
@@ -1791,7 +1672,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     cameraOrientation: typeof input.cameraOrientation === "string" ? input.cameraOrientation : undefined,
     openings,
     anchorFixtures,
-    wallCount: wallCountFromInput,
   };
 }
 
@@ -2094,7 +1974,6 @@ async function extractStructuralBaselineOnce(
       wallCoverageBand: opening.wallCoverageBand,
       orientation: opening.orientation,
       paneStructure: opening.paneStructure,
-      heightClass: opening.heightClass,
       doorLeafState: opening.doorLeafState,
       confidence: opening.confidence,
     })),
@@ -2105,7 +1984,6 @@ async function extractStructuralBaselineOnce(
       horizontalBand: fixture.horizontalBand,
       confidence: fixture.confidence,
     })),
-    wallCount: baseline.wallCount,
   }));
   return baseline;
 }
@@ -2118,7 +1996,6 @@ async function verifyStructuralBaselineOnce(
   const ai = getGeminiClient();
   const promptBuildStartedAt = Date.now();
   const verificationPayload = {
-    wallCount: baseline.wallCount,
     openings: baseline.openings.map((opening) => ({
       id: opening.id,
       type: opening.type,
@@ -3271,8 +3148,8 @@ export async function validateOpeningPreservation(
       });
     }
 
-    const baseAspect = Math.max(0.01, Number(baseOpening.aspect_ratio || baseOpening.approxAspectRatio || 0));
-    const detectedAspect = Math.max(0.01, Number(match.aspect_ratio || match.approxAspectRatio || 0));
+    const baseAspect = Math.max(0.01, (baseOpening.bbox[2] - baseOpening.bbox[0]) / Math.max(0.01, (baseOpening.bbox[3] - baseOpening.bbox[1])));
+    const detectedAspect = Math.max(0.01, (match.bbox[2] - match.bbox[0]) / Math.max(0.01, (match.bbox[3] - match.bbox[1])));
     const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
     maxAspectDelta = Math.max(maxAspectDelta, aspectDelta);
 
@@ -3461,7 +3338,7 @@ export function detectRelocation(
 ): boolean {
   for (const base of baseline.openings) {
     const sameClassMatches = enhancedDetected.filter(
-      (opening) => opening.structuralClass === base.structuralClass
+      (opening) => getCanonicalOpeningIdentityType(opening.type) === getCanonicalOpeningIdentityType(base.type)
     );
 
     if (!sameClassMatches.length) continue;
