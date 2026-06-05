@@ -6,17 +6,14 @@ import { getRedisJson, setRedisJson } from "../utils/persist";
 import type { StructuralSignal, SignalRegion } from "./structuralSignal";
 
 export type StructuralOpeningType = "window" | "door" | "closet_door" | "walkthrough";
-export type StructuralClass = "circulation" | "storage" | "exterior" | "unknown";
 export type WallPosition = "left_wall" | "right_wall" | "far_wall" | "near_wall";
 export type RelativeHorizontalPosition = "left_third" | "center" | "right_third";
 export type WallIndex = 0 | 1 | 2 | 3;
 export type HorizontalBand = "left_third" | "center_third" | "right_third";
 export type VerticalBand = "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height";
-export type WidthBand = "narrow" | "single" | "double" | "wide";
 export type WallCoverageBand = "5-10" | "10-20" | "20-40" | "40-60" | "60+";
 export type OpeningOrientation = "portrait" | "landscape" | "square";
 export type PaneStructure = "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown";
-export type HeightClass = "standard" | "floor_to_ceiling" | "transom";
 export type DoorLeafState = "closed" | "open" | "ajar" | "unknown";
 
 export type AnchorFixtureType =
@@ -41,18 +38,13 @@ export type StructuralOpening = {
   type: StructuralOpeningType;
   bbox: [number, number, number, number];
   area_pct: number;
-  aspect_ratio: number;
-  structuralClass: StructuralClass;
   wallIndex: WallIndex;
   horizontalBand: HorizontalBand;
   verticalBand: VerticalBand;
-  widthBand: WidthBand;
   wallCoverageBand: WallCoverageBand;
   orientation: OpeningOrientation;
   paneStructure: PaneStructure;
-  heightClass: HeightClass;
   doorLeafState: DoorLeafState;
-  approxAspectRatio: number;
   confidence: number;
 
   // Legacy compatibility fields used by existing downstream systems
@@ -68,7 +60,6 @@ export type StructuralBaseline = {
   cameraOrientation?: string;
   openings: StructuralOpening[];
   anchorFixtures?: AnchorFixture[];
-  wallCount: number;
   graphMeta?: {
     graphStable: boolean;
     graphConfidence: number;
@@ -81,8 +72,109 @@ export type StructuralBaseline = {
     candidateGraphHashes: string[];
     openingCountRange: { min: number; max: number };
     confirmedAt: string;
+    baselineMethod?: "graph_consensus" | "extraction_verification";
+    geminiCalls?: number;
+    verification?: {
+      attempted: boolean;
+      accepted: boolean;
+      modelAccepted: boolean;
+      additionalOpeningCount: number;
+      missingOpeningCount: number;
+      materiallyDifferentCount: number;
+      notPresentCount: number;
+      minorDifferenceCount: number;
+      rejectedReasonCodes: string[];
+      openingStatuses?: Array<{
+        id: string;
+        status: BaselineVerificationStatus;
+        notes?: string;
+      }>;
+      additionalOpenings?: BaselineVerificationIssue[];
+      missingOpenings?: BaselineVerificationIssue[];
+      analysis?: string;
+    };
   };
 };
+
+export type BaselineArchitectureMode = "graph_consensus" | "extraction_verification";
+
+type BaselineVerificationStatus =
+  | "confirmed"
+  | "confirmed_with_minor_description_difference"
+  | "materially_different"
+  | "not_present";
+
+type BaselineVerificationOpeningResult = {
+  id: string;
+  status: BaselineVerificationStatus;
+  notes?: string;
+};
+
+type BaselineVerificationIssue = {
+  id?: string;
+  type?: string;
+  location?: string;
+  notes?: string;
+};
+
+type BaselineVerificationResult = {
+  openings: BaselineVerificationOpeningResult[];
+  additionalOpenings: BaselineVerificationIssue[];
+  missingOpenings: BaselineVerificationIssue[];
+  baselineAccepted: boolean;
+  analysis?: string;
+};
+
+type BaselineExtractionOptions = {
+  jobId?: string;
+  imageId?: string;
+  attempt?: number;
+  baselineMode?: BaselineArchitectureMode;
+  disableCache?: boolean;
+};
+
+type BaselineExtractionTimingBreakdown = {
+  imageDownloadMs: number;
+  imageMaterializationMs: number;
+  imageResizeMs: number;
+  promptBuildMs: number;
+  geminiRequestMs: number;
+  responseReceiveMs: number;
+  jsonParseMs: number;
+  normalizationMs: number;
+  graphBuildMs: number;
+  persistenceMs: number;
+};
+
+function createBaselineTimingBreakdown(): BaselineExtractionTimingBreakdown {
+  return {
+    imageDownloadMs: 0,
+    imageMaterializationMs: 0,
+    imageResizeMs: 0,
+    promptBuildMs: 0,
+    geminiRequestMs: 0,
+    responseReceiveMs: 0,
+    jsonParseMs: 0,
+    normalizationMs: 0,
+    graphBuildMs: 0,
+    persistenceMs: 0,
+  };
+}
+
+function sumBaselineTimingBreakdown(timing: BaselineExtractionTimingBreakdown): number {
+  return (
+    timing.imageDownloadMs +
+    timing.imageMaterializationMs +
+    timing.imageResizeMs +
+    timing.promptBuildMs +
+    timing.geminiRequestMs +
+    timing.responseReceiveMs +
+    timing.jsonParseMs +
+    timing.normalizationMs +
+    timing.graphBuildMs +
+    timing.persistenceMs
+  );
+}
 
 export type OpeningValidationResult = {
   results: OpeningResult[];
@@ -101,6 +193,7 @@ export type OpeningValidationResult = {
     openingRelocated: boolean;
     openingResized: boolean;
     openingClassMismatch: boolean;
+    openingClassMismatchEnforcement: "advisory";
     openingBandMismatch: boolean;
     openingStateChanged?: boolean;
     openingApertureExpanded?: boolean;
@@ -186,6 +279,15 @@ const OPENING_BBOX_VARIANCE_THRESHOLD = Math.max(
   0.001,
   Math.min(0.25, Number(process.env.OPENING_BBOX_VARIANCE_THRESHOLD || 0.015))
 );
+const OPENING_BASELINE_VERIFICATION_EXPERIMENT = ["1", "true", "on", "yes"].includes(
+  String(process.env.OPENING_BASELINE_VERIFICATION_EXPERIMENT || "").trim().toLowerCase()
+);
+const OPENING_BASELINE_VERIFICATION_MODEL = String(
+  process.env.OPENING_BASELINE_VERIFICATION_MODEL || ""
+);
+const OPENING_BASELINE_SINGLE_PASS = ["1", "true", "on", "yes"].includes(
+  String(process.env.OPENING_BASELINE_SINGLE_PASS || "").trim().toLowerCase()
+);
 
 function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
   if (!Number.isFinite(value)) return 0;
@@ -226,8 +328,6 @@ function compareStructuralOpenings(left: StructuralOpening, right: StructuralOpe
     compareNumbers(bboxCenterX(left.bbox), bboxCenterX(right.bbox), 1e-4) ||
     compareNumbers((left.bbox[1] + left.bbox[3]) / 2, (right.bbox[1] + right.bbox[3]) / 2, 1e-4) ||
     compareStrings(left.type, right.type) ||
-    compareStrings(left.widthBand, right.widthBand) ||
-    compareStrings(left.heightClass, right.heightClass) ||
     compareStrings(left.paneStructure, right.paneStructure) ||
     compareStrings(bboxKey(left.bbox), bboxKey(right.bbox)) ||
     compareStrings(String(left.id), String(right.id))
@@ -251,8 +351,6 @@ function structuralOpeningTelemetrySignature(opening: StructuralOpening): string
     String(opening.wallIndex),
     opening.horizontalBand,
     opening.verticalBand,
-    opening.widthBand,
-    opening.heightClass,
     bboxKey(opening.bbox),
   ].join("|");
 }
@@ -358,9 +456,17 @@ function summarizeStructuralBaselineVariance(passTelemetry: StructuralBaselinePa
 
 async function materializeOpeningExtractionImage(
   imageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
 ): Promise<{ data: string; mime: string }> {
-  return toBase64(imageUrl);
+  const materializeStartedAt = Date.now();
+  const materialized = toBase64(imageUrl);
+  const elapsedMs = Date.now() - materializeStartedAt;
+  if (options?.timing) {
+    options.timing.imageDownloadMs += elapsedMs;
+    options.timing.imageMaterializationMs += 0;
+    options.timing.imageResizeMs += 0;
+  }
+  return materialized;
 }
 
 function stableSortObject(value: unknown): unknown {
@@ -380,25 +486,90 @@ function stableSortObject(value: unknown): unknown {
     }, {});
 }
 
+const CANONICAL_APERTURE_IDENTITY = "window_door_neutral_aperture";
+
+function getCanonicalOpeningIdentityType(type: StructuralOpeningType): string {
+  return type === "window" || type === "door"
+    ? CANONICAL_APERTURE_IDENTITY
+    : type;
+}
+
+function bboxCenterY(bbox: [number, number, number, number]): number {
+  return (bbox[1] + bbox[3]) / 2;
+}
+
+function bboxIntersectionOverSmallerArea(
+  left: [number, number, number, number],
+  right: [number, number, number, number]
+): number {
+  const smallerArea = Math.max(0.0001, Math.min(bboxArea(left), bboxArea(right)));
+  return bboxIntersectionArea(left, right) / smallerArea;
+}
+
+function bboxCentroidDistance(
+  left: [number, number, number, number],
+  right: [number, number, number, number]
+): number {
+  const dx = bboxCenterX(left) - bboxCenterX(right);
+  const dy = bboxCenterY(left) - bboxCenterY(right);
+  return Math.sqrt((dx * dx) + (dy * dy));
+}
+
+function hasApertureSimilarity(left: StructuralOpening, right: StructuralOpening): boolean {
+  const leftArea = Math.max(0.0001, bboxArea(left.bbox));
+  const rightArea = Math.max(0.0001, bboxArea(right.bbox));
+  const areaRatio = Math.max(leftArea, rightArea) / Math.min(leftArea, rightArea);
+  return wallCoverageBandDistance(left.wallCoverageBand, right.wallCoverageBand) <= 1 || areaRatio <= 1.8;
+}
+
+function shouldCanonicalizeOpeningIdentity(
+  left: StructuralOpening,
+  right: StructuralOpening,
+  rightCanonicalWall: WallIndex = right.wallIndex
+): boolean {
+  if (left.type === right.type) return false;
+  if (getCanonicalOpeningIdentityType(left.type) !== getCanonicalOpeningIdentityType(right.type)) return false;
+  if (rightCanonicalWall !== left.wallIndex) return false;
+
+  const geometryOverlap = bboxIntersectionOverSmallerArea(left.bbox, right.bbox);
+  const centroidDistance = bboxCentroidDistance(left.bbox, right.bbox);
+  if (geometryOverlap < 0.45 || centroidDistance > 0.12) return false;
+
+  return hasApertureSimilarity(left, right);
+}
+
+function buildCanonicalizationReason(
+  left: StructuralOpening,
+  right: StructuralOpening,
+  rightCanonicalWall: WallIndex = right.wallIndex
+): string {
+  return [
+    `same_wall:${rightCanonicalWall === left.wallIndex}`,
+    `geometry_overlap:${bboxIntersectionOverSmallerArea(left.bbox, right.bbox).toFixed(3)}`,
+    `centroid_distance:${bboxCentroidDistance(left.bbox, right.bbox).toFixed(3)}`,
+    `aperture_similarity:${hasApertureSimilarity(left, right)}`,
+  ].join("|");
+}
+
 function structuralOpeningSignature(opening: StructuralOpening): Record<string, unknown> {
+  const canonicalIdentity = getCanonicalOpeningIdentityType(opening.type);
+  const subtypeNeutralIdentity = canonicalIdentity === CANONICAL_APERTURE_IDENTITY;
+
   return {
-    type: opening.type,
+    canonicalIdentity,
     bbox: quantizeBbox(opening.bbox),
-    structuralClass: opening.structuralClass,
     wallIndex: opening.wallIndex,
     horizontalBand: opening.horizontalBand,
     verticalBand: opening.verticalBand,
-    widthBand: opening.widthBand,
     wallCoverageBand: opening.wallCoverageBand,
     orientation: opening.orientation,
-    paneStructure: opening.paneStructure,
-    heightClass: opening.heightClass,
-    doorLeafState: opening.doorLeafState,
+    paneStructure: subtypeNeutralIdentity ? undefined : opening.paneStructure,
+    doorLeafState: subtypeNeutralIdentity ? undefined : opening.doorLeafState,
     wallPosition: opening.wallPosition,
     relativeHorizontalPosition: opening.relativeHorizontalPosition,
-    shape: opening.shape,
-    touchesFloor: opening.touchesFloor,
-    touchesCeiling: opening.touchesCeiling,
+    shape: subtypeNeutralIdentity ? undefined : opening.shape,
+    touchesFloor: subtypeNeutralIdentity ? undefined : opening.touchesFloor,
+    touchesCeiling: subtypeNeutralIdentity ? undefined : opening.touchesCeiling,
     approxCount: opening.approxCount,
   };
 }
@@ -414,7 +585,6 @@ function structuralFixtureSignature(fixture: AnchorFixture): Record<string, unkn
 function hashStructuralBaselineGraph(baseline: StructuralBaseline): string {
   const canonical = stableSortObject({
     cameraOrientation: baseline.cameraOrientation ?? null,
-    wallCount: baseline.wallCount,
     openings: (baseline.openings || [])
       .map((opening) => structuralOpeningSignature(opening))
       .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
@@ -505,18 +675,13 @@ Return JSON in this exact schema:
       "type": "window" | "door" | "closet_door" | "walkthrough",
       "bbox": [x1, y1, x2, y2],
       "area_pct": number,
-      "aspect_ratio": number,
-      "structuralClass": "circulation" | "storage" | "exterior" | "unknown",
       "wallIndex": 0 | 1 | 2 | 3,
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "verticalBand": "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height",
-      "widthBand": "narrow" | "single" | "double" | "wide",
       "wallCoverageBand": "5-10" | "10-20" | "20-40" | "40-60" | "60+",
       "orientation": "portrait" | "landscape" | "square",
       "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
-      "heightClass": "standard" | "floor_to_ceiling" | "transom",
       "doorLeafState": "closed" | "open" | "ajar" | "unknown",
-      "approxAspectRatio": number,
       "confidence": number
     }
   ],
@@ -529,8 +694,7 @@ Return JSON in this exact schema:
       "bbox": [x1, y1, x2, y2],
       "confidence": number
     }
-  ],
-  "wallCount": number
+  ]
 }
 
 Rules:
@@ -538,13 +702,10 @@ Rules:
 - wallIndex mapping: 0=front wall (camera facing), 1=right wall, 2=back wall, 3=left wall.
 - bbox must be normalized to image dimensions (0..1).
 - area_pct must represent % of image area occupied by the opening (0..100).
-- aspect_ratio must be width/height for the opening geometry.
 - horizontalBand and verticalBand should be stable under mild reframing.
-- widthBand reflects approximate opening width class.
 - wallCoverageBand is approximate percent of the wall occupied by the opening (not image area).
 - orientation should be derived from opening shape (portrait, landscape, square).
 - paneStructure should describe visible pane layout; if uncertain return "unknown".
-- heightClass should describe vertical extent as standard, floor_to_ceiling, or transom.
 - doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
@@ -556,6 +717,219 @@ Anchor fixture rules:
 - If no stable fixture is visible, return an empty array.
 
 Return only valid JSON.`;
+
+const BASELINE_VERIFICATION_SYSTEM_INSTRUCTION = `You are a structural baseline verification reviewer.
+
+You must verify a provided baseline extraction against a room image.
+Do not regenerate the full baseline.
+Do not perform a fresh extraction.
+
+Review each listed opening and classify exactly one status:
+- confirmed
+- confirmed_with_minor_description_difference
+- materially_different
+- not_present
+
+Also report:
+- additionalOpenings: openings visible in image but missing from baseline
+- missingOpenings: baseline openings that cannot be confirmed in image
+- baselineAccepted: true only when inventory is materially correct
+
+Rules:
+- Minor differences are tolerated only for descriptive metadata noise.
+- Material differences include wrong opening type, wrong approximate location, or wrong inventory composition.
+- Return strict JSON only. No markdown, no commentary.`;
+
+const BASELINE_VERIFICATION_USER_PROMPT = `Verify this provided structural baseline against the image.
+
+Input includes:
+1) The room image.
+2) The baseline JSON from extraction pass 1.
+
+Return JSON in this schema:
+{
+  "openings": [
+    {
+      "id": string,
+      "status": "confirmed" | "confirmed_with_minor_description_difference" | "materially_different" | "not_present",
+      "notes": string
+    }
+  ],
+  "additionalOpenings": [
+    {
+      "id": string,
+      "type": string,
+      "location": string,
+      "notes": string
+    }
+  ],
+  "missingOpenings": [
+    {
+      "id": string,
+      "type": string,
+      "location": string,
+      "notes": string
+    }
+  ],
+  "baselineAccepted": boolean,
+  "analysis": string
+}
+
+Return only valid JSON.`;
+
+function resolveBaselineMode(options?: BaselineExtractionOptions): BaselineArchitectureMode {
+  if (options?.baselineMode) return options.baselineMode;
+  return OPENING_BASELINE_VERIFICATION_EXPERIMENT
+    ? "extraction_verification"
+    : "graph_consensus";
+}
+
+function getBaselineVerificationModel(): string {
+  return OPENING_BASELINE_VERIFICATION_MODEL || OPENING_VALIDATOR_MODEL;
+}
+
+function isBaselineVerificationStatus(value: string): value is BaselineVerificationStatus {
+  return (
+    value === "confirmed" ||
+    value === "confirmed_with_minor_description_difference" ||
+    value === "materially_different" ||
+    value === "not_present"
+  );
+}
+
+function normalizeVerificationIssue(entry: unknown): BaselineVerificationIssue | null {
+  if (typeof entry === "string") {
+    return { notes: entry.trim() || undefined };
+  }
+  if (!entry || typeof entry !== "object") return null;
+  const value = entry as Record<string, unknown>;
+  const id = typeof value.id === "string" && value.id.trim().length > 0 ? value.id.trim() : undefined;
+  const type = typeof value.type === "string" && value.type.trim().length > 0 ? value.type.trim() : undefined;
+  const location = typeof value.location === "string" && value.location.trim().length > 0 ? value.location.trim() : undefined;
+  const notes = typeof value.notes === "string" && value.notes.trim().length > 0
+    ? value.notes.trim()
+    : (typeof value.reason === "string" && value.reason.trim().length > 0 ? value.reason.trim() : undefined);
+  return { id, type, location, notes };
+}
+
+function isWallAssignmentOnlyVerificationNote(notes: string | undefined): boolean {
+  const text = String(notes || "").toLowerCase();
+  if (!text) return false;
+
+  const mentionsWallAssignment = /wall\s*index|wrong wall|assigned to .*wall|incorrectly assigned|located on the .* wall|mislocat|wall assignment/.test(text);
+  const mentionsMaterialTypeMismatch = /incorrect type|misclassif|wrong type|not a .*door|not a .*window|not a .*walkthrough|phantom|not visible|missing|absent/.test(text);
+  const mentionsSizeOrBBoxMismatch = /size|larger|smaller|split|bounding box|bbox|coordinates|width|height|span|wider|narrow|area/.test(text);
+
+  return mentionsWallAssignment && !mentionsMaterialTypeMismatch && !mentionsSizeOrBBoxMismatch;
+}
+
+function validateBaselineVerificationResult(input: any, baseline: StructuralBaseline): BaselineVerificationResult {
+  if (!input || typeof input !== "object") {
+    throw new Error("Baseline verification result must be an object");
+  }
+
+  const baselineIds = new Set(baseline.openings.map((opening) => String(opening.id)));
+  const seenIds = new Set<string>();
+
+  const openingsRaw = Array.isArray(input.openings) ? input.openings : [];
+  const openings: BaselineVerificationOpeningResult[] = openingsRaw.map((entry: any, index: number) => {
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`Invalid verification opening result at index ${index}`);
+    }
+    if (typeof entry.id !== "string" || !entry.id.trim()) {
+      throw new Error(`Verification opening id is required at index ${index}`);
+    }
+    const id = entry.id.trim();
+    if (!baselineIds.has(id)) {
+      throw new Error(`Verification opening id not found in baseline: ${id}`);
+    }
+    if (seenIds.has(id)) {
+      throw new Error(`Duplicate verification opening id: ${id}`);
+    }
+    seenIds.add(id);
+
+    const status = String(entry.status || "").trim();
+    if (!isBaselineVerificationStatus(status)) {
+      throw new Error(`Invalid verification status for opening ${id}`);
+    }
+
+    return {
+      id,
+      status,
+      notes: typeof entry.notes === "string" ? entry.notes : undefined,
+    };
+  });
+
+  for (const opening of baseline.openings) {
+    const id = String(opening.id);
+    if (!seenIds.has(id)) {
+      openings.push({ id, status: "materially_different", notes: "missing_verification_result" });
+    }
+  }
+
+  const additionalOpenings = Array.isArray(input.additionalOpenings)
+    ? input.additionalOpenings
+      .map((entry: unknown) => normalizeVerificationIssue(entry))
+      .filter((entry: BaselineVerificationIssue | null): entry is BaselineVerificationIssue => entry !== null)
+    : [];
+
+  const missingOpenings = Array.isArray(input.missingOpenings)
+    ? input.missingOpenings
+      .map((entry: unknown) => normalizeVerificationIssue(entry))
+      .filter((entry: BaselineVerificationIssue | null): entry is BaselineVerificationIssue => entry !== null)
+    : [];
+
+  const baselineAccepted = input.baselineAccepted === true;
+
+  return {
+    openings: openings.sort((left, right) => compareStrings(left.id, right.id)),
+    additionalOpenings,
+    missingOpenings,
+    baselineAccepted,
+    analysis: typeof input.analysis === "string" ? input.analysis : undefined,
+  };
+}
+
+function openingInventoryToken(opening: StructuralOpening): string {
+  return [
+    getCanonicalOpeningIdentityType(opening.type),
+    String(opening.wallIndex),
+    opening.horizontalBand,
+    opening.verticalBand,
+  ].join("|");
+}
+
+function openingInventorySignature(baseline: StructuralBaseline): string {
+  return baseline.openings
+    .map((opening) => openingInventoryToken(opening))
+    .sort(compareStrings)
+    .join("::");
+}
+
+function mergeCanonicalBaselineFromFallback(
+  primary: StructuralBaseline,
+  secondary: StructuralBaseline
+): StructuralBaseline {
+  const mergedByToken = new Map<string, StructuralOpening>();
+  for (const opening of [...primary.openings, ...secondary.openings]) {
+    const token = openingInventoryToken(opening);
+    const existing = mergedByToken.get(token);
+    if (!existing || opening.confidence > existing.confidence) {
+      mergedByToken.set(token, opening);
+    }
+  }
+
+  const mergedOpenings = Array.from(mergedByToken.values()).sort(compareStructuralOpenings);
+  const mergedAnchorFixtures = [...(primary.anchorFixtures || []), ...(secondary.anchorFixtures || [])]
+    .sort(compareAnchorFixtures)
+    .slice(0, Math.max((primary.anchorFixtures || []).length, (secondary.anchorFixtures || []).length));
+
+  return {
+    cameraOrientation: primary.cameraOrientation || secondary.cameraOrientation,
+    openings: mergedOpenings,
+    anchorFixtures: mergedAnchorFixtures,
+  };
+}
 
 function isAnchorFixtureType(value: string): value is AnchorFixtureType {
   return (
@@ -640,10 +1014,6 @@ function isVerticalBand(value: string): value is VerticalBand {
   return value === "floor_zone" || value === "mid_zone" || value === "ceiling_zone" || value === "full_height";
 }
 
-function isWidthBand(value: string): value is WidthBand {
-  return value === "narrow" || value === "single" || value === "double" || value === "wide";
-}
-
 function isWallCoverageBand(value: string): value is WallCoverageBand {
   return value === "5-10" || value === "10-20" || value === "20-40" || value === "40-60" || value === "60+";
 }
@@ -661,10 +1031,6 @@ function isPaneStructure(value: string): value is PaneStructure {
     value === "multi_pane_grid" ||
     value === "unknown"
   );
-}
-
-function isHeightClass(value: string): value is HeightClass {
-  return value === "standard" || value === "floor_to_ceiling" || value === "transom";
 }
 
 function isDoorLeafState(value: string): value is DoorLeafState {
@@ -706,12 +1072,6 @@ function deriveWallCoverageBand(areaPct: number): WallCoverageBand {
   if (area < 40) return "20-40";
   if (area < 60) return "40-60";
   return "60+";
-}
-
-function deriveHeightClass(verticalBand: VerticalBand): HeightClass {
-  if (verticalBand === "full_height") return "floor_to_ceiling";
-  if (verticalBand === "ceiling_zone") return "transom";
-  return "standard";
 }
 
 function wallCoverageBandIndex(value: WallCoverageBand): number {
@@ -829,30 +1189,6 @@ function deriveVerticalBand(opening: Pick<StructuralOpening, "touchesFloor" | "t
   return "mid_zone";
 }
 
-function deriveWidthBand(opening: Pick<StructuralOpening, "type" | "shape" | "approxCount">): WidthBand {
-  const shape = (opening.shape || "").toLowerCase();
-  if (opening.approxCount >= 2 || shape.includes("double")) return "double";
-  if (shape.includes("wide") || shape.includes("panorama")) return "wide";
-  if (shape.includes("narrow") || opening.type === "closet_door") return "narrow";
-  return "single";
-}
-
-function deriveApproxAspectRatio(opening: Pick<StructuralOpening, "type" | "shape">): number {
-  const shape = (opening.shape || "").toLowerCase();
-  if (shape.includes("square")) return 1;
-  if (opening.type === "window") return 1.4;
-  if (opening.type === "door" || opening.type === "closet_door") return 0.5;
-  if (opening.type === "walkthrough") return 0.8;
-  return 1;
-}
-
-export function deriveStructuralClass(opening: Pick<StructuralOpening, "type" | "touchesFloor" | "touchesCeiling">): StructuralClass {
-  if (opening.type === "window") return "exterior";
-  if (opening.type === "closet_door") return "storage";
-  if (opening.type === "door" || opening.type === "walkthrough") return "circulation";
-  return "unknown";
-}
-
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
@@ -948,14 +1284,14 @@ function reconcileOpeningMatches(
     const scoredCandidates = detectedOpenings
       .filter((candidate) => !matchedDetectedIds.has(String(candidate.id)))
       .map((candidate) => {
-        const canonicalWall = wallRemap.get(candidate.wallIndex) ?? candidate.wallIndex;
+        const canonicalWall = (wallRemap.get(candidate.wallIndex) ?? candidate.wallIndex) as WallIndex;
         let score = 0;
+        const canonicalIdentityApplied = shouldCanonicalizeOpeningIdentity(base, candidate, canonicalWall);
 
-        if (candidate.type === base.type) score += 4;
+        if (candidate.type === base.type || canonicalIdentityApplied) score += 4;
         if (canonicalWall === base.wallIndex) score += 3;
         if (candidate.horizontalBand === base.horizontalBand) score += 2;
         if (candidate.verticalBand === base.verticalBand) score += 1;
-        if (candidate.heightClass === base.heightClass) score += 1;
         if (candidate.orientation === base.orientation) score += 0.5;
 
         const paneComparable = candidate.paneStructure !== "unknown" && base.paneStructure !== "unknown";
@@ -969,7 +1305,14 @@ function reconcileOpeningMatches(
           Math.max(0.0001, (base.bbox[2] - base.bbox[0]) * (base.bbox[3] - base.bbox[1]));
         score += Math.max(0, Math.min(2, iou * 2));
 
-        return { candidate, score };
+        return {
+          candidate,
+          score,
+          canonicalIdentityApplied,
+          canonicalIdentityReason: canonicalIdentityApplied
+            ? buildCanonicalizationReason(base, candidate, canonicalWall)
+            : undefined,
+        };
       })
       .sort((left, right) => {
         const scoreCmp = compareNumbers(right.score, left.score, 1e-9);
@@ -985,6 +1328,15 @@ function reconcileOpeningMatches(
       (top.score - (second?.score ?? 0) >= 1.25);
 
     if (!hasUniqueWinner || !top) continue;
+
+    if (top.canonicalIdentityApplied) {
+      console.log("[CANONICALIZATION_APPLIED]", JSON.stringify({
+        openingId: base.id,
+        originalTypes: [base.type, top.candidate.type],
+        canonicalIdentity: CANONICAL_APERTURE_IDENTITY,
+        reason: top.canonicalIdentityReason,
+      }));
+    }
 
     matches.set(base.id, {
       opening: top.candidate,
@@ -1155,17 +1507,6 @@ function normalizeAreaPct(input: any, bbox: [number, number, number, number]): n
   return Math.max(0, Math.min(100, bboxArea));
 }
 
-function normalizeAspectRatio(input: any, bbox: [number, number, number, number], fallback: number): number {
-  const raw = input?.aspect_ratio ?? input?.aspectRatio ?? input?.approxAspectRatio;
-  if (Number.isFinite(Number(raw)) && Number(raw) > 0) {
-    return Number(raw);
-  }
-  const width = Math.max(0.01, bbox[2] - bbox[0]);
-  const height = Math.max(0.01, bbox[3] - bbox[1]);
-  const derived = width / height;
-  return Number.isFinite(derived) && derived > 0 ? derived : fallback;
-}
-
 function validateStructuralBaseline(input: any): StructuralBaseline {
   if (!input || typeof input !== "object") {
     throw new Error("Structural baseline must be an object");
@@ -1227,18 +1568,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         ? opening.approxCount
         : 1;
 
-    const structuralClassCandidate =
-      opening.structuralClass === "circulation" ||
-      opening.structuralClass === "storage" ||
-      opening.structuralClass === "exterior" ||
-      opening.structuralClass === "unknown"
-        ? opening.structuralClass
-        : deriveStructuralClass({
-            type: normalizedType,
-            touchesFloor: touchesFloorCandidate,
-            touchesCeiling: touchesCeilingCandidate,
-          });
-
     const verticalBandCandidate =
       typeof opening.verticalBand === "string" && isVerticalBand(opening.verticalBand)
         ? opening.verticalBand
@@ -1247,26 +1576,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
             touchesCeiling: touchesCeilingCandidate,
           });
 
-    const widthBandCandidate =
-      typeof opening.widthBand === "string" && isWidthBand(opening.widthBand)
-        ? opening.widthBand
-        : deriveWidthBand({
-            type: normalizedType,
-            shape: shapeCandidate,
-            approxCount: approxCountCandidate,
-          });
-
-    const approxAspectRatioCandidate =
-      typeof opening.approxAspectRatio === "number" && Number.isFinite(opening.approxAspectRatio)
-        ? opening.approxAspectRatio
-        : deriveApproxAspectRatio({
-            type: normalizedType,
-            shape: shapeCandidate,
-          });
-
     const bboxCandidate = normalizeBbox(opening, horizontalBandCandidate, verticalBandCandidate);
     const areaPctCandidate = normalizeAreaPct(opening, bboxCandidate);
-    const aspectRatioCandidate = normalizeAspectRatio(opening, bboxCandidate, approxAspectRatioCandidate);
+    const bboxWidth = Math.max(0.01, bboxCandidate[2] - bboxCandidate[0]);
+    const bboxHeight = Math.max(0.01, bboxCandidate[3] - bboxCandidate[1]);
+    const bboxAspectRatio = bboxWidth / bboxHeight;
 
     const confidenceCandidate =
       typeof opening.confidence === "number" && Number.isFinite(opening.confidence)
@@ -1281,17 +1595,12 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     const orientationCandidate =
       typeof opening.orientation === "string" && isOpeningOrientation(opening.orientation)
         ? opening.orientation
-        : deriveOrientation(aspectRatioCandidate);
+        : deriveOrientation(bboxAspectRatio);
 
     const paneStructureCandidate =
       typeof opening.paneStructure === "string" && isPaneStructure(opening.paneStructure)
         ? opening.paneStructure
         : normalizePaneStructure(opening.paneStructure);
-
-    const heightClassCandidate =
-      typeof opening.heightClass === "string" && isHeightClass(opening.heightClass)
-        ? opening.heightClass
-        : deriveHeightClass(verticalBandCandidate);
 
     const doorLeafStateCandidate =
       typeof opening.doorLeafState === "string" && isDoorLeafState(opening.doorLeafState)
@@ -1303,18 +1612,13 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       type: normalizedType,
       bbox: bboxCandidate,
       area_pct: areaPctCandidate,
-      aspect_ratio: aspectRatioCandidate,
-      structuralClass: structuralClassCandidate,
       wallIndex: wallIndexCandidate,
       horizontalBand: horizontalBandCandidate,
       verticalBand: verticalBandCandidate,
-      widthBand: widthBandCandidate,
       wallCoverageBand: wallCoverageBandCandidate,
       orientation: orientationCandidate,
       paneStructure: paneStructureCandidate,
-      heightClass: heightClassCandidate,
       doorLeafState: doorLeafStateCandidate,
-      approxAspectRatio: aspectRatioCandidate,
       confidence: confidenceCandidate,
 
       wallPosition: wallPositionCandidate,
@@ -1326,7 +1630,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     };
   });
 
-  const uniqueWalls = new Set<number>(openings.map((o) => o.wallIndex));
   const anchorFixtures: AnchorFixture[] = Array.isArray(input.anchorFixtures)
     ? input.anchorFixtures
         .map((fixture: any, index: number) => {
@@ -1362,10 +1665,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         })
         .filter((item: AnchorFixture | null): item is AnchorFixture => item !== null)
     : [];
-  const wallCountFromInput = typeof input.wallCount === "number" && Number.isFinite(input.wallCount)
-    ? Math.max(1, Math.min(4, Math.round(input.wallCount)))
-    : uniqueWalls.size;
-
   openings.sort(compareStructuralOpenings);
   anchorFixtures.sort(compareAnchorFixtures);
 
@@ -1373,7 +1672,6 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     cameraOrientation: typeof input.cameraOrientation === "string" ? input.cameraOrientation : undefined,
     openings,
     anchorFixtures,
-    wallCount: wallCountFromInput,
   };
 }
 
@@ -1563,6 +1861,7 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
     openingRelocated: input.summary.openingRelocated === true || results.some((item) => item.relocated === true),
     openingResized: input.summary.openingResized === true,
     openingClassMismatch: input.summary?.openingClassMismatch === true,
+    openingClassMismatchEnforcement: "advisory" as const,
     openingBandMismatch: input.summary.openingBandMismatch === true,
     openingStateChanged: input.summary.openingStateChanged === true,
     openingApertureExpanded: input.summary.openingApertureExpanded === true,
@@ -1600,22 +1899,27 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
 
 async function extractStructuralBaselineOnce(
   image: { data: string; mime: string },
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
 ): Promise<StructuralBaseline> {
   const ai = getGeminiClient();
 
   const stageStartedAt = Date.now();
+  const promptBuildStartedAt = Date.now();
+  const promptParts = [
+    { text: BASELINE_SYSTEM_INSTRUCTION },
+    { text: BASELINE_USER_PROMPT },
+    { inlineData: { mimeType: image.mime, data: image.data } },
+  ];
+  if (options?.timing) {
+    options.timing.promptBuildMs += Date.now() - promptBuildStartedAt;
+  }
   const requestStartedAt = Date.now();
   const response = await (ai as any).models.generateContent({
     model: OPENING_VALIDATOR_MODEL,
     contents: [
       {
         role: "user",
-        parts: [
-          { text: BASELINE_SYSTEM_INSTRUCTION },
-          { text: BASELINE_USER_PROMPT },
-          { inlineData: { mimeType: image.mime, data: image.data } },
-        ],
+        parts: promptParts,
       },
     ],
     generationConfig: {
@@ -1626,6 +1930,10 @@ async function extractStructuralBaselineOnce(
       responseMimeType: "application/json",
     },
   } as any);
+  if (options?.timing) {
+    options.timing.geminiRequestMs += 0;
+    options.timing.responseReceiveMs += Date.now() - requestStartedAt;
+  }
   logGeminiUsage({
     ctx: {
       jobId: options?.jobId || "",
@@ -1639,8 +1947,16 @@ async function extractStructuralBaselineOnce(
     latencyMs: Date.now() - requestStartedAt,
   });
 
+  const parseStartedAt = Date.now();
   const parsed = parseJsonResponse(response);
+  if (options?.timing) {
+    options.timing.jsonParseMs += Date.now() - parseStartedAt;
+  }
+  const normalizationStartedAt = Date.now();
   const baseline = validateStructuralBaseline(parsed);
+  if (options?.timing) {
+    options.timing.normalizationMs += Date.now() - normalizationStartedAt;
+  }
   console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
@@ -1658,7 +1974,6 @@ async function extractStructuralBaselineOnce(
       wallCoverageBand: opening.wallCoverageBand,
       orientation: opening.orientation,
       paneStructure: opening.paneStructure,
-      heightClass: opening.heightClass,
       doorLeafState: opening.doorLeafState,
       confidence: opening.confidence,
     })),
@@ -1669,27 +1984,103 @@ async function extractStructuralBaselineOnce(
       horizontalBand: fixture.horizontalBand,
       confidence: fixture.confidence,
     })),
-    wallCount: baseline.wallCount,
   }));
   return baseline;
 }
 
-async function stabilizeStructuralBaseline(
-  imageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
-): Promise<StructuralBaseline> {
-  const materializationStartedAt = Date.now();
-  const image = await materializeOpeningExtractionImage(imageUrl, options);
+async function verifyStructuralBaselineOnce(
+  image: { data: string; mime: string },
+  baseline: StructuralBaseline,
+  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
+): Promise<BaselineVerificationResult> {
+  const ai = getGeminiClient();
+  const promptBuildStartedAt = Date.now();
+  const verificationPayload = {
+    openings: baseline.openings.map((opening) => ({
+      id: opening.id,
+      type: opening.type,
+      wallIndex: opening.wallIndex,
+      horizontalBand: opening.horizontalBand,
+      verticalBand: opening.verticalBand,
+      bbox: quantizeBbox(opening.bbox),
+      confidence: roundDeterministic(opening.confidence, 3),
+    })),
+  };
+  if (options?.timing) {
+    options.timing.promptBuildMs += Date.now() - promptBuildStartedAt;
+  }
+
+  const stageStartedAt = Date.now();
+  const requestStartedAt = Date.now();
+  const response = await (ai as any).models.generateContent({
+    model: getBaselineVerificationModel(),
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: BASELINE_VERIFICATION_SYSTEM_INSTRUCTION },
+          { text: BASELINE_VERIFICATION_USER_PROMPT },
+          { text: `BASELINE_JSON:\n${JSON.stringify(verificationPayload)}` },
+          { inlineData: { mimeType: image.mime, data: image.data } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      topP: 0.1,
+      topK: 1,
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json",
+    },
+  } as any);
+  if (options?.timing) {
+    options.timing.geminiRequestMs += 0;
+    options.timing.responseReceiveMs += Date.now() - requestStartedAt;
+  }
+
+  logGeminiUsage({
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
+    model: getBaselineVerificationModel(),
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
+
+  const parseStartedAt = Date.now();
+  const parsed = parseJsonResponse(response);
+  if (options?.timing) {
+    options.timing.jsonParseMs += Date.now() - parseStartedAt;
+  }
+  const normalizationStartedAt = Date.now();
+  const verification = validateBaselineVerificationResult(parsed, baseline);
+  if (options?.timing) {
+    options.timing.normalizationMs += Date.now() - normalizationStartedAt;
+  }
   console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
-    stage: "image_materialization",
-    durationMs: Date.now() - materializationStartedAt,
+    stage: "gemini_structural_verification",
+    durationMs: Date.now() - stageStartedAt,
   }));
-  const imageHash = hashStructuralImage(image.data);
+  return verification;
+}
+
+async function stabilizeStructuralBaselineGraphConsensus(
+  image: { data: string; mime: string },
+  imageHash: string,
+  options?: BaselineExtractionOptions,
+  timingInput?: BaselineExtractionTimingBreakdown
+): Promise<StructuralBaseline> {
+  const modeStartedAt = Date.now();
+  const timing = timingInput || createBaselineTimingBreakdown();
   const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}${imageHash}`;
-  const cached = await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
+  const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
   if (cached?.graphStable && cached.graph) {
     const graphMeta = {
@@ -1704,6 +2095,23 @@ async function stabilizeStructuralBaseline(
       candidateGraphHashes: cached.candidateGraphHashes || [cached.graphHash],
       openingCountRange: cached.openingCountRange,
       confirmedAt: cached.updatedAt,
+      baselineMethod: "graph_consensus" as const,
+      geminiCalls: cached.passCount,
+      verification: {
+        attempted: false,
+        accepted: true,
+        modelAccepted: true,
+        additionalOpeningCount: 0,
+        missingOpeningCount: 0,
+        materiallyDifferentCount: 0,
+        notPresentCount: 0,
+        minorDifferenceCount: 0,
+        rejectedReasonCodes: [],
+        openingStatuses: [],
+        additionalOpenings: [],
+        missingOpenings: [],
+        analysis: undefined,
+      },
     };
     console.log("[STRUCTURAL_BASELINE_CACHE_HIT]", JSON.stringify({
       imageHash,
@@ -1711,6 +2119,37 @@ async function stabilizeStructuralBaseline(
       extractionAgreement: cached.extractionAgreement,
       passCount: cached.passCount,
       openingCountVariance: cached.openingCountVariance,
+      baselineMethod: "graph_consensus",
+    }));
+    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      extractionCalls: 0,
+      cacheStatus: "hit",
+    }));
+    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      baselineExtractionDurationMs: Date.now() - modeStartedAt,
+      totalGeminiCalls: 0,
+    }));
+    const totalMs = sumBaselineTimingBreakdown(timing);
+    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageDownloadMs: timing.imageDownloadMs,
+      imageMaterializationMs: timing.imageMaterializationMs,
+      imageResizeMs: timing.imageResizeMs,
+      promptBuildMs: timing.promptBuildMs,
+      geminiRequestMs: timing.geminiRequestMs,
+      responseReceiveMs: timing.responseReceiveMs,
+      jsonParseMs: timing.jsonParseMs,
+      normalizationMs: timing.normalizationMs,
+      graphBuildMs: timing.graphBuildMs,
+      persistenceMs: timing.persistenceMs,
+      totalMs,
     }));
     return { ...cached.graph, graphMeta };
   }
@@ -1727,8 +2166,11 @@ async function stabilizeStructuralBaseline(
         jobId: options?.jobId,
         imageId: options?.imageId,
         attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + passIndex : passIndex + 1,
+        timing,
       });
+      const hashStartedAt = Date.now();
       const graphHash = hashStructuralBaselineGraph(baseline);
+      timing.graphBuildMs += Date.now() - hashStartedAt;
       passResults.push(baseline);
       passHashes.push(graphHash);
       console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
@@ -1755,6 +2197,7 @@ async function stabilizeStructuralBaseline(
     throw lastError instanceof Error ? lastError : new Error("STRUCTURAL_BASELINE_EXTRACTION_FAILED");
   }
 
+  const graphBuildStartedAt = Date.now();
   const histogram = new Map<string, { count: number; graph: StructuralBaseline }>();
   passResults.forEach((baseline, index) => {
     const hash = passHashes[index];
@@ -1789,10 +2232,28 @@ async function stabilizeStructuralBaseline(
     candidateGraphHashes: ranked.map(([hash]) => hash),
     openingCountRange: { min, max },
     confirmedAt,
+    baselineMethod: "graph_consensus" as const,
+    geminiCalls: passResults.length,
+    verification: {
+      attempted: false,
+      accepted: true,
+      modelAccepted: true,
+      additionalOpeningCount: 0,
+      missingOpeningCount: 0,
+      materiallyDifferentCount: 0,
+      notPresentCount: 0,
+      minorDifferenceCount: 0,
+      rejectedReasonCodes: [],
+      openingStatuses: [],
+      additionalOpenings: [],
+      missingOpenings: [],
+      analysis: undefined,
+    },
   };
   const varianceSummary = summarizeStructuralBaselineVariance(
     passResults.map((baseline, index) => buildStructuralBaselinePassTelemetry(index + 1, passHashes[index], baseline))
   );
+  timing.graphBuildMs += Date.now() - graphBuildStartedAt;
 
   console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
     jobId: options?.jobId,
@@ -1805,6 +2266,7 @@ async function stabilizeStructuralBaseline(
     openingCountVariance: variance,
     candidateGraphHashes: graphMeta.candidateGraphHashes,
     cacheStatus: graphMeta.cacheStatus,
+    baselineMethod: "graph_consensus",
   }));
   console.log("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
     jobId: options?.jobId,
@@ -1822,7 +2284,23 @@ async function stabilizeStructuralBaseline(
 
   const stabilizedGraph = { ...consensus.graph, graphMeta };
 
-  if (graphStable) {
+  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    extractionCalls: passResults.length,
+    cacheStatus: graphMeta.cacheStatus,
+  }));
+  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    baselineExtractionDurationMs: Date.now() - modeStartedAt,
+    totalGeminiCalls: passResults.length,
+  }));
+
+  if (graphStable && !options?.disableCache) {
+    const persistenceStartedAt = Date.now();
     const cacheRecord: StructuralBaselineCacheRecord = {
       imageHash,
       graphHash,
@@ -1838,14 +2316,516 @@ async function stabilizeStructuralBaseline(
       updatedAt: confirmedAt,
     };
     await setRedisJson(cacheKey, cacheRecord);
+    timing.persistenceMs += Date.now() - persistenceStartedAt;
   }
+
+  const totalMs = sumBaselineTimingBreakdown(timing);
+  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageDownloadMs: timing.imageDownloadMs,
+    imageMaterializationMs: timing.imageMaterializationMs,
+    imageResizeMs: timing.imageResizeMs,
+    promptBuildMs: timing.promptBuildMs,
+    geminiRequestMs: timing.geminiRequestMs,
+    responseReceiveMs: timing.responseReceiveMs,
+    jsonParseMs: timing.jsonParseMs,
+    normalizationMs: timing.normalizationMs,
+    graphBuildMs: timing.graphBuildMs,
+    persistenceMs: timing.persistenceMs,
+    totalMs,
+  }));
 
   return stabilizedGraph;
 }
 
+async function stabilizeStructuralBaselineWithVerification(
+  image: { data: string; mime: string },
+  imageHash: string,
+  options?: BaselineExtractionOptions,
+  timingInput?: BaselineExtractionTimingBreakdown
+): Promise<StructuralBaseline> {
+  const modeStartedAt = Date.now();
+  const timing = timingInput || createBaselineTimingBreakdown();
+  const cacheKey = `${STRUCTURAL_BASELINE_CACHE_PREFIX}verify:${imageHash}`;
+  const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
+
+  if (cached?.graphStable && cached.graph) {
+    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      extractionCalls: 0,
+      cacheStatus: "hit",
+    }));
+    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      baselineExtractionDurationMs: Date.now() - modeStartedAt,
+      totalGeminiCalls: 0,
+    }));
+    const totalMs = sumBaselineTimingBreakdown(timing);
+    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageDownloadMs: timing.imageDownloadMs,
+      imageMaterializationMs: timing.imageMaterializationMs,
+      imageResizeMs: timing.imageResizeMs,
+      promptBuildMs: timing.promptBuildMs,
+      geminiRequestMs: timing.geminiRequestMs,
+      responseReceiveMs: timing.responseReceiveMs,
+      jsonParseMs: timing.jsonParseMs,
+      normalizationMs: timing.normalizationMs,
+      graphBuildMs: timing.graphBuildMs,
+      persistenceMs: timing.persistenceMs,
+      totalMs,
+    }));
+    return {
+      ...cached.graph,
+      graphMeta: {
+        ...(cached.graph.graphMeta || {}),
+        graphStable: true,
+        graphConfidence: cached.graphConfidence,
+        extractionAgreement: cached.extractionAgreement,
+        passCount: cached.passCount,
+        openingCountVariance: cached.openingCountVariance,
+        imageHash: cached.imageHash,
+        graphHash: cached.graphHash,
+        cacheStatus: "hit",
+        candidateGraphHashes: cached.candidateGraphHashes || [cached.graphHash],
+        openingCountRange: cached.openingCountRange,
+        confirmedAt: cached.updatedAt,
+        baselineMethod: "extraction_verification",
+      },
+    };
+  }
+
+  const primaryBaseline = await extractStructuralBaselineOnce(image, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    timing,
+  });
+  const primaryHashStartedAt = Date.now();
+  const primaryHash = hashStructuralBaselineGraph(primaryBaseline);
+  timing.graphBuildMs += Date.now() - primaryHashStartedAt;
+  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    baselineMode: "extraction_verification",
+    extractionPass: 1,
+    graphHash: primaryHash,
+    openingCount: primaryBaseline.openings.length,
+  }));
+
+  const verification = await verifyStructuralBaselineOnce(image, primaryBaseline, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + 1 : 2,
+    timing,
+  });
+
+  const materiallyDifferentCount = verification.openings.filter((entry) => entry.status === "materially_different").length;
+  const notPresentCount = verification.openings.filter((entry) => entry.status === "not_present").length;
+  const minorDifferenceCount = verification.openings.filter((entry) => entry.status === "confirmed_with_minor_description_difference").length;
+  const additionalOpeningCount = verification.additionalOpenings.length;
+  const missingOpeningCount = verification.missingOpenings.length;
+  const wallAssignmentOnlyCount = verification.openings.filter((entry) =>
+    entry.status === "materially_different" && isWallAssignmentOnlyVerificationNote(entry.notes)
+  ).length;
+  const adjustedMinorDifferenceCount = minorDifferenceCount + wallAssignmentOnlyCount;
+  const adjustedMateriallyDifferentCount = Math.max(0, materiallyDifferentCount - wallAssignmentOnlyCount);
+
+  console.log("[BASELINE_VERIFICATION_RESULT]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    baselineMode: "extraction_verification",
+    baselineAcceptedByModel: verification.baselineAccepted,
+    materiallyDifferentCount: adjustedMateriallyDifferentCount,
+    notPresentCount,
+    minorDifferenceCount: adjustedMinorDifferenceCount,
+    wallAssignmentOnlyCount,
+    additionalOpeningCount,
+    missingOpeningCount,
+    openingStatuses: verification.openings.map((entry) => ({
+      id: entry.id,
+      status: entry.status === "materially_different" && isWallAssignmentOnlyVerificationNote(entry.notes)
+        ? "confirmed_with_minor_description_difference"
+        : entry.status,
+      notes: entry.notes,
+    })),
+    additionalOpenings: verification.additionalOpenings,
+    missingOpenings: verification.missingOpenings,
+    analysis: verification.analysis,
+  }));
+
+  const rejectedReasonCodes: string[] = [];
+  if (additionalOpeningCount > 0) rejectedReasonCodes.push("additional_openings_detected");
+  if (missingOpeningCount > 0) rejectedReasonCodes.push("missing_openings_detected");
+  if (adjustedMateriallyDifferentCount > 0 || notPresentCount > 0) rejectedReasonCodes.push("material_opening_mismatch");
+
+  const acceptedByRule = additionalOpeningCount === 0 && missingOpeningCount === 0 && adjustedMateriallyDifferentCount === 0 && notPresentCount === 0;
+  const accepted = acceptedByRule;
+
+  if (accepted) {
+    const graphHash = primaryHash;
+    const confirmedAt = new Date().toISOString();
+    const graphMeta = {
+      graphStable: true,
+      graphConfidence: 1,
+      extractionAgreement: 1,
+      passCount: 1,
+      openingCountVariance: 0,
+      imageHash,
+      graphHash,
+      cacheStatus: "stabilized" as const,
+      candidateGraphHashes: [graphHash],
+      openingCountRange: { min: primaryBaseline.openings.length, max: primaryBaseline.openings.length },
+      confirmedAt,
+      baselineMethod: "extraction_verification" as const,
+      geminiCalls: 2,
+      verification: {
+        attempted: true,
+        accepted: true,
+        modelAccepted: verification.baselineAccepted,
+        additionalOpeningCount,
+        missingOpeningCount,
+        materiallyDifferentCount: adjustedMateriallyDifferentCount,
+        notPresentCount,
+        minorDifferenceCount: adjustedMinorDifferenceCount,
+        rejectedReasonCodes,
+        openingStatuses: verification.openings.map((entry) => ({
+          id: entry.id,
+          status: entry.status === "materially_different" && isWallAssignmentOnlyVerificationNote(entry.notes)
+            ? "confirmed_with_minor_description_difference"
+            : entry.status,
+          notes: entry.notes,
+        })),
+        additionalOpenings: verification.additionalOpenings,
+        missingOpenings: verification.missingOpenings,
+        analysis: verification.analysis,
+      },
+    };
+
+    const acceptedBaseline = {
+      ...primaryBaseline,
+      graphMeta,
+    };
+    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      extractionCalls: 2,
+      cacheStatus: graphMeta.cacheStatus,
+    }));
+    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      mode: "consensus",
+      baselineExtractionDurationMs: Date.now() - modeStartedAt,
+      totalGeminiCalls: 2,
+    }));
+    console.log("[BASELINE_VERIFICATION_ACCEPTED]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageHash,
+      baselineMode: "extraction_verification",
+      openingCount: acceptedBaseline.openings.length,
+      graphHash,
+      minorDifferenceCount,
+    }));
+
+    if (!options?.disableCache) {
+      const persistenceStartedAt = Date.now();
+      const cacheRecord: StructuralBaselineCacheRecord = {
+        imageHash,
+        graphHash,
+        graph: acceptedBaseline,
+        graphStable: true,
+        graphConfidence: 1,
+        extractionAgreement: 1,
+        passCount: 1,
+        openingCountVariance: 0,
+        openingCountRange: { min: primaryBaseline.openings.length, max: primaryBaseline.openings.length },
+        candidateGraphHashes: [graphHash],
+        createdAt: confirmedAt,
+        updatedAt: confirmedAt,
+      };
+      await setRedisJson(cacheKey, cacheRecord);
+      timing.persistenceMs += Date.now() - persistenceStartedAt;
+    }
+
+    const totalMs = sumBaselineTimingBreakdown(timing);
+    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      imageDownloadMs: timing.imageDownloadMs,
+      imageMaterializationMs: timing.imageMaterializationMs,
+      imageResizeMs: timing.imageResizeMs,
+      promptBuildMs: timing.promptBuildMs,
+      geminiRequestMs: timing.geminiRequestMs,
+      responseReceiveMs: timing.responseReceiveMs,
+      jsonParseMs: timing.jsonParseMs,
+      normalizationMs: timing.normalizationMs,
+      graphBuildMs: timing.graphBuildMs,
+      persistenceMs: timing.persistenceMs,
+      totalMs,
+    }));
+
+    return acceptedBaseline;
+  }
+
+  console.log("[BASELINE_VERIFICATION_REJECTED]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    baselineMode: "extraction_verification",
+    rejectedReasonCodes,
+  }));
+
+  const fallbackBaseline = await extractStructuralBaselineOnce(image, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + 2 : 3,
+    timing,
+  });
+  const fallbackHashStartedAt = Date.now();
+  const fallbackHash = hashStructuralBaselineGraph(fallbackBaseline);
+  timing.graphBuildMs += Date.now() - fallbackHashStartedAt;
+
+  const primaryInventory = openingInventorySignature(primaryBaseline);
+  const fallbackInventory = openingInventorySignature(fallbackBaseline);
+  const inventoryAgreement = primaryInventory === fallbackInventory;
+
+  const canonical = inventoryAgreement
+    ? primaryBaseline
+    : mergeCanonicalBaselineFromFallback(primaryBaseline, fallbackBaseline);
+  const canonicalHashStartedAt = Date.now();
+  const canonicalHash = hashStructuralBaselineGraph(canonical);
+  timing.graphBuildMs += Date.now() - canonicalHashStartedAt;
+  const { min, max, variance } = openingCountVariance([primaryBaseline, fallbackBaseline]);
+  const confirmedAt = new Date().toISOString();
+
+  const result: StructuralBaseline = {
+    ...canonical,
+    graphMeta: {
+      graphStable: inventoryAgreement,
+      graphConfidence: inventoryAgreement ? 1 : 0.5,
+      extractionAgreement: inventoryAgreement ? 1 : 0.5,
+      passCount: 2,
+      openingCountVariance: variance,
+      imageHash,
+      graphHash: canonicalHash,
+      cacheStatus: inventoryAgreement ? "stabilized" : "unstable",
+      candidateGraphHashes: [primaryHash, fallbackHash],
+      openingCountRange: { min, max },
+      confirmedAt,
+      baselineMethod: "extraction_verification",
+      geminiCalls: 3,
+      verification: {
+        attempted: true,
+        accepted: false,
+        modelAccepted: verification.baselineAccepted,
+        additionalOpeningCount,
+        missingOpeningCount,
+        materiallyDifferentCount: adjustedMateriallyDifferentCount,
+        notPresentCount,
+        minorDifferenceCount: adjustedMinorDifferenceCount,
+        rejectedReasonCodes,
+        openingStatuses: verification.openings.map((entry) => ({
+          id: entry.id,
+          status: entry.status === "materially_different" && isWallAssignmentOnlyVerificationNote(entry.notes)
+            ? "confirmed_with_minor_description_difference"
+            : entry.status,
+          notes: entry.notes,
+        })),
+        additionalOpenings: verification.additionalOpenings,
+        missingOpenings: verification.missingOpenings,
+        analysis: verification.analysis,
+      },
+    },
+  };
+
+  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    extractionCalls: 3,
+    cacheStatus: result.graphMeta?.cacheStatus,
+  }));
+  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "consensus",
+    baselineExtractionDurationMs: Date.now() - modeStartedAt,
+    totalGeminiCalls: 3,
+  }));
+  const totalMs = sumBaselineTimingBreakdown(timing);
+  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageDownloadMs: timing.imageDownloadMs,
+    imageMaterializationMs: timing.imageMaterializationMs,
+    imageResizeMs: timing.imageResizeMs,
+    promptBuildMs: timing.promptBuildMs,
+    geminiRequestMs: timing.geminiRequestMs,
+    responseReceiveMs: timing.responseReceiveMs,
+    jsonParseMs: timing.jsonParseMs,
+    normalizationMs: timing.normalizationMs,
+    graphBuildMs: timing.graphBuildMs,
+    persistenceMs: timing.persistenceMs,
+    totalMs,
+  }));
+
+  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    baselineMode: "extraction_verification",
+    extractionPass: 2,
+    graphHash: fallbackHash,
+    openingCount: fallbackBaseline.openings.length,
+    inventoryAgreement,
+    canonicalGraphHash: canonicalHash,
+    canonicalOpeningCount: result.openings.length,
+  }));
+
+  return result;
+}
+
+async function stabilizeStructuralBaselineSinglePass(
+  image: { data: string; mime: string },
+  imageHash: string,
+  options?: BaselineExtractionOptions,
+  timingInput?: BaselineExtractionTimingBreakdown
+): Promise<StructuralBaseline> {
+  const modeStartedAt = Date.now();
+  const timing = timingInput || createBaselineTimingBreakdown();
+  const baseline = await extractStructuralBaselineOnce(image, {
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    timing,
+  });
+  const graphBuildStartedAt = Date.now();
+  const graphHash = hashStructuralBaselineGraph(baseline);
+  timing.graphBuildMs += Date.now() - graphBuildStartedAt;
+  const confirmedAt = new Date().toISOString();
+  const resolvedMode = resolveBaselineMode(options);
+
+  const singlePassBaseline: StructuralBaseline = {
+    ...baseline,
+    graphMeta: {
+      graphStable: false,
+      graphConfidence: 0.5,
+      extractionAgreement: 0.5,
+      passCount: 1,
+      openingCountVariance: 0,
+      imageHash,
+      graphHash,
+      cacheStatus: "unstable",
+      candidateGraphHashes: [graphHash],
+      openingCountRange: {
+        min: baseline.openings.length,
+        max: baseline.openings.length,
+      },
+      confirmedAt,
+      baselineMethod: resolvedMode,
+      geminiCalls: 1,
+      verification: {
+        attempted: false,
+        accepted: true,
+        modelAccepted: true,
+        additionalOpeningCount: 0,
+        missingOpeningCount: 0,
+        materiallyDifferentCount: 0,
+        notPresentCount: 0,
+        minorDifferenceCount: 0,
+        rejectedReasonCodes: [],
+        openingStatuses: [],
+        additionalOpenings: [],
+        missingOpenings: [],
+        analysis: undefined,
+      },
+    },
+  };
+
+  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "single_pass",
+    extractionCalls: 1,
+  }));
+  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageHash,
+    baselineMode: "single_pass",
+    extractionPass: 1,
+    graphHash,
+    openingCount: baseline.openings.length,
+  }));
+  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    mode: "single_pass",
+    baselineExtractionDurationMs: Date.now() - modeStartedAt,
+    totalGeminiCalls: 1,
+  }));
+  const totalMs = sumBaselineTimingBreakdown(timing);
+  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    imageDownloadMs: timing.imageDownloadMs,
+    imageMaterializationMs: timing.imageMaterializationMs,
+    imageResizeMs: timing.imageResizeMs,
+    promptBuildMs: timing.promptBuildMs,
+    geminiRequestMs: timing.geminiRequestMs,
+    responseReceiveMs: timing.responseReceiveMs,
+    jsonParseMs: timing.jsonParseMs,
+    normalizationMs: timing.normalizationMs,
+    graphBuildMs: timing.graphBuildMs,
+    persistenceMs: timing.persistenceMs,
+    totalMs,
+  }));
+
+  return singlePassBaseline;
+}
+
+async function stabilizeStructuralBaseline(
+  imageUrl: string,
+  options?: BaselineExtractionOptions
+): Promise<StructuralBaseline> {
+  const timing = createBaselineTimingBreakdown();
+  const materializationStartedAt = Date.now();
+  const image = await materializeOpeningExtractionImage(imageUrl, {
+    ...options,
+    timing,
+  });
+  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+    stage: "image_materialization",
+    durationMs: Date.now() - materializationStartedAt,
+  }));
+  const imageHash = hashStructuralImage(image.data);
+  if (OPENING_BASELINE_SINGLE_PASS) {
+    return stabilizeStructuralBaselineSinglePass(image, imageHash, options, timing);
+  }
+  const mode = resolveBaselineMode(options);
+  if (mode === "extraction_verification") {
+    return stabilizeStructuralBaselineWithVerification(image, imageHash, options, timing);
+  }
+  return stabilizeStructuralBaselineGraphConsensus(image, imageHash, options, timing);
+}
+
 export async function extractStructuralBaseline(
   imageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: BaselineExtractionOptions
 ): Promise<StructuralBaseline> {
   return stabilizeStructuralBaseline(imageUrl, options);
 }
@@ -2168,8 +3148,8 @@ export async function validateOpeningPreservation(
       });
     }
 
-    const baseAspect = Math.max(0.01, Number(baseOpening.aspect_ratio || baseOpening.approxAspectRatio || 0));
-    const detectedAspect = Math.max(0.01, Number(match.aspect_ratio || match.approxAspectRatio || 0));
+    const baseAspect = Math.max(0.01, (baseOpening.bbox[2] - baseOpening.bbox[0]) / Math.max(0.01, (baseOpening.bbox[3] - baseOpening.bbox[1])));
+    const detectedAspect = Math.max(0.01, (match.bbox[2] - match.bbox[0]) / Math.max(0.01, (match.bbox[3] - match.bbox[1])));
     const aspectDelta = Math.abs((detectedAspect - baseAspect) / baseAspect);
     maxAspectDelta = Math.max(maxAspectDelta, aspectDelta);
 
@@ -2307,6 +3287,7 @@ export async function validateOpeningPreservation(
     openingRelocated,
     openingResized,
     openingClassMismatch,
+    openingClassMismatchEnforcement: "advisory" as const,
     openingBandMismatch,
     openingStateChanged,
     openingApertureExpanded,
@@ -2348,7 +3329,6 @@ export function shouldHardFailOpening(
   if (summary.openingRemoved) return true;
   if (summary.openingInfilled) return true;
   if (summary.openingSealed) return true;
-  if (summary.openingClassMismatch) return true;
   return false;
 }
 
@@ -2358,7 +3338,7 @@ export function detectRelocation(
 ): boolean {
   for (const base of baseline.openings) {
     const sameClassMatches = enhancedDetected.filter(
-      (opening) => opening.structuralClass === base.structuralClass
+      (opening) => getCanonicalOpeningIdentityType(opening.type) === getCanonicalOpeningIdentityType(base.type)
     );
 
     if (!sameClassMatches.length) continue;

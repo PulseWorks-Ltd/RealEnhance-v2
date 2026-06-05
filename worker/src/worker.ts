@@ -2321,7 +2321,6 @@ type ClosetRegionDescriptor = {
   wallPosition: string;
   horizontalBand: string;
   verticalBand: string;
-  widthBand: string;
   bboxText?: string;
 };
 
@@ -2791,7 +2790,6 @@ function collectClosetRegionDescriptors(baseline: StructuralBaseline | null | un
         wallPosition: String(opening.wallPosition || opening.wallIndex || "unknown"),
         horizontalBand: String(opening.horizontalBand || opening.relativeHorizontalPosition || "unknown"),
         verticalBand: String(opening.verticalBand || "unknown"),
-        widthBand: String(opening.widthBand || "unknown"),
         bboxText,
       };
     });
@@ -2806,7 +2804,7 @@ function buildClosetSurfaceExclusionConstraintBlock(
 
   const regionLines = regions.map((region) => {
     const bboxSuffix = region.bboxText ? `, ${region.bboxText}` : "";
-    return `- ${region.id}: wall=${region.wallPosition}, horizontal=${region.horizontalBand}, vertical=${region.verticalBand}, width=${region.widthBand}${bboxSuffix}`;
+    return `- ${region.id}: wall=${region.wallPosition}, horizontal=${region.horizontalBand}, vertical=${region.verticalBand}${bboxSuffix}`;
   });
 
   const modeRules = mode === "soft"
@@ -8067,15 +8065,34 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
   }
 
-  if (structuralBaseline) {
-    nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=already_hydrated`);
-  } else if (process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY) {
+  const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
+  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent;
+  const shouldTriggerBaselineDuringStage1A = canRunParallelBaseline && !structuralBaseline && !structuralBaselinePromise;
+  const baselineTriggerReason = !stage2Requested
+    ? "stage2_not_required"
+    : !baselineApiKeyPresent
+      ? "missing_gemini_key"
+      : structuralBaseline
+        ? "already_hydrated"
+        : structuralBaselinePromise
+          ? "already_in_progress"
+          : "stage2_required_parallel_stage1a";
+  nLog("[OPENING_BASELINE_TRIGGER]", {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    stage2Required: stage2Requested,
+    baselineStarted: shouldTriggerBaselineDuringStage1A,
+    reason: baselineTriggerReason,
+  });
+
+  if (shouldTriggerBaselineDuringStage1A) {
+    const baselineStartedAt = Date.now();
     structuralBaselinePromise = (async () => {
       try {
         const extractedBaseline = await withMemoryPhase(
           "stage1a_structural_baseline",
-          { attempt: 1 },
-          () => extractStructuralBaseline(path1A, {
+          { attempt: 1, startedDuringStage1A: true },
+          () => extractStructuralBaseline(canonicalPath, {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt: 1,
@@ -8083,11 +8100,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         );
         structuralBaseline = extractedBaseline;
         jobContext.structuralBaseline = extractedBaseline;
+
+        const persistenceStartedAt = Date.now();
         await updateJob(payload.jobId, {
           structuralBaseline: extractedBaseline as any,
           meta: {
             structuralBaseline: extractedBaseline as any,
           } as any,
+        });
+        const persistenceMs = Date.now() - persistenceStartedAt;
+        const baselineCompletedAt = Date.now();
+        const totalMs = Math.max(0, baselineCompletedAt - baselineStartedAt);
+        const extractionCalls = Number(extractedBaseline?.graphMeta?.passCount || 1);
+        const totalGeminiCalls = Number(extractedBaseline?.graphMeta?.geminiCalls || extractionCalls || 1);
+        const mode = Number(extractedBaseline?.graphMeta?.geminiCalls || 0) === 1
+          ? "single_pass"
+          : String(extractedBaseline?.graphMeta?.baselineMethod || "consensus");
+        const completedBeforeStage1AFinished = timestamps.stage1AEnd === null
+          ? true
+          : baselineCompletedAt <= Number(timestamps.stage1AEnd);
+
+        nLog("[OPENING_BASELINE_METRICS]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          mode,
+          extractionCalls,
+          totalGeminiCalls,
+          totalMs,
+          startedDuringStage1A: true,
+          completedBeforeStage1AFinished,
+          persistenceMs,
         });
         nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length}`);
         return extractedBaseline;
@@ -8096,9 +8138,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return null;
       }
     })();
-    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId}`);
-  } else {
-    nLog(`[STRUCTURAL_BASELINE_SKIPPED] jobId=${payload.jobId} reason=missing_gemini_key`);
+    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId} source=canonical startedDuringStage1A=true`);
   }
 
   try {
