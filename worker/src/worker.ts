@@ -5139,6 +5139,61 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog("[STAGE_OUTPUT_COMMITTED]", { jobId: payload.jobId, stage, path: path.substring(path.length - 40) });
   };
 
+  const resolveStructuralBaselineForValidation = async (source: string): Promise<StructuralBaseline | null> => {
+    if (structuralBaseline) {
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: "ready",
+        openings: structuralBaseline.openings.length,
+      });
+      return structuralBaseline;
+    }
+    if (!structuralBaselinePromise) {
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: "missing",
+      });
+      return null;
+    }
+    const waitStartedAt = Date.now();
+    nLog("[OPENING_BASELINE_REUSE]", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      source,
+      baselineStatus: "waiting",
+    });
+    try {
+      const resolved = await structuralBaselinePromise;
+      if (resolved) {
+        structuralBaseline = resolved;
+        jobContext.structuralBaseline = resolved;
+      }
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: resolved ? "resolved" : "null",
+        waitMs: Date.now() - waitStartedAt,
+        openings: resolved?.openings?.length || 0,
+      });
+      return resolved || null;
+    } catch (err: any) {
+      nLog("[OPENING_BASELINE_REUSE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        source,
+        baselineStatus: "error",
+        waitMs: Date.now() - waitStartedAt,
+        error: err?.message || String(err),
+      });
+      return null;
+    }
+  };
+
   const recordStage2AttemptOutput = (attempt: number, localPath: string) => {
     if (!Number.isFinite(attempt) || attempt < 0) return;
     if (stage2AttemptOutputs.some((entry) => entry.localPath === localPath)) return;
@@ -6804,13 +6859,105 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               }
             };
 
-            const openingBlockStartedAt = Date.now();
-            const opRes = await runOpeningValidator(validationBaseline, path2, {
+            const specialistBatchStartedAt = Date.now();
+            const specialistTiming: Record<"opening" | "fixture" | "floor" | "envelope", {
+              startTimestamp: number;
+              endTimestamp: number;
+              durationMs: number;
+            }> = {
+              opening: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+              fixture: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+              floor: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+              envelope: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+            };
+
+            const runSpecialistWithTiming = async <T>(
+              validator: "opening" | "fixture" | "floor" | "envelope",
+              runner: () => Promise<T>
+            ): Promise<T> => {
+              const startTimestamp = Date.now();
+              specialistTiming[validator].startTimestamp = startTimestamp;
+              nLog("[SPECIALIST_VALIDATION_START]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                source: "stage2_only_retry",
+                validator,
+                startTimestamp,
+              });
+              const result = await runner();
+              const endTimestamp = Date.now();
+              const durationMs = Math.max(0, endTimestamp - startTimestamp);
+              specialistTiming[validator].endTimestamp = endTimestamp;
+              specialistTiming[validator].durationMs = durationMs;
+              nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                source: "stage2_only_retry",
+                validator,
+                startTimestamp,
+                endTimestamp,
+                durationMs,
+              });
+              logValidatorBlockEnd(validator, durationMs, { source: "stage2_only_retry" });
+              return result;
+            };
+
+            const stage2OnlyBaselinePromise = resolveStructuralBaselineForValidation("stage2_only_retry_opening_validator");
+            const openingPromise = runSpecialistWithTiming("opening", async () => {
+              const stage2OnlyBaseline = await stage2OnlyBaselinePromise;
+              return runOpeningValidator(validationBaseline, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                baseline: stage2OnlyBaseline || undefined,
+              });
+            });
+            const fixturePromise = runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBaseline, path2, {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt: stage2OnlyAttemptNo,
+            }));
+            const floorPromise = runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBaseline, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+            }));
+            const envelopePromise = runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBaseline, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+            }));
+
+            const [opRes, fixRes, floorRes, envRes] = await Promise.all([
+              openingPromise,
+              fixturePromise,
+              floorPromise,
+              envelopePromise,
+            ]);
+
+            const totalConcurrentDurationMs = Math.max(0, Date.now() - specialistBatchStartedAt);
+            const equivalentSequentialDurationMs =
+              specialistTiming.opening.durationMs
+              + specialistTiming.fixture.durationMs
+              + specialistTiming.floor.durationMs
+              + specialistTiming.envelope.durationMs;
+            const estimatedSavingsMs = Math.max(0, equivalentSequentialDurationMs - totalConcurrentDurationMs);
+            nLog("[SPECIALIST_VALIDATION_SUMMARY]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              source: "stage2_only_retry",
+              openingDurationMs: specialistTiming.opening.durationMs,
+              fixtureDurationMs: specialistTiming.fixture.durationMs,
+              floorDurationMs: specialistTiming.floor.durationMs,
+              envelopeDurationMs: specialistTiming.envelope.durationMs,
+              totalConcurrentDurationMs,
+              equivalentSequentialDurationMs,
+              estimatedSavingsMs,
             });
-            logValidatorBlockEnd("opening", Date.now() - openingBlockStartedAt, { source: "stage2_only_retry" });
+
             const opHardFail = opRes?.hardFail === true;
             specialistResults.openings = opRes;
             if (opHardFail) {
@@ -6818,13 +6965,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("openings", opRes?.advisorySignals);
 
-            const fixtureBlockStartedAt = Date.now();
-            const fixRes = await runFixtureValidator(validationBaseline, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-            });
-            logValidatorBlockEnd("fixture", Date.now() - fixtureBlockStartedAt, { source: "stage2_only_retry" });
             const fixHardFail = fixRes?.hardFail === true;
             specialistResults.fixtures = fixRes;
             if (fixHardFail) {
@@ -6832,13 +6972,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("fixtures", fixRes?.advisorySignals);
 
-            const floorBlockStartedAt = Date.now();
-            const floorRes = await runFloorIntegrityValidator(validationBaseline, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-            });
-            logValidatorBlockEnd("floor", Date.now() - floorBlockStartedAt, { source: "stage2_only_retry" });
             const floorHardFail = floorRes?.hardFail === true;
             specialistResults.floor = floorRes;
             if (floorHardFail) {
@@ -6846,13 +6979,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             }
             appendAdvisories("floor", floorRes?.advisorySignals);
 
-            const envelopeBlockStartedAt = Date.now();
-            const envRes = await runEnvelopeValidator(validationBaseline, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-            });
-            logValidatorBlockEnd("envelope", Date.now() - envelopeBlockStartedAt, { source: "stage2_only_retry" });
             const envHardFail = envRes?.hardFail === true;
             specialistResults.envelope = envRes;
             if (envHardFail) {
@@ -11797,14 +11923,105 @@ All openings must remain identical in position and size to the original image.`;
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
         const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
 
-        const openingBlockStartedAt = Date.now();
-        const opRes = await runOpeningValidator(validationBasePath, path2, {
+        const specialistBatchStartedAt = Date.now();
+        const specialistTiming: Record<"opening" | "fixture" | "floor" | "envelope", {
+          startTimestamp: number;
+          endTimestamp: number;
+          durationMs: number;
+        }> = {
+          opening: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+          fixture: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+          floor: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+          envelope: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+        };
+
+        const runSpecialistWithTiming = async <T>(
+          validator: "opening" | "fixture" | "floor" | "envelope",
+          runner: () => Promise<T>
+        ): Promise<T> => {
+          const startTimestamp = Date.now();
+          specialistTiming[validator].startTimestamp = startTimestamp;
+          nLog("[SPECIALIST_VALIDATION_START]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "main_stage2",
+            validator,
+            startTimestamp,
+          });
+          const result = await runner();
+          const endTimestamp = Date.now();
+          const durationMs = Math.max(0, endTimestamp - startTimestamp);
+          specialistTiming[validator].endTimestamp = endTimestamp;
+          specialistTiming[validator].durationMs = durationMs;
+          nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "main_stage2",
+            validator,
+            startTimestamp,
+            endTimestamp,
+            durationMs,
+          });
+          logValidatorBlockEnd(validator, durationMs);
+          return result;
+        };
+
+        const openingBaselinePromise = resolveStructuralBaselineForValidation("stage2_opening_validator");
+        const openingPromise = runSpecialistWithTiming("opening", async () => {
+          const resolvedOpeningBaseline = await openingBaselinePromise;
+          return runOpeningValidator(validationBasePath, path2, {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            baseline: resolvedOpeningBaseline || undefined,
+          });
+        });
+        const fixturePromise = runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          baseline: structuralBaseline || undefined,
+        }));
+        const floorPromise = runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+        }));
+        const envelopePromise = runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+        }));
+
+        const [opRes, fixRes, floorRes, envRes] = await Promise.all([
+          openingPromise,
+          fixturePromise,
+          floorPromise,
+          envelopePromise,
+        ]);
+
+        const totalConcurrentDurationMs = Math.max(0, Date.now() - specialistBatchStartedAt);
+        const equivalentSequentialDurationMs =
+          specialistTiming.opening.durationMs
+          + specialistTiming.fixture.durationMs
+          + specialistTiming.floor.durationMs
+          + specialistTiming.envelope.durationMs;
+        const estimatedSavingsMs = Math.max(0, equivalentSequentialDurationMs - totalConcurrentDurationMs);
+        nLog("[SPECIALIST_VALIDATION_SUMMARY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          source: "main_stage2",
+          openingDurationMs: specialistTiming.opening.durationMs,
+          fixtureDurationMs: specialistTiming.fixture.durationMs,
+          floorDurationMs: specialistTiming.floor.durationMs,
+          envelopeDurationMs: specialistTiming.envelope.durationMs,
+          totalConcurrentDurationMs,
+          equivalentSequentialDurationMs,
+          estimatedSavingsMs,
         });
-        logValidatorBlockEnd("opening", Date.now() - openingBlockStartedAt);
+
         if (Array.isArray(opRes.structuralSignals)) {
           collectedStructuralSignals.push(...opRes.structuralSignals);
         }
@@ -12030,13 +12247,6 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const fixtureBlockStartedAt = Date.now();
-        const fixRes = await runFixtureValidator(validationBasePath, path2, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-        });
-        logValidatorBlockEnd("fixture", Date.now() - fixtureBlockStartedAt);
         specialistResults.fixture = normalizeSpecialistResult({
           validator: "fixture",
           status: fixRes.status,
@@ -12111,13 +12321,6 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const floorBlockStartedAt = Date.now();
-        const floorRes = await runFloorIntegrityValidator(validationBasePath, path2, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-        });
-        logValidatorBlockEnd("floor", Date.now() - floorBlockStartedAt);
         specialistResults.floor = normalizeSpecialistResult({
           validator: "floor",
           status: floorRes.status,
@@ -12192,13 +12395,6 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        const envelopeBlockStartedAt = Date.now();
-        const envRes = await runEnvelopeValidator(validationBasePath, path2, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-        });
-        logValidatorBlockEnd("envelope", Date.now() - envelopeBlockStartedAt);
         if (Array.isArray(envRes.structuralSignals)) {
           collectedStructuralSignals.push(...envRes.structuralSignals);
         }
