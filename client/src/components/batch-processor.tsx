@@ -1629,6 +1629,9 @@ export default function BatchProcessor({
     previousFileCountRef.current = files.length;
   }, [files.length, runState]);
 
+  // Get current imageId
+  const currentImageId = selectedImageId || (files.length > 0 ? getFileId(files[0]) : null);
+
   // Helper to set current image by index (for UI that uses indices)
   const setCurrentImageIndex = useCallback((
     indexOrFn: number | ((prev: number) => number),
@@ -1676,9 +1679,6 @@ export default function BatchProcessor({
     if (index < 0 || index >= files.length) return null;
     return getFileId(files[index]);
   }, [files]);
-
-  // Get current imageId
-  const currentImageId = selectedImageId || (files.length > 0 ? getFileId(files[0]) : null);
 
   const logSceneTelemetry = useCallback((payload: {
     imageId: string | null;
