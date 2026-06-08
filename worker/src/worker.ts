@@ -41,7 +41,12 @@ import { applyEdit } from "./pipeline/editApply";
 import type { EditContext } from "./pipeline/prompts";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
-import { detectSceneFromImage, determineSkyMode, type SkyModeResult } from "./ai/scene-detector";
+import {
+  detectSceneFromImage,
+  determineSkyMode,
+  logSceneOnnxStartupStatus,
+  type SkyModeResult,
+} from "./ai/scene-detector";
 import {
   analyzeExteriorEnvironment,
   determineLightingDecision,
@@ -7791,9 +7796,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         nLog(`[WORKER] Outdoor staging area/region detection failed, defaulting to no staging:`, e);
       }
     }
+    const explicitSceneType = String(payload.options.sceneType || "auto").toLowerCase();
+    const sceneSource: "client_prediction" | "worker_onnx" | "worker_heuristic" | "user_override" =
+      (manualSceneOverride && (explicitSceneType === "interior" || explicitSceneType === "exterior"))
+        ? "user_override"
+        : ((explicitSceneType === "interior" || explicitSceneType === "exterior")
+            ? "client_prediction"
+            : ((primary?.sceneSource as "worker_onnx" | "worker_heuristic" | undefined) || "worker_heuristic"));
+
+    nLog("[SCENE_TELEMETRY]", {
+      imageId: payload.imageId || null,
+      sceneSource,
+      sceneLabel,
+      confidence: typeof primary?.confidence === "number" ? Number(primary.confidence.toFixed(4)) : null,
+      stage: "scene_resolution",
+    });
+
     // store interim meta (non-fatal if write fails)
     updateJob(payload.jobId, { meta: {
       scene: { label: sceneLabel as any, confidence: primary?.confidence ?? null },
+      sceneSource,
       scenePrimary: primary,
       allowStaging,
       stagingRegion: stagingRegionGlobal,
@@ -15178,6 +15200,8 @@ if (process.env.DEBUG_INVARIANT_REPLAY === "true") {
 // Log validator configuration on startup
 logValidationModes();
 nLog('\n'); // Force flush
+
+void logSceneOnnxStartupStatus((message) => nLog(message));
 
 // Keep billing eventually consistent via non-blocking ledger retries.
 startBillingFinalizationRetryLoop();

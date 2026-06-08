@@ -1580,6 +1580,9 @@ export default function BatchProcessor({
   const [imageSkyReplacementById, setImageSkyReplacementById] = useState<Record<string, boolean>>({});
   // Track manual scene overrides per-image (when user changes scene dropdown)
   const [manualSceneOverrideById, setManualSceneOverrideById] = useState<Record<string, boolean>>({});
+  // Transient-only guided review state (never persisted/restored).
+  const [viewedImageIds, setViewedImageIds] = useState<Record<string, boolean>>({});
+  const [reviewedImageIds, setReviewedImageIds] = useState<Record<string, boolean>>({});
   const [linkImages, setLinkImages] = useState<boolean>(false);
   // Studio view: current image being configured (by stable imageId)
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
@@ -1627,18 +1630,46 @@ export default function BatchProcessor({
   }, [files.length, runState]);
 
   // Helper to set current image by index (for UI that uses indices)
-  const setCurrentImageIndex = useCallback((indexOrFn: number | ((prev: number) => number)) => {
-    if (typeof indexOrFn === 'function') {
-      const newIdx = indexOrFn(currentImageIndex);
-      if (newIdx >= 0 && newIdx < files.length) {
-        setSelectedImageId(getFileId(files[newIdx]));
+  const setCurrentImageIndex = useCallback((
+    indexOrFn: number | ((prev: number) => number),
+    options?: { trackReview?: boolean }
+  ) => {
+    const trackReview = options?.trackReview !== false;
+    const nextIndex = typeof indexOrFn === 'function' ? indexOrFn(currentImageIndex) : indexOrFn;
+    if (nextIndex < 0 || nextIndex >= files.length) return;
+
+    const nextImageId = getFileId(files[nextIndex]);
+    if (!nextImageId || nextImageId === currentImageId) return;
+
+    if (trackReview) {
+      if (currentImageId) {
+        setReviewedImageIds(prev => (prev[currentImageId] ? prev : { ...prev, [currentImageId]: true }));
       }
-    } else {
-      if (indexOrFn >= 0 && indexOrFn < files.length) {
-        setSelectedImageId(getFileId(files[indexOrFn]));
-      }
+      setViewedImageIds(prev => (prev[nextImageId] ? prev : { ...prev, [nextImageId]: true }));
     }
-  }, [currentImageIndex, files]);
+
+    setSelectedImageId(nextImageId);
+  }, [currentImageId, currentImageIndex, files]);
+
+  // Keep transient review maps scoped to current files only.
+  useEffect(() => {
+    const validIds = new Set(files.map(getFileId));
+    const pruneMap = (prev: Record<string, boolean>) => {
+      let changed = false;
+      const next: Record<string, boolean> = {};
+      Object.entries(prev).forEach(([imageId, value]) => {
+        if (value && validIds.has(imageId)) {
+          next[imageId] = true;
+        } else {
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    };
+
+    setViewedImageIds(pruneMap);
+    setReviewedImageIds(pruneMap);
+  }, [files]);
 
   // Get imageId for a given index
   const getImageIdForIndex = useCallback((index: number): string | null => {
@@ -1648,6 +1679,16 @@ export default function BatchProcessor({
 
   // Get current imageId
   const currentImageId = selectedImageId || (files.length > 0 ? getFileId(files[0]) : null);
+
+  const logSceneTelemetry = useCallback((payload: {
+    imageId: string | null;
+    sceneSource: "client_prediction" | "worker_onnx" | "worker_heuristic" | "user_override";
+    sceneLabel: string | null;
+    confidence: number | null;
+    stage: string;
+  }) => {
+    console.info("[SCENE_TELEMETRY]", payload);
+  }, []);
 
   // Tuning controls (apply to all images in this batch; optional)
   // Declutter intensity removed: always heavy/preset in backend
@@ -1935,6 +1976,8 @@ export default function BatchProcessor({
       setManualSceneTypesById({});
       setImageRoomTypesById({});
       setImageSkyReplacementById({});
+      setViewedImageIds({});
+      setReviewedImageIds({});
       setMetaByIndex({});
       setSelection(new Set());
       setManualSceneOverrideById({});
@@ -1946,6 +1989,8 @@ export default function BatchProcessor({
       setManualSceneTypesById({});
       setImageRoomTypesById({});
       setImageSkyReplacementById({});
+      setViewedImageIds({});
+      setReviewedImageIds({});
       setMetaByIndex({});
       setSelection(new Set());
       setManualSceneOverrideById({});
@@ -2009,6 +2054,13 @@ export default function BatchProcessor({
         const prediction = await detectSceneFromFile(f);
         if (!cancelled) {
           nextPreds[imageId] = prediction;
+          logSceneTelemetry({
+            imageId,
+            sceneSource: "client_prediction",
+            sceneLabel: prediction.scene,
+            confidence: typeof prediction.confidence === "number" ? Number(prediction.confidence.toFixed(4)) : null,
+            stage: "client_auto_detect",
+          });
           if (prediction.scene && !manualSceneTypesByIdRef.current[imageId]) {
             setImageSceneTypesById(prev => {
               if (prev[imageId] && prev[imageId] !== "auto") return prev;
@@ -2035,7 +2087,7 @@ export default function BatchProcessor({
       }
     })();
     return () => { cancelled = true; };
-  }, [activeTab, files, imageSkyReplacementById]);
+  }, [activeTab, files, imageSkyReplacementById, logSceneTelemetry]);
 
   const finalSceneForIndex = useCallback((index: number): SceneLabel | null => {
     const imageId = getImageIdForIndex(index);
@@ -2133,6 +2185,38 @@ export default function BatchProcessor({
   const blockingCount = blockingIndices.length;
   const firstBlockingIndex = blockingIndices[0] ?? 0;
   const currentFinalScene = finalSceneForIndex(currentImageIndex);
+  const reviewStatusByIndex = useMemo(() => {
+    return files.map((file, idx) => {
+      const imageId = getFileId(file);
+      const viewed = !!viewedImageIds[imageId];
+      const reviewed = !!reviewedImageIds[imageId];
+      const reviewSatisfied = reviewed || (idx === currentImageIndex && viewed);
+      return { viewed, reviewed, reviewSatisfied };
+    });
+  }, [currentImageIndex, files, reviewedImageIds, viewedImageIds]);
+
+  const viewedImagesCount = useMemo(
+    () => reviewStatusByIndex.reduce((count, row) => count + (row.viewed ? 1 : 0), 0),
+    [reviewStatusByIndex]
+  );
+
+  const reviewedImagesCount = useMemo(
+    () => reviewStatusByIndex.reduce((count, row) => count + (row.reviewed ? 1 : 0), 0),
+    [reviewStatusByIndex]
+  );
+
+  const reviewCompletedCount = useMemo(
+    () => reviewStatusByIndex.reduce((count, row) => count + (row.reviewSatisfied ? 1 : 0), 0),
+    [reviewStatusByIndex]
+  );
+
+  const isReviewComplete = files.length > 0 && reviewCompletedCount === files.length;
+
+  const firstReviewIncompleteIndex = useMemo(
+    () => reviewStatusByIndex.findIndex(row => !row.reviewSatisfied),
+    [reviewStatusByIndex]
+  );
+
   const firstIncompleteIndex = useMemo(() => {
     for (let idx = 0; idx < files.length; idx += 1) {
       const imageId = getImageIdForIndex(idx);
@@ -4854,12 +4938,25 @@ export default function BatchProcessor({
       return;
     }
 
-    // Block start when required inputs are missing
+    // Block start until every image is reviewed in guided flow.
+    if (!isReviewComplete) {
+      const targetIndex = firstReviewIncompleteIndex >= 0 ? firstReviewIncompleteIndex : 0;
+      toast({
+        title: "Review incomplete",
+        description: `Review all images before starting enhancement. Continue from image ${targetIndex + 1}.`,
+        variant: "destructive"
+      });
+      setActiveTab("images");
+      setCurrentImageIndex(targetIndex, { trackReview: false });
+      return;
+    }
+
+    // Block start when required inputs are missing.
     if (blockingIndices.length) {
       const humanList = blockingIndices.map(i => i + 1).join(", ");
       toast({
-        title: "Complete required settings",
-        description: `Please fill Scene Type${allowStaging ? " and Room Type" : ""} for image(s): ${humanList}.`,
+        title: "Configuration incomplete",
+        description: `Complete required settings for image(s): ${humanList}.`,
         variant: "destructive"
       });
       setActiveTab("images");
@@ -6981,6 +7078,8 @@ export default function BatchProcessor({
     setManualSceneOverrideById({});
     setImageSkyReplacementById({});
     setScenePredictionsById({});
+    setViewedImageIds({});
+    setReviewedImageIds({});
     setSelectedImageId(null);
   };
 
@@ -7061,6 +7160,16 @@ export default function BatchProcessor({
         return next;
       });
       setScenePredictionsById(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setViewedImageIds(prev => {
+        const next = { ...prev };
+        delete next[imageIdToRemove];
+        return next;
+      });
+      setReviewedImageIds(prev => {
         const next = { ...prev };
         delete next[imageIdToRemove];
         return next;
@@ -7225,6 +7334,11 @@ export default function BatchProcessor({
     return Math.round((configuredImagesCount / files.length) * 100);
   }, [configuredImagesCount, files.length]);
 
+  const reviewProgressPct = useMemo(() => {
+    if (!files.length) return 0;
+    return Math.round((reviewCompletedCount / files.length) * 100);
+  }, [files.length, reviewCompletedCount]);
+
   const [flashAssignedThumbnailIndex, setFlashAssignedThumbnailIndex] = useState<number | null>(null);
   const flashAssignedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -7247,6 +7361,14 @@ export default function BatchProcessor({
     if (!currentImageId) return;
     const assignedIndex = currentImageIndex;
 
+    logSceneTelemetry({
+      imageId: currentImageId,
+      sceneSource: "user_override",
+      sceneLabel: "interior",
+      confidence: null,
+      stage: "client_quick_assign_room_type",
+    });
+
     setManualSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
     setImageSceneTypesById(prev => ({ ...prev, [currentImageId]: "interior" }));
     setManualSceneOverrideById(prev => ({ ...prev, [currentImageId]: true }));
@@ -7255,7 +7377,7 @@ export default function BatchProcessor({
 
     flashAssignedThumbnail(assignedIndex);
     setCurrentImageIndex(i => Math.min(files.length - 1, i + 1));
-  }, [currentImageId, currentImageIndex, files.length, flashAssignedThumbnail, setCurrentImageIndex]);
+  }, [currentImageId, currentImageIndex, files.length, flashAssignedThumbnail, logSceneTelemetry, setCurrentImageIndex]);
 
   const currentAssignedRoomType = currentImageId ? (imageRoomTypesById[currentImageId] || "") : "";
   const quickAssignButtonClass = (isAssigned: boolean) =>
@@ -7653,6 +7775,9 @@ export default function BatchProcessor({
                         <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
                           {configuredImagesCount} / {files.length} configured
                         </div>
+                        <div className="rounded-full border border-slate-200/90 bg-white/95 px-3 py-1 text-xs font-semibold text-slate-700 shadow-sm">
+                          {reviewCompletedCount} / {files.length} reviewed
+                        </div>
                       </div>
 
                       <img
@@ -7797,33 +7922,19 @@ export default function BatchProcessor({
                       const imageId = getFileId(file);
                       return !!validationMap[imageId]?.isValid;
                     });
+                    const allImagesReviewed = isReviewComplete;
                     const isLastImage = currentImageIndex === files.length - 1;
                     const hasMoreImages = currentImageIndex < files.length - 1;
-                    const shouldReviewMissing = firstIncompleteIndex !== -1 && firstIncompleteIndex < currentImageIndex;
-                    const nextUnconfiguredIndex = files.findIndex((file, idx) => {
-                      if (idx <= currentImageIndex) return false;
-                      const imageId = getFileId(file);
-                      return !validationMap[imageId]?.isValid;
-                    });
+                    const readyToStart = allImagesConfigured && allImagesReviewed;
 
                     const handleGuidedNext = () => {
-                      if (shouldReviewMissing && firstIncompleteIndex >= 0) {
-                        setCurrentImageIndex(firstIncompleteIndex);
-                        return;
-                      }
-                      if (nextUnconfiguredIndex >= 0) {
-                        setCurrentImageIndex(nextUnconfiguredIndex);
-                        return;
-                      }
                       if (hasMoreImages) {
                         setCurrentImageIndex(currentImageIndex + 1);
                       }
                     };
 
-                    const nextButtonLabel = shouldReviewMissing
-                      ? "Review Missing Info"
-                      : "Next Image →";
-                    const nextButtonDisabled = shouldReviewMissing ? false : (!currentImageValid || !hasMoreImages);
+                    const nextButtonLabel = "Next Image →";
+                    const nextButtonDisabled = !hasMoreImages;
 
                     return (
                       <>
@@ -7832,6 +7943,8 @@ export default function BatchProcessor({
                             <p className="text-xs uppercase tracking-wide text-slate-500">Image Progress</p>
                             <p className="text-sm font-semibold text-slate-900">Image {currentImageIndex + 1} of {files.length}</p>
                             <p className="text-xs text-slate-600 mt-0.5">{configuredImagesCount}/{files.length} configured</p>
+                            <p className="text-xs text-slate-600 mt-0.5">{reviewCompletedCount}/{files.length} reviewed ({reviewProgressPct}%)</p>
+                            <p className="text-xs text-slate-600 mt-0.5">{viewedImagesCount}/{files.length} viewed · {reviewedImagesCount}/{files.length} exited</p>
                           </div>
 
                           <div>
@@ -7841,6 +7954,13 @@ export default function BatchProcessor({
                                 type="button"
                                 onClick={() => {
                                   if (!currentImageId) return;
+                                  logSceneTelemetry({
+                                    imageId: currentImageId,
+                                    sceneSource: "user_override",
+                                    sceneLabel: "interior",
+                                    confidence: null,
+                                    stage: "client_manual_scene_toggle",
+                                  });
                                   setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
@@ -7854,6 +7974,13 @@ export default function BatchProcessor({
                                 type="button"
                                 onClick={() => {
                                   if (!currentImageId) return;
+                                  logSceneTelemetry({
+                                    imageId: currentImageId,
+                                    sceneSource: "user_override",
+                                    sceneLabel: "exterior",
+                                    confidence: null,
+                                    stage: "client_manual_scene_toggle",
+                                  });
                                   setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
                                   setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "exterior" }));
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
@@ -7880,6 +8007,13 @@ export default function BatchProcessor({
                                 const value = e.target.value;
                                 setImageRoomTypesById((prev) => ({ ...prev, [currentImageId]: value }));
                                 if (value) {
+                                  logSceneTelemetry({
+                                    imageId: currentImageId,
+                                    sceneSource: "user_override",
+                                    sceneLabel: "interior",
+                                    confidence: null,
+                                    stage: "client_room_type_selection",
+                                  });
                                   setManualSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setImageSceneTypesById((prev) => ({ ...prev, [currentImageId]: "interior" }));
                                   setManualSceneOverrideById((prev) => ({ ...prev, [currentImageId]: true }));
@@ -7903,7 +8037,7 @@ export default function BatchProcessor({
 
                         <footer className="mt-auto shrink-0 border-t border-slate-200 bg-white p-4">
                           <div className="transition-all duration-200">
-                            {allImagesConfigured ? (
+                            {readyToStart ? (
                               <button
                                 onClick={handleStartEnhance}
                                 className="w-full rounded-lg bg-gradient-to-r from-action-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all duration-200 hover:from-action-700 hover:to-indigo-700"
@@ -7923,14 +8057,17 @@ export default function BatchProcessor({
                               </button>
                             )}
                           </div>
-                          {!allImagesConfigured && !currentImageValid && (
-                            <p className="mt-2 text-xs font-medium text-amber-700">Fill room type to unlock Next Image</p>
+                          {!allImagesReviewed && firstReviewIncompleteIndex >= 0 && (
+                            <p className="mt-2 text-xs font-medium text-amber-700">Review incomplete: image {firstReviewIncompleteIndex + 1} still needs review.</p>
                           )}
-                          {!allImagesConfigured && shouldReviewMissing && firstIncompleteIndex >= 0 && (
-                            <p className="mt-2 text-xs font-medium text-amber-700">Image {firstIncompleteIndex + 1} still needs required info.</p>
+                          {!allImagesConfigured && firstIncompleteIndex >= 0 && (
+                            <p className="mt-2 text-xs font-medium text-amber-700">Configuration incomplete: image {firstIncompleteIndex + 1} still needs required settings.</p>
                           )}
-                          {allImagesConfigured && isLastImage && (
-                            <p className="mt-2 text-xs font-medium text-emerald-700">All images configured. Ready to start.</p>
+                          {readyToStart && isLastImage && (
+                            <p className="mt-2 text-xs font-medium text-emerald-700">Review and configuration complete. Ready to start.</p>
+                          )}
+                          {!readyToStart && isLastImage && (
+                            <p className="mt-2 text-xs font-medium text-slate-600">Last image reached. Complete remaining review/configuration requirements to continue.</p>
                           )}
                         </footer>
                       </>
@@ -7968,8 +8105,14 @@ export default function BatchProcessor({
                     </p>
                     <button
                       onClick={handleStartEnhance}
-                      disabled={!files.length || blockingCount > 0}
-                      title={blockingCount ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.` : undefined}
+                      disabled={!files.length || !isReviewComplete || blockingCount > 0}
+                      title={
+                        !isReviewComplete
+                          ? `Review all images before starting enhancement.`
+                          : blockingCount
+                            ? `Complete required settings for ${blockingCount} image${blockingCount === 1 ? '' : 's'}.`
+                            : undefined
+                      }
                       className="bg-emerald-600 text-white px-8 py-4 rounded hover:bg-emerald-700 transition-colors font-medium text-lg disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                       data-testid="button-start-batch"
                     >
