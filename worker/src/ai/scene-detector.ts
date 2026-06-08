@@ -27,11 +27,29 @@ async function ensureSceneSession(): Promise<any | null> {
   return sceneSession;
 }
 
+let onnxStartupLogged = false;
+
+export async function logSceneOnnxStartupStatus(
+  log: (message: string, payload?: Record<string, unknown>) => void,
+): Promise<void> {
+  if (onnxStartupLogged) return;
+  onnxStartupLogged = true;
+
+  const modelPath = process.env.MODEL_SCENE_PATH || path.join(process.cwd(), "models", "scene_mobilenet.onnx");
+  const modelFound = fs.existsSync(modelPath);
+  const runtimeAvailable = !!(await loadOrt());
+
+  log(`[SCENE] ONNX runtime available=${runtimeAvailable}`);
+  log(`[SCENE] ONNX model found=${modelFound}`);
+  log(`[SCENE] ONNX model path=${modelPath}`);
+}
+
 export type ScenePrimary = "interior" | "exterior";
 
 export interface ScenePrimaryResult {
   label: ScenePrimary;
   confidence: number; // 0..1
+  sceneSource?: "worker_onnx" | "worker_heuristic";
   skyPct?: number;
   grassPct?: number;
   woodDeckPct?: number;
@@ -65,7 +83,7 @@ async function onnxClassify(buf: Buffer): Promise<ScenePrimaryResult | null> {
   const probs = softmax(data);
   const idx = probs.indexOf(Math.max(...probs));
   const label: ScenePrimary = idx === 1 ? "exterior" : "interior"; // assume [interior, exterior]
-  return { label, confidence: probs[idx] ?? 0.5 };
+  return { label, confidence: probs[idx] ?? 0.5, sceneSource: "worker_onnx" };
 }
 
 async function heuristic(buf: Buffer): Promise<ScenePrimaryResult> {
@@ -147,6 +165,7 @@ async function heuristic(buf: Buffer): Promise<ScenePrimaryResult> {
   return {
     label,
     confidence,
+    sceneSource: "worker_heuristic",
     skyPct: Number(skyPct.toFixed(4)),
     grassPct: Number(grassPct.toFixed(4)),
     woodDeckPct: Number(woodDeckPct.toFixed(4)),
@@ -164,6 +183,10 @@ export async function detectSceneFromImage(buf: Buffer): Promise<ScenePrimaryRes
   const heur = await heuristic(buf);
 
   const base = onnx ?? heur;
+  const detectorSource = onnx ? "onnx" : "heuristic";
+  logIfNotFocusMode(
+    `[SCENE] source=${detectorSource} label=${base.label} confidence=${Number(base.confidence ?? 0).toFixed(2)}`
+  );
   const metrics = {
     skyTop10: heur.skyTop10 ?? base.skyTop10 ?? 0,
     skyTop40: heur.skyTop40 ?? base.skyTop40 ?? 0,
@@ -176,6 +199,7 @@ export async function detectSceneFromImage(buf: Buffer): Promise<ScenePrimaryRes
     const result: ScenePrimaryResult = {
       ...base,
       ...metrics,
+      sceneSource: onnx ? "worker_onnx" : "worker_heuristic",
       confidence: Math.min(base.confidence ?? 0, 0.49),
       coveredExteriorSuspect: true,
       needsConfirm: true,
@@ -193,7 +217,7 @@ export async function detectSceneFromImage(buf: Buffer): Promise<ScenePrimaryRes
   }
 
   // Return base result with merged metrics for downstream sky mode gating
-  return { ...base, ...metrics };
+  return { ...base, ...metrics, sceneSource: onnx ? "worker_onnx" : "worker_heuristic" };
 }
 
 /**
