@@ -1977,12 +1977,17 @@ export default function BatchProcessor({
     const hasNewFiles = [...currentIds].some(id => !prevIds.has(id));
     const userSelected = files.some(f => !(f as any).__restored);
 
+    const initialViewedState = () => {
+      const firstImageId = files.length > 0 ? getFileId(files[0]) : null;
+      return firstImageId ? { [firstImageId]: true } : {};
+    };
+
     if (userSelected && hasNewFiles && !hasOverlap && prevIds.size > 0) {
       setImageSceneTypesById({});
       setManualSceneTypesById({});
       setImageRoomTypesById({});
       setImageSkyReplacementById({});
-      setViewedImageIds({});
+      setViewedImageIds(initialViewedState());
       setReviewedImageIds({});
       setMetaByIndex({});
       setSelection(new Set());
@@ -1995,7 +2000,7 @@ export default function BatchProcessor({
       setManualSceneTypesById({});
       setImageRoomTypesById({});
       setImageSkyReplacementById({});
-      setViewedImageIds({});
+      setViewedImageIds(initialViewedState());
       setReviewedImageIds({});
       setMetaByIndex({});
       setSelection(new Set());
