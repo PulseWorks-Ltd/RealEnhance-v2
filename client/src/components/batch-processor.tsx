@@ -41,7 +41,7 @@ import { getCardArtifactView, resolveImageUrlRoles, type DisplayOutputKey } from
 import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
 
-type RunState = "idle" | "running" | "done";
+type RunState = "idle" | "running" | "done" | "failed";
 type StageKey = "1A" | "1B" | "2";
 type StagingStyle =
   | "standard_listing"
@@ -710,6 +710,8 @@ interface PersistedBatchJob {
   jobId: string;
   jobIds: string[];
   runState: RunState;
+  completedAt?: number | null;
+  failedAt?: number | null;
   results: any[];
   processedImages: string[];
   processedImagesByIndex: { [key: number]: string };
@@ -740,7 +742,7 @@ interface PersistedBatchJob {
 
 // Stable placeholder for restored (non-image) file blobs so the UI never shows a broken icon
 const RESTORED_PLACEHOLDER = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 90'><rect width='120' height='90' fill='%23e5e7eb'/><path d='M43 30h34l4 6h8a5 5 0 015 5v27a5 5 0 01-5 5H31a5 5 0 01-5-5V41a5 5 0 015-5h8l4-6z' fill='%23d1d5db'/><circle cx='60' cy='53' r='12' fill='%23cbd5e1'/><circle cx='60' cy='53' r='7' fill='%239ca3af'/><text x='50%' y='82%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='10' fill='%239ca3af'>Preview</text></svg>";
-const JOB_EXPIRY_HOURS = 24;
+const TERMINAL_BATCH_RETENTION_MS = 72 * 60 * 60 * 1000;
 
 function normalizeJobStatus(raw: string | undefined): 'processing' | 'completed' | 'failed' | 'cancelled' | 'awaiting_payment' {
   const val = (raw || "").toLowerCase();
@@ -776,6 +778,10 @@ function saveBatchJobState(state: PersistedBatchJob, userId: string | null) {
   }
 }
 
+function getPersistedBatchTerminalAt(state: PersistedBatchJob): number | null {
+  return state.completedAt ?? state.failedAt ?? state.timestamp ?? null;
+}
+
 function loadBatchJobState(userId: string | null): PersistedBatchJob | null {
   try {
     migrateLegacyKeysOnce(userId);
@@ -783,8 +789,12 @@ function loadBatchJobState(userId: string | null): PersistedBatchJob | null {
     if (!saved) return null;
 
     const state = JSON.parse(saved) as PersistedBatchJob;
-    const maxAgeMs = JOB_EXPIRY_HOURS * 60 * 60 * 1000;
-    if (!state?.timestamp || Date.now() - state.timestamp > maxAgeMs) {
+    if (state?.runState === "running") {
+      return state;
+    }
+
+    const terminalAt = getPersistedBatchTerminalAt(state);
+    if (!terminalAt || Date.now() - terminalAt > TERMINAL_BATCH_RETENTION_MS) {
       clearBatchJobState(userId);
       return null;
     }
@@ -1151,6 +1161,8 @@ export default function BatchProcessor({
   const presetKey = "realestate"; // Locked to Real Estate only
   const [showAdditionalSettings, setShowAdditionalSettings] = useState(false);
   const [runState, setRunState] = useState<RunState>("idle");
+  const [completedAt, setCompletedAt] = useState<number | null>(null);
+  const [failedAt, setFailedAt] = useState<number | null>(null);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const activeBatchIdRef = useRef<string | null>(null);
   const [batches, setBatches] = useState<Record<string, any[]>>({});
@@ -2789,6 +2801,8 @@ export default function BatchProcessor({
       setJobId(savedState.jobId);
       setJobIds(savedState.jobIds || (savedState.jobId ? [savedState.jobId] : []));
       setRunState(savedState.runState);
+      setCompletedAt(savedState.completedAt ?? null);
+      setFailedAt(savedState.failedAt ?? null);
       setProcessedImages(savedState.processedImages);
       setProcessedImagesByIndex(savedState.processedImagesByIndex);
       jobIdToIndexRef.current = savedState.jobIdToIndex || {};
@@ -2836,7 +2850,7 @@ export default function BatchProcessor({
       if (savedState.runState === "running") {
         setActiveTab("enhance");
         startPollingExistingBatch(savedState.jobIds && savedState.jobIds.length ? savedState.jobIds : [savedState.jobId]);
-      } else if (savedState.runState === "done") {
+      } else if (savedState.runState === "done" || savedState.runState === "failed") {
         setActiveTab("enhance");
       }
     }
@@ -2953,6 +2967,8 @@ export default function BatchProcessor({
         jobId,
         jobIds,
         runState,
+        completedAt: runState === "done" ? (completedAt ?? Date.now()) : null,
+        failedAt: runState === "failed" ? (failedAt ?? Date.now()) : null,
         results,
         processedImages,
         processedImagesByIndex,
@@ -2982,7 +2998,7 @@ export default function BatchProcessor({
       };
       saveBatchJobState(state, currentUserId);
     }
-  }, [jobId, jobIds, runState, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, propertyAddress, currentUserId]);
+  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, propertyAddress, currentUserId]);
 
   const startPollingExistingBatch = async (ids: string[]) => {
     if (!ids.length) return;
@@ -3224,9 +3240,10 @@ export default function BatchProcessor({
               (singleTarget === "1A" && (!!singleS1A || !!singleFallback))
             );
             if (singleTargetPresent) {
+              setCompletedAt(Date.now());
+              setFailedAt(null);
               setRunState('done');
               setAbortController(null);
-              clearBatchJobState(currentUserId);
               await refreshUser();
               setProgressText('Batch complete! 1 images enhanced successfully.');
               return;
@@ -3234,9 +3251,10 @@ export default function BatchProcessor({
             // Target not reached yet — continue polling
           }
           if (['failed','error'].includes(data.status)) {
-            setRunState('idle');
+            setFailedAt(Date.now());
+            setCompletedAt(null);
+            setRunState('failed');
             setAbortController(null);
-            clearBatchJobState(currentUserId);
             setProgressText('Batch failed');
             return;
           }
@@ -3285,9 +3303,10 @@ export default function BatchProcessor({
             );
           });
           if (allTargetsReached) {
+            setCompletedAt(Date.now());
+            setFailedAt(null);
             setRunState("done");
             setAbortController(null);
-            clearBatchJobState(currentUserId);
             await refreshUser();
             const completedCount = doneItems.filter((item: any) => item && item.status === 'completed').length;
             setProgressText(`Batch complete! ${completedCount} images enhanced successfully.`);
@@ -3418,6 +3437,8 @@ export default function BatchProcessor({
           setShowPendingRestoreBanner(false);
 
           setRunState("idle");
+          setCompletedAt(null);
+          setFailedAt(null);
           setAbortController(null);
           setJobIds([]);
           setCancelIds([]);
@@ -4666,6 +4687,8 @@ export default function BatchProcessor({
         schedule();
 
         const terminalCount = Object.entries(statusCounts).reduce((acc, [st, count]) => acc + (TERMINAL_STATUSES.has(st) ? count : 0), 0);
+        const completedCount = statusCounts['completed'] || 0;
+        const failedCount = (statusCounts['failed'] || 0) + (statusCounts['error'] || 0);
         const queuedCount = statusCounts['queued'] || 0;
         const processingCount = statusCounts['processing'] || 0;
         setProgressText(`Processing images: ${terminalCount}/${total} finished`);
@@ -4814,12 +4837,22 @@ export default function BatchProcessor({
           if (IS_DEV) {
             console.debug('[BATCH][poll] stopping — all items reached targets or failed', { allTerminal, allImagesReachedTarget: allImagesReachedTargetOrFailed, nonTerminalIndices, hasUnmappedNonTerminal });
           }
-          setRunState("done");
-          setAbortController(null);
-          await refreshUser();
-          setProgressText(`Batch complete! ${terminalCount} images finished.`);
-          clearBatchJobState(currentUserId);
-          return;
+          if (completedCount === 0 && failedCount > 0) {
+            setFailedAt(Date.now());
+            setCompletedAt(null);
+            setRunState("failed");
+            setProgressText("Batch failed");
+            setAbortController(null);
+            return;
+          } else {
+            setCompletedAt(Date.now());
+            setFailedAt(null);
+            setRunState("done");
+            setAbortController(null);
+            await refreshUser();
+            setProgressText(`Batch complete! ${terminalCount} images finished.`);
+            return;
+          }
         }
 
         delay = Math.max(BACKOFF_START_MS, Math.floor(delay / BACKOFF_FACTOR));
@@ -4829,6 +4862,8 @@ export default function BatchProcessor({
       }
       await new Promise(r => setTimeout(r, delay));
     }
+    setCompletedAt(null);
+    setFailedAt(null);
     clearBatchJobState(currentUserId);
   };
 
@@ -4874,6 +4909,7 @@ export default function BatchProcessor({
           items.push({ id, status, imageUrl: j?.result?.imageUrl });
         }
         const completed = items.filter(i=>i.status==='completed').length;
+        const failed = items.filter(i=>i.status==='failed').length;
         setProgressText(`Processing images: ${completed}/${ids.length} completed`);
         for (const it of items) {
           const idx = jobIdToIndexRef.current[it.id];
@@ -4887,9 +4923,23 @@ export default function BatchProcessor({
           }
         }
         schedule();
-        if (completed === ids.length) {
-          setRunState('done'); setAbortController(null); await refreshUser();
-          clearBatchJobState(currentUserId);
+        const allTerminal = items.length > 0 && items.every((i) => i.status === 'completed' || i.status === 'failed');
+        if (allTerminal) {
+          if (completed === 0 && failed > 0) {
+            setFailedAt(Date.now());
+            setCompletedAt(null);
+            setRunState('failed');
+            setProgressText('Batch failed');
+            setAbortController(null);
+          } else {
+            setCompletedAt(Date.now());
+            setFailedAt(null);
+            setRunState('done');
+            setProgressText(`Processing images: ${completed}/${ids.length} completed`);
+            setAbortController(null);
+            await refreshUser();
+            return;
+          }
           return;
         }
         delay = Math.max(BACKOFF_START_MS, Math.floor(delay / BACKOFF_FACTOR));
@@ -4899,6 +4949,8 @@ export default function BatchProcessor({
       }
       await new Promise(r=>setTimeout(r, delay));
     }
+    setCompletedAt(null);
+    setFailedAt(null);
     clearBatchJobState(currentUserId);
   };
 
@@ -6868,6 +6920,8 @@ export default function BatchProcessor({
 
     setIsBatchRefining(false);
     setHasRefinedImages(false);
+    setCompletedAt(null);
+    setFailedAt(null);
 
     setSelection(new Set());
     setMetaByIndex({});
