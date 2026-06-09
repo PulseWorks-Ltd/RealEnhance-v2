@@ -1674,6 +1674,12 @@ export default function BatchProcessor({
     setReviewedImageIds(pruneMap);
   }, [files]);
 
+  // Mark the currently displayed image as viewed once it is selected for display.
+  useEffect(() => {
+    if (!currentImageId) return;
+    setViewedImageIds(prev => (prev[currentImageId] ? prev : { ...prev, [currentImageId]: true }));
+  }, [currentImageId]);
+
   // Get imageId for a given index
   const getImageIdForIndex = useCallback((index: number): string | null => {
     if (index < 0 || index >= files.length) return null;
@@ -2186,14 +2192,15 @@ export default function BatchProcessor({
   const firstBlockingIndex = blockingIndices[0] ?? 0;
   const currentFinalScene = finalSceneForIndex(currentImageIndex);
   const reviewStatusByIndex = useMemo(() => {
+    const isSingleImageBatch = files.length === 1;
     return files.map((file, idx) => {
       const imageId = getFileId(file);
       const viewed = !!viewedImageIds[imageId];
       const reviewed = !!reviewedImageIds[imageId];
-      const reviewSatisfied = reviewed || (idx === currentImageIndex && viewed);
+      const reviewSatisfied = isSingleImageBatch ? viewed : reviewed;
       return { viewed, reviewed, reviewSatisfied };
     });
-  }, [currentImageIndex, files, reviewedImageIds, viewedImageIds]);
+  }, [files, reviewedImageIds, viewedImageIds]);
 
   const viewedImagesCount = useMemo(
     () => reviewStatusByIndex.reduce((count, row) => count + (row.viewed ? 1 : 0), 0),
