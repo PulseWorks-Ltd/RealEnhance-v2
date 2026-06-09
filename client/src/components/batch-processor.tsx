@@ -2204,15 +2204,20 @@ export default function BatchProcessor({
   const firstBlockingIndex = blockingIndices[0] ?? 0;
   const currentFinalScene = finalSceneForIndex(currentImageIndex);
   const reviewStatusByIndex = useMemo(() => {
-    const isSingleImageBatch = files.length === 1;
-    return files.map((file, idx) => {
+    return files.map((file, _idx) => {
       const imageId = getFileId(file);
       const viewed = !!viewedImageIds[imageId];
       const reviewed = !!reviewedImageIds[imageId];
-      const reviewSatisfied = isSingleImageBatch ? viewed : reviewed;
+      // An image is review-satisfied when:
+      //   a) the user explicitly navigated away from it (reviewed), OR
+      //   b) the user has viewed it AND it already has a valid configuration
+      //      (catches the last image in a batch that arrives pre-configured,
+      //      e.g. auto-detected exterior, so no settings-change event fires).
+      const isValid = !!validationMap[imageId]?.isValid;
+      const reviewSatisfied = reviewed || (viewed && isValid);
       return { viewed, reviewed, reviewSatisfied };
     });
-  }, [files, reviewedImageIds, viewedImageIds]);
+  }, [files, reviewedImageIds, validationMap, viewedImageIds]);
 
   const viewedImagesCount = useMemo(
     () => reviewStatusByIndex.reduce((count, row) => count + (row.viewed ? 1 : 0), 0),
