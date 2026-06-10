@@ -5093,6 +5093,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   const stage2LayoutPlanCache = new Map<string, Stage2LayoutPlan>();
+  const isManualRetryPayload = (payload as any).retryType === "manual_retry";
+  const normalizedRetryInstructions = String((payload as any).retryInstructions || "").trim();
+  const hasRetryInstructions = normalizedRetryInstructions.length > 0;
+  const retryInstructionHash = hasRetryInstructions
+    ? crypto.createHash("sha1").update(normalizedRetryInstructions).digest("hex")
+    : "none";
   const isPersistableLayoutPlan = (value: any): value is Stage2LayoutPlan => {
     return !!(
       value &&
@@ -5118,7 +5124,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const persistedLayoutPlans =
       existingJobState?.meta?.stage2LayoutPlans ||
       existingJobState?.metadata?.stage2LayoutPlans;
-    if (persistedLayoutPlans && typeof persistedLayoutPlans === "object") {
+    if (!isManualRetryPayload && persistedLayoutPlans && typeof persistedLayoutPlans === "object") {
       for (const [cacheKey, maybePlan] of Object.entries(persistedLayoutPlans as Record<string, any>)) {
         if (!isPersistableLayoutPlan(maybePlan)) continue;
         stage2LayoutPlanCache.set(cacheKey, maybePlan as Stage2LayoutPlan);
@@ -5979,9 +5985,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
 
-    const layoutPlanCacheKey = `${ctx.path}|${ctx.promptMode}|${ctx.sourceStage}|${ctx.basePath}`;
+    const manualRetryPlannerMode = isManualRetryPayload ? "manual_retry_replan" : "standard";
+    const layoutPlanCacheKey = `${ctx.path}|${ctx.promptMode}|${ctx.sourceStage}|${ctx.basePath}|${manualRetryPlannerMode}|${retryInstructionHash}`;
     const cachedLayoutPlan = stage2LayoutPlanCache.get(layoutPlanCacheKey);
-    if (cachedLayoutPlan) {
+    if (!isManualRetryPayload && cachedLayoutPlan) {
       nLog("[STAGE2_LAYOUT_PLANNER_CACHE_HIT]", {
         jobId: payload.jobId,
         path: ctx.path,
@@ -6037,6 +6044,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const plan = await planStage2Layout(ctx.basePath, {
         jobId: payload.jobId,
         roomType: String(payload.options.roomType || ""),
+        stagingStyle: String(payload.options.stagingStyle || "standard_listing"),
+        retryInstructions: isManualRetryPayload ? normalizedRetryInstructions : undefined,
         anchorPlannerEnabled: anchorPlannerEligible,
         structuralBaseline: anchorBaseline,
         anchorConfidenceThreshold: STAGE2_ANCHOR_MIN_CONFIDENCE,
@@ -6080,6 +6089,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         path: ctx.path,
         promptMode: ctx.promptMode,
         sourceStage: ctx.sourceStage,
+        manualRetryReplan: isManualRetryPayload,
+        retryInstructionHash,
         status: plan ? "ready" : "fallback",
         roomType: plan?.room_type || null,
         layoutItems: plan?.layout?.length || 0,

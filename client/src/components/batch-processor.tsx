@@ -6251,6 +6251,7 @@ export default function BatchProcessor({
       // Retry execution is server-resolved from canonical lineage, so no image binary needs to cross the backend.
       const retryPayload: Record<string, unknown> = {
         goal: goalToSend,
+        retryInstructions: (customInstructions || "").trim(),
         sourceStage: retrySource.stage,
         uiSelectedTab: retrySource.stage,
         sourceUrl: retrySource.url,

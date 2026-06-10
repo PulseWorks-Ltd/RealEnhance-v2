@@ -227,6 +227,8 @@ export interface EnhanceJobPayload {
   executionPlan?: RetryExecutionPlan;
   remoteOriginalUrl?: string;        // S3 URL of original if uploaded
   remoteOriginalKey?: string;        // S3 key of original if uploaded
+  retryInstructions?: string | null;
+  retryInstructionHash?: string | null;
   createdAt: string;
 }
 

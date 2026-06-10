@@ -319,6 +319,8 @@ async function buildEnhanceArtifacts(params: {
   };
   retryInfo?: {
     retryType?: "manual_retry";
+    retryInstructions?: string | null;
+    retryInstructionHash?: string | null;
     sourceStage?: string | null;
     executionSourceStage?: "1A" | "1B" | "2" | null;
     sourceUrl?: string | null;
@@ -459,6 +461,8 @@ async function buildEnhanceArtifacts(params: {
     remoteOriginalUrl: params.remoteOriginalUrl as any,
     remoteOriginalKey: params.remoteOriginalKey as any,
     retryType: params.retryInfo?.retryType,
+    retryInstructions: params.retryInfo?.retryInstructions,
+    retryInstructionHash: params.retryInfo?.retryInstructionHash,
     retrySourceStage: (() => {
       const rawSourceStage = String(params.retryInfo?.sourceStage || "").trim().toLowerCase();
       const direct = normalizeStageLabel(rawSourceStage);
@@ -512,6 +516,8 @@ export async function enqueueEnhanceJob(params: {
   remoteOriginalKey?: string;
   retryInfo?: {
     retryType?: "manual_retry";
+    retryInstructions?: string | null;
+    retryInstructionHash?: string | null;
     sourceStage?: string | null;
     executionSourceStage?: "1A" | "1B" | "2" | null;
     sourceUrl?: string | null;
@@ -607,6 +613,8 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   remoteOriginalKey?: string;
   retryInfo?: {
     retryType?: "manual_retry";
+    retryInstructions?: string | null;
+    retryInstructionHash?: string | null;
     sourceStage?: string | null;
     executionSourceStage?: "1A" | "1B" | "2" | null;
     sourceUrl?: string | null;

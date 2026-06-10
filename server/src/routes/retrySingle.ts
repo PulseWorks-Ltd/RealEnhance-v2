@@ -327,6 +327,7 @@ export function retrySingleRouter() {
       const manualSceneOverride = toBool(body.manualSceneOverride, false);
       const replaceSky = sceneType === 'exterior' ? true : undefined; // default sky replacement for exteriors
       const sourceUrlRaw = typeof body.sourceUrl === "string" ? body.sourceUrl.trim() : "";
+      const retryInstructions = typeof body.retryInstructions === "string" ? body.retryInstructions.trim() : "";
       const sourceStage = normalizeRetrySourceStage(body.sourceStage);
       const uiSelectedTab = typeof body.uiSelectedTab === "string" ? body.uiSelectedTab.trim() : "";
       const incomingImageId = String(body.imageId || "").trim() || null;
@@ -1134,6 +1135,7 @@ export function retrySingleRouter() {
         executionPlan: resolvedExecutionPlan,
         retryInfo: {
           retryType: "manual_retry",
+          retryInstructions,
           sourceStage: sourceStage,
           executionSourceStage,
           sourceUrl: retrySourceUrl,

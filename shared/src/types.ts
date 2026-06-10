@@ -209,6 +209,8 @@ export interface EnhanceJobPayload {
   remoteOriginalUrl?: string; // S3 URL of original if uploaded
   remoteOriginalKey?: string; // S3 key of original if uploaded
   retryType?: string;
+  retryInstructions?: string | null;
+  retryInstructionHash?: string | null;
   retrySourceStage?: string | null;
   retrySourceUrl?: string | null;
   retrySourceKey?: string | null;

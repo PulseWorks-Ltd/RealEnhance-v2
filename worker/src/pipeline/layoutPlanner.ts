@@ -78,6 +78,31 @@ Rules:
 - AnchorRegion values must be normalized 0..1.
 - If uncertain, still return layout with conservative anchorConfidence.`;
 
+function buildPlannerPriorityBlock(retryInstructions?: string | null): string {
+  const userInstructions = String(retryInstructions || "").trim();
+  if (!userInstructions) {
+    return `
+PLANNING PRIORITY HIERARCHY (STRICT):
+P0 Structural Constraints + Continuity Constraints (NON-NEGOTIABLE)
+P2 Room Type Rules
+P3 Staging Style Rules
+P4 Default Layout Heuristics
+`;
+  }
+
+  return `
+PLANNING PRIORITY HIERARCHY (STRICT):
+P0 Structural Constraints + Continuity Constraints (NON-NEGOTIABLE)
+P1 User Retry Instructions (HIGH PRIORITY WITHIN P0 SAFETY ENVELOPE)
+P2 Room Type Rules
+P3 Staging Style Rules
+P4 Default Layout Heuristics
+
+USER RETRY INSTRUCTIONS (P1):
+${userInstructions}
+`;
+}
+
 function normalizeText(value: unknown): string {
   const text = String(value ?? "").trim();
   return text;
@@ -547,6 +572,8 @@ export async function planStage2Layout(
   opts?: {
     jobId?: string;
     roomType?: string;
+    stagingStyle?: string;
+    retryInstructions?: string | null;
     anchorPlannerEnabled?: boolean;
     structuralBaseline?: StructuralBaseline | null;
     anchorConfidenceThreshold?: number;
@@ -554,6 +581,7 @@ export async function planStage2Layout(
   }
 ): Promise<Stage2LayoutPlan | null> {
   const startedAt = Date.now();
+  const plannerPriorityBlock = buildPlannerPriorityBlock(opts?.retryInstructions);
 
   const deterministicEnabled = opts?.anchorPlannerEnabled === true;
   const useGeminiFallback = opts?.useGeminiFallback !== false;
@@ -636,7 +664,14 @@ export async function planStage2Layout(
           data,
         },
       },
-      { text: LAYOUT_PLANNER_PROMPT },
+      {
+        text: `${LAYOUT_PLANNER_PROMPT}
+
+CONTEXT:
+- Room type target: ${String(opts?.roomType || "unknown")}
+- Staging style target: ${String(opts?.stagingStyle || "standard_listing")}
+${plannerPriorityBlock}`,
+      },
     ]);
 
     const text = response?.response?.text?.();
