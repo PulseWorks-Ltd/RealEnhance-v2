@@ -6755,6 +6755,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         jobId: payload.jobId,
         imageId: payload.imageId,
         layoutPlan: stage2OnlyLayoutPlan,
+        retryType: (payload as any).retryType,
+        retryInstructions: (payload as any).retryInstructions,
         curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
         onAttemptSuperseded: (nextAttemptId) => {
           stage2AttemptId = nextAttemptId;
@@ -10563,6 +10565,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             imageId: payload.imageId,
             layoutPlan: stage2LayoutPlan,
+            retryType: (payload as any).retryType,
+            retryInstructions: (payload as any).retryInstructions,
             validationConfig: { localMode: localValidatorMode },
             stage1APath: stage2ValidationBaseline,
             curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -10846,6 +10850,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           jobId: payload.jobId,
           imageId: payload.imageId,
           layoutPlan: stage2LayoutPlan,
+          retryType: "light_declutter_backstop",
+          retryInstructions: undefined,
           validationConfig: { localMode: localValidatorMode },
           stage1APath: stage2ValidationBaseline,
           curtainRailLikely: jobContext.curtainRailLikely === "unknown" ? undefined : jobContext.curtainRailLikely,
@@ -11325,6 +11331,8 @@ All openings must remain identical in position and size to the original image.`;
             imageId: payload.imageId,
             outputPath: retryOutputPath,
             attempt,
+            retryType: "validator_forced_retry",
+            retryInstructions: undefined,
             structuralRetryContext: {
                 compositeFail: useReinforcedRetry,
                 failureType: retryFailureType,
