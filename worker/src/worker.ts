@@ -38,7 +38,6 @@ import { classifyStructuralFailure, type StructuralFailureType } from "./pipelin
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
-import { runFixtureRepairAttempt, type FixtureRepairHint } from "./pipeline/fixtureRepair";
 import type { EditContext } from "./pipeline/prompts";
 import { preprocessToCanonical } from "./pipeline/preprocess";
 
@@ -6862,62 +6861,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 specialistAdvisorySignals.push(`${validator}:${normalized}`);
               }
             };
-            const finalizeStage2OnlySpecialists = (blockedAfter?: "opening" | "fixture" | "floor" | "envelope") => {
-              nLog("[STAGE2_ONLY_SPECIALIST_SIGNALS]", {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt: stage2OnlyAttemptNo,
-                opening: {
-                  status: specialistResults.openings?.status || "skipped",
-                  hardFail: specialistResults.openings?.hardFail === true,
-                  reason: specialistResults.openings?.reason || "none",
-                },
-                fixture: {
-                  status: specialistResults.fixtures?.status || "skipped",
-                  hardFail: specialistResults.fixtures?.hardFail === true,
-                  reason: specialistResults.fixtures?.reason || "none",
-                },
-                floor: {
-                  status: specialistResults.floor?.status || "skipped",
-                  hardFail: specialistResults.floor?.hardFail === true,
-                  reason: specialistResults.floor?.reason || "none",
-                },
-                envelope: {
-                  status: specialistResults.envelope?.status || "skipped",
-                  hardFail: specialistResults.envelope?.hardFail === true,
-                  reason: specialistResults.envelope?.reason || "none",
-                },
-                advisorySignals: specialistAdvisorySignals,
-                blockedAfter: blockedAfter || null,
-              });
-
-              if (specialistHardFailReasons.length > 0) {
-                stage2ValidationPassed = false;
-                if (!stage2OnlyBlockedReason) {
-                  const normalizedStage2OnlyReason = String(specialistHardFailReasons[0] || "specialist_hard_fail")
-                    .trim()
-                    .toLowerCase()
-                    .replace(/\s+/g, "_")
-                    .replace(/[^a-z0-9:_-]+/g, "_")
-                    .replace(/_+/g, "_")
-                    .replace(/^_+|_+$/g, "");
-                  stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${normalizedStage2OnlyReason || "specialist_hard_fail"}`;
-                }
-                nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
-                  jobId: payload.jobId,
-                  imageId: payload.imageId,
-                  attempt: stage2OnlyAttemptNo,
-                  reasons: specialistHardFailReasons,
-                  blockedAfter: blockedAfter || null,
-                  action: "block_stage2_retry",
-                });
-              }
-
-              return {
-                specialistResults,
-                specialistAdvisorySignals,
-              };
-            };
 
             const specialistBatchStartedAt = Date.now();
             const specialistTiming: Record<"opening" | "fixture" | "floor" | "envelope", {
@@ -7022,7 +6965,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.openings = opRes;
             if (opHardFail) {
               specialistHardFailReasons.push(`openings:${String(opRes?.reason || "opening_hard_fail").trim()}`);
-              return finalizeStage2OnlySpecialists("opening");
             }
             appendAdvisories("openings", opRes?.advisorySignals);
 
@@ -7030,7 +6972,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.fixtures = fixRes;
             if (fixHardFail) {
               specialistHardFailReasons.push(`fixtures:${String(fixRes?.reason || "fixture_hard_fail").trim()}`);
-              return finalizeStage2OnlySpecialists("fixture");
             }
             appendAdvisories("fixtures", fixRes?.advisorySignals);
 
@@ -7038,7 +6979,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.floor = floorRes;
             if (floorHardFail) {
               specialistHardFailReasons.push(`floor:${String(floorRes?.reason || "floor_hard_fail").trim()}`);
-              return finalizeStage2OnlySpecialists("floor");
             }
             appendAdvisories("floor", floorRes?.advisorySignals);
 
@@ -7046,11 +6986,40 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             specialistResults.envelope = envRes;
             if (envHardFail) {
               specialistHardFailReasons.push(`envelope:${String(envRes?.reason || "envelope_hard_fail").trim()}`);
-              return finalizeStage2OnlySpecialists("envelope");
             }
             appendAdvisories("envelope", envRes?.advisorySignals);
 
-            return finalizeStage2OnlySpecialists();
+            nLog("[STAGE2_ONLY_SPECIALIST_SIGNALS]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              opening: { status: opRes?.status || "unknown", hardFail: opHardFail, reason: opRes?.reason || "none" },
+              fixture: { status: fixRes?.status || "unknown", hardFail: fixHardFail, reason: fixRes?.reason || "none" },
+              floor: { status: floorRes?.status || "unknown", hardFail: floorHardFail, reason: floorRes?.reason || "none" },
+              envelope: { status: envRes?.status || "unknown", hardFail: envHardFail, reason: envRes?.reason || "none" },
+              advisorySignals: specialistAdvisorySignals,
+            });
+
+            if (specialistHardFailReasons.length > 0) {
+              stage2ValidationPassed = false;
+              if (!stage2OnlyBlockedReason) {
+                const normalizedStage2OnlyReason = String(specialistHardFailReasons[0] || "specialist_hard_fail")
+                  .trim()
+                  .toLowerCase()
+                  .replace(/\s+/g, "_")
+                  .replace(/[^a-z0-9:_-]+/g, "_")
+                  .replace(/_+/g, "_")
+                  .replace(/^_+|_+$/g, "");
+                stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${normalizedStage2OnlyReason || "specialist_hard_fail"}`;
+              }
+              nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                reasons: specialistHardFailReasons,
+                action: "block_stage2_retry",
+              });
+            }
           } catch (specialistErr: any) {
             nLog("[worker] Specialist validation error (stage2-only, non-fatal):", specialistErr?.message || specialistErr);
           }
@@ -8088,6 +8057,35 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     },
     "stage1a_start"
   );
+  path1A = await withMemoryPhase(
+    "stage1a_generation",
+    {
+      sceneType: stage1ASceneLabel,
+      replaceSky: safeReplaceSky,
+      skyMode: skyModeForStage1A,
+    },
+    () => runStage1A(canonicalPath, {
+      replaceSky: safeReplaceSky,
+      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
+      sceneType: stage1ASceneLabel,
+      interiorProfile: ((): any => {
+        const p = (payload.options as any)?.interiorProfile;
+        if (p === 'nz_high_end' || p === 'nz_standard') return p;
+        return undefined;
+      })(),
+      skyMode: skyModeForStage1A,
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      roomType: payload.options.roomType,
+      baseArtifacts: jobContext.baseArtifacts,
+      baseArtifactsCache: jobContext.baseArtifactsCache,
+      jobSampling: jobContext.jobSampling,
+    })
+  );
+
+  if (exteriorLightingDecision?.shouldRelight) {
+    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
+  }
 
   const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
   const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent;
@@ -8163,36 +8161,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
     })();
     nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId} source=canonical startedDuringStage1A=true`);
-  }
-
-  path1A = await withMemoryPhase(
-    "stage1a_generation",
-    {
-      sceneType: stage1ASceneLabel,
-      replaceSky: safeReplaceSky,
-      skyMode: skyModeForStage1A,
-    },
-    () => runStage1A(canonicalPath, {
-      replaceSky: safeReplaceSky,
-      declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
-      sceneType: stage1ASceneLabel,
-      interiorProfile: ((): any => {
-        const p = (payload.options as any)?.interiorProfile;
-        if (p === 'nz_high_end' || p === 'nz_standard') return p;
-        return undefined;
-      })(),
-      skyMode: skyModeForStage1A,
-      jobId: payload.jobId,
-      imageId: payload.imageId,
-      roomType: payload.options.roomType,
-      baseArtifacts: jobContext.baseArtifacts,
-      baseArtifactsCache: jobContext.baseArtifactsCache,
-      jobSampling: jobContext.jobSampling,
-    })
-  );
-
-  if (exteriorLightingDecision?.shouldRelight) {
-    path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
   }
 
   try {
@@ -11531,6 +11499,15 @@ All openings must remain identical in position and size to the original image.`;
         });
       }
 
+      const normalizeValidatorReason = (reason: string): string => {
+        const normalized = String(reason || "unknown")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "_")
+          .replace(/^_+|_+$/g, "");
+        return normalized || "unknown";
+      };
+
       const detectMaterialOpeningFromSignals = (result: {
         status?: string;
         reason?: string;
@@ -11614,7 +11591,6 @@ All openings must remain identical in position and size to the original image.`;
       };
 
       const HIGH_CONFIDENCE_THRESHOLD = 0.9;
-      const FIXTURE_REPAIR_CONFIDENCE_THRESHOLD = 0.93;
 
       const normalizeSpecialistResult = (params: {
         validator: "opening" | "fixture" | "envelope" | "floor";
@@ -11913,7 +11889,6 @@ All openings must remain identical in position and size to the original image.`;
         confidence?: number;
         subtype?: string;
         advisorySignals?: string[];
-        fixtureRepair?: FixtureRepairHint;
         primaryStructuredIssue?: StructuredIssue;
         structuredIssues?: StructuredIssue[];
       };
@@ -11985,7 +11960,6 @@ All openings must remain identical in position and size to the original image.`;
           confidence?: number;
           advisorySignals?: string[];
           subtype?: string;
-          fixtureRepair?: FixtureRepairHint;
           primaryStructuredIssue?: StructuredIssue;
           structuredIssues?: StructuredIssue[];
         }
@@ -12000,7 +11974,6 @@ All openings must remain identical in position and size to the original image.`;
           confidence: Number.isFinite(Number(raw.confidence)) ? Number(raw.confidence) : undefined,
           subtype: raw.subtype,
           advisorySignals: Array.isArray(raw.advisorySignals) ? raw.advisorySignals : undefined,
-          fixtureRepair: raw.fixtureRepair,
           primaryStructuredIssue: raw.primaryStructuredIssue,
           structuredIssues: Array.isArray(raw.structuredIssues) ? raw.structuredIssues : undefined,
         });
@@ -12361,7 +12334,6 @@ All openings must remain identical in position and size to the original image.`;
           confidence: fixRes.confidence,
           advisorySignals: fixRes.advisorySignals,
           subtype: (fixRes as any).subtype,
-          fixtureRepair: (fixRes as any).fixtureRepair,
         });
         appendAdvisories("fixtures", fixRes.advisorySignals || []);
         const fixtureHardFail = fixRes.hardFail === true;
@@ -12483,84 +12455,6 @@ All openings must remain identical in position and size to the original image.`;
             result: "PASS",
             reason: "none",
           });
-        }
-
-        if (floorHardFail && specialistResults.floor.issueType === ISSUE_TYPES.FLOOR_CHANGED) {
-          const blockedIssueType = ISSUE_TYPES.FLOOR_CHANGED as ValidationIssueType;
-          const blockedReason = normalizeValidatorReason(floorRes.reason || "issue_type_gate_block");
-          const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
-
-          nLog("[STAGE2_EARLY_AUTHORITATIVE_EXIT]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            blockedAfter: "floor",
-            issueType: blockedIssueType,
-            reason: floorRes.reason,
-            confidence: floorRes.confidence,
-            skippedValidators: ["envelope", "unified"],
-          });
-          nLog("[STAGE2_ISSUETYPE_HARDFAIL]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            issueType: blockedIssueType,
-            reason: floorRes.reason,
-            confidence: floorRes.confidence,
-            source: "critical_issues_gate",
-            action: "blocked_pre_unified",
-          });
-
-          unifiedValidation = {
-            passed: false,
-            hardFail: true,
-            blockSource: "critical_issues_gate" as any,
-            reasons: [decisionReason],
-            warnings: [decisionReason],
-            issueType: blockedIssueType,
-            issueTier: classifyIssueTier(blockedIssueType),
-            score: 0,
-          } as any;
-
-          setStage2AttemptValidation(path2, "gemini", [decisionReason]);
-
-          if (attempt < MAX_STAGE2_RETRIES) {
-            logRefreshValidationTrace({
-              specialistHardFail: true,
-              geminiDecision: "FAIL",
-              finalDecision: "RETRY",
-              reason: decisionReason,
-            });
-            logValidateFinal(attempt, "retry", attempt);
-            logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
-            logEvent("STAGE_RETRY", {
-              jobId: payload.jobId,
-              stage: "2",
-              retry: attempt + 1,
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-              reason: normalizeValidatorReason(decisionReason),
-            });
-            continue;
-          }
-
-          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1A;
-          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `critical_issues_gate_exhausted:${normalizeValidatorReason(decisionReason)}`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
-          logRefreshValidationTrace({
-            specialistHardFail: true,
-            geminiDecision: "FAIL",
-            finalDecision: "RETRY",
-            reason: decisionReason,
-          });
-          logValidateFinal(attempt, "reject", attempt - 1);
-          break;
         }
 
         if (Array.isArray(envRes.structuralSignals)) {
@@ -13348,16 +13242,6 @@ All openings must remain identical in position and size to the original image.`;
             confidence: categoricalBlock.confidence,
             advisorySignals: specialistAdvisorySignals,
           });
-        } else if (blockedIssueType === ISSUE_TYPES.FIXTURE_CHANGED || blockedIssueType === ISSUE_TYPES.HVAC_CHANGED) {
-          nLog("[STAGE2_ISSUETYPE_FIXTURE_DEFER_TO_UNIFIED]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            issueType: blockedIssueType,
-            reason: categoricalBlock.reason,
-            confidence: categoricalBlock.confidence,
-            action: "defer_to_unified_for_fixture_repair_eligibility",
-          });
         } else {
           const blockedReason = normalizeValidatorReason(categoricalBlock.reason || "issue_type_gate_block");
           const decisionReason = `critical_issues_gate:${blockedIssueType}:${blockedReason}`;
@@ -13477,239 +13361,45 @@ All openings must remain identical in position and size to the original image.`;
           reason: unifiedReason,
         });
 
-        const fixtureSignal = specialistIssueSignals.find((signal) => signal.validator === "fixtures");
-        const fixtureRepairHint = fixtureSignal?.fixtureRepair;
-        const fixtureFailureDetected = specialistResults.fixture.hardFail === true;
-        const fixtureConfidence = Number.isFinite(specialistResults.fixture.confidence)
-          ? specialistResults.fixture.confidence
-          : 0;
-        const unifiedFixtureIssue = unifiedIssueType === ISSUE_TYPES.FIXTURE_CHANGED || unifiedIssueType === ISSUE_TYPES.HVAC_CHANGED;
-        const hasNonFixtureBlockingSpecialist =
-          specialistResults.opening.hardFail === true ||
-          specialistResults.floor.hardFail === true ||
-          specialistResults.envelope.hardFail === true;
-        const normalizedUnifiedReason = normalizeReason(unifiedReason);
-        const unifiedMentionsBroaderSceneIssues = /\b(opening|window|door|wall|floor|layout|camera|envelope|room)\b/.test(normalizedUnifiedReason);
-        const unifiedPassesAllOtherChecks =
-          unifiedValidation.blockSource === "gemini" &&
-          unifiedFixtureIssue &&
-          !hasNonFixtureBlockingSpecialist;
-        const fixtureIssueIsOnlyBlockingFailure =
-          unifiedFixtureIssue &&
-          !hasNonFixtureBlockingSpecialist &&
-          !unifiedMentionsBroaderSceneIssues;
-        const fixtureClass = fixtureRepairHint?.fixtureClass;
-        const fixtureStateChange = fixtureRepairHint?.fixtureStateChange;
-        const fixtureClassEligible = fixtureClass === "LIGHTING" || fixtureClass === "HVAC";
-        const fixtureStateChangeEligible =
-          fixtureStateChange === "ADDED"
-          || fixtureStateChange === "REMOVED"
-          || fixtureStateChange === "MODIFIED";
-        const repairEligible =
-          fixtureFailureDetected &&
-          fixtureConfidence >= FIXTURE_REPAIR_CONFIDENCE_THRESHOLD &&
-          unifiedPassesAllOtherChecks &&
-          fixtureIssueIsOnlyBlockingFailure &&
-          fixtureClassEligible &&
-          fixtureStateChangeEligible &&
-          fixtureRepairHint?.supported === true &&
-          !!fixtureRepairHint.repairType;
-
-        let repairRecovered = false;
-        if (repairEligible && fixtureRepairHint) {
-          nLog("[FIXTURE_REPAIR_ELIGIBLE]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            issueType: unifiedIssueType,
-            confidence: fixtureConfidence,
-            repairType: fixtureRepairHint.repairType,
-            fixtureClass,
-            fixtureStateChange,
-            reason: unifiedReason,
-            beforeValidation: {
-              unifiedIssueType,
-              unifiedReason,
-              unifiedHardFail: unifiedValidation.hardFail === true,
-              fixtureHardFail: specialistResults.fixture.hardFail,
-            },
-          });
-
-          try {
-            nLog("[FIXTURE_REPAIR_STARTED]", {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              issueType: unifiedIssueType,
-              confidence: fixtureConfidence,
-              repairType: fixtureRepairHint.repairType,
-              fixtureClass,
-              fixtureStateChange,
-            });
-
-            const repairResult = await runFixtureRepairAttempt({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              stage1ABasePath: validationBasePath,
-              stage2CandidatePath: path2,
-              hint: fixtureRepairHint,
-            });
-
-            const repairedFixture = await (await import("./validators/fixtureValidator.js")).runFixtureValidator(
-              validationBasePath,
-              repairResult.repairedPath,
-              {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt,
-              }
-            );
-
-            const repairedUnified = await runUnifiedValidation({
-              originalPath: validationBasePath,
-              enhancedPath: repairResult.repairedPath,
-              stage: "2",
-              sceneType: sceneLabel as any,
-              roomType: payload.options.roomType,
-              mode: "enforce",
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              stagingStyle: payload.options.stagingStyle,
-              stage1APath: validationBasePath,
-              sourceStage: stage2SourceStage,
-              validationMode: stage2SelectedValidationMode,
-              geminiPolicy: stage2GeminiPolicy,
-              specialistAdvisorySignals: [],
-              specialistAdvisoryObservations: [],
-              specialistStructuredIssues: [],
-            });
-
-            const repairUnifiedPass = repairedUnified.passed === true && repairedUnified.hardFail !== true;
-            const repairFixturePass = repairedFixture.hardFail !== true;
-
-            if (repairUnifiedPass && repairFixturePass) {
-              repairRecovered = true;
-              path2 = repairResult.repairedPath;
-              stage2CandidatePath = repairResult.repairedPath;
-              unifiedValidation = repairedUnified;
-              nLog("[FIXTURE_REPAIR_SUCCESS]", {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt,
-                issueType: unifiedIssueType,
-                confidence: fixtureConfidence,
-                repairType: fixtureRepairHint.repairType,
-                fixtureClass,
-                fixtureStateChange,
-                repairDurationMs: repairResult.durationMs,
-                repairMaskChangedPixels: repairResult.changedPixels,
-                repairMaskCoverageRatio: Number(repairResult.maskCoverageRatio.toFixed(6)),
-                afterValidation: {
-                  unifiedPassed: repairedUnified.passed === true,
-                  unifiedHardFail: repairedUnified.hardFail === true,
-                  fixtureHardFail: repairedFixture.hardFail === true,
-                  unifiedIssueType: repairedUnified.issueType || ISSUE_TYPES.NONE,
-                },
-              });
-            } else {
-              nLog("[FIXTURE_REPAIR_FAILED]", {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt,
-                issueType: unifiedIssueType,
-                confidence: fixtureConfidence,
-                repairType: fixtureRepairHint.repairType,
-                fixtureClass,
-                fixtureStateChange,
-                repairDurationMs: repairResult.durationMs,
-                repairMaskChangedPixels: repairResult.changedPixels,
-                repairMaskCoverageRatio: Number(repairResult.maskCoverageRatio.toFixed(6)),
-                afterValidation: {
-                  unifiedPassed: repairedUnified.passed === true,
-                  unifiedHardFail: repairedUnified.hardFail === true,
-                  unifiedIssueType: repairedUnified.issueType || ISSUE_TYPES.NONE,
-                  unifiedReason: repairedUnified.reasons?.[0] || "none",
-                  fixtureHardFail: repairedFixture.hardFail === true,
-                  fixtureReason: repairedFixture.reason || "none",
-                },
-              });
-            }
-          } catch (repairErr: any) {
-            nLog("[FIXTURE_REPAIR_FAILED]", {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              issueType: unifiedIssueType,
-              confidence: fixtureConfidence,
-              repairType: fixtureRepairHint.repairType,
-              fixtureClass,
-              fixtureStateChange,
-              reason: unifiedReason,
-              error: repairErr?.message || String(repairErr),
-            });
-          }
-        }
-
-        if (repairRecovered) {
-          nLog("[STAGE2_REPAIR_RECOVERED_CONTINUE]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            action: "continue_with_repaired_stage2_candidate",
-          });
-        } else {
-          if (repairEligible) {
-            nLog("[FIXTURE_REPAIR_FALLBACK_TO_RETRY]", {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              issueType: unifiedIssueType,
-              confidence: fixtureConfidence,
-              reason: unifiedReason,
-            });
-          }
-
-          const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
-          setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
-          if (attempt < MAX_STAGE2_RETRIES) {
-            logRefreshValidationTrace({
-              specialistHardFail: false,
-              geminiDecision: "FAIL",
-              finalDecision: "RETRY",
-              reason: unifiedDecisionReason,
-            });
-            logValidateFinal(attempt, "retry", attempt);
-            logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
-            logEvent("STAGE_RETRY", {
-              jobId: payload.jobId,
-              stage: "2",
-              retry: attempt + 1,
-              retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
-              reason: normalizeValidatorReason(unifiedDecisionReason),
-            });
-            continue;
-          }
-
-          const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
-            ? stageLineage.stage1B.output
-            : path1A;
-          const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
-          stage2Blocked = true;
-          stage2FallbackStage = fallbackStage;
-          stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
-          fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
-          path2 = fallbackPath;
-          stage2CandidatePath = fallbackPath;
+        const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
+        setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
+        if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
             specialistHardFail: false,
             geminiDecision: "FAIL",
             finalDecision: "RETRY",
             reason: unifiedDecisionReason,
           });
-          logValidateFinal(attempt, "reject", attempt - 1);
-          break;
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(unifiedDecisionReason));
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: normalizeValidatorReason(unifiedDecisionReason),
+          });
+          continue;
         }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `unified_failure_exhausted:${normalizeValidatorReason(unifiedDecisionReason)}`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        logRefreshValidationTrace({
+          specialistHardFail: false,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: unifiedDecisionReason,
+        });
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
       }
 
       let compositeDecision = "pass";
