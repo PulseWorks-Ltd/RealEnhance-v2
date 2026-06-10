@@ -20,7 +20,7 @@ import { evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
-import { randomUUID } from "crypto";
+import { randomUUID, createHash } from "crypto";
 
 import { runStage1A } from "./pipeline/stage1A";
 import type { Stage1AAnalysis } from "./pipeline/stage1A";
@@ -5093,11 +5093,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   };
 
   const stage2LayoutPlanCache = new Map<string, Stage2LayoutPlan>();
-  const isManualRetryPayload = (payload as any).retryType === "manual_retry";
   const normalizedRetryInstructions = String((payload as any).retryInstructions || "").trim();
   const hasRetryInstructions = normalizedRetryInstructions.length > 0;
   const retryInstructionHash = hasRetryInstructions
-    ? crypto.createHash("sha1").update(normalizedRetryInstructions).digest("hex")
+    ? createHash("sha1").update(normalizedRetryInstructions).digest("hex")
     : "none";
   const isPersistableLayoutPlan = (value: any): value is Stage2LayoutPlan => {
     return !!(

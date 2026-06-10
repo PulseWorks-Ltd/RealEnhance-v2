@@ -156,6 +156,8 @@ export interface EnhanceJobPayload {
     remoteOriginalUrl?: string;
     remoteOriginalKey?: string;
     retryType?: string;
+    retryInstructions?: string | null;
+    retryInstructionHash?: string | null;
     retrySourceStage?: string | null;
     retrySourceUrl?: string | null;
     retrySourceKey?: string | null;
