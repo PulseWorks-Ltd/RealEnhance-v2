@@ -1,0 +1,86 @@
+{
+  "openings": [
+    {
+      "id": "W1",
+      "type": "window",
+      "bbox": [
+        0.057,
+        0.262,
+        0.343,
+        0.612
+      ],
+      "area_pct": 10,
+      "aspect_ratio": 0.817,
+      "structuralClass": "exterior",
+      "wallIndex": 3,
+      "horizontalBand": "left_third",
+      "verticalBand": "mid_zone",
+      "widthBand": "single",
+      "wallCoverageBand": "40-60",
+      "orientation": "portrait",
+      "paneStructure": "unknown",
+      "heightClass": "standard",
+      "doorLeafState": "unknown",
+      "approxAspectRatio": 0.817,
+      "confidence": 0.95,
+      "wallPosition": "left_wall",
+      "relativeHorizontalPosition": "left_third",
+      "shape": "window",
+      "touchesFloor": false,
+      "touchesCeiling": false,
+      "approxCount": 1
+    },
+    {
+      "id": "W2",
+      "type": "window",
+      "bbox": [
+        0.51,
+        0.253,
+        0.901,
+        0.616
+      ],
+      "area_pct": 14.19,
+      "aspect_ratio": 1.077,
+      "structuralClass": "exterior",
+      "wallIndex": 0,
+      "horizontalBand": "right_third",
+      "verticalBand": "mid_zone",
+      "widthBand": "double",
+      "wallCoverageBand": "60+",
+      "orientation": "landscape",
+      "paneStructure": "multi_pane_grid",
+      "heightClass": "standard",
+      "doorLeafState": "unknown",
+      "approxAspectRatio": 1.077,
+      "confidence": 0.98,
+      "wallPosition": "near_wall",
+      "relativeHorizontalPosition": "right_third",
+      "shape": "window",
+      "touchesFloor": false,
+      "touchesCeiling": false,
+      "approxCount": 1
+    }
+  ],
+  "anchorFixtures": [],
+  "wallCount": 3,
+  "graphMeta": {
+    "graphStable": false,
+    "graphConfidence": 0.3333333333333333,
+    "extractionAgreement": 0.3333333333333333,
+    "passCount": 3,
+    "openingCountVariance": 0,
+    "imageHash": "24b3628db0af32420731b2b8a78e855518df81433e8626bd919fe8c11b3d44c2",
+    "graphHash": "01a2cdae727e1f8cdeddacc2458d49f0547214be7247f3dc0c2a8f555accf9df",
+    "cacheStatus": "unstable",
+    "candidateGraphHashes": [
+      "01a2cdae727e1f8cdeddacc2458d49f0547214be7247f3dc0c2a8f555accf9df",
+      "9e231d61f402dc23bfb630b6e8aeab403c9dd8c933088f7079127aa2b096a819",
+      "5d0453940a081f9591e9696baf8299bd4949138d35eea8fd6043393918dc6a3c"
+    ],
+    "openingCountRange": {
+      "min": 2,
+      "max": 2
+    },
+    "confirmedAt": "2026-06-11T23:50:28.772Z"
+  }
+}

@@ -1,0 +1,91 @@
+{
+  "runMeta": {
+    "startedAt": 1781220665477,
+    "completedAt": 1781220771233,
+    "elapsedMs": 105756,
+    "baselineUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781130882124-realenhance-job_b9a952c0-e6fa-42f7-9e67-649dd66f37e0-1781130880340-ne2bbtmgex.jpg",
+    "candidateUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg"
+  },
+  "specialist": {
+    "results": {},
+    "summary": {
+      "expectedSpecialistCount": 4,
+      "settledCount": 4,
+      "completedCount": 0,
+      "failedCount": 4,
+      "allSpecialistsSettled": true,
+      "allSpecialistsCompleted": false,
+      "namesOfMissingSpecialists": [
+        "opening",
+        "fixture",
+        "floor",
+        "envelope"
+      ],
+      "lifecycles": [
+        {
+          "name": "opening",
+          "status": "retry_failed",
+          "retryCount": 1,
+          "startTime": 1781220665477,
+          "completionTime": 1781220761491,
+          "durationMs": 96014,
+          "available": false,
+          "error": "Missing jobId or imageId in logging context"
+        },
+        {
+          "name": "fixture",
+          "status": "retry_failed",
+          "retryCount": 1,
+          "startTime": 1781220665480,
+          "completionTime": 1781220680922,
+          "durationMs": 15442,
+          "available": false,
+          "error": "validator_error_fixture:Missing jobId or imageId in logging context"
+        },
+        {
+          "name": "floor",
+          "status": "retry_failed",
+          "retryCount": 1,
+          "startTime": 1781220665936,
+          "completionTime": 1781220684848,
+          "durationMs": 18912,
+          "available": false,
+          "error": "validator_error_floor_integrity:Missing jobId or imageId in logging context"
+        },
+        {
+          "name": "envelope",
+          "status": "retry_failed",
+          "retryCount": 1,
+          "startTime": 1781220666005,
+          "completionTime": 1781220695779,
+          "durationMs": 29774,
+          "available": false,
+          "error": "validator_error_envelope:Missing jobId or imageId in logging context"
+        }
+      ]
+    },
+    "specialistAdvisorySignals": []
+  },
+  "evidenceGate": {
+    "allSpecialistsSettled": true,
+    "allSpecialistsCompleted": false,
+    "specialistCount": 4,
+    "specialistResultsPresent": 0,
+    "specialistSignalsCount": 0
+  },
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "blockSource": null,
+    "score": 0.792,
+    "derivedWarnings": null,
+    "sourceSpecialistSignals": [],
+    "issueType": "none",
+    "issueTier": "advisory",
+    "reasons": [],
+    "warnings": [
+      "furniture_change",
+      "local_validators_advisory: windows"
+    ]
+  }
+}

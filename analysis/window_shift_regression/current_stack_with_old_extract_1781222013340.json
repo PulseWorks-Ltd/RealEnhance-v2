@@ -1,0 +1,881 @@
+{
+  "label": "old_extract",
+  "baselineJsonPath": "/workspaces/RealEnhance-v2/analysis/window_shift_regression/baseline_extract_old_3a2f.json",
+  "openingBaselineCount": 2,
+  "openingBaselineLocations": [
+    {
+      "id": "W1",
+      "wallIndex": 3,
+      "bbox": [
+        0.057,
+        0.262,
+        0.343,
+        0.612
+      ],
+      "horizontalBand": "left_third"
+    },
+    {
+      "id": "W2",
+      "wallIndex": 0,
+      "bbox": [
+        0.51,
+        0.253,
+        0.901,
+        0.616
+      ],
+      "horizontalBand": "right_third"
+    }
+  ],
+  "openingMetrics": {
+    "issueType": "opening_relocated",
+    "issueTier": "critical",
+    "status": "pass",
+    "hardFail": false,
+    "confidence": 0.6,
+    "resizePercentApprox": 64.8,
+    "visibilityReductionApprox": null,
+    "findingCount": 2,
+    "findingLocations": [
+      "window opening in the left side of the left wall",
+      "window opening in the right side of the near wall"
+    ],
+    "findingClassifications": [
+      "altered",
+      "altered"
+    ],
+    "overlapScores": [
+      null,
+      null
+    ]
+  },
+  "specialistSignals": [
+    "opening_relocated_review",
+    "opening_visibility_reduction:0.648",
+    "opening_resized_minor:0.648",
+    "opening_signature_mismatch",
+    "opening_relocated",
+    "envelope_confirmed_structural_change: A distinct horizontal line or groove on the right wall, clearly visible in the baseline image, is completely absent in the staged image. The wall surface in the staged image appears as a continuous flat plane where the line previously existed, indicating a structural modification such as filling an indentation or seam.",
+    "envelope_confirmed_structural_change",
+    "envelope_vertical_edge_loss",
+    "envelope_corner_flattened"
+  ],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "blockSource": null,
+    "score": 0.792,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "warnings": [
+      "style_only",
+      "local_validators_advisory: windows"
+    ],
+    "reasons": []
+  },
+  "raw": {
+    "opening": {
+      "status": "pass",
+      "reason": "opening_relocated_review|opening_resized|opening_size_reduction_ge_0.25:0.648|opening_band_mismatch",
+      "confidence": 0.6,
+      "hardFail": false,
+      "issueType": "opening_relocated",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_visibility_reduction:0.648",
+        "opening_resized_minor:0.648",
+        "opening_signature_mismatch"
+      ],
+      "explanation": "The window opening in the left side of the left wall appears materially different in size or shape. The window opening in the right side of the near wall appears on a different wall than in the original image and appears materially different in size or shape.",
+      "findings": [
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the left side of the left wall",
+          "wallIndex": 3,
+          "bbox": [
+            0.057,
+            0.262,
+            0.343,
+            0.612
+          ],
+          "machineReasons": [
+            "orientation_changed"
+          ],
+          "explanation": "The window opening in the left side of the left wall appears materially different in size or shape.",
+          "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?",
+          "confidence": 0.95
+        },
+        {
+          "id": "W2",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the right side of the near wall",
+          "wallIndex": 0,
+          "bbox": [
+            0.51,
+            0.253,
+            0.901,
+            0.616
+          ],
+          "machineReasons": [
+            "wall_index_changed",
+            "horizontal_band_changed",
+            "wall_coverage_band_changed_gt_one",
+            "orientation_changed"
+          ],
+          "explanation": "The window opening in the right side of the near wall appears on a different wall than in the original image and appears materially different in size or shape.",
+          "question": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?",
+          "confidence": 0.95
+        }
+      ],
+      "advisoryObservations": [
+        {
+          "category": "openings",
+          "validator": "openings",
+          "issueType": "opening_resized_minor",
+          "location": "window opening in the left side of the left wall",
+          "approximateLocation": "center-left",
+          "bbox": [
+            0.057,
+            0.262,
+            0.343,
+            0.612
+          ],
+          "confidence": 0.95,
+          "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?",
+          "context": "Local opening-preservation analysis flagged a possible structural difference for this baseline opening.",
+          "investigationTask": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?"
+        },
+        {
+          "category": "openings",
+          "validator": "openings",
+          "issueType": "opening_relocated",
+          "location": "window opening in the right side of the near wall",
+          "approximateLocation": "center-right",
+          "bbox": [
+            0.51,
+            0.253,
+            0.901,
+            0.616
+          ],
+          "confidence": 0.95,
+          "question": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?",
+          "context": "Local opening-preservation analysis flagged this opening as potentially appearing on a different wall than in the original image.",
+          "investigationTask": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?"
+        }
+      ],
+      "details": [
+        {
+          "id": "W1",
+          "classification": "altered",
+          "reason": "orientation_changed",
+          "explanation": "The window opening in the left side of the left wall appears materially different in size or shape.",
+          "location": "window opening in the left side of the left wall",
+          "machineReasons": [
+            "orientation_changed"
+          ],
+          "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?"
+        },
+        {
+          "id": "W2",
+          "classification": "relocated",
+          "reason": "wall_index_changed|horizontal_band_changed|wall_coverage_band_changed_gt_one|orientation_changed",
+          "explanation": "The window opening in the right side of the near wall appears on a different wall than in the original image and appears materially different in size or shape.",
+          "location": "window opening in the right side of the near wall",
+          "machineReasons": [
+            "wall_index_changed",
+            "horizontal_band_changed",
+            "wall_coverage_band_changed_gt_one",
+            "orientation_changed"
+          ],
+          "question": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?"
+        }
+      ],
+      "structuralSignals": [
+        {
+          "claim": "opening_resized_major",
+          "region": {
+            "x1": 0.51,
+            "y1": 0.253,
+            "x2": 0.901,
+            "y2": 0.616
+          },
+          "confidence": 0.95,
+          "source": "openingPreservation",
+          "openingId": "W2",
+          "openingType": "window",
+          "wallIndex": 0
+        }
+      ],
+      "decision": {
+        "decision": "advisory",
+        "authorityClass": "CLASS_C",
+        "authority": "advisory",
+        "vetoable": true,
+        "signals": [
+          "opening_relocated_review",
+          "opening_resized",
+          "opening_size_reduction_ge_0.25:0.648",
+          "opening_band_mismatch",
+          "opening_visibility_reduction:0.648",
+          "opening_resized_minor:0.648",
+          "opening_signature_mismatch"
+        ],
+        "decisionTrace": [
+          "decision_trace_started",
+          "advisory_signals_present",
+          "authority_class_c_assigned",
+          "authority_advisory",
+          "advisory_decision_selected"
+        ],
+        "trace": [
+          "decision_trace_started",
+          "advisory_signals_present",
+          "authority_class_c_assigned",
+          "authority_advisory",
+          "advisory_decision_selected"
+        ],
+        "semanticCorroborated": false,
+        "vetoed": false
+      },
+      "openingRegions": [
+        {
+          "bbox": [
+            0.4818,
+            0.3106,
+            0.651,
+            0.6041
+          ],
+          "type": "window"
+        },
+        {
+          "bbox": [
+            0.0861,
+            0.283,
+            0.4688,
+            0.5857
+          ],
+          "type": "window"
+        }
+      ],
+      "primaryStructuredIssue": {
+        "type": "opening_change",
+        "object": "window",
+        "action": "relocated",
+        "severity": "critical",
+        "source": "opening_validator",
+        "confidence": 0.6,
+        "evidence": [
+          "opening_relocated_review",
+          "opening_resized",
+          "opening_size_reduction_ge_0_25_0_648",
+          "opening_band_mismatch",
+          "opening_visibility_reduction_0_648",
+          "opening_resized_minor_0_648",
+          "opening_signature_mismatch"
+        ]
+      },
+      "structuredIssues": [
+        {
+          "type": "opening_change",
+          "object": "window",
+          "action": "relocated",
+          "severity": "critical",
+          "source": "opening_validator",
+          "confidence": 0.6,
+          "evidence": [
+            "opening_relocated_review",
+            "opening_resized",
+            "opening_size_reduction_ge_0_25_0_648",
+            "opening_band_mismatch",
+            "opening_visibility_reduction_0_648",
+            "opening_resized_minor_0_648",
+            "opening_signature_mismatch"
+          ]
+        }
+      ]
+    },
+    "fixture": {
+      "status": "pass",
+      "reason": "Architectural structure and fixed fixtures are preserved. Only staging elements have changed.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": [],
+      "structuredIssues": [],
+      "fixtureRepair": {
+        "supported": false,
+        "fixtureClass": "UNKNOWN",
+        "fixtureStateChange": "MODIFIED",
+        "action": "modified",
+        "reasonTokens": [
+          "architectural_structure_and_fixed_fixtures_are_preserved_only_staging_elements_have_changed"
+        ]
+      }
+    },
+    "floor": {
+      "status": "pass",
+      "reason": "The structural floor material is carpet in both images and remains unchanged. The rug in the staged image is a movable item and does not constitute a structural change.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": [],
+      "structuredIssues": []
+    },
+    "envelope": {
+      "status": "fail",
+      "reason": "envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. envelope_vertical_edge_loss: envelope_confirmed_structural_change: A distinct horizontal line or groove on the right wall, clearly visible in the baseline image, is completely absent in the staged image. The wall surface in the staged image appears as a continuous flat plane where the line previously existed, indicating a structural modification such as filling an indentation or seam.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "envelope_corner_flattened",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "envelope_confirmed_structural_change: A distinct horizontal line or groove on the right wall, clearly visible in the baseline image, is completely absent in the staged image. The wall surface in the staged image appears as a continuous flat plane where the line previously existed, indicating a structural modification such as filling an indentation or seam.",
+        "envelope_confirmed_structural_change",
+        "envelope_vertical_edge_loss",
+        "envelope_corner_flattened"
+      ],
+      "advisory": true,
+      "primaryStructuredIssue": {
+        "type": "envelope_change",
+        "object": "wall_plane",
+        "action": "flattened",
+        "severity": "review",
+        "source": "envelope_validator",
+        "confidence": 1,
+        "evidence": [
+          "envelope_confirmed_structural_change",
+          "boundary_lines_missing",
+          "continuous_surface_replacement",
+          "no_plausible_visual_explanation"
+        ]
+      },
+      "structuredIssues": [
+        {
+          "type": "envelope_change",
+          "object": "wall_plane",
+          "action": "flattened",
+          "severity": "review",
+          "source": "envelope_validator",
+          "confidence": 1,
+          "evidence": [
+            "envelope_confirmed_structural_change",
+            "boundary_lines_missing",
+            "continuous_surface_replacement",
+            "no_plausible_visual_explanation"
+          ]
+        }
+      ],
+      "verticalEdgeDelta": {
+        "verticalEdgeLossDetected": true,
+        "cornerPersistenceFailure": true,
+        "junctions": [
+          {
+            "column": 7,
+            "beforeCount": 189,
+            "afterCount": 204,
+            "retention": 1.0793650793650793,
+            "lost": false
+          },
+          {
+            "column": 10,
+            "beforeCount": 176,
+            "afterCount": 208,
+            "retention": 1.1818181818181819,
+            "lost": false
+          },
+          {
+            "column": 15,
+            "beforeCount": 157,
+            "afterCount": 144,
+            "retention": 0.9171974522292994,
+            "lost": false
+          },
+          {
+            "column": 17,
+            "beforeCount": 158,
+            "afterCount": 183,
+            "retention": 1.1582278481012658,
+            "lost": false
+          },
+          {
+            "column": 20,
+            "beforeCount": 170,
+            "afterCount": 154,
+            "retention": 0.9058823529411765,
+            "lost": false
+          },
+          {
+            "column": 23,
+            "beforeCount": 178,
+            "afterCount": 155,
+            "retention": 0.8707865168539326,
+            "lost": false
+          },
+          {
+            "column": 25,
+            "beforeCount": 178,
+            "afterCount": 154,
+            "retention": 0.8651685393258427,
+            "lost": false
+          },
+          {
+            "column": 28,
+            "beforeCount": 143,
+            "afterCount": 130,
+            "retention": 0.9090909090909091,
+            "lost": false
+          },
+          {
+            "column": 31,
+            "beforeCount": 130,
+            "afterCount": 133,
+            "retention": 1.023076923076923,
+            "lost": false
+          },
+          {
+            "column": 34,
+            "beforeCount": 155,
+            "afterCount": 139,
+            "retention": 0.896774193548387,
+            "lost": false
+          },
+          {
+            "column": 38,
+            "beforeCount": 179,
+            "afterCount": 132,
+            "retention": 0.7374301675977654,
+            "lost": false
+          },
+          {
+            "column": 41,
+            "beforeCount": 174,
+            "afterCount": 136,
+            "retention": 0.7816091954022989,
+            "lost": false
+          },
+          {
+            "column": 44,
+            "beforeCount": 178,
+            "afterCount": 138,
+            "retention": 0.7752808988764045,
+            "lost": false
+          },
+          {
+            "column": 46,
+            "beforeCount": 182,
+            "afterCount": 129,
+            "retention": 0.7087912087912088,
+            "lost": false
+          },
+          {
+            "column": 49,
+            "beforeCount": 160,
+            "afterCount": 147,
+            "retention": 0.91875,
+            "lost": false
+          },
+          {
+            "column": 52,
+            "beforeCount": 136,
+            "afterCount": 134,
+            "retention": 0.9852941176470589,
+            "lost": false
+          },
+          {
+            "column": 54,
+            "beforeCount": 134,
+            "afterCount": 141,
+            "retention": 1.0522388059701493,
+            "lost": false
+          },
+          {
+            "column": 57,
+            "beforeCount": 170,
+            "afterCount": 172,
+            "retention": 1.011764705882353,
+            "lost": false
+          },
+          {
+            "column": 61,
+            "beforeCount": 166,
+            "afterCount": 158,
+            "retention": 0.9518072289156626,
+            "lost": false
+          },
+          {
+            "column": 63,
+            "beforeCount": 160,
+            "afterCount": 188,
+            "retention": 1.175,
+            "lost": false
+          },
+          {
+            "column": 67,
+            "beforeCount": 161,
+            "afterCount": 208,
+            "retention": 1.2919254658385093,
+            "lost": false
+          },
+          {
+            "column": 137,
+            "beforeCount": 106,
+            "afterCount": 167,
+            "retention": 1.5754716981132075,
+            "lost": false
+          },
+          {
+            "column": 139,
+            "beforeCount": 136,
+            "afterCount": 148,
+            "retention": 1.088235294117647,
+            "lost": false
+          },
+          {
+            "column": 142,
+            "beforeCount": 131,
+            "afterCount": 147,
+            "retention": 1.1221374045801527,
+            "lost": false
+          },
+          {
+            "column": 146,
+            "beforeCount": 124,
+            "afterCount": 164,
+            "retention": 1.3225806451612903,
+            "lost": false
+          },
+          {
+            "column": 150,
+            "beforeCount": 109,
+            "afterCount": 108,
+            "retention": 0.9908256880733946,
+            "lost": false
+          },
+          {
+            "column": 152,
+            "beforeCount": 110,
+            "afterCount": 127,
+            "retention": 1.1545454545454545,
+            "lost": false
+          },
+          {
+            "column": 156,
+            "beforeCount": 130,
+            "afterCount": 147,
+            "retention": 1.1307692307692307,
+            "lost": false
+          },
+          {
+            "column": 159,
+            "beforeCount": 124,
+            "afterCount": 145,
+            "retention": 1.1693548387096775,
+            "lost": false
+          },
+          {
+            "column": 164,
+            "beforeCount": 129,
+            "afterCount": 150,
+            "retention": 1.1627906976744187,
+            "lost": false
+          },
+          {
+            "column": 257,
+            "beforeCount": 191,
+            "afterCount": 35,
+            "retention": 0.18324607329842932,
+            "lost": true
+          },
+          {
+            "column": 262,
+            "beforeCount": 156,
+            "afterCount": 42,
+            "retention": 0.2692307692307692,
+            "lost": true
+          },
+          {
+            "column": 264,
+            "beforeCount": 179,
+            "afterCount": 59,
+            "retention": 0.329608938547486,
+            "lost": true
+          },
+          {
+            "column": 268,
+            "beforeCount": 162,
+            "afterCount": 92,
+            "retention": 0.5679012345679012,
+            "lost": false
+          },
+          {
+            "column": 272,
+            "beforeCount": 196,
+            "afterCount": 197,
+            "retention": 1.0051020408163265,
+            "lost": false
+          },
+          {
+            "column": 276,
+            "beforeCount": 184,
+            "afterCount": 194,
+            "retention": 1.0543478260869565,
+            "lost": false
+          },
+          {
+            "column": 278,
+            "beforeCount": 177,
+            "afterCount": 226,
+            "retention": 1.2768361581920904,
+            "lost": false
+          },
+          {
+            "column": 281,
+            "beforeCount": 165,
+            "afterCount": 198,
+            "retention": 1.2,
+            "lost": false
+          },
+          {
+            "column": 292,
+            "beforeCount": 119,
+            "afterCount": 197,
+            "retention": 1.6554621848739495,
+            "lost": false
+          },
+          {
+            "column": 295,
+            "beforeCount": 119,
+            "afterCount": 102,
+            "retention": 0.8571428571428571,
+            "lost": false
+          },
+          {
+            "column": 299,
+            "beforeCount": 114,
+            "afterCount": 204,
+            "retention": 1.7894736842105263,
+            "lost": false
+          },
+          {
+            "column": 301,
+            "beforeCount": 102,
+            "afterCount": 193,
+            "retention": 1.892156862745098,
+            "lost": false
+          },
+          {
+            "column": 303,
+            "beforeCount": 101,
+            "afterCount": 196,
+            "retention": 1.9405940594059405,
+            "lost": false
+          },
+          {
+            "column": 313,
+            "beforeCount": 103,
+            "afterCount": 161,
+            "retention": 1.5631067961165048,
+            "lost": false
+          },
+          {
+            "column": 320,
+            "beforeCount": 120,
+            "afterCount": 22,
+            "retention": 0.18333333333333332,
+            "lost": true
+          },
+          {
+            "column": 340,
+            "beforeCount": 104,
+            "afterCount": 26,
+            "retention": 0.25,
+            "lost": true
+          },
+          {
+            "column": 351,
+            "beforeCount": 102,
+            "afterCount": 57,
+            "retention": 0.5588235294117647,
+            "lost": false
+          },
+          {
+            "column": 372,
+            "beforeCount": 203,
+            "afterCount": 11,
+            "retention": 0.054187192118226604,
+            "lost": true
+          },
+          {
+            "column": 375,
+            "beforeCount": 180,
+            "afterCount": 13,
+            "retention": 0.07222222222222222,
+            "lost": true
+          },
+          {
+            "column": 378,
+            "beforeCount": 164,
+            "afterCount": 12,
+            "retention": 0.07317073170731707,
+            "lost": true
+          },
+          {
+            "column": 381,
+            "beforeCount": 194,
+            "afterCount": 6,
+            "retention": 0.030927835051546393,
+            "lost": true
+          },
+          {
+            "column": 383,
+            "beforeCount": 191,
+            "afterCount": 19,
+            "retention": 0.09947643979057591,
+            "lost": true
+          },
+          {
+            "column": 385,
+            "beforeCount": 198,
+            "afterCount": 30,
+            "retention": 0.15151515151515152,
+            "lost": true
+          },
+          {
+            "column": 386,
+            "beforeCount": 198,
+            "afterCount": 28,
+            "retention": 0.1414141414141414,
+            "lost": true
+          },
+          {
+            "column": 389,
+            "beforeCount": 206,
+            "afterCount": 14,
+            "retention": 0.06796116504854369,
+            "lost": true
+          },
+          {
+            "column": 391,
+            "beforeCount": 205,
+            "afterCount": 14,
+            "retention": 0.06829268292682927,
+            "lost": true
+          },
+          {
+            "column": 393,
+            "beforeCount": 204,
+            "afterCount": 16,
+            "retention": 0.0784313725490196,
+            "lost": true
+          },
+          {
+            "column": 395,
+            "beforeCount": 194,
+            "afterCount": 7,
+            "retention": 0.03608247422680412,
+            "lost": true
+          },
+          {
+            "column": 397,
+            "beforeCount": 208,
+            "afterCount": 7,
+            "retention": 0.03365384615384615,
+            "lost": true
+          },
+          {
+            "column": 399,
+            "beforeCount": 220,
+            "afterCount": 9,
+            "retention": 0.04090909090909091,
+            "lost": true
+          },
+          {
+            "column": 403,
+            "beforeCount": 210,
+            "afterCount": 17,
+            "retention": 0.08095238095238096,
+            "lost": true
+          },
+          {
+            "column": 406,
+            "beforeCount": 208,
+            "afterCount": 17,
+            "retention": 0.08173076923076923,
+            "lost": true
+          },
+          {
+            "column": 410,
+            "beforeCount": 211,
+            "afterCount": 25,
+            "retention": 0.11848341232227488,
+            "lost": true
+          },
+          {
+            "column": 412,
+            "beforeCount": 208,
+            "afterCount": 18,
+            "retention": 0.08653846153846154,
+            "lost": true
+          },
+          {
+            "column": 414,
+            "beforeCount": 216,
+            "afterCount": 26,
+            "retention": 0.12037037037037036,
+            "lost": true
+          },
+          {
+            "column": 420,
+            "beforeCount": 206,
+            "afterCount": 14,
+            "retention": 0.06796116504854369,
+            "lost": true
+          }
+        ],
+        "beforeVerticalEdgeCount": 38096,
+        "afterVerticalEdgeCount": 40414,
+        "worstRetention": 0.030927835051546393
+      },
+      "structuralSignals": [
+        {
+          "claim": "corner_flattened",
+          "region": {
+            "x1": 0.471953125,
+            "y1": 0.05,
+            "x2": 0.547578125,
+            "y2": 0.95
+          },
+          "confidence": 1,
+          "source": "envelope"
+        },
+        {
+          "claim": "corner_flattened",
+          "region": {
+            "x1": 0.595,
+            "y1": 0.05,
+            "x2": 0.696015625,
+            "y2": 0.95
+          },
+          "confidence": 1,
+          "source": "envelope"
+        },
+        {
+          "claim": "corner_flattened",
+          "region": {
+            "x1": 0.6965625,
+            "y1": 0.05,
+            "x2": 0.852265625,
+            "y2": 0.95
+          },
+          "confidence": 1,
+          "source": "envelope"
+        }
+      ]
+    }
+  }
+}

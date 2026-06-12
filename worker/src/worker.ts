@@ -4298,14 +4298,17 @@ type Stage2ValidationPipelineContext<TSpecialistResults = any, TComplianceDecisi
   runSpecialists: () => Promise<{
     specialistResults: TSpecialistResults;
     specialistAdvisorySignals: string[];
+    specialistCompletionSummary?: SpecialistCompletionSummary;
   }>;
   runUnified: (args: {
     specialistResults: TSpecialistResults;
     specialistAdvisorySignals: string[];
+    specialistCompletionSummary?: SpecialistCompletionSummary;
   }) => Promise<UnifiedValidationResult | undefined>;
   runCompliance: (args: {
     specialistResults: TSpecialistResults;
     specialistAdvisorySignals: string[];
+    specialistCompletionSummary?: SpecialistCompletionSummary;
     unifiedValidation: UnifiedValidationResult | undefined;
   }) => Promise<TComplianceDecision>;
 };
@@ -4313,9 +4316,230 @@ type Stage2ValidationPipelineContext<TSpecialistResults = any, TComplianceDecisi
 type Stage2ValidationPipelineResult<TSpecialistResults = any, TComplianceDecision = any> = {
   specialistResults: TSpecialistResults;
   specialistAdvisorySignals: string[];
+  specialistCompletionSummary?: SpecialistCompletionSummary;
   unifiedValidation: UnifiedValidationResult | undefined;
   complianceDecision: TComplianceDecision;
 };
+
+type SpecialistOrchestrationStatus =
+  | "completed"
+  | "failed"
+  | "timeout"
+  | "retry_attempted"
+  | "retry_succeeded"
+  | "retry_failed";
+
+type SpecialistLifecycle = {
+  name: "opening" | "fixture" | "floor" | "envelope";
+  status: SpecialistOrchestrationStatus;
+  retryCount: number;
+  startTime: number;
+  completionTime: number;
+  durationMs: number;
+  available: boolean;
+  error?: string;
+};
+
+type SpecialistCompletionSummary = {
+  expectedSpecialistCount: number;
+  completedCount: number;
+  failedCount: number;
+  retryFailedCount: number;
+  namesOfMissingSpecialists: string[];
+  allSpecialistsSettled: boolean;
+  allSpecialistsCompleted: boolean;
+  lifecycles: SpecialistLifecycle[];
+};
+
+async function orchestrateSpecialistsWithRetry<T>(params: {
+  jobId: string;
+  imageId?: string;
+  attempt: number;
+  source: string;
+  maxRetries: number;
+  timeoutMs: number;
+  tasks: Record<"opening" | "fixture" | "floor" | "envelope", () => Promise<T>>;
+}): Promise<{
+  results: Partial<Record<"opening" | "fixture" | "floor" | "envelope", T>>;
+  summary: SpecialistCompletionSummary;
+}> {
+  const names: Array<"opening" | "fixture" | "floor" | "envelope"> = ["opening", "fixture", "floor", "envelope"];
+  const runWithTimeout = async <R>(promise: Promise<R>, timeoutMs: number, name: string): Promise<R> => {
+    if (!(timeoutMs > 0)) return promise;
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const timeoutPromise = new Promise<R>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`SPECIALIST_TIMEOUT:${name}:${timeoutMs}`)), timeoutMs);
+      });
+      return await Promise.race([promise, timeoutPromise]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
+  const settled = await Promise.allSettled(names.map(async (name) => {
+    let retryCount = 0;
+    let lastError = "";
+    while (true) {
+      const startTime = Date.now();
+      try {
+        const value = await runWithTimeout(params.tasks[name](), params.timeoutMs, name);
+        const completionTime = Date.now();
+        const durationMs = Math.max(0, completionTime - startTime);
+        const status: SpecialistOrchestrationStatus = retryCount > 0 ? "retry_succeeded" : "completed";
+        nLog("[SPECIALIST_ORCHESTRATION]", {
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          source: params.source,
+          specialist: name,
+          startTime,
+          completionTime,
+          durationMs,
+          status,
+          retryCount,
+        });
+        return {
+          name,
+          lifecycle: {
+            name,
+            status,
+            retryCount,
+            startTime,
+            completionTime,
+            durationMs,
+            available: true,
+          } as SpecialistLifecycle,
+          value,
+        };
+      } catch (err: any) {
+        const completionTime = Date.now();
+        const durationMs = Math.max(0, completionTime - startTime);
+        const errorText = String(err?.message || err || "specialist_error");
+        const timedOut = errorText.includes("SPECIALIST_TIMEOUT");
+        lastError = errorText;
+
+        nLog("[SPECIALIST_ORCHESTRATION]", {
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          source: params.source,
+          specialist: name,
+          startTime,
+          completionTime,
+          durationMs,
+          status: timedOut ? "timeout" : "failed",
+          retryCount,
+          error: errorText,
+        });
+
+        if (retryCount < params.maxRetries) {
+          nLog("[SPECIALIST_ORCHESTRATION]", {
+            jobId: params.jobId,
+            imageId: params.imageId,
+            attempt: params.attempt,
+            source: params.source,
+            specialist: name,
+            startTime,
+            completionTime,
+            durationMs,
+            status: "retry_attempted",
+            retryCount: retryCount + 1,
+            error: errorText,
+          });
+          retryCount += 1;
+          continue;
+        }
+
+        nLog("[SPECIALIST_ORCHESTRATION]", {
+          jobId: params.jobId,
+          imageId: params.imageId,
+          attempt: params.attempt,
+          source: params.source,
+          specialist: name,
+          startTime,
+          completionTime,
+          durationMs,
+          status: "retry_failed",
+          retryCount,
+          error: errorText,
+        });
+
+        return {
+          name,
+          lifecycle: {
+            name,
+            status: "retry_failed",
+            retryCount,
+            startTime,
+            completionTime,
+            durationMs,
+            available: false,
+            error: lastError,
+          } as SpecialistLifecycle,
+          value: undefined,
+        };
+      }
+    }
+  }));
+
+  const results: Partial<Record<"opening" | "fixture" | "floor" | "envelope", T>> = {};
+  const lifecycles: SpecialistLifecycle[] = [];
+  for (let idx = 0; idx < settled.length; idx += 1) {
+    const item = settled[idx];
+    const fallbackName = names[idx] || "opening";
+    if (item.status === "fulfilled") {
+      lifecycles.push(item.value.lifecycle);
+      if (item.value.value !== undefined) {
+        results[item.value.name] = item.value.value;
+      }
+      continue;
+    }
+
+    const completionTime = Date.now();
+    const fallbackLifecycle: SpecialistLifecycle = {
+      name: fallbackName,
+      status: "retry_failed",
+      retryCount: 0,
+      startTime: completionTime,
+      completionTime,
+      durationMs: 0,
+      available: false,
+      error: String(item.reason || "specialist_orchestration_unhandled_rejection"),
+    };
+    lifecycles.push(fallbackLifecycle);
+  }
+
+  const expectedSpecialistCount = names.length;
+  const completedCount = lifecycles.filter((l) => l.available).length;
+  const retryFailedCount = lifecycles.filter((l) => l.status === "retry_failed").length;
+  const failedCount = lifecycles.filter((l) => l.status === "failed" || l.status === "timeout" || l.status === "retry_failed").length;
+  const namesOfMissingSpecialists = lifecycles.filter((l) => !l.available).map((l) => l.name);
+  const summary: SpecialistCompletionSummary = {
+    expectedSpecialistCount,
+    completedCount,
+    failedCount,
+    retryFailedCount,
+    namesOfMissingSpecialists,
+    allSpecialistsSettled: true,
+    allSpecialistsCompleted: namesOfMissingSpecialists.length === 0,
+    lifecycles,
+  };
+
+  nLog("[SPECIALIST_COMPLETION_SUMMARY]", {
+    jobId: params.jobId,
+    imageId: params.imageId,
+    attempt: params.attempt,
+    source: params.source,
+    expectedSpecialistCount,
+    completedCount,
+    failedCount,
+    retryFailedCount,
+    namesOfMissingSpecialists,
+  });
+
+  return { results, summary };
+}
 
 async function runStage2ValidationPipeline<TSpecialistResults = any, TComplianceDecision = any>(
   ctx: Stage2ValidationPipelineContext<TSpecialistResults, TComplianceDecision>
@@ -4325,20 +4549,23 @@ async function runStage2ValidationPipeline<TSpecialistResults = any, TCompliance
     source: ctx.source || "unknown",
   });
 
-  const { specialistResults, specialistAdvisorySignals } = await ctx.runSpecialists();
+  const { specialistResults, specialistAdvisorySignals, specialistCompletionSummary } = await ctx.runSpecialists();
   const unifiedValidation = await ctx.runUnified({
     specialistResults,
     specialistAdvisorySignals,
+    specialistCompletionSummary,
   });
   const complianceDecision = await ctx.runCompliance({
     specialistResults,
     specialistAdvisorySignals,
+    specialistCompletionSummary,
     unifiedValidation,
   });
 
   return {
     specialistResults,
     specialistAdvisorySignals,
+    specialistCompletionSummary,
     unifiedValidation,
     complianceDecision,
   };
@@ -6856,6 +7083,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         runSpecialists: async () => {
           const specialistAdvisorySignals: string[] = [];
           const specialistResults: Record<string, any> = {};
+          let specialistCompletionSummary: SpecialistCompletionSummary | undefined;
           // ═══ Specialist Validators (opening, fixture, floor, envelope) ═══
           // Run the same specialist stack as main Stage 2 path while keeping Stage-2-only generation.
           try {
@@ -6900,57 +7128,76 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 validator,
                 startTimestamp,
               });
-              const result = await runner();
-              const endTimestamp = Date.now();
-              const durationMs = Math.max(0, endTimestamp - startTimestamp);
-              specialistTiming[validator].endTimestamp = endTimestamp;
-              specialistTiming[validator].durationMs = durationMs;
-              nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt: stage2OnlyAttemptNo,
-                source: "stage2_only_retry",
-                validator,
-                startTimestamp,
-                endTimestamp,
-                durationMs,
-              });
-              logValidatorBlockEnd(validator, durationMs, { source: "stage2_only_retry" });
-              return result;
+              try {
+                const result = await runner();
+                const endTimestamp = Date.now();
+                const durationMs = Math.max(0, endTimestamp - startTimestamp);
+                specialistTiming[validator].endTimestamp = endTimestamp;
+                specialistTiming[validator].durationMs = durationMs;
+                nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                  source: "stage2_only_retry",
+                  validator,
+                  startTimestamp,
+                  endTimestamp,
+                  durationMs,
+                });
+                logValidatorBlockEnd(validator, durationMs, { source: "stage2_only_retry" });
+                return result;
+              } catch (err) {
+                const endTimestamp = Date.now();
+                const durationMs = Math.max(0, endTimestamp - startTimestamp);
+                specialistTiming[validator].endTimestamp = endTimestamp;
+                specialistTiming[validator].durationMs = durationMs;
+                throw err;
+              }
             };
 
             const stage2OnlyBaselinePromise = resolveStructuralBaselineForValidation("stage2_only_retry_opening_validator");
-            const openingPromise = runSpecialistWithTiming("opening", async () => {
-              const stage2OnlyBaseline = await stage2OnlyBaselinePromise;
-              return runOpeningValidator(validationBaseline, path2, {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt: stage2OnlyAttemptNo,
-                baseline: stage2OnlyBaseline || undefined,
-              });
+            const maxRetries = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_RETRIES || 1));
+            const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
+            const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              source: "stage2_only_retry",
+              maxRetries,
+              timeoutMs,
+              tasks: {
+                opening: () => runSpecialistWithTiming("opening", async () => {
+                  const stage2OnlyBaseline = await stage2OnlyBaselinePromise;
+                  return runOpeningValidator(validationBaseline, path2, {
+                    jobId: payload.jobId,
+                    imageId: payload.imageId,
+                    attempt: stage2OnlyAttemptNo,
+                    baseline: stage2OnlyBaseline || undefined,
+                  });
+                }),
+                fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBaseline, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                })),
+                floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBaseline, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                })),
+                envelope: () => runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBaseline, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                })),
+              },
             });
-            const fixturePromise = runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBaseline, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-            }));
-            const floorPromise = runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBaseline, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-            }));
-            const envelopePromise = runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBaseline, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt: stage2OnlyAttemptNo,
-            }));
+            specialistCompletionSummary = specialistOrchestration.summary;
 
-            const [opRes, fixRes, floorRes, envRes] = await Promise.all([
-              openingPromise,
-              fixturePromise,
-              floorPromise,
-              envelopePromise,
-            ]);
+            const opRes = specialistOrchestration.results.opening;
+            const fixRes = specialistOrchestration.results.fixture;
+            const floorRes = specialistOrchestration.results.floor;
+            const envRes = specialistOrchestration.results.envelope;
 
             const totalConcurrentDurationMs = Math.max(0, Date.now() - specialistBatchStartedAt);
             const equivalentSequentialDurationMs =
@@ -7012,6 +7259,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               advisorySignals: specialistAdvisorySignals,
             });
 
+            if (specialistCompletionSummary && specialistCompletionSummary.namesOfMissingSpecialists.length > 0) {
+              nLog("[STAGE2_ONLY_SPECIALIST_UNAVAILABLE]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                unavailableSpecialists: specialistCompletionSummary.namesOfMissingSpecialists,
+                action: "continue_with_current_non_blocking_policy",
+              });
+            }
+
             if (specialistHardFailReasons.length > 0) {
               stage2ValidationPassed = false;
               if (!stage2OnlyBlockedReason) {
@@ -7039,11 +7296,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           return {
             specialistResults,
             specialistAdvisorySignals,
+            specialistCompletionSummary,
           };
         },
-        runUnified: async ({ specialistAdvisorySignals }) => {
+        runUnified: async ({ specialistAdvisorySignals, specialistCompletionSummary }) => {
           try {
             // SINGLE-AUTHORITY: always enforce, always run Gemini
+            nLog("[UNIFIED_EVIDENCE_GATE]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              source: "stage2_only_retry",
+              allSpecialistsSettled: specialistCompletionSummary?.allSpecialistsSettled === true,
+              allSpecialistsCompleted: specialistCompletionSummary?.allSpecialistsCompleted === true,
+              specialistCount: specialistCompletionSummary?.expectedSpecialistCount ?? 4,
+              specialistResultsPresent: specialistCompletionSummary?.completedCount ?? 0,
+              specialistSignalsCount: specialistAdvisorySignals.length,
+            });
             nLog(`[worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════`);
             const unifiedBlockStartedAt = Date.now();
             unifiedRetryValidation = await runUnifiedValidation({
@@ -11969,6 +12238,7 @@ All openings must remain identical in position and size to the original image.`;
       }
 
       const specialistIssueSignals: SpecialistIssueSignal[] = [];
+      let specialistCompletionSummary: SpecialistCompletionSummary | undefined;
 
       const addSpecialistIssueSignal = (
         validator: Stage2SignalValidator,
@@ -12029,57 +12299,116 @@ All openings must remain identical in position and size to the original image.`;
             validator,
             startTimestamp,
           });
-          const result = await runner();
-          const endTimestamp = Date.now();
-          const durationMs = Math.max(0, endTimestamp - startTimestamp);
-          specialistTiming[validator].endTimestamp = endTimestamp;
-          specialistTiming[validator].durationMs = durationMs;
-          nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            source: "main_stage2",
-            validator,
-            startTimestamp,
-            endTimestamp,
-            durationMs,
-          });
-          logValidatorBlockEnd(validator, durationMs);
-          return result;
+          try {
+            const result = await runner();
+            const endTimestamp = Date.now();
+            const durationMs = Math.max(0, endTimestamp - startTimestamp);
+            specialistTiming[validator].endTimestamp = endTimestamp;
+            specialistTiming[validator].durationMs = durationMs;
+            nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              source: "main_stage2",
+              validator,
+              startTimestamp,
+              endTimestamp,
+              durationMs,
+            });
+            logValidatorBlockEnd(validator, durationMs);
+            return result;
+          } catch (err) {
+            const endTimestamp = Date.now();
+            const durationMs = Math.max(0, endTimestamp - startTimestamp);
+            specialistTiming[validator].endTimestamp = endTimestamp;
+            specialistTiming[validator].durationMs = durationMs;
+            throw err;
+          }
         };
 
         const openingBaselinePromise = resolveStructuralBaselineForValidation("stage2_opening_validator");
-        const openingPromise = runSpecialistWithTiming("opening", async () => {
-          const resolvedOpeningBaseline = await openingBaselinePromise;
-          return runOpeningValidator(validationBasePath, path2, {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt,
-            baseline: resolvedOpeningBaseline || undefined,
-          });
+        const maxRetries = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_RETRIES || 1));
+        const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
+        const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          source: "main_stage2",
+          maxRetries,
+          timeoutMs,
+          tasks: {
+            opening: () => runSpecialistWithTiming("opening", async () => {
+              const resolvedOpeningBaseline = await openingBaselinePromise;
+              return runOpeningValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                baseline: resolvedOpeningBaseline || undefined,
+              });
+            }),
+            fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+            })),
+            floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+            })),
+            envelope: () => runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+            })),
+          },
         });
-        const fixturePromise = runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-        }));
-        const floorPromise = runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-        }));
-        const envelopePromise = runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-        }));
+        specialistCompletionSummary = specialistOrchestration.summary;
 
-        const [opRes, fixRes, floorRes, envRes] = await Promise.all([
-          openingPromise,
-          fixturePromise,
-          floorPromise,
-          envelopePromise,
-        ]);
+        const opRes = specialistOrchestration.results.opening || {
+          status: "error",
+          hardFail: false,
+          reason: "specialist_unavailable",
+          confidence: 0,
+          advisorySignals: [],
+          issueType: ISSUE_TYPES.NONE,
+          issueTier: "none",
+          primaryStructuredIssue: undefined,
+          structuredIssues: [],
+          advisoryObservations: [],
+          openingRegions: [],
+          structuralSignals: [],
+        };
+        const fixRes = specialistOrchestration.results.fixture || {
+          status: "error",
+          hardFail: false,
+          reason: "specialist_unavailable",
+          confidence: 0,
+          advisorySignals: [],
+          issueType: ISSUE_TYPES.NONE,
+          issueTier: "none",
+        };
+        const floorRes = specialistOrchestration.results.floor || {
+          status: "error",
+          hardFail: false,
+          reason: "specialist_unavailable",
+          confidence: 0,
+          advisorySignals: [],
+          issueType: ISSUE_TYPES.NONE,
+          issueTier: "none",
+        };
+        const envRes = specialistOrchestration.results.envelope || {
+          status: "error",
+          hardFail: false,
+          reason: "specialist_unavailable",
+          confidence: 0,
+          advisorySignals: [],
+          issueType: ISSUE_TYPES.NONE,
+          issueTier: "none",
+          primaryStructuredIssue: undefined,
+          structuredIssues: [],
+          structuralSignals: [],
+        };
 
         const totalConcurrentDurationMs = Math.max(0, Date.now() - specialistBatchStartedAt);
         const equivalentSequentialDurationMs =
@@ -12598,6 +12927,16 @@ All openings must remain identical in position and size to the original image.`;
           advisorySignals: specialistAdvisorySignals,
           nonBlocking: true,
         });
+
+        if (specialistCompletionSummary && specialistCompletionSummary.namesOfMissingSpecialists.length > 0) {
+          nLog("[STAGE2_SPECIALIST_UNAVAILABLE]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            unavailableSpecialists: specialistCompletionSummary.namesOfMissingSpecialists,
+            action: "continue_with_current_non_blocking_policy",
+          });
+        }
 
         // --- Build structured AdvisoryObservation[] from specialist results ---
         // SPECIALIST QUESTION FORMAT: Neutral, non-leading questions that guide
@@ -13329,6 +13668,18 @@ All openings must remain identical in position and size to the original image.`;
         }
       }
 
+      nLog("[UNIFIED_EVIDENCE_GATE]", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        attempt,
+        source: "main_stage2",
+        allSpecialistsSettled: specialistCompletionSummary?.allSpecialistsSettled === true,
+        allSpecialistsCompleted: specialistCompletionSummary?.allSpecialistsCompleted === true,
+        specialistCount: specialistCompletionSummary?.expectedSpecialistCount ?? 4,
+        specialistResultsPresent: specialistCompletionSummary?.completedCount ?? 0,
+        specialistSignalsCount: specialistAdvisorySignals.length,
+      });
+
       const unifiedBlockStartedAt = Date.now();
       unifiedValidation = await runUnifiedValidation({
         originalPath: validationBasePath,
@@ -13433,6 +13784,7 @@ All openings must remain identical in position and size to the original image.`;
         runSpecialists: async () => ({
           specialistResults,
           specialistAdvisorySignals,
+          specialistCompletionSummary,
         }),
         runUnified: async () => unifiedValidation,
         runCompliance: async ({ unifiedValidation: complianceUnifiedValidation }) => {

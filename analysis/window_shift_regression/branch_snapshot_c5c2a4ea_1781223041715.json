@@ -1,0 +1,794 @@
+{
+  "label": "c5c2a4ea",
+  "opening": {
+    "status": "pass",
+    "issueType": "opening_occlusion",
+    "issueTier": "review",
+    "confidence": 1,
+    "resizePercentApprox": 63.9,
+    "openingCount": 2,
+    "openingLocations": [
+      "window opening in the center of the near wall",
+      "window opening in the center of the left wall"
+    ],
+    "overlapScores": [
+      null,
+      null
+    ]
+  },
+  "specialistSignals": [
+    "opening_visibility_reduction:0.639",
+    "opening_resized_minor:0.639",
+    "opening_occlusion",
+    "envelope_vertical_edge_loss",
+    "envelope_corner_flattened"
+  ],
+  "unified": {
+    "passed": true,
+    "hardFail": false,
+    "score": 0.792,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "warnings": [
+      "Only flexible changes (furniture and decor) were introduced.",
+      "No structural (Tier 1) or fixed feature (Tier 2) changes were detected.",
+      "The ceiling light fixture is preserved.",
+      "Window openings and curtain types are preserved.",
+      "local_validators_advisory: windows"
+    ],
+    "reasons": []
+  },
+  "raw": {
+    "opening": {
+      "status": "pass",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.639|opening_band_mismatch",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "opening_occlusion",
+      "issueTier": "review",
+      "advisorySignals": [
+        "opening_visibility_reduction:0.639",
+        "opening_resized_minor:0.639"
+      ],
+      "explanation": "The window opening in the center of the near wall appears materially different in size or shape. The window opening in the center of the left wall appears shifted from its original wall position.",
+      "findings": [
+        {
+          "id": "W2",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the center of the near wall",
+          "wallIndex": 0,
+          "bbox": [
+            0.49,
+            0.195,
+            0.872,
+            0.672
+          ],
+          "machineReasons": [
+            "wall_coverage_band_changed_gt_one",
+            "orientation_changed"
+          ],
+          "explanation": "The window opening in the center of the near wall appears materially different in size or shape.",
+          "question": "Does the window opening in the center of the near wall retain the same visible size and shape as in the original image?",
+          "confidence": 0.95
+        },
+        {
+          "id": "W1",
+          "openingType": "window",
+          "status": "altered",
+          "location": "window opening in the center of the left wall",
+          "wallIndex": 3,
+          "bbox": [
+            0.059,
+            0.215,
+            0.344,
+            0.652
+          ],
+          "machineReasons": [
+            "horizontal_band_changed"
+          ],
+          "explanation": "The window opening in the center of the left wall appears shifted from its original wall position.",
+          "question": "Is the window opening in the center of the left wall still in the same wall position as in the original image?",
+          "confidence": 0.95
+        }
+      ],
+      "advisoryObservations": [
+        {
+          "category": "openings",
+          "validator": "openings",
+          "issueType": "opening_resized_minor",
+          "location": "window opening in the center of the near wall",
+          "approximateLocation": "center-right",
+          "bbox": [
+            0.49,
+            0.195,
+            0.872,
+            0.672
+          ],
+          "confidence": 0.95,
+          "question": "Does the window opening in the center of the near wall retain the same visible size and shape as in the original image?",
+          "context": "Local opening-preservation analysis flagged a possible structural difference for this baseline opening.",
+          "investigationTask": "Does the window opening in the center of the near wall retain the same visible size and shape as in the original image?"
+        },
+        {
+          "category": "openings",
+          "validator": "openings",
+          "issueType": "opening_relocated",
+          "location": "window opening in the center of the left wall",
+          "approximateLocation": "center-left",
+          "bbox": [
+            0.059,
+            0.215,
+            0.344,
+            0.652
+          ],
+          "confidence": 0.95,
+          "question": "Is the window opening in the center of the left wall still in the same wall position as in the original image?",
+          "context": "Local opening-preservation analysis flagged a possible shift in the opening's wall position.",
+          "investigationTask": "Is the window opening in the center of the left wall still in the same wall position as in the original image?"
+        }
+      ],
+      "details": [
+        {
+          "id": "W2",
+          "classification": "altered",
+          "reason": "wall_coverage_band_changed_gt_one|orientation_changed",
+          "explanation": "The window opening in the center of the near wall appears materially different in size or shape.",
+          "location": "window opening in the center of the near wall",
+          "machineReasons": [
+            "wall_coverage_band_changed_gt_one",
+            "orientation_changed"
+          ],
+          "question": "Does the window opening in the center of the near wall retain the same visible size and shape as in the original image?"
+        },
+        {
+          "id": "W1",
+          "classification": "altered",
+          "reason": "horizontal_band_changed",
+          "explanation": "The window opening in the center of the left wall appears shifted from its original wall position.",
+          "location": "window opening in the center of the left wall",
+          "machineReasons": [
+            "horizontal_band_changed"
+          ],
+          "question": "Is the window opening in the center of the left wall still in the same wall position as in the original image?"
+        }
+      ],
+      "structuralSignals": [
+        {
+          "claim": "opening_resized_major",
+          "region": {
+            "x1": 0.49,
+            "y1": 0.195,
+            "x2": 0.872,
+            "y2": 0.672
+          },
+          "confidence": 0.95,
+          "source": "openingPreservation",
+          "openingId": "W2",
+          "openingType": "window",
+          "wallIndex": 0
+        }
+      ],
+      "decision": {
+        "decision": "advisory",
+        "authorityClass": "CLASS_C",
+        "authority": "advisory",
+        "vetoable": true,
+        "signals": [
+          "opening_resized",
+          "opening_size_reduction_ge_0.25:0.639",
+          "opening_band_mismatch",
+          "opening_visibility_reduction:0.639",
+          "opening_resized_minor:0.639"
+        ],
+        "decisionTrace": [
+          "decision_trace_started",
+          "advisory_signals_present",
+          "authority_class_c_assigned",
+          "authority_advisory",
+          "advisory_decision_selected"
+        ],
+        "trace": [
+          "decision_trace_started",
+          "advisory_signals_present",
+          "authority_class_c_assigned",
+          "authority_advisory",
+          "advisory_decision_selected"
+        ],
+        "semanticCorroborated": false,
+        "vetoed": false
+      },
+      "openingRegions": [
+        {
+          "bbox": [
+            0.493,
+            0.288,
+            0.668,
+            0.664
+          ],
+          "type": "window"
+        },
+        {
+          "bbox": [
+            0.155,
+            0.26,
+            0.449,
+            0.655
+          ],
+          "type": "window"
+        }
+      ],
+      "primaryStructuredIssue": {
+        "type": "opening_change",
+        "object": "window",
+        "action": "resized",
+        "severity": "review",
+        "source": "opening_validator",
+        "confidence": 1,
+        "evidence": [
+          "opening_resized",
+          "opening_size_reduction_ge_0_25_0_639",
+          "opening_band_mismatch",
+          "opening_visibility_reduction_0_639",
+          "opening_resized_minor_0_639"
+        ]
+      },
+      "structuredIssues": [
+        {
+          "type": "opening_change",
+          "object": "window",
+          "action": "resized",
+          "severity": "review",
+          "source": "opening_validator",
+          "confidence": 1,
+          "evidence": [
+            "opening_resized",
+            "opening_size_reduction_ge_0_25_0_639",
+            "opening_band_mismatch",
+            "opening_visibility_reduction_0_639",
+            "opening_resized_minor_0_639"
+          ]
+        }
+      ]
+    },
+    "fixture": {
+      "status": "pass",
+      "reason": "The room architecture and fixed installed fixtures (ceiling light) are identical between the baseline and staged images.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": [],
+      "structuredIssues": []
+    },
+    "floor": {
+      "status": "pass",
+      "reason": "The structural floor is carpet in both images. The staged image has added a rug, which is a movable object and not a change to the underlying floor.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "advisorySignals": [],
+      "structuredIssues": []
+    },
+    "envelope": {
+      "status": "pass",
+      "reason": "The architectural envelope, including wall layout, window placements, ceiling geometry, and room proportions, is consistent between the baseline and staged images. No structural changes, wall extensions, or filled recesses were observed.",
+      "confidence": 1,
+      "hardFail": false,
+      "issueType": "envelope_vertical_edge_loss",
+      "issueTier": "critical",
+      "advisorySignals": [
+        "envelope_vertical_edge_loss",
+        "envelope_corner_flattened"
+      ],
+      "structuredIssues": [],
+      "verticalEdgeDelta": {
+        "verticalEdgeLossDetected": true,
+        "cornerPersistenceFailure": true,
+        "junctions": [
+          {
+            "column": 2,
+            "beforeCount": 102,
+            "afterCount": 60,
+            "retention": 0.5882352941176471,
+            "lost": false
+          },
+          {
+            "column": 7,
+            "beforeCount": 189,
+            "afterCount": 200,
+            "retention": 1.0582010582010581,
+            "lost": false
+          },
+          {
+            "column": 10,
+            "beforeCount": 176,
+            "afterCount": 205,
+            "retention": 1.1647727272727273,
+            "lost": false
+          },
+          {
+            "column": 15,
+            "beforeCount": 156,
+            "afterCount": 142,
+            "retention": 0.9102564102564102,
+            "lost": false
+          },
+          {
+            "column": 17,
+            "beforeCount": 157,
+            "afterCount": 187,
+            "retention": 1.1910828025477707,
+            "lost": false
+          },
+          {
+            "column": 20,
+            "beforeCount": 168,
+            "afterCount": 153,
+            "retention": 0.9107142857142857,
+            "lost": false
+          },
+          {
+            "column": 23,
+            "beforeCount": 178,
+            "afterCount": 152,
+            "retention": 0.8539325842696629,
+            "lost": false
+          },
+          {
+            "column": 24,
+            "beforeCount": 178,
+            "afterCount": 159,
+            "retention": 0.8932584269662921,
+            "lost": false
+          },
+          {
+            "column": 28,
+            "beforeCount": 144,
+            "afterCount": 130,
+            "retention": 0.9027777777777778,
+            "lost": false
+          },
+          {
+            "column": 31,
+            "beforeCount": 127,
+            "afterCount": 134,
+            "retention": 1.0551181102362204,
+            "lost": false
+          },
+          {
+            "column": 34,
+            "beforeCount": 155,
+            "afterCount": 139,
+            "retention": 0.896774193548387,
+            "lost": false
+          },
+          {
+            "column": 38,
+            "beforeCount": 178,
+            "afterCount": 131,
+            "retention": 0.7359550561797753,
+            "lost": false
+          },
+          {
+            "column": 41,
+            "beforeCount": 175,
+            "afterCount": 136,
+            "retention": 0.7771428571428571,
+            "lost": false
+          },
+          {
+            "column": 44,
+            "beforeCount": 178,
+            "afterCount": 138,
+            "retention": 0.7752808988764045,
+            "lost": false
+          },
+          {
+            "column": 46,
+            "beforeCount": 182,
+            "afterCount": 130,
+            "retention": 0.7142857142857143,
+            "lost": false
+          },
+          {
+            "column": 49,
+            "beforeCount": 162,
+            "afterCount": 146,
+            "retention": 0.9012345679012346,
+            "lost": false
+          },
+          {
+            "column": 52,
+            "beforeCount": 134,
+            "afterCount": 132,
+            "retention": 0.9850746268656716,
+            "lost": false
+          },
+          {
+            "column": 57,
+            "beforeCount": 169,
+            "afterCount": 173,
+            "retention": 1.0236686390532543,
+            "lost": false
+          },
+          {
+            "column": 61,
+            "beforeCount": 166,
+            "afterCount": 159,
+            "retention": 0.9578313253012049,
+            "lost": false
+          },
+          {
+            "column": 65,
+            "beforeCount": 160,
+            "afterCount": 149,
+            "retention": 0.93125,
+            "lost": false
+          },
+          {
+            "column": 67,
+            "beforeCount": 161,
+            "afterCount": 206,
+            "retention": 1.279503105590062,
+            "lost": false
+          },
+          {
+            "column": 137,
+            "beforeCount": 104,
+            "afterCount": 166,
+            "retention": 1.5961538461538463,
+            "lost": false
+          },
+          {
+            "column": 140,
+            "beforeCount": 135,
+            "afterCount": 152,
+            "retention": 1.125925925925926,
+            "lost": false
+          },
+          {
+            "column": 142,
+            "beforeCount": 130,
+            "afterCount": 146,
+            "retention": 1.123076923076923,
+            "lost": false
+          },
+          {
+            "column": 146,
+            "beforeCount": 125,
+            "afterCount": 164,
+            "retention": 1.312,
+            "lost": false
+          },
+          {
+            "column": 150,
+            "beforeCount": 109,
+            "afterCount": 108,
+            "retention": 0.9908256880733946,
+            "lost": false
+          },
+          {
+            "column": 152,
+            "beforeCount": 111,
+            "afterCount": 127,
+            "retention": 1.1441441441441442,
+            "lost": false
+          },
+          {
+            "column": 156,
+            "beforeCount": 130,
+            "afterCount": 147,
+            "retention": 1.1307692307692307,
+            "lost": false
+          },
+          {
+            "column": 159,
+            "beforeCount": 125,
+            "afterCount": 143,
+            "retention": 1.144,
+            "lost": false
+          },
+          {
+            "column": 163,
+            "beforeCount": 128,
+            "afterCount": 148,
+            "retention": 1.15625,
+            "lost": false
+          },
+          {
+            "column": 257,
+            "beforeCount": 192,
+            "afterCount": 34,
+            "retention": 0.17708333333333334,
+            "lost": true
+          },
+          {
+            "column": 262,
+            "beforeCount": 156,
+            "afterCount": 42,
+            "retention": 0.2692307692307692,
+            "lost": true
+          },
+          {
+            "column": 264,
+            "beforeCount": 178,
+            "afterCount": 59,
+            "retention": 0.33146067415730335,
+            "lost": true
+          },
+          {
+            "column": 268,
+            "beforeCount": 162,
+            "afterCount": 92,
+            "retention": 0.5679012345679012,
+            "lost": false
+          },
+          {
+            "column": 272,
+            "beforeCount": 195,
+            "afterCount": 197,
+            "retention": 1.0102564102564102,
+            "lost": false
+          },
+          {
+            "column": 276,
+            "beforeCount": 183,
+            "afterCount": 195,
+            "retention": 1.0655737704918034,
+            "lost": false
+          },
+          {
+            "column": 278,
+            "beforeCount": 178,
+            "afterCount": 223,
+            "retention": 1.252808988764045,
+            "lost": false
+          },
+          {
+            "column": 281,
+            "beforeCount": 164,
+            "afterCount": 199,
+            "retention": 1.2134146341463414,
+            "lost": false
+          },
+          {
+            "column": 286,
+            "beforeCount": 110,
+            "afterCount": 203,
+            "retention": 1.8454545454545455,
+            "lost": false
+          },
+          {
+            "column": 292,
+            "beforeCount": 117,
+            "afterCount": 195,
+            "retention": 1.6666666666666667,
+            "lost": false
+          },
+          {
+            "column": 294,
+            "beforeCount": 121,
+            "afterCount": 147,
+            "retention": 1.2148760330578512,
+            "lost": false
+          },
+          {
+            "column": 299,
+            "beforeCount": 116,
+            "afterCount": 204,
+            "retention": 1.7586206896551724,
+            "lost": false
+          },
+          {
+            "column": 301,
+            "beforeCount": 102,
+            "afterCount": 193,
+            "retention": 1.892156862745098,
+            "lost": false
+          },
+          {
+            "column": 303,
+            "beforeCount": 101,
+            "afterCount": 195,
+            "retention": 1.9306930693069306,
+            "lost": false
+          },
+          {
+            "column": 313,
+            "beforeCount": 101,
+            "afterCount": 159,
+            "retention": 1.5742574257425743,
+            "lost": false
+          },
+          {
+            "column": 320,
+            "beforeCount": 121,
+            "afterCount": 22,
+            "retention": 0.18181818181818182,
+            "lost": true
+          },
+          {
+            "column": 340,
+            "beforeCount": 102,
+            "afterCount": 26,
+            "retention": 0.2549019607843137,
+            "lost": true
+          },
+          {
+            "column": 351,
+            "beforeCount": 103,
+            "afterCount": 56,
+            "retention": 0.5436893203883495,
+            "lost": false
+          },
+          {
+            "column": 372,
+            "beforeCount": 203,
+            "afterCount": 12,
+            "retention": 0.059113300492610835,
+            "lost": true
+          },
+          {
+            "column": 375,
+            "beforeCount": 179,
+            "afterCount": 12,
+            "retention": 0.0670391061452514,
+            "lost": true
+          },
+          {
+            "column": 378,
+            "beforeCount": 164,
+            "afterCount": 12,
+            "retention": 0.07317073170731707,
+            "lost": true
+          },
+          {
+            "column": 381,
+            "beforeCount": 195,
+            "afterCount": 5,
+            "retention": 0.02564102564102564,
+            "lost": true
+          },
+          {
+            "column": 383,
+            "beforeCount": 192,
+            "afterCount": 20,
+            "retention": 0.10416666666666667,
+            "lost": true
+          },
+          {
+            "column": 386,
+            "beforeCount": 198,
+            "afterCount": 27,
+            "retention": 0.13636363636363635,
+            "lost": true
+          },
+          {
+            "column": 389,
+            "beforeCount": 206,
+            "afterCount": 14,
+            "retention": 0.06796116504854369,
+            "lost": true
+          },
+          {
+            "column": 391,
+            "beforeCount": 206,
+            "afterCount": 14,
+            "retention": 0.06796116504854369,
+            "lost": true
+          },
+          {
+            "column": 393,
+            "beforeCount": 204,
+            "afterCount": 17,
+            "retention": 0.08333333333333333,
+            "lost": true
+          },
+          {
+            "column": 395,
+            "beforeCount": 193,
+            "afterCount": 7,
+            "retention": 0.03626943005181347,
+            "lost": true
+          },
+          {
+            "column": 397,
+            "beforeCount": 208,
+            "afterCount": 8,
+            "retention": 0.038461538461538464,
+            "lost": true
+          },
+          {
+            "column": 399,
+            "beforeCount": 220,
+            "afterCount": 10,
+            "retention": 0.045454545454545456,
+            "lost": true
+          },
+          {
+            "column": 403,
+            "beforeCount": 208,
+            "afterCount": 18,
+            "retention": 0.08653846153846154,
+            "lost": true
+          },
+          {
+            "column": 406,
+            "beforeCount": 207,
+            "afterCount": 17,
+            "retention": 0.0821256038647343,
+            "lost": true
+          },
+          {
+            "column": 410,
+            "beforeCount": 212,
+            "afterCount": 25,
+            "retention": 0.1179245283018868,
+            "lost": true
+          },
+          {
+            "column": 412,
+            "beforeCount": 208,
+            "afterCount": 16,
+            "retention": 0.07692307692307693,
+            "lost": true
+          },
+          {
+            "column": 414,
+            "beforeCount": 216,
+            "afterCount": 26,
+            "retention": 0.12037037037037036,
+            "lost": true
+          },
+          {
+            "column": 420,
+            "beforeCount": 206,
+            "afterCount": 13,
+            "retention": 0.06310679611650485,
+            "lost": true
+          }
+        ],
+        "beforeVerticalEdgeCount": 38100,
+        "afterVerticalEdgeCount": 40434,
+        "worstRetention": 0.02564102564102564
+      },
+      "structuralSignals": [
+        {
+          "claim": "corner_flattened",
+          "region": {
+            "x1": 0.471953125,
+            "y1": 0.05,
+            "x2": 0.547578125,
+            "y2": 0.95
+          },
+          "confidence": 1,
+          "source": "envelope"
+        },
+        {
+          "claim": "corner_flattened",
+          "region": {
+            "x1": 0.595,
+            "y1": 0.05,
+            "x2": 0.696015625,
+            "y2": 0.95
+          },
+          "confidence": 1,
+          "source": "envelope"
+        },
+        {
+          "claim": "corner_flattened",
+          "region": {
+            "x1": 0.6965625,
+            "y1": 0.05,
+            "x2": 0.852265625,
+            "y2": 0.95
+          },
+          "confidence": 1,
+          "source": "envelope"
+        }
+      ]
+    }
+  }
+}

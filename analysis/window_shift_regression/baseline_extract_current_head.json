@@ -1,0 +1,90 @@
+{
+  "openings": [
+    {
+      "id": "W2",
+      "type": "window",
+      "bbox": [
+        0.59,
+        0.27,
+        0.92,
+        0.62
+      ],
+      "area_pct": 11.55,
+      "wallIndex": 0,
+      "horizontalBand": "right_third",
+      "verticalBand": "mid_zone",
+      "wallCoverageBand": "20-40",
+      "orientation": "square",
+      "paneStructure": "multi_pane_grid",
+      "doorLeafState": "unknown",
+      "confidence": 0.98,
+      "wallPosition": "near_wall",
+      "relativeHorizontalPosition": "right_third",
+      "shape": "window",
+      "touchesFloor": false,
+      "touchesCeiling": false,
+      "approxCount": 1
+    },
+    {
+      "id": "W1",
+      "type": "window",
+      "bbox": [
+        0.13,
+        0.28,
+        0.44,
+        0.63
+      ],
+      "area_pct": 10.85,
+      "wallIndex": 3,
+      "horizontalBand": "left_third",
+      "verticalBand": "mid_zone",
+      "wallCoverageBand": "20-40",
+      "orientation": "square",
+      "paneStructure": "unknown",
+      "doorLeafState": "unknown",
+      "confidence": 0.95,
+      "wallPosition": "left_wall",
+      "relativeHorizontalPosition": "left_third",
+      "shape": "window",
+      "touchesFloor": false,
+      "touchesCeiling": false,
+      "approxCount": 1
+    }
+  ],
+  "anchorFixtures": [],
+  "graphMeta": {
+    "graphStable": false,
+    "graphConfidence": 0.5,
+    "extractionAgreement": 0.5,
+    "passCount": 2,
+    "openingCountVariance": 0,
+    "imageHash": "24b3628db0af32420731b2b8a78e855518df81433e8626bd919fe8c11b3d44c2",
+    "graphHash": "3f100b63e68fdfd82861f3e0a78da690cb9f7b12fbff40c35febb74db0f30510",
+    "cacheStatus": "unstable",
+    "candidateGraphHashes": [
+      "3f100b63e68fdfd82861f3e0a78da690cb9f7b12fbff40c35febb74db0f30510",
+      "fe79740e1943c944aac912504422c880d5503bc9d3888438ad9cb4c8e6d8fcc5"
+    ],
+    "openingCountRange": {
+      "min": 2,
+      "max": 2
+    },
+    "confirmedAt": "2026-06-11T23:51:31.782Z",
+    "baselineMethod": "graph_consensus",
+    "geminiCalls": 2,
+    "verification": {
+      "attempted": false,
+      "accepted": true,
+      "modelAccepted": true,
+      "additionalOpeningCount": 0,
+      "missingOpeningCount": 0,
+      "materiallyDifferentCount": 0,
+      "notPresentCount": 0,
+      "minorDifferenceCount": 0,
+      "rejectedReasonCodes": [],
+      "openingStatuses": [],
+      "additionalOpenings": [],
+      "missingOpenings": []
+    }
+  }
+}
