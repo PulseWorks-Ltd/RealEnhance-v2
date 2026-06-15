@@ -830,10 +830,38 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
   });
 
   let textPrompt = stage2Prompt;
+
+  const normalizedRetryType = String(opts.retryType || "").trim().toLowerCase();
+  const normalizedRetryInstructions = String(opts.retryInstructions || "").trim();
+  const shouldInjectManualRetryInstructions =
+    normalizedRetryType === "manual_retry" &&
+    normalizedRetryInstructions.length > 0 &&
+    attemptNumber === 1;
+
+  if (normalizedRetryType === "manual_retry") {
+    nLog("[MANUAL_RETRY_INSTRUCTIONS]", {
+      present: normalizedRetryInstructions.length > 0,
+      length: normalizedRetryInstructions.length,
+      attempt: attemptNumber,
+      jobId: opts.jobId,
+    });
+  }
+
+  const promptPrefixBlocks: string[] = [];
+
+  if (shouldInjectManualRetryInstructions) {
+    const manualRetryBlock = `MANUAL RETRY USER REQUIREMENTS\n\nThe user has requested the following changes to the room layout and staging.\n\nFollow these requirements whenever possible while preserving:\n- room structure\n- architectural continuity\n- fixed openings\n- fixed fixtures\n- room usability\n\nPRIORITY HIERARCHY (STRICT):\nP0 Structural Constraints and Architectural Continuity\nP0 Fixed Openings and Fixtures\nP1 Manual Retry User Requirements\nP2 Room Type Requirements\nP3 Staging Style Requirements\nP4 Default Stage 2 Design Heuristics\n\nUser Requirements:\n${normalizedRetryInstructions}`;
+    promptPrefixBlocks.push(manualRetryBlock);
+  }
+
   const diningCeilingFixtureSuppressionInstruction = buildDiningCeilingFixtureSuppressionInstruction(canonicalRoomType);
   if (diningCeilingFixtureSuppressionInstruction) {
-    textPrompt = `${diningCeilingFixtureSuppressionInstruction}\n\n${textPrompt}`;
+    promptPrefixBlocks.push(diningCeilingFixtureSuppressionInstruction);
     console.log(`[Stage2Prompt] Applied dining ceiling fixture suppression instruction for roomType=${canonicalRoomType.toUpperCase()}`);
+  }
+
+  if (promptPrefixBlocks.length > 0) {
+    textPrompt = `${promptPrefixBlocks.join("\n\n")}\n\n${textPrompt}`;
   }
 
   if (resolvedPromptMode === "full") {
