@@ -42,6 +42,32 @@ jest.mock("../src/utils/debugImageUrls", () => ({
 describe("Stage-2 generation reliability", () => {
   const originalEnv = { ...process.env };
 
+  async function captureStage2Prompt(roomType: string): Promise<string> {
+    runWithPrimaryThenFallbackMock.mockResolvedValue({
+      resp: {
+        candidates: [{ content: { parts: [{ inlineData: { data: "ZmFrZQ==" } }] } }],
+      },
+      modelUsed: "gemini-2.5-flash-image",
+    });
+
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stage2-prompt-"));
+    const basePath = path.join(tempDir, "base.webp");
+    const outputPath = path.join(tempDir, "out.webp");
+    fs.writeFileSync(basePath, "base");
+
+    await runStage2GenerationAttempt(basePath, {
+      roomType,
+      jobId: `job-test-prompt-${roomType}`,
+      imageId: `img-test-prompt-${roomType}`,
+      outputPath,
+      attempt: 1,
+    });
+
+    const call = runWithPrimaryThenFallbackMock.mock.calls.at(-1);
+    expect(call).toBeDefined();
+    return call?.[0]?.baseRequest?.contents?.[0]?.text;
+  }
+
   beforeEach(() => {
     jest.clearAllMocks();
     process.env = { ...originalEnv };
@@ -152,4 +178,27 @@ describe("Stage-2 generation reliability", () => {
       })
     ).rejects.toBeInstanceOf(Stage2GenerationFailure);
   });
+
+    it.each([
+      "DINING",
+      "LIVING_DINING",
+      "KITCHEN_DINING",
+      "MULTIPLE_LIVING",
+    ])("applies dining ceiling suppression for %s", async (roomType) => {
+      const prompt = await captureStage2Prompt(roomType);
+
+      expect(prompt).toContain("Do not add pendant lights, hanging lights, chandeliers, or any other ceiling light fixtures above dining tables. Use existing room lighting only.");
+    });
+
+    it.each([
+      "BEDROOM",
+      "BATHROOM",
+      "OFFICE",
+      "EXTERIOR",
+      "LIVING_ROOM",
+    ])("does not apply dining ceiling suppression for %s", async (roomType) => {
+      const prompt = await captureStage2Prompt(roomType);
+
+      expect(prompt).not.toContain("Do not add pendant lights, hanging lights, chandeliers, or any other ceiling light fixtures above dining tables. Use existing room lighting only.");
+    });
 });

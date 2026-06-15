@@ -4,7 +4,7 @@ import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
 import { runOpenCVStructuralValidator } from "../validators/index";
-import { buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { buildDiningCeilingFixtureSuppressionInstruction, buildStage2PromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { normalizeStagingStyle, STYLE_PROMPT_MODIFIERS } from "../ai/stagingStyles";
 import sharp from "sharp";
 import path from "path";
@@ -847,9 +847,21 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
     });
   }
 
+  const promptPrefixBlocks: string[] = [];
+
   if (shouldInjectManualRetryInstructions) {
     const manualRetryBlock = `MANUAL RETRY USER REQUIREMENTS\n\nThe user has requested the following changes to the room layout and staging.\n\nFollow these requirements whenever possible while preserving:\n- room structure\n- architectural continuity\n- fixed openings\n- fixed fixtures\n- room usability\n\nPRIORITY HIERARCHY (STRICT):\nP0 Structural Constraints and Architectural Continuity\nP0 Fixed Openings and Fixtures\nP1 Manual Retry User Requirements\nP2 Room Type Requirements\nP3 Staging Style Requirements\nP4 Default Stage 2 Design Heuristics\n\nUser Requirements:\n${normalizedRetryInstructions}`;
-    textPrompt = `${manualRetryBlock}\n\n${textPrompt}`;
+    promptPrefixBlocks.push(manualRetryBlock);
+  }
+
+  const diningCeilingFixtureSuppressionInstruction = buildDiningCeilingFixtureSuppressionInstruction(canonicalRoomType);
+  if (diningCeilingFixtureSuppressionInstruction) {
+    promptPrefixBlocks.push(diningCeilingFixtureSuppressionInstruction);
+    console.log(`[Stage2Prompt] Applied dining ceiling fixture suppression instruction for roomType=${canonicalRoomType.toUpperCase()}`);
+  }
+
+  if (promptPrefixBlocks.length > 0) {
+    textPrompt = `${promptPrefixBlocks.join("\n\n")}\n\n${textPrompt}`;
   }
 
   if (resolvedPromptMode === "full") {

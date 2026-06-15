@@ -1916,6 +1916,31 @@ ${surfaceEligibilityFilterBlock}`;
   return insertStructureRules(refreshPrompt, "REFRESH-SPECIFIC RULES");
 }
 
+const DINING_CEILING_FIXTURE_SUPPRESSION_BLOCK = `
+Do not add pendant lights, hanging lights, chandeliers, or any other ceiling light fixtures above dining tables. Use existing room lighting only.
+`;
+
+export function buildDiningCeilingFixtureSuppressionInstruction(roomType?: string): string | null {
+  const normalizedRoomType = String(roomType || "")
+    .toLowerCase()
+    .replace(/-/g, "_")
+    .trim();
+
+  if (!normalizedRoomType) {
+    return null;
+  }
+
+  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
+    ? "multiple_living"
+    : normalizedRoomType;
+
+  if (!canonicalRoomType.includes("dining") && canonicalRoomType !== "multiple_living") {
+    return null;
+  }
+
+  return DINING_CEILING_FIXTURE_SUPPRESSION_BLOCK.trim();
+}
+
 function buildStage2ExteriorPromptNZStyle(): string {
   return `Stage this outdoor area with clean, contemporary New Zealand-style outdoor
 furniture consistent with Trade Me real estate photography.
