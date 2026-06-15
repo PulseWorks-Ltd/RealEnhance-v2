@@ -39,6 +39,7 @@ import billingRouter from "./routes/billing.js";
 import adminAnalysisRouter from "./routes/adminAnalysis.js";
 import { enhancedImagesRouter } from "./routes/enhancedImages.js";
 import { startEnhancedImagePurgeScheduler } from "./services/enhancedImagesPurge.js";
+import { startMonthlyPromoTopupScheduler } from "./services/monthlyPromoTopup.js";
 import { imageVersionsRouter } from "./routes/imageVersions.js";
 import adminResetRouter from "./routes/adminReset.js";
 import adminDashboardRouter from "./routes/admin.js";
@@ -250,6 +251,12 @@ async function initializeAsyncServices(): Promise<void> {
     startEnhancedImagePurgeScheduler();
   } catch (e) {
     console.warn("[purge] scheduler startup failed:", e);
+  }
+
+  try {
+    startMonthlyPromoTopupScheduler();
+  } catch (e) {
+    console.warn("[monthly_topup] scheduler startup failed:", e);
   }
 
   console.log("[startup] background initialization complete");

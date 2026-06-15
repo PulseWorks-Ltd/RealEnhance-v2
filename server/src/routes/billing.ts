@@ -684,6 +684,7 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "PROMO_EXPIRED" ||
       code === "PROMO_MAXED" ||
       code === "PROMO_MAXED_FOR_AGENCY" ||
+      code === "PROMO_ALREADY_REDEEMED_THIS_MONTH" ||
       code === "TRIAL_ALREADY_CLAIMED" ||
       code === "AGENCY_ALREADY_USED_TRIAL" ||
       code === "AGENCY_PREVIOUSLY_SUBSCRIBED" ||

@@ -427,6 +427,27 @@ export async function redeemCreditPromoForExistingAgency(params: {
     );
     const agencyRedemptionCount = Number(agencyRedemptionRes.rows[0]?.count || 0);
 
+    if (promo.topup_target !== null) {
+      const monthKey = getCurrentMonthKey();
+      const monthlyRedemptionRes = await client.query(
+        `SELECT 1
+           FROM addon_purchases
+          WHERE agency_id = $1
+            AND source = $2
+            AND metadata ->> 'promoCodeNormalized' = $3
+            AND metadata ->> 'monthKey' = $4
+          LIMIT 1`,
+        [params.agencyId, PROMO_CREDIT_GRANT_SOURCE, promo.code_normalized, monthKey]
+      );
+
+      if (monthlyRedemptionRes.rowCount) {
+        const err: any = new Error("PROMO_ALREADY_REDEEMED_THIS_MONTH");
+        err.code = "PROMO_ALREADY_REDEEMED_THIS_MONTH";
+        err.monthKey = monthKey;
+        throw err;
+      }
+    }
+
     // Enforce per-agency cap (e.g. 2 for the monthly top-up promo).
     if (
       promo.max_redemptions_per_agency !== null &&

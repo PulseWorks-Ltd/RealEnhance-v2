@@ -33,6 +33,21 @@ export const PUBLIC_ORIGIN = process.env.PUBLIC_ORIGIN
 
 export const CREDITS_ENABLED = process.env.CREDITS_ENABLED === "1";
 
+export const MONTHLY_TOPUP_PROMO_CODE =
+  String(process.env.MONTHLY_TOPUP_PROMO_CODE || "AdminUserMonthlyTopUp200").trim();
+
+export const MONTHLY_TOPUP_PROMO_USER_EMAILS = String(
+  process.env.MONTHLY_TOPUP_PROMO_USER_EMAILS || ""
+)
+  .split(",")
+  .map((value) => value.trim().toLowerCase())
+  .filter(Boolean);
+
+const parsedMonthlyTopupIntervalMs = Number(process.env.MONTHLY_TOPUP_PROMO_INTERVAL_MS || 6 * 60 * 60 * 1000);
+export const MONTHLY_TOPUP_PROMO_INTERVAL_MS = Number.isFinite(parsedMonthlyTopupIntervalMs)
+  ? Math.max(60_000, parsedMonthlyTopupIntervalMs)
+  : 6 * 60 * 60 * 1000;
+
 // Launch trial gate (minimal deterministic rule)
 export const LAUNCH_TRIAL_MAX_AGENCIES = 20;
 export const LAUNCH_TRIAL_CREDITS = 75;
