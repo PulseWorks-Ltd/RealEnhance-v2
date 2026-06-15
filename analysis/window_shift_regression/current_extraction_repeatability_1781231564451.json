@@ -1,0 +1,440 @@
+{
+  "generatedAt": "2026-06-12T02:32:44.451Z",
+  "methodology": "Current extraction repeated 10 times on the same baseline image with candidate graph frozen once to isolate baseline extraction variance.",
+  "baselineImage": "/workspaces/RealEnhance-v2/tmp/historical-window-shift-rerun/baseline.jpg",
+  "candidateImage": "/workspaces/RealEnhance-v2/tmp/historical-window-shift-rerun/candidate.jpg",
+  "fixedCandidate": {
+    "graphHash": "d3d1357781508828e22604f6eb060f2d422074ab4aa1cd1f82087c9c58edf2c1",
+    "passCount": 2,
+    "baselineMethod": "graph_consensus",
+    "openings": [
+      {
+        "id": "W1",
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "bbox": [
+          0.051,
+          0.231,
+          0.382,
+          0.532
+        ]
+      },
+      {
+        "id": "W2",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.43,
+          0.288,
+          0.625,
+          0.513
+        ]
+      }
+    ]
+  },
+  "summary": {
+    "resizeStats": {
+      "min": 60.5,
+      "max": 78.2,
+      "mean": 71.46000000000001,
+      "stddev": 5.499672717535111
+    },
+    "uniqueGraphCount": 10,
+    "uniqueLayoutCount": 10,
+    "uniqueOpeningCounts": [
+      2
+    ]
+  },
+  "runs": [
+    {
+      "runIndex": 1,
+      "graphHash": "1bcd41fd7f657f2d80932c1f884347950623d4b7fcff0687f262794aefaca85c",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.058,
+            0.212,
+            0.181,
+            0.468
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "bbox": [
+            0.306,
+            0.208,
+            0.756,
+            0.642
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.058,0.212,0.181,0.468]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"center_third\",\"bbox\":[0.306,0.208,0.756,0.642]}]",
+      "resizePercent": 77.60000000000001,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.776|opening_band_mismatch"
+    },
+    {
+      "runIndex": 2,
+      "graphHash": "26327d2a03e0517da450f3995a462bc49d9ccd5c3ce63d310ab9500017a34288",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.051,
+            0.261,
+            0.351,
+            0.552
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.489,
+            0.24,
+            0.876,
+            0.555
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.051,0.261,0.351,0.552]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.489,0.24,0.876,0.555]}]",
+      "resizePercent": 64.1,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.641|opening_band_mismatch"
+    },
+    {
+      "runIndex": 3,
+      "graphHash": "5a78762979fd9515e13e4e5f02fdb204b1dc8cf4aec8c8b0a6647edf0f7e5259",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.081,
+            0.259,
+            0.301,
+            0.651
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.452,
+            0.246,
+            0.86,
+            0.654
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.081,0.259,0.301,0.651]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.452,0.246,0.86,0.654]}]",
+      "resizePercent": 73.7,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.737|opening_band_mismatch"
+    },
+    {
+      "runIndex": 4,
+      "graphHash": "846723be1bf886a6de9437914fbef11f3da2b05951b03a3d2fbd394d6d959ab1",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.121,
+            0.269,
+            0.435,
+            0.602
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.528,
+            0.239,
+            0.885,
+            0.636
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.121,0.269,0.435,0.602]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.528,0.239,0.885,0.636]}]",
+      "resizePercent": 69.1,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.691|opening_band_mismatch"
+    },
+    {
+      "runIndex": 5,
+      "graphHash": "35528fe6bf8692cc5f6984fcc1b3914a3f4a7d16b5fbed57dab401c6751cff9c",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.048,
+            0.254,
+            0.294,
+            0.641
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.491,
+            0.239,
+            0.941,
+            0.643
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.048,0.254,0.294,0.641]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.491,0.239,0.941,0.643]}]",
+      "resizePercent": 75.9,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.759|opening_band_mismatch"
+    },
+    {
+      "runIndex": 6,
+      "graphHash": "7c6b33c8e24f69b9f37429ca26140d953ea02346a37f8ae7bc455e927a541013",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0,
+            0.261,
+            0.31,
+            0.554
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.509,
+            0.242,
+            0.942,
+            0.592
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0,0.261,0.31,0.554]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.509,0.242,0.942,0.592]}]",
+      "resizePercent": 71.1,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.711|opening_band_mismatch"
+    },
+    {
+      "runIndex": 7,
+      "graphHash": "1b1a5f3c14bebd81146b78f739dc3601ea8cd6175c20927f2a012dfbccfea972",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.021,
+            0.195,
+            0.239,
+            0.453
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "bbox": [
+            0.26,
+            0.195,
+            0.964,
+            0.48
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.021,0.195,0.239,0.453]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"center_third\",\"bbox\":[0.26,0.195,0.964,0.48]}]",
+      "resizePercent": 78.2,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.782"
+    },
+    {
+      "runIndex": 8,
+      "graphHash": "1cc337a70fc6f9984e0d8ec0c4e839097aaad3b3512c8fedb650ce8526534489",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0,
+            0.271,
+            0.306,
+            0.548
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.551,
+            0.252,
+            0.883,
+            0.586
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0,0.271,0.306,0.548]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.551,0.252,0.883,0.586]}]",
+      "resizePercent": 60.5,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.605|opening_band_mismatch"
+    },
+    {
+      "runIndex": 9,
+      "graphHash": "2dae2a66a83c78d492e8cfb2764b8ebb0bdc8ade5a9599ec2cf69929452023c0",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0,
+            0.262,
+            0.322,
+            0.615
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.481,
+            0.272,
+            0.88,
+            0.633
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0,0.262,0.322,0.615]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.481,0.272,0.88,0.633]}]",
+      "resizePercent": 69.6,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.696|opening_band_mismatch"
+    },
+    {
+      "runIndex": 10,
+      "graphHash": "6a870e93500e407d976193e8c06afaea663928c69ceaca117b2928c3c9a82092",
+      "passCount": 2,
+      "baselineMethod": "graph_consensus",
+      "openingCount": 2,
+      "openingIds": [
+        "W2",
+        "W1"
+      ],
+      "openings": [
+        {
+          "id": "W1",
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "bbox": [
+            0.0208,
+            0.2656,
+            0.1927,
+            0.6016
+          ]
+        },
+        {
+          "id": "W2",
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "bbox": [
+            0.5,
+            0.2422,
+            0.9271,
+            0.6484
+          ]
+        }
+      ],
+      "layoutKey": "[{\"id\":\"W1\",\"wallIndex\":3,\"horizontalBand\":\"left_third\",\"bbox\":[0.0208,0.2656,0.1927,0.6016]},{\"id\":\"W2\",\"wallIndex\":0,\"horizontalBand\":\"right_third\",\"bbox\":[0.5,0.2422,0.9271,0.6484]}]",
+      "resizePercent": 74.8,
+      "issueType": "opening_occlusion",
+      "reason": "opening_resized|opening_size_reduction_ge_0.25:0.748|opening_band_mismatch"
+    }
+  ]
+}

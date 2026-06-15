@@ -1,0 +1,467 @@
+{
+  "timestamp": "2026-06-12T02:58:47.944Z",
+  "methodology": "Extracts geometric features (centroid, width, height, area, aspect ratio) from 10 extraction runs and computes variance using coefficient of variation (CV). Features are analyzed in both image and wall-relative coordinates.",
+  "baseline_image": "/workspaces/RealEnhance-v2/tmp/historical-window-shift-rerun/baseline.jpg",
+  "runs_analyzed": 10,
+  "opening_analysis": {
+    "W1": {
+      "image_coords": {
+        "bbox_x1": {
+          "min": 0,
+          "max": 0.121,
+          "mean": 0.04008,
+          "stddev": 0.037789649376515785,
+          "range": 0.121,
+          "cv": 0.9428555233661624
+        },
+        "bbox_y1": {
+          "min": 0.195,
+          "max": 0.271,
+          "mean": 0.25096,
+          "stddev": 0.02447068450207309,
+          "range": 0.07600000000000001,
+          "cv": 0.09750830611281913
+        },
+        "bbox_x2": {
+          "min": 0.181,
+          "max": 0.435,
+          "mean": 0.29317000000000004,
+          "stddev": 0.07100126829853112,
+          "range": 0.254,
+          "cv": 0.24218463109639837
+        },
+        "bbox_y2": {
+          "min": 0.453,
+          "max": 0.651,
+          "mean": 0.56856,
+          "stddev": 0.06386378003219038,
+          "range": 0.198,
+          "cv": 0.11232548901116925
+        },
+        "centroid_x": {
+          "min": 0.10675000000000001,
+          "max": 0.278,
+          "mean": 0.16662500000000002,
+          "stddev": 0.046582084807359155,
+          "range": 0.17125,
+          "cv": 0.2795623994440159
+        },
+        "centroid_y": {
+          "min": 0.324,
+          "max": 0.455,
+          "mean": 0.40976,
+          "stddev": 0.042148409222650375,
+          "range": 0.131,
+          "cv": 0.10286120954375823
+        },
+        "width": {
+          "min": 0.123,
+          "max": 0.322,
+          "mean": 0.25309,
+          "stddev": 0.06526034707232256,
+          "range": 0.199,
+          "cv": 0.25785430902968337
+        },
+        "height": {
+          "min": 0.256,
+          "max": 0.392,
+          "mean": 0.3176,
+          "stddev": 0.047421935852514495,
+          "range": 0.136,
+          "cv": 0.14931340003940333
+        },
+        "area": {
+          "min": 0.031488,
+          "max": 0.113666,
+          "mean": 0.08080524,
+          "stddev": 0.023676891020537303,
+          "range": 0.082178,
+          "cv": 0.2930118272099347
+        },
+        "aspect_ratio": {
+          "min": 0.48046875,
+          "max": 1.1046931407942238,
+          "mean": 0.808268623741238,
+          "stddev": 0.22724165107443375,
+          "range": 0.6242243907942238,
+          "cv": 0.2811461986766218
+        }
+      },
+      "wall_relative": {
+        "wall_center_x": {
+          "min": 0.30500000000000005,
+          "max": 0.7942857142857144,
+          "mean": 0.4760714285714286,
+          "stddev": 0.133091670878169,
+          "range": 0.4892857142857143,
+          "cv": 0.2795623994440159
+        },
+        "wall_width": {
+          "min": 0.3514285714285714,
+          "max": 0.92,
+          "mean": 0.7231142857142857,
+          "stddev": 0.1864581344923502,
+          "range": 0.5685714285714286,
+          "cv": 0.2578543090296834
+        },
+        "y_height": {
+          "min": 0.256,
+          "max": 0.392,
+          "mean": 0.3176,
+          "stddev": 0.047421935852514495,
+          "range": 0.136,
+          "cv": 0.14931340003940333
+        },
+        "wall_area": {
+          "min": 0.11245714285714288,
+          "max": 0.40595000000000003,
+          "mean": 0.2885901428571429,
+          "stddev": 0.08456032507334753,
+          "range": 0.29349285714285717,
+          "cv": 0.2930118272099347
+        }
+      },
+      "ranking": [
+        {
+          "name": "bbox_y1",
+          "cv": 0.09750830611281913,
+          "type": "image"
+        },
+        {
+          "name": "centroid_y",
+          "cv": 0.10286120954375823,
+          "type": "image"
+        },
+        {
+          "name": "bbox_y2",
+          "cv": 0.11232548901116925,
+          "type": "image"
+        },
+        {
+          "name": "height",
+          "cv": 0.14931340003940333,
+          "type": "image"
+        },
+        {
+          "name": "y_height",
+          "cv": 0.14931340003940333,
+          "type": "wall"
+        },
+        {
+          "name": "bbox_x2",
+          "cv": 0.24218463109639837,
+          "type": "image"
+        },
+        {
+          "name": "width",
+          "cv": 0.25785430902968337,
+          "type": "image"
+        },
+        {
+          "name": "wall_width",
+          "cv": 0.2578543090296834,
+          "type": "wall"
+        },
+        {
+          "name": "centroid_x",
+          "cv": 0.2795623994440159,
+          "type": "image"
+        },
+        {
+          "name": "wall_center_x",
+          "cv": 0.2795623994440159,
+          "type": "wall"
+        },
+        {
+          "name": "aspect_ratio",
+          "cv": 0.2811461986766218,
+          "type": "image"
+        },
+        {
+          "name": "area",
+          "cv": 0.2930118272099347,
+          "type": "image"
+        },
+        {
+          "name": "wall_area",
+          "cv": 0.2930118272099347,
+          "type": "wall"
+        },
+        {
+          "name": "bbox_x1",
+          "cv": 0.9428555233661624,
+          "type": "image"
+        }
+      ]
+    },
+    "W2": {
+      "image_coords": {
+        "bbox_x1": {
+          "min": 0.26,
+          "max": 0.551,
+          "mean": 0.4567,
+          "stddev": 0.09100554928134877,
+          "range": 0.29100000000000004,
+          "cv": 0.19926767961757996
+        },
+        "bbox_y1": {
+          "min": 0.195,
+          "max": 0.272,
+          "mean": 0.23752,
+          "stddev": 0.020499599996097486,
+          "range": 0.07700000000000001,
+          "cv": 0.08630683730253236
+        },
+        "bbox_x2": {
+          "min": 0.756,
+          "max": 0.964,
+          "mean": 0.8914099999999999,
+          "stddev": 0.05600315080421814,
+          "range": 0.20799999999999996,
+          "cv": 0.06282535623811505
+        },
+        "bbox_y2": {
+          "min": 0.48,
+          "max": 0.654,
+          "mean": 0.60694,
+          "stddev": 0.05240221751033062,
+          "range": 0.17400000000000004,
+          "cv": 0.08633838189990875
+        },
+        "centroid_x": {
+          "min": 0.531,
+          "max": 0.7255,
+          "mean": 0.6740550000000001,
+          "stddev": 0.05798031756553252,
+          "range": 0.1945,
+          "cv": 0.08601719083091515
+        },
+        "centroid_y": {
+          "min": 0.3375,
+          "max": 0.4525,
+          "mean": 0.42223,
+          "stddev": 0.03262109900049352,
+          "range": 0.11499999999999999,
+          "cv": 0.07725907443927131
+        },
+        "width": {
+          "min": 0.33199999999999996,
+          "max": 0.704,
+          "mean": 0.43470999999999993,
+          "stddev": 0.09690127398543323,
+          "range": 0.372,
+          "cv": 0.22291015616257562
+        },
+        "height": {
+          "min": 0.285,
+          "max": 0.43400000000000005,
+          "mean": 0.36942,
+          "stddev": 0.04556212901083532,
+          "range": 0.14900000000000008,
+          "cv": 0.12333422394790568
+        },
+        "area": {
+          "min": 0.11088799999999997,
+          "max": 0.20063999999999999,
+          "mean": 0.15878030199999998,
+          "stddev": 0.028469239502326653,
+          "range": 0.08975200000000001,
+          "cv": 0.17929956766505367
+        },
+        "aspect_ratio": {
+          "min": 0.8992443324937027,
+          "max": 2.4701754385964914,
+          "mean": 1.2136589422792612,
+          "stddev": 0.4303062644439619,
+          "range": 1.5709311061027886,
+          "cv": 0.35455287268418534
+        }
+      },
+      "wall_relative": {
+        "wall_center_x": {
+          "min": 0.5442857142857144,
+          "max": 0.8221428571428572,
+          "mean": 0.7486500000000001,
+          "stddev": 0.08282902509361789,
+          "range": 0.2778571428571428,
+          "cv": 0.11063784825167686
+        },
+        "wall_width": {
+          "min": 0.47428571428571425,
+          "max": 1.0057142857142858,
+          "mean": 0.6210142857142857,
+          "stddev": 0.13843039140776178,
+          "range": 0.5314285714285716,
+          "cv": 0.22291015616257562
+        },
+        "y_height": {
+          "min": 0.285,
+          "max": 0.43400000000000005,
+          "mean": 0.36942,
+          "stddev": 0.04556212901083532,
+          "range": 0.14900000000000008,
+          "cv": 0.12333422394790568
+        },
+        "wall_area": {
+          "min": 0.2880207792207791,
+          "max": 0.5211428571428571,
+          "mean": 0.4124163688311688,
+          "stddev": 0.07394607662941988,
+          "range": 0.233122077922078,
+          "cv": 0.17929956766505367
+        }
+      },
+      "ranking": [
+        {
+          "name": "bbox_x2",
+          "cv": 0.06282535623811505,
+          "type": "image"
+        },
+        {
+          "name": "centroid_y",
+          "cv": 0.07725907443927131,
+          "type": "image"
+        },
+        {
+          "name": "centroid_x",
+          "cv": 0.08601719083091515,
+          "type": "image"
+        },
+        {
+          "name": "bbox_y1",
+          "cv": 0.08630683730253236,
+          "type": "image"
+        },
+        {
+          "name": "bbox_y2",
+          "cv": 0.08633838189990875,
+          "type": "image"
+        },
+        {
+          "name": "wall_center_x",
+          "cv": 0.11063784825167686,
+          "type": "wall"
+        },
+        {
+          "name": "height",
+          "cv": 0.12333422394790568,
+          "type": "image"
+        },
+        {
+          "name": "y_height",
+          "cv": 0.12333422394790568,
+          "type": "wall"
+        },
+        {
+          "name": "area",
+          "cv": 0.17929956766505367,
+          "type": "image"
+        },
+        {
+          "name": "wall_area",
+          "cv": 0.17929956766505367,
+          "type": "wall"
+        },
+        {
+          "name": "bbox_x1",
+          "cv": 0.19926767961757996,
+          "type": "image"
+        },
+        {
+          "name": "width",
+          "cv": 0.22291015616257562,
+          "type": "image"
+        },
+        {
+          "name": "wall_width",
+          "cv": 0.22291015616257562,
+          "type": "wall"
+        },
+        {
+          "name": "aspect_ratio",
+          "cv": 0.35455287268418534,
+          "type": "image"
+        }
+      ]
+    }
+  },
+  "cross_opening_ranking": [
+    {
+      "feature": "centroid_y",
+      "avgRank": 2,
+      "scores": "2, 2"
+    },
+    {
+      "feature": "bbox_y1",
+      "avgRank": 2.5,
+      "scores": "1, 4"
+    },
+    {
+      "feature": "bbox_x2",
+      "avgRank": 3.5,
+      "scores": "6, 1"
+    },
+    {
+      "feature": "bbox_y2",
+      "avgRank": 4,
+      "scores": "3, 5"
+    },
+    {
+      "feature": "height",
+      "avgRank": 5.5,
+      "scores": "4, 7"
+    },
+    {
+      "feature": "centroid_x",
+      "avgRank": 6,
+      "scores": "9, 3"
+    },
+    {
+      "feature": "y_height",
+      "avgRank": 6.5,
+      "scores": "5, 8"
+    },
+    {
+      "feature": "wall_center_x",
+      "avgRank": 8,
+      "scores": "10, 6"
+    },
+    {
+      "feature": "width",
+      "avgRank": 9.5,
+      "scores": "7, 12"
+    },
+    {
+      "feature": "area",
+      "avgRank": 10.5,
+      "scores": "12, 9"
+    },
+    {
+      "feature": "wall_width",
+      "avgRank": 10.5,
+      "scores": "8, 13"
+    },
+    {
+      "feature": "wall_area",
+      "avgRank": 11.5,
+      "scores": "13, 10"
+    },
+    {
+      "feature": "aspect_ratio",
+      "avgRank": 12.5,
+      "scores": "11, 14"
+    },
+    {
+      "feature": "bbox_x1",
+      "avgRank": 12.5,
+      "scores": "14, 11"
+    }
+  ],
+  "insights": {
+    "most_stable_feature": "centroid_y",
+    "least_stable_feature": "bbox_x1",
+    "image_avg_cv": 0.27586232935299665,
+    "wall_relative_avg_cv": 0.24493548393075934,
+    "recommendation": "Use wall-relative coordinates"
+  }
+}

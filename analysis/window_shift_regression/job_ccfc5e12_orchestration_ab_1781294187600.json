@@ -1,0 +1,57 @@
+{
+  "pair": {
+    "baselinePath": "/workspaces/RealEnhance-v2/tmp/forensic_ccfc/baseline.jpg",
+    "candidatePath": "/workspaces/RealEnhance-v2/tmp/forensic_ccfc/candidate.webp",
+    "baselineJsonPath": "/workspaces/RealEnhance-v2/analysis/window_shift_regression/baseline_extract_current_head.json"
+  },
+  "opening": {
+    "status": "pass",
+    "reason": "opening_resized|opening_size_reduction_ge_0.25:0.307|opening_band_mismatch",
+    "issueType": "opening_occlusion",
+    "issueTier": "review",
+    "confidence": 1,
+    "advisorySignals": [
+      "opening_visibility_reduction:0.307",
+      "opening_resized_minor:0.307"
+    ],
+    "derivedSignals": [
+      "opening_visibility_reduction:0.307",
+      "opening_resized_minor:0.307",
+      "opening_occlusion"
+    ]
+  },
+  "noHandoff": {
+    "passed": true,
+    "hardFail": false,
+    "blockSource": null,
+    "score": 0.744,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "warnings": [
+      "dimension_normalized",
+      "edge_iou: Edge IoU (structure_only) too low: 0.164 < 0.45",
+      "fatal_opening_painted_over: FATAL: Opening painted over ROI=(342,42,27,93) edgeRatio=0.324 texRatio=0.218",
+      "No Tier 1 (structural) changes detected. All walls, window openings, room envelope, and camera viewpoint are preserved.",
+      "No Tier 2 (fixed features) changes detected. The ceiling light fixture is preserved. Window treatment type (curtains) is consistent for both windows.",
+      "Only Tier 3 (flexible) items such as furniture (bed, nightstand), decor (lamp, wall art, rug), and bedding have been added.",
+      "local_validators_advisory: stageAware, windows"
+    ],
+    "reasons": []
+  },
+  "withHandoff": {
+    "passed": true,
+    "hardFail": false,
+    "blockSource": null,
+    "score": 0.744,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "warnings": [
+      "dimension_normalized",
+      "edge_iou: Edge IoU (structure_only) too low: 0.164 < 0.45",
+      "fatal_opening_painted_over: FATAL: Opening painted over ROI=(342,42,27,93) edgeRatio=0.324 texRatio=0.218",
+      "style_only",
+      "local_validators_advisory: stageAware, windows"
+    ],
+    "reasons": []
+  }
+}

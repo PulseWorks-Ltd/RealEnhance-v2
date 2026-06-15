@@ -1,0 +1,198 @@
+[
+  {
+    "label": "old_extract",
+    "runIndex": 1,
+    "inputSignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.648",
+      "opening_resized_minor:0.648",
+      "opening_signature_mismatch",
+      "opening_relocated",
+      "envelope_confirmed_structural_change: A distinct horizontal line or groove on the right wall, clearly visible in the baseline image, is completely absent in the staged image. The wall surface in the staged image appears as a continuous flat plane where the line previously existed, indicating a structural modification such as filling an indentation or seam.",
+      "envelope_confirmed_structural_change",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "unified": {
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.792,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "modelUsed": "gemini-2.5-flash",
+      "profile": "SOFT",
+      "warnings": [
+        "style_only",
+        "local_validators_advisory: windows"
+      ],
+      "reasons": []
+    },
+    "geminiSemantic": {
+      "passed": true,
+      "score": 1,
+      "message": "Gemini warning: style_only",
+      "details": {
+        "category": "style_only",
+        "reasons": [],
+        "confidence": 1,
+        "mode": "block",
+        "consensusMode": false,
+        "derivedWarnings": 3,
+        "rawText": "```json\n{\n  \"finalDecision\": \"PASS\",\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"results\": [\n    {\n      \"question\": 1,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"Both window openings are present in the same size and position. Their frames and sills are partially visible around the new furniture, indicating occlusion rather than structural change. Minor curtain styling is a flexible change.\"\n    },\n    {\n      \"question\": 2,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The carpet flooring material is consistent across both images. A rug has been added, which is a flexible decor item placed on top of the existing floor, not a change to the flooring itself.\"\n    },\n    {\n      \"question\": 3,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The wall structure, ceiling, corners, and overall room geometry remain identical between the BEFORE and AFTER images. The ceiling light fixture is also preserved.\"\n    }\n  ],\n  \"structuralClaims\": [],\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 0\n}\n```",
+        "validator_results": {
+          "v1": "pass"
+        }
+      }
+    }
+  },
+  {
+    "label": "old_extract",
+    "runIndex": 2,
+    "inputSignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.648",
+      "opening_resized_minor:0.648",
+      "opening_signature_mismatch",
+      "opening_relocated",
+      "envelope_confirmed_structural_change: A distinct horizontal line or groove on the right wall, clearly visible in the baseline image, is completely absent in the staged image. The wall surface in the staged image appears as a continuous flat plane where the line previously existed, indicating a structural modification such as filling an indentation or seam.",
+      "envelope_confirmed_structural_change",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "unified": {
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.792,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "modelUsed": "gemini-2.5-flash",
+      "profile": "SOFT",
+      "warnings": [
+        "No structural (Tier 1) or fixed feature (Tier 2) changes detected. All observed changes are classified as flexible (Tier 3) furniture or decor additions/style adjustments.",
+        "local_validators_advisory: windows"
+      ],
+      "reasons": []
+    },
+    "geminiSemantic": {
+      "passed": true,
+      "score": 1,
+      "message": "Gemini warning: furniture_change",
+      "details": {
+        "category": "furniture_change",
+        "reasons": [
+          "No structural (Tier 1) or fixed feature (Tier 2) changes detected. All observed changes are classified as flexible (Tier 3) furniture or decor additions/style adjustments."
+        ],
+        "confidence": 1,
+        "mode": "block",
+        "consensusMode": false,
+        "derivedWarnings": 3,
+        "rawText": "```json\n{\n  \"finalDecision\": \"PASS\",\n  \"hardFail\": false,\n  \"category\": \"furniture_change\",\n  \"results\": [\n    {\n      \"question\": 1,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"Architectural window openings are structurally preserved. Changes in curtain styling or arrangement do not alter the opening geometry.\"\n    },\n    {\n      \"question\": 2,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The base flooring material (carpet) is unchanged. An area rug has been added, which is a flexible decor item.\"\n    },\n    {\n      \"question\": 3,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"Wall structure and room geometry, including corners, recesses, and wall planes, are identical. The camera viewpoint is consistent.\"\n    }\n  ],\n  \"structuralClaims\": [],\n  \"reasons\": [\n    \"No structural (Tier 1) or fixed feature (Tier 2) changes detected. All observed changes are classified as flexible (Tier 3) furniture or decor additions/style adjustments.\"\n  ],\n  \"confidence\": 1.0,\n  \"violationType\": null,\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 3\n}\n```",
+        "validator_results": {
+          "v1": "pass"
+        }
+      }
+    }
+  },
+  {
+    "label": "new_extract",
+    "runIndex": 1,
+    "inputSignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.364",
+      "opening_resized_minor:0.364",
+      "opening_signature_mismatch",
+      "opening_relocated",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "unified": {
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.792,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "modelUsed": "gemini-2.5-flash",
+      "profile": "SOFT",
+      "warnings": [
+        "Only flexible furniture and decor were added.",
+        "No changes to Tier 1 structural elements (walls, window openings, room envelope) were detected.",
+        "No changes to Tier 2 fixed features (ceiling light fixture, window treatment TYPE - curtains remained curtains) were detected.",
+        "local_validators_advisory: windows"
+      ],
+      "reasons": []
+    },
+    "geminiSemantic": {
+      "passed": true,
+      "score": 1,
+      "message": "Gemini warning: furniture_change",
+      "details": {
+        "category": "furniture_change",
+        "reasons": [
+          "Only flexible furniture and decor were added.",
+          "No changes to Tier 1 structural elements (walls, window openings, room envelope) were detected.",
+          "No changes to Tier 2 fixed features (ceiling light fixture, window treatment TYPE - curtains remained curtains) were detected."
+        ],
+        "confidence": 1,
+        "mode": "block",
+        "consensusMode": false,
+        "derivedWarnings": 2,
+        "rawText": "```json\n{\n  \"finalDecision\": \"PASS\",\n  \"hardFail\": false,\n  \"category\": \"furniture_change\",\n  \"results\": [\n    {\n      \"question\": 1,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"All windows are present and their structural frames, sizes, and positions are preserved. Partial occlusion by furniture is not a structural change.\"\n    },\n    {\n      \"question\": 2,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The wall structure and room geometry, including corners and wall planes, appear identical between BEFORE and AFTER.\"\n    }\n  ],\n  \"structuralClaims\": [],\n  \"reasons\": [\n    \"Only flexible furniture and decor were added.\",\n    \"No changes to Tier 1 structural elements (walls, window openings, room envelope) were detected.\",\n    \"No changes to Tier 2 fixed features (ceiling light fixture, window treatment TYPE - curtains remained curtains) were detected.\"\n  ],\n  \"confidence\": 1.0,\n  \"violationType\": \"layout_only\",\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 7\n}\n```",
+        "validator_results": {
+          "v1": "pass"
+        }
+      }
+    }
+  },
+  {
+    "label": "new_extract",
+    "runIndex": 2,
+    "inputSignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.364",
+      "opening_resized_minor:0.364",
+      "opening_signature_mismatch",
+      "opening_relocated",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "unified": {
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.792,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "modelUsed": "gemini-2.5-flash",
+      "profile": "SOFT",
+      "warnings": [
+        "No Tier 1 (structural) or Tier 2 (fixed features) violations were detected. All architectural openings, wall structures, room geometry, and fixed features (like the ceiling light and window treatment type) are preserved.",
+        "Only Tier 3 (flexible) changes, such as the addition of furniture, decor, and lamps, are present, which are allowed.",
+        "local_validators_advisory: windows"
+      ],
+      "reasons": []
+    },
+    "geminiSemantic": {
+      "passed": true,
+      "score": 1,
+      "message": "Gemini warning: style_only",
+      "details": {
+        "category": "style_only",
+        "reasons": [
+          "No Tier 1 (structural) or Tier 2 (fixed features) violations were detected. All architectural openings, wall structures, room geometry, and fixed features (like the ceiling light and window treatment type) are preserved.",
+          "Only Tier 3 (flexible) changes, such as the addition of furniture, decor, and lamps, are present, which are allowed."
+        ],
+        "confidence": 1,
+        "mode": "block",
+        "consensusMode": false,
+        "derivedWarnings": 2,
+        "rawText": "```json\n{\n  \"finalDecision\": \"PASS\",\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"results\": [\n    {\n      \"question\": 1,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The two window openings are present in the same locations with no changes to their size, shape, or position. The window treatment type (curtains) is also preserved.\"\n    },\n    {\n      \"question\": 2,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The wall structure, corners, room envelope, ceiling, and floor geometry remain unchanged.\"\n    }\n  ],\n  \"reasons\": [\n    \"No Tier 1 (structural) or Tier 2 (fixed features) violations were detected. All architectural openings, wall structures, room geometry, and fixed features (like the ceiling light and window treatment type) are preserved.\",\n    \"Only Tier 3 (flexible) changes, such as the addition of furniture, decor, and lamps, are present, which are allowed.\"\n  ],\n  \"confidence\": 1.0,\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 3\n}\n```",
+        "validator_results": {
+          "v1": "pass"
+        }
+      }
+    }
+  }
+]

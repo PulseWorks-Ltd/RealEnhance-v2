@@ -1,0 +1,357 @@
+=== DIRECT JOB LINES (line:number) ===
+12092:2026-06-10T22:38:38.896556711Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12098:2026-06-10T22:38:38.896695994Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12103:2026-06-10T22:38:38.896956502Z [inf]  [Memory] Job job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 started - Heap: 39.92 MB
+12105:2026-06-10T22:38:38.896971140Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12110:2026-06-10T22:38:38.897006098Z [inf]  ========== PROCESSING JOB job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 ==========
+12111:2026-06-10T22:38:38.897012838Z [inf]  [JOB_START] job=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 image=img_4ffd6659-0862-468a-9ac0-9742742a783a stagingStyle=standard_listing
+12113:2026-06-10T22:38:38.903775384Z [inf]  [retry] jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 attempt=1 stage=2 reason=manual_retry parentJobId=job_b9a952c0-e6fa-42f7-9e67-649dd66f37e0
+12117:2026-06-10T22:38:38.903803744Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12129:2026-06-10T22:38:38.903870262Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12135:2026-06-10T22:38:38.907547608Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12141:2026-06-10T22:38:38.907586181Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12147:2026-06-10T22:38:38.907624744Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12154:2026-06-10T22:38:38.912247391Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12162:2026-06-10T22:38:38.912308333Z [inf]  [worker] Downloaded Stage-1A base to: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12165:2026-06-10T22:38:38.912321985Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12170:2026-06-10T22:38:38.912343977Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12175:2026-06-10T22:38:38.919795844Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12189:2026-06-10T22:38:38.919880647Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12191:2026-06-10T22:38:38.919890197Z [inf]    stage1APath: '/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg',
+12193:2026-06-10T22:38:38.919904223Z [inf]    chosenBasePath: '/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg',
+12235:2026-06-10T22:38:39.804703585Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421'
+12237:2026-06-10T22:38:39.804717159Z [inf]  [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+12238:2026-06-10T22:38:39.804734693Z [inf]  [STAGE2_MODEL_ESCALATION] job_id=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+12240:2026-06-10T22:38:39.804748302Z [inf]  [MODEL][2] job=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 file=n/a stage=2 room=bedroom models=gemini-2.5-flash-image reason=stage2_initial_generation
+12266:2026-06-10T22:38:46.541894223Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12329:2026-06-10T22:38:48.419763201Z [inf]  [STAGE2_OUTPUT_PATH] job_id=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 attempt=1 path=/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12331:2026-06-10T22:38:48.419780069Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12338:2026-06-10T22:38:49.410219355Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12341:2026-06-10T22:38:49.410249062Z [inf]  [IMAGE_ATTEMPT_URL] stage=2 attempt=1 job_id=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 file=realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp signed_url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260610%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260610T223849Z&X-Amz-Expires=86400&X-Amz-Signature=550ba45dc88f757fe5e78d38c1531ac7d841645f66f58cc709400fc93943c102&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+12346:2026-06-10T22:38:49.411598856Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12352:2026-06-10T22:38:49.411651756Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12360:2026-06-10T22:38:49.411774200Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12370:2026-06-10T22:38:49.416363499Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12382:2026-06-10T22:38:49.416526395Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12393:2026-06-10T22:38:49.420311172Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","attempt":1,"stage":"image_materialization","durationMs":1}
+12398:2026-06-10T22:38:50.413467839Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12461:2026-06-10T22:38:59.860820960Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12467:2026-06-10T22:39:01.410440244Z [inf]  [unified-validator] Original: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12468:2026-06-10T22:39:01.410449109Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12469:2026-06-10T22:39:01.410457511Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12479:2026-06-10T22:39:01.410557980Z [inf]  [validator] start jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 stage=2
+12512:2026-06-10T22:39:02.539508621Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12513:2026-06-10T22:39:02.539515142Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12515:2026-06-10T22:39:02.539689359Z [inf]  [VALIDATOR][DIM_NORMALIZE] stage=stage2 job=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 baseline=2048x1365 candidate=1248x832 normalized=1248x832 method=crop severity=warn
+12568:2026-06-10T22:39:03.838419022Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12635:2026-06-10T22:39:04.602493360Z [inf]  [unified-validator] [Gemini] start stage=2 scene=interior mode=block risk=MEDIUM base=/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg cand=/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12672:2026-06-10T22:39:04.611206416Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12816:2026-06-10T22:39:08.614117021Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","attempt":1,"stage":"gemini_structural_extraction","durationMs":18563}
+12818:2026-06-10T22:39:08.614125888Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","mode":"single_pass","extractionCalls":1}
+12819:2026-06-10T22:39:08.614129855Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","imageHash":"6b3f5fc81883ce3046da44f6890bb243cd06c5514bbe7b6788c2f5581e318eee","baselineMode":"single_pass","extractionPass":1,"graphHash":"7e58f0fd89bcded6073bbe4e3f4cd39e79188b2820750973f6855b502ff5bc59","openingCount":2}
+12820:2026-06-10T22:39:08.614134140Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","mode":"single_pass","baselineExtractionDurationMs":18563,"totalGeminiCalls":1}
+12821:2026-06-10T22:39:08.617645484Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":18561,"jsonParseMs":1,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":18564}
+12849:2026-06-10T22:39:08.621569224Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","attempt":1,"stage":"image_materialization","durationMs":1}
+12877:2026-06-10T22:39:10.718636304Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12884:2026-06-10T22:39:10.721742441Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12900:2026-06-10T22:39:10.721858078Z [inf]  [validator] verdict=PASS score=0.778 jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+12922:2026-06-10T22:39:20.874619785Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12936:2026-06-10T22:39:22.741335281Z [inf]  [DELIVERY_EXPORT] stage=stage2-only source=1248x832 target=2048x1365 path=/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+12941:2026-06-10T22:39:22.741370179Z [inf]  [PUBLISH] File: realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+12953:2026-06-10T22:39:22.741425875Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+12968:2026-06-10T22:39:23.693743403Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+12975:2026-06-10T22:39:23.693790369Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12979:2026-06-10T22:39:23.693815967Z [inf]  [completion_guard] PASS jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+12981:2026-06-10T22:39:23.693828345Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+12986:2026-06-10T22:39:23.697264144Z [inf]      stage2: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg'
+12991:2026-06-10T22:39:23.697291793Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+13000:2026-06-10T22:39:23.697343994Z [inf]      stage2: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg'
+13005:2026-06-10T22:39:23.700127286Z [inf]  Image: job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13015:2026-06-10T22:39:23.700177299Z [inf]      URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260610%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260610T223849Z&X-Amz-Expires=86400&X-Amz-Signature=550ba45dc88f757fe5e78d38c1531ac7d841645f66f58cc709400fc93943c102&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+13021:2026-06-10T22:39:23.700206484Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+13033:2026-06-10T22:39:23.702246065Z [inf]  [BILLING] Finalized reservation for stage2-only retry: job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13034:2026-06-10T22:39:23.702251059Z [inf]  [BILLING] Skipping charge finalization for non-billable job type or free manual retry: job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13035:2026-06-10T22:39:24.725193916Z [inf]  [PUBLISH] Thumbnail derivative published key=realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery__thumb_640x480.webp size=640x480 quality=84
+13036:2026-06-10T22:39:24.725200156Z [inf]  [worker] ✅ Stage-2-only retry complete: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+13038:2026-06-10T22:39:24.725212808Z [inf]    jobId: 'job_ccfc5e12-399c-479c-adf7-a2aa5db2d421',
+13045:2026-06-10T22:39:24.725257358Z [inf]        url: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg',
+13046:2026-06-10T22:39:24.725262897Z [inf]        signedUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260610%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260610T223849Z&X-Amz-Expires=86400&X-Amz-Signature=550ba45dc88f757fe5e78d38c1531ac7d841645f66f58cc709400fc93943c102&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject',
+13047:2026-06-10T22:39:24.725269564Z [inf]        imageKey: 'debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp',
+13055:2026-06-10T22:39:24.729061697Z [inf]        url: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg'
+13070:2026-06-10T22:39:24.729160970Z [inf]  JOB job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13086:2026-06-10T22:39:24.731669672Z [inf]  candidate=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260610%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260610T223849Z&X-Amz-Expires=86400&X-Amz-Signature=550ba45dc88f757fe5e78d38c1531ac7d841645f66f58cc709400fc93943c102&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+13087:2026-06-10T22:39:24.731674792Z [inf]  output=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260610%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260610T223849Z&X-Amz-Expires=86400&X-Amz-Signature=550ba45dc88f757fe5e78d38c1531ac7d841645f66f58cc709400fc93943c102&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+13088:2026-06-10T22:39:24.731679024Z [inf]  artifact_urls=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_ccfc5e12-399c-479c-adf7-a2aa5db2d421/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260610%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260610T223849Z&X-Amz-Expires=86400&X-Amz-Signature=550ba45dc88f757fe5e78d38c1531ac7d841645f66f58cc709400fc93943c102&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject,https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+13093:2026-06-10T22:39:24.734324080Z [inf]  output=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781131162178-realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2-stage2-only-delivery.jpg
+13094:2026-06-10T22:39:24.734329883Z [inf]  [Cleanup] Deleted 3 temp files for job job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 (1 skipped: recent)
+13095:2026-06-10T22:39:24.734336690Z [inf]  [enhanced-images] Recorded: RE-37SSHY for job job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13096:2026-06-10T22:39:24.734342265Z [inf]  [worker] completed job job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13247:2026-06-10T22:39:44.963275923Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","attempt":1,"stage":"gemini_structural_extraction","durationMs":33580}
+13249:2026-06-10T22:39:44.963289227Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","mode":"single_pass","extractionCalls":1}
+13250:2026-06-10T22:39:44.963296226Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","imageHash":"23d43036fbe7e30b62d9a59b2aab550b2fd1ba69681b60c3d69a9fbbbd334b46","baselineMode":"single_pass","extractionPass":1,"graphHash":"c69d629e0032424c0c1d88c6e532fcc6c1627983b0c7761feebd185097428c12","openingCount":2}
+13251:2026-06-10T22:39:44.963303395Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","mode":"single_pass","baselineExtractionDurationMs":33581,"totalGeminiCalls":1}
+13252:2026-06-10T22:39:44.963314226Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":33577,"jsonParseMs":1,"normalizationMs":1,"graphBuildMs":1,"persistenceMs":0,"totalMs":33581}
+13268:2026-06-10T22:39:46.057379253Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_ccfc5e12-399c-479c-adf7-a2aa5db2d421","imageId":"img_4ffd6659-0862-468a-9ac0-9742742a783a","attempt":1,"reconciliationHash":"ed5a77d2d16b528c23f956967a717e5f1c135993f742dc0f2bae7f304c4eb8b2","baselineOpeningCount":2,"detectedOpeningCount":2,"matchedCount":2,"idMatchCount":2,"graphMatchCount":0,"unmatchedBaselineIds":[],"unmatchedDetectedIds":[]}
+
+=== KEY LINES IN JOB REGION 12000-13150 ===
+12002:2026-06-10T22:38:37.172148690Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12003:2026-06-10T22:38:37.172154665Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12005:2026-06-10T22:38:37.172166708Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12006:2026-06-10T22:38:37.172172537Z [inf]  [validator] start jobId=job_1b06a380-9832-4bcb-9624-da9906170c6e stage=2
+12082:2026-06-10T22:38:38.753734832Z [inf]  [SPECIALIST_VALIDATION_COMPLETE] {
+12209:2026-06-10T22:38:39.017679977Z [inf]  [STAGE2_ADVISORY_INJECTION] {
+12213:2026-06-10T22:38:39.017697783Z [inf]    sourceSpecialistSignals: [],
+12218:2026-06-10T22:38:39.017724492Z [inf]  [unified-validator] [Gemini] start stage=2 scene=interior mode=block risk=MEDIUM base=/tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg cand=/tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12220:2026-06-10T22:38:39.018702562Z [inf]  [STAGE2_ADVISORY_INJECTION] {
+12226:2026-06-10T22:38:39.018747681Z [inf]    promptAdvisorySection: '',
+12227:2026-06-10T22:38:39.018754447Z [inf]    promptSemanticContextSection: ''
+12253:2026-06-10T22:38:40.004653990Z [inf]  [SPECIALIST_VALIDATION_COMPLETE] {
+12322:2026-06-10T22:38:47.720744640Z [inf]  [validator] verdict=PASS score=0.796 jobId=job_1b06a380-9832-4bcb-9624-da9906170c6e
+12356:2026-06-10T22:38:49.411734785Z [inf]    validator: 'opening',
+12460:2026-06-10T22:38:59.860813545Z [inf]  [SPECIALIST_VALIDATION_COMPLETE] {
+12475:2026-06-10T22:39:01.410536573Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12476:2026-06-10T22:39:01.410541945Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12478:2026-06-10T22:39:01.410553067Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12479:2026-06-10T22:39:01.410557980Z [inf]  [validator] start jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 stage=2
+12567:2026-06-10T22:39:03.838411644Z [inf]  [SPECIALIST_VALIDATION_COMPLETE] {
+12617:2026-06-10T22:39:04.602309312Z [inf]  [STAGE2_ADVISORY_INJECTION] {
+12626:2026-06-10T22:39:04.602411679Z [inf]  [STAGE2_ADVISORY_INJECTION] {
+12630:2026-06-10T22:39:04.602454250Z [inf]    sourceSpecialistSignals: [],
+12635:2026-06-10T22:39:04.602493360Z [inf]  [unified-validator] [Gemini] start stage=2 scene=interior mode=block risk=MEDIUM base=/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg cand=/tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12644:2026-06-10T22:39:04.607710111Z [inf]    promptAdvisorySection: '',
+12646:2026-06-10T22:39:04.607716932Z [inf]    promptSemanticContextSection: ''
+12671:2026-06-10T22:39:04.611200027Z [inf]  [SPECIALIST_VALIDATION_COMPLETE] {
+12900:2026-06-10T22:39:10.721858078Z [inf]  [validator] verdict=PASS score=0.778 jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421
+13109:2026-06-10T22:39:25.429404376Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_1b06a380-9832-4bcb-9624-da9906170c6e","imageId":"img_0ba7d4c1-0c3e-4fa2-a38c-80046ae567c4","attempt":1,"reconciliationHash":"04bef8093126aca950f06f23689a06c11012a966f9d210141c7c35a275b89a1e","baselineOpeningCount":2,"detectedOpeningCount":2,"matchedCount":2,"idMatchCount":2,"graphMatchCount":0,"unmatchedBaselineIds":[],"unmatchedDetectedIds":[]}
+13110:2026-06-10T22:39:25.429410844Z [inf]  [OPENING_VALIDATION] baseline_id=W2 status=ALTERED reason=wall_index_extraction_drift|window_sill_shift_gt_0.10
+13111:2026-06-10T22:39:25.431089103Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=wall_index_extraction_drift|window_sill_shift_gt_0.10
+
+=== CONTEXT AROUND SPECIALIST OPENING/UNIFIED START IN REGION ===
+--- window 11990-12026 anchor=12002 ---
+11990:2026-06-10T22:38:37.170563287Z [inf]  }
+11991:2026-06-10T22:38:37.170568438Z [inf]  
+11992:2026-06-10T22:38:37.170574019Z [inf]  
+11993:2026-06-10T22:38:37.172083357Z [inf]    jobId: 'job_1b06a380-9832-4bcb-9624-da9906170c6e',
+11994:2026-06-10T22:38:37.172091806Z [inf]    imageId: 'img_0ba7d4c1-0c3e-4fa2-a38c-80046ae567c4',
+11995:2026-06-10T22:38:37.172098142Z [inf]    attempt: 1,
+11996:2026-06-10T22:38:37.172108692Z [inf]    source: 'stage2_only_retry',
+11997:2026-06-10T22:38:37.172114628Z [inf]    validator: 'floor',
+11998:2026-06-10T22:38:37.172120160Z [inf]    startTimestamp: 1781131108225,
+11999:2026-06-10T22:38:37.172126079Z [inf]    endTimestamp: 1781131117167,
+12000:2026-06-10T22:38:37.172134922Z [inf]    durationMs: 8942
+12001:2026-06-10T22:38:37.172141820Z [inf]  }
+12002:2026-06-10T22:38:37.172148690Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12003:2026-06-10T22:38:37.172154665Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12004:2026-06-10T22:38:37.172160971Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+12005:2026-06-10T22:38:37.172166708Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12006:2026-06-10T22:38:37.172172537Z [inf]  [validator] start jobId=job_1b06a380-9832-4bcb-9624-da9906170c6e stage=2
+12007:2026-06-10T22:38:37.172182682Z [inf]  [unified-validator] Stage: 2
+12008:2026-06-10T22:38:37.172189514Z [inf]  [unified-validator] Scene: interior
+12009:2026-06-10T22:38:37.172195970Z [inf]  [unified-validator] Staging Style: nz_standard
+12010:2026-06-10T22:38:37.172201991Z [inf]  [unified-validator] Modes: local=log gemini=block
+12011:2026-06-10T22:38:37.172207705Z [inf]  [unified-validator] Local validator tier: core
+12012:2026-06-10T22:38:37.172212892Z [inf]  [unified-validator] Stage-Aware: ENABLED
+12013:2026-06-10T22:38:37.172217762Z [inf]  [unified-validator] Original: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12014:2026-06-10T22:38:37.173894147Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12015:2026-06-10T22:38:37.173902970Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12016:2026-06-10T22:38:37.173908606Z [inf]  [perceptual-diff] skipped (tier=core)
+12017:2026-06-10T22:38:37.173914665Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+12018:2026-06-10T22:38:37.173920397Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+12019:2026-06-10T22:38:37.173926780Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12020:2026-06-10T22:38:37.173932322Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12021:2026-06-10T22:38:37.173937674Z [inf]  [stageAware] Mode: block
+12022:2026-06-10T22:38:37.378041086Z [inf]  [VALIDATOR][DIM_NORMALIZE] stage=stage2 job=job_1b06a380-9832-4bcb-9624-da9906170c6e baseline=2048x1365 candidate=1248x832 normalized=1248x832 method=crop severity=warn
+12023:2026-06-10T22:38:37.692759139Z [inf]  [stageAware] Mask A: 125604 pixels (12.10%)
+12024:2026-06-10T22:38:37.692769627Z [inf]  [stageAware] Mask B: 105226 pixels (10.13%)
+12025:2026-06-10T22:38:37.737746351Z [inf]  [stageAware] Structural IoU (masked): 0.852 (inter=106979, union=125537)
+12026:2026-06-10T22:38:37.999060058Z [inf]  [stageAware] Edge IoU (structure_only): 0.854
+--- window 11991-12027 anchor=12003 ---
+11991:2026-06-10T22:38:37.170568438Z [inf]  
+11992:2026-06-10T22:38:37.170574019Z [inf]  
+11993:2026-06-10T22:38:37.172083357Z [inf]    jobId: 'job_1b06a380-9832-4bcb-9624-da9906170c6e',
+11994:2026-06-10T22:38:37.172091806Z [inf]    imageId: 'img_0ba7d4c1-0c3e-4fa2-a38c-80046ae567c4',
+11995:2026-06-10T22:38:37.172098142Z [inf]    attempt: 1,
+11996:2026-06-10T22:38:37.172108692Z [inf]    source: 'stage2_only_retry',
+11997:2026-06-10T22:38:37.172114628Z [inf]    validator: 'floor',
+11998:2026-06-10T22:38:37.172120160Z [inf]    startTimestamp: 1781131108225,
+11999:2026-06-10T22:38:37.172126079Z [inf]    endTimestamp: 1781131117167,
+12000:2026-06-10T22:38:37.172134922Z [inf]    durationMs: 8942
+12001:2026-06-10T22:38:37.172141820Z [inf]  }
+12002:2026-06-10T22:38:37.172148690Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12003:2026-06-10T22:38:37.172154665Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12004:2026-06-10T22:38:37.172160971Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+12005:2026-06-10T22:38:37.172166708Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12006:2026-06-10T22:38:37.172172537Z [inf]  [validator] start jobId=job_1b06a380-9832-4bcb-9624-da9906170c6e stage=2
+12007:2026-06-10T22:38:37.172182682Z [inf]  [unified-validator] Stage: 2
+12008:2026-06-10T22:38:37.172189514Z [inf]  [unified-validator] Scene: interior
+12009:2026-06-10T22:38:37.172195970Z [inf]  [unified-validator] Staging Style: nz_standard
+12010:2026-06-10T22:38:37.172201991Z [inf]  [unified-validator] Modes: local=log gemini=block
+12011:2026-06-10T22:38:37.172207705Z [inf]  [unified-validator] Local validator tier: core
+12012:2026-06-10T22:38:37.172212892Z [inf]  [unified-validator] Stage-Aware: ENABLED
+12013:2026-06-10T22:38:37.172217762Z [inf]  [unified-validator] Original: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12014:2026-06-10T22:38:37.173894147Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12015:2026-06-10T22:38:37.173902970Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12016:2026-06-10T22:38:37.173908606Z [inf]  [perceptual-diff] skipped (tier=core)
+12017:2026-06-10T22:38:37.173914665Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+12018:2026-06-10T22:38:37.173920397Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+12019:2026-06-10T22:38:37.173926780Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12020:2026-06-10T22:38:37.173932322Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12021:2026-06-10T22:38:37.173937674Z [inf]  [stageAware] Mode: block
+12022:2026-06-10T22:38:37.378041086Z [inf]  [VALIDATOR][DIM_NORMALIZE] stage=stage2 job=job_1b06a380-9832-4bcb-9624-da9906170c6e baseline=2048x1365 candidate=1248x832 normalized=1248x832 method=crop severity=warn
+12023:2026-06-10T22:38:37.692759139Z [inf]  [stageAware] Mask A: 125604 pixels (12.10%)
+12024:2026-06-10T22:38:37.692769627Z [inf]  [stageAware] Mask B: 105226 pixels (10.13%)
+12025:2026-06-10T22:38:37.737746351Z [inf]  [stageAware] Structural IoU (masked): 0.852 (inter=106979, union=125537)
+12026:2026-06-10T22:38:37.999060058Z [inf]  [stageAware] Edge IoU (structure_only): 0.854
+12027:2026-06-10T22:38:37.999065449Z [inf]  [paintOver] ROI=(188,70,101,198) edgeRatio=0.638 texRatio=0.457 baseEdge=0.4109 candEdge=0.2624 baseTex=3102.16 candTex=1418.26
+--- window 11993-12029 anchor=12005 ---
+11993:2026-06-10T22:38:37.172083357Z [inf]    jobId: 'job_1b06a380-9832-4bcb-9624-da9906170c6e',
+11994:2026-06-10T22:38:37.172091806Z [inf]    imageId: 'img_0ba7d4c1-0c3e-4fa2-a38c-80046ae567c4',
+11995:2026-06-10T22:38:37.172098142Z [inf]    attempt: 1,
+11996:2026-06-10T22:38:37.172108692Z [inf]    source: 'stage2_only_retry',
+11997:2026-06-10T22:38:37.172114628Z [inf]    validator: 'floor',
+11998:2026-06-10T22:38:37.172120160Z [inf]    startTimestamp: 1781131108225,
+11999:2026-06-10T22:38:37.172126079Z [inf]    endTimestamp: 1781131117167,
+12000:2026-06-10T22:38:37.172134922Z [inf]    durationMs: 8942
+12001:2026-06-10T22:38:37.172141820Z [inf]  }
+12002:2026-06-10T22:38:37.172148690Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12003:2026-06-10T22:38:37.172154665Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12004:2026-06-10T22:38:37.172160971Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+12005:2026-06-10T22:38:37.172166708Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12006:2026-06-10T22:38:37.172172537Z [inf]  [validator] start jobId=job_1b06a380-9832-4bcb-9624-da9906170c6e stage=2
+12007:2026-06-10T22:38:37.172182682Z [inf]  [unified-validator] Stage: 2
+12008:2026-06-10T22:38:37.172189514Z [inf]  [unified-validator] Scene: interior
+12009:2026-06-10T22:38:37.172195970Z [inf]  [unified-validator] Staging Style: nz_standard
+12010:2026-06-10T22:38:37.172201991Z [inf]  [unified-validator] Modes: local=log gemini=block
+12011:2026-06-10T22:38:37.172207705Z [inf]  [unified-validator] Local validator tier: core
+12012:2026-06-10T22:38:37.172212892Z [inf]  [unified-validator] Stage-Aware: ENABLED
+12013:2026-06-10T22:38:37.172217762Z [inf]  [unified-validator] Original: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12014:2026-06-10T22:38:37.173894147Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12015:2026-06-10T22:38:37.173902970Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12016:2026-06-10T22:38:37.173908606Z [inf]  [perceptual-diff] skipped (tier=core)
+12017:2026-06-10T22:38:37.173914665Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+12018:2026-06-10T22:38:37.173920397Z [inf]  [stageAware] === Stage-Aware Validation (stage2) ===
+12019:2026-06-10T22:38:37.173926780Z [inf]  [stageAware] Baseline: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6.jpg
+12020:2026-06-10T22:38:37.173932322Z [inf]  [stageAware] Candidate: /tmp/realenhance-job_1b06a380-9832-4bcb-9624-da9906170c6e-stage1A-1781131093738-qcyhochpu6-2.webp
+12021:2026-06-10T22:38:37.173937674Z [inf]  [stageAware] Mode: block
+12022:2026-06-10T22:38:37.378041086Z [inf]  [VALIDATOR][DIM_NORMALIZE] stage=stage2 job=job_1b06a380-9832-4bcb-9624-da9906170c6e baseline=2048x1365 candidate=1248x832 normalized=1248x832 method=crop severity=warn
+12023:2026-06-10T22:38:37.692759139Z [inf]  [stageAware] Mask A: 125604 pixels (12.10%)
+12024:2026-06-10T22:38:37.692769627Z [inf]  [stageAware] Mask B: 105226 pixels (10.13%)
+12025:2026-06-10T22:38:37.737746351Z [inf]  [stageAware] Structural IoU (masked): 0.852 (inter=106979, union=125537)
+12026:2026-06-10T22:38:37.999060058Z [inf]  [stageAware] Edge IoU (structure_only): 0.854
+12027:2026-06-10T22:38:37.999065449Z [inf]  [paintOver] ROI=(188,70,101,198) edgeRatio=0.638 texRatio=0.457 baseEdge=0.4109 candEdge=0.2624 baseTex=3102.16 candTex=1418.26
+12028:2026-06-10T22:38:37.999070429Z [inf]  [paintOver] ROI=(167,90,51,101) edgeRatio=1.746 texRatio=7.231 baseEdge=0.1103 candEdge=0.1926 baseTex=100.70 candTex=728.15
+12029:2026-06-10T22:38:37.999075402Z [inf]  [stageAware] Triggers: 0 (gate: 2, hasFatal: false)
+--- window 12463-12499 anchor=12475 ---
+12463:2026-06-10T22:39:01.410384419Z [inf]  [unified-validator] Staging Style: nz_standard
+12464:2026-06-10T22:39:01.410412032Z [inf]  [unified-validator] Modes: local=log gemini=block
+12465:2026-06-10T22:39:01.410420573Z [inf]  [unified-validator] Local validator tier: core
+12466:2026-06-10T22:39:01.410430654Z [inf]  [unified-validator] Stage-Aware: ENABLED
+12467:2026-06-10T22:39:01.410440244Z [inf]  [unified-validator] Original: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12468:2026-06-10T22:39:01.410449109Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12469:2026-06-10T22:39:01.410457511Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12470:2026-06-10T22:39:01.410498482Z [inf]    validator: 'fixture',
+12471:2026-06-10T22:39:01.410503785Z [inf]    startTimestamp: 1781131129341,
+12472:2026-06-10T22:39:01.410509958Z [inf]    endTimestamp: 1781131139322,
+12473:2026-06-10T22:39:01.410525484Z [inf]    durationMs: 9981
+12474:2026-06-10T22:39:01.410530219Z [inf]  }
+12475:2026-06-10T22:39:01.410536573Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12476:2026-06-10T22:39:01.410541945Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12477:2026-06-10T22:39:01.410547567Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+12478:2026-06-10T22:39:01.410553067Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12479:2026-06-10T22:39:01.410557980Z [inf]  [validator] start jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 stage=2
+12480:2026-06-10T22:39:01.410562914Z [inf]  [unified-validator] Stage: 2
+12481:2026-06-10T22:39:01.410567192Z [inf]  [unified-validator] Scene: interior
+12482:2026-06-10T22:39:01.748959991Z [inf]  
+12483:2026-06-10T22:39:01.748967677Z [inf]  
+12484:2026-06-10T22:39:01.748973300Z [inf]  
+12485:2026-06-10T22:39:01.748978332Z [inf]  
+12486:2026-06-10T22:39:01.748983002Z [inf]  [COMPLIANCE_RESULT] { ok: true, confidence: 0, reasonsCount: 0 }
+12487:2026-06-10T22:39:01.748989229Z [inf]  [worker] compliance check skipped (stage2-only): Cannot access 'logValidatorBlockEnd' before initialization
+12488:2026-06-10T22:39:01.748994051Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only secondary semantic/masked validators skipped {
+12489:2026-06-10T22:39:01.748998691Z [inf]    jobId: 'job_1b06a380-9832-4bcb-9624-da9906170c6e',
+12490:2026-06-10T22:39:01.749003074Z [inf]    tier: 'core',
+12491:2026-06-10T22:39:01.749008114Z [inf]    stage: '2',
+12492:2026-06-10T22:39:01.749012816Z [inf]    path: 'stage2_only'
+12493:2026-06-10T22:39:01.749018524Z [inf]  }
+12494:2026-06-10T22:39:01.749025094Z [inf]  [DELIVERY_EXPORT_MODE] {
+12495:2026-06-10T22:39:01.749031535Z [inf]    stageLabel: 'stage2-only',
+12496:2026-06-10T22:39:01.749037540Z [inf]    enhancementsApplied: false,
+12497:2026-06-10T22:39:01.749044102Z [inf]    isStage2: true,
+12498:2026-06-10T22:39:01.749051196Z [inf]    stage2PolishApplied: true,
+12499:2026-06-10T22:39:01.749809609Z [inf]    resized: true
+--- window 12464-12500 anchor=12476 ---
+12464:2026-06-10T22:39:01.410412032Z [inf]  [unified-validator] Modes: local=log gemini=block
+12465:2026-06-10T22:39:01.410420573Z [inf]  [unified-validator] Local validator tier: core
+12466:2026-06-10T22:39:01.410430654Z [inf]  [unified-validator] Stage-Aware: ENABLED
+12467:2026-06-10T22:39:01.410440244Z [inf]  [unified-validator] Original: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12468:2026-06-10T22:39:01.410449109Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12469:2026-06-10T22:39:01.410457511Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12470:2026-06-10T22:39:01.410498482Z [inf]    validator: 'fixture',
+12471:2026-06-10T22:39:01.410503785Z [inf]    startTimestamp: 1781131129341,
+12472:2026-06-10T22:39:01.410509958Z [inf]    endTimestamp: 1781131139322,
+12473:2026-06-10T22:39:01.410525484Z [inf]    durationMs: 9981
+12474:2026-06-10T22:39:01.410530219Z [inf]  }
+12475:2026-06-10T22:39:01.410536573Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12476:2026-06-10T22:39:01.410541945Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12477:2026-06-10T22:39:01.410547567Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+12478:2026-06-10T22:39:01.410553067Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12479:2026-06-10T22:39:01.410557980Z [inf]  [validator] start jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 stage=2
+12480:2026-06-10T22:39:01.410562914Z [inf]  [unified-validator] Stage: 2
+12481:2026-06-10T22:39:01.410567192Z [inf]  [unified-validator] Scene: interior
+12482:2026-06-10T22:39:01.748959991Z [inf]  
+12483:2026-06-10T22:39:01.748967677Z [inf]  
+12484:2026-06-10T22:39:01.748973300Z [inf]  
+12485:2026-06-10T22:39:01.748978332Z [inf]  
+12486:2026-06-10T22:39:01.748983002Z [inf]  [COMPLIANCE_RESULT] { ok: true, confidence: 0, reasonsCount: 0 }
+12487:2026-06-10T22:39:01.748989229Z [inf]  [worker] compliance check skipped (stage2-only): Cannot access 'logValidatorBlockEnd' before initialization
+12488:2026-06-10T22:39:01.748994051Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only secondary semantic/masked validators skipped {
+12489:2026-06-10T22:39:01.748998691Z [inf]    jobId: 'job_1b06a380-9832-4bcb-9624-da9906170c6e',
+12490:2026-06-10T22:39:01.749003074Z [inf]    tier: 'core',
+12491:2026-06-10T22:39:01.749008114Z [inf]    stage: '2',
+12492:2026-06-10T22:39:01.749012816Z [inf]    path: 'stage2_only'
+12493:2026-06-10T22:39:01.749018524Z [inf]  }
+12494:2026-06-10T22:39:01.749025094Z [inf]  [DELIVERY_EXPORT_MODE] {
+12495:2026-06-10T22:39:01.749031535Z [inf]    stageLabel: 'stage2-only',
+12496:2026-06-10T22:39:01.749037540Z [inf]    enhancementsApplied: false,
+12497:2026-06-10T22:39:01.749044102Z [inf]    isStage2: true,
+12498:2026-06-10T22:39:01.749051196Z [inf]    stage2PolishApplied: true,
+12499:2026-06-10T22:39:01.749809609Z [inf]    resized: true
+12500:2026-06-10T22:39:01.749814830Z [inf]  }
+--- window 12466-12502 anchor=12478 ---
+12466:2026-06-10T22:39:01.410430654Z [inf]  [unified-validator] Stage-Aware: ENABLED
+12467:2026-06-10T22:39:01.410440244Z [inf]  [unified-validator] Original: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12468:2026-06-10T22:39:01.410449109Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc-2.webp
+12469:2026-06-10T22:39:01.410457511Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_ccfc5e12-399c-479c-adf7-a2aa5db2d421-stage1A-1781131115860-q4zv3728wmc.jpg
+12470:2026-06-10T22:39:01.410498482Z [inf]    validator: 'fixture',
+12471:2026-06-10T22:39:01.410503785Z [inf]    startTimestamp: 1781131129341,
+12472:2026-06-10T22:39:01.410509958Z [inf]    endTimestamp: 1781131139322,
+12473:2026-06-10T22:39:01.410525484Z [inf]    durationMs: 9981
+12474:2026-06-10T22:39:01.410530219Z [inf]  }
+12475:2026-06-10T22:39:01.410536573Z [inf]  [worker] Specialist validation error (stage2-only, non-fatal): Cannot access 'logValidatorBlockEnd' before initialization
+12476:2026-06-10T22:39:01.410541945Z [inf]  [worker] ═══════════ Running Unified Validation (stage2-only retry) mode=enforce ═══════════
+12477:2026-06-10T22:39:01.410547567Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+12478:2026-06-10T22:39:01.410553067Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+12479:2026-06-10T22:39:01.410557980Z [inf]  [validator] start jobId=job_ccfc5e12-399c-479c-adf7-a2aa5db2d421 stage=2
+12480:2026-06-10T22:39:01.410562914Z [inf]  [unified-validator] Stage: 2
+12481:2026-06-10T22:39:01.410567192Z [inf]  [unified-validator] Scene: interior
+12482:2026-06-10T22:39:01.748959991Z [inf]  
+12483:2026-06-10T22:39:01.748967677Z [inf]  
+12484:2026-06-10T22:39:01.748973300Z [inf]  
+12485:2026-06-10T22:39:01.748978332Z [inf]  
+12486:2026-06-10T22:39:01.748983002Z [inf]  [COMPLIANCE_RESULT] { ok: true, confidence: 0, reasonsCount: 0 }
+12487:2026-06-10T22:39:01.748989229Z [inf]  [worker] compliance check skipped (stage2-only): Cannot access 'logValidatorBlockEnd' before initialization
+12488:2026-06-10T22:39:01.748994051Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only secondary semantic/masked validators skipped {
+12489:2026-06-10T22:39:01.748998691Z [inf]    jobId: 'job_1b06a380-9832-4bcb-9624-da9906170c6e',
+12490:2026-06-10T22:39:01.749003074Z [inf]    tier: 'core',
+12491:2026-06-10T22:39:01.749008114Z [inf]    stage: '2',
+12492:2026-06-10T22:39:01.749012816Z [inf]    path: 'stage2_only'
+12493:2026-06-10T22:39:01.749018524Z [inf]  }
+12494:2026-06-10T22:39:01.749025094Z [inf]  [DELIVERY_EXPORT_MODE] {
+12495:2026-06-10T22:39:01.749031535Z [inf]    stageLabel: 'stage2-only',
+12496:2026-06-10T22:39:01.749037540Z [inf]    enhancementsApplied: false,
+12497:2026-06-10T22:39:01.749044102Z [inf]    isStage2: true,
+12498:2026-06-10T22:39:01.749051196Z [inf]    stage2PolishApplied: true,
+12499:2026-06-10T22:39:01.749809609Z [inf]    resized: true
+12500:2026-06-10T22:39:01.749814830Z [inf]  }
+12501:2026-06-10T22:39:02.439283823Z [inf]  [Stage2 Polish] {
+12502:2026-06-10T22:39:02.439293059Z [inf]    luminanceMean: 184.68,

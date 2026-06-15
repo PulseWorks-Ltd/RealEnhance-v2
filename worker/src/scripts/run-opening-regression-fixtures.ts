@@ -311,6 +311,11 @@ async function main(): Promise<void> {
         reason: result.reason,
         decision: result.decision,
         advisorySignals: result.advisorySignals,
+        observabilityEvidence: result.observabilityEvidence
+          ? {
+              summary: result.observabilityEvidence.summary,
+            }
+          : null,
       },
     }));
   }

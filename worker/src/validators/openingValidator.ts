@@ -4,8 +4,10 @@ import { toBase64 } from "../utils/images";
 import {
   detectRelocation,
   extractStructuralBaseline,
+  type AnchorFixture,
   type StructuralBaseline,
   type OpeningDiagnosticFinding,
+  type StructuralOpening,
   validateOpeningPreservation,
 } from "./openingPreservationValidator";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue, type ValidationIssueType } from "./issueTypes";
@@ -29,6 +31,57 @@ export type OpeningValidatorResult = ValidatorOutcome & {
   advisoryObservations?: AdvisoryObservation[];
   details?: OpeningValidatorDetail[];
   decision?: OpeningValidatorDecision;
+  observabilityEvidence?: OpeningObservabilityEvidence;
+};
+
+export type OpeningGeometryMetric = {
+  openingId: string;
+  openingType: "window" | "door" | "closet_door" | "walkthrough";
+  widthChangePct: number;
+  heightChangePct: number;
+  areaChangePct: number;
+  aspectRatioChangePct: number;
+  widthHeightAsymmetryScore: number;
+  widthDominantChange: boolean;
+  heightDominantChange: boolean;
+};
+
+export type OpeningRelocationFingerprint = {
+  openingId: string;
+  openingType: "window" | "door" | "closet_door" | "walkthrough";
+  wallShift: boolean;
+  horizontalBandShift: boolean;
+  verticalBandShift: boolean;
+  centroidDxPct: number;
+  centroidDyPct: number;
+  centroidDriftPct: number;
+  anchorDistanceDeltaPct: number;
+  baselineNearestAnchorId?: string;
+  detectedNearestAnchorId?: string;
+  reasonTokens: string[];
+};
+
+export type OpeningConfidenceBand = {
+  openingId: string;
+  confidenceScore: number;
+  band: "LOW" | "MEDIUM" | "HIGH";
+  rationale: string;
+};
+
+export type OpeningObservabilityEvidence = {
+  geometryMetrics: OpeningGeometryMetric[];
+  relocationFingerprints: OpeningRelocationFingerprint[];
+  confidenceBands: OpeningConfidenceBand[];
+  summary: {
+    maxAbsWidthChangePct: number;
+    maxAbsHeightChangePct: number;
+    maxAbsAreaChangePct: number;
+    maxAbsAspectRatioChangePct: number;
+    relocationSignalCount: number;
+    lowConfidenceCount: number;
+    mediumConfidenceCount: number;
+    highConfidenceCount: number;
+  };
 };
 
 export type OpeningValidatorDecision = {
@@ -119,6 +172,76 @@ type BaselineOpenings = {
 function clamp01(value: number): number {
   if (!Number.isFinite(value)) return 0;
   return Math.max(0, Math.min(1, value));
+}
+
+function clampSignedPct(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(-999.999, Math.min(999.999, value));
+}
+
+function safePercentChange(beforeValue: number, afterValue: number): number {
+  const denominator = Math.max(1e-6, Math.abs(beforeValue));
+  return ((afterValue - beforeValue) / denominator) * 100;
+}
+
+function openingCenter(opening: StructuralOpening): { x: number; y: number } {
+  const [x1, y1, x2, y2] = opening.bbox || [0, 0, 0, 0];
+  return {
+    x: (x1 + x2) / 2,
+    y: (y1 + y2) / 2,
+  };
+}
+
+function openingDimensions(opening: StructuralOpening): { width: number; height: number; area: number; aspectRatio: number } {
+  const [x1, y1, x2, y2] = opening.bbox || [0, 0, 0, 0];
+  const width = Math.max(1e-6, x2 - x1);
+  const height = Math.max(1e-6, y2 - y1);
+  return {
+    width,
+    height,
+    area: Math.max(1e-6, opening.area_pct || width * height),
+    aspectRatio: width / Math.max(1e-6, height),
+  };
+}
+
+function nearestAnchorDistance(center: { x: number; y: number }, wallIndex: number, anchors?: AnchorFixture[]): {
+  anchorId?: string;
+  distancePct: number;
+} {
+  if (!Array.isArray(anchors) || anchors.length === 0) {
+    return { distancePct: NaN };
+  }
+  const candidates = anchors.filter((anchor) => anchor.wallIndex === wallIndex);
+  if (candidates.length === 0) {
+    return { distancePct: NaN };
+  }
+  let bestDistance = Number.POSITIVE_INFINITY;
+  let bestId: string | undefined;
+  for (const anchor of candidates) {
+    const [x1, y1, x2, y2] = anchor.bbox || [0, 0, 0, 0];
+    const anchorCenter = { x: (x1 + x2) / 2, y: (y1 + y2) / 2 };
+    const dx = center.x - anchorCenter.x;
+    const dy = center.y - anchorCenter.y;
+    const distance = Math.sqrt((dx * dx) + (dy * dy));
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      bestId = anchor.id;
+    }
+  }
+  return {
+    anchorId: bestId,
+    distancePct: Number.isFinite(bestDistance) ? bestDistance : NaN,
+  };
+}
+
+function classifyOpeningConfidenceBand(score: number): { band: "LOW" | "MEDIUM" | "HIGH"; rationale: string } {
+  if (score < 0.55) {
+    return { band: "LOW", rationale: "low detector confidence and/or unstable graph support" };
+  }
+  if (score < 0.8) {
+    return { band: "MEDIUM", rationale: "moderate agreement; inspect occlusion and perspective drift" };
+  }
+  return { band: "HIGH", rationale: "high detector confidence and stable structural agreement" };
 }
 
 type OpeningSignalCoherenceAnalysis = {
@@ -1304,6 +1427,9 @@ export async function runOpeningValidator(
     const areaDelta = Number.isFinite(deterministic.summary.semanticOpeningAreaDeltaPct)
       ? Number(deterministic.summary.semanticOpeningAreaDeltaPct)
       : 0;
+    const geometryMetrics: OpeningGeometryMetric[] = [];
+    const relocationFingerprints: OpeningRelocationFingerprint[] = [];
+    const confidenceBands: OpeningConfidenceBand[] = [];
     let maxSizeReductionDelta = 0;
     const openingSizeReductionAdvisoryThreshold = Math.max(0.1, OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD * 0.5);
     let openingSizeReductionDetected = false;
@@ -1427,6 +1553,75 @@ export async function runOpeningValidator(
       const retention = detectedArea / baseArea;
       const sizeReduction = clamp01((baseArea - detectedArea) / baseArea);
 
+      const baseDims = openingDimensions(baseOpening);
+      const detectedDims = openingDimensions(matchedOpening);
+      const widthChangePct = clampSignedPct(safePercentChange(baseDims.width, detectedDims.width));
+      const heightChangePct = clampSignedPct(safePercentChange(baseDims.height, detectedDims.height));
+      const areaChangePct = clampSignedPct(safePercentChange(baseDims.area, detectedDims.area));
+      const aspectRatioChangePct = clampSignedPct(safePercentChange(baseDims.aspectRatio, detectedDims.aspectRatio));
+      const widthHeightAsymmetryScore = Math.abs(Math.abs(widthChangePct) - Math.abs(heightChangePct));
+      const widthDominantChange = Math.abs(widthChangePct) > Math.abs(heightChangePct);
+      const heightDominantChange = Math.abs(heightChangePct) > Math.abs(widthChangePct);
+
+      geometryMetrics.push({
+        openingId: String(baseOpening.id),
+        openingType: baseOpening.type,
+        widthChangePct,
+        heightChangePct,
+        areaChangePct,
+        aspectRatioChangePct,
+        widthHeightAsymmetryScore,
+        widthDominantChange,
+        heightDominantChange,
+      });
+
+      const beforeCenter = openingCenter(baseOpening);
+      const afterCenter = openingCenter(matchedOpening);
+      const centroidDxPct = clampSignedPct((afterCenter.x - beforeCenter.x) * 100);
+      const centroidDyPct = clampSignedPct((afterCenter.y - beforeCenter.y) * 100);
+      const centroidDriftPct = Math.sqrt((centroidDxPct * centroidDxPct) + (centroidDyPct * centroidDyPct));
+      const beforeAnchor = nearestAnchorDistance(beforeCenter, baseOpening.wallIndex, baseline.anchorFixtures);
+      const afterAnchor = nearestAnchorDistance(afterCenter, matchedOpening.wallIndex, frozenCandidateGraph.anchorFixtures);
+      const anchorDistanceDeltaPct =
+        Number.isFinite(beforeAnchor.distancePct) && Number.isFinite(afterAnchor.distancePct)
+          ? clampSignedPct(safePercentChange(beforeAnchor.distancePct, afterAnchor.distancePct))
+          : 0;
+      const relocationReasonTokens: string[] = [];
+      if (matchedOpening.wallIndex !== baseOpening.wallIndex) relocationReasonTokens.push("wall_index_changed");
+      if (matchedOpening.horizontalBand !== baseOpening.horizontalBand) relocationReasonTokens.push("horizontal_band_changed");
+      if (matchedOpening.verticalBand !== baseOpening.verticalBand) relocationReasonTokens.push("vertical_band_changed");
+      if (centroidDriftPct >= 8) relocationReasonTokens.push("centroid_drift_gt_8pct");
+      if (Math.abs(anchorDistanceDeltaPct) >= 25) relocationReasonTokens.push("anchor_distance_delta_gt_25pct");
+
+      relocationFingerprints.push({
+        openingId: String(baseOpening.id),
+        openingType: baseOpening.type,
+        wallShift: matchedOpening.wallIndex !== baseOpening.wallIndex,
+        horizontalBandShift: matchedOpening.horizontalBand !== baseOpening.horizontalBand,
+        verticalBandShift: matchedOpening.verticalBand !== baseOpening.verticalBand,
+        centroidDxPct,
+        centroidDyPct,
+        centroidDriftPct,
+        anchorDistanceDeltaPct,
+        baselineNearestAnchorId: beforeAnchor.anchorId,
+        detectedNearestAnchorId: afterAnchor.anchorId,
+        reasonTokens: relocationReasonTokens,
+      });
+
+      const confidenceScore = clamp01(Math.min(
+        Number(baseOpening.confidence || 0),
+        Number(matchedOpening.confidence || 0),
+        baselineGraphStable ? 1 : 0.75,
+        candidateGraphStable ? 1 : 0.75,
+      ));
+      const confidenceBand = classifyOpeningConfidenceBand(confidenceScore);
+      confidenceBands.push({
+        openingId: String(baseOpening.id),
+        confidenceScore,
+        band: confidenceBand.band,
+        rationale: confidenceBand.rationale,
+      });
+
       maxSizeReductionDelta = Math.max(maxSizeReductionDelta, sizeReduction);
       if (sizeReduction >= openingSizeReductionAdvisoryThreshold) {
         openingSizeReductionDetected = true;
@@ -1455,6 +1650,36 @@ export async function runOpeningValidator(
     }
 
     logOpeningPhaseEnd(options?.jobId, "geometry_comparison", Date.now() - geometryComparisonStartedAt);
+
+    const observabilitySummary: OpeningObservabilityEvidence["summary"] = {
+      maxAbsWidthChangePct: geometryMetrics.length
+        ? Math.max(...geometryMetrics.map((entry) => Math.abs(entry.widthChangePct)))
+        : 0,
+      maxAbsHeightChangePct: geometryMetrics.length
+        ? Math.max(...geometryMetrics.map((entry) => Math.abs(entry.heightChangePct)))
+        : 0,
+      maxAbsAreaChangePct: geometryMetrics.length
+        ? Math.max(...geometryMetrics.map((entry) => Math.abs(entry.areaChangePct)))
+        : 0,
+      maxAbsAspectRatioChangePct: geometryMetrics.length
+        ? Math.max(...geometryMetrics.map((entry) => Math.abs(entry.aspectRatioChangePct)))
+        : 0,
+      relocationSignalCount: relocationFingerprints.filter((entry) => entry.reasonTokens.length > 0).length,
+      lowConfidenceCount: confidenceBands.filter((entry) => entry.band === "LOW").length,
+      mediumConfidenceCount: confidenceBands.filter((entry) => entry.band === "MEDIUM").length,
+      highConfidenceCount: confidenceBands.filter((entry) => entry.band === "HIGH").length,
+    };
+    const observabilityEvidence: OpeningObservabilityEvidence = {
+      geometryMetrics,
+      relocationFingerprints,
+      confidenceBands,
+      summary: observabilitySummary,
+    };
+    console.log("[OPENING_OBSERVABILITY_EVIDENCE]", {
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      summary: observabilitySummary,
+    });
 
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
     const rawDeterministicHardFailSignal =
@@ -1864,6 +2089,7 @@ export async function runOpeningValidator(
       details: comparisonResult.details,
       structuralSignals: deterministic.structuralSignals,
       decision: validatorDecision,
+      observabilityEvidence,
       openingRegions,
       primaryStructuredIssue: structuredIssues[0],
       structuredIssues,

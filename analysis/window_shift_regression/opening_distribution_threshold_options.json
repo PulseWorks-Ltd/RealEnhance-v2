@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Option A (Conservative)",
+    "resize_threshold_pct": 92.5,
+    "relocation_threshold_pct_proxy": 100.0,
+    "rationale": "Set threshold at successful p95 to minimize false positives; will miss moderate anomalies."
+  },
+  {
+    "name": "Option B (Balanced)",
+    "resize_threshold_pct": 91.19,
+    "relocation_threshold_pct_proxy": 85.0,
+    "rationale": "Set threshold at successful p90 to improve sensitivity while keeping most successful edits unflagged."
+  },
+  {
+    "name": "Option C (Aggressive)",
+    "resize_threshold_pct": 76.7,
+    "relocation_threshold_pct_proxy": 50.0,
+    "rationale": "Set threshold near failed median to catch more likely failures, with higher false-positive risk."
+  }
+]

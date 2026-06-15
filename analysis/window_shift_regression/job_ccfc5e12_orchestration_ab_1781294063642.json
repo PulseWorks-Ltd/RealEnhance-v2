@@ -1,0 +1,57 @@
+{
+  "pair": {
+    "baselinePath": "/workspaces/RealEnhance-v2/tmp/forensic_ccfc/baseline.jpg",
+    "candidatePath": "/workspaces/RealEnhance-v2/tmp/forensic_ccfc/candidate.webp",
+    "baselineJsonPath": "/workspaces/RealEnhance-v2/analysis/window_shift_regression/baseline_extract_current_head.json"
+  },
+  "opening": {
+    "status": "pass",
+    "reason": "opening_relocated_review|opening_resized|opening_size_reduction_ge_0.25:0.397|opening_band_mismatch",
+    "issueType": "opening_relocated",
+    "issueTier": "critical",
+    "confidence": 0.6,
+    "advisorySignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.397",
+      "opening_resized_minor:0.397",
+      "opening_signature_mismatch"
+    ],
+    "derivedSignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.397",
+      "opening_resized_minor:0.397",
+      "opening_signature_mismatch",
+      "opening_relocated"
+    ]
+  },
+  "noHandoff": {
+    "passed": true,
+    "hardFail": false,
+    "blockSource": null,
+    "score": 0.792,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "warnings": [
+      "All structural elements including walls, window openings, and the room envelope are preserved.",
+      "All fixed features such as the ceiling light fixture and window treatment type (curtains) are preserved and unchanged.",
+      "The changes introduced are limited to the addition of flexible furniture and decor items (bed, bedside table, lamp, rug, wall art).",
+      "local_validators_advisory: windows"
+    ],
+    "reasons": []
+  },
+  "withHandoff": {
+    "passed": true,
+    "hardFail": false,
+    "blockSource": null,
+    "score": 0.792,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "warnings": [
+      "No Tier 1 structural changes detected (walls, window openings, room envelope, camera viewpoint are preserved).",
+      "No Tier 2 fixed feature changes detected (ceiling light fixture, window treatment type are preserved).",
+      "All visible changes are classified as Tier 3 (furniture, decor, lamps, rug), which do not cause a hard fail.",
+      "local_validators_advisory: windows"
+    ],
+    "reasons": []
+  }
+}
