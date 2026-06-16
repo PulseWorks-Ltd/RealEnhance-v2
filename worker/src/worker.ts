@@ -4351,6 +4351,30 @@ type SpecialistCompletionSummary = {
   lifecycles: SpecialistLifecycle[];
 };
 
+function emitValidatorBlockEnd(
+  jobId: string,
+  validator: string,
+  durationMs: number,
+  extra: Record<string, unknown> = {}
+): void {
+  try {
+    console.log(JSON.stringify({
+      event: "VALIDATOR_BLOCK_END",
+      jobId,
+      validator,
+      phase: "validator_block",
+      durationMs: Math.max(0, Math.round(durationMs)),
+      ...extra,
+    }));
+  } catch (err: any) {
+    nLog("[VALIDATOR_BLOCK_END_LOG_ERROR]", {
+      jobId,
+      validator,
+      error: String(err?.message || err || "validator_block_log_error"),
+    });
+  }
+}
+
 async function orchestrateSpecialistsWithRetry<T>(params: {
   jobId: string;
   imageId?: string;
@@ -7144,7 +7168,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   endTimestamp,
                   durationMs,
                 });
-                logValidatorBlockEnd(validator, durationMs, { source: "stage2_only_retry" });
+                emitValidatorBlockEnd(payload.jobId, validator, durationMs, { source: "stage2_only_retry" });
                 return result;
               } catch (err) {
                 const endTimestamp = Date.now();
@@ -7193,6 +7217,30 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               },
             });
             specialistCompletionSummary = specialistOrchestration.summary;
+
+            const missingSpecialists = specialistCompletionSummary.namesOfMissingSpecialists;
+            const specialistExecutionFailed = missingSpecialists.length > 0;
+            const specialistQuorumFailed = specialistCompletionSummary.completedCount === 0;
+            if (specialistExecutionFailed || specialistQuorumFailed) {
+              stage2ValidationPassed = false;
+              if (!stage2OnlyBlockedReason) {
+                const reasonTokens: string[] = [];
+                if (specialistQuorumFailed) reasonTokens.push("quorum_zero");
+                if (specialistExecutionFailed) {
+                  reasonTokens.push(`missing_${missingSpecialists.join("_") || "unknown"}`);
+                }
+                stage2OnlyBlockedReason = `stage2_specialist_execution_failed:${reasonTokens.join("|")}`;
+              }
+              nLog("[STAGE2_ONLY_SPECIALIST_EXECUTION_FAIL_CLOSED]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                completedCount: specialistCompletionSummary.completedCount,
+                expectedSpecialistCount: specialistCompletionSummary.expectedSpecialistCount,
+                unavailableSpecialists: missingSpecialists,
+                action: "block_stage2_retry",
+              });
+            }
 
             const opRes = specialistOrchestration.results.opening;
             const fixRes = specialistOrchestration.results.fixture;
@@ -7265,7 +7313,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 imageId: payload.imageId,
                 attempt: stage2OnlyAttemptNo,
                 unavailableSpecialists: specialistCompletionSummary.namesOfMissingSpecialists,
-                action: "continue_with_current_non_blocking_policy",
+                action: "block_stage2_retry",
               });
             }
 
@@ -7290,7 +7338,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               });
             }
           } catch (specialistErr: any) {
-            nLog("[worker] Specialist validation error (stage2-only, non-fatal):", specialistErr?.message || specialistErr);
+            const specialistErrorText = String(specialistErr?.message || specialistErr || "specialist_validation_error");
+            stage2ValidationPassed = false;
+            if (!stage2OnlyBlockedReason) {
+              stage2OnlyBlockedReason = `stage2_specialist_execution_error:${specialistErrorText}`;
+            }
+            nLog("[worker] Specialist validation error (stage2-only, fail-closed):", specialistErrorText);
           }
 
           return {
@@ -7331,7 +7384,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               validationMode: stage2OnlySelectedValidationMode,
               specialistAdvisorySignals,
             });
-            logValidatorBlockEnd("unified", Date.now() - unifiedBlockStartedAt, { source: "stage2_only_retry" });
+            emitValidatorBlockEnd(payload.jobId, "unified", Date.now() - unifiedBlockStartedAt, { source: "stage2_only_retry" });
             nLog("[UNIFIED_RESULT]", {
               jobId: payload.jobId,
               imageId: payload.imageId,
@@ -7402,7 +7455,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 imageId: payload.imageId,
                 attempt: stage2OnlyAttemptNo,
               });
-              logValidatorBlockEnd("compliance", Date.now() - complianceBlockStartedAt, { source: "stage2_only_retry" });
+              emitValidatorBlockEnd(payload.jobId, "compliance", Date.now() - complianceBlockStartedAt, { source: "stage2_only_retry" });
               if (s2oCompliance && s2oCompliance.ok === false) {
                 const confidence = s2oCompliance.confidence ?? 0.6;
                 const tier = Number.isFinite((s2oCompliance as any).tier)
@@ -11256,16 +11309,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     30000,
     Number(process.env.STAGE2_RETRY_GRACE_MS || 180000)
   );
-  const logValidatorBlockEnd = (validator: string, durationMs: number, extra: Record<string, unknown> = {}) => {
-    console.log(JSON.stringify({
-      event: "VALIDATOR_BLOCK_END",
-      jobId: payload.jobId,
-      validator,
-      phase: "validator_block",
-      durationMs: Math.max(0, Math.round(durationMs)),
-      ...extra,
-    }));
-  };
   const logPostCompliancePhaseEnd = (phase: string, durationMs: number, extra: Record<string, unknown> = {}) => {
     console.log(JSON.stringify({
       event: "POST_COMPLIANCE_PHASE_END",
@@ -12315,7 +12358,7 @@ All openings must remain identical in position and size to the original image.`;
               endTimestamp,
               durationMs,
             });
-            logValidatorBlockEnd(validator, durationMs);
+            emitValidatorBlockEnd(payload.jobId, validator, durationMs);
             return result;
           } catch (err) {
             const endTimestamp = Date.now();
@@ -12934,8 +12977,43 @@ All openings must remain identical in position and size to the original image.`;
             imageId: payload.imageId,
             attempt,
             unavailableSpecialists: specialistCompletionSummary.namesOfMissingSpecialists,
-            action: "continue_with_current_non_blocking_policy",
+            action: "block_stage2_fail_closed",
           });
+        }
+
+        if (specialistCompletionSummary) {
+          const missingSpecialists = specialistCompletionSummary.namesOfMissingSpecialists;
+          const specialistExecutionFailed = missingSpecialists.length > 0;
+          const specialistQuorumFailed = specialistCompletionSummary.completedCount === 0;
+          if (specialistExecutionFailed || specialistQuorumFailed) {
+            const reasonTokens: string[] = [];
+            if (specialistQuorumFailed) reasonTokens.push("quorum_zero");
+            if (specialistExecutionFailed) reasonTokens.push(`missing_${missingSpecialists.join("_") || "unknown"}`);
+            const failClosedReason = `specialist_execution_failed:${reasonTokens.join("|")}`;
+            const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+              ? stageLineage.stage1B.output
+              : path1A;
+            const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+            stage2Blocked = true;
+            stage2FallbackStage = fallbackStage;
+            stage2BlockedReason = failClosedReason;
+            fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+            path2 = fallbackPath;
+            stage2CandidatePath = fallbackPath;
+            setStage2AttemptValidation(path2, "gemini", [failClosedReason]);
+            nLog("[STAGE2_SPECIALIST_EXECUTION_FAIL_CLOSED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              completedCount: specialistCompletionSummary.completedCount,
+              expectedSpecialistCount: specialistCompletionSummary.expectedSpecialistCount,
+              unavailableSpecialists: missingSpecialists,
+              action: "blocked_pre_unified",
+              reason: failClosedReason,
+            });
+            logValidateFinal(attempt, "reject", attempt - 1);
+            break;
+          }
         }
 
         // --- Build structured AdvisoryObservation[] from specialist results ---
@@ -13700,7 +13778,7 @@ All openings must remain identical in position and size to the original image.`;
         specialistStructuredIssues,
         structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
       });
-      logValidatorBlockEnd("unified", Date.now() - unifiedBlockStartedAt);
+      emitValidatorBlockEnd(payload.jobId, "unified", Date.now() - unifiedBlockStartedAt);
 
       nLog("[UNIFIED_RESULT]", {
         jobId: payload.jobId,
@@ -13833,7 +13911,7 @@ All openings must remain identical in position and size to the original image.`;
                 attempt,
                 modelOverride: "gemini-2.5-pro",
               });
-              logValidatorBlockEnd("compliance", Date.now() - complianceBlockStartedAt);
+              emitValidatorBlockEnd(payload.jobId, "compliance", Date.now() - complianceBlockStartedAt);
 
               if (compliance && compliance.ok === false) {
                 const HIGH_CONF = COMPLIANCE_BLOCK_THRESHOLD;
