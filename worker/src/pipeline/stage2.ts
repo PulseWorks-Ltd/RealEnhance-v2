@@ -332,6 +332,11 @@ function resolveStage2GenerationPlanForAttempt(attempt: number, retryReason: Sta
   return plan as Stage2GenerationPlan;
 }
 
+function isStage2MinimalPlannerModeEnabled(): boolean {
+  const raw = String(process.env.STAGE2_MINIMAL_PLANNER_MODE || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+}
+
 function mapStructuralFailureTypeToRetryReason(failureType: StructuralFailureType | null): Stage2RetryReason {
   if (!failureType) return "unknown";
   if (failureType === "opening_removed" || failureType === "opening_infilled" || failureType === "opening_relocated") {
@@ -742,8 +747,9 @@ export async function runStage2GenerationAttempt(
   const selectedStyle = ["nz_standard", "standard_listing", "standard", "default"].includes(selectedStyleRaw)
     ? "nz_standard"
     : selectedStyleRaw;
+  const minimalPlannerMode = isStage2MinimalPlannerModeEnabled();
 
-  const STAGE2_PROMPT_LEGACY = `${useTest
+  const stage2PromptLegacy = `${useTest
     ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
     : buildStage2PromptNZStyle(normalizedRoomType, scene, {
         stagingStyle: selectedStyle,
@@ -751,6 +757,27 @@ export async function runStage2GenerationAttempt(
         mode: resolvedPromptMode,
         layoutContext: opts.layoutContext || undefined,
       })}`;
+
+  const stage2PromptMinimal = `${useTest
+    ? stage2PromptLegacy
+    : buildStage2PromptNZStyle(normalizedRoomType, scene, {
+        stagingStyle: selectedStyle,
+        sourceStage: opts.sourceStage,
+        mode: resolvedPromptMode,
+        layoutContext: opts.layoutContext || undefined,
+        minimalPlannerMode,
+      })}`;
+
+  const STAGE2_PROMPT_LEGACY = minimalPlannerMode ? stage2PromptMinimal : stage2PromptLegacy;
+
+  if (minimalPlannerMode) {
+    console.log("[Stage2Prompt] Minimal planner mode enabled", {
+      jobId: opts.jobId,
+      attempt: attemptNumber,
+      originalPromptLength: stage2PromptLegacy.length,
+      minimalPlannerPromptLength: stage2PromptMinimal.length,
+    });
+  }
 
   const STAGE2_PROMPT_NANO_BANANA = `Virtual Staging Instructions for nano banana (or Pro)
 
@@ -909,7 +936,15 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
     textPrompt = `${textPrompt}\n\n${opts.structuralConstraintBlock}`;
   }
 
-  if (opts.layoutPlan) {
+  if (minimalPlannerMode && opts.layoutPlan) {
+    console.log("[Stage2Prompt] Layout planner instructions bypassed", {
+      jobId: opts.jobId,
+      attempt: attemptNumber,
+      roomType: canonicalRoomType,
+    });
+  }
+
+  if (!minimalPlannerMode && opts.layoutPlan) {
     const plannerInstructionMode: "exact" | "guided" = attemptNumber > 1 ? "guided" : "exact";
     const plannerInstructionLine = plannerInstructionMode === "guided"
       ? "Base the staging composition on the following layout plan while preserving architectural continuity and adhering to all staging prompt restrictions."
@@ -946,6 +981,14 @@ Do not place furniture outside the defined zones.
 
 ${formatStage2LayoutPlanForPrompt(opts.layoutPlan)}
 `;
+  }
+
+  if (minimalPlannerMode) {
+    console.log("[Stage2Prompt] Furniture planner instructions bypassed", {
+      jobId: opts.jobId,
+      attempt: attemptNumber,
+      hasLayoutPlan: !!opts.layoutPlan,
+    });
   }
 
   const retryReason: Stage2RetryReason = attemptNumber > 1

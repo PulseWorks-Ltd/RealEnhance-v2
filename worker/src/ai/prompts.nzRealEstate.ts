@@ -1,5 +1,11 @@
 import { buildStage2FullPromptNZ } from "./prompts/stage2/full.prompt";
 import { buildStage2RefreshPromptNZ } from "./prompts/stage2/refresh.prompt";
+import {
+  STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK,
+  STAGE2_CAMERA_IMMUTABILITY_BLOCK,
+  STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK,
+  STAGE2_OUTPUT_FORMAT_BLOCK,
+} from "./prompts/stage2/sharedArchitecturalLock";
 
 // ────────────────────────────────
 // MULTI-ZONE CONSTRAINT SYSTEM (REFACTORED — DRY)
@@ -565,6 +571,45 @@ Preserve it exactly.
 Staging is additive within structure.
 It is never corrective of structure.
 `;
+
+const STAGE2_MINIMAL_PLANNER_DIRECTIVE = `
+Stage this room in a modern real-estate style.
+
+Preserve all architecture exactly.
+
+Do not alter:
+- windows
+- doors
+- flooring
+- walls
+- ceilings
+- cabinetry
+- fixtures
+
+Add realistic furniture appropriate for the room.
+
+Maintain correct scale, spacing, and visual realism.
+`.trim();
+
+function buildStage2MinimalPlannerPromptNZ(roomType: string): string {
+  const room = roomType || "room";
+  return `ROLE: Interior Virtual Staging Specialist — NZ Real Estate
+
+TASK:
+This is a Stage 2 minimal planner experiment.
+Stage as: ${room}
+
+${STAGE2_ARCHITECTURAL_IMMUTABILITY_BLOCK}
+
+${STAGE2_CAMERA_IMMUTABILITY_BLOCK}
+
+${STAGE2_FIXED_FINISH_IMMUTABILITY_BLOCK}
+
+MINIMAL STAGING DIRECTIVE
+${STAGE2_MINIMAL_PLANNER_DIRECTIVE}
+
+${STAGE2_OUTPUT_FORMAT_BLOCK}`.trim();
+}
 
 // 🏗️ Build multi-zone block by injecting zone config into base
 function buildMultiZoneConstraintBlock(roomType: string, mode: "full" | "refresh"): string {
@@ -1790,6 +1835,7 @@ export function buildStage2PromptNZStyle(
     sourceStage?: "1A" | "1B-light" | "1B-stage-ready";
     mode?: "full" | "refresh";
     layoutContext?: import("./layoutPlanner").LayoutContextResult;
+    minimalPlannerMode?: boolean;
   }
 ): string {
   if (sceneType === "exterior") return buildStage2ExteriorPromptNZStyle();
@@ -1813,8 +1859,9 @@ export function buildStage2PromptNZStyle(
   const resolvedMode: "full" | "refresh" = explicitMode
     ? explicitMode
     : (sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh");
+  const minimalPlannerMode = opts?.minimalPlannerMode === true;
 
-  const layoutContextBlock = resolvedMode === "full" && opts?.layoutContext
+  const layoutContextBlock = !minimalPlannerMode && resolvedMode === "full" && opts?.layoutContext
     ? `
 LAYOUT CONTEXT (ADVISORY ONLY)
 - room_type_guess: ${opts.layoutContext.room_type_guess || "unknown"}
@@ -1906,6 +1953,11 @@ ${surfaceEligibilityFilterBlock}`;
     }
     return `${prompt}\n\n${structureRulesBlock}`;
   };
+
+  if (minimalPlannerMode) {
+    const minimalPrompt = buildStage2MinimalPlannerPromptNZ(canonicalRoomType);
+    return `${minimalPrompt}\n\n${structureRulesBlock}`;
+  }
 
   if (resolvedMode === "full") {
     const fullPrompt = buildStage2FullPromptNZ(canonicalRoomType, layoutContextBlock);

@@ -7,6 +7,7 @@ import {
   Stage2GenerationFailure,
   Stage2GenerationNoImageError,
 } from "../src/pipeline/stage2";
+import type { Stage2LayoutPlan } from "../src/pipeline/layoutPlanner";
 
 jest.mock("../src/ai/gemini", () => ({
   getGeminiClient: jest.fn(() => ({ models: { generateContent: jest.fn() } })),
@@ -42,7 +43,7 @@ jest.mock("../src/utils/debugImageUrls", () => ({
 describe("Stage-2 generation reliability", () => {
   const originalEnv = { ...process.env };
 
-  async function captureStage2Prompt(roomType: string): Promise<string> {
+  async function captureStage2Prompt(roomType: string, layoutPlan?: Stage2LayoutPlan | null): Promise<string> {
     runWithPrimaryThenFallbackMock.mockResolvedValue({
       resp: {
         candidates: [{ content: { parts: [{ inlineData: { data: "ZmFrZQ==" } }] } }],
@@ -61,6 +62,7 @@ describe("Stage-2 generation reliability", () => {
       imageId: `img-test-prompt-${roomType}`,
       outputPath,
       attempt: 1,
+      layoutPlan: layoutPlan ?? undefined,
     });
 
     const call = runWithPrimaryThenFallbackMock.mock.calls.at(-1);
@@ -200,5 +202,32 @@ describe("Stage-2 generation reliability", () => {
       const prompt = await captureStage2Prompt(roomType);
 
       expect(prompt).not.toContain("Do not add pendant lights, hanging lights, chandeliers, or any other ceiling light fixtures above dining tables. Use existing room lighting only.");
+    });
+
+    it("uses minimal planner directive when STAGE2_MINIMAL_PLANNER_MODE is enabled", async () => {
+      process.env.STAGE2_MINIMAL_PLANNER_MODE = "true";
+      const prompt = await captureStage2Prompt("living_room");
+
+      expect(prompt).toContain("MINIMAL STAGING DIRECTIVE");
+      expect(prompt).toContain("Stage this room in a modern real-estate style.");
+      expect(prompt).toContain("Preserve all architecture exactly.");
+      expect(prompt).not.toContain("FULL-SYNTHESIS LOGIC — MANDATORY");
+      expect(prompt).not.toContain("REFRESH LOGIC — FLEXIBLE STAGING MODE");
+    });
+
+    it("bypasses layout planner instructions in minimal planner mode", async () => {
+      process.env.STAGE2_MINIMAL_PLANNER_MODE = "1";
+      const layoutPlan: Stage2LayoutPlan = {
+        room_type: "living_room",
+        layout: [{ item: "sofa", placement: "centered on focal wall" }],
+        avoid_zones: ["window_wall"],
+        anchorItem: "sofa_group",
+      };
+
+      const prompt = await captureStage2Prompt("living_room", layoutPlan);
+
+      expect(prompt).not.toContain("Use the following furniture placement plan exactly.");
+      expect(prompt).not.toContain("ANCHOR REGION GUIDANCE (SOFT, NOT A HARD MASK)");
+      expect(prompt).not.toContain("PLAN_JSON:");
     });
 });
