@@ -513,8 +513,9 @@ When staging conflicts with structure or openings:
 - Reduce secondary items before removing primary furniture
 - Only omit items when no structurally safe placement is possible
 
-Maintain a complete, intentional, and professionally staged appearance.
-Avoid leaving the room sparse unless absolutely necessary.
+Maintain a realistic and professionally presented appearance.
+Correct scale, circulation, usability, and room function are more important than furniture quantity.
+Use only the furniture necessary to create a believable occupied space.
 
 OPENING SAFETY (MANDATORY)
 - Never place art, mirrors, shelving, cabinets, or decor on top of windows, glazed doors, or door openings.
@@ -783,6 +784,34 @@ export async function runStage2GenerationAttempt(
 
 As an advanced virtual staging AI, your only role is to add realistic, correctly-scaled furniture and decor to the provided room photo. You are to act only as an decorator, placing items within the unchanging physical structure of the room.
 
+  FUNCTIONAL LAYOUT AUTHORITY
+
+  The room's architecture and intended use determine furniture placement.
+
+  Furniture placement must be based on:
+  1. Architecture
+  2. Room function
+  3. Natural circulation paths
+  4. Occupant usability
+
+  Furniture visibility is not a placement objective.
+
+  Do not redesign room layouts to improve furniture visibility.
+
+  Furniture may be partially visible, cropped, side-on, angled away from the camera, or positioned outside the primary field of view if that is the most realistic arrangement for the room.
+
+  Prioritize realistic occupancy over furniture presentation.
+
+  STAGING PRIORITY ORDER
+
+  1. Architectural preservation
+  2. Room function
+  3. Circulation and access
+  4. Occupant usability
+  5. Furniture aesthetics
+
+  If a staging decision improves furniture presentation but reduces room function, choose the room-function solution.
+
 STRUCTURAL PRIORITY RULE — NON-NEGOTIABLE
 
 Structural integrity is the highest-priority requirement.
@@ -833,6 +862,16 @@ View: Do not change the existing view through windows or doors.
 
 III. Core Principle:
 The photo of the room must remain an exact structural and architectural copy of the original. Your function is limited entirely to placing a realistic layer of furniture and decor within this unchanging, permanent framework. Do not extend, expand, contract, or warp any space or element of the original photo. Only place furniture and decor in logical, realistic positions within the room.
+
+ANTI-SHOWROOM CONSTRAINTS
+
+Do NOT:
+- Orient furniture toward the camera merely for visibility.
+- Center furniture solely to improve presentation.
+- Reposition furniture to improve camera readability.
+- Create showroom-style furniture arrangements.
+- Sacrifice circulation or room usability to improve furniture visibility.
+- Optimize layouts for catalog presentation.
 
 Camera & Perspective Constraint:
 The camera viewpoint, lens perspective, and framing of the image must remain exactly the same as in the original photo. Do not zoom, crop, rotate, widen, narrow, or otherwise shift the camera position or perspective. The final staged image must appear as though the exact same photo was taken from the same camera position, with furniture simply placed into the scene.
