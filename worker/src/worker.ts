@@ -4382,6 +4382,7 @@ async function orchestrateSpecialistsWithRetry<T>(params: {
   source: string;
   maxRetries: number;
   timeoutMs: number;
+  timeoutMsBySpecialist?: Partial<Record<"opening" | "fixture" | "floor" | "envelope", number>>;
   tasks: Record<"opening" | "fixture" | "floor" | "envelope", () => Promise<T>>;
 }): Promise<{
   results: Partial<Record<"opening" | "fixture" | "floor" | "envelope", T>>;
@@ -4407,7 +4408,11 @@ async function orchestrateSpecialistsWithRetry<T>(params: {
     while (true) {
       const startTime = Date.now();
       try {
-        const value = await runWithTimeout(params.tasks[name](), params.timeoutMs, name);
+        const timeoutMs = Math.max(
+          0,
+          Number(params.timeoutMsBySpecialist?.[name] ?? params.timeoutMs)
+        );
+        const value = await runWithTimeout(params.tasks[name](), timeoutMs, name);
         const completionTime = Date.now();
         const durationMs = Math.max(0, completionTime - startTime);
         const status: SpecialistOrchestrationStatus = retryCount > 0 ? "retry_succeeded" : "completed";
@@ -7182,6 +7187,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const stage2OnlyBaselinePromise = resolveStructuralBaselineForValidation("stage2_only_retry_opening_validator");
             const maxRetries = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_RETRIES || 1));
             const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
+            const openingTimeoutMs = Math.max(
+              0,
+              Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
+            );
             const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
               jobId: payload.jobId,
               imageId: payload.imageId,
@@ -7189,6 +7198,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               source: "stage2_only_retry",
               maxRetries,
               timeoutMs,
+              timeoutMsBySpecialist: {
+                opening: openingTimeoutMs,
+                fixture: timeoutMs,
+                floor: timeoutMs,
+                envelope: timeoutMs,
+              },
               tasks: {
                 opening: () => runSpecialistWithTiming("opening", async () => {
                   const stage2OnlyBaseline = await stage2OnlyBaselinePromise;
@@ -12372,6 +12387,10 @@ All openings must remain identical in position and size to the original image.`;
         const openingBaselinePromise = resolveStructuralBaselineForValidation("stage2_opening_validator");
         const maxRetries = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_RETRIES || 1));
         const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
+        const openingTimeoutMs = Math.max(
+          0,
+          Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
+        );
         const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
           jobId: payload.jobId,
           imageId: payload.imageId,
@@ -12379,6 +12398,12 @@ All openings must remain identical in position and size to the original image.`;
           source: "main_stage2",
           maxRetries,
           timeoutMs,
+          timeoutMsBySpecialist: {
+            opening: openingTimeoutMs,
+            fixture: timeoutMs,
+            floor: timeoutMs,
+            envelope: timeoutMs,
+          },
           tasks: {
             opening: () => runSpecialistWithTiming("opening", async () => {
               const resolvedOpeningBaseline = await openingBaselinePromise;

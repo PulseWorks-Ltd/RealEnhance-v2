@@ -479,11 +479,56 @@ function deriveUnifiedCompletionState(params: {
     item?.meta?.stage1BSkippedByDesign === true ||
     item?.result?.meta?.stage1BSkippedByDesign === true ||
     routingSnapshot?.stage1BSkippedByDesign === true;
+  const blockedStageRaw =
+    item?.validation?.blockedStage ??
+    item?.blockedStage ??
+    item?.meta?.blockedStage ??
+    item?.result?.blockedStage ??
+    item?.result?.meta?.blockedStage ??
+    null;
+  const fallbackStageRaw =
+    item?.validation?.fallbackStage ??
+    item?.fallbackStage ??
+    item?.meta?.fallbackStage ??
+    item?.result?.fallbackStage ??
+    item?.result?.meta?.fallbackStage ??
+    null;
+  const fallbackUsedRaw =
+    item?.fallbackUsed ??
+    item?.meta?.fallbackUsed ??
+    item?.result?.fallbackUsed ??
+    item?.result?.meta?.fallbackUsed ??
+    null;
+  const completionTypeRaw =
+    item?.completionType ??
+    item?.meta?.completionType ??
+    item?.result?.completionType ??
+    item?.result?.meta?.completionType ??
+    null;
+  const blockedStage = String(blockedStageRaw || "").toUpperCase();
+  const fallbackStage = String(fallbackStageRaw || "").toUpperCase();
+  const fallbackUsed = String(fallbackUsedRaw || "").toLowerCase();
+  const completionType = String(completionTypeRaw || "").toLowerCase();
   const stage1BCompletedWithoutOutput = requestedFinalStage === "1B" && stage1BSkippedByDesign && hasStage1A && !hasStage1B;
+  const explicitStage2FallbackTo1A =
+    requestedFinalStage === "2" &&
+    !hasStage2 &&
+    hasStage1A &&
+    (
+      fallbackStage === "1A" ||
+      blockedStage === "2" ||
+      completionType === "fallback_1a" ||
+      fallbackUsed.includes("fallback_1a")
+    );
+  const stage2FallbackAvailable =
+    requestedFinalStage === "2" &&
+    !stage2NotExpectedByDesign &&
+    !hasStage2 &&
+    (hasStage1B || explicitStage2FallbackTo1A);
 
   const isFallback =
     requestedFinalStage === "2"
-      ? !stage2NotExpectedByDesign && !hasStage2 && hasStage1B
+      ? stage2FallbackAvailable
       : requestedFinalStage === "1B"
       ? !stage1BCompletedWithoutOutput && !hasStage1B && hasStage1A
       : false;
@@ -493,8 +538,9 @@ function deriveUnifiedCompletionState(params: {
     fallbackMessage = "No clutter detected - no changes needed.";
   } else if (isFallback) {
     if (requestedFinalStage === "2") {
-      fallbackMessage =
-        "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again.";
+      fallbackMessage = hasStage1B
+        ? "We couldn’t provide the staged image, but here is a decluttered copy of the original. Use Edit to stage or Retry to try again."
+        : "We couldn’t provide the staged image, but here is an enhanced copy of the original. Use Edit to stage or Retry to try again.";
     } else if (requestedFinalStage === "1B") {
       fallbackMessage =
         "We couldn’t provide the decluttered image, but here is an enhanced copy of the original. Use Edit to declutter or Retry to try again.";
@@ -512,7 +558,7 @@ function deriveUnifiedCompletionState(params: {
 
   const targetUrlPresent =
     requestedFinalStage === "2"
-      ? (stage2NotExpectedByDesign ? (hasStage1B || hasStage1A) : hasStage2)
+      ? (stage2NotExpectedByDesign ? (hasStage1B || hasStage1A) : (hasStage2 || stage2FallbackAvailable))
       : requestedFinalStage === "1B"
       ? (hasStage1B || stage1BCompletedWithoutOutput)
       : hasStage1A;

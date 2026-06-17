@@ -424,7 +424,7 @@ export function statusRouter() {
         let { state: pipelineStatus, source: statusSource } = pickAuthoritativeState(localStatusRaw, state);
         const persistedState = normalizePipelineState(localStatusRaw);
         const hasPersistedCompletedArtifact =
-          (persistedState === "completed" || localCompleted) && !!resultUrl;
+          (persistedState === "completed" || localCompleted) && !!(resultUrl || bestAvailableStage.url);
         if (hasPersistedCompletedArtifact && pipelineStatus !== "completed") {
           pipelineStatus = "completed";
           statusSource = "persisted";
@@ -554,9 +554,16 @@ export function statusRouter() {
           uiStatus = hardFail ? uiStatus : "ok";
         }
 
-        // If Stage 2 is not expected (exterior or staging disabled), allow best-available (1B/1A) to define resultUrl/finalStage
-        const resolvedResultUrl = resultUrl || (!stage2Expected ? (bestAvailableStage.url || null) : null);
-        const resolvedFinalStage = finalStageRaw || (!stage2Expected ? (bestAvailableStage.stage || null) : null);
+        // If Stage 2 was blocked/fallbacked or the job is already terminal-complete, allow
+        // best-available fallback artifacts (1B/1A) to be surfaced as canonical result.
+        const allowFallbackResultUrl =
+          !stage2Expected ||
+          pipelineStatus === "completed" ||
+          localCompleted ||
+          !!blockedStage ||
+          !!fallbackStageMeta;
+        const resolvedResultUrl = resultUrl || (allowFallbackResultUrl ? (bestAvailableStage.url || null) : null);
+        const resolvedFinalStage = finalStageRaw || (allowFallbackResultUrl ? (bestAvailableStage.stage || null) : null);
 
         if (pipelineStatus === "completed" && !resolvedResultUrl) {
           console.warn("[INVALID_STATUS_COMPLETED_NO_IMAGE]", { jobId: id });
@@ -879,18 +886,24 @@ export function statusRouter() {
       let { state: stateOut, source: statusSource } = pickAuthoritativeState(localStatusRaw, state);
       const persistedState = normalizePipelineState(localStatusRaw);
       const hasPersistedCompletedArtifact =
-        (persistedState === "completed" || localCompleted) && !!resultUrl;
+        (persistedState === "completed" || localCompleted) && !!(resultUrl || bestAvailableStage.url);
       if (hasPersistedCompletedArtifact && stateOut !== "completed") {
         stateOut = "completed";
         statusSource = "persisted";
       }
 
-      const resolvedResultUrl = resultUrl || (!stage2Expected ? (bestAvailableStage.url || null) : null);
+      const allowFallbackResultUrl =
+        !stage2Expected ||
+        stateOut === "completed" ||
+        localCompleted ||
+        !!blockedStage ||
+        !!fallbackStageMeta;
+      const resolvedResultUrl = resultUrl || (allowFallbackResultUrl ? (bestAvailableStage.url || null) : null);
       const resolvedFinalStage =
         local.finalStage ||
         local.resultStage ||
         (rv && (rv.finalStage || rv.resultStage)) ||
-        (!stage2Expected ? (bestAvailableStage.stage || null) : null);
+        (allowFallbackResultUrl ? (bestAvailableStage.stage || null) : null);
       const hasFallbackOutput = !!(stage1BPresent || stage1APresent || resultUrl || bestAvailableStage.url);
       if (requestedStage2 === true && !stage2Present && stateOut === "completed" && !blockedStage && stage2Expected) {
         warningSet.add("We couldn’t safely finish staging for this image. The best enhanced version is shown.");
