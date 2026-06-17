@@ -28,5 +28,21 @@ describe("envelope validator structured issue emission", () => {
         "continuous_surface_replacement",
       ])
     );
+    expect(result.hardFail).toBe(true);
+  });
+
+  it("keeps ambiguous envelope changes advisory", () => {
+    const result = parseEnvelopeResult(JSON.stringify({
+      ok: false,
+      reason: "envelope_changed",
+      confidence: 0.55,
+      boundaryLinesMissing: false,
+      continuousSurfaceReplacement: false,
+      noPlausibleVisualExplanation: false,
+      visualAmbiguity: true,
+    }));
+
+    expect(result.hardFail).toBe(false);
+    expect(result.advisory).toBe(true);
   });
 });

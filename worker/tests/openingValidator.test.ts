@@ -34,6 +34,30 @@ describe("opening validator structured issue emission", () => {
     expect(result.primaryStructuredIssue?.evidence).toContain("opening_removed");
   });
 
+  it.each([
+    ["added opening", { pass: false, reason: "opening_added", confidence: 1.0, details: [{ id: "opening_1", classification: "added", reason: "opening added" }] }],
+    ["relocated opening", { pass: false, reason: "opening_relocated_review", confidence: 1.0, details: [{ id: "opening_1", classification: "relocated", reason: "opening relocated" }] }],
+    ["major resize", { pass: false, reason: "opening_resized_major", confidence: 1.0, details: [{ id: "opening_1", classification: "altered", reason: "opening resized major" }] }],
+  ] as const)("hard-fails %s", (_label, payload) => {
+    const result = parseOpeningResult(JSON.stringify(payload));
+
+    expect(result.status).toBe("fail");
+    expect(result.hardFail).toBe(true);
+  });
+
+  it("keeps ambiguous occlusion advisory", () => {
+    const result = parseOpeningResult(JSON.stringify({
+      pass: false,
+      reason: "window_occlusion_review",
+      confidence: 0.5,
+      details: [{ id: "opening_1", classification: "occluded", reason: "occluded by staging" }],
+    }));
+
+    expect(result.status).toBe("pass");
+    expect(result.hardFail).toBe(false);
+    expect(result.issueType).toBeDefined();
+  });
+
   it("treats destructive opening bundles as coherent when resize is supportive", () => {
     const analysis = analyzeOpeningSignalCoherence({
       issueType: "opening_infilled",

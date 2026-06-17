@@ -3329,6 +3329,8 @@ export function shouldHardFailOpening(
   if (summary.openingRemoved) return true;
   if (summary.openingInfilled) return true;
   if (summary.openingSealed) return true;
+  if (summary.openingRelocated && (opts?.relocationDetected === true || opts?.invariantStructuralDriftDetected === true)) return true;
+  if (summary.openingApertureExpanded === true && opts?.invariantStructuralDriftDetected === true) return true;
   return false;
 }
 

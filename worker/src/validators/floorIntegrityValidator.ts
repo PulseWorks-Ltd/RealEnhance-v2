@@ -53,6 +53,10 @@ function normalizeFloorMaterialClass(raw: string): NormalizedFloorMaterialClass 
     return "carpet";
   }
 
+  if (/(linoleum|lino|vinyl sheet|sheet vinyl|vinyl tile|vt|lvt|vinyl flooring)/.test(value)) {
+    return "concrete";
+  }
+
   if (/(wood|hardwood|timber|oak|engineered wood|engineered timber|laminate|vinyl plank|lvp|floorboard|floorboards|plank)/.test(value)) {
     return "wood";
   }
@@ -169,6 +173,7 @@ export function parseFloorIntegrityResult(rawText: string): FloorIntegrityValida
     ? parsed.reason.trim()
     : modelReportedFail ? "floor_integrity_changed" : "floor_integrity_preserved";
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
+  const flooringMaterialChanged = materialChangedExplicit || materialChangedByCompare;
   const identityBreakingMaterialShift =
     shouldForceFail &&
     isIdentityBreakingFloorClassShift(baselineMaterial, stagedMaterial);
@@ -177,6 +182,7 @@ export function parseFloorIntegrityResult(rawText: string): FloorIntegrityValida
     confidence >= FLOOR_ADVISORY_CONFIDENCE_THRESHOLD &&
     confidence < FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD;
   const hardFail =
+    flooringMaterialChanged &&
     identityBreakingMaterialShift &&
     confidence >= FLOOR_HARD_FAIL_CONFIDENCE_THRESHOLD;
   const ignoreIdentityBreakingShift =
