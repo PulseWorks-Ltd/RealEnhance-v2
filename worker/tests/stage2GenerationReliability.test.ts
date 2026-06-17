@@ -219,6 +219,20 @@ describe("Stage-2 generation reliability", () => {
       expect(prompt).not.toContain("REFRESH LOGIC — FLEXIBLE STAGING MODE");
     });
 
+    it("applies composition-authority opening to BEDROOM in minimal planner mode", async () => {
+      process.env.STAGE2_MINIMAL_PLANNER_MODE = "true";
+      const prompt = await captureStage2Prompt("bedroom");
+
+      expect(prompt).toContain("ROLE: Real Estate Interior Photographer and Staging Consultant");
+      expect(prompt).toContain("CAMERA COMPOSITION AUTHORITY");
+      expect(prompt).toContain("ROOM FUNCTION AUTHORITY");
+      expect(prompt).toContain("Do not create showroom-style furniture layouts.");
+      expect(prompt).toContain("Stage as: bedroom");
+      expect(prompt).toContain("MINIMAL STAGING DIRECTIVE");
+      expect(prompt).not.toContain("FULL-SYNTHESIS LOGIC — MANDATORY");
+      expect(prompt).not.toContain("REFRESH LOGIC — FLEXIBLE STAGING MODE");
+    });
+
     it("bypasses layout planner instructions in minimal planner mode", async () => {
       process.env.STAGE2_MINIMAL_PLANNER_MODE = "1";
       const layoutPlan: Stage2LayoutPlan = {
