@@ -371,163 +371,49 @@ function buildNanoRoomProgramGuidance(opts: {
   const room = String(opts.roomType || "").toLowerCase().trim();
   const style = String(opts.stagingStyle || "standard_listing").toLowerCase().trim();
 
-  let anchorGuidance = "Primary anchor: choose one clear, room-appropriate anchor and build the rest of the layout around it.";
-  let roomRules: string[] = [];
-  let itemBudget = "Furniture budget: max 3 major furniture pieces. Decor budget: max 3 small decor accents total.";
-
+  let roomLabel = "Room";
   switch (room) {
+    case "bedroom":
+      roomLabel = "Bedroom";
+      break;
     case "living_room":
     case "living":
-      anchorGuidance =
-        "Primary anchor (MANDATORY): the main sofa or sectional seating group. Build the living-room layout around this seating anchor. A freestanding, non-permanent TV/media console is OPTIONAL only when there is a clearly suitable uninterrupted wall area that does not conflict with windows, doors, openings, or circulation. Do not force a TV/media unit into the layout when no such area exists.";
-      roomRules = [
-        "Include a realistic sofa or sectional as the primary living-room anchor.",
-        "If a suitable uninterrupted wall area exists, you may add a freestanding TV unit/media console as a secondary focal element.",
-        "If no suitable TV wall exists, use conversation grouping, fireplace, or view as the focal point instead.",
-        "Arrange seating for natural circulation and a believable living-room focal point.",
-        "Do not stage this as a dining room or bedroom.",
-      ];
-      itemBudget = "Furniture budget: max 4 major furniture pieces. Decor budget: max 3 small decor accents total.";
+      roomLabel = "Living Room";
       break;
-    case "bedroom":
-      anchorGuidance =
-        "Primary anchor (MANDATORY): bed placement as the dominant focal object.";
-      roomRules = [
-        "Include a realistic bed at correct scale.",
-        "Use supporting bedside furniture proportionally.",
-      ];
-      itemBudget = "Furniture budget: max 3 major furniture pieces (bed + up to 2 supporting pieces). Decor budget: max 2 small decor accents total.";
+    case "living_dining":
+      roomLabel = "Living + Dining";
+      break;
+    case "kitchen_dining":
+      roomLabel = "Kitchen + Dining";
+      break;
+    case "multiple_living":
+      roomLabel = "Multiple Living";
       break;
     case "dining":
     case "dining_room":
-      anchorGuidance =
-        "Primary anchor (MANDATORY): dining table with chairs as the dominant focal object.";
-      roomRules = [
-        "Dining table and chairs must be present and to-scale.",
-        "Do not convert to a lounge-first layout.",
-      ];
-      itemBudget = "Furniture budget: max 3 major furniture pieces. Decor budget: max 2 small decor accents total.";
+      roomLabel = "Dining Room";
       break;
     case "office":
-      anchorGuidance =
-        "Primary anchor (MANDATORY): desk and office chair as the dominant focal object.";
-      roomRules = [
-        "Keep layout functional for work use.",
-      ];
-      itemBudget = "Furniture budget: max 3 major furniture pieces. Decor budget: max 2 small decor accents total.";
+      roomLabel = "Office";
       break;
     case "kitchen":
-      anchorGuidance =
-        "Primary anchor: existing kitchen context (cabinets/counters) must remain visually dominant; add only compatible, minimal movable staging.";
-      roomRules = [
-        "Do NOT add a dining table when room type is kitchen.",
-        "Do NOT add chairs, stools, or benches to kitchen islands.",
-        "Kitchen staging is countertop/window-sill/open-shelf only; no added floor furniture in kitchen areas.",
-        "Allow up to 2 small appliances total (kettle, toaster, coffee machine, blender).",
-        "Allow up to 3 decor/accessory items total (vase, fruit bowl, cookbooks, utensil holder, knife block, oven gloves, dish towel).",
-      ];
-      itemBudget = "Kitchen budget: no new floor furniture. Add up to 2 small appliances and up to 3 decor/accessory items on countertop/window-sill/open-shelf only.";
+      roomLabel = "Kitchen";
       break;
     case "kitchen_living":
-      anchorGuidance =
-        "Primary anchors (MANDATORY): preserve kitchen context and include a clear living-room seating anchor.";
-      roomRules = [
-        "Do NOT add chairs, stools, or benches to kitchen islands.",
-        "Do NOT introduce a third functional zone.",
-        "Kitchen zone allows micro-staging only: countertop/window-sill/open-shelf items; no added floor furniture in kitchen area.",
-        "Kitchen micro-staging cap: up to 2 small appliances and up to 3 decor/accessory items total.",
-      ];
-      itemBudget = "Furniture budget: max 4 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
-      break;
-    case "kitchen_dining":
-      anchorGuidance =
-        "Primary anchors (MANDATORY): preserve kitchen context and include a clear dining-table anchor.";
-      roomRules = [
-        "Do NOT add chairs, stools, or benches to kitchen islands.",
-        "Do NOT introduce a third functional zone.",
-        "Kitchen zone allows micro-staging only: countertop/window-sill/open-shelf items; no added floor furniture in kitchen area.",
-        "Kitchen micro-staging cap: up to 2 small appliances and up to 3 decor/accessory items total.",
-      ];
-      itemBudget = "Furniture budget: max 4 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
-      break;
-    case "living_dining":
-      anchorGuidance =
-        "Primary anchors (MANDATORY): one living anchor and one dining anchor, both clearly readable.";
-      roomRules = [
-        "Do NOT collapse both functions into a single furniture cluster.",
-      ];
-      itemBudget = "Furniture budget: max 5 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
-      break;
-    default:
-      roomRules = [
-        "Use room type as authoritative for furniture program and anchor choice.",
-      ];
+      roomLabel = "Kitchen + Living";
       break;
   }
 
-  return `CRITICAL PRIORITY 1: ARCHITECTURAL LOCK
-The input image is an immutable architectural blueprint.
-You are strictly forbidden from modifying any permanent structure or built-in elements.
-Do not modify walls, ceilings, floors, windows, doors, openings, trims, fixed lighting, built-ins, or permanent fixtures.
-Do not repaint, re-floor, renovate, remodel, or add any built architectural elements.
-All openings must remain fully functional and unobstructed in realistic use.
+  return `Stage this room in the selected staging style.
 
-Style must be achieved through freestanding furniture and movable decor only.
-Do not add architectural features to achieve style, including coffered ceilings, wall moldings, built-in LED strips, recessed-lighting additions, wall panels, or integrated cabinetry.
+Room type: ${roomLabel}
+Staging style: ${style || "standard_listing"}
 
-RESOURCE CONSTRAINT (ZERO TOLERANCE)
-Furniture must adapt to the room; the room must never adapt to furniture.
-Do not extend wall planes, flatten recesses, or shift openings to create placement surface.
-Internal doorways, walk-throughs, and alcoves are structural voids—not blank canvases.
-EGRESS & CLEARANCE: Maintain a minimum 80cm clear path for all doors and walk-throughs.
-Priority Hierarchy: Doorway access and floor-plan flow always outrank furniture density.
-If an item blocks an opening's path or overlaps a door swing zone, you MUST omit that item.
-Do not alter window-to-wall ratio, door-to-wall ratio, sill height, or wall returns.
-If an item does not fit on existing wall area, omit the item.
+Add realistic furniture and decor appropriate for the room type.
+Maintain realistic scale and spacing.
+Keep circulation and access clear.
 
-CRITICAL PRIORITY 2: PRIMARY ANCHOR
-Selected room type: ${room || "unknown"}
-${anchorGuidance}
-
-Required room-program guidance:
-${roomRules.map((rule) => `- ${rule}`).join("\n")}
-
-CRITICAL PRIORITY 3: STYLE OVERLAY
-Selected staging style: ${style || "standard_listing"}
-- Respect the selected staging style as the aesthetic layer (materials, palette, decor mood).
-- Room type and functional anchor rules are higher priority than style.
-- Never violate architecture, openings, or permanent fixtures to satisfy style.
-
-CRITICAL PRIORITY 4: FIT-FIRST DENSITY CONTROL
-- ${itemBudget}
-- Stage only what comfortably fits in the visible room volume and circulation paths.
-- If an item would feel crowded, reduce walkway clearance, or risk covering architecture, omit it.
-- Prefer fewer, correctly scaled items over adding extra furniture/decor.
-- Keep at least one clear path from entry to the main window/opening.
-
-STRUCTURAL CONFLICT RESOLUTION
-
-When staging conflicts with structure or openings:
-- First, reposition or reorient items within the space
-- If needed, use appropriately scaled alternatives
-- Reduce secondary items before removing primary furniture
-- Only omit items when no structurally safe placement is possible
-
-Maintain a realistic and professionally presented appearance.
-Correct scale, circulation, usability, and room function are more important than furniture quantity.
-Use only the furniture necessary to create a believable occupied space.
-
-OPENING SAFETY (MANDATORY)
-- Never place art, mirrors, shelving, cabinets, or decor on top of windows, glazed doors, or door openings.
-- Only place wall art on uninterrupted wall segments with no opening behind or directly adjacent.
-- If wall availability is uncertain, omit wall art entirely.
-- If a bed or headboard must be placed in front of a window due to room size, keep the full window frame, sill height, and visible glass unchanged behind and around the furniture. Never raise the sill or shorten the window to fit furniture.
-- If a TV, artwork, console, or shelf requires more continuous wall than exists between openings, you MUST omit that item. Do not create new mountable wall area by shrinking, shifting, or removing any opening.
-
-NEGATIVE CONSTRAINTS
-- Apply all strict prohibitions in this prompt exactly.
-- If any style request conflicts with architecture lock rules, architecture lock rules always win.
-`;
+All structural preservation rules below are mandatory.`;
 }
 
 // Stage 2: virtual staging (add furnitur)
@@ -782,35 +668,9 @@ export async function runStage2GenerationAttempt(
 
   const STAGE2_PROMPT_NANO_BANANA = `Virtual Staging Instructions for nano banana (or Pro)
 
-As an advanced virtual staging AI, your only role is to add realistic, correctly-scaled furniture and decor to the provided room photo. You are to act only as an decorator, placing items within the unchanging physical structure of the room.
-
-  FUNCTIONAL LAYOUT AUTHORITY
-
-  The room's architecture and intended use determine furniture placement.
-
-  Furniture placement must be based on:
-  1. Architecture
-  2. Room function
-  3. Natural circulation paths
-  4. Occupant usability
-
-  Furniture visibility is not a placement objective.
-
-  Do not redesign room layouts to improve furniture visibility.
-
-  Furniture may be partially visible, cropped, side-on, angled away from the camera, or positioned outside the primary field of view if that is the most realistic arrangement for the room.
-
-  Prioritize realistic occupancy over furniture presentation.
-
-  STAGING PRIORITY ORDER
-
-  1. Architectural preservation
-  2. Room function
-  3. Circulation and access
-  4. Occupant usability
-  5. Furniture aesthetics
-
-  If a staging decision improves furniture presentation but reduces room function, choose the room-function solution.
+Stage this room in the selected staging style.
+Add realistic furniture and decor appropriate for the room type.
+Maintain realistic scale and spacing.
 
 STRUCTURAL PRIORITY RULE — NON-NEGOTIABLE
 
@@ -862,16 +722,6 @@ View: Do not change the existing view through windows or doors.
 
 III. Core Principle:
 The photo of the room must remain an exact structural and architectural copy of the original. Your function is limited entirely to placing a realistic layer of furniture and decor within this unchanging, permanent framework. Do not extend, expand, contract, or warp any space or element of the original photo. Only place furniture and decor in logical, realistic positions within the room.
-
-ANTI-SHOWROOM CONSTRAINTS
-
-Do NOT:
-- Orient furniture toward the camera merely for visibility.
-- Center furniture solely to improve presentation.
-- Reposition furniture to improve camera readability.
-- Create showroom-style furniture arrangements.
-- Sacrifice circulation or room usability to improve furniture visibility.
-- Optimize layouts for catalog presentation.
 
 Camera & Perspective Constraint:
 The camera viewpoint, lens perspective, and framing of the image must remain exactly the same as in the original photo. Do not zoom, crop, rotate, widen, narrow, or otherwise shift the camera position or perspective. The final staged image must appear as though the exact same photo was taken from the same camera position, with furniture simply placed into the scene.
