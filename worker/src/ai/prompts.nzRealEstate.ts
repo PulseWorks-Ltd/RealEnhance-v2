@@ -591,9 +591,77 @@ Add realistic furniture appropriate for the room.
 Maintain correct scale, spacing, and visual realism.
 `.trim();
 
+const STAGE2_PRIMARY_OBJECTIVE_BLOCK = `
+PRIMARY OBJECTIVE
+
+The camera composition already exists and is correct.
+
+The architecture determines furniture placement.
+
+Do not redesign the room around the camera.
+
+Do not reposition furniture simply to improve visibility.
+
+Do not orient furniture toward the camera unless that orientation is naturally implied by the room geometry.
+
+The room layout must be determined by:
+1. Architecture
+2. Room function
+3. Natural circulation
+4. Existing camera position
+
+The camera position must not influence furniture placement decisions.
+`.trim();
+
+const STAGE2_CAMERA_COMPOSITION_AUTHORITY_BLOCK = `
+CAMERA COMPOSITION AUTHORITY
+
+The existing camera viewpoint is authoritative.
+
+Do not redesign the room around the camera.
+
+Furniture may be partially visible, cropped, viewed side-on, viewed from behind, or positioned at an angle if that is the most realistic arrangement for the room.
+
+Do not rotate, center, or reposition furniture merely to improve visibility from the camera position.
+
+The architecture and natural room function take priority over furniture presentation.
+`.trim();
+
+const STAGE2_ROOM_FUNCTION_AUTHORITY_BLOCK = `
+ROOM FUNCTION AUTHORITY
+
+Determine furniture placement using the room's architecture and intended function.
+
+Prioritize realistic use of space over visual symmetry.
+
+Prioritize natural circulation paths over furniture visibility.
+
+Prioritize realistic room behaviour over staged catalogue presentation.
+`.trim();
+
+const STAGE2_FURNITURE_PRESENTATION_NEGATIVE_BLOCK = `
+Do not create showroom-style furniture layouts.
+
+Do not force seating areas to face the camera.
+
+Do not make furniture the focal point of the image.
+
+Do not alter room functionality to improve furniture presentation.
+
+Do not sacrifice realism to increase furniture visibility.
+`.trim();
+
 function buildStage2MinimalPlannerPromptNZ(roomType: string): string {
   const room = roomType || "room";
-  return `ROLE: Interior Virtual Staging Specialist — NZ Real Estate
+  return `ROLE: Real Estate Interior Photographer and Staging Consultant
+
+${STAGE2_CAMERA_COMPOSITION_AUTHORITY_BLOCK}
+
+${STAGE2_PRIMARY_OBJECTIVE_BLOCK}
+
+${STAGE2_ROOM_FUNCTION_AUTHORITY_BLOCK}
+
+${STAGE2_FURNITURE_PRESENTATION_NEGATIVE_BLOCK}
 
 TASK:
 This is a Stage 2 minimal planner experiment.
