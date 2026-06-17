@@ -9,6 +9,10 @@ const logger = console;
 const FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
 const FIXTURE_MUTATION_REGEX = /\b(add|added|addition|inserted|introduced|install|installed|installation|replace|replaced|replacement|remove|removed|removal|missing)\b/;
 const HVAC_TARGET_REGEX = /\b(hvac|air conditioner|ac unit|split unit|fixed ac unit|wall mounted split unit)\b/;
+const BUILT_IN_TARGET_REGEX = /\b(built[\s_-]?in|builtin|millwork|cabinetry|cabinet|wardrobe|closet|shelving|shelves)\b/;
+const KITCHEN_ISLAND_TARGET_REGEX = /\b(kitchen[\s_-]?island|island)\b/;
+const SINK_TARGET_REGEX = /\b(sink|basin)\b/;
+const STOVETOP_TARGET_REGEX = /\b(stovetop|cooktop|hob|range|oven range)\b/;
 const FIXTURE_TARGET_REGEX = /\b(pendant|chandelier|ceiling fan|recessed light|recessed lights|downlight|downlights|ceiling vent|ceiling vents|smoke detector|smoke detectors|light fixture|light fixtures)\b/;
 const LIGHTING_TARGET_REGEX = /\b(light|lights|lighting|light fixture|light fixtures|pendant|chandelier|track light|track lighting|feature light|suspended light|spot rail|rail light|ceiling fixture|ceiling mounted fixture|ceiling fan|recessed light|downlight|decorative ceiling)\b/;
 
@@ -111,7 +115,14 @@ function isHardFailEligibleFixtureMutation(reason: string, advisorySignals: stri
   const signals = buildNormalizedSignals(reason, advisorySignals);
 
   return signals.some((value) =>
-    hasMutationSignal(value) && (FIXTURE_TARGET_REGEX.test(value) || HVAC_TARGET_REGEX.test(value))
+    hasMutationSignal(value) && (
+      FIXTURE_TARGET_REGEX.test(value) ||
+      HVAC_TARGET_REGEX.test(value) ||
+      BUILT_IN_TARGET_REGEX.test(value) ||
+      KITCHEN_ISLAND_TARGET_REGEX.test(value) ||
+      SINK_TARGET_REGEX.test(value) ||
+      STOVETOP_TARGET_REGEX.test(value)
+    )
   );
 }
 
@@ -123,6 +134,26 @@ function classifyFixtureIssueType(reason: string, advisorySignals: string[]): (t
   const hasHvacMutation = signals.some((value) => HVAC_TARGET_REGEX.test(value) && hasMutationSignal(value));
   if (has("hvac_changed") || hasHvacMutation) {
     return ISSUE_TYPES.HVAC_CHANGED;
+  }
+
+  const hasBuiltInMutation = signals.some((value) => BUILT_IN_TARGET_REGEX.test(value) && hasMutationSignal(value));
+  if (hasBuiltInMutation || has("built_in")) {
+    return ISSUE_TYPES.FIXTURE_CHANGED;
+  }
+
+  const hasIslandMutation = signals.some((value) => KITCHEN_ISLAND_TARGET_REGEX.test(value) && hasMutationSignal(value));
+  if (hasIslandMutation || has("kitchen_island") || has("island")) {
+    return ISSUE_TYPES.FIXTURE_CHANGED;
+  }
+
+  const hasSinkMutation = signals.some((value) => SINK_TARGET_REGEX.test(value) && hasMutationSignal(value));
+  if (hasSinkMutation || has("sink")) {
+    return ISSUE_TYPES.FIXTURE_CHANGED;
+  }
+
+  const hasStovetopMutation = signals.some((value) => STOVETOP_TARGET_REGEX.test(value) && hasMutationSignal(value));
+  if (hasStovetopMutation || has("stovetop") || has("cooktop") || has("hob") || has("range")) {
+    return ISSUE_TYPES.FIXTURE_CHANGED;
   }
 
   const hasFixtureMutation = signals.some((value) => FIXTURE_TARGET_REGEX.test(value) && hasMutationSignal(value));
@@ -154,6 +185,12 @@ function buildFixtureStructuredIssues(params: {
 
   const object = /(^|_)hvac(_|$)|air_conditioner|ac_unit|split_unit/.test(joined)
     ? "hvac_unit"
+    : /kitchen_island|island/.test(joined)
+      ? "kitchen_island"
+      : /(^|_)sink(_|$)|basin/.test(joined)
+        ? "sink"
+        : /stovetop|cooktop|hob|range/.test(joined)
+          ? "stovetop"
     : /track_light|track_lighting|feature_light|spot_rail|rail_light|pendant|chandelier|light_fixture|downlight|recessed_light|ceiling_fan/.test(joined)
       ? "lighting_fixture"
       : "fixture";

@@ -1,0 +1,2 @@
+jobId,imageId,validator,confidence,hardFail,reason,stage2ImageSignedUrl,batchId
+job_4505ea3b-f4d4-49c5-b999-b35329e22631,img_b29789cc-757e-46de-9d0c-82add7e7bf0d,opening,0.917,true,opening_added|opening_relocated_review|opening_resized|opening_band_mismatch,https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1779875568413-realenhance-job_4505ea3b-f4d4-49c5-b999-b35329e22631-1779874982111-9idhlqimg0w-canonical-1A-2-2-delivery.jpg,client-batch-1779874978753-98968a98-574e-4e07-882f-e9f8f5f4b877

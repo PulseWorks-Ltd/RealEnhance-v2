@@ -27,6 +27,7 @@ function logEnvelopePhaseEnd(jobId: string | undefined, phase: string, durationM
 const ENVELOPE_MODEL_PRIMARY = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
 const ENVELOPE_MODEL_ESCALATION = process.env.GEMINI_VALIDATOR_MODEL_ESCALATION || "gemini-2.5-pro";
 const ENVELOPE_ESCALATION_CONFIDENCE = Number(process.env.GEMINI_VALIDATOR_PRO_MIN_CONFIDENCE || 0.7);
+const ENVELOPE_HARD_FAIL_CONFIDENCE_THRESHOLD = ENVELOPE_ESCALATION_CONFIDENCE;
 
 type EnvelopeReasonCode =
   | "envelope_visual_ambiguity"
@@ -127,6 +128,8 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
         ? ISSUE_TYPES.WALL_CHANGED
         : ISSUE_TYPES.ENVELOPE_ANOMALY;
   const issueTier = classifyIssueTier(issueType);
+  const hardFailEligible = envelopeDetectedChange && geometricCertainty && reasonCode === "envelope_confirmed_structural_change";
+  const hardFail = hardFailEligible && confidence >= ENVELOPE_HARD_FAIL_CONFIDENCE_THRESHOLD;
   const structuredIssues = buildEnvelopeStructuredIssues({
     issueType,
     issueTier,
@@ -152,11 +155,11 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     status: parsed.ok ? "pass" : "fail",
     reason,
     confidence,
-    hardFail: false,
+    hardFail,
     issueType,
     issueTier,
     advisorySignals,
-    advisory: envelopeDetectedChange ? true : undefined,
+    advisory: envelopeDetectedChange && !hardFail ? true : undefined,
     primaryStructuredIssue: structuredIssues[0],
     structuredIssues,
   };

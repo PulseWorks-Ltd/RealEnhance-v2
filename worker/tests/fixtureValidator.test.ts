@@ -54,6 +54,26 @@ describe("fixture validator mutation parsing", () => {
       reason: "new HVAC unit installed",
       issueType: ISSUE_TYPES.HVAC_CHANGED,
     },
+    {
+      name: "built-in cabinetry mutation",
+      reason: "built_in_cabinet_removed",
+      issueType: ISSUE_TYPES.FIXTURE_CHANGED,
+    },
+    {
+      name: "kitchen island mutation",
+      reason: "kitchen_island_added",
+      issueType: ISSUE_TYPES.FIXTURE_CHANGED,
+    },
+    {
+      name: "sink mutation",
+      reason: "sink_replaced",
+      issueType: ISSUE_TYPES.FIXTURE_CHANGED,
+    },
+    {
+      name: "stovetop mutation",
+      reason: "stovetop_removed",
+      issueType: ISSUE_TYPES.FIXTURE_CHANGED,
+    },
   ] as const;
 
   it.each(fixtureMutationCases)("hard-fails $name", ({ reason, issueType }) => {
@@ -78,7 +98,7 @@ describe("fixture validator mutation parsing", () => {
 
     expect(result.primaryStructuredIssue).toMatchObject({
       type: "fixture_change",
-      object: "pendant_light",
+      object: "lighting_fixture",
       action: "added",
       severity: "critical",
       source: "fixture_validator",

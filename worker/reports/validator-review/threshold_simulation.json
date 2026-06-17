@@ -1,0 +1,114 @@
+[
+  {
+    "validator": "opening",
+    "scenario": "Current Threshold",
+    "threshold": 0.9,
+    "additionalImagesWouldHardFail": 2,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "opening",
+    "scenario": "Alternative Threshold A",
+    "threshold": 0.85,
+    "additionalImagesWouldHardFail": 2,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "opening",
+    "scenario": "Alternative Threshold B",
+    "threshold": 0.8,
+    "additionalImagesWouldHardFail": 2,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "opening",
+    "scenario": "Alternative Threshold C",
+    "threshold": 0.75,
+    "additionalImagesWouldHardFail": 2,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "envelope",
+    "scenario": "Current Threshold",
+    "threshold": null,
+    "additionalImagesWouldHardFail": 0,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "envelope",
+    "scenario": "Alternative Threshold A",
+    "threshold": 0.85,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 4
+  },
+  {
+    "validator": "envelope",
+    "scenario": "Alternative Threshold B",
+    "threshold": 0.8,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 4
+  },
+  {
+    "validator": "envelope",
+    "scenario": "Alternative Threshold C",
+    "threshold": 0.75,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 4
+  },
+  {
+    "validator": "flooring",
+    "scenario": "Current Threshold",
+    "threshold": 0.9,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "flooring",
+    "scenario": "Alternative Threshold A",
+    "threshold": 0.85,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "flooring",
+    "scenario": "Alternative Threshold B",
+    "threshold": 0.8,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "flooring",
+    "scenario": "Alternative Threshold C",
+    "threshold": 0.75,
+    "additionalImagesWouldHardFail": 4,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "fixture",
+    "scenario": "Current Threshold",
+    "threshold": 0.9,
+    "additionalImagesWouldHardFail": 5,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "fixture",
+    "scenario": "Alternative Threshold A",
+    "threshold": 0.85,
+    "additionalImagesWouldHardFail": 5,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "fixture",
+    "scenario": "Alternative Threshold B",
+    "threshold": 0.8,
+    "additionalImagesWouldHardFail": 5,
+    "additionalVsCurrentScenario": 0
+  },
+  {
+    "validator": "fixture",
+    "scenario": "Alternative Threshold C",
+    "threshold": 0.75,
+    "additionalImagesWouldHardFail": 5,
+    "additionalVsCurrentScenario": 0
+  }
+]

@@ -31,5 +31,6 @@ describe("floor validator structured issue emission", () => {
         "floor_confidence_band:block",
       ])
     );
+    expect(result.hardFail).toBe(true);
   });
 });

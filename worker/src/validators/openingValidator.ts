@@ -260,6 +260,23 @@ function hasAnyToken(tokens: string[], candidates: string[]): boolean {
   return candidates.some((candidate) => tokens.includes(candidate));
 }
 
+function hasOpeningHardFailEvidence(tokens: string[], details: Array<{ classification: string }>): {
+  added: boolean;
+  infilled: boolean;
+  relocated: boolean;
+  resizedMajor: boolean;
+  sealed: boolean;
+} {
+  const normalizedTokens = tokens.map((token) => String(token || "").trim().toLowerCase());
+  return {
+    added: hasAnyToken(normalizedTokens, ["opening_added", "light_anchor_opening_added_confirmed"]),
+    infilled: hasAnyToken(normalizedTokens, ["opening_infilled", "light_anchor_opening_infilled"]),
+    relocated: details.some((entry) => entry.classification === "relocated") || hasAnyToken(normalizedTokens, ["opening_relocated_review", "light_anchor_opening_relocated_review", "opening_signature_mismatch", "opening_band_mismatch"]),
+    resizedMajor: hasAnyToken(normalizedTokens, ["opening_resized_major", "opening_size_reduction_ge_0_25", "opening_resize_ge_0_30", "opening_resized"]),
+    sealed: hasAnyToken(normalizedTokens, ["opening_sealed"]),
+  };
+}
+
 type OpeningAuthorityKey =
   | "deterministic_added_opening"
   | "deterministic_opening_break"
@@ -434,6 +451,8 @@ export function analyzeOpeningSignalCoherence(params: {
     token === "opening_removed" ||
     token === "opening_infilled" ||
     token === "opening_sealed" ||
+    token === "opening_resized_major" ||
+    token === "opening_anomaly" ||
     token === "opening_type_changed" ||
     token === "opening_class_mismatch" ||
     token === "light_anchor_opening_removed" ||
@@ -926,10 +945,12 @@ function extractBaselineOpenings(baseline?: StructuralBaseline | null): Baseline
 
 function inferIssueTypeFromComparison(params: {
   anyRemoved: boolean;
+  anyAdded: boolean;
   anyAlteredMajor: boolean;
   anyRelocated: boolean;
 }): ValidationIssueType {
   if (params.anyRemoved) return ISSUE_TYPES.OPENING_REMOVED;
+  if (params.anyAdded) return ISSUE_TYPES.OPENING_ANOMALY;
   if (params.anyAlteredMajor) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
   if (params.anyRelocated) return ISSUE_TYPES.OPENING_ANOMALY;
   return ISSUE_TYPES.NONE;
@@ -950,6 +971,8 @@ function inferOpeningIssueType(params: {
   if (has("opening_sealed")) return ISSUE_TYPES.OPENING_SEALED;
   if (has("opening_type_changed") || has("opening_class_mismatch") || has("opening_added")) return ISSUE_TYPES.OPENING_ANOMALY;
   if (has("opening_relocated") || has("light_anchor_opening_relocated")) return ISSUE_TYPES.OPENING_RELOCATED;
+  if (has("opening_resized_major") || has("opening_size_reduction_ge") || has("opening_resize_ge_0_30")) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+  if (has("opening_resized_minor")) return ISSUE_TYPES.OPENING_RESIZED_MINOR;
   if (has("opening_visibility_reduction")) return ISSUE_TYPES.OPENING_OCCLUSION;
   if (has("opening_size_reduction_ge") || has("opening_resize_ge_0_30")) return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
   if (has("opening_resized")) return ISSUE_TYPES.OPENING_RESIZED_MINOR;
@@ -1035,11 +1058,19 @@ export function parseOpeningResult(rawText: string): OpeningValidatorResult {
 
   const anyRemoved = details.some((entry: any) => entry.classification === "removed") || String(parsed?.issueType || "") === "opening_removed";
   const anyAlteredMajor = details.some((entry: any) => entry.classification === "altered") || String(parsed?.issueType || "") === "opening_altered";
+  const anyAdded = details.some((entry: any) => entry.classification === "added") || /(^|_)opening_added($|_)/.test(String(parsed?.reason || "")) || /(^|_)opening_added($|_)/.test(String(parsed?.issueType || ""));
+  const anyInfilled = /(^|_)opening_infilled($|_)/.test(String(parsed?.reason || "")) || /(^|_)opening_infilled($|_)/.test(String(parsed?.issueType || ""));
+  const anySealed = /(^|_)opening_sealed($|_)/.test(String(parsed?.reason || "")) || /(^|_)opening_sealed($|_)/.test(String(parsed?.issueType || ""));
   const anyOccluded = details.some((entry: any) => entry.classification === "occluded");
   const anyRelocated = details.some((entry: any) => entry.classification === "relocated") || /relocat/i.test(String(parsed?.reason || ""));
+  const hardFailEvidence = hasOpeningHardFailEvidence(
+    splitIssueTokens(String(parsed?.reason || ""), Array.isArray(parsed?.advisorySignals) ? parsed.advisorySignals : undefined),
+    details,
+  );
 
   const issueType = inferIssueTypeFromComparison({
     anyRemoved,
+    anyAdded,
     anyAlteredMajor,
     anyRelocated,
   });
@@ -1051,7 +1082,7 @@ export function parseOpeningResult(rawText: string): OpeningValidatorResult {
   } else if (anyAlteredMajor) {
     confidence = Math.max(0.8, Math.min(0.95, confidence || 0.85));
   } else if (anyRelocated) {
-    confidence = Math.min(confidence || 0.6, 0.6);
+    confidence = Math.max(0.9, confidence || 0.9);
   }
 
   // Occlusion alone is never a fail condition.
@@ -1083,7 +1114,8 @@ export function parseOpeningResult(rawText: string): OpeningValidatorResult {
     hasOcclusion: anyOccluded,
     hasBandMismatch: false,
   });
-  const hardFail = !pass && anyRemoved && confidence >= HARD_FAIL_CONFIDENCE_THRESHOLD && fallbackCoherent;
+  const hardFailEligible = anyRemoved || anyAdded || anyInfilled || anySealed || hardFailEvidence.relocated || hardFailEvidence.resizedMajor;
+  const hardFail = !pass && hardFailEligible && confidence >= HARD_FAIL_CONFIDENCE_THRESHOLD && fallbackCoherent;
   const issueTier = classifyIssueTier(issueType);
   const structuredIssues = buildOpeningStructuredIssues({
     issueType,
@@ -1686,6 +1718,9 @@ export async function runOpeningValidator(
       deterministic.summary.openingRemoved ||
       deterministic.summary.openingInfilled ||
       deterministic.summary.openingSealed ||
+      deterministic.summary.openingRelocated === true ||
+      deterministic.summary.openingApertureExpanded === true ||
+      openingSizeReductionDetected ||
       authoritativeAddedOpenings;
 
     const findings = Array.isArray(deterministic.findings) ? deterministic.findings : [];
@@ -1713,6 +1748,7 @@ export async function runOpeningValidator(
       authoritativeAddedOpenings;
     const deterministicStructuralCorroborated =
       strongTopologyBreakEvidence ||
+      openingSizeReductionDetected ||
       strongContinuityBreakEvidence ||
       strongBandCorroboration ||
       strongCrossAnchorInconsistency ||
@@ -1782,6 +1818,9 @@ export async function runOpeningValidator(
       advisorySignals.push("opening_relocated_review");
       reasonParts.push("opening_relocated_review");
     }
+    if (deterministic.summary.openingRelocated || relocationDetected || strongCrossAnchorInconsistency || strongBandCorroboration) {
+      reasonParts.push("opening_relocated");
+    }
     if (openingAddedConsensusUnstable) {
       advisorySignals.push("opening_added_consensus_unstable");
     }
@@ -1797,6 +1836,9 @@ export async function runOpeningValidator(
       if (deterministic.summary.openingResized && maxSizeReductionDelta >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
         reasonParts.push(`opening_size_reduction_ge_${OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD.toFixed(2)}:${maxSizeReductionDelta.toFixed(3)}`);
       }
+    }
+    if (deterministic.summary.openingResized && maxSizeReductionDelta >= OPENING_SIZE_REDUCTION_HARD_FAIL_THRESHOLD) {
+      reasonParts.push("opening_resized_major");
     }
     if (deterministic.summary.openingBandMismatch) reasonParts.push("opening_band_mismatch");
     if ((deterministic.summary as any).openingSignatureMismatch === true) {
