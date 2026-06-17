@@ -208,6 +208,10 @@ describe("Stage-2 generation reliability", () => {
       process.env.STAGE2_MINIMAL_PLANNER_MODE = "true";
       const prompt = await captureStage2Prompt("living_room");
 
+      expect(prompt).toContain("ROLE: Real Estate Interior Photographer and Staging Consultant");
+      expect(prompt).toContain("CAMERA COMPOSITION AUTHORITY");
+      expect(prompt).toContain("ROOM FUNCTION AUTHORITY");
+      expect(prompt).toContain("Do not create showroom-style furniture layouts.");
       expect(prompt).toContain("MINIMAL STAGING DIRECTIVE");
       expect(prompt).toContain("Stage this room in a modern real-estate style.");
       expect(prompt).toContain("Preserve all architecture exactly.");
