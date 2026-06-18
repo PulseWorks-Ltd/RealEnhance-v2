@@ -1411,7 +1411,6 @@ export async function runOpeningValidator(
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
-    extractionContext: "opening_validator_before",
   });
   logOpeningPhaseEnd(options?.jobId, "baseline_retrieval", Date.now() - baselineStartedAt, {
     skipped: options?.baseline ? true : false,
@@ -1435,7 +1434,6 @@ export async function runOpeningValidator(
       jobId: options?.jobId,
       imageId: options?.imageId,
       attempt: options?.attempt,
-      extractionContext: "opening_validator_after",
     });
     logOpeningGeminiEnd(options?.jobId, "opening-baseline-extraction", "opening_extraction", Date.now() - openingExtractionStartedAt);
     logOpeningPhaseEnd(options?.jobId, "opening_extraction", Date.now() - openingExtractionStartedAt, {
