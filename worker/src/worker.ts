@@ -35,6 +35,7 @@ import {
   runStage2GenerationAttempt,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
+import { accumulateValidatorTriggers, buildValidatorRetryGuidance } from "./pipeline/validatorRetryGuidance";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
@@ -11416,6 +11417,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: string | null = null;
     let pendingStage2RetryReason: string | null = null;
+    // Accumulates validator issue type tokens across retry attempts for guidance injection.
+    let pendingStage2ValidatorTriggers: string[] = [];
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -11639,6 +11642,17 @@ All openings must remain identical in position and size to the original image.`;
           source: "pipeline",
           retryType: "validator_forced_retry",
         });
+
+        const { guidanceText: validatorRetryGuidanceText, categories: validatorGuidanceCategories } =
+          buildValidatorRetryGuidance(pendingStage2ValidatorTriggers);
+        nLog("[RETRY_GUIDANCE_GENERATED]", {
+          jobId: payload.jobId,
+          attempt,
+          validatorSources: pendingStage2ValidatorTriggers,
+          guidanceCount: validatorGuidanceCategories.length,
+          guidanceSummary: validatorGuidanceCategories,
+        });
+
         let retryStage2Path: string;
         try {
           retryStage2Path = await withMemoryPhase(
@@ -11660,6 +11674,7 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             retryType: "validator_forced_retry",
             retryInstructions: undefined,
+            validatorRetryGuidance: validatorRetryGuidanceText || undefined,
             structuralRetryContext: {
                 compositeFail: useReinforcedRetry,
                 failureType: retryFailureType,
@@ -11708,6 +11723,7 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2StructuralFailureType = null;
         pendingStage2RetryStrategy = null;
         pendingStage2RetryReason = null;
+        pendingStage2ValidatorTriggers = [];
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
@@ -13730,6 +13746,7 @@ All openings must remain identical in position and size to the original image.`;
           } as any;
 
           setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+          pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [blockedIssueType]);
 
           if (attempt < MAX_STAGE2_RETRIES) {
             logRefreshValidationTrace({
@@ -13835,6 +13852,7 @@ All openings must remain identical in position and size to the original image.`;
 
         const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
         setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
+        pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [unifiedIssueType]);
         if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
             specialistHardFail: false,
@@ -14181,6 +14199,7 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
         pendingStage2RetryStrategy = "NORMAL";
         pendingStage2RetryReason = retryReason;
+        pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [retryReason]);
 
         mergeAttemptValidation("2", attempt, {
           final: {
@@ -14269,6 +14288,7 @@ All openings must remain identical in position and size to the original image.`;
             },
           });
 
+          pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [retryReason]);
           if (attempt < MAX_STAGE2_RETRIES) {
             logValidateFinal(attempt, "retry", attempt);
             logStage2Retry(attempt, retryReason);

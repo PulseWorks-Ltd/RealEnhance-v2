@@ -621,6 +621,8 @@ export async function runStage2GenerationAttempt(
     structuralConstraintBlock?: string;
     retryType?: string;
     retryInstructions?: string | null;
+    /** Validator-derived guidance text for automatic retries. Injected as prompt prefix when retryType=validator_forced_retry. */
+    validatorRetryGuidance?: string | null;
   }
 ): Promise<string> {
   const attemptNumber = Math.max(1, opts.attempt ?? 1);
@@ -852,6 +854,27 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
   if (shouldInjectManualRetryInstructions) {
     const manualRetryBlock = `MANUAL RETRY USER REQUIREMENTS\n\nThe user has requested the following changes to the room layout and staging.\n\nFollow these requirements whenever possible while preserving:\n- room structure\n- architectural continuity\n- fixed openings\n- fixed fixtures\n- room usability\n\nPRIORITY HIERARCHY (STRICT):\nP0 Structural Constraints and Architectural Continuity\nP0 Fixed Openings and Fixtures\nP1 Manual Retry User Requirements\nP2 Room Type Requirements\nP3 Staging Style Requirements\nP4 Default Stage 2 Design Heuristics\n\nUser Requirements:\n${normalizedRetryInstructions}`;
     promptPrefixBlocks.push(manualRetryBlock);
+  }
+
+  const normalizedValidatorGuidance = String(opts.validatorRetryGuidance || "").trim();
+  const shouldInjectValidatorRetryGuidance =
+    normalizedRetryType === "validator_forced_retry" &&
+    normalizedValidatorGuidance.length > 0;
+
+  if (shouldInjectValidatorRetryGuidance) {
+    promptPrefixBlocks.push(normalizedValidatorGuidance);
+    nLog("[RETRY_GUIDANCE_INJECTED]", {
+      jobId: opts.jobId,
+      attempt: attemptNumber,
+      guidanceLength: normalizedValidatorGuidance.length,
+      guidanceTypes: Array.from(
+        new Set(
+          (normalizedValidatorGuidance.match(/CRITICAL RETRY GUIDANCE — ([A-Z ]+):/g) || []).map(
+            (m) => m.replace("CRITICAL RETRY GUIDANCE — ", "").replace(":", "").trim().toLowerCase()
+          )
+        )
+      ),
+    });
   }
 
   const diningCeilingFixtureSuppressionInstruction = buildDiningCeilingFixtureSuppressionInstruction(canonicalRoomType);
