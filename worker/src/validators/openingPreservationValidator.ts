@@ -131,6 +131,7 @@ type BaselineExtractionOptions = {
   attempt?: number;
   baselineMode?: BaselineArchitectureMode;
   disableCache?: boolean;
+  extractionContext?: "baseline_stage1a" | "opening_validator_before" | "opening_validator_after" | "opening_preservation_detected";
 };
 
 type BaselineExtractionTimingBreakdown = {
@@ -621,6 +622,29 @@ const WINDOW_SILL_MAX_SHIFT = Number(process.env.OPENING_WINDOW_SILL_MAX_SHIFT |
 const OPENING_APERTURE_EXPANSION_MAX = Number(process.env.OPENING_APERTURE_EXPANSION_MAX || 0.45);
 const OPENING_STATE_CONFIDENCE_MIN = Number(process.env.OPENING_STATE_CONFIDENCE_MIN || 0.9);
 const OPENING_APERTURE_CONFIDENCE_MIN = Number(process.env.OPENING_APERTURE_CONFIDENCE_MIN || 0.9);
+const DETERMINISTIC_EXTRACTION_PROTOCOL_VERSION = "wall_opening_deterministic_v1";
+
+const SHARED_DETERMINISTIC_EXTRACTION_PROTOCOL = `Deterministic Wall and Opening Extraction Protocol (mandatory):
+
+Wall identification rules:
+1. Identify all visible wall planes.
+2. Number visible walls strictly from left to right based on visible position in the image.
+3. The leftmost visible wall must always be Wall 0.
+4. Continue numbering left to right for additional visible walls.
+5. Do not use room semantics, room orientation, inferred floor plans, camera orientation, or room-shape assumptions when numbering walls.
+6. Only visible wall planes may be numbered.
+7. Use the same wall numbering methodology every time regardless of room type.
+
+Opening identification rules:
+1. For each wall, process openings from left to right.
+2. Opening numbering must follow left-to-right order within each wall.
+3. Opening numbering restarts for each wall.
+4. Classify all openings consistently.
+5. If uncertain between window, doorway, or sliding door, still identify the opening and provide best classification.
+6. Prioritize extraction consistency over classification confidence.
+
+Extraction stability rule:
+If the same image were processed twice, the wall numbering and opening numbering must be identical.`;
 
 const BASELINE_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine.
 
@@ -662,7 +686,9 @@ classify as replacement/infill rather than occlusion.
 
 If you are uncertain whether something is a structural opening, include it.
 
-Do not omit visible openings.`;
+Do not omit visible openings.
+
+${SHARED_DETERMINISTIC_EXTRACTION_PROTOCOL}`;
 
 const BASELINE_USER_PROMPT = `Analyze this room image and extract a structural baseline.
 
@@ -699,7 +725,7 @@ Return JSON in this exact schema:
 
 Rules:
 - Assign deterministic IDs like W1, W2, D1, C1, A1.
-- wallIndex mapping: 0=front wall (camera facing), 1=right wall, 2=back wall, 3=left wall.
+- wallIndex mapping: strictly visible left-to-right numbering where leftmost visible wall is 0.
 - bbox must be normalized to image dimensions (0..1).
 - area_pct must represent % of image area occupied by the opening (0..100).
 - horizontalBand and verticalBand should be stable under mild reframing.
@@ -709,6 +735,7 @@ Rules:
 - doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
+- Within each wall, assign openings in left-to-right order and keep this ordering stable across repeated runs on the same image.
 
 Anchor fixture rules:
 - Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
@@ -717,6 +744,13 @@ Anchor fixture rules:
 - If no stable fixture is visible, return an empty array.
 
 Return only valid JSON.`;
+
+function buildOpeningExtractionProtocolSignature(): string {
+  return createHash("sha256")
+    .update(`${BASELINE_SYSTEM_INSTRUCTION}\n${BASELINE_USER_PROMPT}`)
+    .digest("hex")
+    .slice(0, 12);
+}
 
 const BASELINE_VERIFICATION_SYSTEM_INSTRUCTION = `You are a structural baseline verification reviewer.
 
@@ -1215,105 +1249,213 @@ function wallCoverageBandDistance(a: WallCoverageBand, b: WallCoverageBand): num
   return Math.abs(wallCoverageBandIndex(a) - wallCoverageBandIndex(b));
 }
 
-function buildDetectedToBaselineWallRemap(
-  baselineOpenings: StructuralOpening[],
-  detectedOpenings: StructuralOpening[]
-): Map<number, number> {
-  const votes = new Map<number, Map<number, number>>();
-  const safeVote = (detectedWall: number, baselineWall: number): void => {
-    const bucket = votes.get(detectedWall) ?? new Map<number, number>();
-    bucket.set(baselineWall, (bucket.get(baselineWall) ?? 0) + 1);
-    votes.set(detectedWall, bucket);
-  };
+type OpeningMatchSource = "id" | "graph_reconcile";
 
-  for (const candidate of detectedOpenings) {
-    const direct = baselineOpenings.find((base) => String(base.id) === String(candidate.id));
-    if (direct) {
-      safeVote(candidate.wallIndex, direct.wallIndex);
-    }
+type OpeningMatchVote = {
+  baselineWall: WallIndex;
+  detectedWall: WallIndex;
+  weight: number;
+};
+
+type InferredWallMapping = {
+  detectedWall: WallIndex;
+  baselineWall: WallIndex;
+  confidence: number;
+  support: number;
+  totalSupport: number;
+  contradictory: boolean;
+};
+
+type OpeningScoredCandidate = {
+  candidate: StructuralOpening;
+  score: number;
+  canonicalIdentityApplied: boolean;
+  canonicalIdentityReason?: string;
+  mappingConfidence: number;
+  mappingContradictory: boolean;
+};
+
+function openingWidth(opening: StructuralOpening): number {
+  return Math.max(0.0001, opening.bbox[2] - opening.bbox[0]);
+}
+
+function openingHeight(opening: StructuralOpening): number {
+  return Math.max(0.0001, opening.bbox[3] - opening.bbox[1]);
+}
+
+function ratioSimilarity(left: number, right: number): number {
+  const maxValue = Math.max(0.0001, left, right);
+  const minValue = Math.max(0.0001, Math.min(left, right));
+  return minValue / maxValue;
+}
+
+function buildInferredWallMappings(votes: OpeningMatchVote[]): InferredWallMapping[] {
+  const tally = new Map<WallIndex, Map<WallIndex, number>>();
+  for (const vote of votes) {
+    const bucket = tally.get(vote.detectedWall) ?? new Map<WallIndex, number>();
+    bucket.set(vote.baselineWall, (bucket.get(vote.baselineWall) ?? 0) + vote.weight);
+    tally.set(vote.detectedWall, bucket);
   }
 
-  const remap = new Map<number, number>();
-  votes.forEach((bucket, detectedWall) => {
-    let topWall: number | null = null;
-    let topCount = 0;
-    let tied = false;
-    bucket.forEach((count, baselineWall) => {
-      if (count > topCount) {
-        topWall = baselineWall;
-        topCount = count;
-        tied = false;
-      } else if (count === topCount) {
-        tied = true;
-      }
+  const mappings: InferredWallMapping[] = [];
+  for (const [detectedWall, bucket] of tally.entries()) {
+    const ranked = Array.from(bucket.entries())
+      .map(([baselineWall, support]) => ({ baselineWall, support }))
+      .sort((left, right) => {
+        const supportCmp = compareNumbers(right.support, left.support, 1e-9);
+        if (supportCmp !== 0) return supportCmp;
+        return compareNumbers(left.baselineWall, right.baselineWall);
+      });
+    if (ranked.length === 0) continue;
+
+    const top = ranked[0];
+    const secondSupport = ranked[1]?.support ?? 0;
+    const totalSupport = ranked.reduce((sum, item) => sum + item.support, 0);
+    const contradictory = ranked.length > 1;
+    const dominance = totalSupport > 0 ? top.support / totalSupport : 0;
+    const margin = totalSupport > 0 ? Math.max(0, top.support - secondSupport) / totalSupport : 0;
+    let confidence = (dominance * 0.7) + (margin * 0.3);
+    if (contradictory) confidence *= 0.75;
+
+    mappings.push({
+      detectedWall,
+      baselineWall: top.baselineWall,
+      confidence: Number(confidence.toFixed(3)),
+      support: Number(top.support.toFixed(3)),
+      totalSupport: Number(totalSupport.toFixed(3)),
+      contradictory,
     });
-    if (!tied && topWall !== null) {
-      remap.set(detectedWall, topWall);
-    }
-  });
-  return remap;
+  }
+
+  return mappings.sort((left, right) => compareNumbers(left.detectedWall, right.detectedWall));
+}
+
+function wallMappingIndex(mappings: InferredWallMapping[]): Map<WallIndex, InferredWallMapping> {
+  const index = new Map<WallIndex, InferredWallMapping>();
+  for (const mapping of mappings) {
+    index.set(mapping.detectedWall, mapping);
+  }
+  return index;
+}
+
+function emitWallMappingLogs(mappings: InferredWallMapping[], context: "id_seed" | "iterative_update"): void {
+  for (const mapping of mappings) {
+    console.log("[WALL_MAPPING]", JSON.stringify({
+      detectedWall: mapping.detectedWall,
+      baselineWall: mapping.baselineWall,
+      confidence: mapping.confidence,
+      support: mapping.support,
+      totalSupport: mapping.totalSupport,
+      contradictory: mapping.contradictory,
+      context,
+    }));
+  }
+}
+
+function scoreOpeningCandidate(
+  base: StructuralOpening,
+  candidate: StructuralOpening,
+  mappingIndex: Map<WallIndex, InferredWallMapping>
+): OpeningScoredCandidate {
+  const mapping = mappingIndex.get(candidate.wallIndex);
+  const mappingConfidence = mapping?.confidence ?? 0;
+  const mappingContradictory = mapping?.contradictory ?? false;
+  const canonicalWall = mapping && mappingConfidence >= 0.5
+    ? mapping.baselineWall
+    : candidate.wallIndex;
+
+  let score = 0;
+  const canonicalIdentityApplied = shouldCanonicalizeOpeningIdentity(base, candidate, canonicalWall);
+  if (candidate.type === base.type || canonicalIdentityApplied) score += 4;
+  if (canonicalWall === base.wallIndex) score += 3;
+  if (candidate.horizontalBand === base.horizontalBand) score += 2;
+  if (candidate.verticalBand === base.verticalBand) score += 1;
+  if (candidate.orientation === base.orientation) score += 0.5;
+
+  const paneComparable = candidate.paneStructure !== "unknown" && base.paneStructure !== "unknown";
+  if (!paneComparable || candidate.paneStructure === base.paneStructure) score += 1;
+
+  const wallCoverageDistance = wallCoverageBandDistance(candidate.wallCoverageBand, base.wallCoverageBand);
+  if (wallCoverageDistance === 0) score += 1;
+  else if (wallCoverageDistance === 1) score += 0.5;
+
+  const iou = bboxIntersectionArea(base.bbox, candidate.bbox) /
+    Math.max(0.0001, (base.bbox[2] - base.bbox[0]) * (base.bbox[3] - base.bbox[1]));
+  score += Math.max(0, Math.min(2, iou * 2));
+
+  const centroidDistance = bboxCentroidDistance(base.bbox, candidate.bbox);
+  if (centroidDistance <= 0.04) score += 1.5;
+  else if (centroidDistance <= 0.08) score += 1;
+  else if (centroidDistance <= 0.12) score += 0.5;
+
+  const widthSimilarity = ratioSimilarity(openingWidth(base), openingWidth(candidate));
+  const heightSimilarity = ratioSimilarity(openingHeight(base), openingHeight(candidate));
+  if (widthSimilarity >= 0.8) score += 0.75;
+  else if (widthSimilarity >= 0.65) score += 0.4;
+  if (heightSimilarity >= 0.8) score += 0.75;
+  else if (heightSimilarity >= 0.65) score += 0.4;
+
+  if (mappingContradictory) {
+    score -= 0.75;
+  }
+
+  return {
+    candidate,
+    score,
+    canonicalIdentityApplied,
+    canonicalIdentityReason: canonicalIdentityApplied
+      ? buildCanonicalizationReason(base, candidate, canonicalWall)
+      : undefined,
+    mappingConfidence,
+    mappingContradictory,
+  };
 }
 
 function reconcileOpeningMatches(
   baselineOpenings: StructuralOpening[],
   detectedOpenings: StructuralOpening[]
 ): {
-  matches: Map<string, { opening: StructuralOpening; source: "id" | "graph_reconcile"; score: number }>;
+  matches: Map<string, { opening: StructuralOpening; source: OpeningMatchSource; score: number }>;
   matchedDetectedIds: Set<string>;
-  debug: Array<{ baselineId: string; detectedId: string; matchSource: "id" | "graph_reconcile"; score: number }>;
+  debug: Array<{ baselineId: string; detectedId: string; matchSource: OpeningMatchSource; score: number }>;
 } {
-  const matches = new Map<string, { opening: StructuralOpening; source: "id" | "graph_reconcile"; score: number }>();
+  const matches = new Map<string, { opening: StructuralOpening; source: OpeningMatchSource; score: number }>();
   const matchedDetectedIds = new Set<string>();
-  const debug: Array<{ baselineId: string; detectedId: string; matchSource: "id" | "graph_reconcile"; score: number }> = [];
-
-  const wallRemap = buildDetectedToBaselineWallRemap(baselineOpenings, detectedOpenings);
+  const debug: Array<{ baselineId: string; detectedId: string; matchSource: OpeningMatchSource; score: number }> = [];
+  const wallVotes: OpeningMatchVote[] = [];
 
   for (const base of baselineOpenings) {
     const direct = detectedOpenings.find((candidate) =>
       String(candidate.id) === String(base.id) && !matchedDetectedIds.has(String(candidate.id))
     );
     if (!direct) continue;
+
     matches.set(base.id, { opening: direct, source: "id", score: 999 });
     matchedDetectedIds.add(String(direct.id));
+    wallVotes.push({
+      baselineWall: base.wallIndex,
+      detectedWall: direct.wallIndex,
+      weight: 2,
+    });
+    console.log("[OPENING_MATCH]", JSON.stringify({
+      baselineId: base.id,
+      detectedId: String(direct.id),
+      score: 999,
+      source: "id",
+    }));
     debug.push({ baselineId: base.id, detectedId: String(direct.id), matchSource: "id", score: 999 });
   }
+
+  let inferredMappings = buildInferredWallMappings(wallVotes);
+  emitWallMappingLogs(inferredMappings, "id_seed");
 
   const unmatchedBaseline = baselineOpenings.filter((base) => !matches.has(base.id));
 
   for (const base of unmatchedBaseline) {
+    const mappingIndex = wallMappingIndex(inferredMappings);
     const scoredCandidates = detectedOpenings
       .filter((candidate) => !matchedDetectedIds.has(String(candidate.id)))
-      .map((candidate) => {
-        const canonicalWall = (wallRemap.get(candidate.wallIndex) ?? candidate.wallIndex) as WallIndex;
-        let score = 0;
-        const canonicalIdentityApplied = shouldCanonicalizeOpeningIdentity(base, candidate, canonicalWall);
-
-        if (candidate.type === base.type || canonicalIdentityApplied) score += 4;
-        if (canonicalWall === base.wallIndex) score += 3;
-        if (candidate.horizontalBand === base.horizontalBand) score += 2;
-        if (candidate.verticalBand === base.verticalBand) score += 1;
-        if (candidate.orientation === base.orientation) score += 0.5;
-
-        const paneComparable = candidate.paneStructure !== "unknown" && base.paneStructure !== "unknown";
-        if (!paneComparable || candidate.paneStructure === base.paneStructure) score += 1;
-
-        const wallCoverageDistance = wallCoverageBandDistance(candidate.wallCoverageBand, base.wallCoverageBand);
-        if (wallCoverageDistance === 0) score += 1;
-        else if (wallCoverageDistance === 1) score += 0.5;
-
-        const iou = bboxIntersectionArea(base.bbox, candidate.bbox) /
-          Math.max(0.0001, (base.bbox[2] - base.bbox[0]) * (base.bbox[3] - base.bbox[1]));
-        score += Math.max(0, Math.min(2, iou * 2));
-
-        return {
-          candidate,
-          score,
-          canonicalIdentityApplied,
-          canonicalIdentityReason: canonicalIdentityApplied
-            ? buildCanonicalizationReason(base, candidate, canonicalWall)
-            : undefined,
-        };
-      })
+      .map((candidate) => scoreOpeningCandidate(base, candidate, mappingIndex))
       .sort((left, right) => {
         const scoreCmp = compareNumbers(right.score, left.score, 1e-9);
         if (scoreCmp !== 0) return scoreCmp;
@@ -1327,7 +1469,40 @@ function reconcileOpeningMatches(
       top.score >= 7 &&
       (top.score - (second?.score ?? 0) >= 1.25);
 
-    if (!hasUniqueWinner || !top) continue;
+    if (!top) {
+      console.log("[MATCH_REJECT]", JSON.stringify({
+        baselineId: base.id,
+        reason: "no_available_candidates",
+      }));
+      continue;
+    }
+    if (top.score < 7) {
+      console.log("[MATCH_REJECT]", JSON.stringify({
+        baselineId: base.id,
+        reason: "score_below_threshold",
+        topScore: Number(top.score.toFixed(3)),
+        requiredScore: 7,
+      }));
+      continue;
+    }
+    const margin = top.score - (second?.score ?? 0);
+    if (margin < 1.25) {
+      console.log("[MATCH_REJECT]", JSON.stringify({
+        baselineId: base.id,
+        reason: "ambiguous_winner_margin",
+        topScore: Number(top.score.toFixed(3)),
+        secondScore: Number((second?.score ?? 0).toFixed(3)),
+        requiredMargin: 1.25,
+      }));
+      continue;
+    }
+    if (!hasUniqueWinner) {
+      console.log("[MATCH_REJECT]", JSON.stringify({
+        baselineId: base.id,
+        reason: "winner_gate_rejected",
+      }));
+      continue;
+    }
 
     if (top.canonicalIdentityApplied) {
       console.log("[CANONICALIZATION_APPLIED]", JSON.stringify({
@@ -1344,6 +1519,22 @@ function reconcileOpeningMatches(
       score: Number(top.score.toFixed(3)),
     });
     matchedDetectedIds.add(String(top.candidate.id));
+    wallVotes.push({
+      baselineWall: base.wallIndex,
+      detectedWall: top.candidate.wallIndex,
+      weight: 1 + Math.min(1.5, Math.max(0, top.score / 10)),
+    });
+    inferredMappings = buildInferredWallMappings(wallVotes);
+    emitWallMappingLogs(inferredMappings, "iterative_update");
+    console.log("[OPENING_MATCH]", JSON.stringify({
+      baselineId: base.id,
+      detectedId: String(top.candidate.id),
+      score: Number(top.score.toFixed(3)),
+      source: "graph_reconcile",
+      canonicalIdentityApplied: top.canonicalIdentityApplied,
+      mappingConfidence: Number(top.mappingConfidence.toFixed(3)),
+      mappingContradictory: top.mappingContradictory,
+    }));
     debug.push({
       baselineId: base.id,
       detectedId: String(top.candidate.id),
@@ -1679,6 +1870,50 @@ function bboxCenterX(bbox: [number, number, number, number]): number {
   return (bbox[0] + bbox[2]) / 2;
 }
 
+function buildExtractionNumberingTelemetry(baseline: StructuralBaseline): {
+  wallCount: number;
+  wallNumbering: WallIndex[];
+  openingNumberingByWall: Array<{
+    wallIndex: WallIndex;
+    openings: Array<{ order: number; id: string; type: StructuralOpeningType }>;
+  }>;
+} {
+  const wallSet = new Set<WallIndex>();
+  for (const opening of baseline.openings) {
+    wallSet.add(opening.wallIndex);
+  }
+  for (const fixture of baseline.anchorFixtures || []) {
+    wallSet.add(fixture.wallIndex);
+  }
+  const wallNumbering = Array.from(wallSet.values()).sort((left, right) => left - right) as WallIndex[];
+  const openingNumberingByWall = wallNumbering.map((wallIndex) => {
+    const ordered = baseline.openings
+      .filter((opening) => opening.wallIndex === wallIndex)
+      .slice()
+      .sort((left, right) => {
+        const centerOrder = compareNumbers(bboxCenterX(left.bbox), bboxCenterX(right.bbox), 1e-4);
+        if (centerOrder !== 0) return centerOrder;
+        return compareStrings(left.id, right.id);
+      })
+      .map((opening, index) => ({
+        order: index + 1,
+        id: opening.id,
+        type: opening.type,
+      }));
+
+    return {
+      wallIndex,
+      openings: ordered,
+    };
+  });
+
+  return {
+    wallCount: wallNumbering.length,
+    wallNumbering,
+    openingNumberingByWall,
+  };
+}
+
 type WallSequenceContext = {
   openingTokens: string[];
   fixtureTokens: string[];
@@ -1899,12 +2134,27 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
 
 async function extractStructuralBaselineOnce(
   image: { data: string; mime: string },
-  options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
+  options?: {
+    jobId?: string;
+    imageId?: string;
+    attempt?: number;
+    timing?: BaselineExtractionTimingBreakdown;
+    extractionContext?: BaselineExtractionOptions["extractionContext"];
+  }
 ): Promise<StructuralBaseline> {
   const ai = getGeminiClient();
 
   const stageStartedAt = Date.now();
   const promptBuildStartedAt = Date.now();
+  const protocolSignature = buildOpeningExtractionProtocolSignature();
+  console.log("[OPENING_EXTRACTION_PROTOCOL]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+    extractionContext: options?.extractionContext || "unspecified",
+    protocolVersion: DETERMINISTIC_EXTRACTION_PROTOCOL_VERSION,
+    protocolSignature,
+  }));
   const promptParts = [
     { text: BASELINE_SYSTEM_INSTRUCTION },
     { text: BASELINE_USER_PROMPT },
@@ -1984,6 +2234,15 @@ async function extractStructuralBaselineOnce(
       horizontalBand: fixture.horizontalBand,
       confidence: fixture.confidence,
     })),
+  }));
+  const numberingTelemetry = buildExtractionNumberingTelemetry(baseline);
+  console.log("[OPENING_EXTRACTION_NUMBERING]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+    extractionContext: options?.extractionContext || "unspecified",
+    protocolVersion: DETERMINISTIC_EXTRACTION_PROTOCOL_VERSION,
+    ...numberingTelemetry,
   }));
   return baseline;
 }
@@ -2845,6 +3104,7 @@ export async function validateOpeningPreservation(
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
+    extractionContext: "opening_preservation_detected",
   });
   const isEditMode = options?.mode === "edit";
 

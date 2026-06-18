@@ -8452,6 +8452,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             jobId: payload.jobId,
             imageId: payload.imageId,
             attempt: 1,
+            extractionContext: "baseline_stage1a",
           })
         );
         structuralBaseline = extractedBaseline;
