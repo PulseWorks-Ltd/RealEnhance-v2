@@ -8395,6 +8395,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
     }
   }
+  const stage1ASunnyExteriorEnabled = strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
   await safeWriteJobStatus(
@@ -8416,6 +8417,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     },
     () => runStage1A(canonicalPath, {
       replaceSky: safeReplaceSky,
+      enhanceExteriorSky: stage1ASunnyExteriorEnabled,
       declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
       sceneType: stage1ASceneLabel,
       interiorProfile: ((): any => {
@@ -8580,6 +8582,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       stage: "1A",
       progress: 35,
       stageUrls: { "1A": pub1AUrl ?? null },
+      meta: {
+        stage1A: {
+          sunnyExteriorEnabled: stage1ASunnyExteriorEnabled,
+        },
+      },
       updatedAt: now,
       updated_at: now,
     },
@@ -8656,6 +8663,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       },
       meta: {
         ...sceneMeta,
+        stage1A: {
+          sunnyExteriorEnabled: stage1ASunnyExteriorEnabled,
+        },
         routingSnapshot: {
           authority: "localEmptyBypass",
           localEmpty: false,
@@ -14910,6 +14920,9 @@ All openings must remain identical in position and size to the original image.`;
   // Build metadata BEFORE any async operations that could fail
   const meta = {
     ...sceneMeta,
+    stage1A: {
+      sunnyExteriorEnabled: stage1ASunnyExteriorEnabled,
+    },
     routingSnapshot: frozenRoutingSnapshot || undefined,
     roomTypeDetected: detectedRoom,
     roomType: payload.options.roomType || undefined,

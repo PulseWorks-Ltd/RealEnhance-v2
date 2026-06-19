@@ -515,10 +515,29 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
  */
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `If exterior sky is clearly visible through existing windows or doors, enhance the visible outdoor sky and natural daylight conditions so the scene appears bright, clear, and photographed on a pleasant sunny day.
+
+Preserve the existing exterior view exactly as shown.
+
+Do not alter neighboring buildings, landscaping, trees, roads, fences, terrain, or surrounding structures.
+
+Do not invent exterior content that is not visible in the original image.
+
+Do not reveal areas hidden by blinds, curtains, shutters, frosted glass, privacy film, reflections, or obstructions.
+
+Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors.
+
+Only improve exterior sky appearance and visible natural daylight where the sky is already clearly visible.
+
+If the sky is not clearly visible through an existing opening, make no sky-related modifications.
+
+Structural preservation requirements always take priority.`;
+
 async function enhanceWithGeminiStage1A(
   sharpPath: string,
   sceneType: string | undefined,
   replaceSky: boolean,
+  enhanceExteriorSky: boolean,
   applyInteriorProfile: boolean,
   interiorProfileKey: EnhancementProfile,
   skyMode: "safe" | "strong" = "safe",
@@ -556,6 +575,21 @@ async function enhanceWithGeminiStage1A(
     nzTopP = 0.9;
     nzTopK = 40;
   }
+
+  const promptInjected =
+    enhanceExteriorSky === true
+    && typeof enhancementPrompt === "string"
+    && enhancementPrompt.trim().length > 0;
+
+  if (promptInjected) {
+    enhancementPrompt = `${enhancementPrompt}\n\n${STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK}`;
+  }
+
+  console.log("[STAGE1A_SUNNY_EXTERIOR_PROMPT]", {
+    jobId,
+    enabled: enhanceExteriorSky === true,
+    promptInjected,
+  });
 
   const geminiPath = await enhanceWithGemini(sharpPath, {
     replaceSky: replaceSky,
@@ -968,6 +1002,7 @@ export async function runStage1A(
   inputPath: string,
   options: { 
     replaceSky?: boolean;
+    enhanceExteriorSky?: boolean;
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
@@ -980,7 +1015,16 @@ export async function runStage1A(
     jobSampling?: { temperature?: number; topP?: number; topK?: number };
   }
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
+  const {
+    replaceSky = false,
+    enhanceExteriorSky = false,
+    declutter = false,
+    sceneType,
+    skyMode = "safe",
+    jobId,
+    imageId,
+    roomType,
+  } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
   const baseArtifacts = options.baseArtifacts ?? undefined;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
@@ -1060,10 +1104,17 @@ export async function runStage1A(
   );
 
   const runGeminiStage1AWithOptionalFinish = async (): Promise<string> => {
+    console.log("[STAGE1A_SUNNY_EXTERIOR]", {
+      jobId: jobIdResolved,
+      enabled: enhanceExteriorSky === true,
+      roomType: roomTypeResolved ?? null,
+    });
+
     const geminiOutputPath = await enhanceWithGeminiStage1A(
       sharpOutputPath,
       effectiveSceneType,
       replaceSky,
+      enhanceExteriorSky,
       applyInteriorProfile,
       interiorProfileKey,
       skyMode,

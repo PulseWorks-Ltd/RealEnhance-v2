@@ -294,6 +294,7 @@ export function uploadRouter() {
     const stagingStyleForm = normalizeStagingStyle((req.body as any)?.stagingStyle);
     const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
     const stage2OnlyForm = String((req.body as any)?.stage2Only ?? "").toLowerCase() === "true";
+    const enhanceExteriorSkyForm = String((req.body as any)?.enhanceExteriorSky ?? "").toLowerCase() === "true";
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
@@ -623,6 +624,7 @@ export function uploadRouter() {
       if (meta.roomType) opts.roomType = normalizeRoomType(meta.roomType);
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+      if (meta.enhanceExteriorSky !== undefined) opts.enhanceExteriorSky = !!meta.enhanceExteriorSky;
       if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
       // Pass scenePrediction to worker for SKY_SAFE forcing logic
       if (meta.scenePrediction) opts.scenePrediction = meta.scenePrediction;
@@ -679,6 +681,9 @@ export function uploadRouter() {
       // Apply form-level manualSceneOverride if set globally and not present per-item
       if (opts.manualSceneOverride === undefined && manualSceneOverrideForm) {
         opts.manualSceneOverride = true;
+      }
+      if (opts.enhanceExteriorSky === undefined) {
+        opts.enhanceExteriorSky = enhanceExteriorSkyForm;
       }
       // Default to canonical NZ standard token.
       if (!opts.stagingStyle || opts.stagingStyle.trim() === '') {
@@ -956,6 +961,7 @@ export function uploadRouter() {
           stage2Only: !!opts.stage2Only,
           roomType: opts.roomType,
           sceneType: opts.sceneType,
+          enhanceExteriorSky: !!opts.enhanceExteriorSky,
           replaceSky: opts.replaceSky,
           manualSceneOverride: opts.manualSceneOverride,
           scenePrediction: opts.scenePrediction,

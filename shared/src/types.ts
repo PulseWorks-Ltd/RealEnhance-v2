@@ -172,6 +172,7 @@ export interface EnhanceJobPayload {
     stage2Only?: boolean;
     roomType: RoomType | string;
     sceneType: string | "auto";
+    enhanceExteriorSky?: boolean;  // Optional Stage 1A sunny exterior daylight enhancement experiment
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
     stagingStyle?: string;  // Staging style (defaults to standard_listing)
     declutterMode?: DeclutterMode;  // Light declutter or structured-retain declutter
