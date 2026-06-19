@@ -26,6 +26,7 @@ interface RetryDialogProps {
 
 export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imageIndex, originalImageUrl, enhancedImageUrl, defaultSceneType = "auto", defaultRoomType = "auto" }: RetryDialogProps) {
   const [customInstructions, setCustomInstructions] = useState("");
+  const [instructionsError, setInstructionsError] = useState("");
   const [sceneType, setSceneType] = useState<"auto" | "interior" | "exterior">(defaultSceneType);
   const [roomType, setRoomType] = useState<string>(defaultRoomType);
   const [roomTypeError, setRoomTypeError] = useState<string>("");
@@ -38,11 +39,14 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
       setSceneType(defaultSceneType);
       setRoomType(defaultRoomType || "auto");
       setRoomTypeError("");
+      setInstructionsError("");
       setCustomInstructions("");
       setReferenceImage(null);
       setReferencePreview(null);
     }
   }, [isOpen, defaultSceneType, defaultRoomType]);
+
+  const hasRetryInstructions = customInstructions.trim().length > 0;
 
 
   const handleReferenceImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,16 +79,22 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
         return;
       }
     }
+    if (!hasRetryInstructions) {
+      setInstructionsError("Please provide staging instructions before retrying.");
+      return;
+    }
     setRoomTypeError("");
+    setInstructionsError("");
     handleClose();
     const effectiveRoom = sceneType === "interior" ? roomType : undefined;
-    onSubmit(customInstructions, sceneType, effectiveRoom, referenceImage || undefined);
+    onSubmit(customInstructions.trim(), sceneType, effectiveRoom, referenceImage || undefined);
   };
 
   const handleClose = () => {
     setCustomInstructions("");
     setSceneType(defaultSceneType);
     setRoomType(defaultRoomType || "auto");
+    setInstructionsError("");
     setReferenceImage(null);
     setReferencePreview(null);
     onClose();
@@ -209,17 +219,26 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
 
             <div className={`${sceneType === "interior" ? "lg:col-span-6" : "lg:col-span-9"} space-y-1`}>
               <Label htmlFor="custom-instructions" className="text-sm font-medium text-slate-800">
-                Additional Instructions <span className="text-slate-500">(optional)</span>
+                Additional Instructions <span className="text-indigo-600">*</span>
               </Label>
               <Textarea
                 id="custom-instructions"
                 value={customInstructions}
-                onChange={(e) => setCustomInstructions(e.target.value)}
-                placeholder="Any specific instructions for this retry..."
-                className="border-slate-300 focus-visible:ring-action-500"
-                rows={2}
+                onChange={(e) => {
+                  setCustomInstructions(e.target.value);
+                  if (instructionsError && e.target.value.trim().length > 0) {
+                    setInstructionsError("");
+                  }
+                }}
+                placeholder={"Add specific instructions on predominant furniture placement or staging layout.\n\nExamples:\n- Place the bed against the right wall.\n- Keep both windows visible.\n- Create a living area facing the fireplace.\n- Position the dining table beneath the existing light fitting."}
+                className={`border-slate-300 focus-visible:ring-action-500 ${instructionsError ? "border-red-500 focus-visible:ring-red-500" : ""}`}
+                rows={5}
                 data-testid="input-retry-instructions"
               />
+              {instructionsError && <div className="text-red-600 text-xs" data-testid="retry-instructions-error">{instructionsError}</div>}
+              <div className="text-xs text-slate-600">
+                Providing furniture placement guidance generally improves staging quality and structural preservation.
+              </div>
             </div>
 
             <div className="lg:col-span-12 space-y-1">
@@ -257,7 +276,7 @@ export function RetryDialog({ isOpen, onClose, onSubmit, isLoading = false, imag
           <Button
             variant="action"
             onClick={handleSubmit}
-            disabled={isLoading}
+            disabled={isLoading || !hasRetryInstructions}
             data-testid="button-retry-enhance"
             className="bg-gradient-to-r from-action-600 to-emerald-600 hover:from-action-700 hover:to-emerald-700 text-white border border-transparent px-6"
           >

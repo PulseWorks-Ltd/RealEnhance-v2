@@ -5768,6 +5768,22 @@ export default function BatchProcessor({
       const effectiveSourceStageLabel = sourceStage;
       const effectiveSourceUrl = sourceUrl;
       const stage1BWasRequested = stage1BWasRequestedByPipeline || sourceStage === "1B";
+      const instructionText = String(customInstructions || "").trim();
+      const instructionWordCount = instructionText.length > 0
+        ? instructionText.split(/\s+/).filter(Boolean).length
+        : 0;
+      const retryJobId =
+        res?.jobId ||
+        res?.result?.jobId ||
+        res?.retryLatestJobId ||
+        res?.result?.retryLatestJobId ||
+        null;
+
+      console.log("[MANUAL_RETRY_INSTRUCTION_SUBMITTED]", {
+        jobId: retryJobId,
+        instructionLength: instructionText.length,
+        instructionWordCount,
+      });
       
       console.log("[RETRY] Source-locked retry:", {
         imageIndex,
@@ -5802,7 +5818,7 @@ export default function BatchProcessor({
       
       await handleRetryImage(
         imageIndex,
-        customInstructions,
+        instructionText,
         sceneType,
         effectiveAllowStaging,
         false, // furnitureReplacementMode
