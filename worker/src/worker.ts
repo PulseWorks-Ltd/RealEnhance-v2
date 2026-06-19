@@ -35,7 +35,7 @@ import {
   runStage2GenerationAttempt,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
-import { accumulateValidatorTriggers, buildValidatorRetryGuidance } from "./pipeline/validatorRetryGuidance";
+import { accumulateValidatorTriggers, buildAutoRetryGuidance } from "./pipeline/validatorRetryGuidance";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
@@ -11653,14 +11653,18 @@ All openings must remain identical in position and size to the original image.`;
           retryType: "validator_forced_retry",
         });
 
-        const { guidanceText: validatorRetryGuidanceText, categories: validatorGuidanceCategories } =
-          buildValidatorRetryGuidance(pendingStage2ValidatorTriggers);
-        nLog("[RETRY_GUIDANCE_GENERATED]", {
+        const anchorWall = (stage2LayoutPlan as any)?.anchorWall || null;
+        const autoRetryGuidance = buildAutoRetryGuidance({
+          triggers: pendingStage2ValidatorTriggers,
+          roomType: payload.options.roomType,
+          anchorWall,
+        });
+        nLog("[AUTO_RETRY_GUIDANCE]", {
           jobId: payload.jobId,
           attempt,
-          validatorSources: pendingStage2ValidatorTriggers,
-          guidanceCount: validatorGuidanceCategories.length,
-          guidanceSummary: validatorGuidanceCategories,
+          validatorInstructions: autoRetryGuidance.validatorInstructions,
+          layoutInstruction: autoRetryGuidance.layoutInstruction,
+          instructionCount: autoRetryGuidance.instructionCount,
         });
 
         let retryStage2Path: string;
@@ -11683,8 +11687,7 @@ All openings must remain identical in position and size to the original image.`;
             outputPath: retryOutputPath,
             attempt,
             retryType: "validator_forced_retry",
-            retryInstructions: undefined,
-            validatorRetryGuidance: validatorRetryGuidanceText || undefined,
+            retryInstructions: autoRetryGuidance.text || undefined,
             structuralRetryContext: {
                 compositeFail: useReinforcedRetry,
                 failureType: retryFailureType,
@@ -13012,6 +13015,23 @@ All openings must remain identical in position and size to the original image.`;
             reason: "none",
           });
         }
+
+        const specialistHardFailTriggers = Object.values(specialistResults)
+          .filter((result) => result.hardFail === true)
+          .flatMap((result) => {
+            const triggers: string[] = [];
+            if (result.issueType && result.issueType !== ISSUE_TYPES.NONE) {
+              triggers.push(String(result.issueType));
+            }
+            if (typeof result.reason === "string" && result.reason.trim().length > 0) {
+              triggers.push(result.reason);
+            }
+            return triggers;
+          });
+        pendingStage2ValidatorTriggers = accumulateValidatorTriggers(
+          pendingStage2ValidatorTriggers,
+          specialistHardFailTriggers,
+        );
 
         nLog("[STAGE2_SPECIALIST_SIGNALS]", {
           jobId: payload.jobId,

@@ -20,6 +20,19 @@ export type ValidatorGuidanceCategory =
   | "flooring"
   | "envelope";
 
+type AutoRetryGuidanceInput = {
+  triggers: string[];
+  roomType?: string;
+  anchorWall?: string | null;
+};
+
+type AutoRetryGuidanceOutput = {
+  text: string | null;
+  validatorInstructions: string[];
+  layoutInstruction: string | null;
+  instructionCount: number;
+};
+
 // ─── Token → Category mapping ─────────────────────────────────────────────────
 
 /**
@@ -71,6 +84,27 @@ const TOKEN_TO_CATEGORY: Readonly<Record<string, ValidatorGuidanceCategory>> = {
   structural_review_failed: "envelope",
 };
 
+const OPENING_TRIGGER_TOKENS = [
+  "opening_removed",
+  "opening_sealed",
+  "opening_infilled",
+  "opening_relocated",
+  "opening_resized",
+  "opening_resize",
+  "opening_obscured",
+  "opening_occlusion",
+  "window_occlusion_exceeds_partial_threshold",
+  "door_or_closet_blocked",
+  "door_or_closet_partial_occlusion_not_allowed",
+  "light_anchor_opening_removed",
+  "light_anchor_opening_infilled",
+  "light_anchor_opening_relocated",
+];
+
+const FIXTURE_PENDANT_TOKENS = ["pendant", "chandelier"];
+const FIXTURE_HVAC_TOKENS = ["hvac", "air_conditioner", "ac_unit", "split_unit"];
+const FIXTURE_COUNTERTOP_TOKENS = ["countertop", "counter_top", "benchtop", "worktop"];
+
 // ─── Guidance text blocks ─────────────────────────────────────────────────────
 
 const GUIDANCE_BLOCKS: Readonly<Record<ValidatorGuidanceCategory, string>> = {
@@ -112,6 +146,53 @@ function normalizeToken(token: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function hasAnyToken(haystack: string[], tokens: string[]): boolean {
+  for (const value of haystack) {
+    for (const token of tokens) {
+      if (value.includes(token)) return true;
+    }
+  }
+  return false;
+}
+
+function dedupeLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const line of lines) {
+    const key = normalizeToken(line);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(line.trim());
+  }
+  return out;
+}
+
+function inferAnchorPlacementInstruction(roomType?: string, anchorWall?: string | null): string | null {
+  const normalizedRoom = normalizeToken(roomType || "");
+  const normalizedWall = normalizeToken(anchorWall || "");
+
+  const wallPhrase = normalizedWall.includes("right")
+    ? "against the wall on the right"
+    : normalizedWall.includes("left")
+      ? "against the wall on the left"
+      : (normalizedWall.includes("rear") || normalizedWall.includes("back"))
+        ? "against the rear wall"
+        : "against the rear wall";
+
+  if (normalizedRoom.includes("bedroom")) {
+    return `Place the bed ${wallPhrase}.`;
+  }
+  if (normalizedRoom.includes("living")) {
+    return normalizedWall.includes("rear") || normalizedWall.includes("back")
+      ? "Place the sofa against the rear wall."
+      : `Place the sofa ${wallPhrase}.`;
+  }
+  if (normalizedRoom.includes("dining")) {
+    return "Place the dining table centrally within the room.";
+  }
+  return null;
 }
 
 /**
@@ -184,4 +265,51 @@ export function buildValidatorRetryGuidance(
   const guidanceText = appliedCategories.map((cat) => GUIDANCE_BLOCKS[cat]).join("\n\n");
 
   return { guidanceText, categories: appliedCategories };
+}
+
+export function buildAutoRetryGuidance(input: AutoRetryGuidanceInput): AutoRetryGuidanceOutput {
+  const normalizedTriggers = input.triggers.map(normalizeToken).filter(Boolean);
+  const lines: string[] = [];
+
+  if (hasAnyToken(normalizedTriggers, OPENING_TRIGGER_TOKENS)) {
+    lines.push("Do not remove, seal, cover, wall over, resize or relocate any window openings.");
+  }
+
+  if (hasAnyToken(normalizedTriggers, FIXTURE_PENDANT_TOKENS)) {
+    lines.push("Do not remove or materially alter any existing pendant lights.");
+  }
+
+  if (hasAnyToken(normalizedTriggers, FIXTURE_HVAC_TOKENS)) {
+    lines.push("Do not remove or materially alter any existing HVAC units.");
+  }
+
+  if (hasAnyToken(normalizedTriggers, FIXTURE_COUNTERTOP_TOKENS)) {
+    lines.push("Do not alter or replace existing countertop materials or finishes.");
+  }
+
+  if (hasAnyToken(normalizedTriggers, ["fixture_changed", "fixture_removed", "built_in_modified"])) {
+    lines.push("Do not remove or materially alter any existing built-in fixtures.");
+  }
+
+  if (hasAnyToken(normalizedTriggers, ["floor_changed", "flooring_changed", "floor_anomaly"])) {
+    lines.push("Do not alter existing flooring materials or finishes.");
+  }
+
+  if (hasAnyToken(normalizedTriggers, ["envelope_vertical_edge_loss", "envelope_corner_flattened", "wall_changed", "room_envelope_changed", "envelope_confirmed_structural_change"])) {
+    lines.push("Do not alter wall geometry, recesses, corners, or room envelope surfaces.");
+  }
+
+  const validatorInstructions = dedupeLines(lines);
+  const layoutInstruction = inferAnchorPlacementInstruction(input.roomType, input.anchorWall);
+  const combined = layoutInstruction
+    ? [...validatorInstructions, layoutInstruction]
+    : [...validatorInstructions];
+  const limited = combined.slice(0, 5);
+
+  return {
+    text: limited.length > 0 ? limited.join("\n") : null,
+    validatorInstructions,
+    layoutInstruction,
+    instructionCount: limited.length,
+  };
 }

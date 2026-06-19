@@ -1,0 +1,1246 @@
+49:2026-06-18T08:24:11.471250138Z [inf]  [STAGE_URLS_WRITE] {
+66:2026-06-18T08:24:11.473266163Z [inf]  [STAGE2_RETRY_SUMMARY] {
+106:2026-06-18T08:24:11.477632718Z [inf]  [worker] Structural warnings: style_only; local_validators_advisory: windows
+109:2026-06-18T08:24:11.479877035Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+165:2026-06-18T08:24:11.510693185Z [inf]    parentJobId: undefined,
+177:2026-06-18T08:24:11.518898812Z [inf]  [STAGE2_COMPLETION_ALLOWED] {
+184:2026-06-18T08:24:11.521207758Z [inf]  [STAGE_URLS_WRITE] {
+227:2026-06-18T08:24:11.603154465Z [inf]  [JOB_FINAL][job=job_ec41f419-afbb-4d61-ae22-3243db84f007] status=complete hardFail=false warnings=2 normalized=false
+354:2026-06-18T08:24:14.911359103Z [inf]        reasoning: 'The door opening in the left side of the near wall retains its visible size and shape. New furniture partially occludes it, but the structural edges remain visible, and there is no evidence of infill.'
+359:2026-06-18T08:24:14.911417090Z [inf]        reasoning: 'The window opening in the center of the left wall is still present on the same wall. Its position, size, and type are consistent with the original image, with only new furniture in front.'
+361:2026-06-18T08:24:14.913300457Z [inf]  [unified-validator]   ✓ globalEdge (score: 1.000): Edge IoU: 1.000 (threshold: 0.6)
+362:2026-06-18T08:24:14.913318982Z [inf]  [unified-validator]   ✓ structuralMask (score: 1.000): Structural IoU: 1.000 (threshold: 0.25)
+363:2026-06-18T08:24:14.913326085Z [inf]  [unified-validator]   ✓ lineEdge (score: 1.000): Line/edge validation skipped (tier=core)
+365:2026-06-18T08:24:14.913332677Z [inf]  [unified-validator]   ✓ anchors (score: 1.000): All anchors intact
+366:2026-06-18T08:24:14.913340513Z [inf]  [validator] escalated=false earlyExit=false
+367:2026-06-18T08:24:14.913347761Z [inf]  [unified-validator] [Gemini] validator_results={"v1":"pass"} consensus=false derivedWarnings=3
+368:2026-06-18T08:24:14.913354557Z [inf]  [unified-validator] [Gemini] verdict cat=style_only hardFail=false geminiMode=block conf=1
+371:2026-06-18T08:24:14.913375151Z [inf]  [unified-validator] === Validation Results ===
+372:2026-06-18T08:24:14.913381810Z [inf]  [unified-validator]   ✓ perceptualDiff (score: 1.000): Perceptual diff skipped (tier=core)
+373:2026-06-18T08:24:14.913390020Z [inf]  [unified-validator]   ✓ stageAware (score: 0.999): Stage-aware validation passed
+374:2026-06-18T08:24:14.913395429Z [inf]  [unified-validator]   ✗ windows (score: 0.000): window_position_change
+375:2026-06-18T08:24:14.913400618Z [inf]  [unified-validator]   ✓ walls (score: 1.000): Wall validation skipped (tier=core)
+376:2026-06-18T08:24:14.915540121Z [inf]  [unified-validator]   ✓ geminiSemantic (score: 1.000): Gemini warning: style_only
+378:2026-06-18T08:24:14.915550348Z [inf]  [unified-validator] Aggregate Score: 0.808
+379:2026-06-18T08:24:14.915551194Z [inf]  [validator] check=perceptualDiff pass=true score=1.000
+381:2026-06-18T08:24:14.915557534Z [inf]  [unified-validator] ===============================
+382:2026-06-18T08:24:14.915565028Z [inf]  [unified-validator] Overall: FAILED
+384:2026-06-18T08:24:14.915572118Z [inf]  [unified-validator] Failure Reasons:
+386:2026-06-18T08:24:14.915578996Z [inf]  [unified-validator]   - Window validation failed: window_position_change
+388:2026-06-18T08:24:14.915588464Z [inf]  [unified-validator] Warnings:
+390:2026-06-18T08:24:14.915599498Z [inf]  [unified-validator]   - No Tier 1 (structural) changes detected.
+392:2026-06-18T08:24:14.915608758Z [inf]  [unified-validator]   - No Tier 2 (fixed feature) changes detected.
+394:2026-06-18T08:24:14.915615867Z [inf]  [unified-validator]   - All identified changes are Tier 3 (flexible furniture and decor).
+395:2026-06-18T08:24:14.915623911Z [inf]  [UNIFIED_AUTHORITY] Local validator failures overridden by Gemini PASS {
+406:2026-06-18T08:24:14.917164082Z [inf]  [validator] check=stageAware pass=true score=0.999
+408:2026-06-18T08:24:14.917170806Z [inf]  [validator] check=windows pass=false score=0.000
+410:2026-06-18T08:24:14.917177730Z [inf]  [validator] check=walls pass=true score=1.000
+412:2026-06-18T08:24:14.917187836Z [inf]  [validator] check=globalEdge pass=true score=1.000
+414:2026-06-18T08:24:14.917200026Z [inf]  [validator] check=structuralMask pass=true score=1.000
+416:2026-06-18T08:24:14.917207013Z [inf]  [validator] check=lineEdge pass=true score=1.000
+417:2026-06-18T08:24:14.917211545Z [inf]  [validator] check=anchors pass=true score=1.000
+418:2026-06-18T08:24:14.917215906Z [inf]  [validator] check=geminiSemantic pass=true score=1.000
+419:2026-06-18T08:24:14.917221385Z [inf]  [validator] verdict=PASS score=0.808 jobId=job_6e8f1758-7f5e-4a35-ae82-41ab5c879adf
+421:2026-06-18T08:24:14.918941144Z [inf]    openingStructuralSignalFlag: false,
+422:2026-06-18T08:24:14.918949454Z [inf]    openingStructuralSignal: null,
+426:2026-06-18T08:24:14.918963771Z [inf]    openingRegions: []
+462:2026-06-18T08:24:41.829393949Z [inf]    validator: 'structuralIdentityReview',
+470:2026-06-18T08:24:41.829445337Z [inf]  validator=structuralIdentityReview
+524:2026-06-18T08:24:45.210054749Z [inf]  [STAGE_URLS_WRITE] {
+556:2026-06-18T08:24:45.211082713Z [inf]  [STAGE2_RETRY_SUMMARY] {
+576:2026-06-18T08:24:45.213650346Z [inf]  [worker] Structural warnings: No Tier 1 (structural) changes detected.; No Tier 2 (fixed feature) changes detected.; All identified changes are Tier 3 (flexible furniture and decor).; local_validators_advisory: windows
+594:2026-06-18T08:24:45.215662008Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+651:2026-06-18T08:24:45.221646903Z [inf]  [STAGE2_COMPLETION_ALLOWED] {
+658:2026-06-18T08:24:45.221685651Z [inf]    parentJobId: undefined,
+662:2026-06-18T08:24:45.221703871Z [inf]  [STAGE_URLS_WRITE] {
+709:2026-06-18T08:24:45.348358048Z [inf]  [JOB_FINAL][job=job_6e8f1758-7f5e-4a35-ae82-41ab5c879adf] status=complete hardFail=false warnings=4 normalized=false
+820:2026-06-18T21:30:39.216007362Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+826:2026-06-18T21:30:39.216035927Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+830:2026-06-18T21:30:39.216057693Z [inf]  [Memory] Job job_0a649ccd-e39d-48e8-aa5b-b081391fee82 started - Heap: 41.54 MB
+832:2026-06-18T21:30:39.216177891Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+837:2026-06-18T21:30:39.216214623Z [inf]  ========== PROCESSING JOB job_0a649ccd-e39d-48e8-aa5b-b081391fee82 ==========
+838:2026-06-18T21:30:39.216220686Z [inf]  [JOB_START] job=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 image=img_e9cefb64-085e-43d6-aa89-011537106dea stagingStyle=standard_listing
+840:2026-06-18T21:30:39.216242422Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+849:2026-06-18T21:30:39.216331758Z [inf]  [WORKER] Remote original downloaded to: /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87.jpg
+852:2026-06-18T21:30:39.216380199Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1781818237201-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87.jpg
+857:2026-06-18T21:30:39.216428129Z [inf]  [worker] Local validator tier: core
+868:2026-06-18T21:30:39.216475896Z [inf]  [PUBLISH] File: realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87.jpg
+891:2026-06-18T21:30:39.216594136Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818237201-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87.jpg
+896:2026-06-18T21:30:39.217717222Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+911:2026-06-18T21:30:39.217815182Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:canonical_preprocess:5',
+912:2026-06-18T21:30:39.217823222Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+950:2026-06-18T21:30:39.233780750Z [inf]  [STRAIGHTEN_ATTEMPT] jobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+1024:2026-06-18T21:30:39.241299850Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:canonical_preprocess:5',
+1027:2026-06-18T21:30:39.241312533Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+1052:2026-06-18T21:30:39.261589953Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+1059:2026-06-18T21:30:39.261625187Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+1063:2026-06-18T21:30:40.205278023Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+1074:2026-06-18T21:30:40.205330859Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage1a_generation:6',
+1077:2026-06-18T21:30:40.205339368Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+1308:2026-06-18T21:30:41.462433960Z [inf]  [worker] Local validator tier: core
+1767:2026-06-18T21:30:44.590289210Z [inf]  [stage1A] Sharp enhancement complete: /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical.webp → /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-sharp.webp
+1772:2026-06-18T21:30:44.592274218Z [inf]  [Gemini] 🔵 Input path: /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-sharp.webp
+1780:2026-06-18T21:30:44.592353507Z [inf]  [MODEL][1A] job=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 file=realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-sharp.webp stage=1A room=bedroom models=gemini-2.5-flash-image reason=interior enhance
+1816:2026-06-18T21:30:46.355557101Z [inf]  [worker] Local validator tier: core
+2295:2026-06-18T21:30:53.360731045Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2342:2026-06-18T21:30:55.016572884Z [inf]  [OPENING_BASELINE_TRIGGER] {
+2371:2026-06-18T21:30:55.023543294Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","attempt":1,"stage":"image_materialization","durationMs":7}
+2422:2026-06-18T21:30:57.757737368Z [inf]  [STAGE_URLS_WRITE] {
+2469:2026-06-18T21:31:02.861685513Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2487:2026-06-18T21:31:02.863662259Z [inf]  [OPENING_BASELINE_TRIGGER] {
+2526:2026-06-18T21:31:02.864900088Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","attempt":1,"stage":"image_materialization","durationMs":2}
+2580:2026-06-18T21:31:02.867866738Z [inf]  [STAGE_URLS_WRITE] {
+2627:2026-06-18T21:31:04.587297224Z [inf]  [Gemini] 💾 Saved enhanced image to: /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-sharp-gemini-1A.webp
+2629:2026-06-18T21:31:04.587313040Z [inf]  [stage1A] ✅ Gemini enhancement complete: /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-sharp-gemini-1A.webp
+2630:2026-06-18T21:31:04.589180611Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+2632:2026-06-18T21:31:04.589197579Z [inf]  [stage1A] Professional enhancement complete: /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical.webp → /tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp
+2634:2026-06-18T21:31:04.589215559Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage1a_generation:6',
+2635:2026-06-18T21:31:04.589223260Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2654:2026-06-18T21:31:04.590849321Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage1a_structural_baseline:7',
+2656:2026-06-18T21:31:04.590856818Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2671:2026-06-18T21:31:04.590949779Z [inf]  [OPENING_BASELINE_TRIGGER] {
+2672:2026-06-18T21:31:04.590956099Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2680:2026-06-18T21:31:04.592819022Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"image_materialization","durationMs":9}
+2684:2026-06-18T21:31:04.592838092Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2692:2026-06-18T21:31:04.592879113Z [inf]  [STRUCTURAL_BASELINE_STARTED] jobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 source=canonical startedDuringStage1A=true
+2696:2026-06-18T21:31:04.592904800Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2716:2026-06-18T21:31:04.594551150Z [inf]  [PUBLISH] File: realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg
+2725:2026-06-18T21:31:04.594603305Z [inf]  [DELIVERY_EXPORT] stage=1A source=1248x832 target=2048x1365 path=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg
+2727:2026-06-18T21:31:04.596115093Z [inf]  [PUBLISH] Destination: s3://realenhance-bucket/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg
+2739:2026-06-18T21:31:04.596207796Z [inf]  [PUBLISH] URL: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg
+2744:2026-06-18T21:31:04.596234340Z [inf]  [STAGE_URLS_WRITE] {
+2745:2026-06-18T21:31:04.596239602Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2747:2026-06-18T21:31:04.596250166Z [inf]      stage1A: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+2753:2026-06-18T21:31:04.597989212Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2759:2026-06-18T21:31:04.598031424Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+2763:2026-06-18T21:31:04.598126012Z [inf]    imagePath: 'realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp',
+2764:2026-06-18T21:31:04.598131905Z [inf]    imagePath: 'realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp',
+2772:2026-06-18T21:31:04.598179121Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3022:2026-06-18T21:31:09.044175503Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","attempt":1,"stage":"gemini_structural_extraction","durationMs":14012}
+3023:2026-06-18T21:31:09.044181255Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W1","type":"window","wallIndex":0,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"fixed_plus_opening","doorLeafState":"unknown","confidence":0.98}],"anchorFixtures":[]}
+3024:2026-06-18T21:31:09.044185983Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","mode":"single_pass","extractionCalls":1}
+3025:2026-06-18T21:31:09.044192840Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","imageHash":"dc483d9ac47180de2bea174a9535691ffefb1db57b511e54887779e2ac84323b","baselineMode":"single_pass","extractionPass":1,"graphHash":"782b7163aa0619db95996e7b29ac50c8229821d4f9226818e69997720b533eea","openingCount":1}
+3026:2026-06-18T21:31:09.044197899Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","mode":"single_pass","baselineExtractionDurationMs":14013,"totalGeminiCalls":1}
+3027:2026-06-18T21:31:09.044202400Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":14010,"jsonParseMs":0,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":14012}
+3035:2026-06-18T21:31:09.045632729Z [inf]  [OPENING_BASELINE_METRICS] {
+3068:2026-06-18T21:31:09.046515028Z [inf]  [STRUCTURAL_BASELINE_EXTRACTED] jobId=job_bd40338d-ca3c-49a2-87ab-d4a3896fc926 openings=1
+3312:2026-06-18T21:31:12.227064902Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3316:2026-06-18T21:31:12.227082548Z [inf]    imagePath: 'realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp',
+3335:2026-06-18T21:31:12.228671253Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3348:2026-06-18T21:31:12.228751210Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3366:2026-06-18T21:31:12.229734839Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3387:2026-06-18T21:31:12.231340297Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3397:2026-06-18T21:31:12.231400948Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3416:2026-06-18T21:31:12.232964762Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3424:2026-06-18T21:31:12.233013569Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3430:2026-06-18T21:31:12.233047818Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3441:2026-06-18T21:31:12.235475000Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3446:2026-06-18T21:31:12.235504853Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3448:2026-06-18T21:31:12.235511476Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3455:2026-06-18T21:31:12.235532922Z [inf]    using: '/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp'
+3460:2026-06-18T21:31:12.235579500Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3465:2026-06-18T21:31:12.237396182Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3474:2026-06-18T21:31:12.237466110Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3478:2026-06-18T21:31:12.237498184Z [inf]  [WORKER] Stage 2 source: baseStage=1A, inputPath=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp
+3492:2026-06-18T21:31:12.237638553Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3496:2026-06-18T21:31:12.239086951Z [inf]    stage1APath: '/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp',
+3499:2026-06-18T21:31:12.239099648Z [inf]    chosenBasePath: '/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp',
+3506:2026-06-18T21:31:12.239152730Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3512:2026-06-18T21:31:12.239193001Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3518:2026-06-18T21:31:12.239230920Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3522:2026-06-18T21:31:12.240572728Z [inf]  [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+3524:2026-06-18T21:31:12.240579786Z [inf]  [STAGE2_MODEL_ESCALATION] job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 attempt=1 model=gemini-2.5-flash-image temperature=0.4 retry_reason=initial
+3529:2026-06-18T21:31:12.240600075Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage2_generation_main:8',
+3530:2026-06-18T21:31:12.240605039Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3543:2026-06-18T21:31:12.242273095Z [inf]  [MODEL][2] job=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 file=n/a stage=2 room=bedroom models=gemini-2.5-flash-image reason=stage2_initial_generation
+3600:2026-06-18T21:31:19.880294179Z [inf]  [STAGE_URLS_WRITE] {
+3659:2026-06-18T21:31:20.698831746Z [inf]  [OPENING_BASELINE_REUSE] {
+3661:2026-06-18T21:31:20.698852944Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only Stage2 semantic/masked validators skipped {
+3675:2026-06-18T21:31:20.700310455Z [inf]    validator: 'fixture',
+3681:2026-06-18T21:31:20.700333780Z [inf]    source: 'stage2_opening_validator',
+3685:2026-06-18T21:31:20.700351642Z [inf]    openings: 1
+3692:2026-06-18T21:31:20.700385587Z [inf]    validator: 'opening',
+3703:2026-06-18T21:31:20.701130433Z [inf]    validator: 'floor',
+3715:2026-06-18T21:31:20.723095079Z [inf]    validator: 'envelope',
+3725:2026-06-18T21:31:20.728663975Z [inf]  [OPENINGS_BASELINE] {
+3727:2026-06-18T21:31:20.728672070Z [inf]    openings: [
+3742:2026-06-18T21:31:20.730545584Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","attempt":1,"stage":"image_materialization","durationMs":1}
+3796:2026-06-18T21:31:22.241164787Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3811:2026-06-18T21:31:23.041289048Z [inf]  [STAGE_URLS_WRITE] {
+3858:2026-06-18T21:31:23.207601919Z [inf]  [STAGE2_OUTPUT_PATH] job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 attempt=1 path=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp
+3860:2026-06-18T21:31:23.207614554Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage2_generation_main:8',
+3861:2026-06-18T21:31:23.207619691Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3887:2026-06-18T21:31:23.209310738Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3897:2026-06-18T21:31:24.190889032Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only Stage2 semantic/masked validators skipped {
+3911:2026-06-18T21:31:24.190957243Z [inf]  [OPENING_BASELINE_REUSE] {
+3917:2026-06-18T21:31:24.193279850Z [inf]    source: 'stage2_opening_validator',
+3925:2026-06-18T21:31:24.193334408Z [inf]    validator: 'opening',
+3933:2026-06-18T21:31:24.193390791Z [inf]    validator: 'fixture',
+3940:2026-06-18T21:31:24.199308171Z [inf]    validator: 'floor',
+3952:2026-06-18T21:31:24.231549412Z [inf]    validator: 'envelope',
+3970:2026-06-18T21:31:24.518088409Z [inf]  [IMAGE_ATTEMPT_URL] stage=2 attempt=1 job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 file=realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp signed_url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213124Z&X-Amz-Expires=86400&X-Amz-Signature=7c41060dfc2e48b8b4d1aecee39c42318b9a0f9f307c92cd5a2bab5e65d0b610&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+3973:2026-06-18T21:31:24.518109145Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3978:2026-06-18T21:31:24.527440456Z [inf]  [STAGE_URLS_WRITE] {
+3979:2026-06-18T21:31:24.527458908Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3981:2026-06-18T21:31:24.527478193Z [inf]      stage1A: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+3987:2026-06-18T21:31:24.527531715Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3993:2026-06-18T21:31:24.537724226Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+3999:2026-06-18T21:31:24.537759838Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+4003:2026-06-18T21:31:24.537786979Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4010:2026-06-18T21:31:24.539333597Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+4013:2026-06-18T21:31:24.539353434Z [inf]  candidate_path=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp
+4015:2026-06-18T21:31:24.539368839Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4022:2026-06-18T21:31:25.516892000Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"gemini_structural_extraction","durationMs":27383}
+4023:2026-06-18T21:31:25.518783021Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W2","type":"window","wallIndex":0,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"sliding_panel","doorLeafState":"unknown","confidence":0.98},{"id":"W1","type":"window","wallIndex":3,"horizontalBand":"left_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"sliding_panel","doorLeafState":"unknown","confidence":0.98}],"anchorFixtures":[]}
+4024:2026-06-18T21:31:25.518793375Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","extractionCalls":1}
+4025:2026-06-18T21:31:25.518801924Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageHash":"18702d4c9e36bf5e080f5d70bae15b6660c7de1e6374052befa6d90ae728093c","baselineMode":"single_pass","extractionPass":1,"graphHash":"1fa87da2a804b1f6cc5c3d05296eb2a783a1c51919a1802e062e4f071bc27322","openingCount":2}
+4026:2026-06-18T21:31:25.518806949Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","baselineExtractionDurationMs":27384,"totalGeminiCalls":1}
+4027:2026-06-18T21:31:25.518811549Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":27381,"jsonParseMs":1,"normalizationMs":1,"graphBuildMs":1,"persistenceMs":0,"totalMs":27385}
+4029:2026-06-18T21:31:25.518825638Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage1a_structural_baseline:7',
+4030:2026-06-18T21:31:25.518830851Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4057:2026-06-18T21:31:25.525305108Z [inf]  [OPENING_BASELINE_METRICS] {
+4058:2026-06-18T21:31:25.525314098Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4068:2026-06-18T21:31:25.525373660Z [inf]  [STRUCTURAL_BASELINE_EXTRACTED] jobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 openings=2
+4070:2026-06-18T21:31:25.673101807Z [inf]  [VALIDATOR_INPUT] stage=2 attempt=1 base=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp candidate=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp
+4072:2026-06-18T21:31:25.673111894Z [inf]  [IMAGE_ATTEMPT_URL] stage=2 attempt=1 job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 file=realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp signed_url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213124Z&X-Amz-Expires=86400&X-Amz-Signature=7c41060dfc2e48b8b4d1aecee39c42318b9a0f9f307c92cd5a2bab5e65d0b610&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+4074:2026-06-18T21:31:25.675938585Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only Stage2 semantic/masked validators skipped {
+4075:2026-06-18T21:31:25.675943730Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4081:2026-06-18T21:31:25.676015327Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4089:2026-06-18T21:31:25.676065372Z [inf]  [OPENING_BASELINE_REUSE] {
+4090:2026-06-18T21:31:25.678832282Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4092:2026-06-18T21:31:25.678848139Z [inf]    source: 'stage2_opening_validator',
+4094:2026-06-18T21:31:25.678870774Z [inf]    openings: 2
+4097:2026-06-18T21:31:25.678887145Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4101:2026-06-18T21:31:25.678908654Z [inf]    validator: 'opening',
+4105:2026-06-18T21:31:25.678928240Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4109:2026-06-18T21:31:25.678947471Z [inf]    validator: 'fixture',
+4115:2026-06-18T21:31:25.692721284Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4119:2026-06-18T21:31:25.692754407Z [inf]    validator: 'floor',
+4127:2026-06-18T21:31:25.729236595Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4131:2026-06-18T21:31:25.729264527Z [inf]    validator: 'envelope',
+4145:2026-06-18T21:31:25.762488381Z [inf]  [OPENINGS_BASELINE] {
+4147:2026-06-18T21:31:25.762494944Z [inf]    openings: [
+4165:2026-06-18T21:31:25.772984934Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"image_materialization","durationMs":2}
+4177:2026-06-18T21:31:26.229640739Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4196:2026-06-18T21:31:28.434621701Z [inf]    validator: 'fixture',
+4235:2026-06-18T21:31:28.579580797Z [inf]    validator: 'floor',
+4254:2026-06-18T21:31:28.873943621Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","attempt":1,"stage":"gemini_structural_extraction","durationMs":30707}
+4255:2026-06-18T21:31:28.873947837Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"D1","type":"door","wallIndex":0,"horizontalBand":"center_third","verticalBand":"full_height","wallCoverageBand":"40-60","orientation":"portrait","paneStructure":"sliding_panel","doorLeafState":"closed","confidence":0.98},{"id":"W1","type":"window","wallIndex":1,"horizontalBand":"right_third","verticalBand":"ceiling_zone","wallCoverageBand":"5-10","orientation":"square","paneStructure":"single_fixed","doorLeafState":"unknown","confidence":0.95},{"id":"A1","type":"walkthrough","wallIndex":3,"horizontalBand":"left_third","verticalBand":"full_height","wallCoverageBand":"20-40","orientation":"portrait","paneStructure":"unknown","doorLeafState":"unknown","confidence":0.9}],"anchorFixtures":[{"id":"F1","type":"ac_unit","wallIndex":0,"horizontalBand":"left_third","confidence":0.99}]}
+4256:2026-06-18T21:31:28.873952781Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","mode":"single_pass","extractionCalls":1}
+4257:2026-06-18T21:31:28.873957086Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","imageHash":"62d062bf48f9648ecca25628c754cbf4f400f76ee1ee5cea2e31686d1e8c4b35","baselineMode":"single_pass","extractionPass":1,"graphHash":"6090a12bf70ed13ab4d2d91de8341669a351c09599b11e778bf7752149afe8d0","openingCount":3}
+4259:2026-06-18T21:31:28.875795047Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","mode":"single_pass","baselineExtractionDurationMs":30708,"totalGeminiCalls":1}
+4260:2026-06-18T21:31:28.875803033Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":30706,"jsonParseMs":0,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":30708}
+4281:2026-06-18T21:31:28.877862986Z [inf]  [STRUCTURAL_BASELINE_EXTRACTED] jobId=job_2c44549d-94f9-4407-a01b-443543dbafa6 openings=3
+4283:2026-06-18T21:31:28.877872157Z [inf]  [OPENING_BASELINE_REUSE] {
+4288:2026-06-18T21:31:28.877893609Z [inf]    source: 'stage2_opening_validator',
+4292:2026-06-18T21:31:28.877912746Z [inf]    openings: 3
+4298:2026-06-18T21:31:28.877949769Z [inf]  [OPENING_BASELINE_METRICS] {
+4311:2026-06-18T21:31:28.879615455Z [inf]        type: 'opening',
+4317:2026-06-18T21:31:28.879644127Z [inf]  [OPENINGS_BASELINE] {
+4319:2026-06-18T21:31:28.879652049Z [inf]    openings: [
+4345:2026-06-18T21:31:28.881015108Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","attempt":1,"stage":"image_materialization","durationMs":1}
+4382:2026-06-18T21:31:33.094732964Z [inf]    validator: 'envelope',
+4399:2026-06-18T21:31:33.731432874Z [inf]    validator: 'floor',
+4446:2026-06-18T21:31:33.830309226Z [inf]    validator: 'envelope',
+4492:2026-06-18T21:31:35.068880195Z [inf]    validator: 'fixture',
+4522:2026-06-18T21:31:35.285347143Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4527:2026-06-18T21:31:35.287671464Z [inf]    validator: 'fixture',
+4537:2026-06-18T21:31:35.287721762Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4562:2026-06-18T21:31:35.291032177Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4566:2026-06-18T21:31:35.291051194Z [inf]    validator: 'floor',
+4573:2026-06-18T21:31:35.293291000Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4613:2026-06-18T21:31:36.241966517Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4617:2026-06-18T21:31:36.241991161Z [inf]    validator: 'envelope',
+4624:2026-06-18T21:31:36.243195071Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+4636:2026-06-18T21:31:53.834981568Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","attempt":1,"stage":"gemini_structural_extraction","durationMs":24796}
+4637:2026-06-18T21:31:53.834986255Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W1","type":"window","wallIndex":0,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"40-60","orientation":"landscape","paneStructure":"sliding_panel","doorLeafState":"unknown","confidence":0.95}],"anchorFixtures":[]}
+4638:2026-06-18T21:31:53.834990426Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","mode":"single_pass","extractionCalls":1}
+4639:2026-06-18T21:31:53.834994869Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","imageHash":"d209c0af4580663a9c9fc2b8bad3b694fbf2f73cc2f438e641e26a36ea79ff21","baselineMode":"single_pass","extractionPass":1,"graphHash":"016bf2c39653bff7ca531f86b094400f10af834e050aff9beb9a5e0059a70dae","openingCount":1}
+4640:2026-06-18T21:31:53.835001117Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","mode":"single_pass","baselineExtractionDurationMs":24796,"totalGeminiCalls":1}
+4641:2026-06-18T21:31:53.835005052Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":24795,"jsonParseMs":0,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":24797}
+4647:2026-06-18T21:31:53.835867524Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_bd40338d-ca3c-49a2-87ab-d4a3896fc926","imageId":"img_124f4d47-48ed-476d-b3f7-b44f61062cc9","attempt":1,"reconciliationHash":"dc6d807b558c402b5f9b5c58b87b57ecae8d08c394b15d8ff69c5c8bca3330f2","baselineOpeningCount":1,"detectedOpeningCount":1,"matchedCount":1,"idMatchCount":1,"graphMatchCount":0,"unmatchedBaselineIds":[],"unmatchedDetectedIds":[]}
+4648:2026-06-18T21:31:53.835871177Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=pane_structure_changed|aperture_expanded_gt_0.45
+4654:2026-06-18T21:31:53.837405260Z [inf]  [OPENING_OBSERVABILITY_EVIDENCE] {
+4668:2026-06-18T21:31:53.837468204Z [inf]  [OPENING_COHERENCE_DOWNGRADE] {
+4670:2026-06-18T21:31:53.837475615Z [inf]    reasonParts: [ 'opening_resized' ],
+4675:2026-06-18T21:31:53.838681496Z [inf]    explanation: 'The window opening in the right side of the near wall appears materially different in size or shape.'
+4677:2026-06-18T21:31:53.838707085Z [inf]  [SPECIALIST_REVIEW][OPENING] {
+4683:2026-06-18T21:31:53.838753648Z [inf]  [OPENINGS_COMPARISON] {
+4685:2026-06-18T21:31:53.838764410Z [inf]    issueType: 'opening_resized_minor',
+4687:2026-06-18T21:31:53.838773875Z [inf]    reason: 'opening_resized',
+4688:2026-06-18T21:31:53.838778137Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' },
+4694:2026-06-18T21:31:53.838807890Z [inf]        explanation: 'The window opening in the right side of the near wall appears materially different in size or shape.',
+4695:2026-06-18T21:31:53.838813307Z [inf]        location: 'window opening in the right side of the near wall',
+4697:2026-06-18T21:31:53.838824551Z [inf]        question: 'Does the window opening in the right side of the near wall retain the same visible size and shape as in the original image?'
+4702:2026-06-18T21:31:53.839695847Z [inf]    reason: 'opening_resized',
+4704:2026-06-18T21:31:53.839703803Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' }
+4715:2026-06-18T21:31:53.839754477Z [inf]    validator: 'opening',
+4735:2026-06-18T21:31:53.840911863Z [inf]    specialist: 'opening',
+4753:2026-06-18T21:31:53.841819079Z [inf]    openingDurationMs: 24838,
+4758:2026-06-18T21:31:53.841835832Z [inf]    validator: 'openings',
+4760:2026-06-18T21:31:53.841842582Z [inf]    advisorySignals: [ 'openings:opening_signal_incoherent_downgraded' ]
+4770:2026-06-18T21:31:53.841875543Z [inf]    validator: 'opening',
+4773:2026-06-18T21:31:53.841885390Z [inf]    issueType: 'opening_resized_minor',
+4774:2026-06-18T21:31:53.842836004Z [inf]  [OPENING_SEMANTIC_AUTHORITY_PRESERVED] {
+4779:2026-06-18T21:31:53.842868145Z [inf]    issueType: 'opening_resized_minor',
+4784:2026-06-18T21:31:53.842890809Z [inf]  [OPENING_STRUCTURAL_SIGNAL] {
+4785:2026-06-18T21:31:53.842894072Z [inf]    openingStructuralSignal: false,
+4795:2026-06-18T21:31:53.842929670Z [inf]  [OPENING_STRUCTURAL_ADVISORY] {
+4803:2026-06-18T21:31:53.844055198Z [inf]  [STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)
+4804:2026-06-18T21:31:53.844064054Z [inf]  [OPENING_SIGNATURE_TELEMETRY] {
+4810:2026-06-18T21:31:53.844092817Z [inf]    decisionPath: 'post_opening_validator',
+4818:2026-06-18T21:31:53.844126642Z [inf]    validator: 'openingValidator',
+4826:2026-06-18T21:31:53.844160130Z [inf]  validator=openingValidator
+4828:2026-06-18T21:31:53.844171673Z [inf]  reason=sensor_opening_signal
+4838:2026-06-18T21:31:53.845106019Z [inf]    validator: 'fixture',
+4841:2026-06-18T21:31:53.845118450Z [inf]    validator: 'fixtures',
+4843:2026-06-18T21:31:53.845125269Z [inf]    validator: 'fixtures',
+4861:2026-06-18T21:31:53.846355927Z [inf]    validator: 'fixtureValidator',
+4869:2026-06-18T21:31:53.846389289Z [inf]  validator=fixtureValidator
+4876:2026-06-18T21:31:53.846415548Z [inf]    validator: 'floor',
+4888:2026-06-18T21:31:53.846463843Z [inf]    validator: 'floorIntegrityValidator',
+4905:2026-06-18T21:31:53.847761466Z [inf]  validator=floorIntegrityValidator
+4908:2026-06-18T21:31:53.847772145Z [inf]    validator: 'envelopeValidator',
+4917:2026-06-18T21:31:53.847809670Z [inf]    validator: 'envelope',
+4923:2026-06-18T21:31:53.848685745Z [inf]  validator=envelopeValidator
+4931:2026-06-18T21:31:53.848720549Z [inf]      openings: { pass: true, reason: 'opening_resized' },
+4940:2026-06-18T21:31:53.848756608Z [inf]      'openings:opening_signal_incoherent_downgraded',
+4943:2026-06-18T21:31:53.849791566Z [inf]        location: 'window opening in the right side of the near wall',
+4944:2026-06-18T21:31:53.849798671Z [inf]        question: 'Does the window opening in the right side of the near wall retain the same visible size and shape as in the original image?',
+4951:2026-06-18T21:31:53.849822941Z [inf]  [OPENING_STRUCTURED_ISSUES_PROPAGATED] {
+4960:2026-06-18T21:31:53.849854106Z [inf]        category: 'openings',
+4963:2026-06-18T21:31:53.849867921Z [inf]        type: 'opening_change',
+4973:2026-06-18T21:31:53.850877696Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+4976:2026-06-18T21:31:53.850888272Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+4979:2026-06-18T21:31:53.850898096Z [inf]  [validator] start jobId=job_bd40338d-ca3c-49a2-87ab-d4a3896fc926 stage=2
+4990:2026-06-18T21:31:53.850948163Z [inf]  signals={structuralDegreeChange:0.0000,wallDrift:0.0000,maskedEdgeDrift:0.0000,edgeOpeningRisk:0.0000,openingCountMismatch:0.0000,floorPlaneShift:0.0000,fixtureMismatch:0.0000,islandDetectionDrift:0.0000}
+4998:2026-06-18T21:31:53.851864041Z [inf]  [unified-validator] Stage: 2
+5000:2026-06-18T21:31:53.851871361Z [inf]  [unified-validator] Scene: interior
+5002:2026-06-18T21:31:53.851878535Z [inf]  [unified-validator] Staging Style: nz_standard
+5004:2026-06-18T21:31:53.851886176Z [inf]  [unified-validator] Modes: local=log gemini=block
+5005:2026-06-18T21:31:53.851891427Z [inf]  [unified-validator] Local validator tier: core
+5006:2026-06-18T21:31:53.851895567Z [inf]  [unified-validator] Stage-Aware: ENABLED
+5007:2026-06-18T21:31:53.851899260Z [inf]  [unified-validator] Original: /tmp/realenhance-job_bd40338d-ca3c-49a2-87ab-d4a3896fc926-1781818236354-63sfgz2bzvp-canonical-1A-env-relit.webp
+5008:2026-06-18T21:31:53.851902384Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_bd40338d-ca3c-49a2-87ab-d4a3896fc926-1781818236354-63sfgz2bzvp-canonical-1A-env-relit-2.webp
+5009:2026-06-18T21:31:53.851905228Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_bd40338d-ca3c-49a2-87ab-d4a3896fc926-1781818236354-63sfgz2bzvp-canonical-1A-env-relit.webp
+5011:2026-06-18T21:31:53.851912078Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+5024:2026-06-18T21:31:53.852946125Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.985
+5026:2026-06-18T21:31:53.852952897Z [inf]  [unified-validator] Wall validation skipped (tier=core)
+5036:2026-06-18T21:31:53.852989481Z [inf]  [unified-validator] Global edge validation skipped (tier=core)
+5043:2026-06-18T21:31:53.854130143Z [inf]  [unified-validator] Structural IoU validation skipped (tier=core)
+5046:2026-06-18T21:31:53.854146211Z [inf]  [unified-validator] Line/edge validation skipped (tier=core)
+5047:2026-06-18T21:31:53.854154724Z [inf]  [unified-validator] Running anchor region validators...
+5048:2026-06-18T21:31:53.854157971Z [inf]  [unified-validator] Anchors: island=true hvac=false cabinetry=false lighting=false
+5049:2026-06-18T21:31:53.854162035Z [inf]      'openings:opening_signal_incoherent_downgraded',
+5052:2026-06-18T21:31:53.854173279Z [inf]  [unified-validator] Geometry Profile: SOFT
+5058:2026-06-18T21:31:53.854196094Z [inf]  [unified-validator] Risk Classification: MEDIUM
+5060:2026-06-18T21:31:53.854205132Z [inf]  [unified-validator]   → MEDIUM: heuristic validator flagged structural issue (no anchor evidence)
+5066:2026-06-18T21:31:53.855316066Z [inf]      '[openings] Location: window opening in the right side of the near wall. Question: Does the window opening in the right side of the near wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible structural difference for this baseline opening.'
+5069:2026-06-18T21:31:53.855330825Z [inf]      'Possible window resized detected by opening specialist. Severity=review. Confidence: 0.950. Evidence: opening_resized, opening_signal_incoherent_downgraded. This context is non-binding and must be visually verified.'
+5073:2026-06-18T21:31:53.855348406Z [inf]  [unified-validator] [Gemini] start stage=2 scene=interior mode=block risk=MEDIUM base=/tmp/realenhance-job_bd40338d-ca3c-49a2-87ab-d4a3896fc926-1781818236354-63sfgz2bzvp-canonical-1A-env-relit.webp cand=/tmp/realenhance-job_bd40338d-ca3c-49a2-87ab-d4a3896fc926-1781818236354-63sfgz2bzvp-canonical-1A-env-relit-2.webp
+5074:2026-06-18T21:31:53.855352629Z [inf]  Stage2 validator mode { validationMode: 'FULL_STAGE_ONLY' }
+5079:2026-06-18T21:31:53.855382146Z [inf]      '[openings] Location: window opening in the right side of the near wall. Question: Does the window opening in the right side of the near wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible structural difference for this baseline opening.'
+5082:2026-06-18T21:31:53.856404393Z [inf]      'Possible window resized detected by opening specialist. Severity=review. Confidence: 0.950. Evidence: opening_resized, opening_signal_incoherent_downgraded. This context is non-binding and must be visually verified.'
+5086:2026-06-18T21:31:53.856421810Z [inf]      '- [openings] Location: window opening in the right side of the near wall. Question: Does the window opening in the right side of the near wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible structural difference for this baseline opening.',
+5088:2026-06-18T21:31:53.856430704Z [inf]      '- Possible window resized detected by opening specialist. Severity=review. Confidence: 0.950. Evidence: opening_resized, opening_signal_incoherent_downgraded. This context is non-binding and must be visually verified.'
+5097:2026-06-18T21:31:56.656334920Z [inf]  [validator] escalated=false earlyExit=false
+5098:2026-06-18T21:31:56.656338725Z [inf]  [unified-validator] [Gemini] validator_results={"v1":"pass"} consensus=false derivedWarnings=2
+5111:2026-06-18T21:31:56.656424576Z [inf]        reasoning: 'The window opening in the right side of the near wall retains its visible size and shape. No structural changes to the opening geometry are observed.'
+5114:2026-06-18T21:31:56.657664916Z [inf]  [unified-validator] [Gemini] verdict cat=style_only hardFail=false geminiMode=block conf=1
+5117:2026-06-18T21:31:56.657678330Z [inf]  [unified-validator]   ✓ geminiSemantic (score: 1.000): Gemini warning: style_only
+5118:2026-06-18T21:31:56.657678376Z [inf]  [unified-validator] === Validation Results ===
+5119:2026-06-18T21:31:56.657683496Z [inf]  [unified-validator]   ✓ perceptualDiff (score: 1.000): Perceptual diff skipped (tier=core)
+5120:2026-06-18T21:31:56.657689425Z [inf]  [unified-validator]   ✓ stageAware (score: 0.985): Stage-aware validation passed
+5121:2026-06-18T21:31:56.657689884Z [inf]  [unified-validator] Aggregate Score: 0.807
+5122:2026-06-18T21:31:56.657694687Z [inf]  [unified-validator]   ✗ windows (score: 0.000): window_size_change
+5123:2026-06-18T21:31:56.657697455Z [inf]  [unified-validator] Overall: FAILED
+5124:2026-06-18T21:31:56.657700317Z [inf]  [unified-validator]   ✓ walls (score: 1.000): Wall validation skipped (tier=core)
+5125:2026-06-18T21:31:56.657705378Z [inf]  [unified-validator] Failure Reasons:
+5126:2026-06-18T21:31:56.657706771Z [inf]  [unified-validator]   ✓ globalEdge (score: 1.000): Edge IoU: 1.000 (threshold: 0.6)
+5127:2026-06-18T21:31:56.657711084Z [inf]  [unified-validator]   ✓ structuralMask (score: 1.000): Structural IoU: 1.000 (threshold: 0.25)
+5128:2026-06-18T21:31:56.657715434Z [inf]  [unified-validator]   ✓ lineEdge (score: 1.000): Line/edge validation skipped (tier=core)
+5129:2026-06-18T21:31:56.657718761Z [inf]  [unified-validator]   ✓ anchors (score: 1.000): anchor:island_changed
+5130:2026-06-18T21:31:56.658863123Z [inf]  [unified-validator]   - Window validation failed: window_size_change
+5131:2026-06-18T21:31:56.658870560Z [inf]  [unified-validator] Warnings:
+5132:2026-06-18T21:31:56.658874555Z [inf]  [unified-validator]   - No structural (Tier 1) or fixed feature (Tier 2) changes were detected.
+5133:2026-06-18T21:31:56.658878195Z [inf]  [unified-validator]   - The window opening's size, shape, and position are preserved.
+5134:2026-06-18T21:31:56.658881527Z [inf]  [unified-validator]   - The window treatment type (roller blind) is preserved.
+5135:2026-06-18T21:31:56.658884923Z [inf]  [unified-validator]   - Only flexible items (furniture, decor, lamps) have been introduced, which are Tier 3 changes.
+5136:2026-06-18T21:31:56.658888711Z [inf]  [UNIFIED_AUTHORITY] Local validator failures overridden by Gemini PASS {
+5150:2026-06-18T21:31:56.658939088Z [inf]  [unified-validator] ===============================
+5151:2026-06-18T21:31:56.658942433Z [inf]  [validator] check=perceptualDiff pass=true score=1.000
+5152:2026-06-18T21:31:56.658945896Z [inf]  [validator] check=stageAware pass=true score=0.985
+5153:2026-06-18T21:31:56.658949532Z [inf]  [validator] check=windows pass=false score=0.000
+5154:2026-06-18T21:31:56.660069680Z [inf]  [validator] check=walls pass=true score=1.000
+5155:2026-06-18T21:31:56.660075571Z [inf]  [validator] check=globalEdge pass=true score=1.000
+5156:2026-06-18T21:31:56.660080914Z [inf]  [validator] check=structuralMask pass=true score=1.000
+5157:2026-06-18T21:31:56.660084542Z [inf]  [validator] check=lineEdge pass=true score=1.000
+5158:2026-06-18T21:31:56.660088247Z [inf]  [validator] check=anchors pass=true score=1.000
+5159:2026-06-18T21:31:56.660091472Z [inf]  [validator] check=geminiSemantic pass=true score=1.000
+5160:2026-06-18T21:31:56.660094274Z [inf]  [validator] verdict=PASS score=0.807 jobId=job_bd40338d-ca3c-49a2-87ab-d4a3896fc926
+5184:2026-06-18T21:31:56.661287049Z [inf]    openingStructuralSignalFlag: false,
+5186:2026-06-18T21:31:56.661295977Z [inf]    openingStructuralSignal: null,
+5190:2026-06-18T21:31:56.661313946Z [inf]    openingRegions: []
+5194:2026-06-18T21:32:05.825270554Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"gemini_structural_extraction","durationMs":35910}
+5195:2026-06-18T21:32:05.825277533Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W1","type":"window","wallIndex":0,"horizontalBand":"center_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"sliding_panel","doorLeafState":"unknown","confidence":0.98}],"anchorFixtures":[]}
+5196:2026-06-18T21:32:05.825284261Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","extractionCalls":1}
+5197:2026-06-18T21:32:05.825291128Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageHash":"ab3e2618895ca570aae3ad9ce59d9b3520a63ee2b84e2eb44a680f211191c4a3","baselineMode":"single_pass","extractionPass":1,"graphHash":"1be426cc219526dcd1d36fb36c820c34065173eeaf6b99e4d8c14f2f09d0475e","openingCount":1}
+5198:2026-06-18T21:32:05.825301487Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","baselineExtractionDurationMs":35911,"totalGeminiCalls":1}
+5199:2026-06-18T21:32:05.825307858Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageDownloadMs":2,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":35908,"jsonParseMs":1,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":35912}
+5205:2026-06-18T21:32:05.826983248Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"reconciliationHash":"dc6d807b558c402b5f9b5c58b87b57ecae8d08c394b15d8ff69c5c8bca3330f2","baselineOpeningCount":2,"detectedOpeningCount":1,"matchedCount":1,"idMatchCount":1,"graphMatchCount":0,"unmatchedBaselineIds":["W2"],"unmatchedDetectedIds":[]}
+5206:2026-06-18T21:32:05.826989512Z [inf]  [OPENING_VALIDATION] baseline_id=W2 status=MISSING reason=missing_opening
+5207:2026-06-18T21:32:05.826996874Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=wall_index_changed|horizontal_band_changed
+5208:2026-06-18T21:32:05.827002454Z [inf]  [OPENING_SIGNATURE_ADVISORY] wall=3 before=O:window after=none anchor_reference=false
+5215:2026-06-18T21:32:05.829362829Z [inf]  [OPENING_OBSERVABILITY_EVIDENCE] {
+5216:2026-06-18T21:32:05.829370065Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5221:2026-06-18T21:32:05.829391931Z [inf]  [OPENING_COHERENCE_REINFORCED] {
+5224:2026-06-18T21:32:05.829401147Z [inf]    primaryIssueType: 'opening_removed',
+5226:2026-06-18T21:32:05.829409579Z [inf]    destructiveStates: [ 'opening_removed', 'opening_sealed' ],
+5231:2026-06-18T21:32:05.831184556Z [inf]    supportiveModifiers: [ 'opening_resized', 'opening_band_mismatch' ],
+5233:2026-06-18T21:32:05.831198646Z [inf]    contextualUncertainty: [ 'opening_relocated_review' ],
+5236:2026-06-18T21:32:05.831206204Z [inf]        question: 'Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?'
+5242:2026-06-18T21:32:05.831220602Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_band_mismatch',
+5244:2026-06-18T21:32:05.831226074Z [inf]  [OPENINGS_COMPARISON] {
+5245:2026-06-18T21:32:05.831231890Z [inf]        reason: 'missing_opening',
+5248:2026-06-18T21:32:05.831244833Z [inf]    issueType: 'opening_removed',
+5249:2026-06-18T21:32:05.831249661Z [inf]        explanation: 'The window opening in the right side of the near wall is not detectable in the AFTER image.',
+5250:2026-06-18T21:32:05.831256193Z [inf]        location: 'window opening in the right side of the near wall',
+5251:2026-06-18T21:32:05.831332662Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' },
+5255:2026-06-18T21:32:05.832759963Z [inf]        explanation: 'The window opening in the left side of the left wall appears on a different wall than in the original image.',
+5256:2026-06-18T21:32:05.832795657Z [inf]        location: 'window opening in the left side of the left wall',
+5258:2026-06-18T21:32:05.832810363Z [inf]        question: 'Is the window opening in the left side of the left wall still present on the same wall as in the original image, or does it now appear on a different wall?'
+5261:2026-06-18T21:32:05.832828945Z [inf]    explanation: 'The window opening in the right side of the near wall is not detectable in the AFTER image. The window opening in the left side of the left wall appears on a different wall than in the original image.'
+5263:2026-06-18T21:32:05.832848808Z [inf]  [SPECIALIST_REVIEW][OPENING] {
+5268:2026-06-18T21:32:05.832876230Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_band_mismatch',
+5270:2026-06-18T21:32:05.832885289Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' }
+5280:2026-06-18T21:32:05.834907757Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5283:2026-06-18T21:32:05.834923421Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5288:2026-06-18T21:32:05.834939999Z [inf]    validator: 'opening',
+5291:2026-06-18T21:32:05.834952538Z [inf]    specialist: 'opening',
+5298:2026-06-18T21:32:05.837427529Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5306:2026-06-18T21:32:05.837460473Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5308:2026-06-18T21:32:05.837466270Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5321:2026-06-18T21:32:05.837509389Z [inf]    openingDurationMs: 36020,
+5327:2026-06-18T21:32:05.840090942Z [inf]    validator: 'opening',
+5330:2026-06-18T21:32:05.840114283Z [inf]    issueType: 'opening_removed',
+5334:2026-06-18T21:32:05.840170612Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5337:2026-06-18T21:32:05.840190053Z [inf]    validator: 'openings',
+5339:2026-06-18T21:32:05.840203867Z [inf]      'openings:opening_relocated_review',
+5340:2026-06-18T21:32:05.840210014Z [inf]      'openings:opening_visibility_reduction_0_361',
+5341:2026-06-18T21:32:05.840217301Z [inf]      'openings:opening_resized_minor_0_361',
+5342:2026-06-18T21:32:05.840225453Z [inf]      'openings:opening_signature_mismatch'
+5346:2026-06-18T21:32:05.840399576Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5349:2026-06-18T21:32:05.840423012Z [inf]    validator: 'openings',
+5350:2026-06-18T21:32:05.840428533Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_band_mismatch',
+5352:2026-06-18T21:32:05.844836545Z [inf]    source: 'opening_validator',
+5353:2026-06-18T21:32:05.844850458Z [inf]    issueType: 'opening_removed',
+5356:2026-06-18T21:32:05.844883512Z [inf]  [STAGE2_VALIDATION_SIGNAL_FAIL] openings
+5358:2026-06-18T21:32:05.844896540Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5362:2026-06-18T21:32:05.844919600Z [inf]    validator: 'openingValidator',
+5367:2026-06-18T21:32:05.845066520Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5370:2026-06-18T21:32:05.845102370Z [inf]  validator=openingValidator
+5372:2026-06-18T21:32:05.845117397Z [inf]  reason=opening_removed_opening_sealed_opening_relocated_review_opening_relocated_opening_band_mismatch
+5374:2026-06-18T21:32:05.845131389Z [err]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5378:2026-06-18T21:32:05.845165239Z [err]    validator: 'openingValidator',
+5379:2026-06-18T21:32:05.845173385Z [err]    reason: 'opening_removed_opening_sealed_opening_relocated_review_opening_relocated_opening_band_mismatch'
+5381:2026-06-18T21:32:05.847484588Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5382:2026-06-18T21:32:05.847490273Z [inf]  [OPENING_HIGH_CONFIDENCE_REMOVAL_GUARD] {
+5384:2026-06-18T21:32:05.847503734Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5388:2026-06-18T21:32:05.847528989Z [inf]    validator: 'openings',
+5389:2026-06-18T21:32:05.847535089Z [inf]    issueType: 'opening_removed',
+5392:2026-06-18T21:32:05.847555990Z [inf]      'openings:opening_structural_signal_true',
+5393:2026-06-18T21:32:05.847560245Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_band_mismatch',
+5396:2026-06-18T21:32:05.847594337Z [inf]  [OPENING_STRUCTURAL_SIGNAL] {
+5397:2026-06-18T21:32:05.847601817Z [inf]    openingStructuralSignal: true,
+5399:2026-06-18T21:32:05.847613110Z [inf]    reason: 'opening_removed_and_relocated',
+5413:2026-06-18T21:32:05.850663330Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5415:2026-06-18T21:32:05.850679883Z [inf]      'openings:opening_structural_signal_reason_opening_removed_and_relocated'
+5420:2026-06-18T21:32:05.850709396Z [inf]    validator: 'fixtureValidator',
+5421:2026-06-18T21:32:05.850710713Z [inf]  [OPENING_STRUCTURAL_ESCALATION] {
+5422:2026-06-18T21:32:05.850719264Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5426:2026-06-18T21:32:05.850743493Z [inf]    reason: 'opening_removed_and_relocated',
+5430:2026-06-18T21:32:05.850769371Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5433:2026-06-18T21:32:05.850786264Z [inf]    validator: 'fixture',
+5437:2026-06-18T21:32:05.852341680Z [inf]    validator: 'floorIntegrityValidator',
+5443:2026-06-18T21:32:05.852363146Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5447:2026-06-18T21:32:05.852379934Z [inf]  validator=fixtureValidator
+5451:2026-06-18T21:32:05.852398990Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5454:2026-06-18T21:32:05.852413146Z [inf]    validator: 'floor',
+5462:2026-06-18T21:32:05.852448010Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5467:2026-06-18T21:32:05.855057104Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5471:2026-06-18T21:32:05.855076526Z [inf]    validator: 'envelope',
+5472:2026-06-18T21:32:05.855080236Z [inf]  validator=floorIntegrityValidator
+5478:2026-06-18T21:32:05.855111047Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5481:2026-06-18T21:32:05.855182777Z [inf]    validator: 'envelope',
+5488:2026-06-18T21:32:05.855236696Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5491:2026-06-18T21:32:05.857252555Z [inf]    validator: 'envelopeValidator',
+5505:2026-06-18T21:32:05.857314212Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5506:2026-06-18T21:32:05.857317080Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5512:2026-06-18T21:32:05.857341200Z [inf]    validator: 'envelope',
+5515:2026-06-18T21:32:05.859902426Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5518:2026-06-18T21:32:05.859916548Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5521:2026-06-18T21:32:05.859930960Z [err]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5524:2026-06-18T21:32:05.859942536Z [inf]  validator=envelopeValidator
+5528:2026-06-18T21:32:05.859963783Z [err]    validator: 'envelopeValidator',
+5534:2026-06-18T21:32:05.863261795Z [inf]      'openings:opening_relocated_review',
+5535:2026-06-18T21:32:05.863268963Z [inf]      'openings:opening_visibility_reduction_0_361',
+5536:2026-06-18T21:32:05.863275595Z [inf]      'openings:opening_resized_minor_0_361',
+5538:2026-06-18T21:32:05.863283673Z [inf]      'openings:opening_signature_mismatch',
+5539:2026-06-18T21:32:05.863291074Z [inf]      'openings:opening_structural_signal_true',
+5541:2026-06-18T21:32:05.863298658Z [inf]      'openings:opening_structural_signal_reason_opening_removed_and_relocated',
+5544:2026-06-18T21:32:05.863309228Z [inf]      openings: {
+5546:2026-06-18T21:32:05.863324444Z [inf]        reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_band_mismatch'
+5565:2026-06-18T21:32:06.371424735Z [inf]  [OPENING_STRUCTURED_ISSUES_PROPAGATED] {
+5567:2026-06-18T21:32:06.371436705Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5574:2026-06-18T21:32:06.371456127Z [inf]        type: 'opening_change',
+5586:2026-06-18T21:32:06.372230859Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5593:2026-06-18T21:32:06.372297039Z [inf]        category: 'openings',
+5595:2026-06-18T21:32:06.372304782Z [inf]        location: 'window opening in the right side of the near wall',
+5597:2026-06-18T21:32:06.372318320Z [inf]        question: 'Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?',
+5607:2026-06-18T21:32:06.372413926Z [inf]        category: 'openings',
+5608:2026-06-18T21:32:06.372420668Z [inf]        location: 'window opening in the left side of the left wall',
+5609:2026-06-18T21:32:06.372438691Z [inf]        question: 'Is the window opening in the left side of the left wall still present on the same wall as in the original image, or does it now appear on a different wall?',
+5616:2026-06-18T21:32:06.374715625Z [inf]        openingId: undefined,
+5619:2026-06-18T21:32:06.374730791Z [inf]        openingType: undefined,
+5623:2026-06-18T21:32:06.374751048Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5631:2026-06-18T21:32:06.374797652Z [inf]      opening_removed: { count: 1, minConf: 0.99, maxConf: 0.99 },
+5632:2026-06-18T21:32:06.374802329Z [inf]      opening_resized_major: { count: 1, minConf: 0.98, maxConf: 0.98 }
+5647:2026-06-18T21:32:06.376364293Z [inf]        claim: 'opening_resized_major',
+5650:2026-06-18T21:32:06.376385584Z [inf]        openingId: undefined,
+5651:2026-06-18T21:32:06.376395244Z [inf]        openingType: undefined,
+5659:2026-06-18T21:32:06.376475829Z [inf]        openingId: undefined,
+5660:2026-06-18T21:32:06.376485392Z [inf]        openingType: undefined,
+5664:2026-06-18T21:32:06.376526375Z [inf]        claim: 'opening_removed',
+5667:2026-06-18T21:32:06.376550556Z [inf]        source: 'openingPreservation',
+5668:2026-06-18T21:32:06.376559764Z [inf]        openingId: 'W2',
+5669:2026-06-18T21:32:06.376567544Z [inf]        openingType: 'window',
+5673:2026-06-18T21:32:06.379007694Z [inf]        source: 'openingPreservation',
+5674:2026-06-18T21:32:06.379013726Z [inf]        openingId: 'W1',
+5675:2026-06-18T21:32:06.379018114Z [inf]        openingType: 'window',
+5681:2026-06-18T21:32:06.379048662Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5686:2026-06-18T21:32:06.379077129Z [inf]  signals={structuralDegreeChange:1.0000,wallDrift:0.0000,maskedEdgeDrift:0.0000,edgeOpeningRisk:0.0000,openingCountMismatch:1.0000,floorPlaneShift:0.0000,fixtureMismatch:0.0000,islandDetectionDrift:0.0000}
+5689:2026-06-18T21:32:06.379096553Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5692:2026-06-18T21:32:06.379119690Z [inf]    validator: 'opening',
+5694:2026-06-18T21:32:06.379131731Z [inf]    issueType: 'opening_removed',
+5696:2026-06-18T21:32:06.379146293Z [inf]    reason: 'specialist_high_confidence:opening:opening_removed:0.985',
+5700:2026-06-18T21:32:06.381560379Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5703:2026-06-18T21:32:06.381580717Z [inf]    issueType: 'opening_removed',
+5704:2026-06-18T21:32:06.381645336Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_band_mismatch',
+5712:2026-06-18T21:32:06.381688860Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5716:2026-06-18T21:32:06.381704925Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5719:2026-06-18T21:32:06.381726793Z [inf]  reason=critical_issues_gate_opening_removed_opening_removed_opening_sealed_opening_relocated_review_opening_relocated_opening_band_mismatch
+5722:2026-06-18T21:32:06.383630478Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5728:2026-06-18T21:32:06.383670779Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5741:2026-06-18T21:32:06.383757421Z [inf]  [STAGE2_PROMPT_SOURCE] { source: 'pipeline', retryType: 'validator_forced_retry' }
+5745:2026-06-18T21:32:06.383774327Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage2_generation_retry_attempt:9',
+5746:2026-06-18T21:32:06.383782046Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5751:2026-06-18T21:32:06.385329159Z [inf]  [STAGE2_PROMPT_STRUCTURE_RULES_ACTIVE] jobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5752:2026-06-18T21:32:06.385335902Z [inf]  [STAGE2_MODEL_ESCALATION] job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 attempt=2 model=gemini-2.5-flash-image temperature=0.4 retry_reason=unknown
+5754:2026-06-18T21:32:06.385349535Z [inf]  [MODEL][2] job=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 file=n/a stage=2 room=bedroom models=gemini-2.5-flash-image reason=stage2 unified retry 1
+5758:2026-06-18T21:32:11.601798433Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5773:2026-06-18T21:32:13.349964001Z [inf]  [STAGE2_OUTPUT_PATH] job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 attempt=2 path=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp
+5775:2026-06-18T21:32:13.349973501Z [inf]    token: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82:stage2_generation_retry_attempt:9',
+5776:2026-06-18T21:32:13.349978656Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5803:2026-06-18T21:32:13.353291462Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+5808:2026-06-18T21:32:13.353310849Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5811:2026-06-18T21:32:13.353322715Z [inf]  candidate_path=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp
+5814:2026-06-18T21:32:13.360953889Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+5822:2026-06-18T21:32:14.406364625Z [inf]  [VALIDATOR_INPUT] stage=2 attempt=2 base=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A.webp candidate=/tmp/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp
+5826:2026-06-18T21:32:15.067806589Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","attempt":1,"stage":"gemini_structural_extraction","durationMs":37171}
+5827:2026-06-18T21:32:15.067814850Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"D1","type":"door","wallIndex":0,"horizontalBand":"center_third","verticalBand":"full_height","wallCoverageBand":"40-60","orientation":"portrait","paneStructure":"sliding_panel","doorLeafState":"closed","confidence":0.98},{"id":"W1","type":"window","wallIndex":1,"horizontalBand":"right_third","verticalBand":"ceiling_zone","wallCoverageBand":"10-20","orientation":"landscape","paneStructure":"fixed_plus_opening","doorLeafState":"unknown","confidence":0.99},{"id":"A1","type":"walkthrough","wallIndex":3,"horizontalBand":"left_third","verticalBand":"full_height","wallCoverageBand":"40-60","orientation":"portrait","paneStructure":"unknown","doorLeafState":"unknown","confidence":0.9}],"anchorFixtures":[{"id":"F1","type":"ac_unit","wallIndex":0,"horizontalBand":"center_third","confidence":0.99}]}
+5828:2026-06-18T21:32:15.067824186Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","mode":"single_pass","extractionCalls":1}
+5829:2026-06-18T21:32:15.067831002Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","imageHash":"093f722db4d9d856375e7bfe9dfddf8c5a78338d26b6b3aeed858cc67ba5e667","baselineMode":"single_pass","extractionPass":1,"graphHash":"b356226fcc574b6c5abf4e8ad481a47c7651ec4431e78553038e95857de6b639","openingCount":3}
+5830:2026-06-18T21:32:15.069163789Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","mode":"single_pass","baselineExtractionDurationMs":37171,"totalGeminiCalls":1}
+5831:2026-06-18T21:32:15.069174785Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":37170,"jsonParseMs":1,"normalizationMs":0,"graphBuildMs":0,"persistenceMs":0,"totalMs":37172}
+5837:2026-06-18T21:32:15.069210094Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_2c44549d-94f9-4407-a01b-443543dbafa6","imageId":"img_12cf882a-8848-469b-8117-fe7c2e78749d","attempt":1,"reconciliationHash":"eae8de6766862612046ef6a757a214a85a8415a1588b57957b003795321ec54b","baselineOpeningCount":3,"detectedOpeningCount":3,"matchedCount":3,"idMatchCount":3,"graphMatchCount":0,"unmatchedBaselineIds":[],"unmatchedDetectedIds":[]}
+5838:2026-06-18T21:32:15.070771446Z [inf]  [OPENING_VALIDATION] baseline_id=D1 status=PRESERVED reason=none
+5839:2026-06-18T21:32:15.070780651Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=pane_structure_changed|orientation_changed
+5840:2026-06-18T21:32:15.070787799Z [inf]  [OPENING_VALIDATION] baseline_id=A1 status=PRESERVED reason=none
+5846:2026-06-18T21:32:15.070829149Z [inf]  [OPENING_OBSERVABILITY_EVIDENCE] {
+5856:2026-06-18T21:32:15.072807187Z [inf]        reason: 'opening_resized',
+5865:2026-06-18T21:32:15.072841297Z [inf]  [OPENING_COHERENCE_DOWNGRADE] {
+5868:2026-06-18T21:32:15.072854199Z [inf]  [OPENINGS_COMPARISON] {
+5869:2026-06-18T21:32:15.072858869Z [inf]    reasonParts: [ 'opening_resized' ],
+5874:2026-06-18T21:32:15.072877377Z [inf]    issueType: 'opening_resized_minor',
+5878:2026-06-18T21:32:15.072894639Z [inf]    reason: 'opening_resized',
+5879:2026-06-18T21:32:15.072900320Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' },
+5884:2026-06-18T21:32:15.074371075Z [inf]  [SPECIALIST_REVIEW][OPENING] {
+5893:2026-06-18T21:32:15.074414711Z [inf]        explanation: 'The window opening in the right side of the right wall appears materially different in size or shape.',
+5894:2026-06-18T21:32:15.074419374Z [inf]        location: 'window opening in the right side of the right wall',
+5896:2026-06-18T21:32:15.074428174Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?'
+5901:2026-06-18T21:32:15.074450486Z [inf]        reason: 'opening_resized',
+5908:2026-06-18T21:32:15.074488992Z [inf]    explanation: 'The window opening in the right side of the right wall appears materially different in size or shape.'
+5910:2026-06-18T21:32:15.075912139Z [inf]    validator: 'opening',
+5916:2026-06-18T21:32:15.075941136Z [inf]    reason: 'opening_resized',
+5918:2026-06-18T21:32:15.075951306Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' }
+5947:2026-06-18T21:32:15.077882921Z [inf]    specialist: 'opening',
+5958:2026-06-18T21:32:15.079284067Z [inf]    validator: 'openings',
+5966:2026-06-18T21:32:15.079306808Z [inf]      'openings:opening_visibility_reduction_0_176',
+5967:2026-06-18T21:32:15.079310401Z [inf]    openingDurationMs: 41872,
+5972:2026-06-18T21:32:15.079325161Z [inf]    validator: 'opening',
+5976:2026-06-18T21:32:15.079339136Z [inf]    issueType: 'opening_resized_minor',
+5984:2026-06-18T21:32:15.080739034Z [inf]      'openings:opening_resized_minor_0_176',
+5985:2026-06-18T21:32:15.080746282Z [inf]      'openings:opening_signal_incoherent_downgraded'
+5989:2026-06-18T21:32:15.080765504Z [inf]    openingStructuralSignal: false,
+5991:2026-06-18T21:32:15.080768773Z [inf]  [OPENING_SEMANTIC_AUTHORITY_PRESERVED] {
+5997:2026-06-18T21:32:15.080789936Z [inf]  [OPENING_STRUCTURAL_ADVISORY] {
+6011:2026-06-18T21:32:15.080830098Z [inf]    issueType: 'opening_resized_minor',
+6012:2026-06-18T21:32:15.080836251Z [inf]  [OPENING_STRUCTURAL_SIGNAL] {
+6024:2026-06-18T21:32:15.082217248Z [inf]  validator=openingValidator
+6025:2026-06-18T21:32:15.082221694Z [inf]  [STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)
+6026:2026-06-18T21:32:15.082226730Z [inf]  [OPENING_SIGNATURE_TELEMETRY] {
+6032:2026-06-18T21:32:15.082253417Z [inf]    decisionPath: 'post_opening_validator',
+6040:2026-06-18T21:32:15.082288587Z [inf]    validator: 'openingValidator',
+6041:2026-06-18T21:32:15.083911570Z [inf]    validator: 'fixtureValidator',
+6048:2026-06-18T21:32:15.083933564Z [inf]  reason=sensor_opening_signal
+6056:2026-06-18T21:32:15.083958164Z [inf]  validator=fixtureValidator
+6062:2026-06-18T21:32:15.083980234Z [inf]    validator: 'fixture',
+6076:2026-06-18T21:32:15.085486583Z [inf]    validator: 'floor',
+6082:2026-06-18T21:32:15.085511850Z [inf]    validator: 'floorIntegrityValidator',
+6096:2026-06-18T21:32:15.085577377Z [inf]  validator=floorIntegrityValidator
+6101:2026-06-18T21:32:15.087293547Z [inf]    validator: 'envelope',
+6114:2026-06-18T21:32:15.087341100Z [inf]      openings: { pass: true, reason: 'opening_resized' },
+6121:2026-06-18T21:32:15.087375062Z [inf]  validator=envelopeValidator
+6129:2026-06-18T21:32:15.087404312Z [inf]    validator: 'envelopeValidator',
+6134:2026-06-18T21:32:15.089193930Z [inf]        reason: 'The architectural envelope, including all visible walls, ceiling, and fixed openings, remains identical between the baseline and staged images. No structural modifications such as altered walls, changed room footprint, or new/removed structural elements are observed.'
+6138:2026-06-18T21:32:15.089213052Z [inf]      'openings:opening_visibility_reduction_0_176',
+6139:2026-06-18T21:32:15.089219635Z [inf]      'openings:opening_resized_minor_0_176',
+6140:2026-06-18T21:32:15.089224476Z [inf]      'openings:opening_signal_incoherent_downgraded'
+6144:2026-06-18T21:32:15.089241899Z [inf]  [OPENING_STRUCTURED_ISSUES_PROPAGATED] {
+6151:2026-06-18T21:32:15.089276103Z [inf]        type: 'opening_change',
+6167:2026-06-18T21:32:15.090871353Z [inf]  signals={structuralDegreeChange:0.0000,wallDrift:0.0000,maskedEdgeDrift:0.0000,edgeOpeningRisk:0.0000,openingCountMismatch:0.0000,floorPlaneShift:0.0000,fixtureMismatch:0.0000,islandDetectionDrift:0.0000}
+6171:2026-06-18T21:32:15.090890493Z [inf]  [OPENING_ENVELOPE_EXPLICIT_CONTRADICTION] {
+6174:2026-06-18T21:32:15.090907031Z [inf]        category: 'openings',
+6175:2026-06-18T21:32:15.090911123Z [inf]        location: 'window opening in the right side of the right wall',
+6176:2026-06-18T21:32:15.090915282Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?',
+6195:2026-06-18T21:32:15.092531256Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+6197:2026-06-18T21:32:15.092543764Z [inf]    envelopeReason: 'The architectural envelope, including all visible walls, ceiling, and fixed openings, remains identical between the baseline and staged images. No structural modifications such as altered walls, changed room footprint, or new/removed structural elements are observed.',
+6201:2026-06-18T21:32:15.092569684Z [inf]    action: 'opening_downgrade_allowed_only_with_explicit_contradiction'
+6205:2026-06-18T21:32:15.093973187Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+6206:2026-06-18T21:32:15.093982820Z [inf]  [validator] start jobId=job_2c44549d-94f9-4407-a01b-443543dbafa6 stage=2
+6207:2026-06-18T21:32:15.093990910Z [inf]  [unified-validator] Stage: 2
+6208:2026-06-18T21:32:15.093997600Z [inf]  [unified-validator] Scene: interior
+6209:2026-06-18T21:32:15.094003767Z [inf]  [unified-validator] Staging Style: nz_standard
+6210:2026-06-18T21:32:15.094009757Z [inf]  [unified-validator] Modes: local=log gemini=block
+6211:2026-06-18T21:32:15.094016272Z [inf]  [unified-validator] Local validator tier: core
+6212:2026-06-18T21:32:15.094022405Z [inf]  [unified-validator] Stage-Aware: ENABLED
+6213:2026-06-18T21:32:15.094028388Z [inf]  [unified-validator] Original: /tmp/realenhance-job_2c44549d-94f9-4407-a01b-443543dbafa6-1781818236365-9mm4hvo0e0c-canonical-1A.webp
+6214:2026-06-18T21:32:15.094034114Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_2c44549d-94f9-4407-a01b-443543dbafa6-1781818236365-9mm4hvo0e0c-canonical-1A-2.webp
+6215:2026-06-18T21:32:15.094040116Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_2c44549d-94f9-4407-a01b-443543dbafa6-1781818236365-9mm4hvo0e0c-canonical-1A.webp
+6217:2026-06-18T21:32:15.094052399Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+6224:2026-06-18T21:32:15.095169848Z [inf]  [unified-validator] Global edge validation skipped (tier=core)
+6240:2026-06-18T21:32:15.095248558Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.999
+6241:2026-06-18T21:32:15.095253214Z [inf]  [unified-validator] Wall validation skipped (tier=core)
+6256:2026-06-18T21:32:15.096367312Z [inf]  [unified-validator] Structural IoU validation skipped (tier=core)
+6258:2026-06-18T21:32:15.096377192Z [inf]  [unified-validator] Line/edge validation skipped (tier=core)
+6259:2026-06-18T21:32:15.096381282Z [inf]  [unified-validator] Running anchor region validators...
+6265:2026-06-18T21:32:15.096406476Z [inf]  [unified-validator] Anchors: island=true hvac=false cabinetry=false lighting=false
+6266:2026-06-18T21:32:15.096410482Z [inf]  [unified-validator] Geometry Profile: SOFT
+6268:2026-06-18T21:32:15.096420624Z [inf]  [unified-validator] Risk Classification: MEDIUM
+6269:2026-06-18T21:32:15.096424856Z [inf]  [unified-validator]   → MEDIUM: heuristic validator flagged structural issue (no anchor evidence)
+6273:2026-06-18T21:32:15.097647643Z [inf]      'openings:opening_visibility_reduction_0_176',
+6274:2026-06-18T21:32:15.097652134Z [inf]      'openings:opening_resized_minor_0_176',
+6275:2026-06-18T21:32:15.097656179Z [inf]      'openings:opening_signal_incoherent_downgraded'
+6278:2026-06-18T21:32:15.097669716Z [inf]      '[openings] Location: window opening in the right side of the right wall. Question: Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible structural difference for this baseline opening.'
+6281:2026-06-18T21:32:15.097682291Z [inf]      'Possible window resized detected by opening specialist. Severity=review. Confidence: 0.943. Evidence: opening_resized, opening_visibility_reduction_0_176, opening_resized_minor_0_176, opening_signal_incoherent_downgraded. This context is non-binding and must be visually verified.'
+6285:2026-06-18T21:32:15.097702675Z [inf]  [unified-validator] [Gemini] start stage=2 scene=interior mode=block risk=MEDIUM base=/tmp/realenhance-job_2c44549d-94f9-4407-a01b-443543dbafa6-1781818236365-9mm4hvo0e0c-canonical-1A.webp cand=/tmp/realenhance-job_2c44549d-94f9-4407-a01b-443543dbafa6-1781818236365-9mm4hvo0e0c-canonical-1A-2.webp
+6286:2026-06-18T21:32:15.097708117Z [inf]  Stage2 validator mode { validationMode: 'FULL_STAGE_ONLY' }
+6287:2026-06-18T21:32:15.099314276Z [inf]      '- Possible window resized detected by opening specialist. Severity=review. Confidence: 0.943. Evidence: opening_resized, opening_visibility_reduction_0_176, opening_resized_minor_0_176, opening_signal_incoherent_downgraded. This context is non-binding and must be visually verified.'
+6293:2026-06-18T21:32:15.099350787Z [inf]      '- [openings] Location: window opening in the right side of the right wall. Question: Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible structural difference for this baseline opening.',
+6296:2026-06-18T21:32:15.099361992Z [inf]      '[openings] Location: window opening in the right side of the right wall. Question: Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible structural difference for this baseline opening.'
+6299:2026-06-18T21:32:15.099382593Z [inf]      'Possible window resized detected by opening specialist. Severity=review. Confidence: 0.943. Evidence: opening_resized, opening_visibility_reduction_0_176, opening_resized_minor_0_176, opening_signal_incoherent_downgraded. This context is non-binding and must be visually verified.'
+6303:2026-06-18T21:32:15.574469846Z [inf]  [IMAGE_ATTEMPT_URL] stage=2 attempt=2 job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 file=realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp signed_url=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213215Z&X-Amz-Expires=86400&X-Amz-Signature=85b2708fb7a86b374a3c2640e8f75a729403d92cbd3418429f034865f8de0ca0&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject
+6305:2026-06-18T21:32:15.574485908Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only Stage2 semantic/masked validators skipped {
+6306:2026-06-18T21:32:15.574497101Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6315:2026-06-18T21:32:15.577738654Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6316:2026-06-18T21:32:15.577752362Z [inf]    validator: 'opening',
+6327:2026-06-18T21:32:15.577847575Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6328:2026-06-18T21:32:15.577854844Z [inf]  [OPENING_BASELINE_REUSE] {
+6330:2026-06-18T21:32:15.577868607Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6332:2026-06-18T21:32:15.577882891Z [inf]    source: 'stage2_opening_validator',
+6334:2026-06-18T21:32:15.577895665Z [inf]    openings: 2
+6337:2026-06-18T21:32:15.577917806Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6340:2026-06-18T21:32:15.583067989Z [inf]    validator: 'fixture',
+6349:2026-06-18T21:32:15.583141714Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6356:2026-06-18T21:32:15.583182466Z [inf]    validator: 'floor',
+6360:2026-06-18T21:32:15.588641842Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6364:2026-06-18T21:32:15.588672769Z [inf]    validator: 'envelope',
+6372:2026-06-18T21:32:15.588733292Z [inf]  [OPENINGS_BASELINE] {
+6373:2026-06-18T21:32:15.588740031Z [inf]    openings: [
+6396:2026-06-18T21:32:15.594404531Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":2,"stage":"image_materialization","durationMs":3}
+6401:2026-06-18T21:32:15.643744709Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6422:2026-06-18T21:32:18.688160001Z [inf]        reasoning: "The window opening in the right wall retains its original size, shape, and position. Although a lamp partially occludes the right edge, the window's structural geometry is unchanged, and sufficient frame/pane visibility remains to confirm its preservation. This is considered an occlusion by flexible furniture, not a structural alteration."
+6431:2026-06-18T21:32:18.689756105Z [inf]  [validator] escalated=false earlyExit=false
+6432:2026-06-18T21:32:18.689767720Z [inf]  [unified-validator] [Gemini] validator_results={"v1":"pass"} consensus=false derivedWarnings=2
+6433:2026-06-18T21:32:18.689776907Z [inf]  [unified-validator] [Gemini] verdict cat=style_only hardFail=false geminiMode=block conf=0.95
+6436:2026-06-18T21:32:18.689803445Z [inf]  [unified-validator] === Validation Results ===
+6437:2026-06-18T21:32:18.689812156Z [inf]  [unified-validator]   ✓ perceptualDiff (score: 1.000): Perceptual diff skipped (tier=core)
+6438:2026-06-18T21:32:18.689820728Z [inf]  [unified-validator]   ✓ stageAware (score: 0.999): Stage-aware validation passed
+6439:2026-06-18T21:32:18.689825405Z [inf]  [unified-validator] Aggregate Score: 0.804
+6440:2026-06-18T21:32:18.689830148Z [inf]  [unified-validator]   ✗ windows (score: 0.000): window_position_change
+6441:2026-06-18T21:32:18.689836789Z [inf]  [unified-validator]   ✓ walls (score: 1.000): Wall validation skipped (tier=core)
+6442:2026-06-18T21:32:18.689843759Z [inf]  [unified-validator]   ✓ globalEdge (score: 1.000): Edge IoU: 1.000 (threshold: 0.6)
+6443:2026-06-18T21:32:18.689850786Z [inf]  [unified-validator]   ✓ structuralMask (score: 1.000): Structural IoU: 1.000 (threshold: 0.25)
+6444:2026-06-18T21:32:18.689856654Z [inf]  [unified-validator]   ✓ lineEdge (score: 1.000): Line/edge validation skipped (tier=core)
+6445:2026-06-18T21:32:18.689862459Z [inf]  [unified-validator]   ✓ anchors (score: 1.000): anchor:island_changed
+6446:2026-06-18T21:32:18.689867360Z [inf]  [unified-validator]   ✓ geminiSemantic (score: 0.950): Gemini warning: style_only
+6447:2026-06-18T21:32:18.691055557Z [inf]  [unified-validator] Overall: FAILED
+6448:2026-06-18T21:32:18.691063405Z [inf]  [unified-validator] Failure Reasons:
+6449:2026-06-18T21:32:18.691071359Z [inf]  [unified-validator]   - Window validation failed: window_position_change
+6451:2026-06-18T21:32:18.691080265Z [inf]  [unified-validator] Warnings:
+6453:2026-06-18T21:32:18.691090279Z [inf]  [unified-validator]   - style_only
+6455:2026-06-18T21:32:18.691101125Z [inf]  [UNIFIED_AUTHORITY] Local validator failures overridden by Gemini PASS {
+6456:2026-06-18T21:32:18.691102259Z [inf]  [validator] check=globalEdge pass=true score=1.000
+6460:2026-06-18T21:32:18.691114529Z [inf]  [validator] check=structuralMask pass=true score=1.000
+6468:2026-06-18T21:32:18.691154645Z [inf]  [unified-validator] ===============================
+6469:2026-06-18T21:32:18.691155865Z [inf]  [validator] check=windows pass=false score=0.000
+6470:2026-06-18T21:32:18.691160556Z [inf]  [validator] check=perceptualDiff pass=true score=1.000
+6471:2026-06-18T21:32:18.691166177Z [inf]  [validator] check=stageAware pass=true score=0.999
+6472:2026-06-18T21:32:18.691174138Z [inf]  [validator] check=walls pass=true score=1.000
+6477:2026-06-18T21:32:18.692592922Z [inf]  [validator] check=lineEdge pass=true score=1.000
+6479:2026-06-18T21:32:18.692601278Z [inf]  [validator] check=anchors pass=true score=1.000
+6481:2026-06-18T21:32:18.692609177Z [inf]  [validator] check=geminiSemantic pass=true score=0.950
+6483:2026-06-18T21:32:18.692617230Z [inf]  [validator] verdict=PASS score=0.804 jobId=job_2c44549d-94f9-4407-a01b-443543dbafa6
+6503:2026-06-18T21:32:18.694806720Z [inf]    openingStructuralSignalFlag: false,
+6504:2026-06-18T21:32:18.694813155Z [inf]    openingStructuralSignal: null,
+6506:2026-06-18T21:32:18.694825225Z [inf]    openingRegions: []
+6522:2026-06-18T21:32:21.479663257Z [inf]    validator: 'fixture',
+6526:2026-06-18T21:32:21.479692490Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6533:2026-06-18T21:32:21.480906381Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6561:2026-06-18T21:32:25.408027149Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6565:2026-06-18T21:32:25.408065285Z [inf]    validator: 'floor',
+6572:2026-06-18T21:32:25.408108771Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6612:2026-06-18T21:32:32.360564684Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6616:2026-06-18T21:32:32.360588503Z [inf]    validator: 'envelope',
+6623:2026-06-18T21:32:32.362213063Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6645:2026-06-18T21:32:32.649124735Z [inf]    validator: 'structuralIdentityReview',
+6653:2026-06-18T21:32:32.649168565Z [inf]  validator=structuralIdentityReview
+6716:2026-06-18T21:32:32.652196890Z [inf]  [STAGE_URLS_WRITE] {
+6731:2026-06-18T21:32:32.652980303Z [inf]  [STAGE2_RETRY_SUMMARY] {
+6760:2026-06-18T21:32:32.654395121Z [inf]  [worker] Structural warnings: No structural (Tier 1) or fixed feature (Tier 2) changes were detected.; The window opening's size, shape, and position are preserved.; The window treatment type (roller blind) is preserved.; Only flexible items (furniture, decor, lamps) have been introduced, which are Tier 3 changes.; local_validators_advisory: windows
+6762:2026-06-18T21:32:32.655359211Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+6819:2026-06-18T21:32:32.657891643Z [inf]    parentJobId: undefined,
+6830:2026-06-18T21:32:32.658959193Z [inf]  [STAGE_URLS_WRITE] {
+6839:2026-06-18T21:32:32.658991946Z [inf]  [STAGE2_COMPLETION_ALLOWED] {
+6877:2026-06-18T21:32:32.661026002Z [inf]  [JOB_FINAL][job=job_bd40338d-ca3c-49a2-87ab-d4a3896fc926] status=complete hardFail=false warnings=5 normalized=false
+6964:2026-06-18T21:32:35.466028825Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":2,"stage":"gemini_structural_extraction","durationMs":19588}
+6965:2026-06-18T21:32:35.466034778Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W1","type":"window","wallIndex":3,"horizontalBand":"left_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"single_fixed","doorLeafState":"unknown","confidence":0.98}],"anchorFixtures":[]}
+6966:2026-06-18T21:32:35.466050774Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","extractionCalls":1}
+6967:2026-06-18T21:32:35.466056121Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","baselineExtractionDurationMs":19588,"totalGeminiCalls":1}
+6968:2026-06-18T21:32:35.466057885Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageHash":"1851f962a40652a12e5af0856fea8445b12c992ac15b9cf226bf81d505f880e3","baselineMode":"single_pass","extractionPass":1,"graphHash":"05f7e04eb9a7dab0ff0647fda24ab4f8899a3ac2da179d50b5e612a61dbbe576","openingCount":1}
+6969:2026-06-18T21:32:35.466065718Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageDownloadMs":3,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":19586,"jsonParseMs":1,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":19591}
+6975:2026-06-18T21:32:35.468184930Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_0a649ccd-e39d-48e8-aa5b-b081391fee82","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":2,"reconciliationHash":"dc6d807b558c402b5f9b5c58b87b57ecae8d08c394b15d8ff69c5c8bca3330f2","baselineOpeningCount":2,"detectedOpeningCount":1,"matchedCount":1,"idMatchCount":1,"graphMatchCount":0,"unmatchedBaselineIds":["W2"],"unmatchedDetectedIds":[]}
+6976:2026-06-18T21:32:35.468192093Z [inf]  [OPENING_VALIDATION] baseline_id=W2 status=MISSING reason=missing_opening
+6977:2026-06-18T21:32:35.468200738Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=pane_structure_changed
+6978:2026-06-18T21:32:35.468209279Z [inf]  [OPENING_SIGNATURE_ADVISORY] wall=0 before=O:window after=none anchor_reference=false
+6984:2026-06-18T21:32:35.472855726Z [inf]  [OPENING_OBSERVABILITY_EVIDENCE] {
+6985:2026-06-18T21:32:35.472862347Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+6998:2026-06-18T21:32:35.473131908Z [inf]  [OPENING_COHERENCE_REINFORCED] {
+6999:2026-06-18T21:32:35.473137694Z [inf]    primaryIssueType: 'opening_removed',
+7000:2026-06-18T21:32:35.473144965Z [inf]    destructiveStates: [ 'opening_removed', 'opening_sealed' ],
+7001:2026-06-18T21:32:35.476089545Z [inf]    supportiveModifiers: [ 'opening_resized' ],
+7002:2026-06-18T21:32:35.476097099Z [inf]    contextualUncertainty: [ 'opening_relocated_review' ],
+7005:2026-06-18T21:32:35.476111373Z [inf]  [OPENINGS_COMPARISON] {
+7007:2026-06-18T21:32:35.476123596Z [inf]    issueType: 'opening_removed',
+7009:2026-06-18T21:32:35.476135560Z [inf]        explanation: 'The window opening in the right side of the near wall is not detectable in the AFTER image.',
+7010:2026-06-18T21:32:35.476136372Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized',
+7011:2026-06-18T21:32:35.476143421Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' },
+7013:2026-06-18T21:32:35.476155778Z [inf]        location: 'window opening in the right side of the near wall',
+7018:2026-06-18T21:32:35.476180566Z [inf]        reason: 'missing_opening',
+7019:2026-06-18T21:32:35.476185169Z [inf]        question: 'Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?'
+7025:2026-06-18T21:32:35.476236048Z [inf]        explanation: 'The window opening in the left side of the left wall appears materially different in size or shape.',
+7026:2026-06-18T21:32:35.479861012Z [inf]        location: 'window opening in the left side of the left wall',
+7028:2026-06-18T21:32:35.479878702Z [inf]        question: 'Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?'
+7031:2026-06-18T21:32:35.479896018Z [inf]    explanation: 'The window opening in the right side of the near wall is not detectable in the AFTER image. The window opening in the left side of the left wall appears materially different in size or shape.'
+7033:2026-06-18T21:32:35.479908166Z [inf]  [SPECIALIST_REVIEW][OPENING] {
+7038:2026-06-18T21:32:35.479937548Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized',
+7040:2026-06-18T21:32:35.479948087Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' }
+7047:2026-06-18T21:32:35.482975446Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7051:2026-06-18T21:32:35.483023767Z [inf]    validator: 'opening',
+7058:2026-06-18T21:32:35.483076489Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7062:2026-06-18T21:32:35.483113736Z [inf]    specialist: 'opening',
+7070:2026-06-18T21:32:35.486918094Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7077:2026-06-18T21:32:35.486985891Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7083:2026-06-18T21:32:35.487023272Z [inf]    validator: 'opening',
+7087:2026-06-18T21:32:35.487045480Z [inf]    openingDurationMs: 19681,
+7090:2026-06-18T21:32:35.487067338Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7100:2026-06-18T21:32:35.491240121Z [inf]    issueType: 'opening_removed',
+7104:2026-06-18T21:32:35.491316524Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7107:2026-06-18T21:32:35.491336953Z [inf]    validator: 'openings',
+7109:2026-06-18T21:32:35.491350437Z [inf]      'openings:opening_relocated_review',
+7110:2026-06-18T21:32:35.491357849Z [inf]      'openings:opening_visibility_reduction_0_201',
+7111:2026-06-18T21:32:35.491364061Z [inf]      'openings:opening_resized_minor_0_201',
+7112:2026-06-18T21:32:35.491369636Z [inf]      'openings:opening_signature_mismatch'
+7116:2026-06-18T21:32:35.491398925Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7119:2026-06-18T21:32:35.491419518Z [inf]    validator: 'openings',
+7120:2026-06-18T21:32:35.491424954Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized',
+7122:2026-06-18T21:32:35.491438813Z [inf]    source: 'opening_validator',
+7123:2026-06-18T21:32:35.491445699Z [inf]    issueType: 'opening_removed',
+7126:2026-06-18T21:32:35.493378046Z [inf]  [STAGE2_VALIDATION_SIGNAL_FAIL] openings
+7129:2026-06-18T21:32:35.493399294Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7130:2026-06-18T21:32:35.493404880Z [inf]  validator=openingValidator
+7133:2026-06-18T21:32:35.493427240Z [inf]  reason=opening_removed_opening_sealed_opening_relocated_review_opening_relocated_opening_resized
+7137:2026-06-18T21:32:35.493446206Z [err]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7139:2026-06-18T21:32:35.493458435Z [inf]    validator: 'openingValidator',
+7142:2026-06-18T21:32:35.493480534Z [err]    validator: 'openingValidator',
+7143:2026-06-18T21:32:35.493486937Z [err]    reason: 'opening_removed_opening_sealed_opening_relocated_review_opening_relocated_opening_resized'
+7145:2026-06-18T21:32:35.493498600Z [inf]  [OPENING_HIGH_CONFIDENCE_REMOVAL_GUARD] {
+7146:2026-06-18T21:32:35.493508308Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7151:2026-06-18T21:32:35.493550522Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7157:2026-06-18T21:32:35.495254962Z [inf]    issueType: 'opening_removed',
+7159:2026-06-18T21:32:35.495270595Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized',
+7162:2026-06-18T21:32:35.495289554Z [inf]  [OPENING_STRUCTURAL_SIGNAL] {
+7163:2026-06-18T21:32:35.495297252Z [inf]    openingStructuralSignal: true,
+7165:2026-06-18T21:32:35.495311667Z [inf]    reason: 'opening_removed_and_relocated',
+7174:2026-06-18T21:32:35.495377004Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7177:2026-06-18T21:32:35.496127150Z [inf]    validator: 'openings',
+7179:2026-06-18T21:32:35.496139647Z [inf]      'openings:opening_structural_signal_true',
+7180:2026-06-18T21:32:35.496146356Z [inf]      'openings:opening_structural_signal_reason_opening_removed_and_relocated'
+7183:2026-06-18T21:32:35.497951058Z [inf]  [OPENING_STRUCTURAL_ESCALATION] {
+7184:2026-06-18T21:32:35.497967382Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7185:2026-06-18T21:32:35.497971815Z [inf]    validator: 'fixtureValidator',
+7191:2026-06-18T21:32:35.498014085Z [inf]    reason: 'opening_removed_and_relocated',
+7197:2026-06-18T21:32:35.498049264Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7200:2026-06-18T21:32:35.498065399Z [inf]    validator: 'fixture',
+7208:2026-06-18T21:32:35.498112187Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7210:2026-06-18T21:32:35.500475643Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7212:2026-06-18T21:32:35.500488310Z [inf]    validator: 'floorIntegrityValidator',
+7215:2026-06-18T21:32:35.500507955Z [inf]  validator=fixtureValidator
+7222:2026-06-18T21:32:35.500554170Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7223:2026-06-18T21:32:35.500554596Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7227:2026-06-18T21:32:35.500585215Z [inf]    validator: 'floor',
+7235:2026-06-18T21:32:35.500653018Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7240:2026-06-18T21:32:35.503265082Z [inf]    validator: 'envelope',
+7243:2026-06-18T21:32:35.503277550Z [inf]  validator=floorIntegrityValidator
+7250:2026-06-18T21:32:35.503307635Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7255:2026-06-18T21:32:35.503328153Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7256:2026-06-18T21:32:35.503329093Z [inf]    validator: 'envelope',
+7266:2026-06-18T21:32:35.503412781Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7269:2026-06-18T21:32:35.505668497Z [inf]      openings: {
+7273:2026-06-18T21:32:35.505685244Z [inf]    validator: 'envelopeValidator',
+7277:2026-06-18T21:32:35.505698216Z [inf]  validator=envelopeValidator
+7286:2026-06-18T21:32:35.505728411Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7290:2026-06-18T21:32:35.505741335Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7295:2026-06-18T21:32:35.505755205Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7297:2026-06-18T21:32:35.512186218Z [inf]        reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized'
+7300:2026-06-18T21:32:35.512211201Z [inf]      'openings:opening_signature_mismatch',
+7302:2026-06-18T21:32:35.512220770Z [inf]      'openings:opening_structural_signal_true',
+7303:2026-06-18T21:32:35.512227254Z [inf]      'openings:opening_structural_signal_reason_opening_removed_and_relocated',
+7314:2026-06-18T21:32:35.512315545Z [inf]      'openings:opening_relocated_review',
+7315:2026-06-18T21:32:35.512322279Z [inf]      'openings:opening_visibility_reduction_0_201',
+7316:2026-06-18T21:32:35.512405868Z [inf]      'openings:opening_resized_minor_0_201',
+7319:2026-06-18T21:32:35.514839954Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7332:2026-06-18T21:32:35.514881963Z [inf]        type: 'opening_change',
+7343:2026-06-18T21:32:35.514926865Z [inf]  [OPENING_STRUCTURED_ISSUES_PROPAGATED] {
+7344:2026-06-18T21:32:35.514932820Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7349:2026-06-18T21:32:35.521692549Z [inf]        category: 'openings',
+7350:2026-06-18T21:32:35.521698491Z [inf]        location: 'window opening in the right side of the near wall',
+7351:2026-06-18T21:32:35.521705036Z [inf]        question: 'Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?',
+7360:2026-06-18T21:32:35.521759317Z [inf]        category: 'openings',
+7361:2026-06-18T21:32:35.521766772Z [inf]        location: 'window opening in the left side of the left wall',
+7363:2026-06-18T21:32:35.521774162Z [inf]        question: 'Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?',
+7367:2026-06-18T21:32:35.521795682Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7375:2026-06-18T21:32:35.525964476Z [inf]      opening_removed: { count: 1, minConf: 0.99, maxConf: 0.99 }
+7380:2026-06-18T21:32:35.525975136Z [inf]        openingId: undefined,
+7390:2026-06-18T21:32:35.526025511Z [inf]        openingId: undefined,
+7391:2026-06-18T21:32:35.526032592Z [inf]        openingType: undefined,
+7393:2026-06-18T21:32:35.526048980Z [inf]        openingType: undefined,
+7401:2026-06-18T21:32:35.528635002Z [inf]  signals={structuralDegreeChange:0.0000,wallDrift:0.0000,maskedEdgeDrift:0.0000,edgeOpeningRisk:0.0000,openingCountMismatch:1.0000,floorPlaneShift:0.0000,fixtureMismatch:0.0000,islandDetectionDrift:0.0000}
+7402:2026-06-18T21:32:35.528643809Z [inf]        openingId: undefined,
+7404:2026-06-18T21:32:35.528651533Z [inf]        openingType: undefined,
+7406:2026-06-18T21:32:35.528658595Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7411:2026-06-18T21:32:35.528679204Z [inf]        claim: 'opening_removed',
+7414:2026-06-18T21:32:35.528696623Z [inf]        source: 'openingPreservation',
+7415:2026-06-18T21:32:35.528701640Z [inf]        openingId: 'W2',
+7416:2026-06-18T21:32:35.528707124Z [inf]        openingType: 'window',
+7422:2026-06-18T21:32:35.528739308Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7428:2026-06-18T21:32:35.531165970Z [inf]    validator: 'opening',
+7429:2026-06-18T21:32:35.531170698Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7431:2026-06-18T21:32:35.531178888Z [inf]    issueType: 'opening_removed',
+7435:2026-06-18T21:32:35.531193683Z [inf]    reason: 'specialist_high_confidence:opening:opening_removed:0.985',
+7440:2026-06-18T21:32:35.531212766Z [inf]  [OPENING_ENVELOPE_NON_CONTRADICTORY_ADVISORY] {
+7442:2026-06-18T21:32:35.531225511Z [inf]    action: 'do_not_downgrade_opening_from_advisory_only_envelope'
+7445:2026-06-18T21:32:35.531247541Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7450:2026-06-18T21:32:35.534751838Z [inf]    issueType: 'opening_removed',
+7451:2026-06-18T21:32:35.534761510Z [inf]    reason: 'opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized',
+7458:2026-06-18T21:32:35.534787728Z [inf]        url: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213124Z&X-Amz-Expires=86400&X-Amz-Signature=7c41060dfc2e48b8b4d1aecee39c42318b9a0f9f307c92cd5a2bab5e65d0b610&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject',
+7462:2026-06-18T21:32:35.534803574Z [inf]  job_id=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7465:2026-06-18T21:32:35.534818034Z [inf]  [STAGE2_RETRY_SUMMARY] {
+7466:2026-06-18T21:32:35.534825467Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7471:2026-06-18T21:32:35.536878380Z [inf]        signedUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213124Z&X-Amz-Expires=86400&X-Amz-Signature=7c41060dfc2e48b8b4d1aecee39c42318b9a0f9f307c92cd5a2bab5e65d0b610&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject',
+7472:2026-06-18T21:32:35.536891502Z [inf]        imageKey: 'debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp',
+7473:2026-06-18T21:32:35.536894059Z [inf]        signedUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213215Z&X-Amz-Expires=86400&X-Amz-Signature=85b2708fb7a86b374a3c2640e8f75a729403d92cbd3418429f034865f8de0ca0&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject',
+7480:2026-06-18T21:32:35.536930242Z [inf]        url: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213215Z&X-Amz-Expires=86400&X-Amz-Signature=85b2708fb7a86b374a3c2640e8f75a729403d92cbd3418429f034865f8de0ca0&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject',
+7481:2026-06-18T21:32:35.540381921Z [inf]        imageKey: 'debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp',
+7491:2026-06-18T21:32:35.540427473Z [inf]        url: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213124Z&X-Amz-Expires=86400&X-Amz-Signature=7c41060dfc2e48b8b4d1aecee39c42318b9a0f9f307c92cd5a2bab5e65d0b610&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject'
+7493:2026-06-18T21:32:35.540434896Z [inf]        url: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260618%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260618T213215Z&X-Amz-Expires=86400&X-Amz-Signature=85b2708fb7a86b374a3c2640e8f75a729403d92cbd3418429f034865f8de0ca0&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject'
+7502:2026-06-18T21:32:35.547312634Z [inf]    baseKey: '1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+7504:2026-06-18T21:32:35.549928321Z [inf]      '1A': 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+7523:2026-06-18T21:32:47.299611833Z [inf]    validator: 'structuralIdentityReview',
+7531:2026-06-18T21:32:47.299664643Z [inf]  validator=structuralIdentityReview
+7598:2026-06-18T21:32:49.947434835Z [inf]  [STAGE_URLS_WRITE] {
+7613:2026-06-18T21:32:49.947583923Z [inf]  [STAGE2_RETRY_SUMMARY] {
+7645:2026-06-18T21:32:49.951239630Z [inf]  [worker] Structural warnings: style_only; local_validators_advisory: windows
+7650:2026-06-18T21:32:49.951265762Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+7701:2026-06-18T21:32:49.993705830Z [inf]    parentJobId: undefined,
+7713:2026-06-18T21:32:49.993757145Z [inf]  [STAGE2_COMPLETION_ALLOWED] {
+7720:2026-06-18T21:32:49.995294210Z [inf]  [STAGE_URLS_WRITE] {
+7759:2026-06-18T21:32:50.090407397Z [inf]  [JOB_FINAL][job=job_2c44549d-94f9-4407-a01b-443543dbafa6] status=complete hardFail=false warnings=2 normalized=false
+7857:2026-06-18T21:33:52.488611834Z [inf]  [JOB_START] retryType=manual_retry sourceStage=1A sourceUrl=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg sourceKey=realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg parentJobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 stagingStyle=standard_listing
+7858:2026-06-18T21:33:52.489502266Z [inf]  [retry] jobId=job_1a34ef7d-7a89-40c8-9300-fad93a366105 attempt=1 stage=1A reason=manual_retry parentJobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82
+7871:2026-06-18T21:33:52.489576531Z [inf]    sourceUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+7873:2026-06-18T21:33:52.489586440Z [inf]      stage1A: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+7877:2026-06-18T21:33:52.490616577Z [inf]    parentJobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7896:2026-06-18T21:33:52.490702531Z [inf]    parentJobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82'
+7900:2026-06-18T21:33:52.491933270Z [inf]    parentJobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7902:2026-06-18T21:33:52.491942957Z [inf]    baselineUrl: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+7906:2026-06-18T21:33:52.491959562Z [inf]  [worker] Reusing validated Stage-1A output: https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg
+7970:2026-06-18T21:33:56.386010043Z [inf]    parentJobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+7983:2026-06-18T21:33:57.518095655Z [inf]  [OPENING_BASELINE_REUSE] {
+7986:2026-06-18T21:33:57.518123297Z [inf]    source: 'stage2_only_retry_opening_validator',
+7994:2026-06-18T21:33:57.518169931Z [inf]    validator: 'opening',
+8002:2026-06-18T21:33:57.518212515Z [inf]    validator: 'fixture',
+8012:2026-06-18T21:33:57.525249736Z [inf]    validator: 'floor',
+8024:2026-06-18T21:33:57.544475582Z [inf]    validator: 'envelope',
+8031:2026-06-18T21:33:57.563264404Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"image_materialization","durationMs":1}
+8062:2026-06-18T21:34:04.269587389Z [inf]    validator: 'fixture',
+8108:2026-06-18T21:34:06.374837897Z [inf]    validator: 'floor',
+8143:2026-06-18T21:34:10.698656967Z [inf]    validator: 'envelope',
+8171:2026-06-18T21:34:20.131870934Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"gemini_structural_extraction","durationMs":22569}
+8172:2026-06-18T21:34:20.131873994Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W2","type":"window","wallIndex":1,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"fixed_plus_opening","doorLeafState":"unknown","confidence":0.98},{"id":"W1","type":"window","wallIndex":3,"horizontalBand":"left_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"fixed_plus_opening","doorLeafState":"unknown","confidence":0.98}],"anchorFixtures":[]}
+8173:2026-06-18T21:34:20.133159931Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","extractionCalls":1}
+8174:2026-06-18T21:34:20.133167480Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageHash":"8dc0c4c1ceea0a3400746f7d16c5de957c8d6655d46937ab9754865711249a14","baselineMode":"single_pass","extractionPass":1,"graphHash":"6c40c7ae3177b09536e2c63309af7e7e56521821afc956a8cba2363fcc95d6c8","openingCount":2}
+8175:2026-06-18T21:34:20.133172762Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","baselineExtractionDurationMs":22569,"totalGeminiCalls":1}
+8176:2026-06-18T21:34:20.133178022Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":22567,"jsonParseMs":1,"normalizationMs":1,"graphBuildMs":0,"persistenceMs":0,"totalMs":22570}
+8178:2026-06-18T21:34:20.133186452Z [inf]  [OPENINGS_BASELINE] {
+8179:2026-06-18T21:34:20.133190934Z [inf]    openings: [
+8204:2026-06-18T21:34:20.135069229Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"image_materialization","durationMs":0}
+8206:2026-06-18T21:34:50.172417953Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"stage":"gemini_structural_extraction","durationMs":25655}
+8207:2026-06-18T21:34:50.172421538Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"W2","type":"window","wallIndex":0,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"10-20","orientation":"landscape","paneStructure":"sliding_panel","doorLeafState":"unknown","confidence":0.98},{"id":"W1","type":"window","wallIndex":3,"horizontalBand":"left_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"single_fixed","doorLeafState":"unknown","confidence":0.98}],"anchorFixtures":[]}
+8208:2026-06-18T21:34:50.172424991Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","extractionCalls":1}
+8209:2026-06-18T21:34:50.172428545Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageHash":"920a4d53e666af07ab8894dce4c156ea43c35b3a8eb9c07d637a2a5cb7919842","baselineMode":"single_pass","extractionPass":1,"graphHash":"43994118582e16261cb691f8d3bfcb6f22328524eacbf072982370ef95951395","openingCount":2}
+8210:2026-06-18T21:34:50.172431880Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","mode":"single_pass","baselineExtractionDurationMs":25656,"totalGeminiCalls":1}
+8211:2026-06-18T21:34:50.173212321Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","imageDownloadMs":0,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":25654,"jsonParseMs":1,"normalizationMs":0,"graphBuildMs":0,"persistenceMs":0,"totalMs":25655}
+8217:2026-06-18T21:34:50.173235854Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_1a34ef7d-7a89-40c8-9300-fad93a366105","imageId":"img_e9cefb64-085e-43d6-aa89-011537106dea","attempt":1,"reconciliationHash":"04bef8093126aca950f06f23689a06c11012a966f9d210141c7c35a275b89a1e","baselineOpeningCount":2,"detectedOpeningCount":2,"matchedCount":2,"idMatchCount":2,"graphMatchCount":0,"unmatchedBaselineIds":[],"unmatchedDetectedIds":[]}
+8218:2026-06-18T21:34:50.173239334Z [inf]  [OPENING_VALIDATION] baseline_id=W2 status=ALTERED reason=wall_index_extraction_drift|pane_structure_changed
+8219:2026-06-18T21:34:50.174625078Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=pane_structure_changed
+8220:2026-06-18T21:34:50.174631423Z [inf]  [OPENING_SIGNATURE_ADVISORY] wall=1 before=O:window after=none anchor_reference=false
+8226:2026-06-18T21:34:50.174659938Z [inf]  [OPENING_OBSERVABILITY_EVIDENCE] {
+8239:2026-06-18T21:34:50.176192622Z [inf]    issueType: 'opening_relocated',
+8243:2026-06-18T21:34:50.176210620Z [inf]  [OPENING_COHERENCE_DOWNGRADE] {
+8244:2026-06-18T21:34:50.176213822Z [inf]    reason: 'opening_relocated_review|opening_relocated|opening_resized',
+8246:2026-06-18T21:34:50.176222442Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' },
+8249:2026-06-18T21:34:50.176232503Z [inf]      'opening_relocated_review',
+8250:2026-06-18T21:34:50.176239547Z [inf]      'opening_relocated',
+8252:2026-06-18T21:34:50.176247166Z [inf]      'opening_resized'
+8261:2026-06-18T21:34:50.176277840Z [inf]    contextualUncertainty: [ 'opening_relocated_review' ],
+8264:2026-06-18T21:34:50.176289752Z [inf]  [OPENINGS_COMPARISON] {
+8265:2026-06-18T21:34:50.177282924Z [inf]        explanation: 'The window opening in the right side of the right wall appears materially different in size or shape.',
+8266:2026-06-18T21:34:50.177288744Z [inf]        location: 'window opening in the right side of the right wall',
+8268:2026-06-18T21:34:50.177297166Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?'
+8274:2026-06-18T21:34:50.177315644Z [inf]        explanation: 'The window opening in the left side of the left wall appears materially different in size or shape.',
+8275:2026-06-18T21:34:50.177321759Z [inf]        location: 'window opening in the left side of the left wall',
+8277:2026-06-18T21:34:50.177327375Z [inf]        question: 'Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?'
+8280:2026-06-18T21:34:50.177337710Z [inf]    explanation: 'The window opening in the right side of the right wall appears materially different in size or shape. The window opening in the left side of the left wall appears materially different in size or shape.'
+8282:2026-06-18T21:34:50.177343578Z [inf]  [SPECIALIST_REVIEW][OPENING] {
+8289:2026-06-18T21:34:50.178415957Z [inf]    reason: 'opening_relocated_review|opening_relocated|opening_resized',
+8293:2026-06-18T21:34:50.178429071Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' }
+8304:2026-06-18T21:34:50.178465518Z [inf]    validator: 'opening',
+8319:2026-06-18T21:34:50.179832728Z [inf]    specialist: 'opening',
+8339:2026-06-18T21:34:50.180966529Z [inf]    openingDurationMs: 48283,
+8351:2026-06-18T21:34:50.181020269Z [inf]    opening: {
+8354:2026-06-18T21:34:50.181032867Z [inf]      reason: 'opening_relocated_review|opening_relocated|opening_resized'
+8370:2026-06-18T21:34:50.182439099Z [inf]      'openings:opening_relocated_review',
+8371:2026-06-18T21:34:50.182443387Z [inf]      'openings:opening_visibility_reduction:0.197',
+8372:2026-06-18T21:34:50.182448530Z [inf]      'openings:opening_resized_minor:0.197',
+8373:2026-06-18T21:34:50.182453086Z [inf]      'openings:opening_signature_mismatch',
+8374:2026-06-18T21:34:50.182458315Z [inf]      'openings:opening_signal_incoherent_downgraded',
+8385:2026-06-18T21:34:50.183695604Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_1a34ef7d-7a89-40c8-9300-fad93a366105-stage1A-1781818424742-6loq7hmd5oj.jpg
+8388:2026-06-18T21:34:50.183710467Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+8393:2026-06-18T21:34:50.183728159Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+8394:2026-06-18T21:34:50.183731488Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+8395:2026-06-18T21:34:50.183734672Z [inf]  [validator] start jobId=job_1a34ef7d-7a89-40c8-9300-fad93a366105 stage=2
+8396:2026-06-18T21:34:50.183737606Z [inf]  [unified-validator] Stage: 2
+8397:2026-06-18T21:34:50.183741262Z [inf]  [unified-validator] Scene: interior
+8398:2026-06-18T21:34:50.183744440Z [inf]  [unified-validator] Staging Style: nz_standard
+8399:2026-06-18T21:34:50.183747442Z [inf]  [unified-validator] Modes: local=log gemini=block
+8400:2026-06-18T21:34:50.183750438Z [inf]  [unified-validator] Local validator tier: core
+8401:2026-06-18T21:34:50.183753377Z [inf]  [unified-validator] Stage-Aware: ENABLED
+8402:2026-06-18T21:34:50.183756713Z [inf]  [unified-validator] Original: /tmp/realenhance-job_1a34ef7d-7a89-40c8-9300-fad93a366105-stage1A-1781818424742-6loq7hmd5oj.jpg
+8403:2026-06-18T21:34:50.183761103Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_1a34ef7d-7a89-40c8-9300-fad93a366105-stage1A-1781818424742-6loq7hmd5oj-2.webp
+8416:2026-06-18T21:34:50.185135524Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.595
+8417:2026-06-18T21:34:50.185139103Z [inf]  [unified-validator] Wall validation skipped (tier=core)
+8425:2026-06-18T21:34:50.185186619Z [inf]  [unified-validator] Global edge validation skipped (tier=core)
+8427:2026-06-18T21:34:50.186341079Z [inf]  [unified-validator] Anchors: island=true hvac=false cabinetry=false lighting=false
+8430:2026-06-18T21:34:50.186356101Z [inf]  [unified-validator] Geometry Profile: SOFT
+8441:2026-06-18T21:34:50.186405437Z [inf]  [unified-validator] Structural IoU validation skipped (tier=core)
+8443:2026-06-18T21:34:50.186413777Z [inf]  [unified-validator] Line/edge validation skipped (tier=core)
+8444:2026-06-18T21:34:50.186418030Z [inf]  [unified-validator] Running anchor region validators...
+8451:2026-06-18T21:34:50.187632302Z [inf]  [unified-validator] Risk Classification: MEDIUM
+8452:2026-06-18T21:34:50.187637178Z [inf]  [unified-validator]   → MEDIUM: heuristic validator flagged structural issue (no anchor evidence)
+8458:2026-06-18T21:34:50.187658242Z [inf]      'openings:opening_relocated_review',
+8459:2026-06-18T21:34:50.187661659Z [inf]      'openings:opening_visibility_reduction:0.197',
+8460:2026-06-18T21:34:50.187664566Z [inf]      'openings:opening_resized_minor:0.197',
+8461:2026-06-18T21:34:50.187668042Z [inf]      'openings:opening_signature_mismatch',
+8462:2026-06-18T21:34:50.187672118Z [inf]      'openings:opening_signal_incoherent_downgraded',
+8467:2026-06-18T21:34:50.187687888Z [inf]      'Are there any architectural openings (windows, doors) in this image that appear to differ in presence, size, or position compared to the original?',
+8472:2026-06-18T21:34:50.188774218Z [inf]  [unified-validator] [Gemini] start stage=2 scene=interior mode=block risk=MEDIUM base=/tmp/realenhance-job_1a34ef7d-7a89-40c8-9300-fad93a366105-stage1A-1781818424742-6loq7hmd5oj.jpg cand=/tmp/realenhance-job_1a34ef7d-7a89-40c8-9300-fad93a366105-stage1A-1781818424742-6loq7hmd5oj-2.webp
+8473:2026-06-18T21:34:50.188781481Z [inf]  Stage2 validator mode { validationMode: 'FULL_STAGE_ONLY' }
+8478:2026-06-18T21:34:50.188808509Z [inf]      'Are there any architectural openings (windows, doors) in this image that appear to differ in presence, size, or position compared to the original?',
+8484:2026-06-18T21:34:50.188830361Z [inf]      '- Are there any architectural openings (windows, doors) in this image that appear to differ in presence, size, or position compared to the original?\n' +
+8514:2026-06-18T21:34:55.848310724Z [inf]  [unified-validator]   ✓ walls (score: 1.000): Wall validation skipped (tier=core)
+8515:2026-06-18T21:34:55.848318208Z [inf]  [unified-validator]   ✓ globalEdge (score: 1.000): Edge IoU: 1.000 (threshold: 0.6)
+8516:2026-06-18T21:34:55.848323286Z [inf]  [unified-validator]   ✓ structuralMask (score: 1.000): Structural IoU: 1.000 (threshold: 0.25)
+8517:2026-06-18T21:34:55.848331866Z [inf]  [unified-validator]   ✓ lineEdge (score: 1.000): Line/edge validation skipped (tier=core)
+8519:2026-06-18T21:34:55.848338074Z [inf]  [unified-validator]   ✓ anchors (score: 1.000): anchor:island_changed
+8520:2026-06-18T21:34:55.848342797Z [inf]  [validator] escalated=false earlyExit=false
+8521:2026-06-18T21:34:55.848347806Z [inf]  [unified-validator] [Gemini] validator_results={"v1":"pass"} consensus=false derivedWarnings=2
+8522:2026-06-18T21:34:55.848351997Z [inf]  [unified-validator] [Gemini] verdict cat=style_only hardFail=false geminiMode=block conf=1
+8525:2026-06-18T21:34:55.848366726Z [inf]  [unified-validator] === Validation Results ===
+8526:2026-06-18T21:34:55.848371474Z [inf]  [unified-validator]   ✓ perceptualDiff (score: 1.000): Perceptual diff skipped (tier=core)
+8527:2026-06-18T21:34:55.848376824Z [inf]  [unified-validator]   ✓ stageAware (score: 0.595): Stage-aware validation passed
+8528:2026-06-18T21:34:55.848380805Z [inf]  [unified-validator]   ✗ windows (score: 0.000): window_position_change
+8529:2026-06-18T21:34:55.849595918Z [inf]  [unified-validator] ===============================
+8530:2026-06-18T21:34:55.849607491Z [inf]  [unified-validator]   ✓ geminiSemantic (score: 1.000): Gemini warning: style_only
+8531:2026-06-18T21:34:55.849612436Z [inf]  [unified-validator] Aggregate Score: 0.777
+8532:2026-06-18T21:34:55.849615828Z [inf]  [unified-validator] Overall: FAILED
+8533:2026-06-18T21:34:55.849619704Z [inf]  [unified-validator] Failure Reasons:
+8534:2026-06-18T21:34:55.849623396Z [inf]  [unified-validator]   - Window validation failed: window_position_change
+8535:2026-06-18T21:34:55.849626910Z [inf]  [unified-validator] Warnings:
+8536:2026-06-18T21:34:55.849630194Z [inf]  [unified-validator]   - dimension_normalized
+8537:2026-06-18T21:34:55.849635138Z [inf]  [unified-validator]   - No structural (Tier 1) or fixed feature (Tier 2) changes were detected. Only flexible furniture and decor (Tier 3) were added, which is allowed.
+8538:2026-06-18T21:34:55.849638294Z [inf]  [unified-validator]   - The window treatment type (blinds) remains consistent across both images.
+8539:2026-06-18T21:34:55.849642249Z [inf]  [UNIFIED_AUTHORITY] Local validator failures overridden by Gemini PASS {
+8554:2026-06-18T21:34:55.850969094Z [inf]  [validator] check=perceptualDiff pass=true score=1.000
+8555:2026-06-18T21:34:55.850974816Z [inf]  [validator] check=stageAware pass=true score=0.595
+8556:2026-06-18T21:34:55.850979221Z [inf]  [validator] check=windows pass=false score=0.000
+8557:2026-06-18T21:34:55.850982987Z [inf]  [validator] check=walls pass=true score=1.000
+8558:2026-06-18T21:34:55.850986585Z [inf]  [validator] check=globalEdge pass=true score=1.000
+8559:2026-06-18T21:34:55.850990119Z [inf]  [validator] check=structuralMask pass=true score=1.000
+8560:2026-06-18T21:34:55.850993836Z [inf]  [validator] check=lineEdge pass=true score=1.000
+8561:2026-06-18T21:34:55.850997254Z [inf]  [validator] check=anchors pass=true score=1.000
+8562:2026-06-18T21:34:55.851000702Z [inf]  [validator] check=geminiSemantic pass=true score=1.000
+8563:2026-06-18T21:34:55.851004377Z [inf]  [validator] verdict=PASS score=0.777 jobId=job_1a34ef7d-7a89-40c8-9300-fad93a366105
+8589:2026-06-18T21:35:09.512272369Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only secondary semantic/masked validators skipped {
+8647:2026-06-18T21:35:11.808237235Z [inf]  [STAGE2_COMPLETION_ALLOWED] {
+8653:2026-06-18T21:35:11.814915953Z [inf]      stage1A: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+8654:2026-06-18T21:35:11.814924863Z [inf]  [STAGE_URLS_WRITE] {
+8659:2026-06-18T21:35:11.814942671Z [inf]      stage1A: 'https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg',
+8669:2026-06-18T21:35:11.814985629Z [inf]  [STAGE_URLS_WRITE] {
+8670:2026-06-18T21:35:11.814989804Z [inf]    jobId: 'job_0a649ccd-e39d-48e8-aa5b-b081391fee82',
+8711:2026-06-18T21:35:12.377939460Z [inf]  [STAGE2_RETRY_SUMMARY] {
+8747:2026-06-18T21:35:12.379722005Z [inf]  upload=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/retry/user_615d112e-5072-4203-98f1-d22e052caab6/1781818422272-1781818259681-realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-1a-delivery.jpg
+8757:2026-06-18T21:35:12.380843745Z [inf]  validator_warnings=dimension_normalized|No structural (Tier 1) or fixed feature (Tier 2) changes were detected. Only flexible furniture and decor (Tier 3) were added, which is allowed.|The window treatment type (blinds) remains consistent across both images.|local_validators_advisory: windows
+8806:2026-06-18T21:48:14.948598756Z [inf]  [worker] Local validator tier: core
+9233:2026-06-18T21:48:34.783930192Z [inf]  [stage1A] Structural validator verdict (gemini output): { ok: true }
+9279:2026-06-18T21:48:34.786455703Z [inf]  [OPENING_BASELINE_TRIGGER] {
+9309:2026-06-18T21:48:34.787659045Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","attempt":1,"stage":"image_materialization","durationMs":6}
+9360:2026-06-18T21:48:34.789560164Z [inf]  [STAGE_URLS_WRITE] {
+9703:2026-06-18T21:48:59.927497867Z [inf]  [STAGE_URLS_WRITE] {
+9740:2026-06-18T21:48:59.930541735Z [inf]  [LOCAL_VALIDATOR_TIER] FULL-only Stage2 semantic/masked validators skipped {
+9755:2026-06-18T21:48:59.930602775Z [inf]  [OPENING_BASELINE_REUSE] {
+9758:2026-06-18T21:48:59.930612273Z [inf]    source: 'stage2_opening_validator',
+9766:2026-06-18T21:48:59.930639233Z [inf]    validator: 'opening',
+9768:2026-06-18T21:48:59.931680269Z [inf]    validator: 'floor',
+9780:2026-06-18T21:48:59.931751015Z [inf]    validator: 'fixture',
+9797:2026-06-18T21:48:59.932573987Z [inf]    validator: 'envelope',
+9831:2026-06-18T21:49:01.163091317Z [inf]    validator: 'fixture',
+9870:2026-06-18T21:49:05.574062056Z [inf]    validator: 'floor',
+9928:2026-06-18T21:49:06.375868276Z [inf]    validator: 'envelope',
+9940:2026-06-18T21:49:07.792180061Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","attempt":1,"stage":"gemini_structural_extraction","durationMs":39247}
+9941:2026-06-18T21:49:07.793202042Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"D1","type":"door","wallIndex":0,"horizontalBand":"center_third","verticalBand":"full_height","wallCoverageBand":"40-60","orientation":"portrait","paneStructure":"sliding_panel","doorLeafState":"open","confidence":0.98},{"id":"W2","type":"window","wallIndex":1,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"5-10","orientation":"landscape","paneStructure":"double_fixed","doorLeafState":"unknown","confidence":0.97},{"id":"W1","type":"window","wallIndex":1,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"unknown","doorLeafState":"unknown","confidence":0.95},{"id":"C1","type":"closet_door","wallIndex":3,"horizontalBand":"left_third","verticalBand":"mid_zone","wallCoverageBand":"10-20","orientation":"portrait","paneStructure":"unknown","doorLeafState":"closed","confidence":0.98}],"anchorFixtures":[{"id":"AF1","type":"ac_unit","wallIndex":0,"horizontalBand":"center_third","confidence":0.99},{"id":"AF2","type":"built_in_cabinet","wallIndex":3,"horizontalBand":"left_third","confidence":0.9},{"id":"AF3","type":"staircase","wallIndex":3,"horizontalBand":"left_third","confidence":0.95}]}
+9942:2026-06-18T21:49:07.793207946Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","mode":"single_pass","extractionCalls":1}
+9943:2026-06-18T21:49:07.793213272Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","imageHash":"ccac336af5611248cf937663fc554e3e9e70f37b8a184af2a981d89d8375195b","baselineMode":"single_pass","extractionPass":1,"graphHash":"d33058962334d4004cadc102d9568d991ed5bd91f3c50874e5784c48f65111b6","openingCount":4}
+9944:2026-06-18T21:49:07.793217893Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","mode":"single_pass","baselineExtractionDurationMs":39248,"totalGeminiCalls":1}
+9945:2026-06-18T21:49:07.794494659Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":39246,"jsonParseMs":0,"normalizationMs":1,"graphBuildMs":1,"persistenceMs":0,"totalMs":39249}
+9975:2026-06-18T21:49:07.795626760Z [inf]  [OPENING_BASELINE_METRICS] {
+9986:2026-06-18T21:49:07.795669608Z [inf]  [STRUCTURAL_BASELINE_EXTRACTED] jobId=job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39 openings=4
+9987:2026-06-18T21:49:07.795673004Z [inf]  [OPENING_BASELINE_REUSE] {
+9990:2026-06-18T21:49:07.795683573Z [inf]    source: 'stage2_opening_validator',
+9993:2026-06-18T21:49:07.795694546Z [inf]    openings: 4
+10003:2026-06-18T21:49:07.796752022Z [inf]  [OPENINGS_BASELINE] {
+10006:2026-06-18T21:49:07.796761868Z [inf]    openings: [
+10038:2026-06-18T21:49:07.797565197Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","attempt":1,"stage":"image_materialization","durationMs":1}
+10040:2026-06-18T21:49:57.804579661Z [inf]  [OPENING_EXTRACTION_STAGE_DURATION] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","attempt":1,"stage":"gemini_structural_extraction","durationMs":41940}
+10041:2026-06-18T21:49:57.804583404Z [inf]  [OPENING_BASELINE] {"openings":[{"id":"D1","type":"door","wallIndex":0,"horizontalBand":"center_third","verticalBand":"full_height","wallCoverageBand":"60+","orientation":"portrait","paneStructure":"sliding_panel","doorLeafState":"closed","confidence":0.98},{"id":"W1","type":"window","wallIndex":1,"horizontalBand":"center_third","verticalBand":"mid_zone","wallCoverageBand":"5-10","orientation":"landscape","paneStructure":"single_fixed","doorLeafState":"unknown","confidence":0.95},{"id":"W2","type":"window","wallIndex":1,"horizontalBand":"right_third","verticalBand":"mid_zone","wallCoverageBand":"20-40","orientation":"landscape","paneStructure":"single_fixed","doorLeafState":"unknown","confidence":0.98},{"id":"C1","type":"closet_door","wallIndex":3,"horizontalBand":"center_third","verticalBand":"mid_zone","wallCoverageBand":"40-60","orientation":"portrait","paneStructure":"unknown","doorLeafState":"closed","confidence":0.95},{"id":"A1","type":"walkthrough","wallIndex":3,"horizontalBand":"center_third","verticalBand":"mid_zone","wallCoverageBand":"10-20","orientation":"landscape","paneStructure":"unknown","doorLeafState":"open","confidence":0.9}],"anchorFixtures":[{"id":"AC1","type":"ac_unit","wallIndex":0,"horizontalBand":"center_third","confidence":0.99},{"id":"BC1","type":"built_in_cabinet","wallIndex":3,"horizontalBand":"left_third","confidence":0.97},{"id":"S1","type":"staircase","wallIndex":3,"horizontalBand":"left_third","confidence":0.92}]}
+10042:2026-06-18T21:49:57.805831432Z [inf]  [OPENING_BASELINE_MODE] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","mode":"single_pass","extractionCalls":1}
+10043:2026-06-18T21:49:57.805840557Z [inf]  [BASELINE_EXTRACTION_RESULT] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","imageHash":"9d3ab79e2c87aed8c4911367011863431d5d5f58a43f676fe308d34aac949e83","baselineMode":"single_pass","extractionPass":1,"graphHash":"5df64fd3849758e2d02db10868b01b007d866f0b259d34b54ec996d548a99b53","openingCount":5}
+10044:2026-06-18T21:49:57.805847272Z [inf]  [OPENING_BASELINE_METRICS] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","mode":"single_pass","baselineExtractionDurationMs":41940,"totalGeminiCalls":1}
+10045:2026-06-18T21:49:57.805852248Z [inf]  [OPENING_BASELINE_TIMING] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","imageDownloadMs":1,"imageMaterializationMs":0,"imageResizeMs":0,"promptBuildMs":0,"geminiRequestMs":0,"responseReceiveMs":41939,"jsonParseMs":0,"normalizationMs":0,"graphBuildMs":0,"persistenceMs":0,"totalMs":41940}
+10051:2026-06-18T21:49:57.806890076Z [inf]  [OPENING_RECONCILIATION_TRACE] {"jobId":"job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39","imageId":"img_7117de0a-4ddb-4b14-be98-513a452ef736","attempt":1,"reconciliationHash":"b88318113e250b3f0044ae10876168fa12fc5bc58cca35c7ab74e70b69a7514a","baselineOpeningCount":4,"detectedOpeningCount":5,"matchedCount":4,"idMatchCount":4,"graphMatchCount":0,"unmatchedBaselineIds":[],"unmatchedDetectedIds":["A1"]}
+10052:2026-06-18T21:49:57.806893015Z [inf]  [OPENING_VALIDATION] baseline_id=D1 status=ALTERED reason=door_leaf_state_changed
+10053:2026-06-18T21:49:57.806895891Z [inf]  [OPENING_VALIDATION] baseline_id=W2 status=ALTERED reason=wall_coverage_band_changed_gt_one|pane_structure_changed|aperture_expanded_gt_0.45
+10054:2026-06-18T21:49:57.806899246Z [inf]  [OPENING_VALIDATION] baseline_id=W1 status=ALTERED reason=horizontal_band_changed|wall_coverage_band_changed_gt_one
+10055:2026-06-18T21:49:57.806902386Z [inf]  [OPENING_VALIDATION] baseline_id=C1 status=ALTERED reason=horizontal_band_changed|wall_coverage_band_changed_gt_one
+10061:2026-06-18T21:49:57.808441684Z [inf]  [OPENING_OBSERVABILITY_EVIDENCE] {
+10075:2026-06-18T21:49:57.808496561Z [inf]  [OPENING_COHERENCE_DOWNGRADE] {
+10078:2026-06-18T21:49:57.808506221Z [inf]      'opening_added',
+10079:2026-06-18T21:49:57.808509468Z [inf]      'opening_relocated',
+10080:2026-06-18T21:49:57.808512996Z [inf]      'opening_resized',
+10081:2026-06-18T21:49:57.808516945Z [inf]      'opening_size_reduction_ge_0.25:0.901',
+10082:2026-06-18T21:49:57.808521987Z [inf]      'opening_resized_major',
+10083:2026-06-18T21:49:57.808526980Z [inf]      'opening_band_mismatch'
+10093:2026-06-18T21:49:57.809599730Z [inf]    contradictions: [ 'opening_added_without_relocation_explanation' ],
+10097:2026-06-18T21:49:57.809613556Z [inf]  [OPENINGS_COMPARISON] {
+10099:2026-06-18T21:49:57.809619521Z [inf]    issueType: 'opening_anomaly',
+10101:2026-06-18T21:49:57.809624917Z [inf]    reason: 'opening_added|opening_relocated|opening_resized|opening_size_reduction_ge_0.25:0.901|opening_resized_major|opening_band_mismatch',
+10102:2026-06-18T21:49:57.809627761Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' },
+10108:2026-06-18T21:49:57.809644729Z [inf]        explanation: 'The door opening in the center of the near wall appears in a different door-leaf state.',
+10109:2026-06-18T21:49:57.809647750Z [inf]        location: 'door opening in the center of the near wall',
+10111:2026-06-18T21:49:57.809653881Z [inf]        question: 'Does the door opening in the center of the near wall retain the same position and structure as in the original image?'
+10112:2026-06-18T21:49:57.810724481Z [inf]        explanation: 'The window opening in the right side of the right wall appears materially different in size or shape.',
+10113:2026-06-18T21:49:57.810729017Z [inf]        location: 'window opening in the right side of the right wall',
+10115:2026-06-18T21:49:57.810736602Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?'
+10121:2026-06-18T21:49:57.810759260Z [inf]        explanation: 'The window opening in the right side of the right wall appears shifted from its original wall position and appears materially different in size or shape.',
+10122:2026-06-18T21:49:57.810763175Z [inf]        location: 'window opening in the right side of the right wall',
+10124:2026-06-18T21:49:57.810770590Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?'
+10129:2026-06-18T21:49:57.810796734Z [inf]        explanation: 'The closet door opening in the left side of the left wall appears shifted from its original wall position and appears materially different in size or shape.',
+10131:2026-06-18T21:49:57.812103308Z [inf]        location: 'closet door opening in the left side of the left wall',
+10133:2026-06-18T21:49:57.812113923Z [inf]        question: 'Does the closet door opening in the left side of the left wall retain the same visible size and shape as in the original image?'
+10136:2026-06-18T21:49:57.812126681Z [inf]    explanation: 'The door opening in the center of the near wall appears in a different door-leaf state. The window opening in the right side of the right wall appears materially different in size or shape.'
+10138:2026-06-18T21:49:57.812133744Z [inf]  [SPECIALIST_REVIEW][OPENING] {
+10143:2026-06-18T21:49:57.812150631Z [inf]    reason: 'opening_added|opening_relocated|opening_resized|opening_size_reduction_ge_0.25:0.901|opening_resized_major|opening_band_mismatch',
+10145:2026-06-18T21:49:57.812156989Z [inf]    openingClassMismatchTelemetry: { value: false, enforcement: 'advisory' }
+10156:2026-06-18T21:49:57.813838893Z [inf]    validator: 'opening',
+10167:2026-06-18T21:49:57.813885378Z [inf]    specialist: 'opening',
+10188:2026-06-18T21:49:57.815093525Z [inf]    openingDurationMs: 54881,
+10192:2026-06-18T21:49:57.815108513Z [inf]    validator: 'opening',
+10208:2026-06-18T21:49:57.816267701Z [inf]    issueType: 'opening_anomaly',
+10210:2026-06-18T21:49:57.816276690Z [inf]      'openings:opening_signal_incoherent_downgraded'
+10218:2026-06-18T21:49:57.816307454Z [inf]    validator: 'openings',
+10219:2026-06-18T21:49:57.816311913Z [inf]  [OPENING_SEMANTIC_AUTHORITY_PRESERVED] {
+10221:2026-06-18T21:49:57.816319286Z [inf]      'openings:opening_added_graph_stability_unconfirmed',
+10223:2026-06-18T21:49:57.816325207Z [inf]      'openings:opening_added_graph_confidence_0_500',
+10225:2026-06-18T21:49:57.816334539Z [inf]      'openings:opening_added_consensus_unstable',
+10227:2026-06-18T21:49:57.816340627Z [inf]      'openings:opening_visibility_reduction_0_901',
+10228:2026-06-18T21:49:57.816344867Z [inf]      'openings:opening_resized_minor_0_901',
+10230:2026-06-18T21:49:57.816353575Z [inf]    issueType: 'opening_anomaly',
+10235:2026-06-18T21:49:57.817328015Z [inf]    reason: 'opening_relocated_and_resized',
+10238:2026-06-18T21:49:57.817343578Z [inf]  [OPENING_STRUCTURAL_SIGNAL] {
+10239:2026-06-18T21:49:57.817348994Z [inf]    openingStructuralSignal: true,
+10241:2026-06-18T21:49:57.817356255Z [inf]    reason: 'opening_relocated_and_resized',
+10253:2026-06-18T21:49:57.817403072Z [inf]    validator: 'openings',
+10255:2026-06-18T21:49:57.817411398Z [inf]      'openings:opening_structural_signal_true',
+10256:2026-06-18T21:49:57.817414665Z [inf]      'openings:opening_structural_signal_reason_opening_relocated_and_resized'
+10259:2026-06-18T21:49:57.817424002Z [inf]  [OPENING_STRUCTURAL_ESCALATION] {
+10261:2026-06-18T21:49:57.818475179Z [inf]  [STAGE2_VALIDATION_A] openings sensor pass (Gemini adjudicates structural cues)
+10263:2026-06-18T21:49:57.818480820Z [inf]  [OPENING_SIGNATURE_TELEMETRY] {
+10271:2026-06-18T21:49:57.818509350Z [inf]  validator=openingValidator
+10274:2026-06-18T21:49:57.818517763Z [inf]    decisionPath: 'post_opening_validator',
+10276:2026-06-18T21:49:57.818523854Z [inf]  reason=sensor_opening_relocated_and_resized
+10284:2026-06-18T21:49:57.818549871Z [inf]    validator: 'openingValidator',
+10297:2026-06-18T21:49:57.819631866Z [inf]  validator=fixtureValidator
+10299:2026-06-18T21:49:57.819640021Z [inf]    validator: 'fixture',
+10300:2026-06-18T21:49:57.819640789Z [inf]    validator: 'fixtureValidator',
+10317:2026-06-18T21:49:57.820734039Z [inf]  validator=floorIntegrityValidator
+10320:2026-06-18T21:49:57.820744412Z [inf]    validator: 'floor',
+10330:2026-06-18T21:49:57.820780994Z [inf]    validator: 'envelope',
+10339:2026-06-18T21:49:57.820814757Z [inf]    validator: 'floorIntegrityValidator',
+10351:2026-06-18T21:49:57.821785581Z [inf]    validator: 'envelopeValidator',
+10362:2026-06-18T21:49:57.821820819Z [inf]  validator=envelopeValidator
+10368:2026-06-18T21:49:57.821839499Z [inf]    validator: 'envelope',
+10380:2026-06-18T21:49:57.822912302Z [inf]      openings: {
+10382:2026-06-18T21:49:57.822920892Z [inf]        reason: 'opening_added|opening_relocated|opening_resized|opening_size_reduction_ge_0.25:0.901|opening_resized_major|opening_band_mismatch'
+10392:2026-06-18T21:49:57.822967217Z [inf]      'openings:opening_added_graph_stability_unconfirmed',
+10393:2026-06-18T21:49:57.822971356Z [inf]      'openings:opening_added_graph_confidence_0_500',
+10394:2026-06-18T21:49:57.822975783Z [inf]      'openings:opening_added_consensus_unstable',
+10395:2026-06-18T21:49:57.822980802Z [inf]      'openings:opening_visibility_reduction_0_901',
+10396:2026-06-18T21:49:57.822986465Z [inf]      'openings:opening_resized_minor_0_901',
+10397:2026-06-18T21:49:57.822990252Z [inf]      'openings:opening_signal_incoherent_downgraded',
+10398:2026-06-18T21:49:57.822994042Z [inf]      'openings:opening_structural_signal_true',
+10399:2026-06-18T21:49:57.824171287Z [inf]      'openings:opening_structural_signal_reason_opening_relocated_and_resized',
+10406:2026-06-18T21:49:57.824201196Z [inf]        category: 'openings',
+10408:2026-06-18T21:49:57.824209467Z [inf]        location: 'door opening in the center of the near wall',
+10409:2026-06-18T21:49:57.824212973Z [inf]  [OPENING_STRUCTURED_ISSUES_PROPAGATED] {
+10416:2026-06-18T21:49:57.824235733Z [inf]        type: 'opening_change',
+10429:2026-06-18T21:49:57.825271503Z [inf]        question: 'Does the door opening in the center of the near wall retain the same position and structure as in the original image?',
+10433:2026-06-18T21:49:57.825293702Z [inf]        category: 'openings',
+10434:2026-06-18T21:49:57.825297452Z [inf]        location: 'window opening in the right side of the right wall',
+10435:2026-06-18T21:49:57.825300995Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?',
+10439:2026-06-18T21:49:57.825316226Z [inf]        category: 'openings',
+10440:2026-06-18T21:49:57.825319722Z [inf]        location: 'window opening in the right side of the right wall',
+10441:2026-06-18T21:49:57.825323104Z [inf]        question: 'Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image?',
+10445:2026-06-18T21:49:57.825336513Z [inf]        category: 'openings',
+10446:2026-06-18T21:49:57.825339953Z [inf]        location: 'closet door opening in the left side of the left wall',
+10447:2026-06-18T21:49:57.825343461Z [inf]        question: 'Does the closet door opening in the left side of the left wall retain the same visible size and shape as in the original image?',
+10458:2026-06-18T21:49:57.826634145Z [inf]  signals={structuralDegreeChange:0.0000,wallDrift:0.0000,maskedEdgeDrift:0.0000,edgeOpeningRisk:0.0000,openingCountMismatch:0.0000,floorPlaneShift:0.0000,fixtureMismatch:0.0000,islandDetectionDrift:0.0000}
+10461:2026-06-18T21:49:57.826643780Z [inf]  [OPENING_ENVELOPE_NON_CONTRADICTORY_ADVISORY] {
+10471:2026-06-18T21:49:57.826685150Z [inf]    action: 'do_not_downgrade_opening_from_advisory_only_envelope'
+10480:2026-06-18T21:49:57.828036777Z [inf]  [unified-validator] ✅ NZ STANDARD mode detected - enforcing strict structural protection
+10481:2026-06-18T21:49:57.828039908Z [inf]  [unified-validator] === Starting Unified Structural Validation ===
+10482:2026-06-18T21:49:57.828042733Z [inf]  [validator] start jobId=job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39 stage=2
+10483:2026-06-18T21:49:57.828045533Z [inf]  [unified-validator] Stage: 2
+10484:2026-06-18T21:49:57.828049941Z [inf]  [unified-validator] Scene: interior
+10485:2026-06-18T21:49:57.828053064Z [inf]  [unified-validator] Staging Style: nz_standard
+10486:2026-06-18T21:49:57.828055746Z [inf]  [unified-validator] Modes: local=log gemini=block
+10487:2026-06-18T21:49:57.828059961Z [inf]  [unified-validator] Local validator tier: core
+10488:2026-06-18T21:49:57.828062661Z [inf]  [unified-validator] Stage-Aware: ENABLED
+10489:2026-06-18T21:49:57.828065860Z [inf]  [unified-validator] Original: /tmp/realenhance-job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39-1781819285612-2pl5ex0u5tj-canonical-1A.webp
+10490:2026-06-18T21:49:57.828068907Z [inf]  [unified-validator] Enhanced: /tmp/realenhance-job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39-1781819285612-2pl5ex0u5tj-canonical-1A-2.webp
+10491:2026-06-18T21:49:57.828072703Z [inf]  [unified-validator] Stage1A Path (audit only): /tmp/realenhance-job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39-1781819285612-2pl5ex0u5tj-canonical-1A.webp
+10493:2026-06-18T21:49:57.828079764Z [inf]  [unified-validator] Using stage-aware validator for Stage 2
+10500:2026-06-18T21:49:57.829392193Z [inf]  [unified-validator] Global edge validation skipped (tier=core)
+10512:2026-06-18T21:49:57.829438142Z [inf]  [unified-validator] Stage-aware result: risk=false, score=0.999
+10513:2026-06-18T21:49:57.829441302Z [inf]  [unified-validator] Wall validation skipped (tier=core)
+10524:2026-06-18T21:49:57.830713804Z [inf]  [unified-validator]   → MEDIUM: heuristic validator flagged structural issue (no anchor evidence)
+10530:2026-06-18T21:49:57.830731436Z [inf]  [unified-validator] Structural IoU validation skipped (tier=core)
+10532:2026-06-18T21:49:57.830737094Z [inf]  [unified-validator] Line/edge validation skipped (tier=core)
+10533:2026-06-18T21:49:57.830740000Z [inf]  [unified-validator] Running anchor region validators...
+10539:2026-06-18T21:49:57.830759387Z [inf]  [unified-validator] Anchors: island=true hvac=false cabinetry=false lighting=false
+10540:2026-06-18T21:49:57.830762222Z [inf]  [unified-validator] Geometry Profile: SOFT
+10542:2026-06-18T21:49:57.830767519Z [inf]  [unified-validator] Risk Classification: MEDIUM
+10548:2026-06-18T21:49:57.831831768Z [inf]      'openings:opening_added_graph_stability_unconfirmed',
+10549:2026-06-18T21:49:57.831835408Z [inf]      'openings:opening_added_graph_confidence_0_500',
+10550:2026-06-18T21:49:57.831839372Z [inf]      'openings:opening_added_consensus_unstable',
+10551:2026-06-18T21:49:57.831845924Z [inf]      'openings:opening_visibility_reduction_0_901',
+10552:2026-06-18T21:49:57.833217434Z [inf]      "[openings] Location: window opening in the right side of the right wall. Question: Does the window opening in the right side of the right wall retain the same visible size and shape as in the original image? Context: Local opening-preservation analysis flagged a possible shift in the opening's wall position.",
+10563:2026-06-18T21:50:03.384831437Z [inf]        reasoning: 'The window opening in the right side of the right wall retains the same visible size, shape, and wall position.'
+10574:2026-06-18T21:50:03.384874158Z [inf]        reasoning: 'The door opening in the center of the near wall (under the stairs) retains the same position, size, and structure.'
+10579:2026-06-18T21:50:03.384892726Z [inf]        reasoning: "The window opening in the right side of the right wall retains the same visible size and shape. The roller blind's position has changed, which is a flexible feature, not a structural alteration."
+10584:2026-06-18T21:50:03.385350356Z [inf]  [validator] escalated=false earlyExit=false
+10585:2026-06-18T21:50:03.385354474Z [inf]  [unified-validator] [Gemini] validator_results={"v1":"pass"} consensus=false derivedWarnings=5
+10586:2026-06-18T21:50:03.385360864Z [inf]  [unified-validator] [Gemini] verdict cat=style_only hardFail=false geminiMode=block conf=1
+10587:2026-06-18T21:50:03.385361211Z [inf]        reasoning: 'The closet door opening in the left side of the left wall retains the same visible size, shape, and wall position.'
+10592:2026-06-18T21:50:03.385381226Z [inf]  [unified-validator] === Validation Results ===
+10594:2026-06-18T21:50:03.385386726Z [inf]  [unified-validator]   ✓ perceptualDiff (score: 1.000): Perceptual diff skipped (tier=core)
+10597:2026-06-18T21:50:03.386296987Z [inf]  [unified-validator]   ✓ stageAware (score: 0.999): Stage-aware validation passed
+10598:2026-06-18T21:50:03.386306521Z [inf]  [unified-validator]   ✗ windows (score: 0.000): window_position_change
+10599:2026-06-18T21:50:03.386309491Z [inf]  [unified-validator]   ✓ walls (score: 1.000): Wall validation skipped (tier=core)
+10600:2026-06-18T21:50:03.386312502Z [inf]  [unified-validator]   ✓ globalEdge (score: 1.000): Edge IoU: 1.000 (threshold: 0.6)
+10601:2026-06-18T21:50:03.386316589Z [inf]  [unified-validator]   ✓ structuralMask (score: 1.000): Structural IoU: 1.000 (threshold: 0.25)
+10602:2026-06-18T21:50:03.386320078Z [inf]  [unified-validator]   ✓ lineEdge (score: 1.000): Line/edge validation skipped (tier=core)
+10603:2026-06-18T21:50:03.386322753Z [inf]  [unified-validator]   ✓ anchors (score: 1.000): anchor:island_changed
+10604:2026-06-18T21:50:03.386325479Z [inf]  [unified-validator]   ✓ geminiSemantic (score: 1.000): Gemini warning: style_only
+10605:2026-06-18T21:50:03.386328078Z [inf]  [unified-validator] Aggregate Score: 0.808
+10606:2026-06-18T21:50:03.386331052Z [inf]  [unified-validator] Overall: FAILED
+10607:2026-06-18T21:50:03.386334274Z [inf]  [unified-validator] Failure Reasons:
+10608:2026-06-18T21:50:03.386337249Z [inf]  [unified-validator]   - Window validation failed: window_position_change
+10609:2026-06-18T21:50:03.386339923Z [inf]  [unified-validator] Warnings:
+10610:2026-06-18T21:50:03.386342652Z [inf]  [unified-validator]   - No structural (Tier 1) or fixed feature (Tier 2) changes were detected.
+10611:2026-06-18T21:50:03.386345552Z [inf]  [unified-validator]   - Only flexible (Tier 3) furniture, decor, and minor window treatment style adjustments were introduced, which is consistent with staging.
+10612:2026-06-18T21:50:03.386348663Z [inf]  [UNIFIED_AUTHORITY] Local validator failures overridden by Gemini PASS {
+10619:2026-06-18T21:50:03.387398993Z [inf]  [validator] check=globalEdge pass=true score=1.000
+10622:2026-06-18T21:50:03.387411516Z [inf]  [validator] check=structuralMask pass=true score=1.000
+10625:2026-06-18T21:50:03.387421426Z [inf]  [validator] check=lineEdge pass=true score=1.000
+10627:2026-06-18T21:50:03.387430214Z [inf]  [validator] check=anchors pass=true score=1.000
+10630:2026-06-18T21:50:03.387439530Z [inf]  [validator] check=geminiSemantic pass=true score=1.000
+10631:2026-06-18T21:50:03.387443582Z [inf]  [unified-validator] ===============================
+10632:2026-06-18T21:50:03.387448442Z [inf]  [validator] verdict=PASS score=0.808 jobId=job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39
+10633:2026-06-18T21:50:03.387449772Z [inf]  [validator] check=perceptualDiff pass=true score=1.000
+10634:2026-06-18T21:50:03.387456380Z [inf]  [validator] check=stageAware pass=true score=0.999
+10636:2026-06-18T21:50:03.387462647Z [inf]  [validator] check=windows pass=false score=0.000
+10637:2026-06-18T21:50:03.387466941Z [inf]  [validator] check=walls pass=true score=1.000
+10663:2026-06-18T21:50:03.388707370Z [inf]    openingStructuralSignalFlag: false,
+10664:2026-06-18T21:50:03.388710927Z [inf]    openingStructuralSignal: null,
+10666:2026-06-18T21:50:03.389258744Z [inf]    openingRegions: []
+10690:2026-06-18T21:50:46.962088888Z [inf]    validator: 'structuralIdentityReview',
+10698:2026-06-18T21:50:46.962115170Z [inf]  validator=structuralIdentityReview
+10764:2026-06-18T21:50:46.965944976Z [inf]  [STAGE_URLS_WRITE] {
+10776:2026-06-18T21:50:46.966945482Z [inf]  [STAGE2_RETRY_SUMMARY] {
+10803:2026-06-18T21:50:46.969904133Z [inf]  [worker] Structural warnings: No structural (Tier 1) or fixed feature (Tier 2) changes were detected.; Only flexible (Tier 3) furniture, decor, and minor window treatment style adjustments were introduced, which is consistent with staging.; local_validators_advisory: windows
+10807:2026-06-18T21:50:46.969919194Z [inf]  [FINAL_STAGE_DECISION] finalStageLabel=2 hasStage2=true stage2Blocked=false pub2Url=true virtualStage=true declutter=false
+10864:2026-06-18T21:50:46.973712533Z [inf]    parentJobId: undefined,
+10879:2026-06-18T21:50:46.974931820Z [inf]  [STAGE2_COMPLETION_ALLOWED] {
+10891:2026-06-18T21:50:46.974981459Z [inf]  [STAGE_URLS_WRITE] {
+10928:2026-06-18T21:50:46.977156986Z [inf]  [JOB_FINAL][job=job_4fbcb7a6-f7e5-4eb0-92f6-887352cbaf39] status=complete hardFail=false warnings=3 normalized=false
+11000:2026-06-18T22:04:19.961958646Z [err]  [STALE_COMMITTED_REFUND] jobId=job_0a649ccd-e39d-48e8-aa5b-b081391fee82 ttlMs=1800000

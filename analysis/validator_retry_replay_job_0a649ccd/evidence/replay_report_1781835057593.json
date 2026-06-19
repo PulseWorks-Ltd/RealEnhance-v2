@@ -1,0 +1,2162 @@
+{
+  "targetJobId": "job_0a649ccd-e39d-48e8-aa5b-b081391fee82",
+  "imageId": "img_e9cefb64-085e-43d6-aa89-011537106dea",
+  "runAt": "2026-06-19T02:10:57.593Z",
+  "inputs": {
+    "stage1APath": "/workspaces/RealEnhance-v2/analysis/validator_retry_replay_job_0a649ccd/inputs/stage1A_delivery.jpg",
+    "historicalAttempt1Path": "/workspaces/RealEnhance-v2/analysis/validator_retry_replay_job_0a649ccd/inputs/historical_attempt1.webp",
+    "historicalAttempt2Path": "/workspaces/RealEnhance-v2/analysis/validator_retry_replay_job_0a649ccd/inputs/historical_attempt2.webp",
+    "historicalAttempt2Url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2-retry1.webp",
+    "historicalAttempt1Url": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_0a649ccd-e39d-48e8-aa5b-b081391fee82/realenhance-job_0a649ccd-e39d-48e8-aa5b-b081391fee82-1781818236310-9cq0svnrr87-canonical-1A-2.webp"
+  },
+  "replay": {
+    "replayAttempt2Path": "/workspaces/RealEnhance-v2/analysis/validator_retry_replay_job_0a649ccd/outputs/replay_attempt2.webp",
+    "promptDumpPath": "/workspaces/RealEnhance-v2/analysis/validator_retry_replay_job_0a649ccd/evidence/replay_stage2_final_prompt_attempt2.txt",
+    "stage2PromptVariant": "nano",
+    "validatorTriggers": [
+      "opening_relocated_review",
+      "opening_visibility_reduction_0_432",
+      "opening_resized_minor_0_432",
+      "opening_signature_mismatch",
+      "opening_removed",
+      "envelope_confirmed_structural_change_multiple_window_openings_visible_in_the_baseline_image_have_been_removed_and_replaced_with_continuous_flat_wall_surfaces_in_the_staged_image_specifically_the_window_on_the_left_wall_and_the_window_on_the_right_wall_are_gone_additionally_one_of_the_two_windows_on_the_back_wall_in_the_baseline_image_is_gone_this_constitutes_a_significant_alteration_of_the_architectural_envelope_and_wall_plane_continuity",
+      "envelope_confirmed_structural_change",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "guidanceCategories": [
+      "opening",
+      "envelope"
+    ],
+    "guidanceText": "CRITICAL RETRY GUIDANCE — OPENING PRESERVATION:\nThe previous attempt removed, obscured, cropped, or concealed an existing opening.\nPreserve all windows and doors.\nDo not place furniture, artwork, wall panels, decorative features, cabinetry, or staging elements in positions that conceal openings.\nEnsure all original openings remain clearly visible and structurally unchanged.\n\nCRITICAL RETRY GUIDANCE — ENVELOPE PRESERVATION:\nPreserve all walls, ceilings, bulkheads, trims, architectural features, and room geometry exactly as they appear in the original image."
+  },
+  "historicalAttempt2": {
+    "opening": {
+      "status": "fail",
+      "issueType": "opening_removed",
+      "issueTier": "critical",
+      "confidence": 0.985,
+      "reason": "opening_removed|opening_sealed|opening_relocated_review|opening_relocated",
+      "visibilityReduction": null,
+      "resizedMinor": null,
+      "findingCount": 1,
+      "locations": [
+        "window opening in the right side of the near wall"
+      ],
+      "overlapToBaseline": [
+        null
+      ]
+    },
+    "advisorySignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.235",
+      "opening_resized_minor:0.235",
+      "opening_signature_mismatch",
+      "opening_removed",
+      "envelope_confirmed_structural_change: A distinct wall indentation/recess visible on the left wall in the baseline image has been filled, resulting in a continuous flat wall surface in the staged image. This represents a structural modification to the architectural envelope.",
+      "envelope_confirmed_structural_change",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "unified": {
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.792,
+      "issueType": "opening_removed",
+      "issueTier": "critical",
+      "warnings": [],
+      "reasons": [
+        "Gemini structure: A Tier 1 structural opening (window) present in the BEFORE image has been removed and replaced by a solid wall in the AFTER image., The identity of a wall surface has changed from containing an opening to being a continuous solid surface."
+      ],
+      "modelUsed": "gemini-2.5-flash",
+      "profile": "SOFT"
+    }
+  },
+  "replayAttempt2": {
+    "opening": {
+      "status": "fail",
+      "issueType": "opening_relocated",
+      "issueTier": "critical",
+      "confidence": 0.98,
+      "reason": "opening_relocated_review|opening_relocated|opening_resized|opening_size_reduction_ge_0.25:0.688|opening_resized_major|opening_band_mismatch",
+      "visibilityReduction": null,
+      "resizedMinor": null,
+      "findingCount": 2,
+      "locations": [
+        "window opening in the right side of the near wall",
+        "window opening in the left side of the left wall"
+      ],
+      "overlapToBaseline": [
+        null,
+        null
+      ]
+    },
+    "advisorySignals": [
+      "opening_relocated_review",
+      "opening_visibility_reduction:0.688",
+      "opening_resized_minor:0.688",
+      "opening_signature_mismatch",
+      "opening_relocated",
+      "envelope_vertical_edge_loss",
+      "envelope_corner_flattened"
+    ],
+    "unified": {
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.792,
+      "issueType": "none",
+      "issueTier": "advisory",
+      "warnings": [
+        "style_only",
+        "local_validators_advisory: windows"
+      ],
+      "reasons": [],
+      "modelUsed": "gemini-2.5-flash",
+      "profile": "SOFT"
+    }
+  },
+  "raw": {
+    "specialistOnAttempt1": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_sealed|opening_relocated_review|opening_relocated|opening_resized|opening_size_reduction_ge_0.25:0.432|opening_resized_major|opening_band_mismatch",
+        "confidence": 0.97,
+        "hardFail": true,
+        "issueType": "opening_removed",
+        "issueTier": "critical",
+        "advisorySignals": [
+          "opening_relocated_review",
+          "opening_visibility_reduction:0.432",
+          "opening_resized_minor:0.432",
+          "opening_signature_mismatch"
+        ],
+        "explanation": "The window opening in the right side of the near wall is not detectable in the AFTER image. The window opening in the left side of the left wall appears shifted from its original wall position and appears materially different in size or shape.",
+        "findings": [
+          {
+            "id": "W2",
+            "openingType": "window",
+            "status": "missing",
+            "location": "window opening in the right side of the near wall",
+            "wallIndex": 0,
+            "bbox": [
+              0.5898,
+              0.2999,
+              0.9619,
+              0.6297
+            ],
+            "machineReasons": [
+              "missing_opening"
+            ],
+            "explanation": "The window opening in the right side of the near wall is not detectable in the AFTER image.",
+            "question": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?",
+            "confidence": 0.99
+          },
+          {
+            "id": "W1",
+            "openingType": "window",
+            "status": "altered",
+            "location": "window opening in the left side of the left wall",
+            "wallIndex": 3,
+            "bbox": [
+              0.0401,
+              0.3283,
+              0.501,
+              0.6717
+            ],
+            "machineReasons": [
+              "horizontal_band_changed",
+              "pane_structure_changed"
+            ],
+            "explanation": "The window opening in the left side of the left wall appears shifted from its original wall position and appears materially different in size or shape.",
+            "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?",
+            "confidence": 0.95
+          }
+        ],
+        "advisoryObservations": [
+          {
+            "category": "openings",
+            "validator": "openings",
+            "issueType": "opening_removed",
+            "location": "window opening in the right side of the near wall",
+            "approximateLocation": "center-right",
+            "bbox": [
+              0.5898,
+              0.2999,
+              0.9619,
+              0.6297
+            ],
+            "confidence": 0.99,
+            "question": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?",
+            "context": "Local opening-preservation analysis could not match the baseline opening in this region in the AFTER image.",
+            "investigationTask": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?"
+          },
+          {
+            "category": "openings",
+            "validator": "openings",
+            "issueType": "opening_relocated",
+            "location": "window opening in the left side of the left wall",
+            "approximateLocation": "center-left",
+            "bbox": [
+              0.0401,
+              0.3283,
+              0.501,
+              0.6717
+            ],
+            "confidence": 0.95,
+            "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?",
+            "context": "Local opening-preservation analysis flagged a possible shift in the opening's wall position.",
+            "investigationTask": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?"
+          }
+        ],
+        "details": [
+          {
+            "id": "W2",
+            "classification": "removed",
+            "reason": "missing_opening",
+            "explanation": "The window opening in the right side of the near wall is not detectable in the AFTER image.",
+            "location": "window opening in the right side of the near wall",
+            "machineReasons": [
+              "missing_opening"
+            ],
+            "question": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?"
+          },
+          {
+            "id": "W1",
+            "classification": "altered",
+            "reason": "horizontal_band_changed|pane_structure_changed",
+            "explanation": "The window opening in the left side of the left wall appears shifted from its original wall position and appears materially different in size or shape.",
+            "location": "window opening in the left side of the left wall",
+            "machineReasons": [
+              "horizontal_band_changed",
+              "pane_structure_changed"
+            ],
+            "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?"
+          }
+        ],
+        "structuralSignals": [
+          {
+            "claim": "opening_removed",
+            "region": {
+              "x1": 0.5898,
+              "y1": 0.2999,
+              "x2": 0.9619,
+              "y2": 0.6297
+            },
+            "confidence": 0.99,
+            "source": "openingPreservation",
+            "openingId": "W2",
+            "openingType": "window",
+            "wallIndex": 0
+          },
+          {
+            "claim": "opening_resized_major",
+            "region": {
+              "x1": 0.0401,
+              "y1": 0.3283,
+              "x2": 0.501,
+              "y2": 0.6717
+            },
+            "confidence": 0.95,
+            "source": "openingPreservation",
+            "openingId": "W1",
+            "openingType": "window",
+            "wallIndex": 3
+          }
+        ],
+        "decision": {
+          "decision": "hard_fail",
+          "authorityClass": "CLASS_A",
+          "authority": "deterministic_opening_break",
+          "vetoable": false,
+          "signals": [
+            "opening_removed",
+            "opening_sealed",
+            "opening_relocated_review",
+            "opening_relocated",
+            "opening_resized",
+            "opening_size_reduction_ge_0.25:0.432",
+            "opening_resized_major",
+            "opening_band_mismatch",
+            "opening_visibility_reduction:0.432",
+            "opening_resized_minor:0.432",
+            "opening_signature_mismatch"
+          ],
+          "decisionTrace": [
+            "decision_trace_started",
+            "deterministic_signal_detected",
+            "advisory_signals_present",
+            "authority_class_a_assigned",
+            "authority_deterministic_opening_break",
+            "hard_fail_decision_selected",
+            "veto_skipped_nonvetoable",
+            "deterministic_supremacy_applied"
+          ],
+          "trace": [
+            "decision_trace_started",
+            "deterministic_signal_detected",
+            "advisory_signals_present",
+            "authority_class_a_assigned",
+            "authority_deterministic_opening_break",
+            "hard_fail_decision_selected",
+            "veto_skipped_nonvetoable",
+            "deterministic_supremacy_applied"
+          ],
+          "semanticCorroborated": false,
+          "vetoed": false
+        },
+        "observabilityEvidence": {
+          "geometryMetrics": [
+            {
+              "openingId": "W1",
+              "openingType": "window",
+              "widthChangePct": -40.507702321544805,
+              "heightChangePct": -4.630168899242857,
+              "areaChangePct": -43.173198482932996,
+              "aspectRatioChangePct": -37.61937397623965,
+              "widthHeightAsymmetryScore": 35.87753342230195,
+              "widthDominantChange": true,
+              "heightDominantChange": false
+            }
+          ],
+          "relocationFingerprints": [
+            {
+              "openingId": "W1",
+              "openingType": "window",
+              "wallShift": false,
+              "horizontalBandShift": true,
+              "verticalBandShift": false,
+              "centroidDxPct": 11.064999999999998,
+              "centroidDyPct": 3.994999999999993,
+              "centroidDriftPct": 11.764108551012265,
+              "anchorDistanceDeltaPct": 0,
+              "reasonTokens": [
+                "horizontal_band_changed",
+                "centroid_drift_gt_8pct"
+              ]
+            }
+          ],
+          "confidenceBands": [
+            {
+              "openingId": "W1",
+              "confidenceScore": 0.75,
+              "band": "MEDIUM",
+              "rationale": "moderate agreement; inspect occlusion and perspective drift"
+            }
+          ],
+          "summary": {
+            "maxAbsWidthChangePct": 40.507702321544805,
+            "maxAbsHeightChangePct": 4.630168899242857,
+            "maxAbsAreaChangePct": 43.173198482932996,
+            "maxAbsAspectRatioChangePct": 37.61937397623965,
+            "relocationSignalCount": 1,
+            "lowConfidenceCount": 0,
+            "mediumConfidenceCount": 1,
+            "highConfidenceCount": 0
+          }
+        },
+        "openingRegions": [
+          {
+            "bbox": [
+              0.2441,
+              0.3762,
+              0.5183,
+              0.7037
+            ],
+            "type": "window"
+          }
+        ],
+        "primaryStructuredIssue": {
+          "type": "opening_change",
+          "object": "window",
+          "action": "relocated",
+          "severity": "critical",
+          "source": "opening_validator",
+          "confidence": 0.97,
+          "evidence": [
+            "opening_removed",
+            "opening_sealed",
+            "opening_relocated_review",
+            "opening_relocated",
+            "opening_resized",
+            "opening_size_reduction_ge_0_25_0_432",
+            "opening_resized_major",
+            "opening_band_mismatch",
+            "opening_visibility_reduction_0_432",
+            "opening_resized_minor_0_432",
+            "opening_signature_mismatch"
+          ]
+        },
+        "structuredIssues": [
+          {
+            "type": "opening_change",
+            "object": "window",
+            "action": "relocated",
+            "severity": "critical",
+            "source": "opening_validator",
+            "confidence": 0.97,
+            "evidence": [
+              "opening_removed",
+              "opening_sealed",
+              "opening_relocated_review",
+              "opening_relocated",
+              "opening_resized",
+              "opening_size_reduction_ge_0_25_0_432",
+              "opening_resized_major",
+              "opening_band_mismatch",
+              "opening_visibility_reduction_0_432",
+              "opening_resized_minor_0_432",
+              "opening_signature_mismatch"
+            ]
+          }
+        ]
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "All fixed architectural elements and fixtures are preserved. Furniture and decor changes are permitted.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "advisorySignals": [],
+        "structuredIssues": [],
+        "fixtureRepair": {
+          "supported": false,
+          "fixtureClass": "UNKNOWN",
+          "fixtureStateChange": "UNKNOWN",
+          "action": "unknown",
+          "reasonTokens": [
+            "all_fixed_architectural_elements_and_fixtures_are_preserved_furniture_and_decor_changes_are_permitted"
+          ]
+        }
+      },
+      "floor": {
+        "status": "pass",
+        "reason": "The structural floor material is carpet in both images and remains unchanged. A rug has been added in the staged image, which is a non-structural change.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "advisorySignals": [],
+        "structuredIssues": []
+      },
+      "envelope": {
+        "status": "fail",
+        "reason": "envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. envelope_vertical_edge_loss: envelope_confirmed_structural_change: Multiple window openings visible in the baseline image have been removed and replaced with continuous flat wall surfaces in the staged image. Specifically, the window on the left wall and the window on the right wall are gone. Additionally, one of the two windows on the back wall in the baseline image is gone. This constitutes a significant alteration of the architectural envelope and wall plane continuity.",
+        "confidence": 1,
+        "hardFail": true,
+        "issueType": "envelope_corner_flattened",
+        "issueTier": "critical",
+        "advisorySignals": [
+          "envelope_confirmed_structural_change: Multiple window openings visible in the baseline image have been removed and replaced with continuous flat wall surfaces in the staged image. Specifically, the window on the left wall and the window on the right wall are gone. Additionally, one of the two windows on the back wall in the baseline image is gone. This constitutes a significant alteration of the architectural envelope and wall plane continuity.",
+          "envelope_confirmed_structural_change",
+          "envelope_vertical_edge_loss",
+          "envelope_corner_flattened"
+        ],
+        "primaryStructuredIssue": {
+          "type": "envelope_change",
+          "object": "wall_plane",
+          "action": "flattened",
+          "severity": "review",
+          "source": "envelope_validator",
+          "confidence": 1,
+          "evidence": [
+            "envelope_confirmed_structural_change",
+            "boundary_lines_missing",
+            "continuous_surface_replacement",
+            "no_plausible_visual_explanation"
+          ]
+        },
+        "structuredIssues": [
+          {
+            "type": "envelope_change",
+            "object": "wall_plane",
+            "action": "flattened",
+            "severity": "review",
+            "source": "envelope_validator",
+            "confidence": 1,
+            "evidence": [
+              "envelope_confirmed_structural_change",
+              "boundary_lines_missing",
+              "continuous_surface_replacement",
+              "no_plausible_visual_explanation"
+            ]
+          }
+        ],
+        "verticalEdgeDelta": {
+          "verticalEdgeLossDetected": true,
+          "cornerPersistenceFailure": true,
+          "junctions": [
+            {
+              "column": 38,
+              "beforeCount": 122,
+              "afterCount": 50,
+              "retention": 0.4098360655737705,
+              "lost": false
+            },
+            {
+              "column": 42,
+              "beforeCount": 111,
+              "afterCount": 45,
+              "retention": 0.40540540540540543,
+              "lost": false
+            },
+            {
+              "column": 48,
+              "beforeCount": 95,
+              "afterCount": 146,
+              "retention": 1.5368421052631578,
+              "lost": false
+            },
+            {
+              "column": 166,
+              "beforeCount": 80,
+              "afterCount": 33,
+              "retention": 0.4125,
+              "lost": false
+            },
+            {
+              "column": 170,
+              "beforeCount": 95,
+              "afterCount": 83,
+              "retention": 0.8736842105263158,
+              "lost": false
+            },
+            {
+              "column": 172,
+              "beforeCount": 97,
+              "afterCount": 30,
+              "retention": 0.30927835051546393,
+              "lost": true
+            },
+            {
+              "column": 265,
+              "beforeCount": 86,
+              "afterCount": 32,
+              "retention": 0.37209302325581395,
+              "lost": true
+            },
+            {
+              "column": 267,
+              "beforeCount": 83,
+              "afterCount": 49,
+              "retention": 0.5903614457831325,
+              "lost": false
+            },
+            {
+              "column": 274,
+              "beforeCount": 64,
+              "afterCount": 53,
+              "retention": 0.828125,
+              "lost": false
+            },
+            {
+              "column": 276,
+              "beforeCount": 135,
+              "afterCount": 63,
+              "retention": 0.4666666666666667,
+              "lost": false
+            },
+            {
+              "column": 298,
+              "beforeCount": 94,
+              "afterCount": 84,
+              "retention": 0.8936170212765957,
+              "lost": false
+            },
+            {
+              "column": 303,
+              "beforeCount": 94,
+              "afterCount": 83,
+              "retention": 0.8829787234042553,
+              "lost": false
+            },
+            {
+              "column": 306,
+              "beforeCount": 86,
+              "afterCount": 82,
+              "retention": 0.9534883720930233,
+              "lost": false
+            },
+            {
+              "column": 309,
+              "beforeCount": 88,
+              "afterCount": 99,
+              "retention": 1.125,
+              "lost": false
+            },
+            {
+              "column": 311,
+              "beforeCount": 62,
+              "afterCount": 86,
+              "retention": 1.3870967741935485,
+              "lost": false
+            },
+            {
+              "column": 346,
+              "beforeCount": 102,
+              "afterCount": 66,
+              "retention": 0.6470588235294118,
+              "lost": false
+            },
+            {
+              "column": 351,
+              "beforeCount": 105,
+              "afterCount": 48,
+              "retention": 0.45714285714285713,
+              "lost": false
+            },
+            {
+              "column": 353,
+              "beforeCount": 104,
+              "afterCount": 56,
+              "retention": 0.5384615384615384,
+              "lost": false
+            },
+            {
+              "column": 408,
+              "beforeCount": 114,
+              "afterCount": 72,
+              "retention": 0.631578947368421,
+              "lost": false
+            },
+            {
+              "column": 410,
+              "beforeCount": 112,
+              "afterCount": 68,
+              "retention": 0.6071428571428571,
+              "lost": false
+            },
+            {
+              "column": 414,
+              "beforeCount": 127,
+              "afterCount": 21,
+              "retention": 0.16535433070866143,
+              "lost": true
+            },
+            {
+              "column": 416,
+              "beforeCount": 120,
+              "afterCount": 63,
+              "retention": 0.525,
+              "lost": false
+            }
+          ],
+          "beforeVerticalEdgeCount": 13606,
+          "afterVerticalEdgeCount": 27814,
+          "worstRetention": 0.16535433070866143
+        },
+        "structuralSignals": [
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.3059375,
+              "y1": 0.05,
+              "x2": 0.367890625,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.487578125,
+              "y1": 0.05,
+              "x2": 0.54953125,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.77859375,
+              "y1": 0.05,
+              "x2": 0.840546875,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          }
+        ]
+      },
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_visibility_reduction:0.432",
+        "opening_resized_minor:0.432",
+        "opening_signature_mismatch",
+        "opening_removed",
+        "envelope_confirmed_structural_change: Multiple window openings visible in the baseline image have been removed and replaced with continuous flat wall surfaces in the staged image. Specifically, the window on the left wall and the window on the right wall are gone. Additionally, one of the two windows on the back wall in the baseline image is gone. This constitutes a significant alteration of the architectural envelope and wall plane continuity.",
+        "envelope_confirmed_structural_change",
+        "envelope_vertical_edge_loss",
+        "envelope_corner_flattened"
+      ]
+    },
+    "historicalSpecialists": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_removed|opening_sealed|opening_relocated_review|opening_relocated",
+        "confidence": 0.985,
+        "hardFail": true,
+        "issueType": "opening_removed",
+        "issueTier": "critical",
+        "advisorySignals": [
+          "opening_relocated_review",
+          "opening_visibility_reduction:0.235",
+          "opening_resized_minor:0.235",
+          "opening_signature_mismatch"
+        ],
+        "explanation": "The window opening in the right side of the near wall is not detectable in the AFTER image.",
+        "findings": [
+          {
+            "id": "W2",
+            "openingType": "window",
+            "status": "missing",
+            "location": "window opening in the right side of the near wall",
+            "wallIndex": 0,
+            "bbox": [
+              0.571,
+              0.331,
+              0.91,
+              0.708
+            ],
+            "machineReasons": [
+              "missing_opening"
+            ],
+            "explanation": "The window opening in the right side of the near wall is not detectable in the AFTER image.",
+            "question": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?",
+            "confidence": 0.99
+          }
+        ],
+        "advisoryObservations": [
+          {
+            "category": "openings",
+            "validator": "openings",
+            "issueType": "opening_removed",
+            "location": "window opening in the right side of the near wall",
+            "approximateLocation": "center-right",
+            "bbox": [
+              0.571,
+              0.331,
+              0.91,
+              0.708
+            ],
+            "confidence": 0.99,
+            "question": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?",
+            "context": "Local opening-preservation analysis could not match the baseline opening in this region in the AFTER image.",
+            "investigationTask": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?"
+          }
+        ],
+        "details": [
+          {
+            "id": "W2",
+            "classification": "removed",
+            "reason": "missing_opening",
+            "explanation": "The window opening in the right side of the near wall is not detectable in the AFTER image.",
+            "location": "window opening in the right side of the near wall",
+            "machineReasons": [
+              "missing_opening"
+            ],
+            "question": "Is the window opening in the right side of the near wall still visible in the AFTER image, or is it no longer present?"
+          },
+          {
+            "id": "W1",
+            "classification": "removed",
+            "reason": "opening_removed|opening_sealed|opening_relocated_review|opening_relocated"
+          }
+        ],
+        "structuralSignals": [
+          {
+            "claim": "opening_removed",
+            "region": {
+              "x1": 0.571,
+              "y1": 0.331,
+              "x2": 0.91,
+              "y2": 0.708
+            },
+            "confidence": 0.99,
+            "source": "openingPreservation",
+            "openingId": "W2",
+            "openingType": "window",
+            "wallIndex": 0
+          }
+        ],
+        "decision": {
+          "decision": "hard_fail",
+          "authorityClass": "CLASS_A",
+          "authority": "deterministic_opening_break",
+          "vetoable": false,
+          "signals": [
+            "opening_removed",
+            "opening_sealed",
+            "opening_relocated_review",
+            "opening_relocated",
+            "opening_visibility_reduction:0.235",
+            "opening_resized_minor:0.235",
+            "opening_signature_mismatch"
+          ],
+          "decisionTrace": [
+            "decision_trace_started",
+            "deterministic_signal_detected",
+            "advisory_signals_present",
+            "authority_class_a_assigned",
+            "authority_deterministic_opening_break",
+            "hard_fail_decision_selected",
+            "veto_skipped_nonvetoable",
+            "deterministic_supremacy_applied"
+          ],
+          "trace": [
+            "decision_trace_started",
+            "deterministic_signal_detected",
+            "advisory_signals_present",
+            "authority_class_a_assigned",
+            "authority_deterministic_opening_break",
+            "hard_fail_decision_selected",
+            "veto_skipped_nonvetoable",
+            "deterministic_supremacy_applied"
+          ],
+          "semanticCorroborated": false,
+          "vetoed": false
+        },
+        "observabilityEvidence": {
+          "geometryMetrics": [
+            {
+              "openingId": "W1",
+              "openingType": "window",
+              "widthChangePct": -10.827423167848702,
+              "heightChangePct": -14.09669211195929,
+              "areaChangePct": -23.51172579675285,
+              "aspectRatioChangePct": 3.8057544284225786,
+              "widthHeightAsymmetryScore": 3.269268944110589,
+              "widthDominantChange": false,
+              "heightDominantChange": true
+            }
+          ],
+          "relocationFingerprints": [
+            {
+              "openingId": "W1",
+              "openingType": "window",
+              "wallShift": false,
+              "horizontalBandShift": false,
+              "verticalBandShift": false,
+              "centroidDxPct": 2.7899999999999983,
+              "centroidDyPct": -4.779999999999996,
+              "centroidDriftPct": 5.53466349473931,
+              "anchorDistanceDeltaPct": 0,
+              "reasonTokens": []
+            }
+          ],
+          "confidenceBands": [
+            {
+              "openingId": "W1",
+              "confidenceScore": 0.75,
+              "band": "MEDIUM",
+              "rationale": "moderate agreement; inspect occlusion and perspective drift"
+            }
+          ],
+          "summary": {
+            "maxAbsWidthChangePct": 10.827423167848702,
+            "maxAbsHeightChangePct": 14.09669211195929,
+            "maxAbsAreaChangePct": 23.51172579675285,
+            "maxAbsAspectRatioChangePct": 3.8057544284225786,
+            "relocationSignalCount": 0,
+            "lowConfidenceCount": 0,
+            "mediumConfidenceCount": 1,
+            "highConfidenceCount": 0
+          }
+        },
+        "openingRegions": [
+          {
+            "bbox": [
+              0.1078,
+              0.2979,
+              0.485,
+              0.6355
+            ],
+            "type": "window"
+          }
+        ],
+        "primaryStructuredIssue": {
+          "type": "opening_change",
+          "object": "window",
+          "action": "relocated",
+          "severity": "critical",
+          "source": "opening_validator",
+          "confidence": 0.985,
+          "evidence": [
+            "opening_removed",
+            "opening_sealed",
+            "opening_relocated_review",
+            "opening_relocated",
+            "opening_visibility_reduction_0_235",
+            "opening_resized_minor_0_235",
+            "opening_signature_mismatch"
+          ]
+        },
+        "structuredIssues": [
+          {
+            "type": "opening_change",
+            "object": "window",
+            "action": "relocated",
+            "severity": "critical",
+            "source": "opening_validator",
+            "confidence": 0.985,
+            "evidence": [
+              "opening_removed",
+              "opening_sealed",
+              "opening_relocated_review",
+              "opening_relocated",
+              "opening_visibility_reduction_0_235",
+              "opening_resized_minor_0_235",
+              "opening_signature_mismatch"
+            ]
+          }
+        ]
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "No changes to architectural structure or fixed installed fixtures detected.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "advisorySignals": [],
+        "structuredIssues": [],
+        "fixtureRepair": {
+          "supported": false,
+          "fixtureClass": "UNKNOWN",
+          "fixtureStateChange": "ADDED",
+          "action": "added",
+          "reasonTokens": [
+            "no_changes_to_architectural_structure_or_fixed_installed_fixtures_detected"
+          ]
+        }
+      },
+      "floor": {
+        "status": "pass",
+        "reason": "The structural floor material is carpet in both images and remains unchanged. A rug was added in the staged image, which is a non-structural change.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "advisorySignals": [],
+        "structuredIssues": []
+      },
+      "envelope": {
+        "status": "fail",
+        "reason": "envelope_corner_flattened: wall-plane corner collapsed – two planes merged into single surface. envelope_vertical_edge_loss: envelope_confirmed_structural_change: A distinct wall indentation/recess visible on the left wall in the baseline image has been filled, resulting in a continuous flat wall surface in the staged image. This represents a structural modification to the architectural envelope.",
+        "confidence": 1,
+        "hardFail": true,
+        "issueType": "envelope_corner_flattened",
+        "issueTier": "critical",
+        "advisorySignals": [
+          "envelope_confirmed_structural_change: A distinct wall indentation/recess visible on the left wall in the baseline image has been filled, resulting in a continuous flat wall surface in the staged image. This represents a structural modification to the architectural envelope.",
+          "envelope_confirmed_structural_change",
+          "envelope_vertical_edge_loss",
+          "envelope_corner_flattened"
+        ],
+        "primaryStructuredIssue": {
+          "type": "envelope_change",
+          "object": "wall_plane",
+          "action": "flattened",
+          "severity": "review",
+          "source": "envelope_validator",
+          "confidence": 1,
+          "evidence": [
+            "envelope_confirmed_structural_change",
+            "boundary_lines_missing",
+            "continuous_surface_replacement",
+            "no_plausible_visual_explanation"
+          ]
+        },
+        "structuredIssues": [
+          {
+            "type": "envelope_change",
+            "object": "wall_plane",
+            "action": "flattened",
+            "severity": "review",
+            "source": "envelope_validator",
+            "confidence": 1,
+            "evidence": [
+              "envelope_confirmed_structural_change",
+              "boundary_lines_missing",
+              "continuous_surface_replacement",
+              "no_plausible_visual_explanation"
+            ]
+          }
+        ],
+        "verticalEdgeDelta": {
+          "verticalEdgeLossDetected": true,
+          "cornerPersistenceFailure": true,
+          "junctions": [
+            {
+              "column": 38,
+              "beforeCount": 122,
+              "afterCount": 1,
+              "retention": 0.00819672131147541,
+              "lost": true
+            },
+            {
+              "column": 42,
+              "beforeCount": 111,
+              "afterCount": 2,
+              "retention": 0.018018018018018018,
+              "lost": true
+            },
+            {
+              "column": 48,
+              "beforeCount": 95,
+              "afterCount": 2,
+              "retention": 0.021052631578947368,
+              "lost": true
+            },
+            {
+              "column": 166,
+              "beforeCount": 80,
+              "afterCount": 19,
+              "retention": 0.2375,
+              "lost": true
+            },
+            {
+              "column": 170,
+              "beforeCount": 95,
+              "afterCount": 26,
+              "retention": 0.2736842105263158,
+              "lost": true
+            },
+            {
+              "column": 172,
+              "beforeCount": 97,
+              "afterCount": 27,
+              "retention": 0.27835051546391754,
+              "lost": true
+            },
+            {
+              "column": 265,
+              "beforeCount": 86,
+              "afterCount": 40,
+              "retention": 0.46511627906976744,
+              "lost": false
+            },
+            {
+              "column": 267,
+              "beforeCount": 83,
+              "afterCount": 43,
+              "retention": 0.5180722891566265,
+              "lost": false
+            },
+            {
+              "column": 274,
+              "beforeCount": 64,
+              "afterCount": 67,
+              "retention": 1.046875,
+              "lost": false
+            },
+            {
+              "column": 276,
+              "beforeCount": 135,
+              "afterCount": 138,
+              "retention": 1.0222222222222221,
+              "lost": false
+            },
+            {
+              "column": 298,
+              "beforeCount": 94,
+              "afterCount": 89,
+              "retention": 0.9468085106382979,
+              "lost": false
+            },
+            {
+              "column": 303,
+              "beforeCount": 94,
+              "afterCount": 76,
+              "retention": 0.8085106382978723,
+              "lost": false
+            },
+            {
+              "column": 306,
+              "beforeCount": 86,
+              "afterCount": 70,
+              "retention": 0.813953488372093,
+              "lost": false
+            },
+            {
+              "column": 309,
+              "beforeCount": 88,
+              "afterCount": 59,
+              "retention": 0.6704545454545454,
+              "lost": false
+            },
+            {
+              "column": 311,
+              "beforeCount": 62,
+              "afterCount": 52,
+              "retention": 0.8387096774193549,
+              "lost": false
+            },
+            {
+              "column": 346,
+              "beforeCount": 102,
+              "afterCount": 103,
+              "retention": 1.0098039215686274,
+              "lost": false
+            },
+            {
+              "column": 351,
+              "beforeCount": 105,
+              "afterCount": 58,
+              "retention": 0.5523809523809524,
+              "lost": false
+            },
+            {
+              "column": 353,
+              "beforeCount": 104,
+              "afterCount": 41,
+              "retention": 0.3942307692307692,
+              "lost": true
+            },
+            {
+              "column": 408,
+              "beforeCount": 114,
+              "afterCount": 68,
+              "retention": 0.5964912280701754,
+              "lost": false
+            },
+            {
+              "column": 410,
+              "beforeCount": 112,
+              "afterCount": 16,
+              "retention": 0.14285714285714285,
+              "lost": true
+            },
+            {
+              "column": 414,
+              "beforeCount": 127,
+              "afterCount": 71,
+              "retention": 0.5590551181102362,
+              "lost": false
+            },
+            {
+              "column": 416,
+              "beforeCount": 120,
+              "afterCount": 72,
+              "retention": 0.6,
+              "lost": false
+            }
+          ],
+          "beforeVerticalEdgeCount": 13606,
+          "afterVerticalEdgeCount": 21365,
+          "worstRetention": 0.00819672131147541
+        },
+        "structuralSignals": [
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.04421875,
+              "y1": 0.05,
+              "x2": 0.125703125,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.29421875,
+              "y1": 0.05,
+              "x2": 0.367890625,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.659453125,
+              "y1": 0.05,
+              "x2": 0.72140625,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.77078125,
+              "y1": 0.05,
+              "x2": 0.832734375,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          }
+        ]
+      },
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_visibility_reduction:0.235",
+        "opening_resized_minor:0.235",
+        "opening_signature_mismatch",
+        "opening_removed",
+        "envelope_confirmed_structural_change: A distinct wall indentation/recess visible on the left wall in the baseline image has been filled, resulting in a continuous flat wall surface in the staged image. This represents a structural modification to the architectural envelope.",
+        "envelope_confirmed_structural_change",
+        "envelope_vertical_edge_loss",
+        "envelope_corner_flattened"
+      ]
+    },
+    "replaySpecialists": {
+      "opening": {
+        "status": "fail",
+        "reason": "opening_relocated_review|opening_relocated|opening_resized|opening_size_reduction_ge_0.25:0.688|opening_resized_major|opening_band_mismatch",
+        "confidence": 0.98,
+        "hardFail": true,
+        "issueType": "opening_relocated",
+        "issueTier": "critical",
+        "advisorySignals": [
+          "opening_relocated_review",
+          "opening_visibility_reduction:0.688",
+          "opening_resized_minor:0.688",
+          "opening_signature_mismatch"
+        ],
+        "explanation": "The window opening in the right side of the near wall appears on a different wall than in the original image and appears materially different in size or shape. The window opening in the left side of the left wall appears materially different in size or shape.",
+        "findings": [
+          {
+            "id": "W2",
+            "openingType": "window",
+            "status": "altered",
+            "location": "window opening in the right side of the near wall",
+            "wallIndex": 0,
+            "bbox": [
+              0.5804,
+              0.2454,
+              0.9304,
+              0.6121
+            ],
+            "machineReasons": [
+              "wall_index_changed",
+              "horizontal_band_changed",
+              "orientation_changed"
+            ],
+            "explanation": "The window opening in the right side of the near wall appears on a different wall than in the original image and appears materially different in size or shape.",
+            "question": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?",
+            "confidence": 0.98
+          },
+          {
+            "id": "W1",
+            "openingType": "window",
+            "status": "altered",
+            "location": "window opening in the left side of the left wall",
+            "wallIndex": 3,
+            "bbox": [
+              0.0353,
+              0.2731,
+              0.3809,
+              0.5986
+            ],
+            "machineReasons": [
+              "wall_index_extraction_drift",
+              "orientation_changed"
+            ],
+            "explanation": "The window opening in the left side of the left wall appears materially different in size or shape.",
+            "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?",
+            "confidence": 0.98
+          }
+        ],
+        "advisoryObservations": [
+          {
+            "category": "openings",
+            "validator": "openings",
+            "issueType": "opening_relocated",
+            "location": "window opening in the right side of the near wall",
+            "approximateLocation": "center-right",
+            "bbox": [
+              0.5804,
+              0.2454,
+              0.9304,
+              0.6121
+            ],
+            "confidence": 0.98,
+            "question": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?",
+            "context": "Local opening-preservation analysis flagged this opening as potentially appearing on a different wall than in the original image.",
+            "investigationTask": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?"
+          },
+          {
+            "category": "openings",
+            "validator": "openings",
+            "issueType": "opening_resized_minor",
+            "location": "window opening in the left side of the left wall",
+            "approximateLocation": "center-left",
+            "bbox": [
+              0.0353,
+              0.2731,
+              0.3809,
+              0.5986
+            ],
+            "confidence": 0.98,
+            "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?",
+            "context": "Local opening-preservation analysis flagged a possible structural difference for this baseline opening.",
+            "investigationTask": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?"
+          }
+        ],
+        "details": [
+          {
+            "id": "W2",
+            "classification": "relocated",
+            "reason": "wall_index_changed|horizontal_band_changed|orientation_changed",
+            "explanation": "The window opening in the right side of the near wall appears on a different wall than in the original image and appears materially different in size or shape.",
+            "location": "window opening in the right side of the near wall",
+            "machineReasons": [
+              "wall_index_changed",
+              "horizontal_band_changed",
+              "orientation_changed"
+            ],
+            "question": "Is the window opening in the right side of the near wall still present on the same wall as in the original image, or does it now appear on a different wall?"
+          },
+          {
+            "id": "W1",
+            "classification": "altered",
+            "reason": "wall_index_extraction_drift|orientation_changed",
+            "explanation": "The window opening in the left side of the left wall appears materially different in size or shape.",
+            "location": "window opening in the left side of the left wall",
+            "machineReasons": [
+              "wall_index_extraction_drift",
+              "orientation_changed"
+            ],
+            "question": "Does the window opening in the left side of the left wall retain the same visible size and shape as in the original image?"
+          }
+        ],
+        "structuralSignals": [
+          {
+            "claim": "opening_resized_major",
+            "region": {
+              "x1": 0.5804,
+              "y1": 0.2454,
+              "x2": 0.9304,
+              "y2": 0.6121
+            },
+            "confidence": 0.98,
+            "source": "openingPreservation",
+            "openingId": "W2",
+            "openingType": "window",
+            "wallIndex": 0
+          },
+          {
+            "claim": "opening_resized_major",
+            "region": {
+              "x1": 0.0353,
+              "y1": 0.2731,
+              "x2": 0.3809,
+              "y2": 0.5986
+            },
+            "confidence": 0.98,
+            "source": "openingPreservation",
+            "openingId": "W1",
+            "openingType": "window",
+            "wallIndex": 3
+          }
+        ],
+        "decision": {
+          "decision": "hard_fail",
+          "authorityClass": "CLASS_A",
+          "authority": "deterministic_opening_break",
+          "vetoable": false,
+          "signals": [
+            "opening_relocated_review",
+            "opening_relocated",
+            "opening_resized",
+            "opening_size_reduction_ge_0.25:0.688",
+            "opening_resized_major",
+            "opening_band_mismatch",
+            "opening_visibility_reduction:0.688",
+            "opening_resized_minor:0.688",
+            "opening_signature_mismatch"
+          ],
+          "decisionTrace": [
+            "decision_trace_started",
+            "deterministic_signal_detected",
+            "advisory_signals_present",
+            "authority_class_a_assigned",
+            "authority_deterministic_opening_break",
+            "hard_fail_decision_selected",
+            "veto_skipped_nonvetoable",
+            "deterministic_supremacy_applied"
+          ],
+          "trace": [
+            "decision_trace_started",
+            "deterministic_signal_detected",
+            "advisory_signals_present",
+            "authority_class_a_assigned",
+            "authority_deterministic_opening_break",
+            "hard_fail_decision_selected",
+            "veto_skipped_nonvetoable",
+            "deterministic_supremacy_applied"
+          ],
+          "semanticCorroborated": false,
+          "vetoed": false
+        },
+        "observabilityEvidence": {
+          "geometryMetrics": [
+            {
+              "openingId": "W2",
+              "openingType": "window",
+              "widthChangePct": -63.02857142857143,
+              "heightChangePct": -15.653122443414222,
+              "areaChangePct": -68.82307092751364,
+              "aspectRatioChangePct": -56.167401043831724,
+              "widthHeightAsymmetryScore": 47.375448985157206,
+              "widthDominantChange": true,
+              "heightDominantChange": false
+            },
+            {
+              "openingId": "W1",
+              "openingType": "window",
+              "widthChangePct": -45.77546296296296,
+              "heightChangePct": 16.804915514592924,
+              "areaChangePct": -36.97777777777778,
+              "aspectRatioChangePct": -53.576836387281546,
+              "widthHeightAsymmetryScore": 28.970547448370038,
+              "widthDominantChange": true,
+              "heightDominantChange": false
+            }
+          ],
+          "relocationFingerprints": [
+            {
+              "openingId": "W2",
+              "openingType": "window",
+              "wallShift": true,
+              "horizontalBandShift": true,
+              "verticalBandShift": false,
+              "centroidDxPct": -11.720000000000008,
+              "centroidDyPct": 4.840000000000005,
+              "centroidDriftPct": 12.6800630913257,
+              "anchorDistanceDeltaPct": 0,
+              "reasonTokens": [
+                "wall_index_changed",
+                "horizontal_band_changed",
+                "centroid_drift_gt_8pct"
+              ]
+            },
+            {
+              "openingId": "W1",
+              "openingType": "window",
+              "wallShift": true,
+              "horizontalBandShift": false,
+              "verticalBandShift": false,
+              "centroidDxPct": 4.9399999999999995,
+              "centroidDyPct": 3.7349999999999994,
+              "centroidDriftPct": 6.193046503942949,
+              "anchorDistanceDeltaPct": 0,
+              "reasonTokens": [
+                "wall_index_changed"
+              ]
+            }
+          ],
+          "confidenceBands": [
+            {
+              "openingId": "W2",
+              "confidenceScore": 0.75,
+              "band": "MEDIUM",
+              "rationale": "moderate agreement; inspect occlusion and perspective drift"
+            },
+            {
+              "openingId": "W1",
+              "confidenceScore": 0.75,
+              "band": "MEDIUM",
+              "rationale": "moderate agreement; inspect occlusion and perspective drift"
+            }
+          ],
+          "summary": {
+            "maxAbsWidthChangePct": 63.02857142857143,
+            "maxAbsHeightChangePct": 16.804915514592924,
+            "maxAbsAreaChangePct": 68.82307092751364,
+            "maxAbsAspectRatioChangePct": 56.167401043831724,
+            "relocationSignalCount": 2,
+            "lowConfidenceCount": 0,
+            "mediumConfidenceCount": 2,
+            "highConfidenceCount": 0
+          }
+        },
+        "openingRegions": [
+          {
+            "bbox": [
+              0.1638,
+              0.2831,
+              0.3512,
+              0.6633
+            ],
+            "type": "window"
+          },
+          {
+            "bbox": [
+              0.5735,
+              0.3225,
+              0.7029,
+              0.6318
+            ],
+            "type": "window"
+          }
+        ],
+        "primaryStructuredIssue": {
+          "type": "opening_change",
+          "object": "window",
+          "action": "relocated",
+          "severity": "critical",
+          "source": "opening_validator",
+          "confidence": 0.98,
+          "evidence": [
+            "opening_relocated_review",
+            "opening_relocated",
+            "opening_resized",
+            "opening_size_reduction_ge_0_25_0_688",
+            "opening_resized_major",
+            "opening_band_mismatch",
+            "opening_visibility_reduction_0_688",
+            "opening_resized_minor_0_688",
+            "opening_signature_mismatch"
+          ]
+        },
+        "structuredIssues": [
+          {
+            "type": "opening_change",
+            "object": "window",
+            "action": "relocated",
+            "severity": "critical",
+            "source": "opening_validator",
+            "confidence": 0.98,
+            "evidence": [
+              "opening_relocated_review",
+              "opening_relocated",
+              "opening_resized",
+              "opening_size_reduction_ge_0_25_0_688",
+              "opening_resized_major",
+              "opening_band_mismatch",
+              "opening_visibility_reduction_0_688",
+              "opening_resized_minor_0_688",
+              "opening_signature_mismatch"
+            ]
+          }
+        ]
+      },
+      "fixture": {
+        "status": "pass",
+        "reason": "No changes to fixed architectural features or fixtures.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "advisorySignals": [],
+        "structuredIssues": [],
+        "fixtureRepair": {
+          "supported": false,
+          "fixtureClass": "UNKNOWN",
+          "fixtureStateChange": "UNKNOWN",
+          "action": "unknown",
+          "reasonTokens": [
+            "no_changes_to_fixed_architectural_features_or_fixtures"
+          ]
+        }
+      },
+      "floor": {
+        "status": "pass",
+        "reason": "The structural floor is carpet in both the baseline and staged images. The staged image includes a rug, which is a movable object and not a structural change.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "none",
+        "issueTier": "advisory",
+        "advisorySignals": [],
+        "structuredIssues": []
+      },
+      "envelope": {
+        "status": "pass",
+        "reason": "The architectural envelope, including wall layout, window positions, ceiling geometry, and room proportions, is identical in both the baseline and staged images. No structural changes are observed.",
+        "confidence": 1,
+        "hardFail": false,
+        "issueType": "envelope_vertical_edge_loss",
+        "issueTier": "critical",
+        "advisorySignals": [
+          "envelope_vertical_edge_loss",
+          "envelope_corner_flattened"
+        ],
+        "structuredIssues": [],
+        "verticalEdgeDelta": {
+          "verticalEdgeLossDetected": true,
+          "cornerPersistenceFailure": true,
+          "junctions": [
+            {
+              "column": 38,
+              "beforeCount": 122,
+              "afterCount": 52,
+              "retention": 0.4262295081967213,
+              "lost": false
+            },
+            {
+              "column": 42,
+              "beforeCount": 111,
+              "afterCount": 103,
+              "retention": 0.9279279279279279,
+              "lost": false
+            },
+            {
+              "column": 48,
+              "beforeCount": 95,
+              "afterCount": 72,
+              "retention": 0.7578947368421053,
+              "lost": false
+            },
+            {
+              "column": 166,
+              "beforeCount": 80,
+              "afterCount": 44,
+              "retention": 0.55,
+              "lost": false
+            },
+            {
+              "column": 170,
+              "beforeCount": 95,
+              "afterCount": 46,
+              "retention": 0.4842105263157895,
+              "lost": false
+            },
+            {
+              "column": 172,
+              "beforeCount": 97,
+              "afterCount": 44,
+              "retention": 0.4536082474226804,
+              "lost": false
+            },
+            {
+              "column": 265,
+              "beforeCount": 86,
+              "afterCount": 25,
+              "retention": 0.29069767441860467,
+              "lost": true
+            },
+            {
+              "column": 267,
+              "beforeCount": 83,
+              "afterCount": 37,
+              "retention": 0.4457831325301205,
+              "lost": false
+            },
+            {
+              "column": 274,
+              "beforeCount": 64,
+              "afterCount": 27,
+              "retention": 0.421875,
+              "lost": false
+            },
+            {
+              "column": 276,
+              "beforeCount": 135,
+              "afterCount": 125,
+              "retention": 0.9259259259259259,
+              "lost": false
+            },
+            {
+              "column": 298,
+              "beforeCount": 94,
+              "afterCount": 14,
+              "retention": 0.14893617021276595,
+              "lost": true
+            },
+            {
+              "column": 303,
+              "beforeCount": 94,
+              "afterCount": 85,
+              "retention": 0.9042553191489362,
+              "lost": false
+            },
+            {
+              "column": 306,
+              "beforeCount": 86,
+              "afterCount": 19,
+              "retention": 0.22093023255813954,
+              "lost": true
+            },
+            {
+              "column": 309,
+              "beforeCount": 88,
+              "afterCount": 99,
+              "retention": 1.125,
+              "lost": false
+            },
+            {
+              "column": 311,
+              "beforeCount": 62,
+              "afterCount": 106,
+              "retention": 1.7096774193548387,
+              "lost": false
+            },
+            {
+              "column": 346,
+              "beforeCount": 102,
+              "afterCount": 112,
+              "retention": 1.0980392156862746,
+              "lost": false
+            },
+            {
+              "column": 351,
+              "beforeCount": 105,
+              "afterCount": 7,
+              "retention": 0.06666666666666667,
+              "lost": true
+            },
+            {
+              "column": 353,
+              "beforeCount": 104,
+              "afterCount": 10,
+              "retention": 0.09615384615384616,
+              "lost": true
+            },
+            {
+              "column": 408,
+              "beforeCount": 114,
+              "afterCount": 39,
+              "retention": 0.34210526315789475,
+              "lost": true
+            },
+            {
+              "column": 410,
+              "beforeCount": 112,
+              "afterCount": 36,
+              "retention": 0.32142857142857145,
+              "lost": true
+            },
+            {
+              "column": 414,
+              "beforeCount": 127,
+              "afterCount": 47,
+              "retention": 0.3700787401574803,
+              "lost": true
+            },
+            {
+              "column": 416,
+              "beforeCount": 120,
+              "afterCount": 45,
+              "retention": 0.375,
+              "lost": true
+            }
+          ],
+          "beforeVerticalEdgeCount": 13606,
+          "afterVerticalEdgeCount": 20304,
+          "worstRetention": 0.06666666666666667
+        },
+        "structuralSignals": [
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.487578125,
+              "y1": 0.05,
+              "x2": 0.54953125,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.55203125,
+              "y1": 0.05,
+              "x2": 0.629609375,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.655546875,
+              "y1": 0.05,
+              "x2": 0.72140625,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          },
+          {
+            "claim": "corner_flattened",
+            "region": {
+              "x1": 0.766875,
+              "y1": 0.05,
+              "x2": 0.844453125,
+              "y2": 0.95
+            },
+            "confidence": 1,
+            "source": "envelope"
+          }
+        ]
+      },
+      "advisorySignals": [
+        "opening_relocated_review",
+        "opening_visibility_reduction:0.688",
+        "opening_resized_minor:0.688",
+        "opening_signature_mismatch",
+        "opening_relocated",
+        "envelope_vertical_edge_loss",
+        "envelope_corner_flattened"
+      ]
+    },
+    "historicalUnified": {
+      "passed": false,
+      "hardFail": true,
+      "blockSource": "gemini",
+      "score": 0.792,
+      "reasons": [
+        "Gemini structure: A Tier 1 structural opening (window) present in the BEFORE image has been removed and replaced by a solid wall in the AFTER image., The identity of a wall surface has changed from containing an opening to being a continuous solid surface."
+      ],
+      "warnings": [],
+      "normalized": false,
+      "raw": {
+        "perceptualDiff": {
+          "name": "perceptualDiff",
+          "passed": true,
+          "score": 1,
+          "message": "Perceptual diff skipped (tier=core)",
+          "details": {
+            "skipped": true,
+            "tier": "core",
+            "score": 1,
+            "threshold": 0
+          }
+        },
+        "windows": {
+          "name": "windows",
+          "passed": false,
+          "score": 0,
+          "message": "window_count_change",
+          "details": {
+            "ok": false,
+            "reason": "window_count_change",
+            "windowCount": 0
+          }
+        },
+        "walls": {
+          "name": "walls",
+          "passed": true,
+          "score": 1,
+          "message": "Wall validation skipped (tier=core)",
+          "details": {
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "globalEdge": {
+          "name": "globalEdge",
+          "passed": true,
+          "score": 1,
+          "message": "Edge IoU: 1.000 (threshold: 0.6)",
+          "details": {
+            "edgeIoU": 1,
+            "minEdgeIoU": 0.6,
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "structuralMask": {
+          "name": "structuralMask",
+          "passed": true,
+          "score": 1,
+          "message": "Structural IoU: 1.000 (threshold: 0.25)",
+          "details": {
+            "structIoU": 1,
+            "structIoUSkipReason": "tier_core",
+            "minStructIoU": 0.25,
+            "reason": "tier_core_skip",
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "lineEdge": {
+          "name": "lineEdge",
+          "passed": true,
+          "score": 1,
+          "message": "Line/edge validation skipped (tier=core)",
+          "details": {
+            "edgeLoss": 0,
+            "edgeShift": 0,
+            "verticalDeviation": 0,
+            "horizontalDeviation": 0,
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "anchors": {
+          "name": "anchors",
+          "passed": true,
+          "score": 1,
+          "message": "anchor:island_changed",
+          "details": {
+            "islandChanged": true,
+            "hvacChanged": false,
+            "cabinetryChanged": false,
+            "lightingChanged": false,
+            "details": {
+              "islandCentroidShift": 0.16580823282577806,
+              "islandEdgeClusterDrift": 1.0593607305936072,
+              "islandRectMassDelta": 0,
+              "islandMidToneDelta": 0.037714729532163746,
+              "islandDetectedBefore": true,
+              "islandDetectedConfidenceBefore": 0.25,
+              "islandAreaDeltaRatio": 0,
+              "islandMaskedEdgeDrift": 1.0593607305936072,
+              "hvacRegionDrift": 0,
+              "cabinetLineDrift": 0,
+              "lightingPositionDrift": 0
+            }
+          }
+        },
+        "geminiSemantic": {
+          "name": "geminiSemantic",
+          "passed": false,
+          "score": 1,
+          "message": "Gemini flagged structure",
+          "details": {
+            "category": "structure",
+            "reasons": [
+              "A Tier 1 structural opening (window) present in the BEFORE image has been removed and replaced by a solid wall in the AFTER image.",
+              "The identity of a wall surface has changed from containing an opening to being a continuous solid surface."
+            ],
+            "confidence": 1,
+            "mode": "block",
+            "validator_results": {
+              "v1": "fail"
+            },
+            "consensusMode": false,
+            "derivedWarnings": 3,
+            "rawText": "```json\n{\n  \"finalDecision\": \"FAIL\",\n  \"hardFail\": true,\n  \"category\": \"structure\",\n  \"results\": [\n    {\n      \"question\": 1,\n      \"answer\": \"CONFIRMED\",\n      \"reasoning\": \"The architectural opening (window) on the right wall in the BEFORE image is completely absent in the AFTER image, replaced by a continuous solid wall surface.\"\n    },\n    {\n      \"question\": 2,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The grey carpet flooring material appears consistent between BEFORE and AFTER. A rug has been added on top, which is a flexible item.\"\n    },\n    {\n      \"question\": 3,\n      \"answer\": \"CONFIRMED\",\n      \"reasoning\": \"The wall structure on the right side of the room has changed significantly; an entire window opening has been removed and filled to create a continuous flat wall surface.\"\n    }\n  ],\n  \"structuralClaims\": [],\n  \"reasons\": [\n    \"A Tier 1 structural opening (window) present in the BEFORE image has been removed and replaced by a solid wall in the AFTER image.\",\n    \"The identity of a wall surface has changed from containing an opening to being a continuous solid surface.\"\n  ],\n  \"confidence\": 1.0,\n  \"violationType\": \"opening_change\",\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 2\n}\n```"
+          }
+        }
+      },
+      "profile": "SOFT",
+      "evidence": {
+        "jobId": "job_0a649ccd-e39d-48e8-aa5b-b081391fee82-historical-unified",
+        "stage": "2",
+        "roomType": "bedroom",
+        "ssim": 1,
+        "ssimThreshold": 0,
+        "ssimPassed": true,
+        "openings": {
+          "windowsBefore": 0,
+          "windowsAfter": 0,
+          "doorsBefore": 0,
+          "doorsAfter": 0
+        },
+        "drift": {
+          "wallPercent": 0,
+          "maskedEdgePercent": 0,
+          "angleDegrees": 0
+        },
+        "anchorChecks": {
+          "islandChanged": false,
+          "hvacChanged": false,
+          "cabinetryChanged": false,
+          "lightingChanged": false
+        },
+        "geometryProfile": "SOFT",
+        "localFlags": [
+          "anchor:island_changed",
+          "windows: window_count_change"
+        ],
+        "unifiedScore": 0.7916666666666665,
+        "unifiedPassed": false
+      },
+      "riskLevel": "MEDIUM",
+      "riskTriggers": [
+        "MEDIUM: heuristic validator flagged structural issue (no anchor evidence)"
+      ],
+      "modelUsed": "gemini-2.5-flash",
+      "validatorPath": [
+        "perceptualDiff",
+        "structural",
+        "geometry",
+        "gemini"
+      ],
+      "issueType": "opening_removed",
+      "issueTier": "critical"
+    },
+    "replayUnified": {
+      "passed": true,
+      "hardFail": false,
+      "blockSource": null,
+      "score": 0.792,
+      "reasons": [],
+      "warnings": [
+        "style_only",
+        "local_validators_advisory: windows"
+      ],
+      "normalized": false,
+      "raw": {
+        "perceptualDiff": {
+          "name": "perceptualDiff",
+          "passed": true,
+          "score": 1,
+          "message": "Perceptual diff skipped (tier=core)",
+          "details": {
+            "skipped": true,
+            "tier": "core",
+            "score": 1,
+            "threshold": 0
+          }
+        },
+        "windows": {
+          "name": "windows",
+          "passed": false,
+          "score": 0,
+          "message": "window_position_change",
+          "details": {
+            "ok": false,
+            "reason": "window_position_change",
+            "windowCount": 0
+          }
+        },
+        "walls": {
+          "name": "walls",
+          "passed": true,
+          "score": 1,
+          "message": "Wall validation skipped (tier=core)",
+          "details": {
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "globalEdge": {
+          "name": "globalEdge",
+          "passed": true,
+          "score": 1,
+          "message": "Edge IoU: 1.000 (threshold: 0.6)",
+          "details": {
+            "edgeIoU": 1,
+            "minEdgeIoU": 0.6,
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "structuralMask": {
+          "name": "structuralMask",
+          "passed": true,
+          "score": 1,
+          "message": "Structural IoU: 1.000 (threshold: 0.25)",
+          "details": {
+            "structIoU": 1,
+            "structIoUSkipReason": "tier_core",
+            "minStructIoU": 0.25,
+            "reason": "tier_core_skip",
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "lineEdge": {
+          "name": "lineEdge",
+          "passed": true,
+          "score": 1,
+          "message": "Line/edge validation skipped (tier=core)",
+          "details": {
+            "edgeLoss": 0,
+            "edgeShift": 0,
+            "verticalDeviation": 0,
+            "horizontalDeviation": 0,
+            "skipped": true,
+            "tier": "core"
+          }
+        },
+        "anchors": {
+          "name": "anchors",
+          "passed": true,
+          "score": 1,
+          "message": "anchor:island_changed",
+          "details": {
+            "islandChanged": true,
+            "hvacChanged": false,
+            "cabinetryChanged": false,
+            "lightingChanged": false,
+            "details": {
+              "islandCentroidShift": 0.2306675409794845,
+              "islandEdgeClusterDrift": 0.9224062772449868,
+              "islandRectMassDelta": 0.0078125,
+              "islandMidToneDelta": 0.03282620614035088,
+              "islandDetectedBefore": true,
+              "islandDetectedConfidenceBefore": 0.25,
+              "islandAreaDeltaRatio": 0.0078125,
+              "islandMaskedEdgeDrift": 0.9224062772449868,
+              "hvacRegionDrift": 0,
+              "cabinetLineDrift": 0,
+              "lightingPositionDrift": 0
+            }
+          }
+        },
+        "geminiSemantic": {
+          "name": "geminiSemantic",
+          "passed": true,
+          "score": 1,
+          "message": "Gemini warning: style_only",
+          "details": {
+            "category": "style_only",
+            "reasons": [],
+            "confidence": 1,
+            "mode": "block",
+            "validator_results": {
+              "v1": "pass"
+            },
+            "consensusMode": false,
+            "derivedWarnings": 2,
+            "rawText": "```json\n{\n  \"finalDecision\": \"PASS\",\n  \"hardFail\": false,\n  \"category\": \"style_only\",\n  \"results\": [\n    {\n      \"question\": 1,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The two windows appear identical in presence, size, and position. Window treatments (roller blinds) are preserved in type and are present in both images.\"\n    },\n    {\n      \"question\": 2,\n      \"answer\": \"NOT_PRESENT\",\n      \"reasoning\": \"The wall structure, floor, ceiling, and overall room geometry are preserved without change.\"\n    }\n  ],\n  \"reasons\": [],\n  \"confidence\": 1.0,\n  \"builtInDetected\": false,\n  \"structuralAnchorCount\": 2\n}\n```"
+          }
+        }
+      },
+      "profile": "SOFT",
+      "evidence": {
+        "jobId": "job_0a649ccd-e39d-48e8-aa5b-b081391fee82-replay-unified",
+        "stage": "2",
+        "roomType": "bedroom",
+        "ssim": 1,
+        "ssimThreshold": 0,
+        "ssimPassed": true,
+        "openings": {
+          "windowsBefore": 0,
+          "windowsAfter": 0,
+          "doorsBefore": 0,
+          "doorsAfter": 0
+        },
+        "drift": {
+          "wallPercent": 0,
+          "maskedEdgePercent": 0,
+          "angleDegrees": 0
+        },
+        "anchorChecks": {
+          "islandChanged": false,
+          "hvacChanged": false,
+          "cabinetryChanged": false,
+          "lightingChanged": false
+        },
+        "geometryProfile": "SOFT",
+        "localFlags": [
+          "anchor:island_changed",
+          "windows: window_position_change"
+        ],
+        "unifiedScore": 0.7916666666666665,
+        "unifiedPassed": false
+      },
+      "riskLevel": "MEDIUM",
+      "riskTriggers": [
+        "MEDIUM: heuristic validator flagged structural issue (no anchor evidence)"
+      ],
+      "modelUsed": "gemini-2.5-flash",
+      "validatorPath": [
+        "perceptualDiff",
+        "structural",
+        "geometry",
+        "gemini"
+      ],
+      "issueType": "none",
+      "issueTier": "advisory"
+    }
+  }
+}

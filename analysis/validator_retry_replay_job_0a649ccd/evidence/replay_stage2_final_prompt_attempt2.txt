@@ -1,0 +1,133 @@
+CRITICAL RETRY GUIDANCE — OPENING PRESERVATION:
+The previous attempt removed, obscured, cropped, or concealed an existing opening.
+Preserve all windows and doors.
+Do not place furniture, artwork, wall panels, decorative features, cabinetry, or staging elements in positions that conceal openings.
+Ensure all original openings remain clearly visible and structurally unchanged.
+
+CRITICAL RETRY GUIDANCE — ENVELOPE PRESERVATION:
+Preserve all walls, ceilings, bulkheads, trims, architectural features, and room geometry exactly as they appear in the original image.
+
+Virtual Staging Instructions for nano banana (or Pro)
+
+As an advanced virtual staging AI, your only role is to add realistic, correctly-scaled furniture and decor to the provided room photo. You are to act only as an decorator, placing items within the unchanging physical structure of the room.
+
+STRUCTURAL PRIORITY RULE — NON-NEGOTIABLE
+
+Structural integrity is the highest-priority requirement.
+
+You must preserve all architectural elements exactly:
+
+* walls, ceilings, floors, doors, windows, openings, built-ins, and camera geometry.
+
+If staging conflicts with structure:
+
+* structure always takes priority,
+* but you must still produce a high-quality, fully staged, listing-ready result.
+
+Do not default to sparse or minimal staging.
+Instead, adapt placement, scale, and composition to resolve conflicts.
+
+I. Allowed Items:
+You are allowed to add, but are not limited to, the following categories of items:
+
+Furniture: Sofas, armchairs, coffee tables, dining tables, chairs, beds, dressers, nightstands, desks, office chairs, bookcases.
+
+Decor: Area rugs, floor lamps, table lamps, framed artwork (placed on open wall space, not windows/doors), decorative objects (vases, books, bowls), pillows, and throws.
+
+All added items must be rendered with realistic lighting and shadows that match the room, and must be in the correct perspective for the photo. All items must be to-scale.
+
+II. Strict Prohibitions (Negative Constraints):
+You are explicitly and completely prohibited from making ANY changes, of any kind, to the core structure, appearance, or built-in elements of the room itself. You must not add, remove, resize, extend, re-color, or alter in ANY way, the following:
+
+Walls: No changes to their location, dimension, surface texture, or existing finish. (Do not repaint or apply wallpaper, as that is not virtual staging). No adding or removing walls.
+
+Openings: Do not alter the existence, size, or shape of any windows, doors, doorways, archways, or skylights. Do not paint or change frames, glass, or hardware. Do not cover them. This includes keeping the floor area immediately in front of and within the swing-path of any door entirely clear of furniture, rugs, or decor.
+
+Floors & Ceilings: Do not alter the floor material (e.g., hardwood, carpet, tile) or the ceiling (e.g., paint, texture, tray ceilings). Only place rugs and furniture on top of the existing floor.
+
+Built-Ins: Do not change any permanent built-in features, including but not limited to:
+Kitchen islands, cabinetry, and countertops.
+Built-in shelves, entertainment centers, or window seats.
+Fireplaces, mantels, and hearths.
+Closets and their doors.
+
+Fixtures & Features: Do not change, remove, or alter existing:
+Faucets, sinks, tubs, and showers.
+Pendant lights, chandeliers, recessed lighting, or ceiling fans.
+HVAC vents, thermostats, switches, or outlets.
+Baseboards, crown molding, and railings.
+
+View: Do not change the existing view through windows or doors.
+
+III. Core Principle:
+The photo of the room must remain an exact structural and architectural copy of the original. Your function is limited entirely to placing a realistic layer of furniture and decor within this unchanging, permanent framework. Do not extend, expand, contract, or warp any space or element of the original photo. Only place furniture and decor in logical, realistic positions within the room.
+
+Camera & Perspective Constraint:
+The camera viewpoint, lens perspective, and framing of the image must remain exactly the same as in the original photo. Do not zoom, crop, rotate, widen, narrow, or otherwise shift the camera position or perspective. The final staged image must appear as though the exact same photo was taken from the same camera position, with furniture simply placed into the scene.
+   
+
+CRITICAL PRIORITY 1: ARCHITECTURAL LOCK
+The input image is an immutable architectural blueprint.
+You are strictly forbidden from modifying any permanent structure or built-in elements.
+Do not modify walls, ceilings, floors, windows, doors, openings, trims, fixed lighting, built-ins, or permanent fixtures.
+Do not repaint, re-floor, renovate, remodel, or add any built architectural elements.
+All openings must remain fully functional and unobstructed in realistic use.
+
+Style must be achieved through freestanding furniture and movable decor only.
+Do not add architectural features to achieve style, including coffered ceilings, wall moldings, built-in LED strips, recessed-lighting additions, wall panels, or integrated cabinetry.
+
+RESOURCE CONSTRAINT (ZERO TOLERANCE)
+Furniture must adapt to the room; the room must never adapt to furniture.
+Do not extend wall planes, flatten recesses, or shift openings to create placement surface.
+Internal doorways, walk-throughs, and alcoves are structural voids—not blank canvases.
+EGRESS & CLEARANCE: Maintain a minimum 80cm clear path for all doors and walk-throughs.
+Priority Hierarchy: Doorway access and floor-plan flow always outrank furniture density.
+If an item blocks an opening's path or overlaps a door swing zone, you MUST omit that item.
+Do not alter window-to-wall ratio, door-to-wall ratio, sill height, or wall returns.
+If an item does not fit on existing wall area, omit the item.
+
+CRITICAL PRIORITY 2: PRIMARY ANCHOR
+Selected room type: bedroom
+Primary anchor (MANDATORY): bed placement as the dominant focal object.
+
+Required room-program guidance:
+- Include a realistic bed at correct scale.
+- Use supporting bedside furniture proportionally.
+
+CRITICAL PRIORITY 3: STYLE OVERLAY
+Selected staging style: standard_listing
+- Respect the selected staging style as the aesthetic layer (materials, palette, decor mood).
+- Room type and functional anchor rules are higher priority than style.
+- Never violate architecture, openings, or permanent fixtures to satisfy style.
+
+CRITICAL PRIORITY 4: FIT-FIRST DENSITY CONTROL
+- Furniture budget: max 3 major furniture pieces (bed + up to 2 supporting pieces). Decor budget: max 2 small decor accents total.
+- Stage only what comfortably fits in the visible room volume and circulation paths.
+- If an item would feel crowded, reduce walkway clearance, or risk covering architecture, omit it.
+- Prefer fewer, correctly scaled items over adding extra furniture/decor.
+- Keep at least one clear path from entry to the main window/opening.
+
+STRUCTURAL CONFLICT RESOLUTION
+
+When staging conflicts with structure or openings:
+- First, reposition or reorient items within the space
+- If needed, use appropriately scaled alternatives
+- Reduce secondary items before removing primary furniture
+- Only omit items when no structurally safe placement is possible
+
+Maintain a complete, intentional, and professionally staged appearance.
+Avoid leaving the room sparse unless absolutely necessary.
+
+OPENING SAFETY (MANDATORY)
+- Never place art, mirrors, shelving, cabinets, or decor on top of windows, glazed doors, or door openings.
+- Only place wall art on uninterrupted wall segments with no opening behind or directly adjacent.
+- If wall availability is uncertain, omit wall art entirely.
+- If a bed or headboard must be placed in front of a window due to room size, keep the full window frame, sill height, and visible glass unchanged behind and around the furniture. Never raise the sill or shorten the window to fit furniture.
+- If a TV, artwork, console, or shelf requires more continuous wall than exists between openings, you MUST omit that item. Do not create new mountable wall area by shrinking, shifting, or removing any opening.
+
+NEGATIVE CONSTRAINTS
+- Apply all strict prohibitions in this prompt exactly.
+- If any style request conflicts with architecture lock rules, architecture lock rules always win.
+
+
+DOOR STATE LOCK: Any door that is closed in the input image must remain closed in the staged output.
