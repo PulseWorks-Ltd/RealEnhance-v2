@@ -11955,6 +11955,7 @@ All openings must remain identical in position and size to the original image.`;
         pass: boolean;
         hardFail: boolean;
         confidence: number;
+        reason?: string;
         issueType: ValidationIssueType;
         issueTier: ValidationIssueTier;
         semanticIssueType?: ValidationIssueType;
@@ -12015,6 +12016,7 @@ All openings must remain identical in position and size to the original image.`;
           pass,
           hardFail: params.hardFail === true,
           confidence,
+          reason: params.reason,
           issueType,
           issueTier,
           semanticIssueType: preserveSemanticAuthority ? issueType : undefined,

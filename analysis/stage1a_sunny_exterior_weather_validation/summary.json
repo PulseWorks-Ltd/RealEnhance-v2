@@ -1,0 +1,26 @@
+[
+  {
+    "caseId": "A_rain_droplets",
+    "description": "Synthetic rain droplets on visible sliding-door glass",
+    "inputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/inputs/A_rain_droplets.jpg",
+    "outputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/outputs/A_rain_droplets-1A.webp"
+  },
+  {
+    "caseId": "B_water_streaking",
+    "description": "Synthetic water streaking on visible kitchen window glass",
+    "inputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/inputs/B_water_streaking.jpg",
+    "outputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/outputs/B_water_streaking-1A.webp"
+  },
+  {
+    "caseId": "C_privacy_glass",
+    "description": "Synthetic privacy/frosted glass treatment on visible sliding-door glass",
+    "inputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/inputs/C_privacy_glass.jpg",
+    "outputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/outputs/C_privacy_glass-1A.webp"
+  },
+  {
+    "caseId": "D_closed_blinds",
+    "description": "Synthetic closed blinds over visible sliding-door opening",
+    "inputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/inputs/D_closed_blinds.jpg",
+    "outputPath": "/workspaces/RealEnhance-v2/analysis/stage1a_sunny_exterior_weather_validation/outputs/D_closed_blinds-1A.webp"
+  }
+]

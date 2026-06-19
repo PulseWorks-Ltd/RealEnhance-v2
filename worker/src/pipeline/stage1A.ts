@@ -517,15 +517,33 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
  */
 const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `If exterior sky is clearly visible through existing windows or doors, enhance the visible outdoor sky and natural daylight conditions so the scene appears bright, clear, and photographed on a pleasant sunny day.
 
+If exterior views are visible through existing windows or doors, improve the exterior outlook naturally.
+
+Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, or similar temporary weather effects from the glass only to improve visibility.
+
+Only remove temporary weather-related visibility obstructions when clearly present.
+
+Only perform this cleanup on clearly transparent glass where the exterior view is already genuinely visible through the opening.
+
 Preserve the existing exterior view exactly as shown.
 
 Do not alter neighboring buildings, landscaping, trees, roads, fences, terrain, or surrounding structures.
 
 Do not invent exterior content that is not visible in the original image.
 
-Do not reveal areas hidden by blinds, curtains, shutters, frosted glass, privacy film, reflections, or obstructions.
+Do not reveal areas hidden by blinds, curtains, shutters, frosted glass, privacy film, textured glass, patterned glass, reflections, or obstructions.
 
 Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors.
+
+Do not alter, replace, redesign, reshape, tint, resize, relocate, or invent any window, glazing, frame, mullion, blind, curtain, or opening component.
+
+Do not remove privacy glass, frosted glass, textured glass, patterned glass, obscured glazing, decorative glazing, or any intentional architectural glass treatment.
+
+If privacy, frosted, textured, patterned, decorative, translucent, or obscured glazing is present, preserve the same opacity, diffusion, and concealment level exactly as shown.
+
+Do not reveal additional scenery, shapes, silhouettes, or detail behind intentionally obscured glazing.
+
+If exterior visibility is poor because the opening is intentionally covered, leave it unchanged.
 
 Only improve exterior sky appearance and visible natural daylight where the sky is already clearly visible.
 
@@ -1108,6 +1126,7 @@ export async function runStage1A(
       jobId: jobIdResolved,
       enabled: enhanceExteriorSky === true,
       roomType: roomTypeResolved ?? null,
+        weatherArtifactCleanupEnabled: true,
     });
 
     const geminiOutputPath = await enhanceWithGeminiStage1A(
