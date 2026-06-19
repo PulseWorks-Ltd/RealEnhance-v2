@@ -515,9 +515,22 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
  */
+const STAGE1A_EXTERIOR_AUTHENTICITY_GUARDRAIL_BLOCK = `EXTERIOR AUTHENTICITY GUARDRAIL:
+Exterior outlook enhancement is optional and always secondary to image authenticity.
+
+If exterior visibility is limited, obstructed, obscured, reflected, screened, frosted, curtained, blinded, tinted, privacy-treated, textured, patterned, translucent, decorative, or otherwise unclear, preserve the original appearance rather than inventing, reconstructing, enhancing, or fabricating unseen exterior content.
+
+Only enhance exterior outlook where genuine exterior scenery is already clearly visible through transparent glazing.
+
+If visibility is ambiguous, partially obscured, or uncertain, prioritise authenticity and leave the exterior appearance unchanged.`;
+
 const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `If exterior sky is clearly visible through existing windows or doors, enhance the visible outdoor sky and natural daylight conditions so the scene appears bright, clear, and photographed on a pleasant sunny day.
 
 If exterior views are visible through existing windows or doors, improve the exterior outlook naturally.
+
+Authenticity override: if exterior visibility is limited, obstructed, obscured, reflected, screened, frosted, curtained, blinded, tinted, privacy-treated, textured, patterned, translucent, decorative, or otherwise unclear, leave the exterior appearance unchanged.
+
+Only enhance exterior outlook where genuine exterior scenery is already clearly visible through transparent glazing.
 
 Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, or similar temporary weather effects from the glass only to improve visibility.
 
@@ -600,7 +613,7 @@ async function enhanceWithGeminiStage1A(
     && enhancementPrompt.trim().length > 0;
 
   if (promptInjected) {
-    enhancementPrompt = `${enhancementPrompt}\n\n${STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK}`;
+    enhancementPrompt = `${STAGE1A_EXTERIOR_AUTHENTICITY_GUARDRAIL_BLOCK}\n\n${enhancementPrompt}\n\n${STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK}`;
   }
 
   console.log("[STAGE1A_SUNNY_EXTERIOR_PROMPT]", {
