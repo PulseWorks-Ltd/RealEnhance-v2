@@ -121,6 +121,7 @@ export interface EnhanceJobPayload {
         stage2Only?: boolean;
         roomType: RoomType | string;
         sceneType: string | "auto";
+        enhanceExteriorSky?: boolean;
         replaceSky?: boolean;
         stagingStyle?: string;
         declutterMode?: DeclutterMode;

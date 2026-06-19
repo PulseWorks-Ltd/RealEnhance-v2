@@ -342,6 +342,7 @@ async function buildEnhanceArtifacts(params: {
     stage2Only?: boolean;
     roomType: string;
     sceneType: string;
+    enhanceExteriorSky?: boolean;
     replaceSky?: boolean;
     manualSceneOverride?: boolean;
     scenePrediction?: {
@@ -539,6 +540,7 @@ export async function enqueueEnhanceJob(params: {
     stage2Only?: boolean;
     roomType: string;
     sceneType: string;
+    enhanceExteriorSky?: boolean;
     replaceSky?: boolean;
     manualSceneOverride?: boolean;
     scenePrediction?: {
@@ -636,6 +638,7 @@ export async function createAwaitingPaymentEnhanceJob(params: {
     stage2Only?: boolean;
     roomType: string;
     sceneType: string;
+    enhanceExteriorSky?: boolean;
     replaceSky?: boolean;
     manualSceneOverride?: boolean;
     scenePrediction?: {
