@@ -7855,28 +7855,29 @@ export default function BatchProcessor({
                     </button>
 
                     <label
-                    className="w-full bg-white p-3 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
-                    htmlFor="enhance-exterior-outlook-global"
-                    >
-                    <div className="flex items-start gap-3">
-                    <input
-                    id="enhance-exterior-outlook-global"
-                    type="checkbox"
-                    checked={enhanceExteriorSky}
-                    onChange={(e) => setEnhanceExteriorSky(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 text-action-600 focus:ring-action-500"
-                    data-testid="checkbox-enhance-exterior-outlook"
-                    />
+                      htmlFor="enhance-exterior-outlook-global"
+                      className="block cursor-pointer py-2"
+                      >
+                      <div className="flex items-start gap-2">
+                       <input
+                       id="enhance-exterior-outlook-global"
+                       type="checkbox"
+                       checked={enhanceExteriorSky}
+                       onChange={(e) => setEnhanceExteriorSky(e.target.checked)}
+                       className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-action-600 focus:ring-action-500"
+                       data-testid="checkbox-enhance-exterior-outlook"
+                      />
 
-                      <div className="space-y-0.5">
-                      <p className="text-sm font-medium text-slate-700">
-                      Enhance Exterior Outlook
-                      </p>
-                      <p className="text-xs text-slate-500">
+                     <div className="leading-tight">
+                       <p className="text-xs font-medium text-slate-700">
+                       Enhance Exterior Outlook
+                       </p>
+
+                      <p className="text-[11px] text-slate-500 whitespace-nowrap">
                       Brighten exterior outlook visible from interior shots.
-                    </p>
-                    </div>
-                    </div>
+                      </p>
+                      </div>
+                      </div>
                     </label>
 
                     <div className="space-y-3 text-sm">
