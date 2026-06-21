@@ -7854,21 +7854,29 @@ export default function BatchProcessor({
                       </p>
                     </button>
 
-                    <label className="w-full rounded-lg border border-slate-200 bg-white p-3 text-sm text-slate-700 hover:border-slate-300 transition-all cursor-pointer" htmlFor="enhance-exterior-outlook-global">
-                      <div className="flex items-start gap-3">
-                        <input
-                          id="enhance-exterior-outlook-global"
-                          type="checkbox"
-                          checked={enhanceExteriorSky}
-                          onChange={(e) => setEnhanceExteriorSky(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-action-600 focus:ring-action-500"
-                          data-testid="checkbox-enhance-exterior-outlook"
-                        />
-                        <div className="space-y-1">
-                          <p className="font-semibold">Enhance Exterior Outlook</p>
-                          <p className="text-xs">Brightens visible sky/daylight through existing windows and doors during Stage 1A.</p>
-                        </div>
-                      </div>
+                    <label
+                    className="w-full bg-white p-3 text-sm text-slate-700 hover:bg-slate-50 cursor-pointer"
+                    htmlFor="enhance-exterior-outlook-global"
+                    >
+                    <div className="flex items-start gap-3">
+                    <input
+                    id="enhance-exterior-outlook-global"
+                    type="checkbox"
+                    checked={enhanceExteriorSky}
+                    onChange={(e) => setEnhanceExteriorSky(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 text-action-600 focus:ring-action-500"
+                    data-testid="checkbox-enhance-exterior-outlook"
+                    />
+
+                      <div className="space-y-0.5">
+                      <p className="text-sm font-medium text-slate-700">
+                      Enhance Exterior Outlook
+                      </p>
+                      <p className="text-xs text-slate-500">
+                      Brighten exterior outlook visible from interior shots.
+                    </p>
+                    </div>
+                    </div>
                     </label>
 
                     <div className="space-y-3 text-sm">
