@@ -525,6 +525,12 @@ Only remove temporary weather-related visibility obstructions when clearly prese
 
 Only perform this cleanup on clearly transparent glass where the exterior view is already genuinely visible through the opening.
 
+Clean window glass by removing visible rain droplets, water spotting, streaks, smudges, dirt, haze, residue, and other minor contamination from the glass surface.
+
+Preserve the authentic exterior view beyond the window and maintain the existing glass material and properties exactly as they exist, including frosted, opaque, stained, tinted, textured, patterned, privacy, or decorative glass.
+
+Clean only the existing glass surface and do not alter, replace, increase transparency, reduce opacity, or change the appearance of the glass itself.
+
 Preserve the existing exterior view exactly as shown.
 
 Do not alter neighboring buildings, landscaping, trees, roads, fences, terrain, or surrounding structures.
