@@ -16,6 +16,7 @@ import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from ".
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
+import { auditLog } from "../utils/audit.js";
 import * as crypto from "node:crypto";
 
 function timingSafeEqual(a: string, b: string): boolean {
@@ -897,6 +898,7 @@ export function uploadRouter() {
       const rec = createImageRecord({
         userId: sessUser.id,
         agencyId,
+        jobId,
         originalPath: recordOriginalPath,
         roomType: opts.roomType,
         sceneType: opts.sceneType,
@@ -923,6 +925,20 @@ export function uploadRouter() {
           }
         }
       }
+
+      auditLog({
+        jobId,
+        imageId,
+        stage: "upload",
+        event: "IMAGE_UPLOADED",
+        metadata: {
+          sceneType: String(opts.sceneType || "unknown"),
+          roomType: String(opts.roomType || "unknown"),
+          virtualStage: Boolean(finalVirtualStage),
+          declutter: Boolean(opts.declutter),
+          originalImageUrl: remoteOriginalUrl || null,
+        },
+      });
 
       // Debug summary for this item
       try {

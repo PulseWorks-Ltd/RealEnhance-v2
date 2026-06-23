@@ -18,12 +18,17 @@ function isValidatorLogsFocusEnabled(): boolean {
   return process.env.VALIDATOR_LOGS_FOCUS === "1";
 }
 
+export function isProductionLogMode(): boolean {
+  const raw = String(process.env.PRODUCTION_LOG_MODE || "").toLowerCase();
+  return raw === "1" || raw === "true";
+}
+
 export function isValidationFocusMode(): boolean {
   return process.env.VALIDATOR_FOCUS_MODE === "on";
 }
 
 export function logIfNotFocusMode(...args: any[]) {
-  if (!isValidationFocusMode() && !isValidatorLogsFocusEnabled()) {
+  if (!isValidationFocusMode() && !isValidatorLogsFocusEnabled() && !isProductionLogMode()) {
     console.log(...args);
   }
 }
@@ -53,7 +58,7 @@ export function vLog(...args: any[]) {
  * @param args Log arguments
  */
 export function nLog(...args: any[]) {
-  if (!VALIDATOR_FOCUS && !isValidatorLogsFocusEnabled()) {
+  if (!VALIDATOR_FOCUS && !isValidatorLogsFocusEnabled() && !isProductionLogMode()) {
     console.log(...args);
   }
 }

@@ -19,7 +19,7 @@ import { CompareSlider } from '@/components/CompareSlider';
 import { PageHeader } from '@/components/ui/page-header';
 import { EmptyState } from '@/components/ui/empty-state';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { ImageOff, Loader2, Info, Download, Pencil, Folder, X } from 'lucide-react';
+import { ImageOff, Loader2, Info, Download, Pencil, Folder, X, Copy } from 'lucide-react';
 import { Modal } from '@/components/Modal';
 import { RegionEditor } from '@/components/region-editor';
 import type { SourceStageLabel } from '@/lib/edit-source';
@@ -205,6 +205,7 @@ export default function EnhancedHistoryPage() {
         body: JSON.stringify({
           filename: fallbackFilename,
           url: image.publicUrl,
+          jobId: image.jobId,
         }),
       }, 120_000);
 
@@ -235,6 +236,33 @@ export default function EnhancedHistoryPage() {
       });
     }
   };
+
+  const handleCopyJobId = useCallback(async (image: EnhancedImageListItem) => {
+    const jobId = String(image.jobId || '').trim();
+    if (!jobId) {
+      toast({
+        title: 'Job ID unavailable',
+        description: 'This image does not have a persisted job ID.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(jobId);
+      toast({
+        title: 'Copied',
+        description: 'Job ID copied',
+      });
+    } catch (error) {
+      console.error('[enhanced-history] Failed to copy job ID:', error);
+      toast({
+        title: 'Copy failed',
+        description: 'Unable to copy Job ID right now.',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
 
   const handleOpenEditor = useCallback((image: EnhancedImageListItem) => {
     const resolvedStage = resolveHistoryEditSourceStage(image);
@@ -413,6 +441,24 @@ export default function EnhancedHistoryPage() {
       <div className="absolute top-2 right-12">
         <StatusBadge status={statusBadge.status} label={statusBadge.label} />
       </div>
+
+      {image.jobId && (
+        <div className="absolute top-11 right-2 z-20 pointer-events-auto flex items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1 text-[11px] text-white">
+          <span className="font-medium">Job ID</span>
+          <span className="max-w-[120px] truncate">{image.jobId}</span>
+          <button
+            type="button"
+            aria-label="Copy Job ID"
+            className="rounded p-1 hover:bg-white/20"
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleCopyJobId(image);
+            }}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {editIndex && (
         <div className="absolute top-2 left-2 z-10 pointer-events-none">
