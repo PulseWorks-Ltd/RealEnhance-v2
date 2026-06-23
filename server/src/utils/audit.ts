@@ -7,6 +7,64 @@
 
 import { randomBytes } from 'crypto';
 
+type AuditPrimitive = string | number | boolean | null;
+type AuditMetadata = Record<string, AuditPrimitive | AuditPrimitive[] | Record<string, AuditPrimitive>>;
+
+export interface AuditLogEvent {
+  jobId?: string;
+  imageId?: string;
+  stage?: string;
+  event: string;
+  metadata?: AuditMetadata;
+}
+
+export function isProductionLogMode(): boolean {
+  return String(process.env.PRODUCTION_LOG_MODE || '').toLowerCase() === '1'
+    || String(process.env.PRODUCTION_LOG_MODE || '').toLowerCase() === 'true';
+}
+
+function sanitizeMetadataValue(value: unknown): AuditPrimitive | AuditPrimitive[] | Record<string, AuditPrimitive> | undefined {
+  if (value === null) return null;
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((entry) => entry === null || ['string', 'number', 'boolean'].includes(typeof entry)) as AuditPrimitive[];
+  }
+  if (typeof value === 'object') {
+    const out: Record<string, AuditPrimitive> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v === null || ['string', 'number', 'boolean'].includes(typeof v)) {
+        out[k] = v as AuditPrimitive;
+      }
+    }
+    return out;
+  }
+  return undefined;
+}
+
+export function auditLog(event: AuditLogEvent): void {
+  const sanitizedMetadata: AuditMetadata = {};
+  for (const [k, v] of Object.entries(event.metadata || {})) {
+    const cleaned = sanitizeMetadataValue(v);
+    if (cleaned !== undefined) {
+      sanitizedMetadata[k] = cleaned as any;
+    }
+  }
+
+  console.log(JSON.stringify({
+    type: 'AUDIT_EVENT',
+    timestamp: new Date().toISOString(),
+    jobId: event.jobId,
+    imageId: event.imageId,
+    stage: event.stage,
+    event: event.event,
+    metadata: sanitizedMetadata,
+  }));
+}
+
 /**
  * Generate a short, human-friendly audit reference
  * Format: RE-XXXXXX (6 alphanumeric characters, uppercase)

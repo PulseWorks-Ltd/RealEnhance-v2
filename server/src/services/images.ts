@@ -22,6 +22,7 @@ function saveAllImages(state: ImagesState): void {
 export function createImageRecord(params: {
   userId: UserId;
   agencyId?: string;
+  jobId?: string;
   originalPath: string;
   roomType?: string;
   sceneType?: string;
@@ -50,6 +51,7 @@ export function createImageRecord(params: {
     originalPath: params.originalPath,
     versions: { original: params.originalPath },
     meta: {
+      jobId: params.jobId,
       roomType: params.roomType,
       sceneType: params.sceneType,
     },

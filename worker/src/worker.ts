@@ -214,7 +214,7 @@ import type { StructuralSignal } from "./validators/structuralSignal";
 import { deduplicateSignals } from "./validators/structuralSignal";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
-import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
+import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode, isProductionLogMode } from "./logger";
 import {
   VALIDATOR_FOCUS,
   STRUCTURAL_SIGNALS_MODE,
@@ -228,7 +228,7 @@ import { cleanupTempFiles } from "./utils/sharp-utils";
 import { recordEnhanceBundleUsage, recordEditUsage, recordRegionEditUsage } from "./utils/usageTracking";
 import { finalizeReservationFromWorker, startStaleCommittedReservationSweepLoop } from "./utils/reservations.js";
 import { recordEnhancedImage as recordEnhancedImageHistory } from "./db/enhancedImages.js";
-import { generateAuditRef, generateTraceId } from "./utils/audit.js";
+import { generateAuditRef, generateTraceId, auditLog } from "./utils/audit.js";
 import {
   startMemoryTracking,
   endMemoryTracking,
@@ -532,6 +532,21 @@ function logJobErrorAndThrow(job: any, reason: string, extra: Record<string, any
 }
 
 function shouldLog(eventType?: string): boolean {
+  if (isProductionLogMode()) {
+    const productionEvents = new Set([
+      "SYSTEM_START",
+      "SYSTEM_ERROR",
+      "UNHANDLED_EXCEPTION",
+      "AWS_S3_FAILURE",
+      "MODEL_FAILURE",
+      "FATAL_RETRY_EXHAUSTION",
+      "VALIDATION_RESULT",
+      "STAGE_RETRY",
+      "JOB_ATTEMPT_SUMMARY",
+    ]);
+    return eventType ? productionEvents.has(eventType) : false;
+  }
+
   if (!VALIDATOR_LOGS_FOCUS) return true;
 
   const allowedEvents = new Set([
@@ -551,7 +566,63 @@ function shouldLog(eventType?: string): boolean {
   return eventType ? allowedEvents.has(eventType) : false;
 }
 
+function emitAuditFromStructuredEvent(eventType: string, payload: Record<string, any> = {}) {
+  const jobId = payload.jobId ? String(payload.jobId) : undefined;
+  const imageId = payload.imageId ? String(payload.imageId) : undefined;
+  const stage = payload.stage ? String(payload.stage) : undefined;
+
+  if (eventType === "VALIDATION_RESULT") {
+    const summary: string[] = [];
+    if (payload.localPass !== true) {
+      summary.push(`local:${String(payload.violationType || "failed")}`);
+    }
+    if (payload.geminiPass === false) {
+      summary.push("gemini:failed");
+    }
+    if (payload.confirmPass === false) {
+      summary.push("confirm:failed");
+    }
+    if (payload.finalPass !== true && summary.length === 0) {
+      summary.push("final:failed");
+    }
+    auditLog({
+      jobId,
+      imageId,
+      stage,
+      event: "VALIDATOR_RESULT",
+      metadata: {
+        validator: "composite",
+        status: payload.finalPass === true ? "PASS" : "FAIL",
+        summary,
+        attempt: Number(payload.attempt || 0),
+        localPass: payload.localPass === true,
+        geminiPass: payload.geminiPass === true,
+        finalPass: payload.finalPass === true,
+        retriesRemaining: Number(payload.retriesRemaining || 0),
+        violationType: payload.violationType ? String(payload.violationType) : null,
+      },
+    });
+  }
+
+  if (eventType === "STAGE_RETRY") {
+    auditLog({
+      jobId,
+      imageId,
+      stage,
+      event: "RETRY_ATTEMPT",
+      metadata: {
+        attempt: Number(payload.retry || payload.attempt || 0),
+        reason: payload.reason ? String(payload.reason) : "retry",
+        retriesRemaining: Number(payload.retriesRemaining || 0),
+      },
+    });
+  }
+}
+
 function logEvent(eventType: string, payload: Record<string, any> = {}) {
+  try {
+    emitAuditFromStructuredEvent(eventType, payload);
+  } catch {}
   if (!shouldLog(eventType)) return;
   console.log(JSON.stringify({ event: eventType, ...payload }));
 }
@@ -4359,14 +4430,16 @@ function emitValidatorBlockEnd(
   extra: Record<string, unknown> = {}
 ): void {
   try {
-    console.log(JSON.stringify({
-      event: "VALIDATOR_BLOCK_END",
-      jobId,
-      validator,
-      phase: "validator_block",
-      durationMs: Math.max(0, Math.round(durationMs)),
-      ...extra,
-    }));
+    if (!isProductionLogMode()) {
+      console.log(JSON.stringify({
+        event: "VALIDATOR_BLOCK_END",
+        jobId,
+        validator,
+        phase: "validator_block",
+        durationMs: Math.max(0, Math.round(durationMs)),
+        ...extra,
+      }));
+    }
   } catch (err: any) {
     nLog("[VALIDATOR_BLOCK_END_LOG_ERROR]", {
       jobId,
@@ -6407,6 +6480,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       fromAttemptId: currentAttemptId,
       toAttemptId: nextAttemptId,
     });
+    auditLog({
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage: "2",
+      event: "RETRY_ATTEMPT",
+      metadata: {
+        reason,
+        fromAttemptId: currentAttemptId,
+        toAttemptId: nextAttemptId,
+      },
+    });
     nLog("[RETRY_STATUS_WRITE]", {
       jobId: payload.jobId,
       stage: "2",
@@ -7890,7 +7974,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
   nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}, sharpSemantic=${sharpFinalValidatorMode || "disabled"}, geminiSemantic=${geminiSemanticValidatorMode || "disabled"}`);
-  console.log("LOCAL_VALIDATOR_TIER:", LOCAL_VALIDATOR_TIER);
+  nLog("LOCAL_VALIDATOR_TIER:", LOCAL_VALIDATOR_TIER);
   nLog(`[worker] Local validator tier: ${LOCAL_VALIDATOR_TIER}`);
 
   // VALIDATOR FOCUS MODE: Print session header
@@ -11336,14 +11420,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     Number(process.env.STAGE2_RETRY_GRACE_MS || 180000)
   );
   const logPostCompliancePhaseEnd = (phase: string, durationMs: number, extra: Record<string, unknown> = {}) => {
-    console.log(JSON.stringify({
-      event: "POST_COMPLIANCE_PHASE_END",
-      jobId: payload.jobId,
-      validator: "post_compliance",
-      phase,
-      durationMs: Math.max(0, Math.round(durationMs)),
-      ...extra,
-    }));
+    if (!isProductionLogMode()) {
+      console.log(JSON.stringify({
+        event: "POST_COMPLIANCE_PHASE_END",
+        jobId: payload.jobId,
+        validator: "post_compliance",
+        phase,
+        durationMs: Math.max(0, Math.round(durationMs)),
+        ...extra,
+      }));
+    }
   };
   const tVal = Date.now();
   await safeWriteJobStatus(
@@ -14765,6 +14851,66 @@ All openings must remain identical in position and size to the original image.`;
   }
   
   nLog(`[FINAL_STAGE_DECISION] finalStageLabel=${finalStageLabel} hasStage2=${hasStage2} stage2Blocked=${stage2Blocked} pub2Url=${!!pub2Url} virtualStage=${payload.options.virtualStage} declutter=${payload.options.declutter}`);
+
+  if (pub1AUrl) {
+    auditLog({
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage: "1A",
+      event: "STAGE_1A_COMPLETE",
+      metadata: {
+        outputUrl: pub1AUrl,
+        durationMs: Math.max(0, Number(timings.stage1AMs || 0)),
+      },
+    });
+  }
+
+  if (payload.options.declutter && pub1BUrl) {
+    auditLog({
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage: "1B",
+      event: "STAGE_1B_COMPLETE",
+      metadata: {
+        outputUrl: pub1BUrl,
+        durationMs: Math.max(0, Number(timings.stage1BMs || 0)),
+      },
+    });
+  }
+
+  if (payload.options.virtualStage && pub2Url && !stage2Blocked) {
+    auditLog({
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage: "2",
+      event: "STAGE_2_COMPLETE",
+      metadata: {
+        outputUrl: pub2Url,
+        durationMs: Math.max(0, Number(timings.stage2Ms || 0)),
+      },
+    });
+  }
+
+  const finalDecisionBlocked = payload.options.virtualStage && stage2Blocked;
+  auditLog({
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    stage: finalStageLabel,
+    event: "FINAL_DECISION",
+    metadata: {
+      status: finalDecisionBlocked ? "BLOCKED" : "PUBLISHED",
+      reasons: finalDecisionBlocked
+        ? [String(stage2BlockedReason || "stage2_blocked")]
+        : [],
+      selectedStage: finalStageLabel,
+      outputUrl:
+        finalStageLabel === "2"
+          ? (pub2Url || null)
+          : finalStageLabel === "1B"
+            ? (pub1BUrl || null)
+            : (pub1AUrl || null),
+    },
+  });
 
   let finalPathVersion: any = null;
   try {

@@ -31,11 +31,13 @@ import { generateAuditRef, generateTraceId, extractStorageKey } from '../utils/a
 import { getS3SignedUrl, deleteS3Object } from '../utils/s3.js';
 import { getJob } from './jobs.js';
 
+const AUDIT_SIGNED_URL_TTL_SECONDS = 7 * 24 * 60 * 60;
+
 // Best-effort signer with short TTL; falls back to null if signing fails or key missing
 async function safeSign(key?: string | null): Promise<string | null> {
   if (!key) return null;
   try {
-    return await getS3SignedUrl(key, 900); // 15 minutes
+    return await getS3SignedUrl(key, AUDIT_SIGNED_URL_TTL_SECONDS);
   } catch (err) {
     console.warn('[enhanced-images] Failed to sign URL', key, err);
     return null;
