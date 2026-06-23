@@ -17,14 +17,12 @@ type DownloadZipManifestItem = {
   filename?: unknown;
   url?: unknown;
   dataUrl?: unknown;
-  jobId?: unknown;
 };
 
 type NormalizedDownloadItem = {
   filename: string;
   url?: string;
   dataUrl?: string;
-  jobId?: string;
 };
 
 type PreparedDownloadFile = {
@@ -107,98 +105,6 @@ function parseImageDataUrl(dataUrl?: string | null): { buffer: Buffer; contentTy
   }
 }
 
-function escapeXml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/'/g, '&apos;');
-}
-
-function crc32(buf: Buffer): number {
-  let crc = 0xffffffff;
-  for (let i = 0; i < buf.length; i++) {
-    crc ^= buf[i];
-    for (let j = 0; j < 8; j++) {
-      const mask = -(crc & 1);
-      crc = (crc >>> 1) ^ (0xedb88320 & mask);
-    }
-  }
-  return (crc ^ 0xffffffff) >>> 0;
-}
-
-function addPngTextChunk(buffer: Buffer, keyword: string, value: string): Buffer {
-  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-  if (buffer.length < 8 || !buffer.subarray(0, 8).equals(signature)) {
-    return buffer;
-  }
-
-  const textData = Buffer.from(`${keyword}\0${value}`, 'utf8');
-  const type = Buffer.from('tEXt', 'ascii');
-  const len = Buffer.alloc(4);
-  len.writeUInt32BE(textData.length, 0);
-  const crcInput = Buffer.concat([type, textData]);
-  const crc = Buffer.alloc(4);
-  crc.writeUInt32BE(crc32(crcInput), 0);
-  const textChunk = Buffer.concat([len, type, textData, crc]);
-
-  let offset = 8;
-  while (offset + 12 <= buffer.length) {
-    const chunkLen = buffer.readUInt32BE(offset);
-    const chunkType = buffer.subarray(offset + 4, offset + 8).toString('ascii');
-    const chunkEnd = offset + 12 + chunkLen;
-    if (chunkEnd > buffer.length) {
-      return buffer;
-    }
-    if (chunkType === 'IEND') {
-      return Buffer.concat([buffer.subarray(0, offset), textChunk, buffer.subarray(offset)]);
-    }
-    offset = chunkEnd;
-  }
-
-  return buffer;
-}
-
-function addJpegXmpPacket(buffer: Buffer, jobId: string): Buffer {
-  if (buffer.length < 2 || buffer[0] !== 0xff || buffer[1] !== 0xd8) {
-    return buffer;
-  }
-
-  const xmpHeader = Buffer.from('http://ns.adobe.com/xap/1.0/\0', 'utf8');
-  const xmpBody = Buffer.from(
-    `<?xpacket begin="\uFEFF" id="W5M0MpCehiHzreSzNTczkc9d"?>\n<x:xmpmeta xmlns:x="adobe:ns:meta/">\n<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">\n<rdf:Description xmlns:re="https://realenhance.ai/ns/1.0/" re:RealEnhanceJobId="${escapeXml(jobId)}"/>\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end="w"?>`,
-    'utf8'
-  );
-
-  const payload = Buffer.concat([xmpHeader, xmpBody]);
-  const segmentLength = payload.length + 2;
-  if (segmentLength > 0xffff) {
-    return buffer;
-  }
-
-  const marker = Buffer.alloc(4);
-  marker[0] = 0xff;
-  marker[1] = 0xe1;
-  marker.writeUInt16BE(segmentLength, 2);
-
-  return Buffer.concat([buffer.subarray(0, 2), marker, payload, buffer.subarray(2)]);
-}
-
-function injectJobIdMetadata(buffer: Buffer, contentType?: string | null, jobId?: string): Buffer {
-  const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
-  const cleanedJobId = String(jobId || '').trim();
-  if (!cleanedJobId) return buffer;
-
-  if (normalized === 'image/png') {
-    return addPngTextChunk(buffer, 'RealEnhanceJobId', cleanedJobId);
-  }
-  if (normalized === 'image/jpeg' || normalized === 'image/jpg') {
-    return addJpegXmpPacket(buffer, cleanedJobId);
-  }
-  return buffer;
-}
-
 async function maybeConvertForDownload(buffer: Buffer, contentType?: string | null): Promise<{ buffer: Buffer; contentType: string }> {
   const normalized = String(contentType || '').split(';')[0].trim().toLowerCase();
   if (normalized !== 'image/webp' && normalized !== 'image/avif') {
@@ -229,10 +135,9 @@ async function prepareDownloadFile(req: Request, item: NormalizedDownloadItem): 
     }
 
     const converted = await maybeConvertForDownload(parsed.buffer, parsed.contentType);
-    const metadataBuffer = injectJobIdMetadata(converted.buffer, converted.contentType, item.jobId);
     return {
       filename: ensureAttachmentFilename(item.filename, converted.contentType),
-      buffer: metadataBuffer,
+      buffer: converted.buffer,
       contentType: converted.contentType,
     };
   }
@@ -262,10 +167,9 @@ async function prepareDownloadFile(req: Request, item: NormalizedDownloadItem): 
     }
 
     const converted = await maybeConvertForDownload(Buffer.from(arrayBuffer), contentType);
-    const metadataBuffer = injectJobIdMetadata(converted.buffer, converted.contentType, item.jobId);
     return {
       filename: ensureAttachmentFilename(item.filename, converted.contentType),
-      buffer: metadataBuffer,
+      buffer: converted.buffer,
       contentType: converted.contentType,
     };
   } catch (error) {
@@ -283,13 +187,12 @@ function normalizeManifestItems(req: Request, input: unknown): NormalizedDownloa
       const filename = String(item.filename || '').trim();
       const rawUrl = typeof item.url === 'string' ? item.url.trim() : '';
       const dataUrl = typeof item.dataUrl === 'string' ? item.dataUrl.trim() : '';
-      const jobId = typeof item.jobId === 'string' ? item.jobId.trim() : '';
 
       if (!filename) return null;
       if (!rawUrl && !dataUrl) return null;
 
       if (dataUrl.startsWith('data:image/')) {
-        return { filename, dataUrl, jobId: jobId || undefined };
+        return { filename, dataUrl };
       }
 
       if (!rawUrl) return null;
@@ -299,7 +202,7 @@ function normalizeManifestItems(req: Request, input: unknown): NormalizedDownloa
         if (!['http:', 'https:'].includes(resolvedUrl.protocol)) {
           return null;
         }
-        return { filename, url: resolvedUrl.toString(), jobId: jobId || undefined };
+        return { filename, url: resolvedUrl.toString() };
       } catch {
         return null;
       }
@@ -401,7 +304,6 @@ export function enhancedImagesRouter() {
       const prepared = await prepareDownloadFile(req, {
         filename: `enhanced-${image.auditRef || image.id}.jpg`,
         url: image.publicUrl,
-        jobId: image.jobId,
       });
 
       if (!prepared) {
