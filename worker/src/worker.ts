@@ -13520,6 +13520,101 @@ All openings must remain identical in position and size to the original image.`;
         });
       }
 
+      const envelopeConfirmedStructuralSignal = [
+        envelopeReason,
+        ...(Array.isArray(envelopeSignal?.advisorySignals) ? envelopeSignal.advisorySignals : []),
+      ]
+        .map((entry) => normalizeValidatorReason(String(entry || "")))
+        .some((entry) => entry.includes("envelope_confirmed_structural_change"));
+
+      const envelopeStructuralSpecialistAuthorityFail =
+        envelopeSignal?.hardFail === true
+        && specialistResults.envelope.issueTier === "critical"
+        && envelopeConfirmedStructuralSignal;
+
+      if (envelopeStructuralSpecialistAuthorityFail) {
+        const envelopeConfidence = Number.isFinite(Number(envelopeSignal?.confidence))
+          ? clamp01(Number(envelopeSignal?.confidence))
+          : specialistResults.envelope.confidence;
+        const decisionReason = "structural_specialist_authority:envelope_confirmed_structural_change";
+        const blockedIssueType = (specialistResults.envelope.issueType && specialistResults.envelope.issueType !== ISSUE_TYPES.NONE)
+          ? specialistResults.envelope.issueType
+          : ISSUE_TYPES.WALL_CHANGED;
+
+        if (isProductionLogMode()) {
+          console.log(JSON.stringify({
+            jobId: payload.jobId,
+            validator: "Envelope",
+            event: "STRUCTURAL_HARD_FAIL",
+            reason: "envelope_confirmed_structural_change",
+            confidence: Number(envelopeConfidence.toFixed(2)),
+          }));
+        }
+
+        nLog("[STRUCTURAL_SPECIALIST_AUTHORITY]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: "envelope",
+          issueType: blockedIssueType,
+          issueTier: specialistResults.envelope.issueTier,
+          confidence: envelopeConfidence,
+          reason: envelopeReason || "envelope_confirmed_structural_change",
+          action: "blocked_pre_unified",
+        });
+
+        unifiedValidation = {
+          passed: false,
+          hardFail: true,
+          blockSource: "structural_specialist_authority" as any,
+          reasons: [decisionReason],
+          warnings: [decisionReason],
+          issueType: blockedIssueType,
+          issueTier: "critical",
+          score: 0,
+        } as any;
+
+        setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logRefreshValidationTrace({
+            specialistHardFail: true,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: decisionReason,
+          });
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: normalizeValidatorReason(decisionReason),
+          });
+          continue;
+        }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `structural_specialist_authority_exhausted:${normalizeValidatorReason(decisionReason)}`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        logRefreshValidationTrace({
+          specialistHardFail: true,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: decisionReason,
+        });
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
+      }
+
       const shouldHardFailFromIssueType = (signal: SpecialistIssueSignal): boolean => {
         // SINGLE-AUTHORITY: Only specialist-acknowledged hardFail may trigger pre-Unified block.
         // Confidence alone is never sufficient — the specialist must have explicitly decided hardFail.

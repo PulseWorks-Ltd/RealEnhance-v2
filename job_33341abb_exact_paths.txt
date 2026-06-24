@@ -1,0 +1,4 @@
+BASELINE_PATH=/tmp/realenhance-job_33341abb-55e9-42eb-8567-90bd4d8d8baa-1782103024378-fg02wbyn77q-canonical-1A-env-relit.webp
+OUTPUT_PATH=/tmp/realenhance-job_33341abb-55e9-42eb-8567-90bd4d8d8baa-1782103024378-fg02wbyn77q-canonical-1A-env-relit-2.webp
+BASELINE_DOWNLOAD_URL=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_33341abb-55e9-42eb-8567-90bd4d8d8baa/realenhance-job_33341abb-55e9-42eb-8567-90bd4d8d8baa-1782103024378-fg02wbyn77q-canonical-1A-env-relit.webp
+OUTPUT_DOWNLOAD_URL=https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_33341abb-55e9-42eb-8567-90bd4d8d8baa/realenhance-job_33341abb-55e9-42eb-8567-90bd4d8d8baa-1782103024378-fg02wbyn77q-canonical-1A-env-relit-2.webp

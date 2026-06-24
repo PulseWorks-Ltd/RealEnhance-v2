@@ -1,0 +1,349 @@
+{
+  "status": "pass",
+  "reason": "The architectural envelope, including wall layout, ceiling geometry
+, and room footprint, is identical in both the baseline and staged images. No st
+ructural changes, wall modifications, or flattened recesses are observed.",
+  "confidence": 1,
+  "hardFail": false,
+  "issueType": "envelope_vertical_edge_loss",
+  "issueTier": "critical",
+  "advisorySignals": [
+    "envelope_vertical_edge_loss",
+    "envelope_corner_flattened"
+  ],
+  "structuredIssues": [],
+  "verticalEdgeDelta": {
+    "verticalEdgeLossDetected": true,
+    "cornerPersistenceFailure": true,
+    "junctions": [
+      {
+        "column": 171,
+        "beforeCount": 180,
+        "afterCount": 140,
+        "retention": 0.7777777777777778,
+        "lost": false
+      },
+      {
+        "column": 228,
+        "beforeCount": 146,
+        "afterCount": 138,
+        "retention": 0.9452054794520548,
+        "lost": false
+      },
+      {
+        "column": 231,
+        "beforeCount": 154,
+        "afterCount": 153,
+        "retention": 0.9935064935064936,
+        "lost": false
+      },
+      {
+        "column": 234,
+        "beforeCount": 150,
+        "afterCount": 167,
+        "retention": 1.1133333333333333,
+        "lost": false
+      },
+      {
+        "column": 237,
+        "beforeCount": 157,
+        "afterCount": 156,
+        "retention": 0.9936305732484076,
+        "lost": false
+      },
+      {
+        "column": 240,
+        "beforeCount": 166,
+        "afterCount": 180,
+        "retention": 1.0843373493975903,
+        "lost": false
+      },
+      {
+        "column": 243,
+        "beforeCount": 152,
+        "afterCount": 185,
+        "retention": 1.2171052631578947,
+        "lost": false
+      },
+      {
+        "column": 249,
+        "beforeCount": 162,
+        "afterCount": 188,
+        "retention": 1.1604938271604939,
+        "lost": false
+      },
+      {
+        "column": 253,
+        "beforeCount": 154,
+        "afterCount": 175,
+        "retention": 1.1363636363636365,
+        "lost": false
+      },
+      {
+        "column": 254,
+        "beforeCount": 154,
+        "afterCount": 167,
+        "retention": 1.0844155844155845,
+        "lost": false
+      },
+      {
+        "column": 257,
+        "beforeCount": 166,
+        "afterCount": 170,
+        "retention": 1.0240963855421688,
+        "lost": false
+      },
+      {
+        "column": 259,
+        "beforeCount": 161,
+        "afterCount": 186,
+        "retention": 1.15527950310559,
+        "lost": false
+      },
+      {
+        "column": 262,
+        "beforeCount": 154,
+        "afterCount": 170,
+        "retention": 1.103896103896104,
+        "lost": false
+      },
+      {
+        "column": 266,
+        "beforeCount": 157,
+        "afterCount": 168,
+        "retention": 1.070063694267516,
+        "lost": false
+      },
+      {
+        "column": 270,
+        "beforeCount": 163,
+        "afterCount": 184,
+        "retention": 1.1288343558282208,
+        "lost": false
+      },
+      {
+        "column": 273,
+        "beforeCount": 163,
+        "afterCount": 177,
+        "retention": 1.0858895705521472,
+        "lost": false
+      },
+      {
+        "column": 280,
+        "beforeCount": 179,
+        "afterCount": 181,
+        "retention": 1.011173184357542,
+        "lost": false
+      },
+      {
+        "column": 282,
+        "beforeCount": 172,
+        "afterCount": 176,
+        "retention": 1.0232558139534884,
+        "lost": false
+      },
+      {
+        "column": 288,
+        "beforeCount": 205,
+        "afterCount": 171,
+        "retention": 0.8341463414634146,
+        "lost": false
+      },
+      {
+        "column": 291,
+        "beforeCount": 202,
+        "afterCount": 153,
+        "retention": 0.7574257425742574,
+        "lost": false
+      },
+      {
+        "column": 318,
+        "beforeCount": 188,
+        "afterCount": 156,
+        "retention": 0.8297872340425532,
+        "lost": false
+      },
+      {
+        "column": 322,
+        "beforeCount": 185,
+        "afterCount": 133,
+        "retention": 0.7189189189189189,
+        "lost": false
+      },
+      {
+        "column": 325,
+        "beforeCount": 195,
+        "afterCount": 147,
+        "retention": 0.7538461538461538,
+        "lost": false
+      },
+      {
+        "column": 327,
+        "beforeCount": 190,
+        "afterCount": 153,
+        "retention": 0.8052631578947368,
+        "lost": false
+      },
+      {
+        "column": 331,
+        "beforeCount": 176,
+        "afterCount": 160,
+        "retention": 0.9090909090909091,
+        "lost": false
+      },
+      {
+        "column": 336,
+        "beforeCount": 166,
+        "afterCount": 162,
+        "retention": 0.9759036144578314,
+        "lost": false
+      },
+      {
+        "column": 338,
+        "beforeCount": 158,
+        "afterCount": 161,
+        "retention": 1.018987341772152,
+        "lost": false
+      },
+      {
+        "column": 342,
+        "beforeCount": 174,
+        "afterCount": 181,
+        "retention": 1.0402298850574712,
+        "lost": false
+      },
+      {
+        "column": 345,
+        "beforeCount": 120,
+        "afterCount": 121,
+        "retention": 1.0083333333333333,
+        "lost": false
+      },
+      {
+        "column": 350,
+        "beforeCount": 143,
+        "afterCount": 151,
+        "retention": 1.055944055944056,
+        "lost": false
+      },
+      {
+        "column": 353,
+        "beforeCount": 145,
+        "afterCount": 145,
+        "retention": 1,
+        "lost": false
+      },
+      {
+        "column": 356,
+        "beforeCount": 125,
+        "afterCount": 136,
+        "retention": 1.088,
+        "lost": false
+      },
+      {
+        "column": 359,
+        "beforeCount": 139,
+        "afterCount": 140,
+        "retention": 1.0071942446043165,
+        "lost": false
+      },
+      {
+        "column": 362,
+        "beforeCount": 128,
+        "afterCount": 131,
+        "retention": 1.0234375,
+        "lost": false
+      },
+      {
+        "column": 364,
+        "beforeCount": 129,
+        "afterCount": 131,
+        "retention": 1.0155038759689923,
+        "lost": false
+      },
+      {
+        "column": 367,
+        "beforeCount": 111,
+        "afterCount": 111,
+        "retention": 1,
+        "lost": false
+      },
+      {
+        "column": 369,
+        "beforeCount": 120,
+        "afterCount": 129,
+        "retention": 1.075,
+        "lost": false
+      },
+      {
+        "column": 372,
+        "beforeCount": 95,
+        "afterCount": 99,
+        "retention": 1.0421052631578946,
+        "lost": false
+      },
+      {
+        "column": 385,
+        "beforeCount": 148,
+        "afterCount": 152,
+        "retention": 1.027027027027027,
+        "lost": false
+      },
+      {
+        "column": 447,
+        "beforeCount": 130,
+        "afterCount": 44,
+        "retention": 0.3384615384615385,
+        "lost": true
+      },
+      {
+        "column": 449,
+        "beforeCount": 123,
+        "afterCount": 46,
+        "retention": 0.37398373983739835,
+        "lost": true
+      },
+      {
+        "column": 506,
+        "beforeCount": 124,
+        "afterCount": 42,
+        "retention": 0.3387096774193548,
+        "lost": true
+      },
+      {
+        "column": 508,
+        "beforeCount": 124,
+        "afterCount": 120,
+        "retention": 0.967741935483871,
+        "lost": false
+      }
+    ],
+    "beforeVerticalEdgeCount": 26232,
+    "afterVerticalEdgeCount": 34772,
+    "worstRetention": 0.3384615384615385
+  },
+  "structuralSignals": [
+    {
+      "claim": "corner_flattened",
+      "region": {
+        "x1": 0.843046875,
+        "y1": 0.05,
+        "x2": 0.90890625,
+        "y2": 0.95
+      },
+      "confidence": 1,
+      "source": "envelope"
+    },
+    {
+      "claim": "corner_flattened",
+      "region": {
+        "x1": 0.95828125,
+        "y1": 0.05,
+        "x2": 1,
+        "y2": 0.95
+      },
+      "confidence": 1,
+      "source": "envelope"
+    }
+  ]
+}
