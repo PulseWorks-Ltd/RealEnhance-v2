@@ -68,10 +68,14 @@ export type OpeningGeometryMetric = {
 };
 
 export type OpeningSemanticGeometryEvidence = {
+  primaryReductionCause: "none" | "soft_furnishings" | "foreground_furniture" | "camera_perspective" | "architectural_surface" | "uncertain";
   visibleGlazedOpeningChanged: boolean;
   visibleGlazedAreaReduced: boolean;
   glazingReplacedByWall: boolean;
   softFurnishingOcclusion: boolean;
+  foregroundFurnitureOcclusion: boolean;
+  cameraPerspectiveReduction: boolean;
+  architecturalSurfaceReplacement: boolean;
   openingShapeDistortionDetected: boolean;
   confidence: number;
   analysis?: string;
@@ -1194,6 +1198,15 @@ type OpeningLightAnchorVerdict = {
 
 type OpeningGeometrySemanticVerdict = OpeningSemanticGeometryEvidence;
 
+const OPENING_REDUCTION_CAUSES = new Set<OpeningSemanticGeometryEvidence["primaryReductionCause"]>([
+  "none",
+  "soft_furnishings",
+  "foreground_furniture",
+  "camera_perspective",
+  "architectural_surface",
+  "uncertain",
+]);
+
 function parseOpeningLightAnchorVerdict(rawText: string): OpeningLightAnchorVerdict {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -1325,11 +1338,36 @@ function parseOpeningGeometrySemanticVerdict(rawText: string): OpeningGeometrySe
     ? Math.max(0, Math.min(1, confidenceRaw))
     : 0;
 
+  const primaryReductionCauseRaw = String(parsed?.primaryReductionCause || "").trim().toLowerCase();
+  const primaryReductionCause: OpeningSemanticGeometryEvidence["primaryReductionCause"] = OPENING_REDUCTION_CAUSES.has(primaryReductionCauseRaw as OpeningSemanticGeometryEvidence["primaryReductionCause"])
+    ? (primaryReductionCauseRaw as OpeningSemanticGeometryEvidence["primaryReductionCause"])
+    : "uncertain";
+
+  const softFurnishingOcclusion =
+    parsed?.softFurnishingOcclusion === true ||
+    primaryReductionCause === "soft_furnishings";
+  const foregroundFurnitureOcclusion =
+    parsed?.foregroundFurnitureOcclusion === true ||
+    primaryReductionCause === "foreground_furniture";
+  const cameraPerspectiveReduction =
+    parsed?.cameraPerspectiveReduction === true ||
+    primaryReductionCause === "camera_perspective";
+  const architecturalSurfaceReplacement =
+    parsed?.architecturalSurfaceReplacement === true ||
+    primaryReductionCause === "architectural_surface";
+  const glazingReplacedByWall =
+    parsed?.glazingReplacedByWall === true ||
+    architecturalSurfaceReplacement;
+
   return {
+    primaryReductionCause,
     visibleGlazedOpeningChanged: parsed?.visibleGlazedOpeningChanged === true,
     visibleGlazedAreaReduced: parsed?.visibleGlazedAreaReduced === true,
-    glazingReplacedByWall: parsed?.glazingReplacedByWall === true,
-    softFurnishingOcclusion: parsed?.softFurnishingOcclusion === true,
+    glazingReplacedByWall,
+    softFurnishingOcclusion,
+    foregroundFurnitureOcclusion,
+    cameraPerspectiveReduction,
+    architecturalSurfaceReplacement,
     openingShapeDistortionDetected: parsed?.openingShapeDistortionDetected === true,
     confidence,
     analysis: typeof parsed?.analysis === "string" ? parsed.analysis.trim().slice(0, 240) : undefined,
@@ -1373,16 +1411,32 @@ ${JSON.stringify(geometryPayload)}
 
 The width/height disproportion signal threshold is ${thresholdPct}%.
 
+If widthHeightDifferencePct > ${thresholdPct}% and visibleGlazedOpeningChanged=true,
+you MUST explicitly reassess whether camera perspective ALONE can explain the reduction.
+Do not select camera_perspective unless all camera perspective criteria are satisfied.
+
 Important distinction:
-- Soft-furnishing occlusion (curtains, blinds, drapes, sheers) is staging and NOT architectural failure.
-- Architectural modification includes glazing replaced by wall, pane/aperture disappearance into wall continuity, or material opening topology change.
+- You must select exactly ONE primaryReductionCause from this set:
+  none | soft_furnishings | foreground_furniture | camera_perspective | architectural_surface | uncertain
+- soft_furnishings: curtains/blinds/drapes/sheers occluding glazing.
+- foreground_furniture: furniture physically in front of opening and causing occlusion.
+- camera_perspective: use sparingly and ONLY when all are true:
+  1) outer opening geometry remains consistent,
+  2) visible reduction is explainable by viewpoint/foreshortening,
+  3) no continuous opaque architectural surface occupies former glazing.
+- architectural_surface: any previously visible glazing replaced by continuous opaque interior architectural surface.
+  This includes artwork/furniture staged against a newly opaque former-glazing surface.
 
 Return JSON only:
 {
   "visibleGlazedOpeningChanged": boolean,
   "visibleGlazedAreaReduced": boolean,
+  "primaryReductionCause": "none|soft_furnishings|foreground_furniture|camera_perspective|architectural_surface|uncertain",
   "glazingReplacedByWall": boolean,
   "softFurnishingOcclusion": boolean,
+  "foregroundFurnitureOcclusion": boolean,
+  "cameraPerspectiveReduction": boolean,
+  "architecturalSurfaceReplacement": boolean,
   "openingShapeDistortionDetected": boolean,
   "confidence": number,
   "analysis": "short reason"
@@ -1884,10 +1938,14 @@ export async function runOpeningValidator(
       Math.abs(entry.widthHeightDifferencePct) > OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD
     );
     let semanticEvidence: OpeningSemanticGeometryEvidence = {
+      primaryReductionCause: "none",
       visibleGlazedOpeningChanged: false,
       visibleGlazedAreaReduced: false,
       glazingReplacedByWall: false,
       softFurnishingOcclusion: false,
+      foregroundFurnitureOcclusion: false,
+      cameraPerspectiveReduction: false,
+      architecturalSurfaceReplacement: false,
       openingShapeDistortionDetected,
       confidence: 0,
     };
