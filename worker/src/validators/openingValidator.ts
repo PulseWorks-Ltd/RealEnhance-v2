@@ -1395,7 +1395,20 @@ async function runOpeningGeometrySemanticReview(
   beforeImageUrl: string,
   afterImageUrl: string,
   geometryMetrics: OpeningGeometryMetric[],
-  thresholdPct: number,
+  baselineOpenings: Array<{
+    id: string;
+    type: string;
+    wallIndex: number;
+    horizontalBand: string;
+    verticalBand: string;
+    wallCoverageBand: string;
+    orientation: string;
+    paneStructure: string;
+    doorLeafState: string;
+    confidence: number;
+  }>,
+  relocationFingerprints: OpeningRelocationFingerprint[],
+  confidenceBands: OpeningConfidenceBand[],
   jobId?: string,
   imageId?: string,
   attempt?: number,
@@ -1403,58 +1416,116 @@ async function runOpeningGeometrySemanticReview(
   const ai = getGeminiClient();
   const before = toBase64(beforeImageUrl).data;
   const after = toBase64(afterImageUrl).data;
+  const specialistContext = geometryMetrics
+    .filter((entry) => entry.openingType === "window")
+    .map((entry) => {
+      const relocation = relocationFingerprints.find((fingerprint) => fingerprint.openingId === entry.openingId);
+      const confidenceBand = confidenceBands.find((band) => band.openingId === entry.openingId);
+      return {
+        openingId: entry.openingId,
+        openingType: entry.openingType,
+        openingAppearsSubstantiallyDifferent: true,
+        widthDominantChange: entry.widthDominantChange,
+        heightDominantChange: entry.heightDominantChange,
+        wallShift: relocation?.wallShift ?? false,
+        horizontalBandShift: relocation?.horizontalBandShift ?? false,
+        verticalBandShift: relocation?.verticalBandShift ?? false,
+        reasonTokens: relocation?.reasonTokens ?? [],
+        confidenceBand: confidenceBand?.band ?? "MEDIUM",
+      };
+    });
+  const openingTypeLabel = (type: string): string => {
+    if (type === "window") return "window";
+    if (type === "door") return "door";
+    if (type === "closet_door") return "closet door";
+    return "walk-through opening";
+  };
+  const wallLabel = (wallIndex: number): string => {
+    if (wallIndex === 0) return "front wall";
+    if (wallIndex === 1) return "right wall";
+    if (wallIndex === 2) return "rear wall";
+    return "left wall";
+  };
+  const baselineDescriptionContext = baselineOpenings.map((opening) => [
+    `Opening ${opening.id}`,
+    `- ${openingTypeLabel(opening.type)} on the ${wallLabel(opening.wallIndex)} (${String(opening.horizontalBand).replace(/_/g, " ")}, ${String(opening.verticalBand).replace(/_/g, " ")})`,
+    `- wall occupancy: ${opening.wallCoverageBand}`,
+    `- configuration: ${String(opening.orientation).replace(/_/g, " ")} / ${String(opening.paneStructure).replace(/_/g, " ")}`,
+    `- door leaf state: ${opening.doorLeafState}`,
+    `- baseline confidence: ${Number.isFinite(Number(opening.confidence)) ? Number(opening.confidence).toFixed(2) : "0.00"}`,
+  ].join("\n")).join("\n\n");
 
-  const geometryPayload = geometryMetrics.map((entry) => ({
-    openingId: entry.openingId,
-    openingType: entry.openingType,
-    baseline: entry.baseline,
-    candidate: entry.candidate,
-    computed: {
-      widthChangePct: entry.widthChangePct,
-      heightChangePct: entry.heightChangePct,
-      areaChangePct: entry.areaChangePct,
-      aspectRatioChangePct: entry.aspectRatioChangePct,
-      widthHeightDifferencePct: entry.widthHeightDifferencePct,
-    },
-  }));
+  const prompt = `You are a structural opening resize specialist reviewer.
 
-  const prompt = `You are a structural opening semantic reviewer.
+The following description represents the authoritative architectural opening extracted from the
+baseline image.
+This description is considered correct.
+Do not reinterpret the baseline opening from the staged image.
+Your task is to determine whether the staged image still contains this same architectural opening.
 
-Follow this reasoning order exactly:
-1) Determine whether the original architectural opening remains intact.
-2) Determine whether the opening envelope was modified.
-3) If the opening changed, determine what replaced it.
-4) Only if the opening remains substantially intact may you consider occlusion.
-5) Evaluate soft furnishings separately.
-6) Evaluate camera perspective last, and only when viewpoint alone plausibly explains the reduction.
+Your job is only to determine the most likely explanation.
+Do not re-measure geometry.
+Do not infer a change from scratch.
+Do not use numeric values.
 
-You are given measured geometry from reconciled openings:
-OPENING_GEOMETRY_JSON:
-${JSON.stringify(geometryPayload)}
+Use the before and after images together with this authoritative baseline description and the
+qualitative deterministic context:
 
-The width/height disproportion signal threshold is ${thresholdPct}%.
+BASELINE_OPENING_DESCRIPTION:
+${baselineDescriptionContext}
 
-If widthHeightDifferencePct > ${thresholdPct}% and visibleGlazedOpeningChanged=true,
-you MUST explicitly reassess whether camera perspective ALONE can explain the reduction.
-Do not select camera_perspective unless all camera perspective criteria are satisfied.
+OPENING_CONTEXT_JSON:
+${JSON.stringify(specialistContext)}
+
+Reason in this order:
+1) Determine whether the original opening boundaries are still architecturally identifiable.
+   Check the left frame, right frame, top frame, bottom frame when visible, glazing continuity,
+   and mullions where originally present.
+2) Determine whether any continuous opaque architectural surface now occupies space previously
+   occupied by glazing.
+   Architectural surfaces include wall, plasterboard, panelling, cabinetry, shelving,
+   built-in storage, artwork mounted on newly-created wall, and any continuous interior
+   architectural finish.
+   Furniture is not an architectural surface.
+3) Only if the original opening remains substantially intact may foreground furniture occlusion
+   be selected.
+4) Evaluate camera perspective only if the opening remains architecturally unchanged and the
+   apparent reduction is fully explained by framing or viewpoint.
+5) Use extraction ambiguity only when the images do not support a confident scene-change
+   explanation.
+
+If the context shows wallShift, horizontalBandShift, verticalBandShift, or similar relocation
+tokens, prefer structural modification over extraction ambiguity unless the images are genuinely
+too unclear to identify the opening boundaries.
+
+If the opening boundaries are not all clearly identifiable, do not default to foreground
+furniture just because furniture is visible.
+If the image shows a foreground object but the opening boundaries do not continue clearly behind
+it, choose architectural_surface_replacement instead of foreground_furniture.
+
+If the region that previously contained glazing now supports wall-mounted or architecturally
+attached objects, treat that as strong evidence of architectural replacement, not simple
+foreground occlusion.
+Examples include framed artwork, mirrors, floating shelves, wall sconces, mounted televisions,
+decorative wall panelling, and any object that depends on a continuous opaque wall surface for
+support.
+Foreground furniture occlusion should only be selected when the opening remains intact, glazing
+continues behind the furniture, no new architectural surface occupies the former glazing area,
+and no wall-mounted objects indicate a newly created wall.
 
 Important distinction:
-- You must select exactly ONE primaryReductionCause from this set:
-  none | soft_furnishing | foreground_furniture | camera_perspective | architectural_surface_replacement | extraction_ambiguity
-- If the original opening did not change, set originalOpeningPreserved=true and openingEnvelopeModified=false.
-- If any part of the original opening has been removed, narrowed, shortened, filled, replaced, converted into wall/cabinetry/shelving/artwork/panelling/storage, set openingEnvelopeModified=true.
-- If architectural material now occupies former glazing space, set architecturalSurfaceReplacement=true.
-- If furniture sits between camera and an otherwise unchanged opening, set foregroundFurnitureOcclusion=true.
-- If curtains/blinds/drapes/sheers occlude an otherwise unchanged opening, set softFurnishingOcclusion=true.
-- If the reduction is primarily due to extraction uncertainty rather than a genuine architectural change, set extractionAmbiguity=true.
-- foreground_furniture: furniture physically in front of opening and causing occlusion.
-- camera_perspective: use sparingly and ONLY when all are true:
-  1) outer opening geometry remains consistent,
-  2) visible reduction is explainable by viewpoint/foreshortening,
-  3) no continuous opaque architectural surface occupies former glazing.
-- architectural_surface_replacement: any previously visible glazing replaced by continuous opaque interior architectural surface.
-  This includes artwork/furniture staged against a newly opaque former-glazing surface.
-- Do not classify perspective reduction when glazing is missing, frame sections are missing, or architectural replacement is present.
+- Do not decide foreground furniture occlusion simply because furniture is present.
+- If any portion of the opening has been replaced by continuous opaque architectural surface,
+  choose architectural_surface_replacement and set foregroundFurnitureOcclusion=false.
+- If the opening boundaries remain identifiable and glazing continues behind furniture, choose
+  foreground_furniture.
+- If the opening is unchanged and the visible portion is reduced only by viewpoint or framing,
+  choose camera_perspective.
+- If the evidence is too ambiguous to distinguish scene change from extraction uncertainty,
+  choose extraction_ambiguity.
+- Use architectural_surface_replacement for structural modification, including opening resize,
+  narrowing, shortening, infill, glazing removal, or replacement by wall, cabinetry, shelving,
+  panelling, or artwork mounted on new wall.
 
 Return JSON only:
 {
@@ -1831,7 +1902,7 @@ export async function runOpeningValidator(
       const heightChangePct = clampSignedPct(safePercentChange(baseDims.height, detectedDims.height));
       const areaChangePct = clampSignedPct(safePercentChange(baseDims.area, detectedDims.area));
       const aspectRatioChangePct = clampSignedPct(safePercentChange(baseDims.aspectRatio, detectedDims.aspectRatio));
-      const widthHeightDifferencePct = Math.abs(Math.abs(widthChangePct) - Math.abs(heightChangePct));
+      const widthHeightDifferencePct = Math.abs(widthChangePct - heightChangePct);
       const widthHeightAsymmetryScore = widthHeightDifferencePct;
       const widthDominantChange = Math.abs(widthChangePct) > Math.abs(heightChangePct);
       const heightDominantChange = Math.abs(heightChangePct) > Math.abs(widthChangePct);
@@ -1969,6 +2040,9 @@ export async function runOpeningValidator(
     const openingShapeDistortionDetected = geometryMetrics.some((entry) =>
       Math.abs(entry.widthHeightDifferencePct) > OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD
     );
+      const resizeSpecialistShouldRun =
+        deterministic.summary.openingResized === true &&
+        geometryMetrics.some((entry) => entry.openingType === "window");
     let semanticEvidence: OpeningSemanticGeometryEvidence = {
       primaryReductionCause: "none",
       originalOpeningPreserved: false,
@@ -1984,19 +2058,32 @@ export async function runOpeningValidator(
       openingShapeDistortionDetected,
       confidence: 0,
     };
-    if (openingShapeDistortionDetected && options?.microChecks !== false) {
+    if (resizeSpecialistShouldRun && options?.microChecks !== false) {
       const semanticGeometryStartedAt = Date.now();
-      logOpeningGeminiStart(options?.jobId, OPENING_MODEL_ESCALATION, "geometry_semantic_review");
+      logOpeningGeminiStart(options?.jobId, OPENING_MODEL_ESCALATION, "opening_resize_specialist_review");
       const semanticReview = await runOpeningGeometrySemanticReview(
         beforeImageUrl,
         afterImageUrl,
         geometryMetrics,
-        OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD,
+        baseline.openings.map((opening) => ({
+          id: String(opening.id),
+          type: opening.type,
+          wallIndex: Number(opening.wallIndex),
+          horizontalBand: opening.horizontalBand,
+          verticalBand: opening.verticalBand,
+          wallCoverageBand: opening.wallCoverageBand,
+          orientation: opening.orientation,
+          paneStructure: opening.paneStructure,
+          doorLeafState: opening.doorLeafState,
+          confidence: Number(opening.confidence),
+        })),
+        relocationFingerprints,
+        confidenceBands,
         options?.jobId,
         options?.imageId,
         options?.attempt,
       );
-      logOpeningGeminiEnd(options?.jobId, OPENING_MODEL_ESCALATION, "geometry_semantic_review", Date.now() - semanticGeometryStartedAt);
+      logOpeningGeminiEnd(options?.jobId, OPENING_MODEL_ESCALATION, "opening_resize_specialist_review", Date.now() - semanticGeometryStartedAt);
       if (semanticReview) {
         semanticEvidence = {
           ...semanticReview,
