@@ -61,9 +61,20 @@ export type OpeningGeometryMetric = {
   heightChangePct: number;
   areaChangePct: number;
   aspectRatioChangePct: number;
+  widthHeightDifferencePct: number;
   widthHeightAsymmetryScore: number;
   widthDominantChange: boolean;
   heightDominantChange: boolean;
+};
+
+export type OpeningSemanticGeometryEvidence = {
+  visibleGlazedOpeningChanged: boolean;
+  visibleGlazedAreaReduced: boolean;
+  glazingReplacedByWall: boolean;
+  softFurnishingOcclusion: boolean;
+  openingShapeDistortionDetected: boolean;
+  confidence: number;
+  analysis?: string;
 };
 
 export type OpeningRelocationFingerprint = {
@@ -92,11 +103,13 @@ export type OpeningObservabilityEvidence = {
   geometryMetrics: OpeningGeometryMetric[];
   relocationFingerprints: OpeningRelocationFingerprint[];
   confidenceBands: OpeningConfidenceBand[];
+  semanticEvidence: OpeningSemanticGeometryEvidence;
   summary: {
     maxAbsWidthChangePct: number;
     maxAbsHeightChangePct: number;
     maxAbsAreaChangePct: number;
     maxAbsAspectRatioChangePct: number;
+    maxAbsWidthHeightDifferencePct: number;
     relocationSignalCount: number;
     lowConfidenceCount: number;
     mediumConfidenceCount: number;
@@ -129,6 +142,7 @@ const OPENING_ADDED_STRONG_DETERMINISTIC_CONFIDENCE = Number(process.env.OPENING
 const OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE = Number(process.env.OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE || 0.9);
 const OPENING_ADDED_CONSENSUS_MIN_IOU = Number(process.env.OPENING_ADDED_CONSENSUS_MIN_IOU || 0.2);
 const OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES = Number(process.env.OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES || 1);
+const OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD = Number(process.env.OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD || 20);
 
 function logOpeningInstrumentation(event: string, payload: Record<string, unknown>): void {
   console.log(JSON.stringify({
@@ -1178,6 +1192,8 @@ type OpeningLightAnchorVerdict = {
   analysis: string;
 };
 
+type OpeningGeometrySemanticVerdict = OpeningSemanticGeometryEvidence;
+
 function parseOpeningLightAnchorVerdict(rawText: string): OpeningLightAnchorVerdict {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -1294,6 +1310,122 @@ Return JSON only:
   const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
   try {
     return parseOpeningLightAnchorVerdict(rawText);
+  } catch {
+    return null;
+  }
+}
+
+function parseOpeningGeometrySemanticVerdict(rawText: string): OpeningGeometrySemanticVerdict {
+  const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
+  const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
+  const parsed = JSON.parse(jsonCandidate || "{}");
+
+  const confidenceRaw = Number(parsed?.confidence);
+  const confidence = Number.isFinite(confidenceRaw)
+    ? Math.max(0, Math.min(1, confidenceRaw))
+    : 0;
+
+  return {
+    visibleGlazedOpeningChanged: parsed?.visibleGlazedOpeningChanged === true,
+    visibleGlazedAreaReduced: parsed?.visibleGlazedAreaReduced === true,
+    glazingReplacedByWall: parsed?.glazingReplacedByWall === true,
+    softFurnishingOcclusion: parsed?.softFurnishingOcclusion === true,
+    openingShapeDistortionDetected: parsed?.openingShapeDistortionDetected === true,
+    confidence,
+    analysis: typeof parsed?.analysis === "string" ? parsed.analysis.trim().slice(0, 240) : undefined,
+  };
+}
+
+async function runOpeningGeometrySemanticReview(
+  beforeImageUrl: string,
+  afterImageUrl: string,
+  geometryMetrics: OpeningGeometryMetric[],
+  thresholdPct: number,
+  jobId?: string,
+  imageId?: string,
+  attempt?: number,
+): Promise<OpeningGeometrySemanticVerdict | null> {
+  const ai = getGeminiClient();
+  const before = toBase64(beforeImageUrl).data;
+  const after = toBase64(afterImageUrl).data;
+
+  const geometryPayload = geometryMetrics.map((entry) => ({
+    openingId: entry.openingId,
+    openingType: entry.openingType,
+    baseline: entry.baseline,
+    candidate: entry.candidate,
+    computed: {
+      widthChangePct: entry.widthChangePct,
+      heightChangePct: entry.heightChangePct,
+      areaChangePct: entry.areaChangePct,
+      aspectRatioChangePct: entry.aspectRatioChangePct,
+      widthHeightDifferencePct: entry.widthHeightDifferencePct,
+    },
+  }));
+
+  const prompt = `You are a structural opening semantic reviewer.
+
+Assess whether the VISIBLE GLAZED OPENING changed in a way that indicates architectural modification.
+
+You are given measured geometry from reconciled openings:
+OPENING_GEOMETRY_JSON:
+${JSON.stringify(geometryPayload)}
+
+The width/height disproportion signal threshold is ${thresholdPct}%.
+
+Important distinction:
+- Soft-furnishing occlusion (curtains, blinds, drapes, sheers) is staging and NOT architectural failure.
+- Architectural modification includes glazing replaced by wall, pane/aperture disappearance into wall continuity, or material opening topology change.
+
+Return JSON only:
+{
+  "visibleGlazedOpeningChanged": boolean,
+  "visibleGlazedAreaReduced": boolean,
+  "glazingReplacedByWall": boolean,
+  "softFurnishingOcclusion": boolean,
+  "openingShapeDistortionDetected": boolean,
+  "confidence": number,
+  "analysis": "short reason"
+}`;
+
+  const requestStartedAt = Date.now();
+  const response = await (ai as any).models.generateContent({
+    model: OPENING_MODEL_ESCALATION,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: prompt },
+          { text: "IMAGE_BEFORE:" },
+          { inlineData: { mimeType: "image/webp", data: before } },
+          { text: "IMAGE_AFTER:" },
+          { inlineData: { mimeType: "image/webp", data: after } },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0,
+      topP: 0,
+      maxOutputTokens: 260,
+      responseMimeType: "application/json",
+    },
+  });
+  logGeminiUsage({
+    ctx: {
+      jobId: jobId || "",
+      imageId: imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(attempt) ? Number(attempt) : 1,
+    },
+    model: OPENING_MODEL_ESCALATION,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
+
+  const rawText = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  try {
+    return parseOpeningGeometrySemanticVerdict(rawText);
   } catch {
     return null;
   }
@@ -1613,7 +1745,8 @@ export async function runOpeningValidator(
       const heightChangePct = clampSignedPct(safePercentChange(baseDims.height, detectedDims.height));
       const areaChangePct = clampSignedPct(safePercentChange(baseDims.area, detectedDims.area));
       const aspectRatioChangePct = clampSignedPct(safePercentChange(baseDims.aspectRatio, detectedDims.aspectRatio));
-      const widthHeightAsymmetryScore = Math.abs(Math.abs(widthChangePct) - Math.abs(heightChangePct));
+      const widthHeightDifferencePct = Math.abs(Math.abs(widthChangePct) - Math.abs(heightChangePct));
+      const widthHeightAsymmetryScore = widthHeightDifferencePct;
       const widthDominantChange = Math.abs(widthChangePct) > Math.abs(heightChangePct);
       const heightDominantChange = Math.abs(heightChangePct) > Math.abs(widthChangePct);
 
@@ -1644,6 +1777,7 @@ export async function runOpeningValidator(
         heightChangePct,
         areaChangePct,
         aspectRatioChangePct,
+        widthHeightDifferencePct,
         widthHeightAsymmetryScore,
         widthDominantChange,
         heightDominantChange,
@@ -1738,21 +1872,57 @@ export async function runOpeningValidator(
       maxAbsAspectRatioChangePct: geometryMetrics.length
         ? Math.max(...geometryMetrics.map((entry) => Math.abs(entry.aspectRatioChangePct)))
         : 0,
+      maxAbsWidthHeightDifferencePct: geometryMetrics.length
+        ? Math.max(...geometryMetrics.map((entry) => Math.abs(entry.widthHeightDifferencePct)))
+        : 0,
       relocationSignalCount: relocationFingerprints.filter((entry) => entry.reasonTokens.length > 0).length,
       lowConfidenceCount: confidenceBands.filter((entry) => entry.band === "LOW").length,
       mediumConfidenceCount: confidenceBands.filter((entry) => entry.band === "MEDIUM").length,
       highConfidenceCount: confidenceBands.filter((entry) => entry.band === "HIGH").length,
     };
+    const openingShapeDistortionDetected = geometryMetrics.some((entry) =>
+      Math.abs(entry.widthHeightDifferencePct) > OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD
+    );
+    let semanticEvidence: OpeningSemanticGeometryEvidence = {
+      visibleGlazedOpeningChanged: false,
+      visibleGlazedAreaReduced: false,
+      glazingReplacedByWall: false,
+      softFurnishingOcclusion: false,
+      openingShapeDistortionDetected,
+      confidence: 0,
+    };
+    if (openingShapeDistortionDetected && options?.microChecks !== false) {
+      const semanticGeometryStartedAt = Date.now();
+      logOpeningGeminiStart(options?.jobId, OPENING_MODEL_ESCALATION, "geometry_semantic_review");
+      const semanticReview = await runOpeningGeometrySemanticReview(
+        beforeImageUrl,
+        afterImageUrl,
+        geometryMetrics,
+        OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD,
+        options?.jobId,
+        options?.imageId,
+        options?.attempt,
+      );
+      logOpeningGeminiEnd(options?.jobId, OPENING_MODEL_ESCALATION, "geometry_semantic_review", Date.now() - semanticGeometryStartedAt);
+      if (semanticReview) {
+        semanticEvidence = {
+          ...semanticReview,
+          openingShapeDistortionDetected: semanticReview.openingShapeDistortionDetected || openingShapeDistortionDetected,
+        };
+      }
+    }
     const observabilityEvidence: OpeningObservabilityEvidence = {
       geometryMetrics,
       relocationFingerprints,
       confidenceBands,
+      semanticEvidence,
       summary: observabilitySummary,
     };
     console.log("[OPENING_OBSERVABILITY_EVIDENCE]", {
       jobId: options?.jobId,
       imageId: options?.imageId,
       summary: observabilitySummary,
+      semanticEvidence,
     });
     for (const metric of geometryMetrics) {
       console.log("[OPENING_GEOMETRY]", {
@@ -1767,6 +1937,7 @@ export async function runOpeningValidator(
           heightChangePct: metric.heightChangePct,
           areaChangePct: metric.areaChangePct,
           aspectRatioChangePct: metric.aspectRatioChangePct,
+          widthHeightDifferencePct: metric.widthHeightDifferencePct,
           widthHeightAsymmetryScore: metric.widthHeightAsymmetryScore,
           widthDominantChange: metric.widthDominantChange,
           heightDominantChange: metric.heightDominantChange,
@@ -1887,6 +2058,21 @@ export async function runOpeningValidator(
     }
     if (openingAddedStructuralContinuityUnresolved) {
       advisorySignals.push("opening_added_structural_continuity_unresolved");
+    }
+    if (semanticEvidence.openingShapeDistortionDetected) {
+      advisorySignals.push("opening_shape_distortion_detected");
+    }
+    if (semanticEvidence.visibleGlazedOpeningChanged) {
+      advisorySignals.push("visible_glazed_opening_changed");
+    }
+    if (semanticEvidence.visibleGlazedAreaReduced) {
+      advisorySignals.push("visible_glazed_area_reduced");
+    }
+    if (semanticEvidence.glazingReplacedByWall) {
+      advisorySignals.push("glazing_replaced_by_wall_semantic");
+    }
+    if (semanticEvidence.softFurnishingOcclusion) {
+      advisorySignals.push("soft_furnishing_occlusion_semantic");
     }
     if (deterministic.summary.openingResized) {
       reasonParts.push("opening_resized");
