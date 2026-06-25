@@ -37,6 +37,26 @@ export type OpeningValidatorResult = ValidatorOutcome & {
 export type OpeningGeometryMetric = {
   openingId: string;
   openingType: "window" | "door" | "closet_door" | "walkthrough";
+  baseline: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+    area: number;
+    aspectRatio: number;
+  };
+  candidate: {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+    width: number;
+    height: number;
+    area: number;
+    aspectRatio: number;
+  };
   widthChangePct: number;
   heightChangePct: number;
   areaChangePct: number;
@@ -1598,6 +1618,26 @@ export async function runOpeningValidator(
       geometryMetrics.push({
         openingId: String(baseOpening.id),
         openingType: baseOpening.type,
+        baseline: {
+          left: Number(baseOpening.left_pct || 0),
+          top: Number(baseOpening.top_pct || 0),
+          right: Number(baseOpening.right_pct || 0),
+          bottom: Number(baseOpening.bottom_pct || 0),
+          width: baseDims.width,
+          height: baseDims.height,
+          area: baseDims.area,
+          aspectRatio: baseDims.aspectRatio,
+        },
+        candidate: {
+          left: Number(matchedOpening.left_pct || 0),
+          top: Number(matchedOpening.top_pct || 0),
+          right: Number(matchedOpening.right_pct || 0),
+          bottom: Number(matchedOpening.bottom_pct || 0),
+          width: detectedDims.width,
+          height: detectedDims.height,
+          area: detectedDims.area,
+          aspectRatio: detectedDims.aspectRatio,
+        },
         widthChangePct,
         heightChangePct,
         areaChangePct,
@@ -1712,6 +1752,25 @@ export async function runOpeningValidator(
       imageId: options?.imageId,
       summary: observabilitySummary,
     });
+    for (const metric of geometryMetrics) {
+      console.log("[OPENING_GEOMETRY]", {
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        openingId: metric.openingId,
+        openingType: metric.openingType,
+        baseline: metric.baseline,
+        candidate: metric.candidate,
+        computed: {
+          widthChangePct: metric.widthChangePct,
+          heightChangePct: metric.heightChangePct,
+          areaChangePct: metric.areaChangePct,
+          aspectRatioChangePct: metric.aspectRatioChangePct,
+          widthHeightAsymmetryScore: metric.widthHeightAsymmetryScore,
+          widthDominantChange: metric.widthDominantChange,
+          heightDominantChange: metric.heightDominantChange,
+        },
+      });
+    }
 
     const openingRegions = buildOpeningRegions(deterministic.detectedOpenings || []);
     const rawDeterministicHardFailSignal =
