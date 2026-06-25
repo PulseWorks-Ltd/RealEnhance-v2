@@ -1607,6 +1607,8 @@ export async function runOpeningValidator(
 
       const baseDims = openingDimensions(baseOpening);
       const detectedDims = openingDimensions(matchedOpening);
+      const [baseLeft, baseTop, baseRight, baseBottom] = baseOpening.bbox || [0, 0, 0, 0];
+      const [detectedLeft, detectedTop, detectedRight, detectedBottom] = matchedOpening.bbox || [0, 0, 0, 0];
       const widthChangePct = clampSignedPct(safePercentChange(baseDims.width, detectedDims.width));
       const heightChangePct = clampSignedPct(safePercentChange(baseDims.height, detectedDims.height));
       const areaChangePct = clampSignedPct(safePercentChange(baseDims.area, detectedDims.area));
@@ -1619,20 +1621,20 @@ export async function runOpeningValidator(
         openingId: String(baseOpening.id),
         openingType: baseOpening.type,
         baseline: {
-          left: Number(baseOpening.left_pct || 0),
-          top: Number(baseOpening.top_pct || 0),
-          right: Number(baseOpening.right_pct || 0),
-          bottom: Number(baseOpening.bottom_pct || 0),
+          left: Number(baseLeft || 0),
+          top: Number(baseTop || 0),
+          right: Number(baseRight || 0),
+          bottom: Number(baseBottom || 0),
           width: baseDims.width,
           height: baseDims.height,
           area: baseDims.area,
           aspectRatio: baseDims.aspectRatio,
         },
         candidate: {
-          left: Number(matchedOpening.left_pct || 0),
-          top: Number(matchedOpening.top_pct || 0),
-          right: Number(matchedOpening.right_pct || 0),
-          bottom: Number(matchedOpening.bottom_pct || 0),
+          left: Number(detectedLeft || 0),
+          top: Number(detectedTop || 0),
+          right: Number(detectedRight || 0),
+          bottom: Number(detectedBottom || 0),
           width: detectedDims.width,
           height: detectedDims.height,
           area: detectedDims.area,
