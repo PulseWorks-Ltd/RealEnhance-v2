@@ -1,0 +1,114 @@
+You are validating whether two images represent the same permanent room envelope.
+
+Compare the BASELINE image and the STAGED image.
+
+Furniture and movable objects may change. Evaluate only permanent wall-envelope architecture.
+
+BASELINE ENVELOPE DESCRIPTION:
+The following architectural room envelope was extracted from the baseline image.
+This description is considered authoritative.
+Do not reinterpret the baseline architecture from the staged image.
+Determine whether the staged image still represents this same architectural room envelope.
+
+Room overview:
+- camera orientation: unknown
+- visible wall planes: left wall, front / camera-facing wall
+- extracted reference openings: 1
+- extracted architectural landmarks: 1
+- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction
+- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction
+
+left wall: reference openings: D1: door, left third, full height, occupancy 40-60, confidence 0.98
+rear wall: continuous wall plane with no extracted openings or fixed architectural anchors
+right wall: continuous wall plane with no extracted openings or fixed architectural anchors
+front / camera-facing wall: fixed landmarks: F1: built-in AC unit, right third, confidence 0.99
+
+Wall envelope descriptions with visibility semantics (authoritative baseline):
+- front / camera-facing wall:
+  - visibility: partial
+  - visible extent: partial
+  - architectural certainty: partial
+  - left boundary: visible
+  - right boundary: not visible / exits frame
+  - left corner: visible
+  - right corner: not visible
+  - terminates at observed corner: no
+  - continues beyond frame: yes
+  - observed continuity note: A solid wall that forms a visible interior corner with the left wall and continues beyond the right frame.
+- right wall:
+  - visibility: minimal
+  - visible extent: minimal
+  - architectural certainty: unknown
+  - left boundary: not visible / exits frame
+  - right boundary: not visible / exits frame
+  - left corner: not visible
+  - right corner: not visible
+  - terminates at observed corner: no
+  - continues beyond frame: yes
+  - observed continuity note: A very small portion of a wall is visible in the bottom right corner, but its boundaries and features are not clearly observable.
+- left wall:
+  - visibility: partial
+  - visible extent: partial
+  - architectural certainty: partial
+  - left boundary: not visible / exits frame
+  - right boundary: visible
+  - left corner: not visible
+  - right corner: visible
+  - terminates at observed corner: no
+  - continues beyond frame: yes
+  - observed continuity note: Wall features a large sliding glass door (D1). Its right boundary forms a corner with the front wall, while its left boundary extends beyond the frame.
+
+Architectural landmarks:
+- F1: built-in AC unit, front / camera-facing wall, right third, confidence 0.99
+
+Opening reference points (context only, do not validate opening preservation or resize):
+- D1: door, left wall, left third, full height, occupancy 40-60, confidence 0.98
+
+Use the baseline description as the source of truth.
+Do not rebuild the room envelope from the staged image.
+Do not reinterpret the baseline architecture from scratch.
+The baseline defines not only which walls are visible, but also which boundaries/corners were unknown in the original photo.
+If baseline certainty is partial or unknown, preserve that uncertainty unless staged imagery provides clear direct architectural evidence.
+Treat baseline visibility limits as authoritative: if a wall, corner, return wall, or recess is only partially visible, preserve that uncertainty.
+Do not infer unseen architectural geometry beyond what is evidenced in the baseline image.
+Do not complete room geometry where baseline evidence is incomplete.
+The envelope validator owns only the permanent wall envelope.
+Architectural openings may be used only as reference points for understanding wall continuity.
+Do not evaluate whether an opening itself has changed.
+Do not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.
+
+DETERMINISTIC COMPARISON FOUND:
+- Deterministic observation count: 1.
+- right wall: a baseline wall surface is not present in staged extraction.
+- Visible wall count changed from 3 to 2.
+
+ARCHITECTURAL CLAIM:
+We suspect a permanent wall surface present in baseline has been removed on the right side of the room in the staged image.
+
+SUPPORTING STRUCTURAL PATTERNS:
+- Existing wall no longer continues
+
+ARCHITECTURAL QUESTION:
+Is this claim TRUE or FALSE?
+
+Review both images and the deterministic evidence.
+
+Treat the deterministic findings as strong evidence to verify against the images, not as statements to repeat verbatim.
+
+Answer only TRUE or FALSE first, then provide analysis.
+
+If FALSE:
+Explain why the claim is incorrect and directly account for the supporting observations.
+Simply stating that the images appear similar is not sufficient.
+
+Use the deterministic findings as evidence, but verify the claim against the images before answering.
+
+Return JSON only:
+
+{
+  "claim":"We suspect a permanent wall surface present in baseline has been removed on the right side of the room in the staged image.",
+  "answer":"TRUE"|"FALSE",
+  "confidence":0.0-1.0,
+  "analysis":"concise visual explanation"
+}
+

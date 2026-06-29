@@ -3,12 +3,6 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { useUsage } from "@/hooks/use-usage";
 import { apiFetch } from "@/lib/api";
-import {
-  getPendingEnhancementJobIds,
-  getPendingEnhancementSession,
-  setPendingEnhancementResumeStatus,
-  setPendingEnhancementSession,
-} from "@/lib/pending-enhancement";
 import { useToast } from "@/hooks/use-toast";
 
 /**
@@ -16,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
  * 
  * RULE 4: Stripe Success Return Handling
  * 
- * On Stripe success return (?subscription=success, ?bundle=success, ?listing_pack=success, or ?hero_pack=success):
+ * On Stripe success return (?subscription=success or ?bundle=success):
  * 1. Detect success query param
  * 2. Trigger refetchAgency, refetchBilling, refetchUsage
  * 3. Poll for subscription activation (agency.subscriptionStatus === "ACTIVE")
@@ -26,37 +20,11 @@ import { useToast } from "@/hooks/use-toast";
  */
 export function usePostCheckoutSync() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { refreshUser, user } = useAuth();
+  const { refreshUser } = useAuth();
   const { refetch: refetchUsage } = useUsage();
   const navigate = useNavigate();
   const { toast } = useToast();
   const [syncing, setSyncing] = useState(false);
-
-  const markResumePending = useCallback((jobIds: string[]) => {
-    const existing = getPendingEnhancementSession();
-    if (existing) {
-      setPendingEnhancementResumeStatus("pending");
-      return;
-    }
-
-    if (!jobIds.length) return;
-
-    // Fallback for legacy sessions: preserve resumability even when prior session payload is missing.
-    setPendingEnhancementSession({
-      ownerUserId: user?.id || undefined,
-      jobIds,
-      imageIds: [],
-      fileMetadata: [],
-      previewUrls: [],
-      roomTypeByImageId: {},
-      sceneTypeByImageId: {},
-      resumeStatus: "pending",
-      requestedCount: jobIds.length,
-      requiredCredits: 0,
-      availableCredits: 0,
-      missingCredits: 0,
-    });
-  }, [user?.id]);
 
   const refetchAgency = useCallback(async () => {
     try {
@@ -119,46 +87,14 @@ export function usePostCheckoutSync() {
         refetchUsage(),
       ]);
 
-      // Step 1.5: Reconcile subscription state from Stripe as a safety net when webhook delivery is delayed or missed.
-      try {
-        await apiFetch("/api/billing/reconcile-subscription", {
-          method: "POST",
-          body: JSON.stringify({ agencyId: user?.agencyId }),
-        });
-      } catch (reconcileErr) {
-        console.warn("[PostCheckoutSync] reconcile-subscription failed, continuing with polling", reconcileErr);
-      }
-
       // Step 2: Poll for activation
       const activated = await pollForSubscriptionActivation();
-      let resumed = 0;
-      const pendingJobIds = getPendingEnhancementJobIds();
-      for (const jobId of pendingJobIds) {
-        try {
-          const resp = await apiFetch("/api/enhance/resume", {
-            method: "POST",
-            body: JSON.stringify({ jobId }),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (data?.status === "processing") {
-            resumed += 1;
-          }
-        } catch (error) {
-          console.warn("[PostCheckoutSync] Failed to resume pending enhancement after subscription", { jobId, error });
-        }
-      }
-
-      if (resumed > 0) {
-        markResumePending(pendingJobIds);
-      }
 
       if (activated) {
         // Step 3: Show success message
         toast({
           title: "Subscription Activated!",
-          description: resumed > 0
-            ? "Subscription activated and enhancement resumed. Redirecting to Enhance..."
-            : "Your subscription is now active. Redirecting to Enhance...",
+          description: "Your subscription is now active. Redirecting to Enhance...",
         });
 
         // Step 4: Clean up URL and redirect
@@ -208,7 +144,6 @@ export function usePostCheckoutSync() {
     navigate,
     searchParams,
     setSearchParams,
-    user?.agencyId,
   ]);
 
   const handleBundleSuccess = useCallback(async () => {
@@ -225,39 +160,14 @@ export function usePostCheckoutSync() {
         refetchUsage(),
       ]);
 
-      const pendingJobIds = getPendingEnhancementJobIds();
-      let resumed = 0;
-      for (const jobId of pendingJobIds) {
-        try {
-          const resp = await apiFetch("/api/enhance/resume", {
-            method: "POST",
-            body: JSON.stringify({ jobId }),
-          });
-          const data = await resp.json().catch(() => ({}));
-          if (data?.status === "processing") {
-            resumed += 1;
-          }
-        } catch (error) {
-          console.warn("[PostCheckoutSync] Failed to resume pending enhancement", { jobId, error });
-        }
-      }
-
-      if (resumed > 0) {
-        markResumePending(pendingJobIds);
-      }
-
       toast({
         title: "Bundle Purchase Complete!",
-        description: resumed > 0
-          ? "Your credits were added and enhancement resumed. Redirecting to Enhance..."
-          : "Your credits have been added. Redirecting to Enhance...",
+        description: "Your credits have been added. Redirecting to Enhance...",
       });
 
       // Clean up URL
       const newParams = new URLSearchParams(searchParams);
       newParams.delete("bundle");
-      newParams.delete("listing_pack");
-      newParams.delete("hero_pack");
       setSearchParams(newParams, { replace: true });
 
       // Redirect to Enhance
@@ -279,7 +189,6 @@ export function usePostCheckoutSync() {
     refreshUser,
     refetchAgency,
     refetchUsage,
-    markResumePending,
     toast,
     navigate,
     searchParams,
@@ -289,10 +198,7 @@ export function usePostCheckoutSync() {
   // Effect to detect and handle success returns
   useEffect(() => {
     const subscriptionSuccess = searchParams.get("subscription") === "success";
-    const bundleSuccess =
-      searchParams.get("bundle") === "success" ||
-      searchParams.get("listing_pack") === "success" ||
-      searchParams.get("hero_pack") === "success";
+    const bundleSuccess = searchParams.get("bundle") === "success";
 
     if (subscriptionSuccess && !syncing) {
       handleSubscriptionSuccess();

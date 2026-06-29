@@ -1,14 +1,12 @@
 import React, { Suspense, lazy } from "react";
 import { Routes, Route, Navigate, useLocation, Outlet } from "react-router-dom";
 import { Header } from "@/components/Header";
-import { SiteFooter } from "@/components/SiteFooter";
 import { AppShell } from "@/components/layout/AppShell";
 import { RequireAuth } from "@/components/RequireAuth";
 import { RequireAgency } from "@/components/RequireAgency";
 import { RequireSubscription } from "@/components/RequireSubscription";
 import { Toaster } from "@/components/ui/toaster";
 import AuthComplete from "@/pages/auth-complete";
-import Landing from "@/pages/landing";
 
 // Helper to create retry-enabled lazy imports
 function lazyWithRetry(componentImport: () => Promise<any>) {
@@ -33,6 +31,7 @@ function lazyWithRetry(componentImport: () => Promise<any>) {
 }
 
 // Match the filenames exactly (case sensitive on Linux)
+const Landing        = lazyWithRetry(() => import("@/pages/landing"));
 const Login          = lazyWithRetry(() => import("@/pages/login"));
 const Signup         = lazyWithRetry(() => import("@/pages/signup"));
 const Home           = lazyWithRetry(() => import("@/pages/home"));
@@ -44,26 +43,12 @@ const AcceptInvite   = lazyWithRetry(() => import("@/pages/accept-invite"));
 const EnhancedHistory = lazyWithRetry(() => import("@/pages/enhanced-history"));
 const ForgotPassword = lazyWithRetry(() => import("@/pages/forgot-password"));
 const ResetPassword = lazyWithRetry(() => import("@/pages/reset-password"));
-const VerifyEmail = lazyWithRetry(() => import("@/pages/verify-email"));
 const ChangePassword = lazyWithRetry(() => import("@/pages/change-password"));
 const ProfileSettings = lazyWithRetry(() => import("@/pages/settings/profile"));
 const SecuritySettings = lazyWithRetry(() => import("@/pages/settings/security"));
 const BillingSettings = lazyWithRetry(() => import("@/pages/agency"));
 const NotFound       = lazyWithRetry(() => import("@/pages/not-found"));
 const StartTrial     = lazyWithRetry(() => import("@/pages/start-trial"));
-const AdminDashboard = lazyWithRetry(() => import("@/pages/admin"));
-const TermsPage      = lazyWithRetry(() => import("@/pages/terms"));
-const PrivacyPage    = lazyWithRetry(() => import("@/pages/privacy"));
-
-function PublicLayout() {
-  return (
-    <div className="min-h-screen bg-slate-50">
-      <Header />
-      <Outlet />
-      <SiteFooter />
-    </div>
-  );
-}
 
 function LegacyMyPhotosRedirect() {
   const location = useLocation();
@@ -91,18 +76,15 @@ export default function App() {
       <Suspense fallback={<LoadingFallback />}>
         <Routes>
           {/* Public Routes with Header */}
-          <Route element={<PublicLayout />}>
+          <Route element={<><Header /><Outlet /></>}>
             <Route path="/" element={<Landing />} />
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
-            <Route path="/terms" element={<TermsPage />} />
-            <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/auth/complete" element={<AuthComplete />} />
             <Route path="/start-trial" element={<StartTrial />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
             <Route path="/reset-password" element={<ResetPassword />} />
-            <Route path="/verify-email" element={<VerifyEmail />} />
             <Route path="*" element={<NotFound />} />
           </Route>
 
@@ -112,16 +94,11 @@ export default function App() {
             {/* Agency page: RequireAuth only (new users create agency here) */}
             <Route path="/agency" element={<AppShell><Agency /></AppShell>} />
             <Route path="/settings/billing" element={<AppShell><BillingSettings /></AppShell>} />
-            <Route path="/billing" element={<Navigate to="/agency" replace />} />
-            {/* Admin dashboard: RequireAuth only, page handles its own admin guard */}
-            <Route path="/admin" element={<AppShell><AdminDashboard /></AppShell>} />
             
             {/* Protected routes: RequireAuth + RequireAgency */}
             <Route element={<RequireAgency><Outlet /></RequireAgency>}>
               {/* Enhance page: Additional RequireSubscription guard */}
               <Route path="/home" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
-              <Route path="/upload" element={<RequireSubscription><AppShell><Home /></AppShell></RequireSubscription>} />
-              <Route path="/processing" element={<Navigate to="/home" replace />} />
               
               {/* Other app routes: RequireAuth + RequireAgency */}
               <Route element={<AppShell><Outlet /></AppShell>}>

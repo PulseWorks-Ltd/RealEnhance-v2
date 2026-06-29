@@ -1,0 +1,507 @@
+{
+  "job": {
+    "label": "job_bb029607",
+    "jobId": "job_bb029607-dcd8-4614-997c-406d2ed33142",
+    "imageId": "img_e75a5903-34d3-42a2-b93f-b29314a5138d",
+    "baselineFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+    "stagedFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg"
+  },
+  "baselinePath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+  "stagedPath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+  "result": {
+    "status": "pass",
+    "reason": "envelope_preserved",
+    "confidence": 0.85,
+    "hardFail": false,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "advisorySignals": [],
+    "structuredIssues": [],
+    "selectedExplanation": "All permanent architectural elements and their defined relationships from the baseline model are preserved without change in the staged image.",
+    "baselineVerificationResults": [
+      {
+        "statementId": "stmt_01",
+        "statement": "No additional permanent wall planes are visible beyond the baseline wall set.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_02",
+        "statement": "front wall is fully visible.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_03",
+        "statement": "Front wall joins the left wall at a visible left corner.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_04",
+        "statement": "Front wall joins the right wall at a visible right corner.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_05",
+        "statement": "Front wall terminates at an observed corner.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_06",
+        "statement": "The front wall contains reference door D1 in the left third and full height.",
+        "scope": "reference",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_07",
+        "statement": "left wall is only minimally visible.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_08",
+        "statement": "Left wall continues beyond the left image edge.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_09",
+        "statement": "No visible left corner is observed on the left wall.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_10",
+        "statement": "Left wall joins the front wall at a visible right corner.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_11",
+        "statement": "right wall is partially visible.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_12",
+        "statement": "Right wall continues beyond the right image edge.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_13",
+        "statement": "Right wall joins the front wall at a visible left corner.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_14",
+        "statement": "No visible right corner is observed on the right wall.",
+        "scope": "structural",
+        "answer": "TRUE"
+      },
+      {
+        "statementId": "stmt_15",
+        "statement": "The right wall contains built-in AC unit AC1 in the left third.",
+        "scope": "reference",
+        "answer": "TRUE"
+      }
+    ],
+    "primaryHypothesis": "The permanent architectural envelope is fully preserved.",
+    "hypothesisConfidence": "High",
+    "hypothesisVerdict": "rejected",
+    "hypothesisDismissalReason": "",
+    "hypothesisAnalysis": "A thorough visual inspection of the staged image, comparing it to the baseline architectural model, indicates that all permanent architectural elements, including wall planes, corners, and reference features (door D1, AC unit AC1), remain unchanged and true to their baseline descriptions. The camera perspective and field of view also appear identical. The advisory signals suggesting changes in wall count, boundary segments, and wall extent classification for the staged image appear to be erroneous based on direct visual evidence.",
+    "architecturalClaim": "One or more structural baseline architectural statements are no longer true in the staged image.",
+    "architecturalAnswer": "FALSE",
+    "deterministicObservationAdjudications": [],
+    "rawGeminiJson": "```json\n{\n  \"claim\":\"One or more structural baseline architectural statements are no longer true in the staged image.\",\n  \"answer\":\"FALSE\",\n  \"confidence\":0.9,\n  \"analysis\":\"A thorough visual inspection of the staged image, comparing it to the baseline architectural model, indicates that all permanent architectural elements, including wall planes, corners, and reference features (door D1, AC unit AC1), remain unchanged and true to their baseline descriptions. The camera perspective and field of view also appear identical. The advisory signals suggesting changes in wall count, boundary segments, and wall extent classification for the staged image appear to be erroneous based on direct visual evidence.\",\n  \"selectedExplanation\":\"All permanent architectural elements and their defined relationships from the baseline model are preserved without change in the staged image.\",\n  \"primaryHypothesis\":\"The permanent architectural envelope is fully preserved.\",\n  \"hypothesisConfidence\":\"High\",\n  \"visualAmbiguity\":false,\n  \"boundaryLinesMissing\":false,\n  \"continuousSurfaceReplacement\":false,\n  \"noPlausibleVisualExplanation\":false,\n  \"statementVerifications\":[\n    {\n      \"statementId\":\"stmt_01\",\n      \"statement\":\"No additional permanent wall planes are visible beyond the baseline wall set.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_02\",\n      \"statement\":\"front wall is fully visible.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_03\",\n      \"statement\":\"Front wall joins the left wall at a visible left corner.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_04\",\n      \"statement\":\"Front wall joins the right wall at a visible right corner.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_05\",\n      \"statement\":\"Front wall terminates at an observed corner.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_06\",\n      \"statement\":\"The front wall contains reference door D1 in the left third and full height.\",\n      \"scope\":\"reference\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_07\",\n      \"statement\":\"left wall is only minimally visible.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_08\",\n      \"statement\":\"Left wall continues beyond the left image edge.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_09\",\n      \"statement\":\"No visible left corner is observed on the left wall.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_10\",\n      \"statement\":\"Left wall joins the front wall at a visible right corner.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_11\",\n      \"statement\":\"right wall is partially visible.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_12\",\n      \"statement\":\"Right wall continues beyond the right image edge.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_13\",\n      \"statement\":\"Right wall joins the front wall at a visible left corner.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_14\",\n      \"statement\":\"No visible right corner is observed on the right wall.\",\n      \"scope\":\"structural\",\n      \"answer\":\"TRUE\"\n    },\n    {\n      \"statementId\":\"stmt_15\",\n      \"statement\":\"The right wall contains built-in AC unit AC1 in the left third.\",\n      \"scope\":\"reference\",\n      \"answer\":\"TRUE\"\n    }\n  ]\n}\n```",
+    "baselineVerificationMode": "baseline_statement_verification",
+    "baselineArchitecturalModel": "Canonical Baseline Architectural Model\n- Camera orientation: unknown\n- Visible wall planes: front wall, left wall, right wall\nFront wall\n- front wall is fully visible\n- front wall joins the left wall at a visible left corner\n- front wall joins the right wall at a visible right corner\n- front wall terminates at an observed corner\n- anchor: front wall contains reference door D1 in the left third and full height\nLeft wall\n- left wall is only minimally visible\n- left wall continues beyond the left image edge\n- no visible left corner is observed on the left wall\n- left wall joins the front wall at a visible right corner\nRight wall\n- right wall is partially visible\n- right wall continues beyond the right image edge\n- right wall joins the front wall at a visible left corner\n- no visible right corner is observed on the right wall\n- anchor: right wall contains built-in AC unit AC1 in the left third",
+    "baselineVerificationStatements": [
+      {
+        "statementId": "stmt_01",
+        "statement": "No additional permanent wall planes are visible beyond the baseline wall set.",
+        "scope": "structural",
+        "factType": "global_visible_walls",
+        "failureEventHint": "new_wall_plane_introduced",
+        "supportingFacts": [
+          "front wall",
+          "left wall",
+          "right wall"
+        ]
+      },
+      {
+        "statementId": "stmt_02",
+        "statement": "front wall is fully visible.",
+        "scope": "structural",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "full",
+          "full"
+        ]
+      },
+      {
+        "statementId": "stmt_03",
+        "statement": "Front wall joins the left wall at a visible left corner.",
+        "scope": "structural",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_04",
+        "statement": "Front wall joins the right wall at a visible right corner.",
+        "scope": "structural",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_05",
+        "statement": "Front wall terminates at an observed corner.",
+        "scope": "structural",
+        "factType": "terminates_at_corner",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "terminates_at_corner"
+        ]
+      },
+      {
+        "statementId": "stmt_06",
+        "statement": "The front wall contains reference door D1 in the left third and full height.",
+        "scope": "reference",
+        "factType": "opening_anchor",
+        "failureEventHint": "reference_anchor_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "D1",
+          "door"
+        ]
+      },
+      {
+        "statementId": "stmt_07",
+        "statement": "left wall is only minimally visible.",
+        "scope": "structural",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "minimal",
+          "minimal"
+        ]
+      },
+      {
+        "statementId": "stmt_08",
+        "statement": "Left wall continues beyond the left image edge.",
+        "scope": "structural",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_09",
+        "statement": "No visible left corner is observed on the left wall.",
+        "scope": "structural",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "left_corner_not_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_10",
+        "statement": "Left wall joins the front wall at a visible right corner.",
+        "scope": "structural",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "right_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_11",
+        "statement": "right wall is partially visible.",
+        "scope": "structural",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 1,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_12",
+        "statement": "Right wall continues beyond the right image edge.",
+        "scope": "structural",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 1,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_13",
+        "statement": "Right wall joins the front wall at a visible left corner.",
+        "scope": "structural",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 1,
+        "supportingFacts": [
+          "left_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_14",
+        "statement": "No visible right corner is observed on the right wall.",
+        "scope": "structural",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 1,
+        "supportingFacts": [
+          "right_corner_not_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_15",
+        "statement": "The right wall contains built-in AC unit AC1 in the left third.",
+        "scope": "reference",
+        "factType": "fixture_anchor",
+        "failureEventHint": "reference_anchor_changed",
+        "relatedWallIndex": 1,
+        "supportingFacts": [
+          "AC1",
+          "ac_unit"
+        ]
+      }
+    ],
+    "advisoryStageExtraction": "Advisory Stage Extraction\n- Camera orientation: unknown\n- Visible wall planes: 2\n- front wall: Wall surface is continuous. Left side terminates at a visible interior corner. Right side continues beyond the frame.\n- left wall: Wall contains a large sliding glass door (D1). Right side terminates at a visible interior corner. Left side continues beyond the frame.",
+    "baselineVerificationFailures": [],
+    "architecturalChangeSummary": "All structural baseline verification statements remained true in the staged image.",
+    "deterministicEnvelopeComparison": {
+      "baselineWallCount": 3,
+      "stagedWallCount": 2,
+      "suspicions": [
+        {
+          "observationId": "obs_wall_0_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_0_certainty_changed",
+          "code": "possible_architectural_certainty_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: architectural certainty changed from known to partial."
+        },
+        {
+          "observationId": "obs_wall_0_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible corner is not visible in staged extraction."
+        },
+        {
+          "observationId": "obs_wall_0_extended",
+          "code": "possible_wall_extended",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+        },
+        {
+          "observationId": "obs_wall_0_interrupted",
+          "code": "possible_wall_interrupted",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction."
+        },
+        {
+          "observationId": "obs_wall_1_removed",
+          "code": "possible_wall_removed",
+          "wallIndex": 1,
+          "note": "right wall: baseline had a visible wall descriptor but staged extraction does not."
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "note": "left wall: wall visibility classification changed from baseline to staged extraction."
+        }
+      ],
+      "clarificationQuestions": [
+        "Deterministic comparison suggests a possible missing wall surface on right wall. Was a permanent wall surface removed, interrupted from view by framing uncertainty, or explained by baseline visibility limitation?",
+        "Deterministic comparison suggests a potentially missing corner on front / camera-facing wall. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?",
+        "Deterministic comparison suggests architectural certainty changed on front / camera-facing wall (known -> partial). Is this supported by direct evidence, or unsupported architectural completion?",
+        "Deterministic comparison suggests possible wall continuity interruption on front / camera-facing wall. Is continuity genuinely interrupted or explained by framing/visibility limits?",
+        "Deterministic comparison suggests possible wall extension on front / camera-facing wall beyond the baseline corner termination. Is this a true extension or an uncertainty/framing artefact?",
+        "Deterministic comparison suggests wall visibility changed on front / camera-facing wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?",
+        "Deterministic comparison suggests wall visibility changed on left wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?"
+      ]
+    },
+    "deterministicHypotheses": {
+      "primaryHypothesis": {
+        "hypothesisId": "hyp_permanent_wall_removed",
+        "category": "possible_permanent_wall_removed",
+        "title": "Visible room envelope appears reduced",
+        "confidence": "High",
+        "statement": "Deterministic comparison identified reduced or missing wall-envelope features relative to baseline.",
+        "supportingObservationIds": [
+          "obs_wall_0_missing_corner",
+          "obs_wall_1_removed"
+        ],
+        "supportingObservations": [
+          "possible_missing_corner (front / camera-facing wall): front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+          "possible_wall_removed (right wall): right wall: baseline had a visible wall descriptor but staged extraction does not."
+        ],
+        "conflictingObservationIds": [
+          "obs_wall_0_extended"
+        ],
+        "conflictingObservations": [
+          "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+        ],
+        "alternativeExplanationsAlreadyConsidered": [
+          "foreground_occlusion",
+          "camera_viewpoint",
+          "framing"
+        ]
+      },
+      "hypotheses": [
+        {
+          "hypothesisId": "hyp_permanent_wall_removed",
+          "category": "possible_permanent_wall_removed",
+          "title": "Visible room envelope appears reduced",
+          "confidence": "High",
+          "statement": "Deterministic comparison identified reduced or missing wall-envelope features relative to baseline.",
+          "supportingObservationIds": [
+            "obs_wall_0_missing_corner",
+            "obs_wall_1_removed"
+          ],
+          "supportingObservations": [
+            "possible_missing_corner (front / camera-facing wall): front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+            "possible_wall_removed (right wall): right wall: baseline had a visible wall descriptor but staged extraction does not."
+          ],
+          "conflictingObservationIds": [
+            "obs_wall_0_extended"
+          ],
+          "conflictingObservations": [
+            "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+          ],
+          "alternativeExplanationsAlreadyConsidered": [
+            "foreground_occlusion",
+            "camera_viewpoint",
+            "framing"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_visibility_ambiguity",
+          "category": "possible_visibility_ambiguity",
+          "title": "Visibility ambiguity",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified visibility/certainty shifts that may be non-structural.",
+          "supportingObservationIds": [
+            "obs_wall_0_visibility_changed",
+            "obs_wall_0_certainty_changed",
+            "obs_wall_3_visibility_changed"
+          ],
+          "supportingObservations": [
+            "possible_wall_visibility_changed (front / camera-facing wall): front / camera-facing wall: wall visibility classification changed from baseline to staged extraction.",
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from known to partial.",
+            "possible_wall_visibility_changed (left wall): left wall: wall visibility classification changed from baseline to staged extraction."
+          ],
+          "conflictingObservationIds": [
+            "obs_wall_0_certainty_changed",
+            "obs_wall_0_extended"
+          ],
+          "conflictingObservations": [
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from known to partial.",
+            "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+          ],
+          "alternativeExplanationsAlreadyConsidered": [
+            "lighting_effects",
+            "camera_viewpoint",
+            "framing"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_unsupported_completion",
+          "category": "possible_unsupported_architectural_completion",
+          "title": "Visible room envelope differs from baseline extraction",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified newly visible structural continuity not present in baseline extraction.",
+          "supportingObservationIds": [
+            "obs_wall_0_certainty_changed",
+            "obs_wall_0_extended"
+          ],
+          "supportingObservations": [
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from known to partial.",
+            "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+          ],
+          "conflictingObservationIds": [
+            "obs_wall_0_interrupted",
+            "obs_wall_1_removed"
+          ],
+          "conflictingObservations": [
+            "possible_wall_interrupted (front / camera-facing wall): front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction.",
+            "possible_wall_removed (right wall): right wall: baseline had a visible wall descriptor but staged extraction does not."
+          ],
+          "alternativeExplanationsAlreadyConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        }
+      ]
+    },
+    "deterministicAdjudicationCoverage": {
+      "totalSuspicions": 7,
+      "addressedSuspicions": 0,
+      "unresolvedSuspicions": [
+        {
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0
+        },
+        {
+          "code": "possible_architectural_certainty_changed",
+          "wallIndex": 0
+        },
+        {
+          "code": "possible_missing_corner",
+          "wallIndex": 0
+        },
+        {
+          "code": "possible_wall_extended",
+          "wallIndex": 0
+        },
+        {
+          "code": "possible_wall_interrupted",
+          "wallIndex": 0
+        },
+        {
+          "code": "possible_wall_removed",
+          "wallIndex": 1
+        },
+        {
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3
+        }
+      ],
+      "allSuspicionsAddressed": false
+    }
+  }
+}

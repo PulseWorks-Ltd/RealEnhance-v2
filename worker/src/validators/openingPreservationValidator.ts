@@ -33,6 +33,20 @@ export type AnchorFixture = {
   confidence: number;
 };
 
+export type WallDescriptor = {
+  wallIndex: WallIndex;
+  visibility: "full" | "partial" | "minimal";
+  visibleExtent?: "full" | "partial" | "minimal";
+  architecturalCertainty?: "known" | "partial" | "unknown";
+  leftBoundaryVisible?: boolean;
+  rightBoundaryVisible?: boolean;
+  leftCornerVisible?: boolean;
+  rightCornerVisible?: boolean;
+  terminatesAtCorner?: boolean;
+  continuesBeyondFrame?: boolean;
+  description: string;
+};
+
 export type StructuralOpening = {
   id: string;
   type: StructuralOpeningType;
@@ -60,6 +74,7 @@ export type StructuralBaseline = {
   cameraOrientation?: string;
   openings: StructuralOpening[];
   anchorFixtures?: AnchorFixture[];
+  wallDescriptors?: WallDescriptor[];
   graphMeta?: {
     graphStable: boolean;
     graphConfidence: number;
@@ -694,6 +709,21 @@ Return JSON in this exact schema:
       "bbox": [x1, y1, x2, y2],
       "confidence": number
     }
+  ],
+  "wallDescriptors": [
+    {
+      "wallIndex": 0 | 1 | 2 | 3,
+      "visibility": "full" | "partial" | "minimal",
+      "visibleExtent": "full" | "partial" | "minimal",
+      "architecturalCertainty": "known" | "partial" | "unknown",
+      "leftBoundaryVisible": boolean,
+      "rightBoundaryVisible": boolean,
+      "leftCornerVisible": boolean,
+      "rightCornerVisible": boolean,
+      "terminatesAtCorner": boolean,
+      "continuesBeyondFrame": boolean,
+      "description": string
+    }
   ]
 }
 
@@ -716,7 +746,27 @@ Anchor fixture rules:
 - Exclude movable furniture/decor.
 - If no stable fixture is visible, return an empty array.
 
+Wall descriptor rules:
+- For each visible wall, provide one descriptive entry.
+- visibility: "full" if entire wall is visible, "partial" if wall is partially occluded or cut by frame, "minimal" if only small portion visible.
+- visibleExtent should mirror observed visible proportion using the same enum as visibility.
+- architecturalCertainty: "known" only when wall envelope boundaries/corners are clearly visible, "partial" when only some boundaries are visible, "unknown" when continuation is not directly observable.
+- leftBoundaryVisible/rightBoundaryVisible: true only if the wall boundary edge is directly visible in the baseline image.
+- leftCornerVisible/rightCornerVisible: true only if a real wall corner/junction is directly visible.
+- terminatesAtCorner: true only when the visible wall clearly ends at an observed corner.
+- continuesBeyondFrame: true only when the wall exits the frame before a terminating corner is visible.
+- description: Brief description of permanent room envelope characteristics only (doorways, built-ins, alcoves, recesses, structural features).
+- Describe only architectural/structural features: wall continuity, openings, built-in elements (cabinets, shelving), fireplaces, structural columns, half-height walls, recesses, alcoves, bulkheads.
+- Do NOT describe furniture, bedding, staging, décor, rugs, curtains, or movable objects.
+- Do NOT duplicate opening descriptions already captured in the openings array; may reference openings only when necessary to explain wall continuity.
+- Use observational certainty language only. Do not speculate.
+- Good examples: "Left boundary exits frame before a corner is visible", "Right corner clearly visible", "No return wall is visible", "Continuation beyond frame is unknown".
+- Bad examples: "Wall probably continues", "Room likely extends", "There is probably another wall".
+- Examples: "Continuous wall with window on right side", "Wall contains doorway on left, recessed alcove on right", "Half-height wall separator".
+- Return empty array if insufficient wall information visible to describe.
+
 Return only valid JSON.`;
+
 
 const BASELINE_VERIFICATION_SYSTEM_INSTRUCTION = `You are a structural baseline verification reviewer.
 
@@ -1665,6 +1715,58 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         })
         .filter((item: AnchorFixture | null): item is AnchorFixture => item !== null)
     : [];
+
+  const wallDescriptors: WallDescriptor[] = Array.isArray(input.wallDescriptors)
+    ? input.wallDescriptors
+        .map((descriptor: any) => {
+          if (!descriptor || typeof descriptor !== "object") return null;
+          const wallIndexCandidate = typeof descriptor.wallIndex === "number" && isWallIndex(descriptor.wallIndex)
+            ? descriptor.wallIndex
+            : null;
+          if (wallIndexCandidate === null) return null;
+
+          const visibilityCandidate = descriptor.visibility === "full" || descriptor.visibility === "partial" || descriptor.visibility === "minimal"
+            ? descriptor.visibility
+            : "partial";
+
+          const visibleExtentCandidate = descriptor.visibleExtent === "full" || descriptor.visibleExtent === "partial" || descriptor.visibleExtent === "minimal"
+            ? descriptor.visibleExtent
+            : visibilityCandidate;
+
+          const architecturalCertaintyCandidate = descriptor.architecturalCertainty === "known" || descriptor.architecturalCertainty === "partial" || descriptor.architecturalCertainty === "unknown"
+            ? descriptor.architecturalCertainty
+            : (visibilityCandidate === "full" ? "known" : visibilityCandidate === "minimal" ? "unknown" : "partial");
+
+          const leftBoundaryVisibleCandidate = descriptor.leftBoundaryVisible === true;
+          const rightBoundaryVisibleCandidate = descriptor.rightBoundaryVisible === true;
+          const leftCornerVisibleCandidate = descriptor.leftCornerVisible === true;
+          const rightCornerVisibleCandidate = descriptor.rightCornerVisible === true;
+          const terminatesAtCornerCandidate = descriptor.terminatesAtCorner === true;
+          const continuesBeyondFrameCandidate = descriptor.continuesBeyondFrame === true;
+
+          const descriptionCandidate = typeof descriptor.description === "string" && descriptor.description.trim().length > 0
+            ? descriptor.description.trim()
+            : "";
+
+          if (!descriptionCandidate) return null;
+
+          return {
+            wallIndex: wallIndexCandidate,
+            visibility: visibilityCandidate,
+            visibleExtent: visibleExtentCandidate,
+            architecturalCertainty: architecturalCertaintyCandidate,
+            leftBoundaryVisible: leftBoundaryVisibleCandidate,
+            rightBoundaryVisible: rightBoundaryVisibleCandidate,
+            leftCornerVisible: leftCornerVisibleCandidate,
+            rightCornerVisible: rightCornerVisibleCandidate,
+            terminatesAtCorner: terminatesAtCornerCandidate,
+            continuesBeyondFrame: continuesBeyondFrameCandidate,
+            description: descriptionCandidate,
+          } as WallDescriptor;
+        })
+        .filter((item: WallDescriptor | null): item is WallDescriptor => item !== null)
+    : [];
+
   openings.sort(compareStructuralOpenings);
   anchorFixtures.sort(compareAnchorFixtures);
 
@@ -1672,6 +1774,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     cameraOrientation: typeof input.cameraOrientation === "string" ? input.cameraOrientation : undefined,
     openings,
     anchorFixtures,
+    wallDescriptors: wallDescriptors.length > 0 ? wallDescriptors : undefined,
   };
 }
 

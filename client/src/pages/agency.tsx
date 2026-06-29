@@ -37,7 +37,6 @@ import {
 interface AgencyMember {
   id: string;
   email: string;
-  emailVerified?: boolean;
   name?: string;
   firstName?: string;
   lastName?: string;
@@ -57,22 +56,17 @@ interface AgencyInvite {
 interface AgencyInfo {
   agencyId: string;
   name: string;
-  planTier: "starter" | "pro" | "agency" | null;
-  processingMode?: "full" | "safe";
-  isNew?: boolean;
-  promoCreditsGranted?: boolean;
-  upgradeBannerSeen?: boolean;
+  planTier: "starter" | "pro" | "agency";
   subscriptionStatus: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
   stripeCustomerId?: string;
   stripeSubscriptionId?: string;
   billingCountry?: "NZ" | "AU" | "ZA";
   billingCurrency?: "nzd" | "aud" | "zar" | "usd";
-  billingEmail?: string;
   currentPeriodEnd?: string;
   activeUsers?: number;
   userRole: "owner" | "admin" | "member";
   subscription?: {
-    planTier: "starter" | "pro" | "agency" | null;
+    planTier: "starter" | "pro" | "agency";
     planName: string;
     status: "ACTIVE" | "TRIAL" | "PAST_DUE" | "CANCELLED";
     currentPeriodEnd?: string | null;
@@ -83,7 +77,6 @@ interface AgencyInfo {
       monthlyUsed: number;
       monthlyRemaining: number;
       addonBalance: number;
-      pilotRemaining?: number;
       totalRemaining: number;
       monthKey: string;
     };
@@ -104,16 +97,10 @@ const roleIcons = {
   member: User,
 };
 
-function toLabel(value: string | null | undefined, fallback: string): string {
-  const normalized = typeof value === "string" ? value.trim() : "";
-  if (!normalized) return fallback;
-  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
-}
-
 export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
-  const { usage, refetch: refetchUsage } = useUsage();
+  const { usage } = useUsage();
   const { syncing: postCheckoutSyncing } = usePostCheckoutSync();
   const navigate = useNavigate();
   const [agencyInfo, setAgencyInfo] = useState<AgencyInfo | null>(null);
@@ -121,16 +108,6 @@ export default function AgencyPage() {
   const [invites, setInvites] = useState<AgencyInvite[]>([]);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
-  const [newMemberName, setNewMemberName] = useState("");
-  const [newMemberEmail, setNewMemberEmail] = useState("");
-  const [newMemberPassword, setNewMemberPassword] = useState("");
-  const [newMemberRole, setNewMemberRole] = useState<"OWNER" | "ADMIN" | "USER">("USER");
-  const [savingNewMember, setSavingNewMember] = useState(false);
-  const [profileName, setProfileName] = useState("");
-  const [profileCountry, setProfileCountry] = useState<"NZ" | "AU" | "ZA">("NZ");
-  const [profileBillingEmail, setProfileBillingEmail] = useState("");
-  const [savingProfile, setSavingProfile] = useState(false);
-  const [savingProcessingMode, setSavingProcessingMode] = useState(false);
   const [loading, setLoading] = useState(true);
   const [agencyName, setAgencyName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -138,32 +115,6 @@ export default function AgencyPage() {
 
   const isAdminOrOwner = agencyInfo && (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin");
   const isAdmin = Boolean(isAdminOrOwner);
-  const shouldShowConvertedUpgradeBanner = Boolean(
-    agencyInfo
-    && isAdmin
-    && agencyInfo.trial?.status === "converted"
-    && agencyInfo.upgradeBannerSeen !== true
-  );
-
-  useEffect(() => {
-    if (!shouldShowConvertedUpgradeBanner) return;
-
-    let cancelled = false;
-    const markBannerSeen = async () => {
-      try {
-        const res = await apiFetch("/api/agency/upgrade-banner-seen", { method: "POST" });
-        if (cancelled || !res.ok) return;
-        setAgencyInfo((prev) => (prev ? { ...prev, upgradeBannerSeen: true } : prev));
-      } catch {
-        // Keep the banner visible if persistence fails.
-      }
-    };
-
-    markBannerSeen();
-    return () => {
-      cancelled = true;
-    };
-  }, [shouldShowConvertedUpgradeBanner]);
 
   const scrollToBilling = () => {
     setActiveTab("billing");
@@ -175,7 +126,7 @@ export default function AgencyPage() {
     loadAgencyData();
     // Note: Post-checkout sync is now handled by usePostCheckoutSync hook
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.agencyId, user?.role]);
+  }, [user]);
 
   const loadAgencyData = async () => {
     try {
@@ -218,17 +169,12 @@ export default function AgencyPage() {
       const agencyInfo: AgencyInfo = {
         agencyId: infoData.agency.agencyId,
         name: infoData.agency.name,
-        planTier: infoData.agency.planTier ?? null,
-        processingMode: infoData.agency.processingMode === "safe" ? "safe" : "full",
-        isNew: infoData.agency.isNew === true,
-        promoCreditsGranted: infoData.agency.promoCreditsGranted === true,
-        upgradeBannerSeen: infoData.agency.upgradeBannerSeen === true,
+        planTier: infoData.agency.planTier,
         subscriptionStatus: infoData.agency.subscriptionStatus,
         stripeCustomerId: infoData.agency.stripeCustomerId,
         stripeSubscriptionId: infoData.agency.stripeSubscriptionId,
         billingCountry: infoData.agency.billingCountry,
         billingCurrency: infoData.agency.billingCurrency,
-        billingEmail: infoData.agency.billingEmail,
         currentPeriodEnd: infoData.agency.currentPeriodEnd,
         activeUsers: infoData.activeUsers,
         userRole: user?.role || "member",
@@ -255,9 +201,6 @@ export default function AgencyPage() {
       };
 
       setAgencyInfo(agencyInfo);
-      setProfileName(agencyInfo.name);
-      setProfileCountry((agencyInfo.billingCountry || "NZ") as "NZ" | "AU" | "ZA");
-      setProfileBillingEmail(agencyInfo.billingEmail || "");
 
       if (agencyInfo.userRole === "owner" || agencyInfo.userRole === "admin") {
         try {
@@ -373,112 +316,6 @@ export default function AgencyPage() {
     }
   };
 
-  const handleUpdateAgencyProfile = async () => {
-    try {
-      setSavingProfile(true);
-      const res = await apiFetch("/api/agency/profile", {
-        method: "PATCH",
-        body: JSON.stringify({
-          name: profileName.trim(),
-          country: profileCountry,
-          billingEmail: profileBillingEmail.trim(),
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to update agency profile");
-      }
-
-      toast({ title: "Saved", description: "Agency profile updated." });
-      await loadAgencyData();
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to update agency profile", variant: "destructive" });
-    } finally {
-      setSavingProfile(false);
-    }
-  };
-
-  const handleToggleSafeMode = async (enabled: boolean) => {
-    if (!isAdminOrOwner || !agencyInfo) return;
-
-    const nextMode: "full" | "safe" = enabled ? "safe" : "full";
-    const previousMode = agencyInfo.processingMode === "safe" ? "safe" : "full";
-    if (nextMode === previousMode) return;
-
-    try {
-      setSavingProcessingMode(true);
-      setAgencyInfo((prev) => (prev ? { ...prev, processingMode: nextMode } : prev));
-
-      const res = await apiFetch("/api/agency/settings/processing-mode", {
-        method: "PATCH",
-        body: JSON.stringify({ processingMode: nextMode }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to update processing mode");
-      }
-
-      toast({
-        title: "Saved",
-        description: nextMode === "safe"
-          ? "Safe Mode enabled. Stage 2 is now blocked for automated processing."
-          : "Safe Mode disabled. Full automated processing is restored.",
-      });
-      await loadAgencyData();
-    } catch (error: any) {
-      setAgencyInfo((prev) => (prev ? { ...prev, processingMode: previousMode } : prev));
-      toast({
-        title: "Error",
-        description: error.message || "Failed to update processing mode",
-        variant: "destructive",
-      });
-    } finally {
-      setSavingProcessingMode(false);
-    }
-  };
-
-  const handleCreateTeamMember = async () => {
-    if (!newMemberName.trim() || !newMemberEmail.trim() || !newMemberPassword.trim()) {
-      toast({
-        title: "Error",
-        description: "Full Name, Email, and Password are required.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    try {
-      setSavingNewMember(true);
-      const res = await apiFetch("/api/agency/team-members", {
-        method: "POST",
-        body: JSON.stringify({
-          fullName: newMemberName.trim(),
-          email: newMemberEmail.trim(),
-          password: newMemberPassword,
-          role: newMemberRole,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to create team member");
-      }
-
-      toast({ title: "Success", description: `Created ${newMemberEmail.trim()} successfully.` });
-      setNewMemberName("");
-      setNewMemberEmail("");
-      setNewMemberPassword("");
-      setNewMemberRole("USER");
-      await loadAgencyData();
-    } catch (error: any) {
-      toast({ title: "Error", description: error.message || "Failed to create team member", variant: "destructive" });
-    } finally {
-      setSavingNewMember(false);
-    }
-  };
-
   const handleCreateAgency = async () => {
     if (!agencyName.trim()) {
       toast({
@@ -493,7 +330,7 @@ export default function AgencyPage() {
       setCreating(true);
       const res = await apiFetch("/api/agency/create", {
         method: "POST",
-        body: JSON.stringify({ name: agencyName.trim() }),
+        body: JSON.stringify({ name: agencyName.trim(), planTier: "starter" }),
       });
 
       if (res.ok) {
@@ -513,7 +350,7 @@ export default function AgencyPage() {
           setAgencyInfo({
             agencyId: created.agency.agencyId,
             name: created.agency.name,
-            planTier: created.agency.planTier ?? null,
+            planTier: created.agency.planTier,
             subscriptionStatus: created.agency.subscriptionStatus,
             stripeCustomerId: created.agency.stripeCustomerId,
             stripeSubscriptionId: created.agency.stripeSubscriptionId,
@@ -568,30 +405,25 @@ export default function AgencyPage() {
 
   // Create agency state
   if (!agencyInfo) {
-    const accountName = user?.displayName || user?.firstName || user?.email || "Your account";
     return (
       <div className="space-y-6">
         <PageHeader
-          title="Individual Account"
-          description="Use RealEnhance as an individual, or create an agency later if you want a shared workspace."
+          title="Get Started"
+          description="Create your organization to start enhancing property photos"
         />
         <Card className="max-w-md mx-auto">
           <CardHeader className="text-center">
             <div className="w-12 h-12 rounded-full bg-action-50 flex items-center justify-center mx-auto mb-3">
               <Building2 className="w-6 h-6 text-action-600" />
             </div>
-            <CardTitle>{accountName}</CardTitle>
+            <CardTitle>Create Your Organization</CardTitle>
             <CardDescription>
-              No agency linked yet. Create one only if you want team management and agency-scoped billing.
+              Set up your organization to manage billing and invite team members
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-700">
-              <div className="font-medium text-slate-900">Account type</div>
-              <div>Individual</div>
-            </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Create an agency workspace</label>
+              <label className="text-sm font-medium text-foreground">Organization Name</label>
               <Input
                 placeholder="e.g., Smith Real Estate"
                 value={agencyName}
@@ -612,7 +444,7 @@ export default function AgencyPage() {
               ) : (
                 <>
                   <Sparkles className="w-4 h-4 mr-2" />
-                  Create Agency Workspace
+                  Create Organization
                 </>
               )}
             </Button>
@@ -637,10 +469,7 @@ export default function AgencyPage() {
 
         <TabsContent value="billing" className="space-y-6">
           {/* Trial Banner */}
-          {agencyInfo.trial
-            && agencyInfo.trial.status !== "none"
-            && (agencyInfo.trial.status !== "converted" || shouldShowConvertedUpgradeBanner)
-            && (
+          {agencyInfo.trial && agencyInfo.trial.status !== "none" && (
             <Card className="border-gold-400 bg-gold-50">
               <CardContent className="py-4">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -683,32 +512,24 @@ export default function AgencyPage() {
                   </Badge>
                 </CardTitle>
                 <CardDescription>
-                  {(agencyInfo.subscription.planName || "Trial / No Plan")} • {agencyInfo.subscription.allowance.monthKey}
+                  {agencyInfo.subscription.planName} • {agencyInfo.subscription.allowance.monthKey}
                 </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 sm:grid-cols-3">
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Plan allowance</p>
-                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyRemaining} remaining this month</p>
+                  <p className="text-xs text-muted-foreground">Monthly allowance</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.monthlyUsed} / {agencyInfo.subscription.allowance.monthlyIncluded}</p>
                   <p className="text-xs text-muted-foreground">
-                    {agencyInfo.subscription.allowance.monthlyUsed} / {agencyInfo.subscription.allowance.monthlyIncluded} used
+                    {agencyInfo.subscription.allowance.monthlyRemaining} remaining this month
                   </p>
                 </div>
                 <div className="rounded-lg border p-3">
-                  <p className="text-xs text-muted-foreground">Add-on credits</p>
-                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance} remaining</p>
-                  {(agencyInfo.subscription.allowance.pilotRemaining || 0) > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      + {agencyInfo.subscription.allowance.pilotRemaining} pilot promo credits
-                    </p>
-                  )}
-                  <p className="text-xs text-muted-foreground">Used after your monthly allowance is exhausted</p>
+                  <p className="text-xs text-muted-foreground">Add-on balance</p>
+                  <p className="text-lg font-semibold">{agencyInfo.subscription.allowance.addonBalance}</p>
+                  <p className="text-xs text-muted-foreground">Rolls forward from bundles & renewals</p>
                 </div>
                 <div className="rounded-lg border p-3">
                   <p className="text-xs text-muted-foreground">Billing</p>
-                  <p className="text-lg font-semibold">
-                    {agencyInfo.subscription.allowance.totalRemaining} total remaining
-                  </p>
                   <p className="text-lg font-semibold">
                     {agencyInfo.subscription.billingCurrency?.toUpperCase() || agencyInfo.billingCurrency?.toUpperCase() || ""}
                   </p>
@@ -730,7 +551,7 @@ export default function AgencyPage() {
                   <span>Monthly Usage</span>
                 </CardTitle>
                 <CardDescription>
-                  {(usage.planName || "Trial / No Plan")} includes {usage.mainAllowance} enhanced images per month
+                  Your plan includes {usage.mainAllowance} enhanced images per month
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -765,9 +586,6 @@ export default function AgencyPage() {
                   billingCurrency: agencyInfo.billingCurrency,
                   currentPeriodEnd: agencyInfo.currentPeriodEnd,
                 }}
-                onUpgradeComplete={async () => {
-                  await Promise.all([loadAgencyData(), refetchUsage()]);
-                }}
               />
             ) : (
               <Card>
@@ -797,83 +615,15 @@ export default function AgencyPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="rounded-lg border border-border p-3">
-                  <p className="text-sm font-medium">Complete agency profile</p>
-                  <p className="text-xs text-muted-foreground mt-1">You can edit these details anytime in settings.</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between py-2 border-b border-border">
+                  <span className="text-sm text-muted-foreground">Name</span>
+                  <span className="text-sm font-medium">{agencyInfo.name}</span>
                 </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Agency Name</label>
-                  <Input
-                    value={profileName}
-                    onChange={(e) => setProfileName(e.target.value)}
-                    disabled={!isAdmin}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Country</label>
-                  <Select
-                    value={profileCountry}
-                    onValueChange={(v) => setProfileCountry(v as "NZ" | "AU" | "ZA")}
-                    disabled={!isAdmin}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NZ">New Zealand</SelectItem>
-                      <SelectItem value="AU">Australia</SelectItem>
-                      <SelectItem value="ZA">South Africa</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Billing Email</label>
-                  <Input
-                    type="email"
-                    value={profileBillingEmail}
-                    onChange={(e) => setProfileBillingEmail(e.target.value)}
-                    disabled={!isAdmin}
-                  />
-                </div>
-
-                {isAdmin && (
-                  <Button onClick={handleUpdateAgencyProfile} disabled={savingProfile}>
-                    {savingProfile ? "Saving..." : "Save Agency Profile"}
-                  </Button>
-                )}
-
-                <div className="rounded-lg border border-border p-3 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold">Safe Mode</p>
-                      <p className="text-xs text-muted-foreground">
-                        Blocks Stage 2 in automated enhancement pipelines. Edit mode remains fully available.
-                      </p>
-                    </div>
-                    <label className="inline-flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4"
-                        checked={(agencyInfo.processingMode || "full") === "safe"}
-                        onChange={(e) => handleToggleSafeMode(e.target.checked)}
-                        disabled={!isAdmin || savingProcessingMode}
-                      />
-                      {(agencyInfo.processingMode || "full") === "safe" ? "ON" : "OFF"}
-                    </label>
-                  </div>
-                  {!isAdmin && (
-                    <p className="text-xs text-muted-foreground">Only agency owners/admins can change Safe Mode.</p>
-                  )}
-                </div>
-
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">Plan</span>
                   <Badge variant="secondary">
-                    {toLabel(agencyInfo.planTier, "Trial")}
+                    {agencyInfo.planTier.charAt(0).toUpperCase() + agencyInfo.planTier.slice(1)}
                   </Badge>
                 </div>
                 {agencyInfo.billingCountry && (
@@ -893,7 +643,7 @@ export default function AgencyPage() {
                 <div className="flex items-center justify-between py-2">
                   <span className="text-sm text-muted-foreground">Your Role</span>
                   <Badge variant={agencyInfo.userRole === "owner" ? "default" : "secondary"}>
-                    {toLabel(agencyInfo.userRole, "Member")}
+                    {agencyInfo.userRole.charAt(0).toUpperCase() + agencyInfo.userRole.slice(1)}
                   </Badge>
                 </div>
               </div>
@@ -912,57 +662,10 @@ export default function AgencyPage() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Mail className="w-5 h-5 text-muted-foreground" />
-                  Create Team Member
+                  Invite Team Member
                 </CardTitle>
                 <CardDescription>
-                  Add a user directly to your agency
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-                  <Input
-                    type="text"
-                    placeholder="Full name"
-                    value={newMemberName}
-                    onChange={(e) => setNewMemberName(e.target.value)}
-                  />
-                  <Input
-                    type="email"
-                    placeholder="colleague@example.com"
-                    value={newMemberEmail}
-                    onChange={(e) => setNewMemberEmail(e.target.value)}
-                  />
-                  <Input
-                    type="password"
-                    placeholder="Password"
-                    value={newMemberPassword}
-                    onChange={(e) => setNewMemberPassword(e.target.value)}
-                  />
-                  <Select value={newMemberRole} onValueChange={(v) => setNewMemberRole(v as "OWNER" | "ADMIN" | "USER")}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="OWNER">OWNER</SelectItem>
-                      <SelectItem value="ADMIN">ADMIN</SelectItem>
-                      <SelectItem value="USER">USER</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button className="mt-3" onClick={handleCreateTeamMember} disabled={savingNewMember}>
-                  {savingNewMember ? "Creating..." : "Create Team Member"}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Mail className="w-5 h-5 text-muted-foreground" />
-                  Invite via Email
-                </CardTitle>
-                <CardDescription>
-                  Optional: send a signup link instead of setting a password directly
+                  Send an invitation to add a new team member
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -983,7 +686,9 @@ export default function AgencyPage() {
                       <SelectItem value="admin">Admin</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button onClick={handleInvite}>Send Invite</Button>
+                  <Button onClick={handleInvite}>
+                    Send Invite
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -1009,7 +714,7 @@ export default function AgencyPage() {
                         <div>
                           <p className="font-medium text-foreground">{invite.email}</p>
                           <p className="text-sm text-muted-foreground">
-                            {toLabel(invite.role, "Member")} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                            {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
                           </p>
                         </div>
                         <StatusBadge status="pending" label="Pending" />
@@ -1053,15 +758,11 @@ export default function AgencyPage() {
                           </div>
                           <div className="flex items-center gap-2 ml-4">
                             <Badge variant={member.role === "owner" ? "default" : "secondary"}>
-                              {toLabel(member.role, "Member")}
+                              {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
                             </Badge>
                             <StatusBadge
                               status={member.isActive ? "success" : "error"}
                               label={member.isActive ? "Active" : "Disabled"}
-                            />
-                            <StatusBadge
-                              status={member.emailVerified ? "success" : "pending"}
-                              label={member.emailVerified ? "Verified" : "Unverified"}
                             />
                             {member.role !== "owner" && agencyInfo.userRole === "owner" && (
                               <Button

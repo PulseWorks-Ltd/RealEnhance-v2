@@ -31,6 +31,14 @@ STRUCTURE_VALIDATOR_SENSITIVITY=5.0
 | `STAGE1A_MIN_EDGE_IOU` | `0.65` | 0.0-1.0 | Edge IoU threshold for Stage 1A |
 | `VALIDATOR_MODE`, `STRUCTURE_VALIDATOR_MODE`, `REALISM_VALIDATOR_MODE`, `STAGE1B_VALIDATION_MODE` | (deprecated) | legacy | Supported for backward compatibility; mapped to `LOCAL_VALIDATOR_MODE` / `GEMINI_VALIDATOR_MODE` with startup warnings |
 
+## Envelope Validator Architecture
+
+The Envelope Validator now uses architectural constraint verification by default.
+
+- No environment variable is required to enable the baseline semantic wall model / architectural constraint verification flow.
+- `ENVELOPE_CONSTRAINT_VERIFICATION` and `ENVELOPE_BASELINE_VERIFICATION` are retired and should no longer be set.
+- The legacy comparison-claim semantic path is no longer selectable at runtime.
+
 ## Mode Behavior
 
 | Mode | Local Validators | Gemini Confirm | Blocks Images? | Use Case |

@@ -1,0 +1,465 @@
+{
+  "timestamp": "2026-06-28T08:19:20.277Z",
+  "mode": "single-job-envelope-replay-local-with-canonical-webp-fallback",
+  "selectedCases": [
+    "job_bb029607"
+  ],
+  "summaries": [
+    {
+      "job": "job_bb029607",
+      "expected": "fail",
+      "actual": "pass",
+      "selectedReplaySource": "canonicalwebp",
+      "replayPathComparisons": {
+        "localjpg": {
+          "baselinePath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+          "stagedPath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+          "baselineExtractionSummary": "cameraOrientation=unknown; wallCount=3; wall_0: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=yes, continuesBeyondFrame=yes | wall_1: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=yes, continuesBeyondFrame=yes | wall_3: visibility=minimal, certainty=partial, corners=-R, terminatesAtCorner=yes, continuesBeyondFrame=yes",
+          "stageExtractionSummary": "cameraOrientation=unknown; wallCount=2; wall_0: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=yes, continuesBeyondFrame=yes | wall_3: visibility=partial, certainty=partial, corners=-R, terminatesAtCorner=yes, continuesBeyondFrame=yes",
+          "deterministicSuspicions": [
+            {
+              "observationId": "obs_wall_1_removed",
+              "code": "possible_wall_removed",
+              "wallIndex": 1,
+              "note": "right wall: baseline had a visible wall descriptor but staged extraction does not."
+            },
+            {
+              "observationId": "obs_wall_3_visibility_changed",
+              "code": "possible_wall_visibility_changed",
+              "wallIndex": 3,
+              "note": "left wall: wall visibility classification changed from baseline to staged extraction."
+            }
+          ],
+          "clarificationQuestions": [
+            "Deterministic comparison suggests a possible missing wall surface on right wall. Was a permanent wall surface removed, interrupted from view by framing uncertainty, or explained by baseline visibility limitation?",
+            "Deterministic comparison suggests wall visibility changed on left wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?"
+          ],
+          "finalDecision": "pass",
+          "confidence": 1
+        },
+        "canonicalwebp": {
+          "baselinePath": "/workspaces/RealEnhance-v2/worker/reports/debug-baselines/job_bb029607-canonical-stage1a.webp",
+          "stagedPath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+          "baselineExtractionSummary": "cameraOrientation=unknown; wallCount=2; wall_0: visibility=partial, certainty=partial, corners=-R, terminatesAtCorner=yes, continuesBeyondFrame=yes | wall_3: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=yes, continuesBeyondFrame=yes",
+          "stageExtractionSummary": "cameraOrientation=unknown; wallCount=2; wall_0: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=no, continuesBeyondFrame=yes | wall_3: visibility=full, certainty=partial, corners=-R, terminatesAtCorner=yes, continuesBeyondFrame=yes",
+          "deterministicSuspicions": [
+            {
+              "observationId": "obs_wall_0_new_corner",
+              "code": "possible_new_visible_corner",
+              "wallIndex": 0,
+              "note": "front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not."
+            },
+            {
+              "observationId": "obs_wall_0_missing_corner",
+              "code": "possible_missing_corner",
+              "wallIndex": 0,
+              "note": "front / camera-facing wall: a baseline-visible corner is not visible in staged extraction."
+            },
+            {
+              "observationId": "obs_wall_0_extended",
+              "code": "possible_wall_extended",
+              "wallIndex": 0,
+              "note": "front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+            },
+            {
+              "observationId": "obs_wall_0_interrupted",
+              "code": "possible_wall_interrupted",
+              "wallIndex": 0,
+              "note": "front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction."
+            },
+            {
+              "observationId": "obs_wall_3_visibility_changed",
+              "code": "possible_wall_visibility_changed",
+              "wallIndex": 3,
+              "note": "left wall: wall visibility classification changed from baseline to staged extraction."
+            },
+            {
+              "observationId": "obs_wall_3_new_corner",
+              "code": "possible_new_visible_corner",
+              "wallIndex": 3,
+              "note": "left wall: staged extraction indicates a corner now visible where baseline did not."
+            },
+            {
+              "observationId": "obs_wall_3_missing_corner",
+              "code": "possible_missing_corner",
+              "wallIndex": 3,
+              "note": "left wall: a baseline-visible corner is not visible in staged extraction."
+            },
+            {
+              "observationId": "obs_wall_3_interrupted",
+              "code": "possible_wall_interrupted",
+              "wallIndex": 3,
+              "note": "left wall: a baseline-visible boundary is not visible in staged extraction."
+            }
+          ],
+          "clarificationQuestions": [
+            "Deterministic comparison suggests a newly visible corner on front / camera-facing wall. Is this a genuine architectural corner, unsupported completion, perspective/framing effect, or baseline visibility limitation?",
+            "Deterministic comparison suggests a newly visible corner on left wall. Is this a genuine architectural corner, unsupported completion, perspective/framing effect, or baseline visibility limitation?",
+            "Deterministic comparison suggests a potentially missing corner on front / camera-facing wall. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?",
+            "Deterministic comparison suggests a potentially missing corner on left wall. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?",
+            "Deterministic comparison suggests possible wall continuity interruption on front / camera-facing wall. Is continuity genuinely interrupted or explained by framing/visibility limits?",
+            "Deterministic comparison suggests possible wall continuity interruption on left wall. Is continuity genuinely interrupted or explained by framing/visibility limits?",
+            "Deterministic comparison suggests possible wall extension on front / camera-facing wall beyond the baseline corner termination. Is this a true extension or an uncertainty/framing artefact?",
+            "Deterministic comparison suggests wall visibility changed on left wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?"
+          ],
+          "finalDecision": "pass",
+          "confidence": 1
+        }
+      },
+      "architecturalQuestionPresented": "Is this claim TRUE or FALSE?",
+      "architecturalClaimPresented": "We suspect a continuous wall now appears split into two wall planes on the front wall of the room in the staged image.",
+      "geminiAnswer": "FALSE",
+      "geminiReason": "claim_rejected",
+      "structuralPatterns": [
+        {
+          "patternId": "existing_wall_no_longer_continues",
+          "patternName": "Existing wall no longer continues",
+          "supportingObservations": [
+            "front / camera-facing wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "front / camera-facing wall: a corner visible in baseline is not visible in staged extraction.",
+            "left wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "left wall: a corner visible in baseline is not visible in staged extraction."
+          ],
+          "confidence": 0.85
+        },
+        {
+          "patternId": "previously_unseen_wall_continues",
+          "patternName": "Previously unseen wall continues",
+          "supportingObservations": [
+            "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+            "front / camera-facing wall: the staged wall span continues beyond where baseline showed a corner termination.",
+            "left wall: staged extraction indicates a corner that baseline did not show."
+          ],
+          "confidence": 0.9
+        },
+        {
+          "patternId": "new_wall_surface_introduced",
+          "patternName": "New wall surface introduced",
+          "supportingObservations": [
+            "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+            "left wall: staged extraction indicates a corner that baseline did not show.",
+            "left wall: the staged extraction changed the visible wall extent classification."
+          ],
+          "confidence": 0.65
+        },
+        {
+          "patternId": "wall_termination_disappeared",
+          "patternName": "Wall termination disappeared",
+          "supportingObservations": [
+            "front / camera-facing wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "front / camera-facing wall: a corner visible in baseline is not visible in staged extraction.",
+            "left wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "left wall: a corner visible in baseline is not visible in staged extraction."
+          ],
+          "confidence": 0.8500000000000001
+        }
+      ],
+      "architecturalEventCandidates": [
+        {
+          "eventId": "wall_plane_split",
+          "eventName": "Continuous wall split",
+          "supportingStructuralPatterns": [
+            "Wall termination disappeared",
+            "New wall surface introduced"
+          ],
+          "conflictingStructuralPatterns": [
+            "Existing wall no longer continues"
+          ],
+          "supportingObservations": [
+            "front / camera-facing wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "front / camera-facing wall: a corner visible in baseline is not visible in staged extraction.",
+            "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+            "left wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "left wall: a corner visible in baseline is not visible in staged extraction.",
+            "left wall: staged extraction indicates a corner that baseline did not show.",
+            "left wall: the staged extraction changed the visible wall extent classification."
+          ],
+          "conflictingObservations": [
+            "front / camera-facing wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "front / camera-facing wall: a corner visible in baseline is not visible in staged extraction.",
+            "left wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "left wall: a corner visible in baseline is not visible in staged extraction."
+          ],
+          "confidence": 0.6181818181818182,
+          "reasoning": "Supports 2 structural patterns and conflicts with 1 others."
+        },
+        {
+          "eventId": "wall_added",
+          "eventName": "New wall surface added",
+          "supportingStructuralPatterns": [
+            "New wall surface introduced",
+            "Previously unseen wall continues"
+          ],
+          "conflictingStructuralPatterns": [
+            "Existing wall no longer continues",
+            "Wall termination disappeared"
+          ],
+          "supportingObservations": [
+            "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+            "front / camera-facing wall: the staged wall span continues beyond where baseline showed a corner termination.",
+            "left wall: staged extraction indicates a corner that baseline did not show.",
+            "left wall: the staged extraction changed the visible wall extent classification."
+          ],
+          "conflictingObservations": [
+            "front / camera-facing wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "front / camera-facing wall: a corner visible in baseline is not visible in staged extraction.",
+            "left wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "left wall: a corner visible in baseline is not visible in staged extraction."
+          ],
+          "confidence": 0.4794520547945206,
+          "reasoning": "Supports 2 structural patterns and conflicts with 2 others."
+        },
+        {
+          "eventId": "wall_removed",
+          "eventName": "Wall surface removed",
+          "supportingStructuralPatterns": [
+            "Existing wall no longer continues"
+          ],
+          "conflictingStructuralPatterns": [
+            "New wall surface introduced",
+            "Previously unseen wall continues"
+          ],
+          "supportingObservations": [
+            "front / camera-facing wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "front / camera-facing wall: a corner visible in baseline is not visible in staged extraction.",
+            "left wall: a baseline boundary segment is no longer visible in staged extraction.",
+            "left wall: a corner visible in baseline is not visible in staged extraction."
+          ],
+          "conflictingObservations": [
+            "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+            "front / camera-facing wall: the staged wall span continues beyond where baseline showed a corner termination.",
+            "left wall: staged extraction indicates a corner that baseline did not show.",
+            "left wall: the staged extraction changed the visible wall extent classification."
+          ],
+          "confidence": 0.37500000000000006,
+          "reasoning": "Supports 1 structural patterns and conflicts with 2 others."
+        }
+      ],
+      "winningArchitecturalEvent": "Continuous wall split",
+      "architecturalEventInferred": "We suspect a continuous wall now appears split into two wall planes on the front wall of the room in the staged image.",
+      "architecturalEventType": "wall_plane_split",
+      "architecturalEventSecondary": "We suspect a new permanent wall surface has been introduced on the front wall of the room in the staged image.",
+      "architecturalEventEvidence": [
+        "Wall termination disappeared",
+        "New wall surface introduced"
+      ],
+      "alternativeExplanationsConsidered": [],
+      "baselineExtractionSummary": "cameraOrientation=unknown; wallCount=2; wall_0: visibility=partial, certainty=partial, corners=-R, terminatesAtCorner=yes, continuesBeyondFrame=yes | wall_3: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=yes, continuesBeyondFrame=yes",
+      "stageExtractionSummary": "cameraOrientation=unknown; wallCount=2; wall_0: visibility=partial, certainty=partial, corners=L-, terminatesAtCorner=no, continuesBeyondFrame=yes | wall_3: visibility=full, certainty=partial, corners=-R, terminatesAtCorner=yes, continuesBeyondFrame=yes",
+      "architecturalChangeSummaryPassedToGemini": "Architectural Claim\nWe suspect a continuous wall now appears split into two wall planes on the front wall of the room in the staged image.\nSecondary supporting claim: We suspect a new permanent wall surface has been introduced on the front wall of the room in the staged image.\nSupporting structural patterns:\n- Wall termination disappeared\n- New wall surface introduced\nOverall deterministic confidence: Medium\nPattern count: 2\nDeterministic observation count: 8",
+      "deterministicConfidence": "High",
+      "verticalEdgeDeltaExecuted": false,
+      "usedCanonicalStage1AWebp": true,
+      "unsupportedArchitecturalCompletionDetected": false,
+      "addedWallDetected": false,
+      "removedWallDetected": false,
+      "generatedHypothesis": "claim_rejected",
+      "selectedExplanation": "claim_rejected",
+      "generatedHypothesisConfidence": "High",
+      "generatedHypotheses": [
+        {
+          "hypothesisId": "hyp_room_envelope_modified",
+          "category": "possible_room_envelope_modified",
+          "title": "Room envelope modified",
+          "confidence": "High",
+          "statement": "Deterministic comparison identified multi-signal room-envelope differences between baseline and staged extraction.",
+          "supportingObservations": [
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_missing_corner (front / camera-facing wall): front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+            "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not.",
+            "possible_wall_interrupted (front / camera-facing wall): front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction.",
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_missing_corner (left wall): left wall: a baseline-visible corner is not visible in staged extraction.",
+            "possible_wall_interrupted (left wall): left wall: a baseline-visible boundary is not visible in staged extraction."
+          ],
+          "conflictingObservations": [
+            "possible_wall_visibility_changed (left wall): left wall: wall visibility classification changed from baseline to staged extraction."
+          ],
+          "alternativesConsidered": [
+            "camera_viewpoint",
+            "framing",
+            "foreground_occlusion"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_unsupported_completion",
+          "category": "possible_unsupported_architectural_completion",
+          "title": "Visible room envelope differs from baseline extraction",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified newly visible structural continuity not present in baseline extraction.",
+          "supportingObservations": [
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not.",
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "conflictingObservations": [
+            "possible_wall_interrupted (front / camera-facing wall): front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction.",
+            "possible_wall_interrupted (left wall): left wall: a baseline-visible boundary is not visible in staged extraction."
+          ],
+          "alternativesConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_wall_extended",
+          "category": "possible_wall_extension",
+          "title": "Wall boundary extends further than baseline",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified wall boundary continuity extending beyond baseline termination cues.",
+          "supportingObservations": [
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not.",
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "conflictingObservations": [
+            "possible_missing_corner (front / camera-facing wall): front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+            "possible_missing_corner (left wall): left wall: a baseline-visible corner is not visible in staged extraction."
+          ],
+          "alternativesConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        }
+      ],
+      "supportingDeterministicObservations": [
+        "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+        "possible_missing_corner (front / camera-facing wall): front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+        "possible_wall_extended (front / camera-facing wall): front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not.",
+        "possible_wall_interrupted (front / camera-facing wall): front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction.",
+        "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not.",
+        "possible_missing_corner (left wall): left wall: a baseline-visible corner is not visible in staged extraction.",
+        "possible_wall_interrupted (left wall): left wall: a baseline-visible boundary is not visible in staged extraction."
+      ],
+      "geminiVerdict": "rejected",
+      "geminiDismissalReason": "",
+      "geminiAnalysis": "The baseline and staged images are visually identical. There are no changes to the permanent architectural envelope between the two images. Specifically, the front wall appears as a single, continuous wall plane in both the baseline and staged images, with no evidence of it being split into two wall planes. The deterministic findings describe changes that are not visually apparent in the provided images.",
+      "deterministicSuspicions": [
+        {
+          "observationId": "obs_wall_0_new_corner",
+          "code": "possible_new_visible_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not."
+        },
+        {
+          "observationId": "obs_wall_0_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible corner is not visible in staged extraction."
+        },
+        {
+          "observationId": "obs_wall_0_extended",
+          "code": "possible_wall_extended",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not."
+        },
+        {
+          "observationId": "obs_wall_0_interrupted",
+          "code": "possible_wall_interrupted",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction."
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "note": "left wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_3_new_corner",
+          "code": "possible_new_visible_corner",
+          "wallIndex": 3,
+          "note": "left wall: staged extraction indicates a corner now visible where baseline did not."
+        },
+        {
+          "observationId": "obs_wall_3_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 3,
+          "note": "left wall: a baseline-visible corner is not visible in staged extraction."
+        },
+        {
+          "observationId": "obs_wall_3_interrupted",
+          "code": "possible_wall_interrupted",
+          "wallIndex": 3,
+          "note": "left wall: a baseline-visible boundary is not visible in staged extraction."
+        }
+      ],
+      "clarificationQuestions": [
+        "Deterministic comparison suggests a newly visible corner on front / camera-facing wall. Is this a genuine architectural corner, unsupported completion, perspective/framing effect, or baseline visibility limitation?",
+        "Deterministic comparison suggests a newly visible corner on left wall. Is this a genuine architectural corner, unsupported completion, perspective/framing effect, or baseline visibility limitation?",
+        "Deterministic comparison suggests a potentially missing corner on front / camera-facing wall. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?",
+        "Deterministic comparison suggests a potentially missing corner on left wall. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?",
+        "Deterministic comparison suggests possible wall continuity interruption on front / camera-facing wall. Is continuity genuinely interrupted or explained by framing/visibility limits?",
+        "Deterministic comparison suggests possible wall continuity interruption on left wall. Is continuity genuinely interrupted or explained by framing/visibility limits?",
+        "Deterministic comparison suggests possible wall extension on front / camera-facing wall beyond the baseline corner termination. Is this a true extension or an uncertainty/framing artefact?",
+        "Deterministic comparison suggests wall visibility changed on left wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?"
+      ],
+      "observationAdjudications": [],
+      "suspicionAddressMatrix": [
+        {
+          "observationId": "obs_wall_0_new_corner",
+          "code": "possible_new_visible_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_0_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_0_extended",
+          "code": "possible_wall_extended",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: baseline wall terminated at an observed corner, staged wall does not.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_0_interrupted",
+          "code": "possible_wall_interrupted",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible boundary is not visible in staged extraction.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "note": "left wall: wall visibility classification changed from baseline to staged extraction.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_3_new_corner",
+          "code": "possible_new_visible_corner",
+          "wallIndex": 3,
+          "note": "left wall: staged extraction indicates a corner now visible where baseline did not.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_3_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 3,
+          "note": "left wall: a baseline-visible corner is not visible in staged extraction.",
+          "individuallyAddressed": false
+        },
+        {
+          "observationId": "obs_wall_3_interrupted",
+          "code": "possible_wall_interrupted",
+          "wallIndex": 3,
+          "note": "left wall: a baseline-visible boundary is not visible in staged extraction.",
+          "individuallyAddressed": false
+        }
+      ],
+      "allSuspicionsAddressed": false,
+      "geminiReasoning": "envelope_preserved",
+      "rawGeminiJson": "```json\n{\n  \"claim\":\"We suspect a continuous wall now appears split into two wall planes on the front wall of the room in the staged image.\",\n  \"answer\":\"FALSE\",\n  \"confidence\":1.0,\n  \"analysis\":\"The baseline and staged images are visually identical. There are no changes to the permanent architectural envelope between the two images. Specifically, the front wall appears as a single, continuous wall plane in both the baseline and staged images, with no evidence of it being split into two wall planes. The deterministic findings describe changes that are not visually apparent in the provided images.\"\n}\n```",
+      "finalDecision": "pass",
+      "confidence": 1
+    }
+  ]
+}

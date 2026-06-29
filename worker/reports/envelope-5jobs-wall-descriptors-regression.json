@@ -1,0 +1,161 @@
+{
+  "results": [
+    {
+      "label": "job_c11a8e7c (FAIL expected)",
+      "expectedStatus": "fail",
+      "baselineUrl": "/workspaces/RealEnhance-v2/tmp/replay_c11a8e7c/before.jpg",
+      "stagedUrl": "/workspaces/RealEnhance-v2/tmp/replay_c11a8e7c/after.jpg",
+      "baselineSummary": {
+        "openingsCount": 1,
+        "anchorFixturesCount": 0,
+        "wallDescriptorsCount": 2
+      },
+      "wallDescriptors": [
+        {
+          "wallIndex": 0,
+          "visibility": "partial",
+          "description": "Wall containing a large window."
+        },
+        {
+          "wallIndex": 1,
+          "visibility": "partial",
+          "description": "Continuous flat wall."
+        }
+      ],
+      "fullyInterpolatedPrompt": "The following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: front / camera-facing wall\n- extracted reference openings: 1\n- extracted architectural landmarks: 0\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: continuous wall plane with no extracted openings or fixed architectural anchors\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: reference openings: W1: window, left third, mid zone, occupancy 40-60, confidence 0.95\n\nWall envelope descriptions (permanent architectural features):\n- front / camera-facing wall (partial visibility): Wall containing a large window.\n- right wall (partial visibility): Continuous flat wall.\n\nArchitectural landmarks:\n- none explicitly extracted\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- W1: window, front / camera-facing wall, left third, mid zone, occupancy 40-60, confidence 0.95\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.",
+      "geminiRawResponse": "{\n  \"status\": \"pass\",\n  \"reason\": \"The staged image retains the exact same permanent architectural wall envelope as described in the baseline. All walls, corners, and openings match the baseline architecture.\",\n  \"confidence\": 1,\n  \"hardFail\": false,\n  \"issueType\": \"envelope_vertical_edge_loss\",\n  \"issueTier\": \"critical\",\n  \"advisorySignals\": [\n    \"envelope_vertical_edge_loss\",\n    \"envelope_corner_flattened\"\n  ],\n  \"structuredIssues\": [],\n  \"verticalEdgeDelta\": {\n    \"verticalEdgeLossDetected\": true,\n    \"cornerPersistenceFailure\": true,\n    \"junctions\": [\n      {\n        \"column\": 98,\n        \"beforeCount\": 120,\n        \"afterCount\": 151,\n        \"retention\": 1.2583333333333333,\n        \"lost\": false\n      },\n      {\n        \"column\": 103,\n        \"beforeCount\": 72,\n        \"afterCount\": 124,\n        \"retention\": 1.7222222222222223,\n        \"lost\": false\n      },\n      {\n        \"column\": 108,\n        \"beforeCount\": 72,\n        \"afterCount\": 134,\n        \"retention\": 1.8611111111111112,\n        \"lost\": false\n      },\n      {\n        \"column\": 112,\n        \"beforeCount\": 55,\n        \"afterCount\": 69,\n        \"retention\": 1.2545454545454546,\n        \"lost\": false\n      },\n      {\n        \"column\": 119,\n        \"beforeCount\": 70,\n        \"afterCount\": 108,\n        \"retention\": 1.542857142857143,\n        \"lost\": false\n      },\n      {\n        \"column\": 157,\n        \"beforeCount\": 62,\n        \"afterCount\": 66,\n        \"retention\": 1.064516129032258,\n        \"lost\": false\n      },\n      {\n        \"column\": 162,\n        \"beforeCount\": 55,\n        \"afterCount\": 63,\n        \"retention\": 1.1454545454545455,\n        \"lost\": false\n      },\n      {\n        \"column\": 167,\n        \"beforeCount\": 59,\n        \"afterCount\": 46,\n        \"retention\": 0.7796610169491526,\n        \"lost\": false\n      },\n      {\n        \"column\": 169,\n        \"beforeCount\": 59,\n        \"afterCount\": 41,\n        \"retention\": 0.6949152542372882,\n        \"lost\": false\n      },\n      {\n        \"column\": 172,\n        \"beforeCount\": 95,\n        \"afterCount\": 94,\n        \"retention\": 0.9894736842105263,\n        \"lost\": false\n      },\n      {\n        \"column\": 173,\n        \"beforeCount\": 95,\n        \"afterCount\": 91,\n        \"retention\": 0.9578947368421052,\n        \"lost\": false\n      },\n      {\n        \"column\": 179,\n        \"beforeCount\": 96,\n        \"afterCount\": 104,\n        \"retention\": 1.0833333333333333,\n        \"lost\": false\n      },\n      {\n        \"column\": 207,\n        \"beforeCount\": 64,\n        \"afterCount\": 71,\n        \"retention\": 1.109375,\n        \"lost\": false\n      },\n      {\n        \"column\": 211,\n        \"beforeCount\": 57,\n        \"afterCount\": 82,\n        \"retention\": 1.4385964912280702,\n        \"lost\": false\n      },\n      {\n        \"column\": 229,\n        \"beforeCount\": 86,\n        \"afterCount\": 96,\n        \"retention\": 1.1162790697674418,\n        \"lost\": false\n      },\n      {\n        \"column\": 231,\n        \"beforeCount\": 86,\n        \"afterCount\": 102,\n        \"retention\": 1.186046511627907,\n        \"lost\": false\n      },\n      {\n        \"column\": 237,\n        \"beforeCount\": 59,\n        \"afterCount\": 93,\n        \"retention\": 1.576271186440678,\n        \"lost\": false\n      },\n      {\n        \"column\": 257,\n        \"beforeCount\": 69,\n        \"afterCount\": 26,\n        \"retention\": 0.37681159420289856,\n        \"lost\": true\n      },\n      {\n        \"column\": 262,\n        \"beforeCount\": 58,\n        \"afterCount\": 80,\n        \"retention\": 1.3793103448275863,\n        \"lost\": false\n      }\n    ],\n    \"beforeVerticalEdgeCount\": 10785,\n    \"afterVerticalEdgeCount\": 20205,\n    \"worstRetention\": 0.37681159420289856\n  },\n  \"structuralSignals\": [\n    {\n      \"claim\": \"corner_flattened\",\n      \"region\": {\n        \"x1\": 0.471953125,\n        \"y1\": 0.05,\n        \"x2\": 0.53390625,\n        \"y2\": 0.95\n      },\n      \"confidence\": 1,\n      \"source\": \"envelope\"\n    }\n  ]\n}",
+      "decision": {
+        "status": "pass",
+        "confidence": 1,
+        "issueType": "envelope_vertical_edge_loss",
+        "hardFail": false,
+        "advisory": false,
+        "advisorySignals": [
+          "envelope_vertical_edge_loss",
+          "envelope_corner_flattened"
+        ]
+      },
+      "actualResult": "pass",
+      "correct": false,
+      "notes": "Using local Stage 1A (before) vs Stage 2 (after) images"
+    },
+    {
+      "label": "job_bb029607 (FAIL expected)",
+      "expectedStatus": "fail",
+      "baselineUrl": "",
+      "stagedUrl": "",
+      "baselineSummary": {
+        "openingsCount": 0,
+        "anchorFixturesCount": 0,
+        "wallDescriptorsCount": 0
+      },
+      "wallDescriptors": [],
+      "fullyInterpolatedPrompt": "",
+      "geminiRawResponse": "SKIPPED",
+      "decision": {
+        "status": "skipped",
+        "confidence": 0,
+        "issueType": "unavailable",
+        "hardFail": false,
+        "advisory": false,
+        "advisorySignals": []
+      },
+      "actualResult": "skipped",
+      "correct": false,
+      "notes": "⚠ SKIPPED: Stage 2 artifacts not available"
+    },
+    {
+      "label": "job_4a87f43b (PASS expected)",
+      "expectedStatus": "pass",
+      "baselineUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782337804785-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or-canonical-1A-env-relit-1a-delivery.jpg",
+      "stagedUrl": "",
+      "baselineSummary": {
+        "openingsCount": 0,
+        "anchorFixturesCount": 0,
+        "wallDescriptorsCount": 0
+      },
+      "wallDescriptors": [],
+      "fullyInterpolatedPrompt": "",
+      "geminiRawResponse": "SKIPPED",
+      "decision": {
+        "status": "skipped",
+        "confidence": 0,
+        "issueType": "unavailable",
+        "hardFail": false,
+        "advisory": false,
+        "advisorySignals": []
+      },
+      "actualResult": "skipped",
+      "correct": false,
+      "notes": "⚠ SKIPPED: Stage 2 URL not available"
+    },
+    {
+      "label": "job_dfbe98aa (PASS expected)",
+      "expectedStatus": "pass",
+      "baselineUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782337800629-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap-canonical-1A-env-relit-1a-delivery.jpg",
+      "stagedUrl": "",
+      "baselineSummary": {
+        "openingsCount": 0,
+        "anchorFixturesCount": 0,
+        "wallDescriptorsCount": 0
+      },
+      "wallDescriptors": [],
+      "fullyInterpolatedPrompt": "",
+      "geminiRawResponse": "SKIPPED",
+      "decision": {
+        "status": "skipped",
+        "confidence": 0,
+        "issueType": "unavailable",
+        "hardFail": false,
+        "advisory": false,
+        "advisorySignals": []
+      },
+      "actualResult": "skipped",
+      "correct": false,
+      "notes": "⚠ SKIPPED: Stage 2 URL not available"
+    },
+    {
+      "label": "job_81e485e7 (PASS expected)",
+      "expectedStatus": "pass",
+      "baselineUrl": "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782337803926-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2-canonical-1A-1a-delivery.jpg",
+      "stagedUrl": "",
+      "baselineSummary": {
+        "openingsCount": 0,
+        "anchorFixturesCount": 0,
+        "wallDescriptorsCount": 0
+      },
+      "wallDescriptors": [],
+      "fullyInterpolatedPrompt": "",
+      "geminiRawResponse": "SKIPPED",
+      "decision": {
+        "status": "skipped",
+        "confidence": 0,
+        "issueType": "unavailable",
+        "hardFail": false,
+        "advisory": false,
+        "advisorySignals": []
+      },
+      "actualResult": "skipped",
+      "correct": false,
+      "notes": "⚠ SKIPPED: Stage 2 URL not available"
+    }
+  ],
+  "summary": {
+    "totalCount": 5,
+    "correctCount": 0,
+    "mismatchCount": 5,
+    "errorCount": 0,
+    "timestamp": "2026-06-26T01:44:31.560Z",
+    "expectedFailCount": 2,
+    "expectedPassCount": 3,
+    "actualFailCount": 0,
+    "actualPassCount": 1,
+    "allTestsCorrect": false,
+    "discrimination": {
+      "description": "Wall descriptors enable envelope validator to discriminate between architectural changes and styling",
+      "wallDescriptorsImplemented": true,
+      "baselineEnvelopeDescriptionsProvided": true,
+      "validatorPromptUpdated": true
+    }
+  }
+}

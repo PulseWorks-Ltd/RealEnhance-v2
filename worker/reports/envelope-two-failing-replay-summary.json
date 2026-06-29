@@ -1,0 +1,202 @@
+{
+  "timestamp": "2026-06-26T21:30:12.707Z",
+  "mode": "two-job-envelope-replay-local-with-canonical-webp-fallback",
+  "summaries": [
+    {
+      "job": "job_c11a8e7c",
+      "expected": "fail",
+      "actual": "pass",
+      "verticalEdgeDeltaExecuted": false,
+      "usedCanonicalStage1AWebp": true,
+      "unsupportedArchitecturalCompletionDetected": false,
+      "addedWallDetected": false,
+      "removedWallDetected": false,
+      "deterministicSuspicions": [
+        {
+          "observationId": "obs_wall_0_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_1_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 1,
+          "note": "right wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "note": "left wall: wall visibility classification changed from baseline to staged extraction."
+        }
+      ],
+      "clarificationQuestions": [
+        "Deterministic comparison suggests wall visibility changed on front / camera-facing wall. Is this change due to real architectural modification, baseline visibility limits, or extraction ambiguity?",
+        "Deterministic comparison suggests wall visibility changed on left wall. Is this change due to real architectural modification, baseline visibility limits, or extraction ambiguity?",
+        "Deterministic comparison suggests wall visibility changed on right wall. Is this change due to real architectural modification, baseline visibility limits, or extraction ambiguity?"
+      ],
+      "observationAdjudications": [
+        {
+          "observationId": "obs_wall_0_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The visibility and extent of the front / camera-facing wall, including its boundaries and corners, remain architecturally identical to the baseline description."
+        },
+        {
+          "observationId": "obs_wall_1_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 1,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The visibility and extent of the right wall, including its visible corner junction and continuation beyond the frame, remain architecturally identical to the baseline description."
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The visibility and extent of the left wall, including its visible corner junction and continuation beyond the frame, remain architecturally identical to the baseline description."
+        }
+      ],
+      "suspicionAddressMatrix": [
+        {
+          "observationId": "obs_wall_0_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: wall visibility classification changed from baseline to staged extraction.",
+          "individuallyAddressed": true,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The visibility and extent of the front / camera-facing wall, including its boundaries and corners, remain architecturally identical to the baseline description."
+        },
+        {
+          "observationId": "obs_wall_1_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 1,
+          "note": "right wall: wall visibility classification changed from baseline to staged extraction.",
+          "individuallyAddressed": true,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The visibility and extent of the right wall, including its visible corner junction and continuation beyond the frame, remain architecturally identical to the baseline description."
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "note": "left wall: wall visibility classification changed from baseline to staged extraction.",
+          "individuallyAddressed": true,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The visibility and extent of the left wall, including its visible corner junction and continuation beyond the frame, remain architecturally identical to the baseline description."
+        }
+      ],
+      "allSuspicionsAddressed": true,
+      "geminiReasoning": "envelope_preserved_no_material_modification",
+      "rawGeminiJson": "```json\n{\n  \"ok\": true,\n  \"reason\": \"envelope_preserved_no_material_modification\",\n  \"confidence\": 1.0,\n  \"boundaryLinesMissing\": false,\n  \"continuousSurfaceReplacement\": false,\n  \"noPlausibleVisualExplanation\": false,\n  \"visualAmbiguity\": false,\n  \"reasonCode\": \"envelope_preserved_no_material_modification\",\n  \"observationAdjudications\": [\n    {\n      \"observationId\": \"obs_wall_0_visibility_changed\",\n      \"code\": \"possible_wall_visibility_changed\",\n      \"wallIndex\": 0,\n      \"decision\": \"dismiss\",\n      \"dismissReason\": \"observation_incorrect\",\n      \"explanation\": \"The visibility and extent of the front / camera-facing wall, including its boundaries and corners, remain architecturally identical to the baseline description.\"\n    },\n    {\n      \"observationId\": \"obs_wall_1_visibility_changed\",\n      \"code\": \"possible_wall_visibility_changed\",\n      \"wallIndex\": 1,\n      \"decision\": \"dismiss\",\n      \"dismissReason\": \"observation_incorrect\",\n      \"explanation\": \"The visibility and extent of the right wall, including its visible corner junction and continuation beyond the frame, remain architecturally identical to the baseline description.\"\n    },\n    {\n      \"observationId\": \"obs_wall_3_visibility_changed\",\n      \"code\": \"possible_wall_visibility_changed\",\n      \"wallIndex\": 3,\n      \"decision\": \"dismiss\",\n      \"dismissReason\": \"observation_incorrect\",\n      \"explanation\": \"The visibility and extent of the left wall, including its visible corner junction and continuation beyond the frame, remain architecturally identical to the baseline description.\"\n    }\n  ]\n}\n```",
+      "finalDecision": "pass",
+      "confidence": 1
+    },
+    {
+      "job": "job_bb029607",
+      "expected": "fail",
+      "actual": "pass",
+      "verticalEdgeDeltaExecuted": false,
+      "usedCanonicalStage1AWebp": true,
+      "unsupportedArchitecturalCompletionDetected": false,
+      "addedWallDetected": false,
+      "removedWallDetected": false,
+      "deterministicSuspicions": [
+        {
+          "observationId": "obs_wall_0_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible corner is not visible in staged extraction."
+        },
+        {
+          "observationId": "obs_wall_1_added",
+          "code": "possible_wall_added",
+          "wallIndex": 1,
+          "note": "right wall: staged extraction has a visible wall descriptor where baseline had none."
+        },
+        {
+          "observationId": "obs_wall_3_removed",
+          "code": "possible_wall_removed",
+          "wallIndex": 3,
+          "note": "left wall: baseline had a visible wall descriptor but staged extraction does not."
+        }
+      ],
+      "clarificationQuestions": [
+        "Deterministic comparison suggests a possible missing wall surface on left wall. Was a permanent wall surface removed, interrupted from view by framing uncertainty, or is this extraction ambiguity?",
+        "Deterministic comparison suggests a possible newly visible permanent wall surface on right wall. Is this a genuine architectural modification, unsupported architectural completion, extraction ambiguity, or perspective/framing artefact?",
+        "Deterministic comparison suggests a potentially missing corner on front / camera-facing wall. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?"
+      ],
+      "observationAdjudications": [
+        {
+          "observationId": "obs_wall_0_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 0,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The baseline image and staged image are identical. The left interior corner of the front wall is clearly visible in both images, consistent with the baseline description."
+        },
+        {
+          "observationId": "obs_wall_1_added",
+          "code": "possible_wall_added",
+          "wallIndex": 1,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The baseline image and staged image are identical. The right wall is not visible in the staged image, consistent with the authoritative baseline visibility semantics where the right wall was not explicitly visible."
+        },
+        {
+          "observationId": "obs_wall_3_removed",
+          "code": "possible_wall_removed",
+          "wallIndex": 3,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The baseline image and staged image are identical. The left wall is clearly visible in both images, consistent with the baseline description."
+        }
+      ],
+      "suspicionAddressMatrix": [
+        {
+          "observationId": "obs_wall_0_missing_corner",
+          "code": "possible_missing_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: a baseline-visible corner is not visible in staged extraction.",
+          "individuallyAddressed": true,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The baseline image and staged image are identical. The left interior corner of the front wall is clearly visible in both images, consistent with the baseline description."
+        },
+        {
+          "observationId": "obs_wall_1_added",
+          "code": "possible_wall_added",
+          "wallIndex": 1,
+          "note": "right wall: staged extraction has a visible wall descriptor where baseline had none.",
+          "individuallyAddressed": true,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The baseline image and staged image are identical. The right wall is not visible in the staged image, consistent with the authoritative baseline visibility semantics where the right wall was not explicitly visible."
+        },
+        {
+          "observationId": "obs_wall_3_removed",
+          "code": "possible_wall_removed",
+          "wallIndex": 3,
+          "note": "left wall: baseline had a visible wall descriptor but staged extraction does not.",
+          "individuallyAddressed": true,
+          "decision": "dismiss",
+          "dismissReason": "observation_incorrect",
+          "explanation": "The baseline image and staged image are identical. The left wall is clearly visible in both images, consistent with the baseline description."
+        }
+      ],
+      "allSuspicionsAddressed": true,
+      "geminiReasoning": "envelope_preserved_no_material_modification",
+      "rawGeminiJson": "```json\n{\n  \"ok\": true,\n  \"reason\": \"envelope_preserved_no_material_modification\",\n  \"confidence\": 1.0,\n  \"boundaryLinesMissing\": false,\n  \"continuousSurfaceReplacement\": false,\n  \"noPlausibleVisualExplanation\": false,\n  \"visualAmbiguity\": false,\n  \"reasonCode\": \"envelope_visual_ambiguity\",\n  \"observationAdjudications\": [\n    {\n      \"observationId\": \"obs_wall_0_missing_corner\",\n      \"code\": \"possible_missing_corner\",\n      \"wallIndex\": 0,\n      \"decision\": \"dismiss\",\n      \"dismissReason\": \"observation_incorrect\",\n      \"explanation\": \"The baseline image and staged image are identical. The left interior corner of the front wall is clearly visible in both images, consistent with the baseline description.\"\n    },\n    {\n      \"observationId\": \"obs_wall_1_added\",\n      \"code\": \"possible_wall_added\",\n      \"wallIndex\": 1,\n      \"decision\": \"dismiss\",\n      \"dismissReason\": \"observation_incorrect\",\n      \"explanation\": \"The baseline image and staged image are identical. The right wall is not visible in the staged image, consistent with the authoritative baseline visibility semantics where the right wall was not explicitly visible.\"\n    },\n    {\n      \"observationId\": \"obs_wall_3_removed\",\n      \"code\": \"possible_wall_removed\",\n      \"wallIndex\": 3,\n      \"decision\": \"dismiss\",\n      \"dismissReason\": \"observation_incorrect\",\n      \"explanation\": \"The baseline image and staged image are identical. The left wall is clearly visible in both images, consistent with the baseline description.\"\n    }\n  ]\n}\n```",
+      "finalDecision": "pass",
+      "confidence": 1
+    }
+  ]
+}

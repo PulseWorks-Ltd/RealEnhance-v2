@@ -1,0 +1,269 @@
+{
+  "baselineImage": {
+    "path": "/workspaces/RealEnhance-v2/worker/reports/debug-baselines/job_bb029607-canonical-stage1a.webp",
+    "checksumSha256": "b07e51cad0557aca94ae6dc8b458c21b4ffcc2f925f1cc4bb2cb1c0bcd43b5fe"
+  },
+  "stageImage": {
+    "path": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+    "checksumSha256": "2b6000f8affb96f18523fe489bed5925be9c2e4b2be0a80e9217b3fe76498f76"
+  },
+  "rawBaselineExtractionJson": {
+    "openings": [
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0.2241,
+          0.2188,
+          0.4967,
+          0.9725
+        ],
+        "area_pct": 20.55,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "40-60",
+        "orientation": "portrait",
+        "paneStructure": "sliding_panel",
+        "doorLeafState": "closed",
+        "confidence": 0.98,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "F1",
+        "type": "ac_unit",
+        "wallIndex": 0,
+        "horizontalBand": "right_third",
+        "bbox": [
+          0.565,
+          0.15,
+          0.795,
+          0.24
+        ],
+        "confidence": 0.99
+      }
+    ],
+    "wallDescriptors": [
+      {
+        "wallIndex": 0,
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "architecturalCertainty": "partial",
+        "leftBoundaryVisible": true,
+        "rightBoundaryVisible": false,
+        "leftCornerVisible": true,
+        "rightCornerVisible": false,
+        "terminatesAtCorner": false,
+        "continuesBeyondFrame": true,
+        "description": "A solid wall that forms a visible interior corner with the left wall and continues beyond the right frame."
+      },
+      {
+        "wallIndex": 1,
+        "visibility": "minimal",
+        "visibleExtent": "minimal",
+        "architecturalCertainty": "unknown",
+        "leftBoundaryVisible": false,
+        "rightBoundaryVisible": false,
+        "leftCornerVisible": false,
+        "rightCornerVisible": false,
+        "terminatesAtCorner": false,
+        "continuesBeyondFrame": true,
+        "description": "A very small portion of a wall is visible in the bottom right corner, but its boundaries and features are not clearly observable."
+      },
+      {
+        "wallIndex": 3,
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "architecturalCertainty": "partial",
+        "leftBoundaryVisible": false,
+        "rightBoundaryVisible": true,
+        "leftCornerVisible": false,
+        "rightCornerVisible": true,
+        "terminatesAtCorner": false,
+        "continuesBeyondFrame": true,
+        "description": "Wall features a large sliding glass door (D1). Its right boundary forms a corner with the front wall, while its left boundary extends beyond the frame."
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 2,
+      "openingCountVariance": 0,
+      "imageHash": "b07e51cad0557aca94ae6dc8b458c21b4ffcc2f925f1cc4bb2cb1c0bcd43b5fe",
+      "graphHash": "00a35a555cb489b5b53e239f4318da66724633fcf276b7ee5db9cbc3c04057e3",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "00a35a555cb489b5b53e239f4318da66724633fcf276b7ee5db9cbc3c04057e3",
+        "a85d15295b421ae826121774deb47c7cd924306b8d1c6e813755a1fe41d1fda2"
+      ],
+      "openingCountRange": {
+        "min": 1,
+        "max": 1
+      },
+      "confirmedAt": "2026-06-28T08:21:45.251Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 2,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "rawStagedExtractionJson": {
+    "openings": [
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0.264,
+          0.283,
+          0.521,
+          0.948
+        ],
+        "area_pct": 17.09,
+        "wallIndex": 3,
+        "horizontalBand": "center_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "40-60",
+        "orientation": "portrait",
+        "paneStructure": "sliding_panel",
+        "doorLeafState": "closed",
+        "confidence": 0.98,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "center",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "AC1",
+        "type": "ac_unit",
+        "wallIndex": 0,
+        "horizontalBand": "right_third",
+        "bbox": [
+          0.619,
+          0.237,
+          0.819,
+          0.316
+        ],
+        "confidence": 0.99
+      }
+    ],
+    "wallDescriptors": [
+      {
+        "wallIndex": 0,
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "architecturalCertainty": "partial",
+        "leftBoundaryVisible": true,
+        "rightBoundaryVisible": false,
+        "leftCornerVisible": true,
+        "rightCornerVisible": false,
+        "terminatesAtCorner": false,
+        "continuesBeyondFrame": true,
+        "description": "Continuous flat wall. The left corner junction with wall 3 is visible. The wall continues beyond the right side of the frame. A wall-mounted AC unit is present on the upper right."
+      },
+      {
+        "wallIndex": 3,
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "architecturalCertainty": "partial",
+        "leftBoundaryVisible": false,
+        "rightBoundaryVisible": true,
+        "leftCornerVisible": false,
+        "rightCornerVisible": true,
+        "terminatesAtCorner": false,
+        "continuesBeyondFrame": true,
+        "description": "Wall contains a large glass sliding door (D1). The right corner junction with wall 0 is visible. The wall continues beyond the left side of the frame."
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 2,
+      "openingCountVariance": 0,
+      "imageHash": "2b6000f8affb96f18523fe489bed5925be9c2e4b2be0a80e9217b3fe76498f76",
+      "graphHash": "57a311b6ea5a408eb1acc0595e7f5eaf5032d18e21f22e9f547502bdc07b9156",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "57a311b6ea5a408eb1acc0595e7f5eaf5032d18e21f22e9f547502bdc07b9156",
+        "a1c15c8e35c15afd47f04cddea62951c706c2521007c65a2a8a4ff388230dd9d"
+      ],
+      "openingCountRange": {
+        "min": 1,
+        "max": 1
+      },
+      "confirmedAt": "2026-06-28T08:22:25.984Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 2,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "rawDeterministicComparisonJson": {
+    "baselineWallCount": 3,
+    "stagedWallCount": 2,
+    "suspicions": [
+      {
+        "observationId": "obs_wall_1_removed",
+        "code": "possible_wall_removed",
+        "wallIndex": 1,
+        "note": "right wall: baseline had a visible wall descriptor but staged extraction does not."
+      }
+    ],
+    "clarificationQuestions": [
+      "Deterministic comparison suggests a possible missing wall surface on right wall. Was a permanent wall surface removed, interrupted from view by framing uncertainty, or explained by baseline visibility limitation?"
+    ]
+  },
+  "rawEventCandidatesJson": [
+    {
+      "eventId": "wall_removed",
+      "eventName": "Wall surface removed",
+      "supportingStructuralPatterns": [
+        "Existing wall no longer continues"
+      ],
+      "conflictingStructuralPatterns": [],
+      "supportingObservations": [
+        "right wall: a baseline wall surface is not present in staged extraction."
+      ],
+      "conflictingObservations": [],
+      "confidence": 0.8571428571428572
+    }
+  ],
+  "exactPromptSentToGemini": "You are validating whether two images represent the same permanent room envelope.\n\nCompare the BASELINE image and the STAGED image.\n\nFurniture and movable objects may change. Evaluate only permanent wall-envelope architecture.\n\nBASELINE ENVELOPE DESCRIPTION:\nThe following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: left wall, front / camera-facing wall\n- extracted reference openings: 1\n- extracted architectural landmarks: 1\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: reference openings: D1: door, left third, full height, occupancy 40-60, confidence 0.98\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: fixed landmarks: F1: built-in AC unit, right third, confidence 0.99\n\nWall envelope descriptions with visibility semantics (authoritative baseline):\n- front / camera-facing wall:\n  - visibility: partial\n  - visible extent: partial\n  - architectural certainty: partial\n  - left boundary: visible\n  - right boundary: not visible / exits frame\n  - left corner: visible\n  - right corner: not visible\n  - terminates at observed corner: no\n  - continues beyond frame: yes\n  - observed continuity note: A solid wall that forms a visible interior corner with the left wall and continues beyond the right frame.\n- right wall:\n  - visibility: minimal\n  - visible extent: minimal\n  - architectural certainty: unknown\n  - left boundary: not visible / exits frame\n  - right boundary: not visible / exits frame\n  - left corner: not visible\n  - right corner: not visible\n  - terminates at observed corner: no\n  - continues beyond frame: yes\n  - observed continuity note: A very small portion of a wall is visible in the bottom right corner, but its boundaries and features are not clearly observable.\n- left wall:\n  - visibility: partial\n  - visible extent: partial\n  - architectural certainty: partial\n  - left boundary: not visible / exits frame\n  - right boundary: visible\n  - left corner: not visible\n  - right corner: visible\n  - terminates at observed corner: no\n  - continues beyond frame: yes\n  - observed continuity note: Wall features a large sliding glass door (D1). Its right boundary forms a corner with the front wall, while its left boundary extends beyond the frame.\n\nArchitectural landmarks:\n- F1: built-in AC unit, front / camera-facing wall, right third, confidence 0.99\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- D1: door, left wall, left third, full height, occupancy 40-60, confidence 0.98\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe baseline defines not only which walls are visible, but also which boundaries/corners were unknown in the original photo.\nIf baseline certainty is partial or unknown, preserve that uncertainty unless staged imagery provides clear direct architectural evidence.\nTreat baseline visibility limits as authoritative: if a wall, corner, return wall, or recess is only partially visible, preserve that uncertainty.\nDo not infer unseen architectural geometry beyond what is evidenced in the baseline image.\nDo not complete room geometry where baseline evidence is incomplete.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.\n\nDETERMINISTIC COMPARISON FOUND:\n- Deterministic observation count: 1.\n- right wall: a baseline wall surface is not present in staged extraction.\n- Visible wall count changed from 3 to 2.\n\nARCHITECTURAL CLAIM:\nWe suspect a permanent wall surface present in baseline has been removed on the right side of the room in the staged image.\n\nSUPPORTING STRUCTURAL PATTERNS:\n- Existing wall no longer continues\n\nARCHITECTURAL QUESTION:\nIs this claim TRUE or FALSE?\n\nReview both images and the deterministic evidence.\n\nTreat the deterministic findings as strong evidence to verify against the images, not as statements to repeat verbatim.\n\nAnswer only TRUE or FALSE first, then provide analysis.\n\nIf FALSE:\nExplain why the claim is incorrect and directly account for the supporting observations.\nSimply stating that the images appear similar is not sufficient.\n\nUse the deterministic findings as evidence, but verify the claim against the images before answering.\n\nReturn JSON only:\n\n{\n  \"claim\":\"We suspect a permanent wall surface present in baseline has been removed on the right side of the room in the staged image.\",\n  \"answer\":\"TRUE\"|\"FALSE\",\n  \"confidence\":0.0-1.0,\n  \"analysis\":\"concise visual explanation\"\n}\n",
+  "exactJsonReturnedByGemini": "```json\n{\n  \"claim\": \"We suspect a permanent wall surface present in baseline has been removed on the right side of the room in the staged image.\",\n  \"answer\": \"FALSE\",\n  \"confidence\": 1.0,\n  \"analysis\": \"The staged image is visually identical to the baseline image. The 'right wall' described in the baseline description as having 'minimal visibility' in the 'bottom right corner' is present in both images to the exact same extent. There is no architectural change to the permanent wall envelope. Therefore, the claim that a permanent wall surface has been removed is incorrect.\"\n}\n```"
+}

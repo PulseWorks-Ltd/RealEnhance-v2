@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api";
 
 export interface UsageSummary {
@@ -38,32 +38,24 @@ export function useUsage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchUsage = useCallback(async () => {
+  const fetchUsage = async () => {
     try {
       setLoading(true);
       setError(null);
       const response = await apiFetch("/api/usage/summary");
       const data = (await response.json()) as UsageSummary;
-      const pilotCredits = (data as any)?.pilotPromo?.promoCreditsRemaining || 0;
-      const normalized: UsageSummary = {
-        ...data,
-        remaining:
-          Number(data?.remaining) >= 0
-            ? Number(data.remaining)
-            : Math.max(0, Number(data?.mainRemaining ?? 0)) + Math.max(0, Number(data?.addonRemaining ?? 0)) + pilotCredits,
-      };
-      setUsage(normalized);
+      setUsage(data);
     } catch (err) {
       console.error("Error fetching usage:", err);
       setError("Failed to fetch usage");
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
   useEffect(() => {
     fetchUsage();
-  }, [fetchUsage]);
+  }, []);
 
   return {
     usage,

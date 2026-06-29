@@ -1,0 +1,1559 @@
+{
+  "job": {
+    "label": "job_bb029607",
+    "jobId": "job_bb029607-dcd8-4614-997c-406d2ed33142",
+    "imageId": "img_e75a5903-34d3-42a2-b93f-b29314a5138d",
+    "baselineFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+    "stagedFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg"
+  },
+  "baselinePath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+  "stagedPath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+  "pipelineStatus": {
+    "defaultConstraintVerificationPipeline": true,
+    "legacyGatedPathUsed": false,
+    "requiredEnvVars": []
+  },
+  "result": {
+    "status": "fail",
+    "reason": "envelope_confirmed_structural_change: wall containing sliding glass door now shows a left corner that baseline did not show.",
+    "confidence": 1,
+    "hardFail": true,
+    "issueType": "envelope_anomaly",
+    "issueTier": "review",
+    "advisorySignals": [
+      "envelope_insufficient_geometric_evidence: envelope_changed",
+      "envelope_insufficient_geometric_evidence"
+    ],
+    "primaryStructuredIssue": {
+      "type": "envelope_change",
+      "object": "wall_plane",
+      "action": "changed",
+      "severity": "review",
+      "source": "envelope_validator",
+      "confidence": 0.9,
+      "evidence": [
+        "envelope_insufficient_geometric_evidence"
+      ]
+    },
+    "structuredIssues": [
+      {
+        "type": "envelope_change",
+        "object": "wall_plane",
+        "action": "changed",
+        "severity": "review",
+        "source": "envelope_validator",
+        "confidence": 0.9,
+        "evidence": [
+          "envelope_insufficient_geometric_evidence"
+        ]
+      }
+    ],
+    "selectedExplanation": "wall containing sliding glass door now shows a left corner that baseline did not show.",
+    "stagedWallVerifications": [
+      {
+        "semanticWallId": "wall_ac_unit_right_third",
+        "displayName": "wall containing built-in AC unit",
+        "primaryAnchorLabel": "built-in AC unit",
+        "samePermanentWallVisible": "TRUE",
+        "wallVisibility": "substantial",
+        "wallExtent": "substantial",
+        "architecturalCertainty": "known",
+        "leftCornerVisible": true,
+        "rightCornerVisible": false,
+        "continuesBeyondFrame": true,
+        "terminatesAtCorner": false,
+        "returnWallVisible": false,
+        "adjoiningWallVisible": false,
+        "recessVisible": false,
+        "confidence": 1,
+        "observations": [
+          "The wall containing the built-in AC unit is clearly visible.",
+          "It forms a visible corner on its left with the wall containing the sliding glass door.",
+          "It continues beyond the right image frame without a visible corner."
+        ]
+      },
+      {
+        "semanticWallId": "wall_door_center_third_full_height",
+        "displayName": "wall containing sliding glass door",
+        "primaryAnchorLabel": "sliding glass door",
+        "samePermanentWallVisible": "TRUE",
+        "wallVisibility": "substantial",
+        "wallExtent": "substantial",
+        "architecturalCertainty": "known",
+        "leftCornerVisible": true,
+        "rightCornerVisible": true,
+        "continuesBeyondFrame": false,
+        "terminatesAtCorner": true,
+        "returnWallVisible": true,
+        "adjoiningWallVisible": true,
+        "recessVisible": false,
+        "confidence": 1,
+        "observations": [
+          "The wall containing the sliding glass door is clearly visible.",
+          "It forms a visible corner on its right with the wall containing the built-in AC unit.",
+          "It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left.",
+          "The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner."
+        ]
+      }
+    ],
+    "additionalWallPlanes": {
+      "answer": "TRUE",
+      "descriptions": [
+        "A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall)."
+      ],
+      "confidence": 0.9
+    },
+    "additionalArchitecturalEvidence": {
+      "additionalPermanentWallPlanes": "TRUE",
+      "additionalPermanentWallPlaneDescriptions": [
+        "A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall)."
+      ],
+      "additionalPermanentReturnWalls": "TRUE",
+      "additionalPermanentReturnWallDescriptions": [
+        "A permanent return wall connected to the left edge of the wall containing the sliding glass door, extending out of frame to the left."
+      ],
+      "additionalPermanentRecesses": "FALSE",
+      "additionalPermanentRecessDescriptions": [],
+      "additionalPermanentCorners": "TRUE",
+      "additionalPermanentCornerDescriptions": [
+        "A permanent corner connecting the left edge of the wall containing the sliding glass door to an adjoining wall plane (the return wall)."
+      ],
+      "unmatchedPermanentArchitecturalFeatures": "FALSE",
+      "unmatchedPermanentFeatureDescriptions": [],
+      "confidence": 0.9
+    },
+    "baselineVerificationResults": [],
+    "constraintVerificationResults": [],
+    "primaryHypothesis": "The authoritative baseline architectural wall graph is preserved. The additional visible architectural features are consistent with the existing graph, revealing previously unseen parts of the room's permanent structure.",
+    "hypothesisConfidence": "High",
+    "hypothesisVerdict": "confirmed",
+    "hypothesisAnalysis": "The two baseline semantic walls, 'wall containing built-in AC unit' and 'wall containing sliding glass door', are clearly visible in the staged image. Their permanent architectural forms are preserved. However, the geometric visibility of the left edge of the 'wall containing sliding glass door' has changed; a corner and an adjoining return wall are now visible, which were not described as visible in the baseline.",
+    "architecturalClaim": "wall containing sliding glass door now shows a left corner that baseline did not show.",
+    "architecturalAnswer": "TRUE",
+    "architecturalReason": "envelope_confirmed_structural_change",
+    "deterministicObservationAdjudications": [],
+    "rawGeminiJson": "```json\n{\n  \"answer\": \"TRUE\",\n  \"confidence\": 0.9,\n  \"analysis\": \"The two baseline semantic walls, 'wall containing built-in AC unit' and 'wall containing sliding glass door', are clearly visible in the staged image. Their permanent architectural forms are preserved. However, the geometric visibility of the left edge of the 'wall containing sliding glass door' has changed; a corner and an adjoining return wall are now visible, which were not described as visible in the baseline.\",\n  \"selectedExplanation\": \"All baseline semantic walls are present. A previously unobserved corner and adjoining return wall are now visible to the left of the wall containing the sliding glass door.\",\n  \"primaryHypothesis\": \"The authoritative baseline architectural wall graph is preserved. The additional visible architectural features are consistent with the existing graph, revealing previously unseen parts of the room's permanent structure.\",\n  \"hypothesisConfidence\": \"High\",\n  \"visualAmbiguity\": false,\n  \"boundaryLinesMissing\": false,\n  \"continuousSurfaceReplacement\": false,\n  \"noPlausibleVisualExplanation\": false,\n  \"wallVerifications\": [\n    {\n      \"semanticWallId\": \"wall_ac_unit_right_third\",\n      \"displayName\": \"wall containing built-in AC unit\",\n      \"primaryAnchorLabel\": \"built-in AC unit\",\n      \"samePermanentWallVisible\": \"TRUE\",\n      \"wallVisibility\": \"substantial\",\n      \"wallExtent\": \"substantial\",\n      \"architecturalCertainty\": \"known\",\n      \"leftCornerVisible\": true,\n      \"rightCornerVisible\": false,\n      \"continuesBeyondFrame\": true,\n      \"terminatesAtCorner\": false,\n      \"returnWallVisible\": false,\n      \"adjoiningWallVisible\": false,\n      \"recessVisible\": false,\n      \"confidence\": 1.0,\n      \"observations\": [\n        \"The wall containing the built-in AC unit is clearly visible.\",\n        \"It forms a visible corner on its left with the wall containing the sliding glass door.\",\n        \"It continues beyond the right image frame without a visible corner.\"\n      ]\n    },\n    {\n      \"semanticWallId\": \"wall_door_center_third_full_height\",\n      \"displayName\": \"wall containing sliding glass door\",\n      \"primaryAnchorLabel\": \"sliding glass door\",\n      \"samePermanentWallVisible\": \"TRUE\",\n      \"wallVisibility\": \"substantial\",\n      \"wallExtent\": \"substantial\",\n      \"architecturalCertainty\": \"known\",\n      \"leftCornerVisible\": true,\n      \"rightCornerVisible\": true,\n      \"continuesBeyondFrame\": false,\n      \"terminatesAtCorner\": true,\n      \"returnWallVisible\": true,\n      \"adjoiningWallVisible\": true,\n      \"recessVisible\": false,\n      \"confidence\": 1.0,\n      \"observations\": [\n        \"The wall containing the sliding glass door is clearly visible.\",\n        \"It forms a visible corner on its right with the wall containing the built-in AC unit.\",\n        \"It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left.\",\n        \"The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner.\"\n      ]\n    }\n  ],\n  \"additionalPermanentWallPlanes\": \"TRUE\",\n  \"additionalPermanentWallPlaneDescriptions\": [\n    \"A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall).\"\n  ],\n  \"additionalPermanentCorners\": \"TRUE\",\n  \"additionalPermanentCornerDescriptions\": [\n    \"A permanent corner connecting the left edge of the wall containing the sliding glass door to an adjoining wall plane (the return wall).\"\n  ],\n  \"additionalPermanentReturnWalls\": \"TRUE\",\n  \"additionalPermanentReturnWallDescriptions\": [\n    \"A permanent return wall connected to the left edge of the wall containing the sliding glass door, extending out of frame to the left.\"\n  ],\n  \"additionalPermanentRecesses\": \"FALSE\",\n  \"additionalPermanentRecessDescriptions\": [],\n  \"unmatchedPermanentArchitecturalFeatures\": \"FALSE\",\n  \"unmatchedPermanentFeatureDescriptions\": []\n}\n```",
+    "constraintVerificationMode": "constraint_statement_verification",
+    "baselineVerificationMode": "baseline_statement_verification",
+    "baselineArchitecturalConstraintModel": "Canonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing built-in AC unit, wall containing sliding glass door\nWall containing built-in AC unit\n- semantic wall identifier: wall containing built-in AC unit\n- architectural anchors used only for wall identity: built-in AC unit\n- wall visibility observation: wall containing built-in AC unit is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - left corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- Right edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - right corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- wall containing built-in AC unit continues beyond the right image edge\nWall containing sliding glass door\n- semantic wall identifier: wall containing sliding glass door\n- architectural anchors used only for wall identity: sliding glass door\n- wall visibility observation: wall containing sliding glass door is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing sliding glass door continues beyond the left image edge",
+    "baselineArchitecturalModel": "Canonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing built-in AC unit, wall containing sliding glass door\nWall containing built-in AC unit\n- semantic wall identifier: wall containing built-in AC unit\n- architectural anchors used only for wall identity: built-in AC unit\n- wall visibility observation: wall containing built-in AC unit is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - left corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- Right edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - right corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- wall containing built-in AC unit continues beyond the right image edge\nWall containing sliding glass door\n- semantic wall identifier: wall containing sliding glass door\n- architectural anchors used only for wall identity: sliding glass door\n- wall visibility observation: wall containing sliding glass door is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing sliding glass door continues beyond the left image edge",
+    "constraintVerificationStatements": [
+      {
+        "statementId": "stmt_01",
+        "statement": "wall containing built-in AC unit is partially visible.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_02",
+        "statement": "Wall containing built-in AC unit visibility remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility_magnitude",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_03",
+        "statement": "Wall containing built-in AC unit continues beyond the right image edge.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_04",
+        "statement": "Wall containing built-in AC unit joins wall containing sliding glass door at a visible left corner.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "left",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_05",
+        "statement": "Left corner visibility on wall containing built-in AC unit remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "left",
+        "factType": "corner_visibility_magnitude",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_visible",
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_06",
+        "statement": "No visible right corner is observed on wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_not_visible",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_07",
+        "statement": "No visible return wall is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_return_wall",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_08",
+        "statement": "No visible adjoining wall plane is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_adjoining_wall_plane",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_09",
+        "statement": "No visible recess is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_recess",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_10",
+        "statement": "No visible wall termination is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_wall_termination",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_11",
+        "statement": "wall containing sliding glass door is partially visible.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_12",
+        "statement": "Wall containing sliding glass door visibility remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility_magnitude",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_13",
+        "statement": "Wall containing sliding glass door continues beyond the left image edge.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_14",
+        "statement": "No visible left corner is observed on wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "left_corner_not_visible",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_15",
+        "statement": "Wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "right_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_16",
+        "statement": "Right corner visibility on wall containing sliding glass door remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "corner_visibility_magnitude",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "right_corner_visible",
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_17",
+        "statement": "No visible return wall is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_return_wall",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_18",
+        "statement": "No visible adjoining wall plane is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_adjoining_wall_plane",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_19",
+        "statement": "No visible recess is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_recess",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_20",
+        "statement": "No visible wall termination is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_wall_termination",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_21",
+        "statement": "No additional permanent wall planes are visible beyond the baseline wall set once all wall-edge observations are accounted for.",
+        "scope": "structural",
+        "reasoningLayer": "structural_interpretation",
+        "architecturalContext": "global_geometry",
+        "factType": "global_visible_walls",
+        "failureEventHint": "new_wall_plane_introduced",
+        "supportingFacts": [
+          "wall containing built-in AC unit",
+          "wall containing sliding glass door",
+          "derived_from_verified_edge_observations"
+        ]
+      }
+    ],
+    "baselineVerificationStatements": [
+      {
+        "statementId": "stmt_01",
+        "statement": "wall containing built-in AC unit is partially visible.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_02",
+        "statement": "Wall containing built-in AC unit visibility remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility_magnitude",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_03",
+        "statement": "Wall containing built-in AC unit continues beyond the right image edge.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_04",
+        "statement": "Wall containing built-in AC unit joins wall containing sliding glass door at a visible left corner.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "left",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_05",
+        "statement": "Left corner visibility on wall containing built-in AC unit remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "left",
+        "factType": "corner_visibility_magnitude",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_visible",
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_06",
+        "statement": "No visible right corner is observed on wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_not_visible",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_07",
+        "statement": "No visible return wall is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_return_wall",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_08",
+        "statement": "No visible adjoining wall plane is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_adjoining_wall_plane",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_09",
+        "statement": "No visible recess is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_recess",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_10",
+        "statement": "No visible wall termination is present at the right edge of wall containing built-in AC unit.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "right",
+        "factType": "no_visible_wall_termination",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:right",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_11",
+        "statement": "wall containing sliding glass door is partially visible.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_12",
+        "statement": "Wall containing sliding glass door visibility remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility_magnitude",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_13",
+        "statement": "Wall containing sliding glass door continues beyond the left image edge.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_14",
+        "statement": "No visible left corner is observed on wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "left_corner_not_visible",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_15",
+        "statement": "Wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "right_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_16",
+        "statement": "Right corner visibility on wall containing sliding glass door remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "corner_visibility_magnitude",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "right_corner_visible",
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_17",
+        "statement": "No visible return wall is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_return_wall",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_18",
+        "statement": "No visible adjoining wall plane is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_adjoining_wall_plane",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_19",
+        "statement": "No visible recess is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_recess",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_20",
+        "statement": "No visible wall termination is present at the left edge of wall containing sliding glass door.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_wall_termination",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 3,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_21",
+        "statement": "No additional permanent wall planes are visible beyond the baseline wall set once all wall-edge observations are accounted for.",
+        "scope": "structural",
+        "reasoningLayer": "structural_interpretation",
+        "architecturalContext": "global_geometry",
+        "factType": "global_visible_walls",
+        "failureEventHint": "new_wall_plane_introduced",
+        "supportingFacts": [
+          "wall containing built-in AC unit",
+          "wall containing sliding glass door",
+          "derived_from_verified_edge_observations"
+        ]
+      }
+    ],
+    "deterministicEnvelopeComparison": {
+      "baselineWallCount": 2,
+      "stagedWallCount": 2,
+      "suspicions": [
+        {
+          "observationId": "obs_wall_0_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_0_certainty_changed",
+          "code": "possible_architectural_certainty_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: architectural certainty changed from partial to known."
+        },
+        {
+          "observationId": "obs_wall_3_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 3,
+          "note": "left wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_3_certainty_changed",
+          "code": "possible_architectural_certainty_changed",
+          "wallIndex": 3,
+          "note": "left wall: architectural certainty changed from partial to known."
+        },
+        {
+          "observationId": "obs_wall_3_new_corner",
+          "code": "possible_new_visible_corner",
+          "wallIndex": 3,
+          "note": "left wall: staged extraction indicates a corner now visible where baseline did not."
+        },
+        {
+          "observationId": "obs_wall_3_shortened",
+          "code": "possible_wall_shortened",
+          "wallIndex": 3,
+          "note": "left wall: staged wall now terminates at a corner where baseline did not show a termination."
+        },
+        {
+          "observationId": "obs_wall_3_unsupported_completion",
+          "code": "possible_unsupported_architectural_completion",
+          "wallIndex": 3,
+          "note": "left wall: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry."
+        }
+      ],
+      "clarificationQuestions": [
+        "Deterministic comparison suggests a newly visible corner on left wall. Is this a genuine architectural corner, unsupported completion, perspective/framing effect, or baseline visibility limitation?",
+        "Deterministic comparison suggests architectural certainty changed on front / camera-facing wall (partial -> known). Is this supported by direct evidence, or unsupported architectural completion?",
+        "Deterministic comparison suggests architectural certainty changed on left wall (partial -> known). Is this supported by direct evidence, or unsupported architectural completion?",
+        "Deterministic comparison suggests possible wall shortening/interruption on left wall. Is the envelope truly shortened, or does baseline uncertainty explain this difference?",
+        "Deterministic comparison suggests unsupported architectural completion on left wall: baseline continuation beyond frame was uncertain but staged extraction appears architecturally complete. Is completion genuinely evidenced or unsupported?",
+        "Deterministic comparison suggests wall visibility changed on front / camera-facing wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?",
+        "Deterministic comparison suggests wall visibility changed on left wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?"
+      ]
+    },
+    "deterministicStructuralInterpretations": [
+      {
+        "interpretationId": "interp_wall_door_center_third_full_height_shortened",
+        "category": "wall_shortened",
+        "wallSemanticId": "wall_door_center_third_full_height",
+        "wallDisplayName": "wall containing sliding glass door",
+        "severity": "advisory",
+        "confidence": "low",
+        "summary": "wall containing sliding glass door no longer continues beyond the frame in staged observation.",
+        "supportingFacts": [
+          "baseline continuesBeyondFrame=TRUE",
+          "staged continuesBeyondFrame=FALSE"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_door_center_third_full_height_left_corner_added",
+        "category": "corner_introduced",
+        "wallSemanticId": "wall_door_center_third_full_height",
+        "wallDisplayName": "wall containing sliding glass door",
+        "severity": "significant",
+        "confidence": "high",
+        "summary": "wall containing sliding glass door now shows a left corner that baseline did not show.",
+        "supportingFacts": [
+          "baseline leftCornerVisible=FALSE",
+          "staged leftCornerVisible=TRUE"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_door_center_third_full_height_return_wall_added",
+        "category": "return_wall_introduced",
+        "wallSemanticId": "wall_door_center_third_full_height",
+        "wallDisplayName": "wall containing sliding glass door",
+        "severity": "significant",
+        "confidence": "high",
+        "summary": "wall containing sliding glass door now has a visible return wall at the frame edge.",
+        "supportingFacts": [
+          "baseline returnWallVisible=FALSE",
+          "staged returnWallVisible=TRUE"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_door_center_third_full_height_adjoining_wall_added",
+        "category": "adjoining_wall_introduced",
+        "wallSemanticId": "wall_door_center_third_full_height",
+        "wallDisplayName": "wall containing sliding glass door",
+        "severity": "significant",
+        "confidence": "high",
+        "summary": "wall containing sliding glass door now has an adjoining wall plane visible at the frame edge.",
+        "supportingFacts": [
+          "baseline adjoiningWallVisible=FALSE",
+          "staged adjoiningWallVisible=TRUE"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_additional_wall_planes",
+        "category": "wall_plane_introduced",
+        "severity": "significant",
+        "confidence": "medium",
+        "summary": "Guided staged observation reports extra wall planes not associated with baseline semantic walls.",
+        "supportingFacts": [
+          "additional observed architectural features: additionalPermanentWallPlanes=TRUE"
+        ],
+        "corroboratingEvidence": [
+          "A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall)."
+        ],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_additional_return_walls",
+        "category": "return_wall_introduced",
+        "severity": "significant",
+        "confidence": "medium",
+        "summary": "Guided staged observation reports return walls beyond the baseline model.",
+        "supportingFacts": [
+          "additional observed architectural features: additionalPermanentReturnWalls=TRUE"
+        ],
+        "corroboratingEvidence": [
+          "A permanent return wall connected to the left edge of the wall containing the sliding glass door, extending out of frame to the left."
+        ],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_additional_corners",
+        "category": "corner_introduced",
+        "severity": "significant",
+        "confidence": "medium",
+        "summary": "Guided staged observation reports corners not accounted for by baseline semantic walls.",
+        "supportingFacts": [
+          "additional observed architectural features: additionalPermanentCorners=TRUE"
+        ],
+        "corroboratingEvidence": [
+          "A permanent corner connecting the left edge of the wall containing the sliding glass door to an adjoining wall plane (the return wall)."
+        ],
+        "contradictingEvidence": []
+      }
+    ],
+    "baselineAdvisoryGeometry": [],
+    "initialAdvisoryStageExtraction": "Staged Verification\n- Verified baseline walls: 2\n- wall containing built-in AC unit: substantial visibility, extent substantial; leftCorner=yes; rightCorner=no; continuesBeyondFrame=yes; returnWallVisible=no; adjoiningWallVisible=no; recessVisible=no\n- wall containing sliding glass door: substantial visibility, extent substantial; leftCorner=yes; rightCorner=yes; continuesBeyondFrame=no; returnWallVisible=yes; adjoiningWallVisible=yes; recessVisible=no\n- Additional permanent wall planes: TRUE\n  - A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall).",
+    "stagedExtractionIntegrity": {
+      "passed": true,
+      "attempt": 1,
+      "mappingConfidenceThreshold": 0.5,
+      "issues": []
+    },
+    "stagedExtractionRetryStatus": {
+      "triggered": false,
+      "attempts": 1,
+      "finalAttempt": 1,
+      "retrySucceeded": true
+    },
+    "initialStagedWallVerifications": [
+      {
+        "semanticWallId": "wall_ac_unit_right_third",
+        "displayName": "wall containing built-in AC unit",
+        "primaryAnchorLabel": "built-in AC unit",
+        "samePermanentWallVisible": "TRUE",
+        "wallVisibility": "substantial",
+        "wallExtent": "substantial",
+        "architecturalCertainty": "known",
+        "leftCornerVisible": true,
+        "rightCornerVisible": false,
+        "continuesBeyondFrame": true,
+        "terminatesAtCorner": false,
+        "returnWallVisible": false,
+        "adjoiningWallVisible": false,
+        "recessVisible": false,
+        "confidence": 1,
+        "observations": [
+          "The wall containing the built-in AC unit is clearly visible.",
+          "It forms a visible corner on its left with the wall containing the sliding glass door.",
+          "It continues beyond the right image frame without a visible corner."
+        ]
+      },
+      {
+        "semanticWallId": "wall_door_center_third_full_height",
+        "displayName": "wall containing sliding glass door",
+        "primaryAnchorLabel": "sliding glass door",
+        "samePermanentWallVisible": "TRUE",
+        "wallVisibility": "substantial",
+        "wallExtent": "substantial",
+        "architecturalCertainty": "known",
+        "leftCornerVisible": true,
+        "rightCornerVisible": true,
+        "continuesBeyondFrame": false,
+        "terminatesAtCorner": true,
+        "returnWallVisible": true,
+        "adjoiningWallVisible": true,
+        "recessVisible": false,
+        "confidence": 1,
+        "observations": [
+          "The wall containing the sliding glass door is clearly visible.",
+          "It forms a visible corner on its right with the wall containing the built-in AC unit.",
+          "It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left.",
+          "The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner."
+        ]
+      }
+    ],
+    "initialAdditionalArchitecturalEvidence": {
+      "additionalPermanentWallPlanes": "TRUE",
+      "additionalPermanentWallPlaneDescriptions": [
+        "A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall)."
+      ],
+      "additionalPermanentReturnWalls": "TRUE",
+      "additionalPermanentReturnWallDescriptions": [
+        "A permanent return wall connected to the left edge of the wall containing the sliding glass door, extending out of frame to the left."
+      ],
+      "additionalPermanentRecesses": "FALSE",
+      "additionalPermanentRecessDescriptions": [],
+      "additionalPermanentCorners": "TRUE",
+      "additionalPermanentCornerDescriptions": [
+        "A permanent corner connecting the left edge of the wall containing the sliding glass door to an adjoining wall plane (the return wall)."
+      ],
+      "unmatchedPermanentArchitecturalFeatures": "FALSE",
+      "unmatchedPermanentFeatureDescriptions": [],
+      "confidence": 0.9
+    },
+    "initialAdditionalWallPlanes": {
+      "answer": "TRUE",
+      "descriptions": [
+        "A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall)."
+      ],
+      "confidence": 0.9
+    },
+    "baselineCandidateWallQualifications": [
+      {
+        "candidateId": "candidate_wall_0",
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "qualificationScore": 62,
+        "evidenceBreakdown": [
+          "primary architectural anchor built-in AC unit: +32",
+          "visible wall extent partial: +11",
+          "visible corners (1): +8",
+          "continuation beyond frame: +5",
+          "left boundary visible: +3",
+          "architectural certainty partial: +3"
+        ],
+        "qualificationDecision": "qualified_semantic_wall",
+        "qualificationReason": "Sufficient structural evidence exists to promote this candidate into the semantic wall set.",
+        "primaryAnchorLabel": "built-in AC unit",
+        "primaryAnchorToken": "ac_unit:right_third",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "built-in AC unit"
+        ]
+      },
+      {
+        "candidateId": "candidate_wall_3",
+        "advisoryWallIndex": 3,
+        "advisoryPositionalLabel": "left wall",
+        "qualificationScore": 68,
+        "evidenceBreakdown": [
+          "primary architectural anchor sliding glass door: +38",
+          "visible wall extent partial: +11",
+          "visible corners (1): +8",
+          "continuation beyond frame: +5",
+          "right boundary visible: +3",
+          "architectural certainty partial: +3"
+        ],
+        "qualificationDecision": "qualified_semantic_wall",
+        "qualificationReason": "Sufficient structural evidence exists to promote this candidate into the semantic wall set.",
+        "primaryAnchorLabel": "sliding glass door",
+        "primaryAnchorToken": "door:center_third:full_height",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "sliding glass door"
+        ]
+      }
+    ],
+    "semanticBaselineWallModel": [
+      {
+        "semanticWallId": "wall_ac_unit_right_third",
+        "displayName": "wall containing built-in AC unit",
+        "primaryAnchorLabel": "built-in AC unit",
+        "primaryAnchorToken": "ac_unit:right_third",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "built-in AC unit"
+        ],
+        "rawAnchorTokens": [
+          "ac_unit:right_third"
+        ],
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "referenceAnchors": [
+          "built-in AC unit"
+        ],
+        "anchorTokens": [
+          "ac_unit:right_third"
+        ],
+        "geometryLines": [
+          "wall containing built-in AC unit is partially visible",
+          "visibility magnitude: partial",
+          "wall containing built-in AC unit continues beyond the right image edge",
+          "wall containing built-in AC unit joins wall containing sliding glass door at a visible left corner",
+          "no visible right corner on wall containing built-in AC unit",
+          "no visible return wall at the right edge",
+          "no visible adjoining wall plane at the right edge",
+          "no visible recess at the right edge",
+          "no visible wall termination at the right edge"
+        ],
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "descriptor": "Wall surface with a wall-mounted AC unit. The left boundary forms a visible interior corner. The right boundary continues beyond the frame."
+      },
+      {
+        "semanticWallId": "wall_door_center_third_full_height",
+        "displayName": "wall containing sliding glass door",
+        "primaryAnchorLabel": "sliding glass door",
+        "primaryAnchorToken": "door:center_third:full_height",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "sliding glass door"
+        ],
+        "rawAnchorTokens": [
+          "door:center_third:full_height"
+        ],
+        "advisoryWallIndex": 3,
+        "advisoryPositionalLabel": "left wall",
+        "referenceAnchors": [
+          "sliding glass door"
+        ],
+        "anchorTokens": [
+          "door:center_third:full_height"
+        ],
+        "geometryLines": [
+          "wall containing sliding glass door is partially visible",
+          "visibility magnitude: partial",
+          "wall containing sliding glass door continues beyond the left image edge",
+          "no visible left corner on wall containing sliding glass door",
+          "wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner",
+          "no visible return wall at the left edge",
+          "no visible adjoining wall plane at the left edge",
+          "no visible recess at the left edge",
+          "no visible wall termination at the left edge"
+        ],
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "descriptor": "Wall containing a large sliding glass door. The right boundary forms a visible interior corner. The left boundary continues beyond the frame."
+      }
+    ],
+    "initialSemanticStagedWallModel": [
+      {
+        "semanticWallId": "wall_ac_unit_right_third",
+        "displayName": "wall containing built-in AC unit",
+        "primaryAnchorLabel": "built-in AC unit",
+        "primaryAnchorToken": "ac_unit:right_third",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "built-in AC unit"
+        ],
+        "rawAnchorTokens": [
+          "ac_unit:right_third"
+        ],
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "referenceAnchors": [
+          "built-in AC unit"
+        ],
+        "anchorTokens": [
+          "ac_unit:right_third"
+        ],
+        "geometryLines": [
+          "wall containing built-in AC unit visibility: substantial",
+          "wall extent: substantial",
+          "visible left corner on wall containing built-in AC unit",
+          "no visible right corner on wall containing built-in AC unit",
+          "wall containing built-in AC unit continues beyond the image frame",
+          "wall containing built-in AC unit does not terminate at an observed corner",
+          "no visible return wall adjacent to wall containing built-in AC unit",
+          "no visible adjoining wall plane adjacent to wall containing built-in AC unit",
+          "no visible recess adjacent to wall containing built-in AC unit",
+          "The wall containing the built-in AC unit is clearly visible.",
+          "It forms a visible corner on its left with the wall containing the sliding glass door.",
+          "It continues beyond the right image frame without a visible corner."
+        ],
+        "visibility": "substantial",
+        "visibleExtent": "substantial",
+        "descriptor": "The wall containing the built-in AC unit is clearly visible. | It forms a visible corner on its left with the wall containing the sliding glass door. | It continues beyond the right image frame without a visible corner."
+      },
+      {
+        "semanticWallId": "wall_door_center_third_full_height",
+        "displayName": "wall containing sliding glass door",
+        "primaryAnchorLabel": "sliding glass door",
+        "primaryAnchorToken": "door:center_third:full_height",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "sliding glass door"
+        ],
+        "rawAnchorTokens": [
+          "door:center_third:full_height"
+        ],
+        "advisoryWallIndex": 3,
+        "advisoryPositionalLabel": "left wall",
+        "referenceAnchors": [
+          "sliding glass door"
+        ],
+        "anchorTokens": [
+          "door:center_third:full_height"
+        ],
+        "geometryLines": [
+          "wall containing sliding glass door visibility: substantial",
+          "wall extent: substantial",
+          "visible left corner on wall containing sliding glass door",
+          "visible right corner on wall containing sliding glass door",
+          "wall containing sliding glass door does not continue beyond the image frame",
+          "wall containing sliding glass door terminates at an observed corner",
+          "return wall visible adjacent to wall containing sliding glass door",
+          "adjoining wall plane visible adjacent to wall containing sliding glass door",
+          "no visible recess adjacent to wall containing sliding glass door",
+          "The wall containing the sliding glass door is clearly visible.",
+          "It forms a visible corner on its right with the wall containing the built-in AC unit.",
+          "It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left.",
+          "The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner."
+        ],
+        "visibility": "substantial",
+        "visibleExtent": "substantial",
+        "descriptor": "The wall containing the sliding glass door is clearly visible. | It forms a visible corner on its right with the wall containing the built-in AC unit. | It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left. | The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner."
+      }
+    ],
+    "semanticStagedWallModel": [
+      {
+        "semanticWallId": "wall_ac_unit_right_third",
+        "displayName": "wall containing built-in AC unit",
+        "primaryAnchorLabel": "built-in AC unit",
+        "primaryAnchorToken": "ac_unit:right_third",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "built-in AC unit"
+        ],
+        "rawAnchorTokens": [
+          "ac_unit:right_third"
+        ],
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "referenceAnchors": [
+          "built-in AC unit"
+        ],
+        "anchorTokens": [
+          "ac_unit:right_third"
+        ],
+        "geometryLines": [
+          "wall containing built-in AC unit visibility: substantial",
+          "wall extent: substantial",
+          "visible left corner on wall containing built-in AC unit",
+          "no visible right corner on wall containing built-in AC unit",
+          "wall containing built-in AC unit continues beyond the image frame",
+          "wall containing built-in AC unit does not terminate at an observed corner",
+          "no visible return wall adjacent to wall containing built-in AC unit",
+          "no visible adjoining wall plane adjacent to wall containing built-in AC unit",
+          "no visible recess adjacent to wall containing built-in AC unit",
+          "The wall containing the built-in AC unit is clearly visible.",
+          "It forms a visible corner on its left with the wall containing the sliding glass door.",
+          "It continues beyond the right image frame without a visible corner."
+        ],
+        "visibility": "substantial",
+        "visibleExtent": "substantial",
+        "descriptor": "The wall containing the built-in AC unit is clearly visible. | It forms a visible corner on its left with the wall containing the sliding glass door. | It continues beyond the right image frame without a visible corner."
+      },
+      {
+        "semanticWallId": "wall_door_center_third_full_height",
+        "displayName": "wall containing sliding glass door",
+        "primaryAnchorLabel": "sliding glass door",
+        "primaryAnchorToken": "door:center_third:full_height",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "sliding glass door"
+        ],
+        "rawAnchorTokens": [
+          "door:center_third:full_height"
+        ],
+        "advisoryWallIndex": 3,
+        "advisoryPositionalLabel": "left wall",
+        "referenceAnchors": [
+          "sliding glass door"
+        ],
+        "anchorTokens": [
+          "door:center_third:full_height"
+        ],
+        "geometryLines": [
+          "wall containing sliding glass door visibility: substantial",
+          "wall extent: substantial",
+          "visible left corner on wall containing sliding glass door",
+          "visible right corner on wall containing sliding glass door",
+          "wall containing sliding glass door does not continue beyond the image frame",
+          "wall containing sliding glass door terminates at an observed corner",
+          "return wall visible adjacent to wall containing sliding glass door",
+          "adjoining wall plane visible adjacent to wall containing sliding glass door",
+          "no visible recess adjacent to wall containing sliding glass door",
+          "The wall containing the sliding glass door is clearly visible.",
+          "It forms a visible corner on its right with the wall containing the built-in AC unit.",
+          "It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left.",
+          "The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner."
+        ],
+        "visibility": "substantial",
+        "visibleExtent": "substantial",
+        "descriptor": "The wall containing the sliding glass door is clearly visible. | It forms a visible corner on its right with the wall containing the built-in AC unit. | It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left. | The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner."
+      }
+    ],
+    "semanticWallMatches": [
+      {
+        "baselineSemanticWallId": "wall_ac_unit_right_third",
+        "baselineDisplayName": "wall containing built-in AC unit",
+        "stagedSemanticWallId": "wall_ac_unit_right_third",
+        "stagedDisplayName": "wall containing built-in AC unit",
+        "matched": true,
+        "score": 100,
+        "reasons": [
+          "baseline-guided verification identity preserved"
+        ]
+      },
+      {
+        "baselineSemanticWallId": "wall_door_center_third_full_height",
+        "baselineDisplayName": "wall containing sliding glass door",
+        "stagedSemanticWallId": "wall_door_center_third_full_height",
+        "stagedDisplayName": "wall containing sliding glass door",
+        "matched": true,
+        "score": 100,
+        "reasons": [
+          "baseline-guided verification identity preserved"
+        ]
+      }
+    ],
+    "guidedObservationPrompt": "You are verifying whether the staged image still preserves the authoritative baseline architectural wall graph.\n\nReview the BASELINE image and the STAGED image.\n\nOnly evaluate permanent architecture.\nIgnore furniture, decor, styling, and movable objects.\nThe baseline graph is authoritative.\nDo not extract the room again.\nDo not rename walls.\nDo not change wall ordering.\nDo not merge walls.\nDo not split walls.\nDo not invent new semantic identities.\n\nYour reasoning order is mandatory:\n1. Verify each known baseline wall.\n2. Verify the geometry of each known wall.\n3. Observe any additional permanent architectural features not represented by the baseline semantic walls.\n\nCANONICAL BASELINE ARCHITECTURAL MODEL:\nCanonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing built-in AC unit, wall containing sliding glass door\nWall containing built-in AC unit\n- semantic wall identifier: wall containing built-in AC unit\n- architectural anchors used only for wall identity: built-in AC unit\n- wall visibility observation: wall containing built-in AC unit is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - left corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- Right edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - right corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- wall containing built-in AC unit continues beyond the right image edge\nWall containing sliding glass door\n- semantic wall identifier: wall containing sliding glass door\n- architectural anchors used only for wall identity: sliding glass door\n- wall visibility observation: wall containing sliding glass door is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing sliding glass door continues beyond the left image edge\n\nQUALIFIED BASELINE SEMANTIC WALLS TO VERIFY:\n- semanticWallId: wall_ac_unit_right_third\n  displayName: wall containing built-in AC unit\n  primaryAnchor: built-in AC unit\n  baseline geometry: wall containing built-in AC unit is partially visible | visibility magnitude: partial | wall containing built-in AC unit continues beyond the right image edge | wall containing built-in AC unit joins wall containing sliding glass door at a visible left corner | no visible right corner on wall containing built-in AC unit | no visible return wall at the right edge | no visible adjoining wall plane at the right edge | no visible recess at the right edge | no visible wall termination at the right edge\n- semanticWallId: wall_door_center_third_full_height\n  displayName: wall containing sliding glass door\n  primaryAnchor: sliding glass door\n  baseline geometry: wall containing sliding glass door is partially visible | visibility magnitude: partial | wall containing sliding glass door continues beyond the left image edge | no visible left corner on wall containing sliding glass door | wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner | no visible return wall at the left edge | no visible adjoining wall plane at the left edge | no visible recess at the left edge | no visible wall termination at the left edge\n\nBASELINE ADVISORY GEOMETRY (CORROBORATING ONLY; NEVER SEMANTIC IDENTITIES):\n- none\n\nFor each baseline semantic wall above, answer whether that same permanent wall is visible in the staged image.\nIf TRUE, describe only that wall using:\n- wallVisibility\n- wallExtent\n- leftCornerVisible\n- rightCornerVisible\n- continuesBeyondFrame\n- terminatesAtCorner\n- returnWallVisible\n- adjoiningWallVisible\n- recessVisible\n- architecturalCertainty\n- confidence\n- reason\n\nAfter every known wall has been verified, report observational-only additional architectural features using these fields:\n- additionalPermanentWallPlanes\n- additionalPermanentWallPlaneDescriptions\n- additionalPermanentCorners\n- additionalPermanentCornerDescriptions\n- additionalPermanentReturnWalls\n- additionalPermanentReturnWallDescriptions\n- additionalPermanentRecesses\n- additionalPermanentRecessDescriptions\n- unmatchedPermanentArchitecturalFeatures\n- unmatchedPermanentFeatureDescriptions\n\nDo not infer whether these observations imply architectural change.\n\nReturn JSON only:\n\n{\n  \"answer\":\"TRUE\"|\"FALSE\",\n  \"confidence\":0.0-1.0,\n  \"analysis\":\"concise visual explanation\",\n  \"selectedExplanation\":\"short primary explanation\",\n  \"primaryHypothesis\":\"short primary hypothesis\",\n  \"hypothesisConfidence\":\"Low\"|\"Medium\"|\"High\",\n  \"visualAmbiguity\":true|false,\n  \"boundaryLinesMissing\":true|false,\n  \"continuousSurfaceReplacement\":true|false,\n  \"noPlausibleVisualExplanation\":true|false,\n  \"wallVerifications\":[\n    {\n      \"semanticWallId\":\"exact baseline semanticWallId\",\n      \"displayName\":\"exact baseline displayName\",\n      \"primaryAnchorLabel\":\"exact baseline primaryAnchorLabel\",\n      \"samePermanentWallVisible\":\"TRUE\"|\"FALSE\",\n      \"wallVisibility\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"wallExtent\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"architecturalCertainty\":\"known\"|\"partial\"|\"unknown\",\n      \"leftCornerVisible\":true|false,\n      \"rightCornerVisible\":true|false,\n      \"continuesBeyondFrame\":true|false,\n      \"terminatesAtCorner\":true|false,\n      \"returnWallVisible\":true|false,\n      \"adjoiningWallVisible\":true|false,\n      \"recessVisible\":true|false,\n      \"confidence\":0.0-1.0,\n      \"reason\":\"required when samePermanentWallVisible is FALSE; otherwise optional\",\n      \"observations\":[\"short geometric observations\"]\n    }\n  ],\n  \"additionalPermanentWallPlanes\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentWallPlaneDescriptions\":[\"additional permanent wall planes not represented by baseline semantic walls\"],\n  \"additionalPermanentCorners\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentCornerDescriptions\":[\"additional permanent corners not represented by baseline semantic walls\"],\n  \"additionalPermanentReturnWalls\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentReturnWallDescriptions\":[\"additional permanent return walls not represented by baseline semantic walls\"],\n  \"additionalPermanentRecesses\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentRecessDescriptions\":[\"additional permanent recesses not represented by baseline semantic walls\"],\n  \"unmatchedPermanentArchitecturalFeatures\":\"TRUE\"|\"FALSE\",\n  \"unmatchedPermanentFeatureDescriptions\":[\"permanent architectural features not associated with baseline semantic walls\"]\n}",
+    "guidedObservationRawGeminiJson": "```json\n{\n  \"answer\": \"TRUE\",\n  \"confidence\": 0.9,\n  \"analysis\": \"The two baseline semantic walls, 'wall containing built-in AC unit' and 'wall containing sliding glass door', are clearly visible in the staged image. Their permanent architectural forms are preserved. However, the geometric visibility of the left edge of the 'wall containing sliding glass door' has changed; a corner and an adjoining return wall are now visible, which were not described as visible in the baseline.\",\n  \"selectedExplanation\": \"All baseline semantic walls are present. A previously unobserved corner and adjoining return wall are now visible to the left of the wall containing the sliding glass door.\",\n  \"primaryHypothesis\": \"The authoritative baseline architectural wall graph is preserved. The additional visible architectural features are consistent with the existing graph, revealing previously unseen parts of the room's permanent structure.\",\n  \"hypothesisConfidence\": \"High\",\n  \"visualAmbiguity\": false,\n  \"boundaryLinesMissing\": false,\n  \"continuousSurfaceReplacement\": false,\n  \"noPlausibleVisualExplanation\": false,\n  \"wallVerifications\": [\n    {\n      \"semanticWallId\": \"wall_ac_unit_right_third\",\n      \"displayName\": \"wall containing built-in AC unit\",\n      \"primaryAnchorLabel\": \"built-in AC unit\",\n      \"samePermanentWallVisible\": \"TRUE\",\n      \"wallVisibility\": \"substantial\",\n      \"wallExtent\": \"substantial\",\n      \"architecturalCertainty\": \"known\",\n      \"leftCornerVisible\": true,\n      \"rightCornerVisible\": false,\n      \"continuesBeyondFrame\": true,\n      \"terminatesAtCorner\": false,\n      \"returnWallVisible\": false,\n      \"adjoiningWallVisible\": false,\n      \"recessVisible\": false,\n      \"confidence\": 1.0,\n      \"observations\": [\n        \"The wall containing the built-in AC unit is clearly visible.\",\n        \"It forms a visible corner on its left with the wall containing the sliding glass door.\",\n        \"It continues beyond the right image frame without a visible corner.\"\n      ]\n    },\n    {\n      \"semanticWallId\": \"wall_door_center_third_full_height\",\n      \"displayName\": \"wall containing sliding glass door\",\n      \"primaryAnchorLabel\": \"sliding glass door\",\n      \"samePermanentWallVisible\": \"TRUE\",\n      \"wallVisibility\": \"substantial\",\n      \"wallExtent\": \"substantial\",\n      \"architecturalCertainty\": \"known\",\n      \"leftCornerVisible\": true,\n      \"rightCornerVisible\": true,\n      \"continuesBeyondFrame\": false,\n      \"terminatesAtCorner\": true,\n      \"returnWallVisible\": true,\n      \"adjoiningWallVisible\": true,\n      \"recessVisible\": false,\n      \"confidence\": 1.0,\n      \"observations\": [\n        \"The wall containing the sliding glass door is clearly visible.\",\n        \"It forms a visible corner on its right with the wall containing the built-in AC unit.\",\n        \"It terminates at a visible left corner, where it connects to a permanent return wall that extends out of frame to the left.\",\n        \"The baseline described 'no visible left corner' and 'continues beyond frame' for this wall, but in the staged image, a left corner is now visible, and the wall itself terminates at this corner.\"\n      ]\n    }\n  ],\n  \"additionalPermanentWallPlanes\": \"TRUE\",\n  \"additionalPermanentWallPlaneDescriptions\": [\n    \"A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall).\"\n  ],\n  \"additionalPermanentCorners\": \"TRUE\",\n  \"additionalPermanentCornerDescriptions\": [\n    \"A permanent corner connecting the left edge of the wall containing the sliding glass door to an adjoining wall plane (the return wall).\"\n  ],\n  \"additionalPermanentReturnWalls\": \"TRUE\",\n  \"additionalPermanentReturnWallDescriptions\": [\n    \"A permanent return wall connected to the left edge of the wall containing the sliding glass door, extending out of frame to the left.\"\n  ],\n  \"additionalPermanentRecesses\": \"FALSE\",\n  \"additionalPermanentRecessDescriptions\": [],\n  \"unmatchedPermanentArchitecturalFeatures\": \"FALSE\",\n  \"unmatchedPermanentFeatureDescriptions\": []\n}\n```",
+    "finalGeminiPrompt": "You are verifying whether the staged image still preserves the authoritative baseline architectural wall graph.\n\nReview the BASELINE image and the STAGED image.\n\nOnly evaluate permanent architecture.\nIgnore furniture, decor, styling, and movable objects.\nThe baseline graph is authoritative.\nDo not extract the room again.\nDo not rename walls.\nDo not change wall ordering.\nDo not merge walls.\nDo not split walls.\nDo not invent new semantic identities.\n\nYour reasoning order is mandatory:\n1. Verify each known baseline wall.\n2. Verify the geometry of each known wall.\n3. Observe any additional permanent architectural features not represented by the baseline semantic walls.\n\nCANONICAL BASELINE ARCHITECTURAL MODEL:\nCanonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing built-in AC unit, wall containing sliding glass door\nWall containing built-in AC unit\n- semantic wall identifier: wall containing built-in AC unit\n- architectural anchors used only for wall identity: built-in AC unit\n- wall visibility observation: wall containing built-in AC unit is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - left corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- Right edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - right corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- wall containing built-in AC unit continues beyond the right image edge\nWall containing sliding glass door\n- semantic wall identifier: wall containing sliding glass door\n- architectural anchors used only for wall identity: sliding glass door\n- wall visibility observation: wall containing sliding glass door is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: not resolved from baseline view\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing sliding glass door continues beyond the left image edge\n\nQUALIFIED BASELINE SEMANTIC WALLS TO VERIFY:\n- semanticWallId: wall_ac_unit_right_third\n  displayName: wall containing built-in AC unit\n  primaryAnchor: built-in AC unit\n  baseline geometry: wall containing built-in AC unit is partially visible | visibility magnitude: partial | wall containing built-in AC unit continues beyond the right image edge | wall containing built-in AC unit joins wall containing sliding glass door at a visible left corner | no visible right corner on wall containing built-in AC unit | no visible return wall at the right edge | no visible adjoining wall plane at the right edge | no visible recess at the right edge | no visible wall termination at the right edge\n- semanticWallId: wall_door_center_third_full_height\n  displayName: wall containing sliding glass door\n  primaryAnchor: sliding glass door\n  baseline geometry: wall containing sliding glass door is partially visible | visibility magnitude: partial | wall containing sliding glass door continues beyond the left image edge | no visible left corner on wall containing sliding glass door | wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner | no visible return wall at the left edge | no visible adjoining wall plane at the left edge | no visible recess at the left edge | no visible wall termination at the left edge\n\nBASELINE ADVISORY GEOMETRY (CORROBORATING ONLY; NEVER SEMANTIC IDENTITIES):\n- none\n\nFor each baseline semantic wall above, answer whether that same permanent wall is visible in the staged image.\nIf TRUE, describe only that wall using:\n- wallVisibility\n- wallExtent\n- leftCornerVisible\n- rightCornerVisible\n- continuesBeyondFrame\n- terminatesAtCorner\n- returnWallVisible\n- adjoiningWallVisible\n- recessVisible\n- architecturalCertainty\n- confidence\n- reason\n\nAfter every known wall has been verified, report observational-only additional architectural features using these fields:\n- additionalPermanentWallPlanes\n- additionalPermanentWallPlaneDescriptions\n- additionalPermanentCorners\n- additionalPermanentCornerDescriptions\n- additionalPermanentReturnWalls\n- additionalPermanentReturnWallDescriptions\n- additionalPermanentRecesses\n- additionalPermanentRecessDescriptions\n- unmatchedPermanentArchitecturalFeatures\n- unmatchedPermanentFeatureDescriptions\n\nDo not infer whether these observations imply architectural change.\n\nReturn JSON only:\n\n{\n  \"answer\":\"TRUE\"|\"FALSE\",\n  \"confidence\":0.0-1.0,\n  \"analysis\":\"concise visual explanation\",\n  \"selectedExplanation\":\"short primary explanation\",\n  \"primaryHypothesis\":\"short primary hypothesis\",\n  \"hypothesisConfidence\":\"Low\"|\"Medium\"|\"High\",\n  \"visualAmbiguity\":true|false,\n  \"boundaryLinesMissing\":true|false,\n  \"continuousSurfaceReplacement\":true|false,\n  \"noPlausibleVisualExplanation\":true|false,\n  \"wallVerifications\":[\n    {\n      \"semanticWallId\":\"exact baseline semanticWallId\",\n      \"displayName\":\"exact baseline displayName\",\n      \"primaryAnchorLabel\":\"exact baseline primaryAnchorLabel\",\n      \"samePermanentWallVisible\":\"TRUE\"|\"FALSE\",\n      \"wallVisibility\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"wallExtent\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"architecturalCertainty\":\"known\"|\"partial\"|\"unknown\",\n      \"leftCornerVisible\":true|false,\n      \"rightCornerVisible\":true|false,\n      \"continuesBeyondFrame\":true|false,\n      \"terminatesAtCorner\":true|false,\n      \"returnWallVisible\":true|false,\n      \"adjoiningWallVisible\":true|false,\n      \"recessVisible\":true|false,\n      \"confidence\":0.0-1.0,\n      \"reason\":\"required when samePermanentWallVisible is FALSE; otherwise optional\",\n      \"observations\":[\"short geometric observations\"]\n    }\n  ],\n  \"additionalPermanentWallPlanes\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentWallPlaneDescriptions\":[\"additional permanent wall planes not represented by baseline semantic walls\"],\n  \"additionalPermanentCorners\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentCornerDescriptions\":[\"additional permanent corners not represented by baseline semantic walls\"],\n  \"additionalPermanentReturnWalls\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentReturnWallDescriptions\":[\"additional permanent return walls not represented by baseline semantic walls\"],\n  \"additionalPermanentRecesses\":\"TRUE\"|\"FALSE\",\n  \"additionalPermanentRecessDescriptions\":[\"additional permanent recesses not represented by baseline semantic walls\"],\n  \"unmatchedPermanentArchitecturalFeatures\":\"TRUE\"|\"FALSE\",\n  \"unmatchedPermanentFeatureDescriptions\":[\"permanent architectural features not associated with baseline semantic walls\"]\n}",
+    "advisoryStageExtraction": "Staged Verification\n- Verified baseline walls: 2\n- wall containing built-in AC unit: substantial visibility, extent substantial; leftCorner=yes; rightCorner=no; continuesBeyondFrame=yes; returnWallVisible=no; adjoiningWallVisible=no; recessVisible=no\n- wall containing sliding glass door: substantial visibility, extent substantial; leftCorner=yes; rightCorner=yes; continuesBeyondFrame=no; returnWallVisible=yes; adjoiningWallVisible=yes; recessVisible=no\n- Additional permanent wall planes: TRUE\n  - A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall).",
+    "changedConstraints": [],
+    "baselineVerificationFailures": [],
+    "architecturalEventCandidates": [
+      {
+        "eventId": "wall_added",
+        "eventName": "wall containing sliding glass door now shows a left corner that baseline did not show.",
+        "supportingStructuralPatterns": [
+          "baseline leftCornerVisible=FALSE",
+          "staged leftCornerVisible=TRUE"
+        ],
+        "conflictingStructuralPatterns": [],
+        "supportingObservations": [],
+        "conflictingObservations": [],
+        "confidence": 1
+      },
+      {
+        "eventId": "wall_plane_split",
+        "eventName": "wall containing sliding glass door now has a visible return wall at the frame edge.",
+        "supportingStructuralPatterns": [
+          "baseline returnWallVisible=FALSE",
+          "staged returnWallVisible=TRUE"
+        ],
+        "conflictingStructuralPatterns": [],
+        "supportingObservations": [],
+        "conflictingObservations": [],
+        "confidence": 1
+      },
+      {
+        "eventId": "wall_plane_split",
+        "eventName": "wall containing sliding glass door now has an adjoining wall plane visible at the frame edge.",
+        "supportingStructuralPatterns": [
+          "baseline adjoiningWallVisible=FALSE",
+          "staged adjoiningWallVisible=TRUE"
+        ],
+        "conflictingStructuralPatterns": [],
+        "supportingObservations": [],
+        "conflictingObservations": [],
+        "confidence": 1
+      },
+      {
+        "eventId": "wall_plane_split",
+        "eventName": "Guided staged observation reports extra wall planes not associated with baseline semantic walls.",
+        "supportingStructuralPatterns": [
+          "additional observed architectural features: additionalPermanentWallPlanes=TRUE"
+        ],
+        "conflictingStructuralPatterns": [],
+        "supportingObservations": [
+          "A permanent wall plane adjoining the left edge of the wall containing the sliding glass door, extending out of frame to the left (a return wall)."
+        ],
+        "conflictingObservations": [],
+        "confidence": 0.7
+      },
+      {
+        "eventId": "wall_plane_split",
+        "eventName": "Guided staged observation reports return walls beyond the baseline model.",
+        "supportingStructuralPatterns": [
+          "additional observed architectural features: additionalPermanentReturnWalls=TRUE"
+        ],
+        "conflictingStructuralPatterns": [],
+        "supportingObservations": [
+          "A permanent return wall connected to the left edge of the wall containing the sliding glass door, extending out of frame to the left."
+        ],
+        "conflictingObservations": [],
+        "confidence": 0.7
+      },
+      {
+        "eventId": "wall_plane_split",
+        "eventName": "Guided staged observation reports corners not accounted for by baseline semantic walls.",
+        "supportingStructuralPatterns": [
+          "additional observed architectural features: additionalPermanentCorners=TRUE"
+        ],
+        "conflictingStructuralPatterns": [],
+        "supportingObservations": [
+          "A permanent corner connecting the left edge of the wall containing the sliding glass door to an adjoining wall plane (the return wall)."
+        ],
+        "conflictingObservations": [],
+        "confidence": 0.7
+      }
+    ],
+    "architecturalChangeSummary": "Deterministic structural interpretations:\n- wall containing sliding glass door now shows a left corner that baseline did not show.\n- wall containing sliding glass door now has a visible return wall at the frame edge.\n- wall containing sliding glass door now has an adjoining wall plane visible at the frame edge.\n- Guided staged observation reports extra wall planes not associated with baseline semantic walls.\n- Guided staged observation reports return walls beyond the baseline model.\n- Guided staged observation reports corners not accounted for by baseline semantic walls.",
+    "architecturalClaimSupport": [
+      "baseline leftCornerVisible=FALSE",
+      "staged leftCornerVisible=TRUE",
+      "baseline returnWallVisible=FALSE",
+      "staged returnWallVisible=TRUE",
+      "baseline adjoiningWallVisible=FALSE",
+      "staged adjoiningWallVisible=TRUE",
+      "additional observed architectural features: additionalPermanentWallPlanes=TRUE",
+      "additional observed architectural features: additionalPermanentReturnWalls=TRUE",
+      "additional observed architectural features: additionalPermanentCorners=TRUE"
+    ],
+    "deterministicHypotheses": {
+      "primaryHypothesis": {
+        "hypothesisId": "hyp_unsupported_completion",
+        "category": "possible_unsupported_architectural_completion",
+        "title": "Visible room envelope differs from baseline extraction",
+        "confidence": "High",
+        "statement": "Deterministic comparison identified newly visible structural continuity not present in baseline extraction.",
+        "supportingObservationIds": [
+          "obs_wall_0_certainty_changed",
+          "obs_wall_3_certainty_changed",
+          "obs_wall_3_new_corner",
+          "obs_wall_3_unsupported_completion"
+        ],
+        "supportingObservations": [
+          "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from partial to known.",
+          "possible_architectural_certainty_changed (left wall): left wall: architectural certainty changed from partial to known.",
+          "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not.",
+          "possible_unsupported_architectural_completion (left wall): left wall: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry."
+        ],
+        "conflictingObservationIds": [
+          "obs_wall_3_shortened"
+        ],
+        "conflictingObservations": [
+          "possible_wall_shortened (left wall): left wall: staged wall now terminates at a corner where baseline did not show a termination."
+        ],
+        "alternativeExplanationsAlreadyConsidered": [
+          "perspective",
+          "framing",
+          "camera_viewpoint"
+        ]
+      },
+      "hypotheses": [
+        {
+          "hypothesisId": "hyp_unsupported_completion",
+          "category": "possible_unsupported_architectural_completion",
+          "title": "Visible room envelope differs from baseline extraction",
+          "confidence": "High",
+          "statement": "Deterministic comparison identified newly visible structural continuity not present in baseline extraction.",
+          "supportingObservationIds": [
+            "obs_wall_0_certainty_changed",
+            "obs_wall_3_certainty_changed",
+            "obs_wall_3_new_corner",
+            "obs_wall_3_unsupported_completion"
+          ],
+          "supportingObservations": [
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from partial to known.",
+            "possible_architectural_certainty_changed (left wall): left wall: architectural certainty changed from partial to known.",
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_unsupported_architectural_completion (left wall): left wall: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry."
+          ],
+          "conflictingObservationIds": [
+            "obs_wall_3_shortened"
+          ],
+          "conflictingObservations": [
+            "possible_wall_shortened (left wall): left wall: staged wall now terminates at a corner where baseline did not show a termination."
+          ],
+          "alternativeExplanationsAlreadyConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_visibility_ambiguity_compound",
+          "category": "possible_visibility_ambiguity",
+          "title": "Visibility ambiguity",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified internally inconsistent visibility signals requiring contextual review.",
+          "supportingObservationIds": [
+            "obs_wall_0_visibility_changed",
+            "obs_wall_0_certainty_changed",
+            "obs_wall_3_visibility_changed",
+            "obs_wall_3_certainty_changed",
+            "obs_wall_3_new_corner"
+          ],
+          "supportingObservations": [
+            "possible_wall_visibility_changed (front / camera-facing wall): front / camera-facing wall: wall visibility classification changed from baseline to staged extraction.",
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from partial to known.",
+            "possible_wall_visibility_changed (left wall): left wall: wall visibility classification changed from baseline to staged extraction.",
+            "possible_architectural_certainty_changed (left wall): left wall: architectural certainty changed from partial to known.",
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "conflictingObservationIds": [
+            "obs_wall_3_new_corner",
+            "obs_wall_3_shortened"
+          ],
+          "conflictingObservations": [
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_wall_shortened (left wall): left wall: staged wall now terminates at a corner where baseline did not show a termination."
+          ],
+          "alternativeExplanationsAlreadyConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_permanent_wall_added",
+          "category": "possible_permanent_wall_added",
+          "title": "Additional wall surface extracted",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified additional wall-surface extraction relative to baseline.",
+          "supportingObservationIds": [
+            "obs_wall_3_new_corner"
+          ],
+          "supportingObservations": [
+            "possible_new_visible_corner (left wall): left wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "conflictingObservationIds": [],
+          "conflictingObservations": [],
+          "alternativeExplanationsAlreadyConsidered": [
+            "camera_viewpoint",
+            "framing",
+            "baseline_visibility_limitation"
+          ]
+        }
+      ]
+    },
+    "structuralPatterns": [
+      {
+        "patternId": "existing_wall_no_longer_continues",
+        "patternName": "Existing wall no longer continues",
+        "supportingObservations": [
+          "left wall: the staged wall now terminates earlier at a corner."
+        ],
+        "confidence": 1
+      },
+      {
+        "patternId": "previously_unseen_wall_continues",
+        "patternName": "Previously unseen wall continues",
+        "supportingObservations": [
+          "front / camera-facing wall: the staged extraction changed certainty for wall geometry interpretation.",
+          "left wall: staged extraction indicates a corner that baseline did not show.",
+          "left wall: staged extraction resolves geometry that baseline left open at the frame edge.",
+          "left wall: the staged extraction changed certainty for wall geometry interpretation."
+        ],
+        "confidence": 0.675
+      },
+      {
+        "patternId": "new_wall_surface_introduced",
+        "patternName": "New wall surface introduced",
+        "supportingObservations": [
+          "front / camera-facing wall: the staged extraction changed the visible wall extent classification.",
+          "left wall: staged extraction indicates a corner that baseline did not show.",
+          "left wall: the staged extraction changed the visible wall extent classification."
+        ],
+        "confidence": 0.5499999999999999
+      },
+      {
+        "patternId": "wall_termination_disappeared",
+        "patternName": "Wall termination disappeared",
+        "supportingObservations": [
+          "left wall: the staged wall now terminates earlier at a corner."
+        ],
+        "confidence": 0.75
+      }
+    ],
+    "deterministicAdjudicationCoverage": {
+      "totalSuspicions": 0,
+      "addressedSuspicions": 0,
+      "unresolvedSuspicions": [],
+      "allSuspicionsAddressed": true
+    }
+  }
+}

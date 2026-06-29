@@ -1,0 +1,606 @@
+{
+  "title": "Envelope Validator Diagnostic Replay - Full Decision Path Trace",
+  "executedAt": "2026-06-26T02:39:38.662Z",
+  "summary": {
+    "totalJobs": 5,
+    "correctResults": 3,
+    "incorrectResults": 2,
+    "errorResults": 0,
+    "accuracyRate": "60%",
+    "expectedFails": 2,
+    "actualFails": 0,
+    "expectedPasses": 3,
+    "actualPasses": 5
+  },
+  "results": [
+    {
+      "label": "job_c11a8e7c",
+      "jobId": "job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023",
+      "expectedStatus": "fail",
+      "baselineFile": "1782337783609-realenhance-job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023-1782337782818-ijp1zscim9.jpg",
+      "stagedFile": "1782337783609-realenhance-job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023-1782337782818-ijp1zscim9-stage2.jpg",
+      "baseline": {
+        "openingsCount": 1,
+        "fixturesCount": 0,
+        "wallDescriptorsCount": 2,
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "description": "Continuous flat wall."
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "partial",
+            "description": "Wall containing a single window."
+          }
+        ],
+        "graphConfidence": 0,
+        "baselineMethod": "graph_consensus"
+      },
+      "fullyInterpolatedPrompt": "The following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: left wall\n- extracted reference openings: 1\n- extracted architectural landmarks: 0\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: reference openings: W1: window, left third, mid zone, occupancy 20-40, confidence 0.98\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: continuous wall plane with no extracted openings or fixed architectural anchors\n\nWall envelope descriptions (permanent architectural features):\n- front / camera-facing wall (partial visibility): Continuous flat wall.\n- left wall (partial visibility): Wall containing a single window.\n\nArchitectural landmarks:\n- none explicitly extracted\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- W1: window, left wall, left third, mid zone, occupancy 20-40, confidence 0.98\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.",
+      "geometricMetrics": {
+        "verticalEdgeLoss": false,
+        "cornerPersistenceFailure": false,
+        "worstRetention": "N/A",
+        "junctionCount": 0,
+        "beforeEdges": 0,
+        "afterEdges": 0,
+        "deterministic": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        }
+      },
+      "geminiResponse": {
+        "status": "pass",
+        "reason": "The architectural wall envelope, including the walls, ceiling, floor, and the window opening on the left wall, remains consistent with the baseline description. All observed changes are due to furniture, decor, and staging objects, which are permissible.",
+        "confidence": 1,
+        "issueType": "none",
+        "advisorySignals": []
+      },
+      "decisionMerge": {
+        "geometricSignal": "GEOMETRIC_OK",
+        "semanticSignal": "SEMANTIC_PASS",
+        "hardFail": false,
+        "mergedStatus": "pass",
+        "mergeLogic": "hardFail overrides all; else use semantic decision"
+      },
+      "actualStatus": "pass",
+      "correct": false,
+      "confidence": 1,
+      "issueType": "none",
+      "hardFail": false,
+      "advisorySignals": [],
+      "decisionPath": [
+        {
+          "stage": "1_baseline_extraction",
+          "phase": "graph_consensus",
+          "findings": {
+            "openings": 1,
+            "wallDescriptors": 2
+          }
+        },
+        {
+          "stage": "2_geometric_analysis",
+          "phase": "vertical_edge_delta",
+          "findings": {}
+        },
+        {
+          "stage": "3_semantic_review",
+          "phase": "gemini_flash",
+          "findings": {
+            "status": "pass",
+            "reason": "The architectural wall envelope, including the walls, ceiling, floor, and the window opening on the left wall, remains consistent with the baseline description. All observed changes are due to furniture, decor, and staging objects, which are permissible."
+          }
+        },
+        {
+          "stage": "4_decision_merge",
+          "phase": "final_decision",
+          "findings": {
+            "hardFail": false,
+            "finalStatus": "pass"
+          }
+        }
+      ]
+    },
+    {
+      "label": "job_bb029607",
+      "jobId": "job_bb029607-dcd8-4614-997c-406d2ed33142",
+      "expectedStatus": "fail",
+      "baselineFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+      "stagedFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+      "baseline": {
+        "openingsCount": 1,
+        "fixturesCount": 1,
+        "wallDescriptorsCount": 3,
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "full",
+            "description": "Continuous wall with a wall-mounted AC unit."
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "minimal",
+            "description": "Corner of a continuous wall."
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "partial",
+            "description": "Wall with a large glass sliding door."
+          }
+        ],
+        "graphConfidence": 0,
+        "baselineMethod": "graph_consensus"
+      },
+      "fullyInterpolatedPrompt": "The following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: left wall, front / camera-facing wall\n- extracted reference openings: 1\n- extracted architectural landmarks: 1\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: reference openings: D1: door, left third, full height, occupancy 40-60, confidence 0.98\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: fixed landmarks: AF1: built-in AC unit, right third, confidence 0.99\n\nWall envelope descriptions (permanent architectural features):\n- front / camera-facing wall (full visibility): Continuous wall with a wall-mounted AC unit.\n- right wall (minimal visibility): Corner of a continuous wall.\n- left wall (partial visibility): Wall with a large glass sliding door.\n\nArchitectural landmarks:\n- AF1: built-in AC unit, front / camera-facing wall, right third, confidence 0.99\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- D1: door, left wall, left third, full height, occupancy 40-60, confidence 0.98\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.",
+      "geometricMetrics": {
+        "verticalEdgeLoss": false,
+        "cornerPersistenceFailure": false,
+        "worstRetention": "N/A",
+        "junctionCount": 0,
+        "beforeEdges": 0,
+        "afterEdges": 0,
+        "deterministic": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        }
+      },
+      "geminiResponse": {
+        "status": "pass",
+        "reason": "The permanent architectural envelope, including the front wall with the wall-mounted AC unit and the left wall with the large glass sliding door, remains unchanged. All visible wall planes and the ceiling/floor continuity match the baseline description.",
+        "confidence": 1,
+        "issueType": "none",
+        "advisorySignals": []
+      },
+      "decisionMerge": {
+        "geometricSignal": "GEOMETRIC_OK",
+        "semanticSignal": "SEMANTIC_PASS",
+        "hardFail": false,
+        "mergedStatus": "pass",
+        "mergeLogic": "hardFail overrides all; else use semantic decision"
+      },
+      "actualStatus": "pass",
+      "correct": false,
+      "confidence": 1,
+      "issueType": "none",
+      "hardFail": false,
+      "advisorySignals": [],
+      "decisionPath": [
+        {
+          "stage": "1_baseline_extraction",
+          "phase": "graph_consensus",
+          "findings": {
+            "openings": 1,
+            "wallDescriptors": 3
+          }
+        },
+        {
+          "stage": "2_geometric_analysis",
+          "phase": "vertical_edge_delta",
+          "findings": {}
+        },
+        {
+          "stage": "3_semantic_review",
+          "phase": "gemini_flash",
+          "findings": {
+            "status": "pass",
+            "reason": "The permanent architectural envelope, including the front wall with the wall-mounted AC unit and the left wall with the large glass sliding door, remains unchanged. All visible wall planes and the ceiling/floor continuity match the baseline description."
+          }
+        },
+        {
+          "stage": "4_decision_merge",
+          "phase": "final_decision",
+          "findings": {
+            "hardFail": false,
+            "finalStatus": "pass"
+          }
+        }
+      ]
+    },
+    {
+      "label": "job_4a87f43b",
+      "jobId": "job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10",
+      "expectedStatus": "pass",
+      "baselineFile": "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
+      "stagedFile": "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or-stage2.jpg",
+      "baseline": {
+        "openingsCount": 1,
+        "fixturesCount": 0,
+        "wallDescriptorsCount": 3,
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "description": "Continuous wall with a single window on the right side."
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "description": "Continuous wall surface."
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "partial",
+            "description": "Continuous flat wall."
+          }
+        ],
+        "graphConfidence": 0,
+        "baselineMethod": "graph_consensus"
+      },
+      "fullyInterpolatedPrompt": "The following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: front / camera-facing wall\n- extracted reference openings: 1\n- extracted architectural landmarks: 0\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: continuous wall plane with no extracted openings or fixed architectural anchors\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: reference openings: W1: window, right third, mid zone, occupancy 10-20, confidence 0.98\n\nWall envelope descriptions (permanent architectural features):\n- front / camera-facing wall (partial visibility): Continuous wall with a single window on the right side.\n- right wall (partial visibility): Continuous wall surface.\n- left wall (partial visibility): Continuous flat wall.\n\nArchitectural landmarks:\n- none explicitly extracted\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- W1: window, front / camera-facing wall, right third, mid zone, occupancy 10-20, confidence 0.98\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.",
+      "geometricMetrics": {
+        "verticalEdgeLoss": false,
+        "cornerPersistenceFailure": false,
+        "worstRetention": "N/A",
+        "junctionCount": 0,
+        "beforeEdges": 0,
+        "afterEdges": 0,
+        "deterministic": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        }
+      },
+      "geminiResponse": {
+        "status": "pass",
+        "reason": "The permanent architectural wall envelope remains unchanged. The window, wall planes, and room corners are consistent. Staging elements such as furniture, curtains, rug, and a new ceiling light fixture do not constitute a change to the architectural envelope.",
+        "confidence": 1,
+        "issueType": "none",
+        "advisorySignals": []
+      },
+      "decisionMerge": {
+        "geometricSignal": "GEOMETRIC_OK",
+        "semanticSignal": "SEMANTIC_PASS",
+        "hardFail": false,
+        "mergedStatus": "pass",
+        "mergeLogic": "hardFail overrides all; else use semantic decision"
+      },
+      "actualStatus": "pass",
+      "correct": true,
+      "confidence": 1,
+      "issueType": "none",
+      "hardFail": false,
+      "advisorySignals": [],
+      "decisionPath": [
+        {
+          "stage": "1_baseline_extraction",
+          "phase": "graph_consensus",
+          "findings": {
+            "openings": 1,
+            "wallDescriptors": 3
+          }
+        },
+        {
+          "stage": "2_geometric_analysis",
+          "phase": "vertical_edge_delta",
+          "findings": {}
+        },
+        {
+          "stage": "3_semantic_review",
+          "phase": "gemini_flash",
+          "findings": {
+            "status": "pass",
+            "reason": "The permanent architectural wall envelope remains unchanged. The window, wall planes, and room corners are consistent. Staging elements such as furniture, curtains, rug, and a new ceiling light fixture do not constitute a change to the architectural envelope."
+          }
+        },
+        {
+          "stage": "4_decision_merge",
+          "phase": "final_decision",
+          "findings": {
+            "hardFail": false,
+            "finalStatus": "pass"
+          }
+        }
+      ]
+    },
+    {
+      "label": "job_dfbe98aa",
+      "jobId": "job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1",
+      "expectedStatus": "pass",
+      "baselineFile": "1782337783586-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap.jpg",
+      "stagedFile": "1782337783586-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap-stage2.jpg",
+      "baseline": {
+        "openingsCount": 1,
+        "fixturesCount": 0,
+        "wallDescriptorsCount": 3,
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "full",
+            "description": "Continuous flat wall."
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "minimal",
+            "description": "Continuous flat wall, visible at corner."
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "partial",
+            "description": "Wall containing one window."
+          }
+        ],
+        "graphConfidence": 0,
+        "baselineMethod": "graph_consensus"
+      },
+      "fullyInterpolatedPrompt": "The following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: left wall\n- extracted reference openings: 1\n- extracted architectural landmarks: 0\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: reference openings: W1: window, left third, mid zone, occupancy 20-40, confidence 0.98\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: continuous wall plane with no extracted openings or fixed architectural anchors\n\nWall envelope descriptions (permanent architectural features):\n- front / camera-facing wall (full visibility): Continuous flat wall.\n- right wall (minimal visibility): Continuous flat wall, visible at corner.\n- left wall (partial visibility): Wall containing one window.\n\nArchitectural landmarks:\n- none explicitly extracted\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- W1: window, left wall, left third, mid zone, occupancy 20-40, confidence 0.98\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.",
+      "geometricMetrics": {
+        "verticalEdgeLoss": false,
+        "cornerPersistenceFailure": false,
+        "worstRetention": "N/A",
+        "junctionCount": 0,
+        "beforeEdges": 0,
+        "afterEdges": 0,
+        "deterministic": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        }
+      },
+      "geminiResponse": {
+        "status": "pass",
+        "reason": "The permanent architectural wall envelope, including all visible wall planes, the window opening, and room corners, remains consistent between the baseline and staged images. There are no newly created or removed wall sections, no changes to room corners, and no alterations to the continuity of walls, ceiling, or floor junctions. All observed differences are due to staging, furniture, and decor.",
+        "confidence": 1,
+        "issueType": "none",
+        "advisorySignals": [
+          "envelope_corner_flattened"
+        ]
+      },
+      "decisionMerge": {
+        "geometricSignal": "GEOMETRIC_OK",
+        "semanticSignal": "SEMANTIC_PASS",
+        "hardFail": false,
+        "mergedStatus": "pass",
+        "mergeLogic": "hardFail overrides all; else use semantic decision"
+      },
+      "actualStatus": "pass",
+      "correct": true,
+      "confidence": 1,
+      "issueType": "none",
+      "hardFail": false,
+      "advisorySignals": [
+        "envelope_corner_flattened"
+      ],
+      "decisionPath": [
+        {
+          "stage": "1_baseline_extraction",
+          "phase": "graph_consensus",
+          "findings": {
+            "openings": 1,
+            "wallDescriptors": 3
+          }
+        },
+        {
+          "stage": "2_geometric_analysis",
+          "phase": "vertical_edge_delta",
+          "findings": {}
+        },
+        {
+          "stage": "3_semantic_review",
+          "phase": "gemini_flash",
+          "findings": {
+            "status": "pass",
+            "reason": "The permanent architectural wall envelope, including all visible wall planes, the window opening, and room corners, remains consistent between the baseline and staged images. There are no newly created or removed wall sections, no changes to room corners, and no alterations to the continuity of walls, ceiling, or floor junctions. All observed differences are due to staging, furniture, and decor."
+          }
+        },
+        {
+          "stage": "4_decision_merge",
+          "phase": "final_decision",
+          "findings": {
+            "hardFail": false,
+            "finalStatus": "pass"
+          }
+        }
+      ]
+    },
+    {
+      "label": "job_81e485e7",
+      "jobId": "job_81e485e7-e3ce-4283-9f5e-e4f931d784bc",
+      "expectedStatus": "pass",
+      "baselineFile": "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2.jpg",
+      "stagedFile": "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2-stage2.jpg",
+      "baseline": {
+        "openingsCount": 3,
+        "fixturesCount": 2,
+        "wallDescriptorsCount": 3,
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "description": "Wall contains a door on the left, a window in the center, and built-in kitchen cabinetry on the right."
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "minimal",
+            "description": "Continuous wall corner."
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "partial",
+            "description": "Wall contains a full-height walkthrough opening."
+          }
+        ],
+        "graphConfidence": 0,
+        "baselineMethod": "graph_consensus"
+      },
+      "fullyInterpolatedPrompt": "The following architectural room envelope was extracted from the baseline image.\nThis description is considered authoritative.\nDo not reinterpret the baseline architecture from the staged image.\nDetermine whether the staged image still represents this same architectural room envelope.\n\nRoom overview:\n- camera orientation: unknown\n- visible wall planes: front / camera-facing wall, left wall\n- extracted reference openings: 3\n- extracted architectural landmarks: 2\n- ceiling continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n- floor continuity: treat as continuous unless the staged image clearly shows a changed boundary junction\n\nleft wall: reference openings: A1: walkthrough opening, left third, full height, occupancy 20-40, confidence 0.95\nrear wall: continuous wall plane with no extracted openings or fixed architectural anchors\nright wall: continuous wall plane with no extracted openings or fixed architectural anchors\nfront / camera-facing wall: reference openings: W1: window, center third, mid zone, occupancy 5-10, confidence 0.90; D1: door, left third, full height, occupancy 10-20, confidence 1.00 | fixed landmarks: F2: kitchen island, center third, confidence 1.00; F1: built-in cabinet, center third, confidence 1.00\n\nWall envelope descriptions (permanent architectural features):\n- front / camera-facing wall (partial visibility): Wall contains a door on the left, a window in the center, and built-in kitchen cabinetry on the right.\n- right wall (minimal visibility): Continuous wall corner.\n- left wall (partial visibility): Wall contains a full-height walkthrough opening.\n\nArchitectural landmarks:\n- F2: kitchen island, front / camera-facing wall, center third, confidence 1.00\n- F1: built-in cabinet, front / camera-facing wall, center third, confidence 1.00\n\nOpening reference points (context only, do not validate opening preservation or resize):\n- W1: window, front / camera-facing wall, center third, mid zone, occupancy 5-10, confidence 0.90\n- D1: door, front / camera-facing wall, left third, full height, occupancy 10-20, confidence 1.00\n- A1: walkthrough opening, left wall, left third, full height, occupancy 20-40, confidence 0.95\n\nUse the baseline description as the source of truth.\nDo not rebuild the room envelope from the staged image.\nDo not reinterpret the baseline architecture from scratch.\nThe envelope validator owns only the permanent wall envelope.\nArchitectural openings may be used only as reference points for understanding wall continuity.\nDo not evaluate whether an opening itself has changed.\nDo not evaluate fixtures, flooring, or furniture except where they provide architectural context for understanding wall continuity.",
+      "geometricMetrics": {
+        "verticalEdgeLoss": false,
+        "cornerPersistenceFailure": false,
+        "worstRetention": "N/A",
+        "junctionCount": 0,
+        "beforeEdges": 0,
+        "afterEdges": 0,
+        "deterministic": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        }
+      },
+      "geminiResponse": {
+        "status": "pass",
+        "reason": "The permanent architectural room envelope, including walls, openings, and built-in architectural landmarks, remains unchanged between the baseline and staged images. The observed differences are limited to movable staging objects and minor lighting variations.",
+        "confidence": 1,
+        "issueType": "none",
+        "advisorySignals": []
+      },
+      "decisionMerge": {
+        "geometricSignal": "GEOMETRIC_OK",
+        "semanticSignal": "SEMANTIC_PASS",
+        "hardFail": false,
+        "mergedStatus": "pass",
+        "mergeLogic": "hardFail overrides all; else use semantic decision"
+      },
+      "actualStatus": "pass",
+      "correct": true,
+      "confidence": 1,
+      "issueType": "none",
+      "hardFail": false,
+      "advisorySignals": [],
+      "decisionPath": [
+        {
+          "stage": "1_baseline_extraction",
+          "phase": "graph_consensus",
+          "findings": {
+            "openings": 3,
+            "wallDescriptors": 3
+          }
+        },
+        {
+          "stage": "2_geometric_analysis",
+          "phase": "vertical_edge_delta",
+          "findings": {}
+        },
+        {
+          "stage": "3_semantic_review",
+          "phase": "gemini_flash",
+          "findings": {
+            "status": "pass",
+            "reason": "The permanent architectural room envelope, including walls, openings, and built-in architectural landmarks, remains unchanged between the baseline and staged images. The observed differences are limited to movable staging objects and minor lighting variations."
+          }
+        },
+        {
+          "stage": "4_decision_merge",
+          "phase": "final_decision",
+          "findings": {
+            "hardFail": false,
+            "finalStatus": "pass"
+          }
+        }
+      ]
+    }
+  ],
+  "decisionPathAnalysis": {
+    "description": "For each result, trace the decision path from baseline extraction through final merge",
+    "incorrectResults": [
+      {
+        "jobId": "job_c11a8e7c",
+        "expectedStatus": "fail",
+        "actualStatus": "pass",
+        "decisionPath": [
+          {
+            "stage": "1_baseline_extraction",
+            "phase": "graph_consensus",
+            "findings": {
+              "openings": 1,
+              "wallDescriptors": 2
+            }
+          },
+          {
+            "stage": "2_geometric_analysis",
+            "phase": "vertical_edge_delta",
+            "findings": {}
+          },
+          {
+            "stage": "3_semantic_review",
+            "phase": "gemini_flash",
+            "findings": {
+              "status": "pass",
+              "reason": "The architectural wall envelope, including the walls, ceiling, floor, and the window opening on the left wall, remains consistent with the baseline description. All observed changes are due to furniture, decor, and staging objects, which are permissible."
+            }
+          },
+          {
+            "stage": "4_decision_merge",
+            "phase": "final_decision",
+            "findings": {
+              "hardFail": false,
+              "finalStatus": "pass"
+            }
+          }
+        ],
+        "geometricFindings": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        },
+        "semanticFindings": {
+          "status": "pass",
+          "reason": "The architectural wall envelope, including the walls, ceiling, floor, and the window opening on the left wall, remains consistent with the baseline description. All observed changes are due to furniture, decor, and staging objects, which are permissible.",
+          "confidence": 1,
+          "issueType": "none",
+          "advisorySignals": []
+        },
+        "mergeLogic": {
+          "geometricSignal": "GEOMETRIC_OK",
+          "semanticSignal": "SEMANTIC_PASS",
+          "hardFail": false,
+          "mergedStatus": "pass",
+          "mergeLogic": "hardFail overrides all; else use semantic decision"
+        },
+        "analysisNote": "Geometric failure detected but semantic decision overrode to PASS"
+      },
+      {
+        "jobId": "job_bb029607",
+        "expectedStatus": "fail",
+        "actualStatus": "pass",
+        "decisionPath": [
+          {
+            "stage": "1_baseline_extraction",
+            "phase": "graph_consensus",
+            "findings": {
+              "openings": 1,
+              "wallDescriptors": 3
+            }
+          },
+          {
+            "stage": "2_geometric_analysis",
+            "phase": "vertical_edge_delta",
+            "findings": {}
+          },
+          {
+            "stage": "3_semantic_review",
+            "phase": "gemini_flash",
+            "findings": {
+              "status": "pass",
+              "reason": "The permanent architectural envelope, including the front wall with the wall-mounted AC unit and the left wall with the large glass sliding door, remains unchanged. All visible wall planes and the ceiling/floor continuity match the baseline description."
+            }
+          },
+          {
+            "stage": "4_decision_merge",
+            "phase": "final_decision",
+            "findings": {
+              "hardFail": false,
+              "finalStatus": "pass"
+            }
+          }
+        ],
+        "geometricFindings": {
+          "verticalEdgeDeltaTriggered": false,
+          "reason": "N/A"
+        },
+        "semanticFindings": {
+          "status": "pass",
+          "reason": "The permanent architectural envelope, including the front wall with the wall-mounted AC unit and the left wall with the large glass sliding door, remains unchanged. All visible wall planes and the ceiling/floor continuity match the baseline description.",
+          "confidence": 1,
+          "issueType": "none",
+          "advisorySignals": []
+        },
+        "mergeLogic": {
+          "geometricSignal": "GEOMETRIC_OK",
+          "semanticSignal": "SEMANTIC_PASS",
+          "hardFail": false,
+          "mergedStatus": "pass",
+          "mergeLogic": "hardFail overrides all; else use semantic decision"
+        },
+        "analysisNote": "Geometric failure detected but semantic decision overrode to PASS"
+      }
+    ]
+  }
+}
