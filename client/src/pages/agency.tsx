@@ -97,6 +97,20 @@ const roleIcons = {
   member: User,
 };
 
+function formatDisplayLabel(value: string | null | undefined, fallback = "Unknown"): string {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim();
+  if (!normalized) return fallback;
+  return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function getRoleIcon(role: string | null | undefined) {
+  if (role === "owner" || role === "admin" || role === "member") {
+    return roleIcons[role];
+  }
+  return User;
+}
+
 export default function AgencyPage() {
   const { user, refreshUser } = useAuth();
   const { toast } = useToast();
@@ -623,7 +637,7 @@ export default function AgencyPage() {
                 <div className="flex items-center justify-between py-2 border-b border-border">
                   <span className="text-sm text-muted-foreground">Plan</span>
                   <Badge variant="secondary">
-                    {agencyInfo.planTier.charAt(0).toUpperCase() + agencyInfo.planTier.slice(1)}
+                    {formatDisplayLabel(agencyInfo.planTier)}
                   </Badge>
                 </div>
                 {agencyInfo.billingCountry && (
@@ -643,7 +657,7 @@ export default function AgencyPage() {
                 <div className="flex items-center justify-between py-2">
                   <span className="text-sm text-muted-foreground">Your Role</span>
                   <Badge variant={agencyInfo.userRole === "owner" ? "default" : "secondary"}>
-                    {agencyInfo.userRole.charAt(0).toUpperCase() + agencyInfo.userRole.slice(1)}
+                    {formatDisplayLabel(agencyInfo.userRole)}
                   </Badge>
                 </div>
               </div>
@@ -714,7 +728,7 @@ export default function AgencyPage() {
                         <div>
                           <p className="font-medium text-foreground">{invite.email}</p>
                           <p className="text-sm text-muted-foreground">
-                            {invite.role.charAt(0).toUpperCase() + invite.role.slice(1)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                            {formatDisplayLabel(invite.role)} · Expires {new Date(invite.expiresAt).toLocaleDateString()}
                           </p>
                         </div>
                         <StatusBadge status="pending" label="Pending" />
@@ -739,7 +753,7 @@ export default function AgencyPage() {
                 <CardContent>
                   <div className="space-y-2">
                     {members.map((member) => {
-                      const RoleIcon = roleIcons[member.role];
+                      const RoleIcon = getRoleIcon(member.role);
                       return (
                         <div
                           key={member.id}
@@ -758,7 +772,7 @@ export default function AgencyPage() {
                           </div>
                           <div className="flex items-center gap-2 ml-4">
                             <Badge variant={member.role === "owner" ? "default" : "secondary"}>
-                              {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                              {formatDisplayLabel(member.role)}
                             </Badge>
                             <StatusBadge
                               status={member.isActive ? "success" : "error"}

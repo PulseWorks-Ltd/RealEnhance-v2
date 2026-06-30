@@ -28,7 +28,7 @@ import { getDisplayName } from "@realenhance/shared/users.js";
 import { invalidateSessionsForUser } from "../services/sessionStore.js";
 import { getTrialSummary } from "../services/trials.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
-import type { PlanTier } from "@realenhance/shared/auth/types.js";
+import type { PlanTier, SubscriptionStatus } from "@realenhance/shared/auth/types.js";
 import { INITIAL_FREE_CREDITS } from "../config.js";
 import { withTransaction } from "../db/index.js";
 
@@ -60,6 +60,28 @@ function isAgencyInInitialOnboarding(createdAt: string | undefined): boolean {
   const createdAtMs = Date.parse(createdAt);
   if (Number.isNaN(createdAtMs)) return false;
   return Date.now() - createdAtMs <= NEW_AGENCY_ONBOARDING_WINDOW_MS;
+}
+
+function normalizePlanTier(value: unknown): PlanTier {
+  return value === "starter" || value === "pro" || value === "agency" ? value : "starter";
+}
+
+function normalizeSubscriptionStatus(value: unknown): SubscriptionStatus {
+  return value === "ACTIVE" || value === "PAST_DUE" || value === "CANCELLED" || value === "TRIAL"
+    ? value
+    : "ACTIVE";
+}
+
+function normalizeBillingCountry(value: unknown): "NZ" | "AU" | "ZA" | undefined {
+  return value === "NZ" || value === "AU" || value === "ZA" ? value : undefined;
+}
+
+function normalizeBillingCurrency(value: unknown): "nzd" | "aud" | "zar" | "usd" | undefined {
+  return value === "nzd" || value === "aud" || value === "zar" || value === "usd" ? value : undefined;
+}
+
+function normalizeInviteRole(value: unknown): "admin" | "member" {
+  return value === "admin" ? "admin" : "member";
 }
 
 export async function grantSignupPromoCreditsOnce(agencyId: string, credits: number): Promise<boolean> {
@@ -284,8 +306,11 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
       agency.promoCreditsGranted = true;
     }
     const isNew = isAgencyInInitialOnboarding(agency.createdAt);
-    const planTier = agency.planTier ?? null;
-    const plan = planTier ? getStripePlan(planTier as PlanTier) : null;
+    const planTier = normalizePlanTier(agency.planTier);
+    const subscriptionStatus = normalizeSubscriptionStatus(agency.subscriptionStatus);
+    const billingCountry = normalizeBillingCountry(agency.billingCountry);
+    const billingCurrency = normalizeBillingCurrency(agency.billingCurrency);
+    const plan = getStripePlan(planTier);
     const now = Date.now();
     const trialActive =
       trial.status === "active" &&
@@ -308,6 +333,10 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
     res.json({
       agency: {
         ...agency,
+        planTier,
+        subscriptionStatus,
+        billingCountry,
+        billingCurrency,
         processingMode: agency.processingMode === "safe" ? "safe" : "full",
         isNew,
         promoCreditsGranted,
@@ -318,10 +347,10 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
       subscription: {
         planTier,
         planName,
-        status: agency.subscriptionStatus,
+        status: subscriptionStatus,
         currentPeriodEnd: agency.currentPeriodEnd,
-        billingCurrency: agency.billingCurrency,
-        billingCountry: agency.billingCountry,
+        billingCurrency,
+        billingCountry,
         allowance: {
           monthlyIncluded: effectiveIncluded,
           monthlyUsed: effectiveUsed,
@@ -577,8 +606,12 @@ router.get("/invites", requireAuth, requireAgencyAdmin, async (req: Request, res
     const user = (req as any).user as UserRecord;
 
     const invites = await listAgencyInvites(user.agencyId!);
+    const safeInvites = invites.map((invite) => ({
+      ...invite,
+      role: normalizeInviteRole(invite.role),
+    }));
 
-    res.json({ invites });
+    res.json({ invites: safeInvites });
   } catch (err) {
     console.error("[AGENCY] List invites error:", err);
     res.status(500).json({ error: "Failed to list invites" });
