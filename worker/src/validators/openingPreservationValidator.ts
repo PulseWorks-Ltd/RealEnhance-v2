@@ -42,6 +42,13 @@ export type WallDescriptor = {
   rightBoundaryVisible?: boolean;
   leftCornerVisible?: boolean;
   rightCornerVisible?: boolean;
+  leftCornerPosition?: "none" | "image_edge" | "outer_third" | "inner_third" | "centre";
+  rightCornerPosition?: "none" | "image_edge" | "outer_third" | "inner_third" | "centre";
+  leftCornerVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+  rightCornerVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+  leftAdjacentWallVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+  rightAdjacentWallVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+  boundaryBehaviour?: "terminates_at_visible_corner" | "continues_beyond_frame" | "unknown";
   terminatesAtCorner?: boolean;
   continuesBeyondFrame?: boolean;
   description: string;
@@ -1767,6 +1774,17 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         .filter((item: WallDescriptor | null): item is WallDescriptor => item !== null)
     : [];
 
+  const enrichedWallDescriptors = wallDescriptors.map((descriptor) => ({
+    ...descriptor,
+    leftCornerPosition: descriptor.leftCornerPosition || deriveDescriptorCornerPosition(descriptor, "left"),
+    rightCornerPosition: descriptor.rightCornerPosition || deriveDescriptorCornerPosition(descriptor, "right"),
+    leftCornerVisibility: descriptor.leftCornerVisibility || deriveDescriptorCornerVisibility(descriptor, "left"),
+    rightCornerVisibility: descriptor.rightCornerVisibility || deriveDescriptorCornerVisibility(descriptor, "right"),
+    leftAdjacentWallVisibility: descriptor.leftAdjacentWallVisibility || deriveDescriptorAdjacentWallVisibility(wallDescriptors, descriptor, "left"),
+    rightAdjacentWallVisibility: descriptor.rightAdjacentWallVisibility || deriveDescriptorAdjacentWallVisibility(wallDescriptors, descriptor, "right"),
+    boundaryBehaviour: descriptor.boundaryBehaviour || deriveDescriptorBoundaryBehaviour(descriptor),
+  }));
+
   openings.sort(compareStructuralOpenings);
   anchorFixtures.sort(compareAnchorFixtures);
 
@@ -1774,12 +1792,50 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
     cameraOrientation: typeof input.cameraOrientation === "string" ? input.cameraOrientation : undefined,
     openings,
     anchorFixtures,
-    wallDescriptors: wallDescriptors.length > 0 ? wallDescriptors : undefined,
+    wallDescriptors: enrichedWallDescriptors.length > 0 ? enrichedWallDescriptors : undefined,
   };
 }
 
 function bboxCenterX(bbox: [number, number, number, number]): number {
   return (bbox[0] + bbox[2]) / 2;
+}
+
+function deriveDescriptorCornerPosition(descriptor: WallDescriptor, side: "left" | "right"): WallDescriptor["leftCornerPosition"] {
+  const visible = side === "left" ? descriptor.leftCornerVisible === true : descriptor.rightCornerVisible === true;
+  if (!visible) return "none";
+  const sideBoundaryVisible = side === "left" ? descriptor.leftBoundaryVisible === true : descriptor.rightBoundaryVisible === true;
+  const oppositeBoundaryVisible = side === "left" ? descriptor.rightBoundaryVisible === true : descriptor.leftBoundaryVisible === true;
+  if (descriptor.visibility === "minimal") return "image_edge";
+  if (sideBoundaryVisible && !oppositeBoundaryVisible) return "image_edge";
+  if (sideBoundaryVisible && oppositeBoundaryVisible) return "outer_third";
+  return "inner_third";
+}
+
+function deriveDescriptorCornerVisibility(descriptor: WallDescriptor, side: "left" | "right"): WallDescriptor["leftCornerVisibility"] {
+  const visible = side === "left" ? descriptor.leftCornerVisible === true : descriptor.rightCornerVisible === true;
+  if (!visible) return "none";
+  if (descriptor.visibility === "minimal") return "trace";
+  if (descriptor.visibility === "partial") return "partial";
+  return "full";
+}
+
+function deriveDescriptorAdjacentWallVisibility(allDescriptors: WallDescriptor[], descriptor: WallDescriptor, side: "left" | "right"): WallDescriptor["leftAdjacentWallVisibility"] {
+  const visible = side === "left" ? descriptor.leftCornerVisible === true : descriptor.rightCornerVisible === true;
+  if (!visible) return "none";
+  const adjacentIndex = side === "left"
+    ? ((descriptor.wallIndex + 3) % 4) as WallIndex
+    : ((descriptor.wallIndex + 1) % 4) as WallIndex;
+  const adjacentDescriptor = allDescriptors.find((item) => item.wallIndex === adjacentIndex);
+  if (!adjacentDescriptor) return "none";
+  if (adjacentDescriptor.visibility === "minimal") return "minimal";
+  if (adjacentDescriptor.visibility === "partial") return "partial";
+  return "full";
+}
+
+function deriveDescriptorBoundaryBehaviour(descriptor: WallDescriptor): WallDescriptor["boundaryBehaviour"] {
+  if (descriptor.terminatesAtCorner === true) return "terminates_at_visible_corner";
+  if (descriptor.continuesBeyondFrame === true) return "continues_beyond_frame";
+  return "unknown";
 }
 
 type WallSequenceContext = {

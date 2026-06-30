@@ -253,6 +253,14 @@ export type EnvelopeVerificationFailure = EnvelopeBaselineVerificationStatement 
 
 type EnvelopeVisibilityMagnitude = "none" | "minimal" | "partial" | "substantial" | "dominant" | "complete" | "full";
 
+type ArchitecturalFeatureVisibilityMagnitude = "none" | "minimal" | "small" | "partial" | "substantial" | "full";
+
+type EdgeCornerPosition = "none" | "image_edge" | "outer_third" | "inner_third" | "centre";
+
+type EdgeCornerVisibility = "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+
+type EdgeAdjacentWallVisibility = "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+
 export type SemanticWallModel = {
   semanticWallId: string;
   displayName: string;
@@ -315,11 +323,20 @@ export type BaselineGuidedWallVerification = {
   architecturalCertainty?: "known" | "partial" | "unknown";
   leftCornerVisible?: boolean;
   rightCornerVisible?: boolean;
+  leftCornerPosition?: EdgeCornerPosition;
+  rightCornerPosition?: EdgeCornerPosition;
+  leftCornerVisibility?: EdgeCornerVisibility;
+  rightCornerVisibility?: EdgeCornerVisibility;
+  leftAdjacentWallVisibility?: EdgeAdjacentWallVisibility;
+  rightAdjacentWallVisibility?: EdgeAdjacentWallVisibility;
   continuesBeyondFrame?: boolean;
   terminatesAtCorner?: boolean;
   returnWallVisible?: boolean;
   adjoiningWallVisible?: boolean;
   recessVisible?: boolean;
+  returnWallVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  adjoiningWallVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  recessVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
   confidence?: number;
   reason?: string;
   observations: string[];
@@ -333,16 +350,16 @@ export type AdditionalWallPlanesResult = {
 };
 
 export type AdditionalArchitecturalEvidence = {
-  additionalPermanentWallPlanes: "TRUE" | "FALSE";
+  observedFeatures: string[];
   additionalPermanentWallPlaneDescriptions: string[];
-  additionalPermanentReturnWalls: "TRUE" | "FALSE";
   additionalPermanentReturnWallDescriptions: string[];
-  additionalPermanentRecesses: "TRUE" | "FALSE";
   additionalPermanentRecessDescriptions: string[];
-  additionalPermanentCorners: "TRUE" | "FALSE";
   additionalPermanentCornerDescriptions: string[];
-  unmatchedPermanentArchitecturalFeatures: "TRUE" | "FALSE";
   unmatchedPermanentFeatureDescriptions: string[];
+  additionalPermanentWallPlaneVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  additionalPermanentReturnWallVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  additionalPermanentRecessVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  additionalPermanentCornerVisibilityMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
   confidence?: number;
   reason?: string;
 };
@@ -367,6 +384,11 @@ export type DeterministicStructuralInterpretation = {
   severity: "advisory" | "significant";
   confidence: "low" | "medium" | "high";
   summary: string;
+  detectedFeature?: string;
+  associatedWallMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  classification?: "perspective_variation" | "structural_addition";
+  decision?: "pass" | "fail";
+  explanation?: string;
   supportingFacts: string[];
   corroboratingEvidence: string[];
   contradictingEvidence: string[];
@@ -555,7 +577,7 @@ function cornerVisibilityMagnitude(
   const wallMagnitude = wallVisibilityMagnitude(descriptor);
   if (wallMagnitude === "minimal") return "minimal";
   if (wallMagnitude === "partial" || normalizeWallCertainty(descriptor.architecturalCertainty) !== "known") return "partial";
-  return "complete";
+  return "full";
 }
 
 function magnitudeLine(label: string, magnitude: EnvelopeVisibilityMagnitude): string {
@@ -1021,7 +1043,7 @@ function buildBaselineGuidedVerificationPrompt(params: {
     ? `\nRETRY INSTRUCTION:\n- The previous staged verification response failed integrity validation for this reason: ${params.retryReason}\n- Re-verify the same baseline walls carefully.\n- Do not rename walls, merge walls, split walls, or invent new identities.\n`
     : "";
 
-  return `You are verifying whether the staged image still preserves the authoritative baseline architectural wall graph.
+  return `You are observing the staged image using the authoritative baseline semantic wall identities provided below.
 
 Review the BASELINE image and the STAGED image.
 
@@ -1034,8 +1056,14 @@ Do not change wall ordering.
 Do not merge walls.
 Do not split walls.
 Do not invent new semantic identities.
+Gemini must only describe staged-image observations.
+Do not compare staged against baseline.
+Do not explain why anything changed.
+Do not conclude whether architecture changed.
+Do not classify anything as structural or non-structural.
+Do not output pass/fail, changed/unchanged, anomaly/preserved, or any other verdict.
 
-Your reasoning order is mandatory:
+Your observation order is mandatory:
 1. Verify each known baseline wall.
 2. Verify the geometry of each known wall.
 3. Observe any additional permanent architectural features not represented by the baseline semantic walls.
@@ -1050,47 +1078,114 @@ BASELINE ADVISORY GEOMETRY (CORROBORATING ONLY; NEVER SEMANTIC IDENTITIES):
 ${advisoryGeometryText}
 
 For each baseline semantic wall above, answer whether that same permanent wall is visible in the staged image.
-If TRUE, describe only that wall using:
+If TRUE, describe only that wall using observation language that mirrors baseline extraction.
+Use short descriptive observation lines such as:
+- "wall containing sliding glass door is partially visible"
+- "wall containing sliding glass door continues beyond the left image edge"
+- "no visible left corner on wall containing sliding glass door"
+- "wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner"
+- "wall containing sliding glass door terminates at an observed left corner"
+- "return wall visible adjacent to the left edge of wall containing sliding glass door"
+- "no visible adjoining wall plane adjacent to the left edge of wall containing sliding glass door"
+- "no visible recess adjacent to the left edge of wall containing sliding glass door"
+- "wall containing sliding glass door contains sliding glass door"
+
+Do not mention baseline, previous visibility, or change.
+Do not copy baseline geometry text unless that exact condition is visibly true in the staged image.
+A return wall, adjoining wall plane, visible corner, or wall termination visible at a staged frame edge must be described directly in that wall's observations.
+Do not hide such edge geometry by defaulting to continuation beyond frame.
+For every visible wall, the observations array must explicitly cover the staged image only with:
+- one visibility line
+- one anchor containment line
+- one left-edge corner line
+- one left-edge continuation-or-termination line
+- one left-edge adjacent-geometry line
+- one right-edge corner line
+- one right-edge continuation-or-termination line
+- one right-edge adjacent-geometry line
+If a wall terminates at a visible corner on an edge, state that directly for that edge and do not also say the wall continues beyond that same edge.
+If a return wall is visible at an edge, also state the visible corner/termination for that same edge.
+If an adjoining wall plane is visible at an edge, state it in that wall's observations even when it is the same observed geometry as a return wall.
+If TRUE, include:
 - wallVisibility
 - wallExtent
-- leftCornerVisible
-- rightCornerVisible
-- continuesBeyondFrame
-- terminatesAtCorner
-- returnWallVisible
-- adjoiningWallVisible
-- recessVisible
 - architecturalCertainty
+- leftBoundary
+- rightBoundary
+- leftCorner
+- leftCornerVisibility
+- leftCornerPosition
+- leftAdjacentWallVisibility
+- rightCorner
+- rightCornerVisibility
+- rightCornerPosition
+- rightAdjacentWallVisibility
+- continuesBeyondFrame
+- terminatesAtVisibleCorner
+- returnWallVisibilityMagnitude
+- adjoiningWallVisibilityMagnitude
+- recessVisibilityMagnitude
+- observations
 - confidence
-- reason
 
-After every known wall has been verified, report observational-only additional architectural features using these fields:
-- additionalPermanentWallPlanes
-- additionalPermanentWallPlaneDescriptions
-- additionalPermanentCorners
-- additionalPermanentCornerDescriptions
-- additionalPermanentReturnWalls
-- additionalPermanentReturnWallDescriptions
-- additionalPermanentRecesses
-- additionalPermanentRecessDescriptions
-- unmatchedPermanentArchitecturalFeatures
-- unmatchedPermanentFeatureDescriptions
+For returnWallVisibilityMagnitude, adjoiningWallVisibilityMagnitude, and recessVisibilityMagnitude use exactly one of:
+- none
+- minimal
+- small
+- partial
+- substantial
+- full
+
+For leftCornerVisibility and rightCornerVisibility use exactly one of:
+- none
+- trace
+- minimal
+- partial
+- substantial
+- full
+
+For leftCornerPosition and rightCornerPosition use exactly one of:
+- none
+- image_edge
+- outer_third
+- inner_third
+- centre
+
+For leftAdjacentWallVisibility and rightAdjacentWallVisibility use exactly one of:
+- none
+- trace
+- minimal
+- partial
+- substantial
+- full
+
+Use these values only to describe how much of the permanent architectural feature is visible in the staged image.
+Do not interpret what the value means.
+
+After every known wall has been verified, report observational-only additional architectural features visible in the staged image but not part of the verified baseline semantic walls.
+Use short descriptive feature lines only.
+Do not list floors, ceilings, lighting, electrical outlets, trim, baseboards, or openings already contained within a verified baseline wall.
+Only list additional permanent wall planes, return walls, interior corners, adjoining wall planes, recesses, or other room-envelope features not already covered by the verified baseline walls.
+Prefix each listed feature with one visibility significance label:
+- none
+- minimal
+- small
+- partial
+- substantial
+- full
+
+Example:
+- "minimal: permanent return wall connected to the left edge of wall containing sliding glass door"
+- "small: permanent interior corner connecting this return wall"
+
+If no such features exist, return "NONE".
 
 Do not infer whether these observations imply architectural change.
 ${retryText}
 Return JSON only:
 
 {
-  "answer":"TRUE"|"FALSE",
   "confidence":0.0-1.0,
-  "analysis":"concise visual explanation",
-  "selectedExplanation":"short primary explanation",
-  "primaryHypothesis":"short primary hypothesis",
-  "hypothesisConfidence":"Low"|"Medium"|"High",
-  "visualAmbiguity":true|false,
-  "boundaryLinesMissing":true|false,
-  "continuousSurfaceReplacement":true|false,
-  "noPlausibleVisualExplanation":true|false,
   "wallVerifications":[
     {
       "semanticWallId":"exact baseline semanticWallId",
@@ -1100,28 +1195,26 @@ Return JSON only:
       "wallVisibility":"none"|"minimal"|"partial"|"substantial"|"dominant"|"complete"|"full",
       "wallExtent":"none"|"minimal"|"partial"|"substantial"|"dominant"|"complete"|"full",
       "architecturalCertainty":"known"|"partial"|"unknown",
-      "leftCornerVisible":true|false,
-      "rightCornerVisible":true|false,
-      "continuesBeyondFrame":true|false,
-      "terminatesAtCorner":true|false,
-      "returnWallVisible":true|false,
-      "adjoiningWallVisible":true|false,
-      "recessVisible":true|false,
+      "leftBoundary":"visible"|"exits_frame",
+      "rightBoundary":"visible"|"exits_frame",
+      "leftCorner":"visible"|"not_visible",
+      "leftCornerVisibility":"none"|"trace"|"minimal"|"partial"|"substantial"|"full",
+      "leftCornerPosition":"none"|"image_edge"|"outer_third"|"inner_third"|"centre",
+      "leftAdjacentWallVisibility":"none"|"trace"|"minimal"|"partial"|"substantial"|"full",
+      "rightCorner":"visible"|"not_visible",
+      "rightCornerVisibility":"none"|"trace"|"minimal"|"partial"|"substantial"|"full",
+      "rightCornerPosition":"none"|"image_edge"|"outer_third"|"inner_third"|"centre",
+      "rightAdjacentWallVisibility":"none"|"trace"|"minimal"|"partial"|"substantial"|"full",
+      "continuesBeyondFrame":"yes"|"no"|"unknown",
+      "terminatesAtVisibleCorner":"yes"|"no"|"unknown",
+      "returnWallVisibilityMagnitude":"none"|"minimal"|"small"|"partial"|"substantial"|"full",
+      "adjoiningWallVisibilityMagnitude":"none"|"minimal"|"small"|"partial"|"substantial"|"full",
+      "recessVisibilityMagnitude":"none"|"minimal"|"small"|"partial"|"substantial"|"full",
       "confidence":0.0-1.0,
-      "reason":"required when samePermanentWallVisible is FALSE; otherwise optional",
-      "observations":["short geometric observations"]
+      "observations":["short descriptive architectural observations only"]
     }
   ],
-  "additionalPermanentWallPlanes":"TRUE"|"FALSE",
-  "additionalPermanentWallPlaneDescriptions":["additional permanent wall planes not represented by baseline semantic walls"],
-  "additionalPermanentCorners":"TRUE"|"FALSE",
-  "additionalPermanentCornerDescriptions":["additional permanent corners not represented by baseline semantic walls"],
-  "additionalPermanentReturnWalls":"TRUE"|"FALSE",
-  "additionalPermanentReturnWallDescriptions":["additional permanent return walls not represented by baseline semantic walls"],
-  "additionalPermanentRecesses":"TRUE"|"FALSE",
-  "additionalPermanentRecessDescriptions":["additional permanent recesses not represented by baseline semantic walls"],
-  "unmatchedPermanentArchitecturalFeatures":"TRUE"|"FALSE",
-  "unmatchedPermanentFeatureDescriptions":["permanent architectural features not associated with baseline semantic walls"]
+  "additionalPermanentArchitecturalFeatures":"NONE"|["descriptive permanent architectural features not part of the verified baseline semantic walls"]
 }`;
 }
 
@@ -1170,9 +1263,144 @@ function normalizeVisibilityMagnitude(value: unknown): EnvelopeVisibilityMagnitu
   return undefined;
 }
 
+function normalizeArchitecturalFeatureVisibilityMagnitude(value: unknown): ArchitecturalFeatureVisibilityMagnitude | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "none" || normalized === "minimal" || normalized === "small" || normalized === "partial" || normalized === "substantial" || normalized === "full") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeEdgeCornerPosition(value: unknown): EdgeCornerPosition | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase().replace(/\s+/g, "_");
+  if (normalized === "near_image_edge" || normalized === "far_third") return "outer_third";
+  if (normalized === "none" || normalized === "image_edge" || normalized === "outer_third" || normalized === "inner_third" || normalized === "centre") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeEdgeCornerVisibility(value: unknown): EdgeCornerVisibility | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "complete") return "full";
+  if (normalized === "none" || normalized === "trace" || normalized === "minimal" || normalized === "partial" || normalized === "substantial" || normalized === "full") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function normalizeEdgeAdjacentWallVisibility(value: unknown): EdgeAdjacentWallVisibility | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "none" || normalized === "trace" || normalized === "minimal" || normalized === "partial" || normalized === "substantial" || normalized === "full") {
+    return normalized;
+  }
+  return undefined;
+}
+
+function edgeAdjacentWallVisibilityRank(value?: EdgeAdjacentWallVisibility): number {
+  if (value === "none") return 0;
+  if (value === "trace") return 1;
+  if (value === "minimal") return 2;
+  if (value === "partial") return 3;
+  if (value === "substantial") return 4;
+  if (value === "full") return 5;
+  return -1;
+}
+
+function cornerVisibilityRank(value?: EdgeCornerVisibility): number {
+  if (value === "none") return 0;
+  if (value === "trace") return 1;
+  if (value === "minimal") return 2;
+  if (value === "partial") return 3;
+  if (value === "substantial") return 4;
+  if (value === "full") return 5;
+  return -1;
+}
+
+function mapArchitecturalFeatureVisibilityToAdjacentWallVisibility(
+  value?: ArchitecturalFeatureVisibilityMagnitude,
+): EdgeAdjacentWallVisibility | undefined {
+  if (value === "none") return "none";
+  if (value === "minimal") return "trace";
+  if (value === "small") return "minimal";
+  if (value === "partial") return "partial";
+  if (value === "substantial") return "substantial";
+  if (value === "full") return "full";
+  return undefined;
+}
+
+function mapAdjacentWallVisibilityToArchitecturalFeature(
+  value?: EdgeAdjacentWallVisibility,
+): ArchitecturalFeatureVisibilityMagnitude | undefined {
+  if (value === "none") return "none";
+  if (value === "trace") return "minimal";
+  if (value === "minimal") return "small";
+  if (value === "partial") return "partial";
+  if (value === "substantial") return "substantial";
+  if (value === "full") return "full";
+  return undefined;
+}
+
+function mapEnvelopeMagnitudeToCornerVisibility(value?: EnvelopeVisibilityMagnitude): EdgeCornerVisibility {
+  if (value === "minimal") return "trace";
+  if (value === "partial") return "partial";
+  if (value === "substantial" || value === "dominant") return "substantial";
+  if (value === "complete" || value === "full") return "full";
+  return "none";
+}
+
+function mapEnvelopeMagnitudeToAdjacentWallVisibility(value?: EnvelopeVisibilityMagnitude): EdgeAdjacentWallVisibility {
+  if (value === "minimal") return "minimal";
+  if (value === "partial") return "partial";
+  if (value === "substantial" || value === "dominant") return "substantial";
+  if (value === "complete" || value === "full") return "full";
+  return "none";
+}
+
+function architecturalFeatureVisibilityRank(value?: ArchitecturalFeatureVisibilityMagnitude): number {
+  if (value === "none") return 0;
+  if (value === "minimal") return 1;
+  if (value === "small") return 2;
+  if (value === "partial") return 3;
+  if (value === "substantial") return 4;
+  if (value === "full") return 5;
+  return -1;
+}
+
+function maxArchitecturalFeatureVisibilityMagnitude(...values: Array<ArchitecturalFeatureVisibilityMagnitude | undefined>): ArchitecturalFeatureVisibilityMagnitude | undefined {
+  let best: ArchitecturalFeatureVisibilityMagnitude | undefined;
+  let bestRank = -1;
+  for (const value of values) {
+    const rank = architecturalFeatureVisibilityRank(value);
+    if (rank > bestRank) {
+      best = value;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+function classifyArchitecturalFeatureVisibilityFromObservationLine(value: string): ArchitecturalFeatureVisibilityMagnitude | undefined {
+  const normalized = normalizeObservationLine(value).toLowerCase();
+  if (!normalized) return undefined;
+  if (normalized.includes("no visible return wall") || normalized.includes("no visible adjoining wall plane") || normalized.includes("no visible recess")) {
+    return "none";
+  }
+  if (normalized.includes("tiny sliver") || normalized.includes("sliver") || normalized.includes("minimal")) return "minimal";
+  if (normalized.includes("small")) return "small";
+  if (normalized.includes("substantial") || normalized.includes("large portion")) return "substantial";
+  if (normalized.includes("full") || normalized.includes("fully visible") || normalized.includes("most or all")) return "full";
+  if (normalized.includes("partial") || normalized.includes("meaningful portion") || normalized.includes("visible")) return "partial";
+  return undefined;
+}
+
 function buildStageVerificationDescription(
   wallVerifications: BaselineGuidedWallVerification[],
-  additionalWallPlanes?: AdditionalWallPlanesResult,
+  additionalEvidence?: AdditionalArchitecturalEvidence,
 ): string {
   if (wallVerifications.length === 0) {
     return [
@@ -1190,19 +1418,433 @@ function buildStageVerificationDescription(
     const visibility = item.samePermanentWallVisible === "TRUE"
       ? `${item.wallVisibility || "unknown"} visibility, extent ${item.wallExtent || "unknown"}`
       : `not visible`;
-    lines.push(`- ${item.displayName}: ${visibility}; leftCorner=${item.leftCornerVisible === true ? "yes" : item.leftCornerVisible === false ? "no" : "unknown"}; rightCorner=${item.rightCornerVisible === true ? "yes" : item.rightCornerVisible === false ? "no" : "unknown"}; continuesBeyondFrame=${item.continuesBeyondFrame === true ? "yes" : item.continuesBeyondFrame === false ? "no" : "unknown"}; returnWallVisible=${item.returnWallVisible === true ? "yes" : item.returnWallVisible === false ? "no" : "unknown"}; adjoiningWallVisible=${item.adjoiningWallVisible === true ? "yes" : item.adjoiningWallVisible === false ? "no" : "unknown"}; recessVisible=${item.recessVisible === true ? "yes" : item.recessVisible === false ? "no" : "unknown"}${item.reason ? ` -- ${item.reason}` : ""}`);
+    lines.push(`- ${item.displayName}: ${visibility}${item.reason ? ` -- ${item.reason}` : ""}`);
+    lines.push(`  - left corner position: ${item.leftCornerPosition || "unknown"}`);
+    lines.push(`  - left corner visibility: ${item.leftCornerVisibility || "unknown"}`);
+    lines.push(`  - left adjacent wall visibility: ${item.leftAdjacentWallVisibility || "unknown"}`);
+    lines.push(`  - right corner position: ${item.rightCornerPosition || "unknown"}`);
+    lines.push(`  - right corner visibility: ${item.rightCornerVisibility || "unknown"}`);
+    lines.push(`  - right adjacent wall visibility: ${item.rightAdjacentWallVisibility || "unknown"}`);
+    for (const observation of item.observations) {
+      lines.push(`  - ${observation}`);
+    }
   }
 
-  if (additionalWallPlanes) {
-    lines.push(`- Additional permanent wall planes: ${additionalWallPlanes.answer}`);
-    if (additionalWallPlanes.descriptions.length > 0) {
-      for (const description of additionalWallPlanes.descriptions) {
-        lines.push(`  - ${description}`);
-      }
+  if (additionalEvidence?.observedFeatures?.length) {
+    lines.push(`- Additional permanent architectural features:`);
+    for (const description of additionalEvidence.observedFeatures) {
+      lines.push(`  - ${description}`);
     }
   }
 
   return lines.join("\n");
+}
+
+function normalizeObservationLine(value: unknown): string {
+  return typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+}
+
+function deriveWallObservationBooleans(observations: string[]): Pick<BaselineGuidedWallVerification, "leftCornerVisible" | "rightCornerVisible" | "leftCornerPosition" | "rightCornerPosition" | "leftCornerVisibility" | "rightCornerVisibility" | "leftAdjacentWallVisibility" | "rightAdjacentWallVisibility" | "continuesBeyondFrame" | "terminatesAtCorner" | "returnWallVisible" | "adjoiningWallVisible" | "recessVisible" | "returnWallVisibilityMagnitude" | "adjoiningWallVisibilityMagnitude" | "recessVisibilityMagnitude"> {
+  const normalized = observations.map((value) => normalizeObservationLine(value).toLowerCase()).filter((value) => value.length > 0);
+  const has = (...patterns: RegExp[]): boolean => normalized.some((line) => patterns.some((pattern) => pattern.test(line)));
+  const readLabel = (pattern: RegExp): string | undefined => {
+    for (const line of normalized) {
+      const match = line.match(pattern);
+      if (match?.[1]) return match[1].trim();
+    }
+    return undefined;
+  };
+  const leftCornerVisible = has(/no visible left corner/)
+    ? false
+    : has(/\bvisible left corner\b/, /forms a visible corner on its left/, /joins .* at a visible left corner/, /terminates at an observed left corner/, /terminates at a visible left corner/)
+      ? true
+      : undefined;
+  const rightCornerVisible = has(/no visible right corner/)
+      ? false
+      : has(/\bvisible right corner\b/, /forms a visible corner on its right/, /joins .* at a visible right corner/, /terminates at an observed right corner/, /terminates at a visible right corner/)
+        ? true
+        : undefined;
+  const continuesBeyondFrame = has(/continues beyond the .*image edge/, /continues beyond the image frame/)
+    ? true
+    : has(/does not continue beyond the image frame/)
+      ? false
+      : has(/terminates at an observed .* corner/, /terminates at a visible .* corner/)
+        ? false
+      : undefined;
+  const terminatesAtCorner = has(/does not terminate at an observed corner/, /no visible wall termination/)
+    ? false
+    : has(/terminates at an observed .* corner/, /terminates at a visible .* corner/)
+    ? true
+      : undefined;
+  const returnWallVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    ...observations
+      .filter((line) => /return wall/i.test(line) || /left edge/i.test(line) || /right edge/i.test(line))
+      .map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line))
+  );
+  const adjoiningWallVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    ...observations
+      .filter((line) => /adjoining wall plane/i.test(line) || /left edge/i.test(line) || /right edge/i.test(line))
+      .map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line))
+  );
+  const recessVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    ...observations
+      .filter((line) => /recess/i.test(line) || /left edge/i.test(line) || /right edge/i.test(line))
+      .map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line))
+  );
+  const explicitReturnWallVisible = has(/return wall visible/, /connects to a permanent return wall/, /connected to a permanent return wall/, /connects to a return wall/)
+    ? true
+    : has(/no visible return wall/)
+      ? false
+      : undefined;
+  const adjoiningWallVisible = explicitReturnWallVisible === true
+    ? true
+    : has(/no visible adjoining wall plane/)
+    ? false
+      : has(/adjoining wall plane visible/, /connects to an adjoining wall plane/, /connected to an adjoining wall plane/)
+        ? true
+        : undefined;
+  const returnWallVisible = explicitReturnWallVisible === false
+    ? false
+    : explicitReturnWallVisible === true
+      ? true
+      : adjoiningWallVisible === true && terminatesAtCorner === true && (leftCornerVisible === true || rightCornerVisible === true)
+        ? true
+        : undefined;
+  const normalizedAdjoiningWallVisible = returnWallVisible === true
+    ? true
+    : adjoiningWallVisible;
+  const recessVisible = has(/no visible recess/)
+    ? false
+    : has(/recess visible/)
+      ? true
+      : undefined;
+  const leftCornerVisibility = normalizeEdgeCornerVisibility(readLabel(/left corner visibility:\s*(none|trace|minimal|partial|substantial|full|complete)/))
+    || (leftCornerVisible === false ? "none" : leftCornerVisible === true ? "partial" : undefined);
+  const rightCornerVisibility = normalizeEdgeCornerVisibility(readLabel(/right corner visibility:\s*(none|trace|minimal|partial|substantial|full|complete)/))
+    || (rightCornerVisible === false ? "none" : rightCornerVisible === true ? "partial" : undefined);
+  const leftCornerPosition = normalizeEdgeCornerPosition(readLabel(/left corner position:\s*(none|image edge|near image edge|inner third|centre|far third)/))
+    || (leftCornerVisible === false ? "none" : leftCornerVisible === true && normalized.some((line) => /left edge|image edge/.test(line)) ? "image_edge" : leftCornerVisible === true ? "outer_third" : undefined);
+  const rightCornerPosition = normalizeEdgeCornerPosition(readLabel(/right corner position:\s*(none|image edge|near image edge|inner third|centre|far third)/))
+    || (rightCornerVisible === false ? "none" : rightCornerVisible === true && normalized.some((line) => /right edge|image edge/.test(line)) ? "image_edge" : rightCornerVisible === true ? "outer_third" : undefined);
+  const leftAdjacentWallVisibility = normalizeEdgeAdjacentWallVisibility(readLabel(/left adjacent wall visibility:\s*(none|trace|minimal|partial|substantial|full)/))
+    || mapArchitecturalFeatureVisibilityToAdjacentWallVisibility(maxArchitecturalFeatureVisibilityMagnitude(
+      ...normalized.filter((line) => detectObservationSide(line) === "left").map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line)),
+    ));
+  const rightAdjacentWallVisibility = normalizeEdgeAdjacentWallVisibility(readLabel(/right adjacent wall visibility:\s*(none|trace|minimal|partial|substantial|full)/))
+    || mapArchitecturalFeatureVisibilityToAdjacentWallVisibility(maxArchitecturalFeatureVisibilityMagnitude(
+      ...normalized.filter((line) => detectObservationSide(line) === "right").map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line)),
+    ));
+  return {
+    leftCornerVisible,
+    rightCornerVisible,
+    leftCornerPosition,
+    rightCornerPosition,
+    leftCornerVisibility,
+    rightCornerVisibility,
+    leftAdjacentWallVisibility,
+    rightAdjacentWallVisibility,
+    continuesBeyondFrame,
+    terminatesAtCorner,
+    returnWallVisible,
+    adjoiningWallVisible: normalizedAdjoiningWallVisible,
+    recessVisible,
+    returnWallVisibilityMagnitude: returnWallVisibilityMagnitude || (returnWallVisible === true ? "partial" : returnWallVisible === false ? "none" : undefined),
+    adjoiningWallVisibilityMagnitude: adjoiningWallVisibilityMagnitude || (normalizedAdjoiningWallVisible === true ? "partial" : normalizedAdjoiningWallVisible === false ? "none" : undefined),
+    recessVisibilityMagnitude: recessVisibilityMagnitude || (recessVisible === true ? "partial" : recessVisible === false ? "none" : undefined),
+  };
+}
+
+function detectObservationSide(text: string): "left" | "right" | undefined {
+  const normalized = normalizeObservationLine(text).toLowerCase();
+  if (/\bleft edge\b|\bleft side\b|\bfar left\b|\bto (?:the|its) left\b|\bvisible left corner\b|\bobserved left corner\b/.test(normalized)) {
+    return "left";
+  }
+  if (/\bright edge\b|\bright side\b|\bfar right\b|\bto (?:the|its) right\b|\bvisible right corner\b|\bobserved right corner\b/.test(normalized)) {
+    return "right";
+  }
+  return undefined;
+}
+
+function deriveFrameEdgeFeatureObservation(
+  observations: string[],
+  side: "left" | "right",
+): Pick<BaselineGuidedWallVerification, "returnWallVisible" | "adjoiningWallVisible" | "recessVisible" | "returnWallVisibilityMagnitude" | "adjoiningWallVisibilityMagnitude" | "recessVisibilityMagnitude" | "leftCornerPosition" | "rightCornerPosition" | "leftCornerVisibility" | "rightCornerVisibility" | "leftAdjacentWallVisibility" | "rightAdjacentWallVisibility"> {
+  const normalized = observations
+    .map((value) => normalizeObservationLine(value).toLowerCase())
+    .filter((value) => value.length > 0 && detectObservationSide(value) === side);
+  const has = (...patterns: RegExp[]): boolean => normalized.some((line) => patterns.some((pattern) => pattern.test(line)));
+
+  const returnWallVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    ...normalized
+      .filter((line) => /return wall/i.test(line))
+      .map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line)),
+  );
+  const adjoiningWallVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    ...normalized
+      .filter((line) => /adjoining wall plane|wall plane/i.test(line))
+      .map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line)),
+  );
+  const recessVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    ...normalized
+      .filter((line) => /recess/i.test(line))
+      .map((line) => classifyArchitecturalFeatureVisibilityFromObservationLine(line)),
+  );
+
+  const returnWallVisible = has(/return wall visible/, /connects to a permanent return wall/, /connected to a permanent return wall/, /connects to a return wall/)
+    ? true
+    : has(/no visible return wall/)
+      ? false
+      : returnWallVisibilityMagnitude
+        ? returnWallVisibilityMagnitude !== "none"
+        : undefined;
+  const adjoiningWallVisible = has(/adjoining wall plane visible/, /connects to an adjoining wall plane/, /connected to an adjoining wall plane/)
+    ? true
+    : has(/no visible adjoining wall plane/)
+      ? false
+      : adjoiningWallVisibilityMagnitude
+        ? adjoiningWallVisibilityMagnitude !== "none"
+        : undefined;
+  const recessVisible = has(/recess visible/)
+    ? true
+    : has(/no visible recess/)
+      ? false
+      : recessVisibilityMagnitude
+        ? recessVisibilityMagnitude !== "none"
+        : undefined;
+  const sideCornerVisibility = normalizeEdgeCornerVisibility(
+    normalized.map((line) => line.match(/corner visibility:\s*(none|trace|minimal|partial|substantial|full|complete)/)?.[1]).find(Boolean),
+  ) || (normalized.some((line) => /no visible .*corner/.test(line)) ? "none" : normalized.some((line) => /visible .*corner|terminates at an observed .* corner/.test(line)) ? "partial" : undefined);
+  const sideCornerPosition = normalizeEdgeCornerPosition(
+    normalized.map((line) => line.match(/corner position:\s*(none|image edge|near image edge|inner third|centre|far third)/)?.[1]).find(Boolean),
+  ) || (sideCornerVisibility && sideCornerVisibility !== "none" ? (normalized.some((line) => /image edge|left edge|right edge/.test(line)) ? "image_edge" : "outer_third") : undefined);
+  const sideAdjacentWallVisibility = mapArchitecturalFeatureVisibilityToAdjacentWallVisibility(
+    maxArchitecturalFeatureVisibilityMagnitude(returnWallVisibilityMagnitude, adjoiningWallVisibilityMagnitude, recessVisibilityMagnitude),
+  );
+
+  return {
+    returnWallVisible,
+    adjoiningWallVisible,
+    recessVisible,
+    leftCornerPosition: side === "left" ? sideCornerPosition : undefined,
+    rightCornerPosition: side === "right" ? sideCornerPosition : undefined,
+    leftCornerVisibility: side === "left" ? sideCornerVisibility : undefined,
+    rightCornerVisibility: side === "right" ? sideCornerVisibility : undefined,
+    leftAdjacentWallVisibility: side === "left" ? sideAdjacentWallVisibility : undefined,
+    rightAdjacentWallVisibility: side === "right" ? sideAdjacentWallVisibility : undefined,
+    returnWallVisibilityMagnitude: returnWallVisibilityMagnitude || (returnWallVisible === true ? "partial" : returnWallVisible === false ? "none" : undefined),
+    adjoiningWallVisibilityMagnitude: adjoiningWallVisibilityMagnitude || (adjoiningWallVisible === true ? "partial" : adjoiningWallVisible === false ? "none" : undefined),
+    recessVisibilityMagnitude: recessVisibilityMagnitude || (recessVisible === true ? "partial" : recessVisible === false ? "none" : undefined),
+  };
+}
+
+function parseFeatureLineWithSignificance(value: string): { magnitude?: ArchitecturalFeatureVisibilityMagnitude; description: string } {
+  const trimmed = normalizeObservationLine(value);
+  const match = trimmed.match(/^(none|minimal|small|partial|substantial|full)\s*:\s*(.+)$/i);
+  if (!match) {
+    return {
+      magnitude: classifyArchitecturalFeatureVisibilityFromObservationLine(trimmed),
+      description: trimmed,
+    };
+  }
+  return {
+    magnitude: normalizeArchitecturalFeatureVisibilityMagnitude(match[1]),
+    description: normalizeObservationLine(match[2]),
+  };
+}
+
+function enrichAdditionalArchitecturalEvidence(params: {
+  baseline: StructuralBaseline | null | undefined;
+  baselineWalls: SemanticWallModel[];
+  stagedObservations: BaselineGuidedWallVerification[];
+  additionalEvidence?: AdditionalArchitecturalEvidence;
+}): AdditionalArchitecturalEvidence | undefined {
+  const derivedFeatureLines = [...(params.additionalEvidence?.observedFeatures || [])];
+  const stagedById = new Map(params.stagedObservations.map((item) => [item.semanticWallId, item] as const));
+
+  for (const baselineWall of params.baselineWalls) {
+    const descriptor = findBaselineDescriptorForSemanticWall(params.baseline, baselineWall);
+    const staged = stagedById.get(baselineWall.semanticWallId);
+    if (!descriptor || !staged || staged.samePermanentWallVisible !== "TRUE") continue;
+    const frameSide = exitedFrameSide(descriptor);
+    if (!frameSide) continue;
+
+    const frameEdgeObservation = deriveFrameEdgeFeatureObservation(staged.observations, frameSide);
+
+    if (frameEdgeObservation.returnWallVisible === true) {
+      derivedFeatureLines.push(`return wall visible adjacent to the ${frameSide} edge of ${baselineWall.displayName}`);
+    }
+    if (frameEdgeObservation.adjoiningWallVisible === true && frameEdgeObservation.returnWallVisible !== true) {
+      derivedFeatureLines.push(`adjoining wall plane visible adjacent to the ${frameSide} edge of ${baselineWall.displayName}`);
+    }
+    if (frameEdgeObservation.recessVisible === true) {
+      derivedFeatureLines.push(`recess visible adjacent to the ${frameSide} edge of ${baselineWall.displayName}`);
+    }
+  }
+
+  return categorizeAdditionalArchitecturalFeatures(
+    derivedFeatureLines,
+    params.additionalEvidence?.confidence,
+    params.additionalEvidence?.reason,
+  );
+}
+
+function reconcileWallVerificationsWithAdditionalFeatures(params: {
+  baseline: StructuralBaseline | null | undefined;
+  baselineWalls: SemanticWallModel[];
+  wallVerifications: BaselineGuidedWallVerification[];
+  additionalEvidence?: AdditionalArchitecturalEvidence;
+}): BaselineGuidedWallVerification[] {
+  const additionalEvidence = params.additionalEvidence;
+  if (!additionalEvidence?.observedFeatures?.length) return params.wallVerifications;
+  const baselineById = new Map(params.baselineWalls.map((wall) => [wall.semanticWallId, wall] as const));
+
+  return params.wallVerifications.map((item) => {
+    const baselineWall = baselineById.get(item.semanticWallId);
+    const descriptor = baselineWall ? findBaselineDescriptorForSemanticWall(params.baseline, baselineWall) : undefined;
+    const frameSide = descriptor ? exitedFrameSide(descriptor) : null;
+    if (!baselineWall || !frameSide || item.samePermanentWallVisible !== "TRUE") return item;
+
+    const relevantFeatures = additionalEvidence.observedFeatures.filter((feature) => {
+      const normalized = feature.toLowerCase();
+      const detectedSide = detectObservationSide(normalized);
+      if (detectedSide && detectedSide !== frameSide) return false;
+      if (normalized.includes(item.displayName.toLowerCase())) return true;
+      if (frameSide === "left" && (normalized.includes("far left") || normalized.includes("left edge") || normalized.includes("to the left") || normalized.includes("to its left"))) return true;
+      if (frameSide === "right" && (normalized.includes("far right") || normalized.includes("right edge") || normalized.includes("to the right") || normalized.includes("to its right"))) return true;
+      return false;
+    });
+    if (relevantFeatures.length === 0) return item;
+
+    const normalizedRelevant = relevantFeatures.map((feature) => feature.toLowerCase());
+    const mentionsPerpendicularPlane = normalizedRelevant.some((value) => value.includes("perpendicular wall plane") || value.includes("wall plane"));
+    const mentionsInteriorCorner = normalizedRelevant.some((value) => value.includes("interior corner") || value.includes("corner"));
+    const mentionsReturnWall = normalizedRelevant.some((value) => value.includes("return wall"));
+    const mentionsAdjoiningWall = normalizedRelevant.some((value) => value.includes("adjoining wall plane"));
+    if (!mentionsPerpendicularPlane && !mentionsInteriorCorner && !mentionsReturnWall && !mentionsAdjoiningWall) {
+      return item;
+    }
+
+    const observationLines = [...item.observations];
+    const addObservation = (line: string) => {
+      if (!observationLines.includes(line)) observationLines.push(line);
+    };
+    addObservation(`visible ${frameSide} corner on ${item.displayName}`);
+    addObservation(`${item.displayName} terminates at an observed ${frameSide} corner`);
+    addObservation(`adjoining wall plane visible adjacent to the ${frameSide} edge of ${item.displayName}`);
+    addObservation(`return wall visible adjacent to the ${frameSide} edge of ${item.displayName}`);
+    const featureMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+      additionalEvidence.additionalPermanentWallPlaneVisibilityMagnitude,
+      additionalEvidence.additionalPermanentReturnWallVisibilityMagnitude,
+      additionalEvidence.additionalPermanentCornerVisibilityMagnitude,
+    ) || "partial";
+
+    return {
+      ...item,
+      observations: observationLines,
+      continuesBeyondFrame: false,
+      terminatesAtCorner: true,
+      leftCornerVisible: frameSide === "left" ? true : item.leftCornerVisible,
+      rightCornerVisible: frameSide === "right" ? true : item.rightCornerVisible,
+      adjoiningWallVisible: true,
+      returnWallVisible: true,
+      adjoiningWallVisibilityMagnitude: featureMagnitude,
+      returnWallVisibilityMagnitude: additionalEvidence.additionalPermanentReturnWallVisibilityMagnitude || featureMagnitude,
+    } satisfies BaselineGuidedWallVerification;
+  });
+}
+
+function categorizeAdditionalArchitecturalFeatures(features: string[], confidence?: number, reason?: string): AdditionalArchitecturalEvidence | undefined {
+  const parsedFeatures = features
+    .map((value) => parseFeatureLineWithSignificance(value))
+    .filter((item) => item.description.length > 0 && item.description.toUpperCase() !== "NONE");
+  const observedFeatures = sortUniqueStrings(parsedFeatures.map((item) => item.description));
+  if (observedFeatures.length === 0) return undefined;
+  const wallPlaneDescriptions: string[] = [];
+  const returnWallDescriptions: string[] = [];
+  const recessDescriptions: string[] = [];
+  const cornerDescriptions: string[] = [];
+  const unmatchedDescriptions: string[] = [];
+  const wallPlaneMagnitudes: Array<ArchitecturalFeatureVisibilityMagnitude | undefined> = [];
+  const returnWallMagnitudes: Array<ArchitecturalFeatureVisibilityMagnitude | undefined> = [];
+  const recessMagnitudes: Array<ArchitecturalFeatureVisibilityMagnitude | undefined> = [];
+  const cornerMagnitudes: Array<ArchitecturalFeatureVisibilityMagnitude | undefined> = [];
+
+  for (const { description: feature, magnitude } of parsedFeatures) {
+    const normalized = feature.toLowerCase();
+    let matched = false;
+    if (normalized.includes("return wall")) {
+      returnWallDescriptions.push(feature);
+      wallPlaneDescriptions.push(feature);
+      returnWallMagnitudes.push(magnitude);
+      wallPlaneMagnitudes.push(magnitude);
+      matched = true;
+    }
+    if (normalized.includes("wall plane") || normalized.includes("permanent wall") || normalized.includes("adjoining wall")) {
+      wallPlaneDescriptions.push(feature);
+      wallPlaneMagnitudes.push(magnitude);
+      matched = true;
+    }
+    if (normalized.includes("corner")) {
+      cornerDescriptions.push(feature);
+      cornerMagnitudes.push(magnitude);
+      matched = true;
+    }
+    if (normalized.includes("recess")) {
+      recessDescriptions.push(feature);
+      recessMagnitudes.push(magnitude);
+      matched = true;
+    }
+    if (!matched) {
+      unmatchedDescriptions.push(feature);
+    }
+  }
+
+  return {
+    observedFeatures,
+    additionalPermanentWallPlaneDescriptions: sortUniqueStrings(wallPlaneDescriptions),
+    additionalPermanentReturnWallDescriptions: sortUniqueStrings(returnWallDescriptions),
+    additionalPermanentRecessDescriptions: sortUniqueStrings(recessDescriptions),
+    additionalPermanentCornerDescriptions: sortUniqueStrings(cornerDescriptions),
+    unmatchedPermanentFeatureDescriptions: sortUniqueStrings(unmatchedDescriptions),
+    additionalPermanentWallPlaneVisibilityMagnitude: maxArchitecturalFeatureVisibilityMagnitude(...wallPlaneMagnitudes),
+    additionalPermanentReturnWallVisibilityMagnitude: maxArchitecturalFeatureVisibilityMagnitude(...returnWallMagnitudes),
+    additionalPermanentRecessVisibilityMagnitude: maxArchitecturalFeatureVisibilityMagnitude(...recessMagnitudes),
+    additionalPermanentCornerVisibilityMagnitude: maxArchitecturalFeatureVisibilityMagnitude(...cornerMagnitudes),
+    confidence,
+    reason,
+  } satisfies AdditionalArchitecturalEvidence;
+}
+
+type ArchitecturalFeatureBaselineState = "none" | "unknown";
+
+function featureBaselineStateForFrameEdge(baselineFrameSide: "left" | "right" | null): ArchitecturalFeatureBaselineState {
+  return baselineFrameSide ? "unknown" : "none";
+}
+
+function assessArchitecturalFeatureSignificance(params: {
+  baselineState: ArchitecturalFeatureBaselineState;
+  observedMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+}): { severity: "none" | "advisory" | "significant"; confidence: "low" | "medium" | "high"; significanceLabel: string } {
+  const magnitude = params.observedMagnitude;
+  if (!magnitude || magnitude === "none") {
+    return { severity: "none", confidence: "low", significanceLabel: "none" };
+  }
+  if (params.baselineState === "unknown") {
+    if (magnitude === "minimal" || magnitude === "small") {
+      return { severity: "none", confidence: "low", significanceLabel: "acceptable_perspective_variation" };
+    }
+    if (magnitude === "partial") {
+      return { severity: "advisory", confidence: "medium", significanceLabel: "potential_structural_concern" };
+    }
+    return { severity: "significant", confidence: "high", significanceLabel: "structural_failure" };
+  }
+  if (magnitude === "minimal") {
+    return { severity: "advisory", confidence: "low", significanceLabel: "review_only" };
+  }
+  if (magnitude === "small") {
+    return { severity: "advisory", confidence: "medium", significanceLabel: "potential_structural_concern" };
+  }
+  return { severity: "significant", confidence: "high", significanceLabel: "structural_failure" };
 }
 
 function magnitudeLabelToRank(value?: EnvelopeVisibilityMagnitude): number {
@@ -1226,6 +1868,48 @@ function isEdgeWeakGeometry(
     && (magnitudeLabelToRank(magnitude) <= 2 || magnitudeLabelToRank(cornerMagnitude) <= 1);
 }
 
+function hasWeakCornerSwapAmbiguity(
+  descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number],
+  staged: BaselineGuidedWallVerification,
+): boolean {
+  const baselineSingleVisibleCorner = Number(descriptor.leftCornerVisible === true) + Number(descriptor.rightCornerVisible === true) === 1;
+  const stagedSingleVisibleCorner = Number(staged.leftCornerVisible === true) + Number(staged.rightCornerVisible === true) === 1;
+  const swappedVisibleCorner = (
+    descriptor.leftCornerVisible === true
+    && staged.leftCornerVisible !== true
+    && descriptor.rightCornerVisible !== true
+    && staged.rightCornerVisible === true
+  ) || (
+    descriptor.rightCornerVisible === true
+    && staged.rightCornerVisible !== true
+    && descriptor.leftCornerVisible !== true
+    && staged.leftCornerVisible === true
+  );
+
+  return baselineSingleVisibleCorner
+    && stagedSingleVisibleCorner
+    && swappedVisibleCorner
+    && descriptor.continuesBeyondFrame === true
+    && staged.terminatesAtCorner === true
+    && wallVisibilityMagnitude(descriptor) === "minimal"
+    && normalizeWallCertainty(descriptor.architecturalCertainty) !== "known";
+}
+
+function shouldPreserveBaselineEdgeUncertainty(
+  baseline: StructuralBaseline | null | undefined,
+  descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number],
+): boolean {
+  const graphConfidence = baseline?.graphMeta?.graphConfidence;
+  const graphStable = baseline?.graphMeta?.graphStable;
+  const certainty = normalizeWallCertainty(descriptor.architecturalCertainty);
+  const frameEdgeWall = descriptor.leftBoundaryVisible !== true || descriptor.rightBoundaryVisible !== true || descriptor.continuesBeyondFrame === true;
+  const uncertainWall = wallVisibilityMagnitude(descriptor) !== "full" && certainty !== "known";
+
+  return frameEdgeWall
+    && uncertainWall
+    && (graphStable === false || (typeof graphConfidence === "number" && graphConfidence <= 0.5));
+}
+
 function findBaselineDescriptorForSemanticWall(
   baseline: StructuralBaseline | null | undefined,
   wall: SemanticWallModel,
@@ -1240,6 +1924,11 @@ function buildDeterministicStructuralInterpretation(params: {
   severity: DeterministicStructuralInterpretation["severity"];
   confidence: DeterministicStructuralInterpretation["confidence"];
   summary: string;
+  detectedFeature?: string;
+  associatedWallMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  classification?: "perspective_variation" | "structural_addition";
+  decision?: "pass" | "fail";
+  explanation?: string;
   supportingFacts: string[];
   corroboratingEvidence?: string[];
   contradictingEvidence?: string[];
@@ -1252,9 +1941,223 @@ function buildDeterministicStructuralInterpretation(params: {
     severity: params.severity,
     confidence: params.confidence,
     summary: params.summary,
+    detectedFeature: params.detectedFeature,
+    associatedWallMagnitude: params.associatedWallMagnitude,
+    classification: params.classification,
+    decision: params.decision,
+    explanation: params.explanation,
     supportingFacts: params.supportingFacts,
     corroboratingEvidence: params.corroboratingEvidence || [],
     contradictingEvidence: params.contradictingEvidence || [],
+  };
+}
+
+function mapEnvelopeMagnitudeToArchitecturalFeatureMagnitude(
+  value?: EnvelopeVisibilityMagnitude,
+): ArchitecturalFeatureVisibilityMagnitude | undefined {
+  if (!value || value === "none") return value;
+  if (value === "minimal") return "minimal";
+  if (value === "partial") return "partial";
+  if (value === "substantial" || value === "dominant") return "substantial";
+  if (value === "complete" || value === "full") return "full";
+  return undefined;
+}
+
+function inferAssociatedWallMagnitudeForIntroducedEdge(params: {
+  baseline: StructuralBaseline | null | undefined;
+  descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number];
+  side: "left" | "right";
+  staged: BaselineGuidedWallVerification;
+  edgeObservation?: Pick<BaselineGuidedWallVerification, "returnWallVisible" | "adjoiningWallVisible" | "recessVisible" | "returnWallVisibilityMagnitude" | "adjoiningWallVisibilityMagnitude" | "recessVisibilityMagnitude" | "leftCornerPosition" | "rightCornerPosition" | "leftCornerVisibility" | "rightCornerVisibility" | "leftAdjacentWallVisibility" | "rightAdjacentWallVisibility">;
+}): {
+  magnitude: ArchitecturalFeatureVisibilityMagnitude;
+  adjacentBaselineMagnitude?: ArchitecturalFeatureVisibilityMagnitude;
+  classification?: "perspective_variation" | "structural_addition";
+  decision?: "pass" | "fail";
+  explanation?: string;
+} {
+  const adjacentDescriptor = (params.baseline?.wallDescriptors || []).find((item) => item.wallIndex === adjacentWallIndex(params.descriptor.wallIndex, params.side));
+  const adjacentBaselineMagnitude = adjacentDescriptor
+    ? mapEnvelopeMagnitudeToArchitecturalFeatureMagnitude(wallVisibilityMagnitude(adjacentDescriptor))
+    : undefined;
+
+  const effectiveReturnWallVisible = params.edgeObservation?.returnWallVisible ?? params.staged.returnWallVisible;
+  const effectiveAdjoiningWallVisible = params.edgeObservation?.adjoiningWallVisible ?? params.staged.adjoiningWallVisible;
+  const effectiveRecessVisible = params.edgeObservation?.recessVisible ?? params.staged.recessVisible;
+  const explicitEdgeMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+    params.edgeObservation?.returnWallVisibilityMagnitude ?? params.staged.returnWallVisibilityMagnitude,
+    params.edgeObservation?.adjoiningWallVisibilityMagnitude ?? params.staged.adjoiningWallVisibilityMagnitude,
+    params.edgeObservation?.recessVisibilityMagnitude ?? params.staged.recessVisibilityMagnitude,
+  );
+  const cornerVisible = params.side === "left" ? params.staged.leftCornerVisible === true : params.staged.rightCornerVisible === true;
+  const supportingPlaneVisible = effectiveReturnWallVisible === true || effectiveAdjoiningWallVisible === true || effectiveRecessVisible === true;
+  const stagedCornerVisibility = params.side === "left"
+    ? params.edgeObservation?.leftCornerVisibility ?? params.staged.leftCornerVisibility
+    : params.edgeObservation?.rightCornerVisibility ?? params.staged.rightCornerVisibility;
+  const stagedCornerPosition = params.side === "left"
+    ? params.edgeObservation?.leftCornerPosition ?? params.staged.leftCornerPosition
+    : params.edgeObservation?.rightCornerPosition ?? params.staged.rightCornerPosition;
+  const stagedAdjacentWallVisibility = params.side === "left"
+    ? params.edgeObservation?.leftAdjacentWallVisibility ?? params.staged.leftAdjacentWallVisibility
+    : params.edgeObservation?.rightAdjacentWallVisibility ?? params.staged.rightAdjacentWallVisibility;
+  const adjacentRank = edgeAdjacentWallVisibilityRank(stagedAdjacentWallVisibility);
+  const baselineAdjacentRank = architecturalFeatureVisibilityRank(adjacentBaselineMagnitude);
+
+  if (effectiveRecessVisible === true && adjacentRank >= edgeAdjacentWallVisibilityRank("partial")) {
+    return {
+      magnitude: "partial",
+      adjacentBaselineMagnitude,
+      classification: "structural_addition",
+      decision: "fail",
+      explanation: "A newly visible recess with meaningful supporting wall visibility is treated as a structural addition.",
+    };
+  }
+
+  if (adjacentBaselineMagnitude) {
+    if (adjacentBaselineMagnitude === "minimal") {
+      return {
+        magnitude: "small",
+        adjacentBaselineMagnitude,
+        classification: "perspective_variation",
+        decision: "pass",
+        explanation: "The baseline already weakly suggested adjacent geometry on this side.",
+      };
+    }
+    return {
+      magnitude: "small",
+      adjacentBaselineMagnitude,
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "Adjacent baseline wall visibility reduces the significance of this introduced edge.",
+    };
+  }
+
+  if (adjacentRank >= edgeAdjacentWallVisibilityRank("partial")) {
+    return {
+      magnitude: mapAdjacentWallVisibilityToArchitecturalFeature(stagedAdjacentWallVisibility) || "partial",
+      adjacentBaselineMagnitude,
+      classification: "structural_addition",
+      decision: "fail",
+      explanation: "The introduced edge exposes a meaningful amount of adjacent permanent wall geometry.",
+    };
+  }
+
+  if (adjacentRank <= edgeAdjacentWallVisibilityRank("minimal")
+    && (stagedCornerPosition === "image_edge")
+    && cornerVisibilityRank(stagedCornerVisibility) <= cornerVisibilityRank("minimal")) {
+    return {
+      magnitude: adjacentRank <= edgeAdjacentWallVisibilityRank("trace") ? "minimal" : "small",
+      adjacentBaselineMagnitude,
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "The introduced corner is confined to a light image-edge sliver rather than a meaningful new wall return.",
+    };
+  }
+
+  if (baselineAdjacentRank > -1 && baselineAdjacentRank <= architecturalFeatureVisibilityRank("minimal") && adjacentRank <= edgeAdjacentWallVisibilityRank("minimal")) {
+    return {
+      magnitude: adjacentRank <= edgeAdjacentWallVisibilityRank("trace") ? "minimal" : "small",
+      adjacentBaselineMagnitude,
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "Baseline already hinted at slight adjacent wall geometry and staged visibility remains slight.",
+    };
+  }
+
+  if (explicitEdgeMagnitude === "minimal" || explicitEdgeMagnitude === "small") {
+    return {
+      magnitude: explicitEdgeMagnitude,
+      adjacentBaselineMagnitude,
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "Only a small amount of edge geometry is visible.",
+    };
+  }
+
+  if (cornerVisible && supportingPlaneVisible) {
+    return {
+      magnitude: "partial",
+      adjacentBaselineMagnitude,
+      classification: "structural_addition",
+      decision: "fail",
+      explanation: "A newly visible corner with supporting wall plane visibility is treated as a structural addition.",
+    };
+  }
+
+  if (supportingPlaneVisible) {
+    const magnitude = explicitEdgeMagnitude && explicitEdgeMagnitude !== "none" ? explicitEdgeMagnitude : "partial";
+    return {
+      magnitude,
+      adjacentBaselineMagnitude,
+      classification: architecturalFeatureVisibilityRank(magnitude) >= architecturalFeatureVisibilityRank("partial") ? "structural_addition" : "perspective_variation",
+      decision: architecturalFeatureVisibilityRank(magnitude) >= architecturalFeatureVisibilityRank("partial") ? "fail" : "pass",
+      explanation: architecturalFeatureVisibilityRank(magnitude) >= architecturalFeatureVisibilityRank("partial")
+        ? "Supporting wall geometry exceeds the allowed framing tolerance."
+        : "Supporting wall geometry remains within framing tolerance.",
+    };
+  }
+
+  if (cornerVisible) {
+    return {
+      magnitude: "none",
+      adjacentBaselineMagnitude,
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "A corner without supporting adjacent wall visibility is treated as framing variation.",
+    };
+  }
+
+  return {
+    magnitude: explicitEdgeMagnitude || "none",
+    adjacentBaselineMagnitude,
+    classification: "perspective_variation",
+    decision: "pass",
+    explanation: "No meaningful adjacent wall geometry was introduced.",
+  };
+}
+
+function assessIntroducedAssociatedWallMagnitude(params: {
+  magnitude: ArchitecturalFeatureVisibilityMagnitude;
+}): {
+  severity: "advisory" | "significant";
+  confidence: "low" | "medium" | "high";
+  significanceLabel: string;
+  classification: "perspective_variation" | "structural_addition";
+  decision: "pass" | "fail";
+} {
+  if (params.magnitude === "none") {
+    return {
+      severity: "advisory",
+      confidence: "low",
+      significanceLabel: "acceptable_perspective_variation",
+      classification: "perspective_variation",
+      decision: "pass",
+    };
+  }
+  if (params.magnitude === "minimal") {
+    return {
+      severity: "advisory",
+      confidence: "low",
+      significanceLabel: "acceptable_perspective_variation",
+      classification: "perspective_variation",
+      decision: "pass",
+    };
+  }
+  if (params.magnitude === "small") {
+    return {
+      severity: "advisory",
+      confidence: "medium",
+      significanceLabel: "acceptable_perspective_variation",
+      classification: "perspective_variation",
+      decision: "pass",
+    };
+  }
+  return {
+    severity: "significant",
+    confidence: params.magnitude === "partial" ? "medium" : "high",
+    significanceLabel: "structural_addition",
+    classification: "structural_addition",
+    decision: "fail",
   };
 }
 
@@ -1266,6 +2169,13 @@ function deriveDeterministicStructuralInterpretations(params: {
 }): DeterministicStructuralInterpretation[] {
   const stagedById = new Map(params.stagedObservations.map((item) => [item.semanticWallId, item] as const));
   const interpretations: DeterministicStructuralInterpretation[] = [];
+  const appendCorroboration = (category: DeterministicStructuralInterpretation["category"], evidence: string[]) => {
+    if (evidence.length === 0) return;
+    for (const item of interpretations) {
+      if (item.category !== category) continue;
+      item.corroboratingEvidence = sortUniqueStrings([...item.corroboratingEvidence, ...evidence]);
+    }
+  };
 
   for (const baselineWall of params.baselineWalls) {
     const descriptor = findBaselineDescriptorForSemanticWall(params.baseline, baselineWall);
@@ -1315,20 +2225,117 @@ function deriveDeterministicStructuralInterpretations(params: {
       }));
     }
 
+    const baselineFrameSide = exitedFrameSide(descriptor);
+    const frameEdgeObservation = baselineFrameSide ? deriveFrameEdgeFeatureObservation(staged.observations, baselineFrameSide) : undefined;
+    const weakCornerSwapAmbiguity = hasWeakCornerSwapAmbiguity(descriptor, staged);
+    const preserveBaselineEdgeUncertainty = shouldPreserveBaselineEdgeUncertainty(params.baseline, descriptor);
+    const effectiveReturnWallVisible = frameEdgeObservation?.returnWallVisible ?? staged.returnWallVisible;
+    const effectiveAdjoiningWallVisible = frameEdgeObservation?.adjoiningWallVisible ?? staged.adjoiningWallVisible;
+    const effectiveRecessVisible = frameEdgeObservation?.recessVisible ?? staged.recessVisible;
+    const effectiveReturnWallVisibilityMagnitude = frameEdgeObservation?.returnWallVisibilityMagnitude ?? staged.returnWallVisibilityMagnitude;
+    const effectiveAdjoiningWallVisibilityMagnitude = frameEdgeObservation?.adjoiningWallVisibilityMagnitude ?? staged.adjoiningWallVisibilityMagnitude;
+    const effectiveRecessVisibilityMagnitude = frameEdgeObservation?.recessVisibilityMagnitude ?? staged.recessVisibilityMagnitude;
+    const baselineFeatureState = featureBaselineStateForFrameEdge(baselineFrameSide);
+    const wallPlaneVisibilityMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+      effectiveReturnWallVisibilityMagnitude,
+      effectiveAdjoiningWallVisibilityMagnitude,
+      effectiveRecessVisibilityMagnitude,
+      params.additionalEvidence?.additionalPermanentWallPlaneVisibilityMagnitude,
+    );
+    const introducedSide = baselineFrameSide && (
+      (baselineFrameSide === "left" && descriptor.leftCornerVisible !== true && staged.leftCornerVisible === true)
+      || (baselineFrameSide === "right" && descriptor.rightCornerVisible !== true && staged.rightCornerVisible === true)
+      || effectiveReturnWallVisible === true
+      || effectiveAdjoiningWallVisible === true
+      || effectiveRecessVisible === true
+    )
+      ? baselineFrameSide
+      : null;
+    const associatedWall = introducedSide
+      ? inferAssociatedWallMagnitudeForIntroducedEdge({
+          baseline: params.baseline,
+          descriptor,
+          side: introducedSide,
+          staged,
+          edgeObservation: frameEdgeObservation,
+        })
+      : undefined;
+    const introducedAdditionAssessment = associatedWall
+      ? assessIntroducedAssociatedWallMagnitude({ magnitude: associatedWall.magnitude })
+      : undefined;
+    const returnWallSignificance = introducedSide && effectiveReturnWallVisible === true && introducedAdditionAssessment
+      ? introducedAdditionAssessment
+      : assessArchitecturalFeatureSignificance({
+          baselineState: baselineFeatureState,
+          observedMagnitude: effectiveReturnWallVisibilityMagnitude,
+        });
+    const adjoiningWallSignificance = introducedSide && effectiveAdjoiningWallVisible === true && introducedAdditionAssessment
+      ? introducedAdditionAssessment
+      : assessArchitecturalFeatureSignificance({
+          baselineState: baselineFeatureState,
+          observedMagnitude: effectiveAdjoiningWallVisibilityMagnitude,
+        });
+    const recessSignificance = introducedSide && effectiveRecessVisible === true && introducedAdditionAssessment
+      ? introducedAdditionAssessment
+      : assessArchitecturalFeatureSignificance({
+          baselineState: baselineFeatureState,
+          observedMagnitude: effectiveRecessVisibilityMagnitude,
+        });
+    const wallPlaneSignificance = introducedSide && introducedAdditionAssessment
+      ? introducedAdditionAssessment
+      : assessArchitecturalFeatureSignificance({
+          baselineState: baselineFeatureState,
+          observedMagnitude: wallPlaneVisibilityMagnitude,
+        });
+
     if (descriptor.leftCornerVisible !== true && staged.leftCornerVisible === true) {
-      interpretations.push(buildDeterministicStructuralInterpretation({
+      if (returnWallSignificance.severity !== "none" || adjoiningWallSignificance.severity !== "none" || wallPlaneSignificance.severity !== "none") {
+        const cornerSeverity = introducedSide === "left" && introducedAdditionAssessment
+          ? introducedAdditionAssessment.severity
+          : weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty
+            ? "advisory"
+          : wallPlaneSignificance.severity === "significant"
+            || returnWallSignificance.severity === "significant"
+            || adjoiningWallSignificance.severity === "significant"
+            ? "significant"
+            : "advisory";
+        const cornerConfidence = introducedSide === "left" && introducedAdditionAssessment
+          ? introducedAdditionAssessment.confidence
+          : weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty
+            ? "low"
+          : wallPlaneSignificance.confidence === "high"
+            || returnWallSignificance.confidence === "high"
+            || adjoiningWallSignificance.confidence === "high"
+            ? "high"
+            : "medium";
+        interpretations.push(buildDeterministicStructuralInterpretation({
         interpretationId: `interp_${baselineWall.semanticWallId}_left_corner_added`,
         category: "corner_introduced",
         wall: baselineWall,
-        severity: edgeObservationContext(descriptor, "left") === "frame_edge" ? "significant" : "significant",
-        confidence: edgeObservationContext(descriptor, "left") === "frame_edge" ? "high" : "high",
+        severity: cornerSeverity,
+        confidence: cornerConfidence,
         summary: `${baselineWall.displayName} now shows a left corner that baseline did not show.`,
-        supportingFacts: ["baseline leftCornerVisible=FALSE", "staged leftCornerVisible=TRUE"],
+        detectedFeature: "corner introduced",
+        associatedWallMagnitude: introducedSide === "left" ? associatedWall?.magnitude : undefined,
+        classification: introducedSide === "left" ? associatedWall?.classification || (introducedAdditionAssessment ? introducedAdditionAssessment.classification : undefined) : undefined,
+        decision: introducedSide === "left" ? associatedWall?.decision || (introducedAdditionAssessment ? introducedAdditionAssessment.decision : undefined) : undefined,
+        explanation: introducedSide === "left" ? associatedWall?.explanation : undefined,
+        supportingFacts: [
+          "baseline leftCornerVisible=FALSE",
+          "staged leftCornerVisible=TRUE",
+          `staged left corner position=${staged.leftCornerPosition || frameEdgeObservation?.leftCornerPosition || "unknown"}`,
+          `staged left corner visibility=${staged.leftCornerVisibility || frameEdgeObservation?.leftCornerVisibility || "unknown"}`,
+          `staged left adjacent wall visibility=${staged.leftAdjacentWallVisibility || frameEdgeObservation?.leftAdjacentWallVisibility || "unknown"}`,
+            ...(associatedWall?.adjacentBaselineMagnitude ? [`baseline adjacent wall visibility=${associatedWall.adjacentBaselineMagnitude}`] : []),
+            ...(introducedSide === "left" ? [`associated wall magnitude=${associatedWall?.magnitude || "none"}`] : []),
+            `connected feature significance=${maxArchitecturalFeatureVisibilityMagnitude(effectiveReturnWallVisibilityMagnitude, effectiveAdjoiningWallVisibilityMagnitude, wallPlaneVisibilityMagnitude) || "none"}`,
+        ],
       }));
+      }
     }
 
     if (descriptor.leftCornerVisible === true && staged.leftCornerVisible === false) {
-      const weak = isEdgeWeakGeometry(descriptor, "left");
+      const weak = isEdgeWeakGeometry(descriptor, "left") || weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty;
       interpretations.push(buildDeterministicStructuralInterpretation({
         interpretationId: `interp_${baselineWall.semanticWallId}_left_corner_removed`,
         category: "corner_removed",
@@ -1341,19 +2348,53 @@ function deriveDeterministicStructuralInterpretations(params: {
     }
 
     if (descriptor.rightCornerVisible !== true && staged.rightCornerVisible === true) {
-      interpretations.push(buildDeterministicStructuralInterpretation({
-        interpretationId: `interp_${baselineWall.semanticWallId}_right_corner_added`,
-        category: "corner_introduced",
-        wall: baselineWall,
-        severity: "significant",
-        confidence: "high",
-        summary: `${baselineWall.displayName} now shows a right corner that baseline did not show.`,
-        supportingFacts: ["baseline rightCornerVisible=FALSE", "staged rightCornerVisible=TRUE"],
-      }));
+      if (returnWallSignificance.severity !== "none" || adjoiningWallSignificance.severity !== "none" || wallPlaneSignificance.severity !== "none") {
+        const cornerSeverity = introducedSide === "right" && introducedAdditionAssessment
+          ? introducedAdditionAssessment.severity
+          : weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty
+            ? "advisory"
+          : wallPlaneSignificance.severity === "significant"
+            || returnWallSignificance.severity === "significant"
+            || adjoiningWallSignificance.severity === "significant"
+            ? "significant"
+            : "advisory";
+        const cornerConfidence = introducedSide === "right" && introducedAdditionAssessment
+          ? introducedAdditionAssessment.confidence
+          : weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty
+            ? "low"
+          : wallPlaneSignificance.confidence === "high"
+            || returnWallSignificance.confidence === "high"
+            || adjoiningWallSignificance.confidence === "high"
+            ? "high"
+            : "medium";
+        interpretations.push(buildDeterministicStructuralInterpretation({
+          interpretationId: `interp_${baselineWall.semanticWallId}_right_corner_added`,
+          category: "corner_introduced",
+          wall: baselineWall,
+          severity: cornerSeverity,
+          confidence: cornerConfidence,
+          summary: `${baselineWall.displayName} now shows a right corner that baseline did not show.`,
+          detectedFeature: "corner introduced",
+          associatedWallMagnitude: introducedSide === "right" ? associatedWall?.magnitude : undefined,
+          classification: introducedSide === "right" ? associatedWall?.classification || (introducedAdditionAssessment ? introducedAdditionAssessment.classification : undefined) : undefined,
+          decision: introducedSide === "right" ? associatedWall?.decision || (introducedAdditionAssessment ? introducedAdditionAssessment.decision : undefined) : undefined,
+          explanation: introducedSide === "right" ? associatedWall?.explanation : undefined,
+          supportingFacts: [
+            "baseline rightCornerVisible=FALSE",
+            "staged rightCornerVisible=TRUE",
+            `staged right corner position=${staged.rightCornerPosition || frameEdgeObservation?.rightCornerPosition || "unknown"}`,
+            `staged right corner visibility=${staged.rightCornerVisibility || frameEdgeObservation?.rightCornerVisibility || "unknown"}`,
+            `staged right adjacent wall visibility=${staged.rightAdjacentWallVisibility || frameEdgeObservation?.rightAdjacentWallVisibility || "unknown"}`,
+            ...(associatedWall?.adjacentBaselineMagnitude ? [`baseline adjacent wall visibility=${associatedWall.adjacentBaselineMagnitude}`] : []),
+            ...(introducedSide === "right" ? [`associated wall magnitude=${associatedWall?.magnitude || "none"}`] : []),
+            `connected feature significance=${maxArchitecturalFeatureVisibilityMagnitude(effectiveReturnWallVisibilityMagnitude, effectiveAdjoiningWallVisibilityMagnitude, wallPlaneVisibilityMagnitude) || "none"}`,
+          ],
+        }));
+      }
     }
 
     if (descriptor.rightCornerVisible === true && staged.rightCornerVisible === false) {
-      const weak = isEdgeWeakGeometry(descriptor, "right");
+      const weak = isEdgeWeakGeometry(descriptor, "right") || weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty;
       interpretations.push(buildDeterministicStructuralInterpretation({
         interpretationId: `interp_${baselineWall.semanticWallId}_right_corner_removed`,
         category: "corner_removed",
@@ -1365,90 +2406,125 @@ function deriveDeterministicStructuralInterpretations(params: {
       }));
     }
 
-    const baselineFrameSide = exitedFrameSide(descriptor);
-    if (baselineFrameSide && staged.returnWallVisible === true) {
+    const introducedFramePlane = baselineFrameSide && (
+      effectiveReturnWallVisible === true
+      || effectiveAdjoiningWallVisible === true
+      || (
+        descriptor.continuesBeyondFrame === true
+        && staged.terminatesAtCorner === true
+        && ((baselineFrameSide === "left" && staged.leftCornerVisible === true) || (baselineFrameSide === "right" && staged.rightCornerVisible === true))
+      )
+    );
+    if (introducedFramePlane && wallPlaneSignificance.severity !== "none") {
+      const effectiveWallPlaneSeverity = weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "advisory" : wallPlaneSignificance.severity;
+      const effectiveWallPlaneConfidence = weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "low" : wallPlaneSignificance.confidence;
+      interpretations.push(buildDeterministicStructuralInterpretation({
+        interpretationId: `interp_${baselineWall.semanticWallId}_wall_plane_added`,
+        category: "wall_plane_introduced",
+        wall: baselineWall,
+        severity: effectiveWallPlaneSeverity,
+        confidence: effectiveWallPlaneConfidence,
+        summary: `Staged observation introduces a permanent wall plane at the ${baselineFrameSide} frame edge of ${baselineWall.displayName}.`,
+        detectedFeature: "wall plane introduced",
+        associatedWallMagnitude: associatedWall?.magnitude || wallPlaneVisibilityMagnitude,
+        classification: associatedWall?.classification || introducedAdditionAssessment?.classification,
+        decision: associatedWall?.decision || introducedAdditionAssessment?.decision,
+        explanation: associatedWall?.explanation,
+        supportingFacts: [
+          `baseline continuesBeyondFrame=${descriptor.continuesBeyondFrame === true ? "TRUE" : "FALSE"}`,
+          `staged terminatesAtCorner=${staged.terminatesAtCorner === true ? "TRUE" : "FALSE"}`,
+          `staged returnWallVisible=${effectiveReturnWallVisible === true ? "TRUE" : "FALSE"}`,
+          `staged adjoiningWallVisible=${effectiveAdjoiningWallVisible === true ? "TRUE" : "FALSE"}`,
+          ...(associatedWall?.adjacentBaselineMagnitude ? [`baseline adjacent wall visibility=${associatedWall.adjacentBaselineMagnitude}`] : []),
+          `associated wall magnitude=${associatedWall?.magnitude || wallPlaneVisibilityMagnitude || "none"}`,
+          `observed wall plane visibility=${wallPlaneVisibilityMagnitude || "none"}`,
+          `architectural significance=${weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "acceptable_perspective_variation" : wallPlaneSignificance.significanceLabel}`,
+        ],
+      }));
+    }
+
+    if (baselineFrameSide && effectiveReturnWallVisible === true && returnWallSignificance.severity !== "none") {
+      const effectiveReturnSeverity = weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "advisory" : returnWallSignificance.severity;
+      const effectiveReturnConfidence = weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "low" : returnWallSignificance.confidence;
       interpretations.push(buildDeterministicStructuralInterpretation({
         interpretationId: `interp_${baselineWall.semanticWallId}_return_wall_added`,
         category: "return_wall_introduced",
         wall: baselineWall,
-        severity: "significant",
-        confidence: "high",
+        severity: effectiveReturnSeverity,
+        confidence: effectiveReturnConfidence,
         summary: `${baselineWall.displayName} now has a visible return wall at the frame edge.`,
-        supportingFacts: ["baseline returnWallVisible=FALSE", "staged returnWallVisible=TRUE"],
+        detectedFeature: "return wall introduced",
+        associatedWallMagnitude: associatedWall?.magnitude || effectiveReturnWallVisibilityMagnitude,
+        classification: associatedWall?.classification || introducedAdditionAssessment?.classification,
+        decision: associatedWall?.decision || introducedAdditionAssessment?.decision,
+        explanation: associatedWall?.explanation,
+        supportingFacts: [
+          "baseline returnWallVisible=FALSE",
+          "staged returnWallVisible=TRUE",
+          ...(associatedWall?.adjacentBaselineMagnitude ? [`baseline adjacent wall visibility=${associatedWall.adjacentBaselineMagnitude}`] : []),
+          `associated wall magnitude=${associatedWall?.magnitude || effectiveReturnWallVisibilityMagnitude || "none"}`,
+          `observed return wall visibility=${effectiveReturnWallVisibilityMagnitude || "none"}`,
+          `architectural significance=${weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "acceptable_perspective_variation" : returnWallSignificance.significanceLabel}`,
+        ],
       }));
     }
 
-    if (baselineFrameSide && staged.adjoiningWallVisible === true) {
+    if (baselineFrameSide && effectiveAdjoiningWallVisible === true && adjoiningWallSignificance.severity !== "none") {
+      const effectiveAdjoiningSeverity = weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "advisory" : adjoiningWallSignificance.severity;
+      const effectiveAdjoiningConfidence = weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "low" : adjoiningWallSignificance.confidence;
       interpretations.push(buildDeterministicStructuralInterpretation({
         interpretationId: `interp_${baselineWall.semanticWallId}_adjoining_wall_added`,
         category: "adjoining_wall_introduced",
         wall: baselineWall,
-        severity: "significant",
-        confidence: "high",
+        severity: effectiveAdjoiningSeverity,
+        confidence: effectiveAdjoiningConfidence,
         summary: `${baselineWall.displayName} now has an adjoining wall plane visible at the frame edge.`,
-        supportingFacts: ["baseline adjoiningWallVisible=FALSE", "staged adjoiningWallVisible=TRUE"],
+        detectedFeature: "adjoining wall introduced",
+        associatedWallMagnitude: associatedWall?.magnitude || effectiveAdjoiningWallVisibilityMagnitude,
+        classification: associatedWall?.classification || introducedAdditionAssessment?.classification,
+        decision: associatedWall?.decision || introducedAdditionAssessment?.decision,
+        explanation: associatedWall?.explanation,
+        supportingFacts: [
+          "baseline adjoiningWallVisible=FALSE",
+          "staged adjoiningWallVisible=TRUE",
+          ...(associatedWall?.adjacentBaselineMagnitude ? [`baseline adjacent wall visibility=${associatedWall.adjacentBaselineMagnitude}`] : []),
+          `associated wall magnitude=${associatedWall?.magnitude || effectiveAdjoiningWallVisibilityMagnitude || "none"}`,
+          `observed adjoining wall visibility=${effectiveAdjoiningWallVisibilityMagnitude || "none"}`,
+          `architectural significance=${weakCornerSwapAmbiguity || preserveBaselineEdgeUncertainty ? "acceptable_perspective_variation" : adjoiningWallSignificance.significanceLabel}`,
+        ],
       }));
     }
 
-    if (baselineFrameSide && staged.recessVisible === true) {
+    if (baselineFrameSide && effectiveRecessVisible === true && recessSignificance.severity !== "none") {
       interpretations.push(buildDeterministicStructuralInterpretation({
         interpretationId: `interp_${baselineWall.semanticWallId}_recess_added`,
         category: "recess_introduced",
         wall: baselineWall,
-        severity: "significant",
-        confidence: "high",
+        severity: recessSignificance.severity,
+        confidence: recessSignificance.confidence,
         summary: `${baselineWall.displayName} now has a visible recess at the frame edge.`,
-        supportingFacts: ["baseline recessVisible=FALSE", "staged recessVisible=TRUE"],
+        detectedFeature: "recess introduced",
+        associatedWallMagnitude: associatedWall?.magnitude || effectiveRecessVisibilityMagnitude,
+        classification: associatedWall?.classification || introducedAdditionAssessment?.classification,
+        decision: associatedWall?.decision || introducedAdditionAssessment?.decision,
+        explanation: associatedWall?.explanation,
+        supportingFacts: [
+          "baseline recessVisible=FALSE",
+          "staged recessVisible=TRUE",
+          ...(associatedWall?.adjacentBaselineMagnitude ? [`baseline adjacent wall visibility=${associatedWall.adjacentBaselineMagnitude}`] : []),
+          `associated wall magnitude=${associatedWall?.magnitude || effectiveRecessVisibilityMagnitude || "none"}`,
+          `observed recess visibility=${effectiveRecessVisibilityMagnitude || "none"}`,
+          `architectural significance=${recessSignificance.significanceLabel}`,
+        ],
       }));
     }
   }
 
-  if (params.additionalEvidence?.additionalPermanentWallPlanes === "TRUE") {
-    interpretations.push(buildDeterministicStructuralInterpretation({
-      interpretationId: "interp_additional_wall_planes",
-      category: "wall_plane_introduced",
-      severity: "significant",
-      confidence: "medium",
-      summary: "Guided staged observation reports extra wall planes not associated with baseline semantic walls.",
-      supportingFacts: ["additional observed architectural features: additionalPermanentWallPlanes=TRUE"],
-      corroboratingEvidence: params.additionalEvidence.additionalPermanentWallPlaneDescriptions,
-    }));
-  }
-
-  if (params.additionalEvidence?.additionalPermanentReturnWalls === "TRUE") {
-    interpretations.push(buildDeterministicStructuralInterpretation({
-      interpretationId: "interp_additional_return_walls",
-      category: "return_wall_introduced",
-      severity: "significant",
-      confidence: "medium",
-      summary: "Guided staged observation reports return walls beyond the baseline model.",
-      supportingFacts: ["additional observed architectural features: additionalPermanentReturnWalls=TRUE"],
-      corroboratingEvidence: params.additionalEvidence.additionalPermanentReturnWallDescriptions,
-    }));
-  }
-
-  if (params.additionalEvidence?.additionalPermanentRecesses === "TRUE") {
-    interpretations.push(buildDeterministicStructuralInterpretation({
-      interpretationId: "interp_additional_recesses",
-      category: "recess_introduced",
-      severity: "significant",
-      confidence: "medium",
-      summary: "Guided staged observation reports recesses beyond the baseline model.",
-      supportingFacts: ["additional observed architectural features: additionalPermanentRecesses=TRUE"],
-      corroboratingEvidence: params.additionalEvidence.additionalPermanentRecessDescriptions,
-    }));
-  }
-
-  if (params.additionalEvidence?.additionalPermanentCorners === "TRUE") {
-    interpretations.push(buildDeterministicStructuralInterpretation({
-      interpretationId: "interp_additional_corners",
-      category: "corner_introduced",
-      severity: "significant",
-      confidence: "medium",
-      summary: "Guided staged observation reports corners not accounted for by baseline semantic walls.",
-      supportingFacts: ["additional observed architectural features: additionalPermanentCorners=TRUE"],
-      corroboratingEvidence: params.additionalEvidence.additionalPermanentCornerDescriptions,
-    }));
+  if (params.additionalEvidence) {
+    appendCorroboration("wall_plane_introduced", params.additionalEvidence.additionalPermanentWallPlaneDescriptions);
+    appendCorroboration("return_wall_introduced", params.additionalEvidence.additionalPermanentReturnWallDescriptions);
+    appendCorroboration("recess_introduced", params.additionalEvidence.additionalPermanentRecessDescriptions);
+    appendCorroboration("corner_introduced", params.additionalEvidence.additionalPermanentCornerDescriptions);
   }
 
   return interpretations;
@@ -3049,6 +4125,39 @@ function boolLabel(value: boolean | undefined, positive: string, negative: strin
   return value ? positive : negative;
 }
 
+function baselineCornerPosition(descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number], side: "left" | "right"): EdgeCornerPosition {
+  const explicit = side === "left" ? descriptor.leftCornerPosition : descriptor.rightCornerPosition;
+  if (explicit) return explicit;
+  const visible = side === "left" ? descriptor.leftCornerVisible === true : descriptor.rightCornerVisible === true;
+  if (!visible) return "none";
+  const sideBoundary = side === "left" ? descriptor.leftBoundaryVisible === true : descriptor.rightBoundaryVisible === true;
+  const oppositeBoundary = side === "left" ? descriptor.rightBoundaryVisible === true : descriptor.leftBoundaryVisible === true;
+  if (descriptor.visibility === "minimal") return "image_edge";
+  if (sideBoundary && !oppositeBoundary) return "image_edge";
+  if (sideBoundary && oppositeBoundary) return "outer_third";
+  return "inner_third";
+}
+
+function baselineCornerVisibility(descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number], side: "left" | "right"): EdgeCornerVisibility {
+  const explicit = side === "left" ? descriptor.leftCornerVisibility : descriptor.rightCornerVisibility;
+  if (explicit) return explicit;
+  const magnitude = cornerVisibilityMagnitude(descriptor, side);
+  return mapEnvelopeMagnitudeToCornerVisibility(magnitude);
+}
+
+function baselineAdjacentWallVisibility(
+  baseline: StructuralBaseline | null | undefined,
+  descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number],
+  side: "left" | "right",
+): EdgeAdjacentWallVisibility {
+  const explicit = side === "left" ? descriptor.leftAdjacentWallVisibility : descriptor.rightAdjacentWallVisibility;
+  if (explicit) return explicit;
+  const visible = side === "left" ? descriptor.leftCornerVisible === true : descriptor.rightCornerVisible === true;
+  if (!visible) return "none";
+  const adjacentDescriptor = (baseline?.wallDescriptors || []).find((item) => item.wallIndex === adjacentWallIndex(descriptor.wallIndex, side));
+  return adjacentDescriptor ? mapEnvelopeMagnitudeToAdjacentWallVisibility(wallVisibilityMagnitude(adjacentDescriptor)) : "none";
+}
+
 export function buildEnvelopeAuthoritativeBaselineDescription(baseline?: StructuralBaseline | null): string {
   const openings = Array.isArray(baseline?.openings) ? baseline.openings : [];
   const anchorFixtures = Array.isArray(baseline?.anchorFixtures) ? baseline.anchorFixtures : [];
@@ -3064,7 +4173,7 @@ export function buildEnvelopeAuthoritativeBaselineDescription(baseline?: Structu
       "The following description represents the authoritative architectural envelope extracted from the baseline image.",
       "This description is considered correct.",
       "Do not reinterpret the baseline architecture from the staged image.",
-      "Determine whether the staged image still contains this same room envelope.",
+      "Report only factual staged-image architectural observations for the baseline walls.",
       "",
       "Authoritative envelope features:",
       "- visible wall planes and their continuity",
@@ -3092,7 +4201,13 @@ export function buildEnvelopeAuthoritativeBaselineDescription(baseline?: Structu
             `  - left boundary: ${boolLabel(descriptor.leftBoundaryVisible, "visible", "not visible / exits frame")}`,
             `  - right boundary: ${boolLabel(descriptor.rightBoundaryVisible, "visible", "not visible / exits frame")}`,
             `  - left corner: ${boolLabel(descriptor.leftCornerVisible, "visible", "not visible")}`,
+            `  - left corner position: ${baselineCornerPosition(descriptor, "left").replace(/_/g, " ")}`,
+            `  - left corner visibility: ${baselineCornerVisibility(descriptor, "left")}`,
+            `  - left adjacent wall visibility: ${baselineAdjacentWallVisibility(baseline, descriptor, "left")}`,
             `  - right corner: ${boolLabel(descriptor.rightCornerVisible, "visible", "not visible")}`,
+            `  - right corner position: ${baselineCornerPosition(descriptor, "right").replace(/_/g, " ")}`,
+            `  - right corner visibility: ${baselineCornerVisibility(descriptor, "right")}`,
+            `  - right adjacent wall visibility: ${baselineAdjacentWallVisibility(baseline, descriptor, "right")}`,
             `  - terminates at observed corner: ${descriptor.terminatesAtCorner === true ? "yes" : "no"}`,
             `  - continues beyond frame: ${descriptor.continuesBeyondFrame === true ? "yes" : "no / unknown"}`,
             `  - observed continuity note: ${descriptor.description}`,
@@ -3106,7 +4221,7 @@ export function buildEnvelopeAuthoritativeBaselineDescription(baseline?: Structu
     "The following architectural room envelope was extracted from the baseline image.",
     "This description is considered authoritative.",
     "Do not reinterpret the baseline architecture from the staged image.",
-    "Determine whether the staged image still represents this same architectural room envelope.",
+    "Report only factual staged-image architectural observations for the baseline walls.",
     "",
     "Room overview:",
     `- camera orientation: ${baseline.cameraOrientation || "unknown"}`,
@@ -3135,6 +4250,8 @@ export function buildEnvelopeAuthoritativeBaselineDescription(baseline?: Structu
     "Use the baseline description as the source of truth.",
     "Do not rebuild the room envelope from the staged image.",
     "Do not reinterpret the baseline architecture from scratch.",
+    "Do not decide whether anything passes or fails.",
+    "Do not decide whether the room envelope changed.",
     "The baseline defines not only which walls are visible, but also which boundaries/corners were unknown in the original photo.",
     "If baseline certainty is partial or unknown, preserve that uncertainty unless staged imagery provides clear direct architectural evidence.",
     "Treat baseline visibility limits as authoritative: if a wall, corner, return wall, or recess is only partially visible, preserve that uncertainty.",
@@ -3157,9 +4274,6 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     throw new Error("validator_error_invalid_json");
   }
 
-  const normalizedAnswer = typeof parsed?.answer === "string"
-    ? parsed.answer.trim().toUpperCase()
-    : "";
   const rawVerifications = Array.isArray(parsed?.verifications)
     ? parsed.verifications
     : Array.isArray(parsed?.statementVerifications)
@@ -3202,6 +4316,13 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
           ? item.samePermanentWallVisible.trim().toUpperCase()
           : "";
         if (!semanticWallId || !displayName || (samePermanentWallVisible !== "TRUE" && samePermanentWallVisible !== "FALSE")) return null;
+        const observations = Array.isArray(item.observations)
+          ? item.observations.map((value: unknown) => normalizeObservationLine(value)).filter((value: string) => value.length > 0)
+          : [];
+        const derivedGeometry = deriveWallObservationBooleans(observations);
+        const returnWallVisibilityMagnitude = normalizeArchitecturalFeatureVisibilityMagnitude(item.returnWallVisibilityMagnitude) || derivedGeometry.returnWallVisibilityMagnitude;
+        const adjoiningWallVisibilityMagnitude = normalizeArchitecturalFeatureVisibilityMagnitude(item.adjoiningWallVisibilityMagnitude) || derivedGeometry.adjoiningWallVisibilityMagnitude;
+        const recessVisibilityMagnitude = normalizeArchitecturalFeatureVisibilityMagnitude(item.recessVisibilityMagnitude) || derivedGeometry.recessVisibilityMagnitude;
         return {
           semanticWallId,
           displayName,
@@ -3212,92 +4333,80 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
           architecturalCertainty: item.architecturalCertainty === "known" || item.architecturalCertainty === "partial" || item.architecturalCertainty === "unknown"
             ? item.architecturalCertainty
             : undefined,
-          leftCornerVisible: typeof item.leftCornerVisible === "boolean" ? item.leftCornerVisible : undefined,
-          rightCornerVisible: typeof item.rightCornerVisible === "boolean" ? item.rightCornerVisible : undefined,
-          continuesBeyondFrame: typeof item.continuesBeyondFrame === "boolean" ? item.continuesBeyondFrame : undefined,
-          terminatesAtCorner: typeof item.terminatesAtCorner === "boolean" ? item.terminatesAtCorner : undefined,
-          returnWallVisible: typeof item.returnWallVisible === "boolean" ? item.returnWallVisible : undefined,
-          adjoiningWallVisible: typeof item.adjoiningWallVisible === "boolean" ? item.adjoiningWallVisible : undefined,
-          recessVisible: typeof item.recessVisible === "boolean" ? item.recessVisible : undefined,
+          leftCornerVisible: typeof item.leftCornerVisible === "boolean"
+            ? item.leftCornerVisible
+            : item.leftCorner === "visible"
+              ? true
+              : item.leftCorner === "not_visible"
+                ? false
+                : derivedGeometry.leftCornerVisible,
+          rightCornerVisible: typeof item.rightCornerVisible === "boolean"
+            ? item.rightCornerVisible
+            : item.rightCorner === "visible"
+              ? true
+              : item.rightCorner === "not_visible"
+                ? false
+                : derivedGeometry.rightCornerVisible,
+          leftCornerPosition: normalizeEdgeCornerPosition(item.leftCornerPosition) || derivedGeometry.leftCornerPosition,
+          rightCornerPosition: normalizeEdgeCornerPosition(item.rightCornerPosition) || derivedGeometry.rightCornerPosition,
+          leftCornerVisibility: normalizeEdgeCornerVisibility(item.leftCornerVisibility) || derivedGeometry.leftCornerVisibility,
+          rightCornerVisibility: normalizeEdgeCornerVisibility(item.rightCornerVisibility) || derivedGeometry.rightCornerVisibility,
+          leftAdjacentWallVisibility: normalizeEdgeAdjacentWallVisibility(item.leftAdjacentWallVisibility) || derivedGeometry.leftAdjacentWallVisibility,
+          rightAdjacentWallVisibility: normalizeEdgeAdjacentWallVisibility(item.rightAdjacentWallVisibility) || derivedGeometry.rightAdjacentWallVisibility,
+          continuesBeyondFrame: typeof item.continuesBeyondFrame === "boolean"
+            ? item.continuesBeyondFrame
+            : item.continuesBeyondFrame === "yes"
+              ? true
+              : item.continuesBeyondFrame === "no"
+                ? false
+                : derivedGeometry.continuesBeyondFrame,
+          terminatesAtCorner: typeof item.terminatesAtCorner === "boolean"
+            ? item.terminatesAtCorner
+            : item.terminatesAtVisibleCorner === "yes"
+              ? true
+              : item.terminatesAtVisibleCorner === "no"
+                ? false
+                : derivedGeometry.terminatesAtCorner,
+          returnWallVisible: typeof item.returnWallVisible === "boolean"
+            ? item.returnWallVisible
+            : derivedGeometry.returnWallVisible ?? (returnWallVisibilityMagnitude ? returnWallVisibilityMagnitude !== "none" : undefined),
+          adjoiningWallVisible: typeof item.adjoiningWallVisible === "boolean"
+            ? item.adjoiningWallVisible
+            : derivedGeometry.adjoiningWallVisible ?? (adjoiningWallVisibilityMagnitude ? adjoiningWallVisibilityMagnitude !== "none" : undefined),
+          recessVisible: typeof item.recessVisible === "boolean"
+            ? item.recessVisible
+            : derivedGeometry.recessVisible ?? (recessVisibilityMagnitude ? recessVisibilityMagnitude !== "none" : undefined),
+          returnWallVisibilityMagnitude,
+          adjoiningWallVisibilityMagnitude,
+          recessVisibilityMagnitude,
           confidence: Number.isFinite(item.confidence) ? Number(item.confidence) : undefined,
-          reason: typeof item.reason === "string" ? item.reason.trim() : undefined,
-          observations: Array.isArray(item.observations)
-            ? item.observations.map((value: unknown) => typeof value === "string" ? value.trim() : "").filter((value: string) => value.length > 0)
-            : [],
+          observations,
         };
       })
       .filter((item: BaselineGuidedWallVerification | null): item is BaselineGuidedWallVerification => item !== null)
     : [];
-  const additionalWallPlanes: AdditionalWallPlanesResult | undefined = typeof parsed?.additionalPermanentWallPlanes === "string"
+  const additionalFeatureList = Array.isArray(parsed?.additionalPermanentArchitecturalFeatures)
+    ? parsed.additionalPermanentArchitecturalFeatures.map((value: unknown) => normalizeObservationLine(value)).filter((value: string) => value.length > 0)
+    : typeof parsed?.additionalPermanentArchitecturalFeatures === "string"
+      ? [normalizeObservationLine(parsed.additionalPermanentArchitecturalFeatures)]
+      : [];
+  const additionalArchitecturalEvidence = categorizeAdditionalArchitecturalFeatures(
+    additionalFeatureList,
+    Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : undefined,
+    typeof parsed?.reason === "string" ? parsed.reason.trim() : undefined,
+  );
+  const additionalWallPlanes: AdditionalWallPlanesResult | undefined = additionalArchitecturalEvidence
     ? {
-      answer: parsed.additionalPermanentWallPlanes.trim().toUpperCase() === "TRUE" ? "TRUE" : "FALSE",
-      descriptions: Array.isArray(parsed?.additionalPermanentWallPlaneDescriptions)
-        ? parsed.additionalPermanentWallPlaneDescriptions.map((value: unknown) => typeof value === "string" ? value.trim() : "").filter((value: string) => value.length > 0)
-        : [],
-      confidence: Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : undefined,
-      reason: typeof parsed?.reason === "string" ? parsed.reason.trim() : undefined,
+      answer: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
+      descriptions: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
+      confidence: additionalArchitecturalEvidence.confidence,
+      reason: additionalArchitecturalEvidence.reason,
     }
     : undefined;
-  const additionalArchitecturalEvidence: AdditionalArchitecturalEvidence | undefined = (() => {
-    const hasAnyField = typeof parsed?.additionalPermanentWallPlanes === "string"
-      || typeof parsed?.additionalPermanentReturnWalls === "string"
-      || typeof parsed?.additionalPermanentRecesses === "string"
-      || typeof parsed?.additionalPermanentCorners === "string"
-      || typeof parsed?.unmatchedPermanentArchitecturalFeatures === "string";
-    if (!hasAnyField) return undefined;
-    const normalizeAnswerField = (value: unknown): "TRUE" | "FALSE" => {
-      const normalized = typeof value === "string" ? value.trim().toUpperCase() : "FALSE";
-      return normalized === "TRUE" ? "TRUE" : "FALSE";
-    };
-    const normalizeDescriptions = (value: unknown): string[] => Array.isArray(value)
-      ? value.map((entry: unknown) => typeof entry === "string" ? entry.trim() : "").filter((entry: string) => entry.length > 0)
-      : [];
-    return {
-      additionalPermanentWallPlanes: normalizeAnswerField(parsed?.additionalPermanentWallPlanes),
-      additionalPermanentWallPlaneDescriptions: normalizeDescriptions(parsed?.additionalPermanentWallPlaneDescriptions),
-      additionalPermanentReturnWalls: normalizeAnswerField(parsed?.additionalPermanentReturnWalls),
-      additionalPermanentReturnWallDescriptions: normalizeDescriptions(parsed?.additionalPermanentReturnWallDescriptions),
-      additionalPermanentRecesses: normalizeAnswerField(parsed?.additionalPermanentRecesses),
-      additionalPermanentRecessDescriptions: normalizeDescriptions(parsed?.additionalPermanentRecessDescriptions),
-      additionalPermanentCorners: normalizeAnswerField(parsed?.additionalPermanentCorners),
-      additionalPermanentCornerDescriptions: normalizeDescriptions(parsed?.additionalPermanentCornerDescriptions),
-      unmatchedPermanentArchitecturalFeatures: normalizeAnswerField(parsed?.unmatchedPermanentArchitecturalFeatures),
-      unmatchedPermanentFeatureDescriptions: normalizeDescriptions(parsed?.unmatchedPermanentFeatureDescriptions),
-      confidence: Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : undefined,
-      reason: typeof parsed?.reason === "string" ? parsed.reason.trim() : undefined,
-    } satisfies AdditionalArchitecturalEvidence;
-  })();
-  const derivedOverallAnswer = statementVerifications.some((item) => item.scope === "structural" && item.answer === "FALSE")
-    ? "TRUE"
-    : statementVerifications.length > 0
-      ? "FALSE"
-      : undefined;
-  const answer = normalizedAnswer === "TRUE" || normalizedAnswer === "FALSE"
-    ? (normalizedAnswer as "TRUE" | "FALSE")
-    : derivedOverallAnswer;
-  const hasOk = typeof parsed?.ok === "boolean";
+  const observationOnlySchema = wallVerifications.length > 0 || additionalFeatureList.length > 0 || statementVerifications.length > 0;
 
-  if (!hasOk && !answer) {
+  if (!observationOnlySchema) {
     throw new Error("validator_error_invalid_schema");
-  }
-
-  const envelopeDetectedChange = answer
-    ? answer === "TRUE"
-    : parsed.ok === false;
-  const semanticOk = answer
-    ? answer === "FALSE"
-    : parsed.ok === true;
-  const geometricCertainty = envelopeDetectedChange ? hasClearGeometricChange(parsed) : false;
-
-  let reasonCode: EnvelopeReasonCode | undefined;
-  if (!envelopeDetectedChange) {
-    reasonCode = undefined;
-  } else if (geometricCertainty) {
-    reasonCode = "envelope_confirmed_structural_change";
-  } else if (parsed?.visualAmbiguity === true) {
-    reasonCode = "envelope_visual_ambiguity";
-  } else {
-    reasonCode = "envelope_insufficient_geometric_evidence";
   }
 
   const adjudications: EnvelopeObservationAdjudication[] = Array.isArray(parsed?.observationAdjudications)
@@ -3330,12 +4439,9 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
   const primaryHypothesis = typeof parsed?.primaryHypothesis === "string"
     ? parsed.primaryHypothesis.trim()
     : undefined;
-  const normalizedReason = typeof parsed?.reason === "string"
-    ? parsed.reason.trim()
-    : "";
   const selectedExplanation = typeof parsed?.selectedExplanation === "string"
     ? parsed.selectedExplanation.trim()
-    : normalizedReason || primaryHypothesis;
+    : primaryHypothesis;
   const hypothesisConfidence = parsed?.hypothesisConfidence === "Low"
     || parsed?.hypothesisConfidence === "Medium"
     || parsed?.hypothesisConfidence === "High"
@@ -3350,55 +4456,25 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
   const hypothesisAnalysis = typeof parsed?.analysis === "string"
     ? parsed.analysis.trim()
     : undefined;
-
-  const baseReason = normalizedReason.length > 0
-    ? normalizedReason
-    : semanticOk ? "envelope_preserved" : "envelope_changed";
-  const reason = reasonCode ? `${reasonCode}: ${baseReason}` : baseReason;
   const confidence = Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : 0.5;
-  const advisorySignals = semanticOk ? [] : [reason, ...(reasonCode ? [reasonCode] : [])];
-  const tokens = splitIssueTokens(reason, advisorySignals);
-  const has = (prefix: string): boolean => tokens.some((token) => token === prefix || token.startsWith(`${prefix}_`));
-  const issueType = semanticOk
-    ? ISSUE_TYPES.NONE
-    : has("room_envelope_changed")
-      ? ISSUE_TYPES.ROOM_ENVELOPE_CHANGED
-      : has("wall_changed") || has("wall_plane") || has("wall")
-        ? ISSUE_TYPES.WALL_CHANGED
-        : ISSUE_TYPES.ENVELOPE_ANOMALY;
+  const issueType = ISSUE_TYPES.NONE;
   const issueTier = classifyIssueTier(issueType);
-  const hardFailEligible = envelopeDetectedChange && geometricCertainty && reasonCode === "envelope_confirmed_structural_change";
-  const hardFail = hardFailEligible && confidence >= ENVELOPE_HARD_FAIL_CONFIDENCE_THRESHOLD;
-  const structuredIssues = buildEnvelopeStructuredIssues({
-    issueType,
-    issueTier,
-    confidence,
-    reasonCode,
-    boundaryLinesMissing: parsed?.boundaryLinesMissing === true,
-    continuousSurfaceReplacement: parsed?.continuousSurfaceReplacement === true,
-    noPlausibleVisualExplanation: parsed?.noPlausibleVisualExplanation === true,
-    visualAmbiguity: parsed?.visualAmbiguity === true,
-  });
-
-  console.log("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
-    envelopeDetectedChange,
-    geometricCertainty,
-    reason: reasonCode || "envelope_preserved",
-  });
+  const hardFail = false;
+  const structuredIssues: StructuredIssue[] = [];
 
   // ENVELOPE ADVISORY DEMOTION: Envelope validator is always advisory.
   // Subtle geometry changes (recess flattened, indentation removed, corner smoothed,
   // vertical edge loss) must NOT hard-fail. These signals are passed to Unified for
   // adjudication. True opening removals are caught by the opening validator.
   return {
-    status: semanticOk ? "pass" : "fail",
-    reason,
+    status: "pass",
+    reason: "staged_observation_recorded",
     confidence,
     hardFail,
     issueType,
     issueTier,
-    advisorySignals,
-    advisory: envelopeDetectedChange && !hardFail ? true : undefined,
+    advisorySignals: [],
+    advisory: undefined,
     primaryStructuredIssue: structuredIssues[0],
     structuredIssues,
     selectedExplanation,
@@ -3409,8 +4485,8 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     constraintVerificationResults: statementVerifications,
     primaryHypothesis,
     hypothesisConfidence,
-    hypothesisVerdict: hypothesisVerdict || (answer ? (answer === "TRUE" ? "confirmed" : "rejected") : undefined),
-    hypothesisDismissalReason: hypothesisDismissalReason || (answer === "FALSE" ? normalizedReason : undefined),
+    hypothesisVerdict,
+    hypothesisDismissalReason,
     hypothesisAnalysis,
     architecturalClaim: typeof parsed?.claim === "string"
       ? parsed.claim.trim()
@@ -3420,8 +4496,8 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     architecturalQuestion: typeof parsed?.architecturalQuestion === "string"
       ? parsed.architecturalQuestion.trim()
       : undefined,
-    architecturalAnswer: answer,
-    architecturalReason: normalizedReason.length > 0 ? normalizedReason : undefined,
+    architecturalAnswer: undefined,
+    architecturalReason: undefined,
     deterministicObservationAdjudications: adjudications,
     rawGeminiJson: jsonCandidate,
   };
@@ -3583,17 +4659,39 @@ export async function runEnvelopeValidator(
     // Gemini semantic analysis
     const initialAttemptResult = await runVerificationAttempt();
     const initialStagedWallVerifications = initialAttemptResult.stagedWallVerifications || [];
-    const initialAdditionalWallPlanes = initialAttemptResult.additionalWallPlanes;
-    const initialAdvisoryStageExtraction = buildStageVerificationDescription(initialStagedWallVerifications, initialAdditionalWallPlanes);
+    const initialAdditionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
+      baseline: options?.baseline ?? null,
+      baselineWalls: semanticBaselineWallModel,
+      stagedObservations: initialStagedWallVerifications,
+      additionalEvidence: initialAttemptResult.additionalArchitecturalEvidence,
+    });
+    initialAttemptResult.additionalArchitecturalEvidence = initialAdditionalArchitecturalEvidence;
+    const reconciledInitialStagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
+      baseline: options?.baseline ?? null,
+      baselineWalls: semanticBaselineWallModel,
+      wallVerifications: initialStagedWallVerifications,
+      additionalEvidence: initialAdditionalArchitecturalEvidence,
+    });
+    initialAttemptResult.stagedWallVerifications = reconciledInitialStagedWallVerifications;
+    const initialAdditionalWallPlanes = initialAdditionalArchitecturalEvidence
+      ? {
+        answer: initialAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
+        descriptions: initialAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
+        confidence: initialAdditionalArchitecturalEvidence.confidence,
+        reason: initialAdditionalArchitecturalEvidence.reason,
+      } satisfies AdditionalWallPlanesResult
+      : initialAttemptResult.additionalWallPlanes;
+    initialAttemptResult.additionalWallPlanes = initialAdditionalWallPlanes;
+    const initialAdvisoryStageExtraction = buildStageVerificationDescription(reconciledInitialStagedWallVerifications, initialAdditionalArchitecturalEvidence);
     let geminiResult = initialAttemptResult;
-    let stagedExtractionIntegrity = evaluateStagedVerificationIntegrity(semanticBaselineWallModel, initialStagedWallVerifications, 1);
+    let stagedExtractionIntegrity = evaluateStagedVerificationIntegrity(semanticBaselineWallModel, reconciledInitialStagedWallVerifications, 1);
     let stagedExtractionRetryStatus: StagedExtractionRetryStatus = {
       triggered: false,
       attempts: 1,
       finalAttempt: 1,
       retrySucceeded: stagedExtractionIntegrity.passed,
     };
-    let stagedWallVerifications = initialStagedWallVerifications;
+    let stagedWallVerifications = reconciledInitialStagedWallVerifications;
     let additionalWallPlanes = initialAdditionalWallPlanes;
 
     if (!stagedExtractionIntegrity.passed) {
@@ -3606,14 +4704,36 @@ export async function runEnvelopeValidator(
       };
       geminiResult = await runVerificationAttempt(stagedExtractionIntegrity.issues[0]?.message);
       stagedWallVerifications = geminiResult.stagedWallVerifications || [];
-      additionalWallPlanes = geminiResult.additionalWallPlanes;
+      const retryAdditionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
+        baseline: options?.baseline ?? null,
+        baselineWalls: semanticBaselineWallModel,
+        stagedObservations: stagedWallVerifications,
+        additionalEvidence: geminiResult.additionalArchitecturalEvidence,
+      });
+      geminiResult.additionalArchitecturalEvidence = retryAdditionalArchitecturalEvidence;
+      stagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
+        baseline: options?.baseline ?? null,
+        baselineWalls: semanticBaselineWallModel,
+        wallVerifications: stagedWallVerifications,
+        additionalEvidence: retryAdditionalArchitecturalEvidence,
+      });
+      geminiResult.stagedWallVerifications = stagedWallVerifications;
+      additionalWallPlanes = retryAdditionalArchitecturalEvidence
+        ? {
+          answer: retryAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
+          descriptions: retryAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
+          confidence: retryAdditionalArchitecturalEvidence.confidence,
+          reason: retryAdditionalArchitecturalEvidence.reason,
+        } satisfies AdditionalWallPlanesResult
+        : geminiResult.additionalWallPlanes;
+      geminiResult.additionalWallPlanes = additionalWallPlanes;
       stagedExtractionIntegrity = evaluateStagedVerificationIntegrity(semanticBaselineWallModel, stagedWallVerifications, 2);
       stagedExtractionRetryStatus.retrySucceeded = stagedExtractionIntegrity.passed;
     }
 
     const semanticStagedWallModel = materializeSemanticWallModelsFromVerifications(semanticBaselineWallModel, stagedWallVerifications);
     const initialSemanticStagedWallModel = materializeSemanticWallModelsFromVerifications(semanticBaselineWallModel, initialStagedWallVerifications);
-    const advisoryStageExtraction = buildStageVerificationDescription(stagedWallVerifications, additionalWallPlanes);
+    const advisoryStageExtraction = buildStageVerificationDescription(stagedWallVerifications, geminiResult.additionalArchitecturalEvidence);
     const semanticWallMatches = semanticBaselineWallModel.map((wall) => ({
       baselineSemanticWallId: wall.semanticWallId,
       baselineDisplayName: wall.displayName,
@@ -3708,12 +4828,28 @@ export async function runEnvelopeValidator(
         };
       }),
     });
-    const deterministicStructuralInterpretations = deriveDeterministicStructuralInterpretations({
+    const additionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
       baseline: options?.baseline ?? null,
       baselineWalls: semanticBaselineWallModel,
       stagedObservations: stagedWallVerifications,
+      additionalEvidence: geminiResult.additionalArchitecturalEvidence,
     });
-    const additionalArchitecturalEvidence = geminiResult.additionalArchitecturalEvidence;
+    geminiResult.additionalArchitecturalEvidence = additionalArchitecturalEvidence;
+    stagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
+      baseline: options?.baseline ?? null,
+      baselineWalls: semanticBaselineWallModel,
+      wallVerifications: stagedWallVerifications,
+      additionalEvidence: additionalArchitecturalEvidence,
+    });
+    geminiResult.stagedWallVerifications = stagedWallVerifications;
+    additionalWallPlanes = additionalArchitecturalEvidence
+      ? {
+        answer: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
+        descriptions: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
+        confidence: additionalArchitecturalEvidence.confidence,
+        reason: additionalArchitecturalEvidence.reason,
+      } satisfies AdditionalWallPlanesResult
+      : additionalWallPlanes;
     const finalDeterministicStructuralInterpretations = deriveDeterministicStructuralInterpretations({
       baseline: options?.baseline ?? null,
       baselineWalls: semanticBaselineWallModel,
@@ -3753,6 +4889,16 @@ export async function runEnvelopeValidator(
 
     const significantInterpretations = finalDeterministicStructuralInterpretations.filter((item) => item.severity === "significant");
     const advisoryInterpretations = finalDeterministicStructuralInterpretations.filter((item) => item.severity === "advisory");
+    const hasCornerIntroduction = significantInterpretations.some((item) => item.category === "corner_introduced");
+    const hasReturnWallIntroduction = significantInterpretations.some((item) => item.category === "return_wall_introduced");
+    const hasWallPlaneIntroduction = significantInterpretations.some((item) => item.category === "wall_plane_introduced");
+    const finalDeterministicExplanation = hasCornerIntroduction && hasReturnWallIntroduction && hasWallPlaneIntroduction
+      ? "The staged observation introduces a permanent corner and return wall not represented by the authoritative baseline wall geometry."
+      : significantInterpretations.length > 0
+        ? significantInterpretations[0].summary
+        : advisoryInterpretations.length > 0
+          ? advisoryInterpretations[0].summary
+          : "No deterministic structural differences were identified.";
     geminiResult.changedConstraints = [];
     geminiResult.baselineVerificationFailures = [];
     geminiResult.architecturalEventCandidates = significantInterpretations.map((item, index) => ({
@@ -3791,7 +4937,7 @@ export async function runEnvelopeValidator(
     geminiResult.issueTier = classifyIssueTier(geminiResult.issueType);
     geminiResult.advisory = significantInterpretations.length === 0 && advisoryInterpretations.length > 0 ? true : undefined;
     geminiResult.reason = significantInterpretations.length > 0
-      ? `envelope_confirmed_structural_change: ${significantInterpretations[0].summary}`
+      ? `envelope_confirmed_structural_change: ${finalDeterministicExplanation}`
       : advisoryInterpretations.length > 0
         ? `envelope_insufficient_geometric_evidence: ${advisoryInterpretations[0].summary}`
         : "envelope_preserved";
@@ -3935,11 +5081,7 @@ export async function runEnvelopeValidator(
       supportingObservations: pattern.supportingObservations,
       confidence: pattern.confidence,
     })) || [];
-    geminiResult.selectedExplanation = significantInterpretations.length > 0
-      ? significantInterpretations[0].summary
-      : advisoryInterpretations.length > 0
-        ? advisoryInterpretations[0].summary
-        : "No deterministic structural differences were identified.";
+    geminiResult.selectedExplanation = finalDeterministicExplanation;
     geminiResult.primaryHypothesis = geminiResult.primaryHypothesis || geminiResult.selectedExplanation || primaryHypothesis.statement;
     geminiResult.hypothesisConfidence = geminiResult.hypothesisConfidence || primaryHypothesis.confidence;
     geminiResult.deterministicAdjudicationCoverage = {

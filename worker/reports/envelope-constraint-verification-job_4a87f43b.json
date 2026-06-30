@@ -1,0 +1,1043 @@
+{
+  "job": {
+    "label": "job_4a87f43b",
+    "jobId": "job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10",
+    "imageId": "img_a4f41fe0-ecc8-4bef-9a9b-0715d4e3963c",
+    "baselineFile": "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
+    "stagedFile": "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or-stage2.jpg"
+  },
+  "baselinePath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
+  "stagedPath": "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images/1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or-stage2.jpg",
+  "pipelineStatus": {
+    "defaultConstraintVerificationPipeline": true,
+    "legacyGatedPathUsed": false,
+    "requiredEnvVars": []
+  },
+  "result": {
+    "status": "pass",
+    "reason": "envelope_insufficient_geometric_evidence: wall containing window no longer continues beyond the frame in staged observation.",
+    "confidence": 0.65,
+    "hardFail": false,
+    "issueType": "none",
+    "issueTier": "advisory",
+    "advisorySignals": [],
+    "advisory": true,
+    "structuredIssues": [],
+    "selectedExplanation": "wall containing window no longer continues beyond the frame in staged observation.",
+    "stagedWallVerifications": [
+      {
+        "semanticWallId": "wall_window_right_third_mid_zone",
+        "displayName": "wall containing window",
+        "primaryAnchorLabel": "window",
+        "samePermanentWallVisible": "TRUE",
+        "wallVisibility": "substantial",
+        "wallExtent": "substantial",
+        "architecturalCertainty": "known",
+        "leftCornerVisible": true,
+        "rightCornerVisible": true,
+        "continuesBeyondFrame": false,
+        "terminatesAtCorner": true,
+        "returnWallVisible": true,
+        "adjoiningWallVisible": true,
+        "recessVisible": false,
+        "returnWallVisibilityMagnitude": "partial",
+        "adjoiningWallVisibilityMagnitude": "partial",
+        "recessVisibilityMagnitude": "none",
+        "confidence": 1,
+        "observations": [
+          "wall containing window is partially visible",
+          "wall containing window contains window",
+          "no visible left corner on wall containing window",
+          "wall containing window continues beyond the left image edge",
+          "no visible return wall adjacent to the left edge of wall containing window",
+          "no visible adjoining wall plane adjacent to the left edge of wall containing window",
+          "no visible recess adjacent to the left edge of wall containing window",
+          "wall containing window joins right wall at a visible right corner",
+          "wall containing window terminates at an observed right corner",
+          "return wall visible adjacent to the right edge of wall containing window",
+          "adjoining wall plane visible adjacent to the right edge of wall containing window",
+          "no visible recess adjacent to the right edge of wall containing window",
+          "visible left corner on wall containing window",
+          "wall containing window terminates at an observed left corner",
+          "adjoining wall plane visible adjacent to the left edge of wall containing window",
+          "return wall visible adjacent to the left edge of wall containing window"
+        ]
+      }
+    ],
+    "additionalWallPlanes": {
+      "answer": "TRUE",
+      "descriptions": [
+        "permanent wall plane on the left side of the room",
+        "permanent wall plane on the right side of the room",
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "confidence": 1
+    },
+    "additionalArchitecturalEvidence": {
+      "observedFeatures": [
+        "permanent wall plane on the left side of the room",
+        "permanent wall plane on the right side of the room",
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "additionalPermanentWallPlaneDescriptions": [
+        "permanent wall plane on the left side of the room",
+        "permanent wall plane on the right side of the room",
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "additionalPermanentReturnWallDescriptions": [
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "additionalPermanentRecessDescriptions": [],
+      "additionalPermanentCornerDescriptions": [],
+      "unmatchedPermanentFeatureDescriptions": [],
+      "additionalPermanentWallPlaneVisibilityMagnitude": "partial",
+      "additionalPermanentReturnWallVisibilityMagnitude": "partial",
+      "confidence": 1
+    },
+    "baselineVerificationResults": [],
+    "constraintVerificationResults": [],
+    "primaryHypothesis": "wall containing window no longer continues beyond the frame in staged observation.",
+    "hypothesisConfidence": "Low",
+    "architecturalClaim": "No deterministic structural differences were identified.",
+    "architecturalAnswer": "FALSE",
+    "architecturalReason": "envelope_insufficient_geometric_evidence",
+    "deterministicObservationAdjudications": [],
+    "rawGeminiJson": "```json\n{\n  \"confidence\": 1.0,\n  \"stagedImageSummary\": \"The staged image displays a bedroom with a bed centered against the wall containing a window. A large plain wall occupies the left side, and a plain wall occupies the right side. Furniture and decor are present.\",\n  \"wallVerifications\": [\n    {\n      \"semanticWallId\": \"wall_window_right_third_mid_zone\",\n      \"displayName\": \"wall containing window\",\n      \"primaryAnchorLabel\": \"window\",\n      \"samePermanentWallVisible\": \"TRUE\",\n      \"wallVisibility\": \"substantial\",\n      \"wallExtent\": \"substantial\",\n      \"architecturalCertainty\": \"known\",\n      \"returnWallVisibilityMagnitude\": \"substantial\",\n      \"adjoiningWallVisibilityMagnitude\": \"substantial\",\n      \"recessVisibilityMagnitude\": \"none\",\n      \"confidence\": 1.0,\n      \"observations\": [\n        \"wall containing window is partially visible\",\n        \"wall containing window contains window\",\n        \"no visible left corner on wall containing window\",\n        \"wall containing window continues beyond the left image edge\",\n        \"no visible return wall adjacent to the left edge of wall containing window\",\n        \"no visible adjoining wall plane adjacent to the left edge of wall containing window\",\n        \"no visible recess adjacent to the left edge of wall containing window\",\n        \"wall containing window joins right wall at a visible right corner\",\n        \"wall containing window terminates at an observed right corner\",\n        \"return wall visible adjacent to the right edge of wall containing window\",\n        \"adjoining wall plane visible adjacent to the right edge of wall containing window\",\n        \"no visible recess adjacent to the right edge of wall containing window\"\n      ]\n    }\n  ],\n  \"additionalPermanentArchitecturalFeatures\": [\n    \"full: permanent wall plane on the left side of the room\",\n    \"substantial: permanent wall plane on the right side of the room\"\n  ]\n}\n```",
+    "constraintVerificationMode": "constraint_statement_verification",
+    "baselineVerificationMode": "baseline_statement_verification",
+    "baselineArchitecturalConstraintModel": "Canonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing window\nWall containing window\n- semantic wall identifier: wall containing window\n- architectural anchors used only for wall identity: window\n- wall visibility observation: wall containing window is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: observed\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing window continues beyond the left image edge",
+    "baselineArchitecturalModel": "Canonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing window\nWall containing window\n- semantic wall identifier: wall containing window\n- architectural anchors used only for wall identity: window\n- wall visibility observation: wall containing window is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: observed\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing window continues beyond the left image edge",
+    "constraintVerificationStatements": [
+      {
+        "statementId": "stmt_01",
+        "statement": "wall containing window is partially visible.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_02",
+        "statement": "Wall containing window visibility remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility_magnitude",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_03",
+        "statement": "Wall containing window continues beyond the left image edge.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_04",
+        "statement": "No visible left corner is observed on wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_not_visible",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_05",
+        "statement": "A visible right corner is observed on wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_06",
+        "statement": "Right corner visibility on wall containing window remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "corner_visibility_magnitude",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_visible",
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_07",
+        "statement": "Wall containing window terminates at an observed corner.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "terminates_at_corner",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "terminates_at_corner"
+        ]
+      },
+      {
+        "statementId": "stmt_08",
+        "statement": "No visible return wall is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_return_wall",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_09",
+        "statement": "No visible adjoining wall plane is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_adjoining_wall_plane",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_10",
+        "statement": "No visible recess is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_recess",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_11",
+        "statement": "No visible wall termination is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_wall_termination",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_12",
+        "statement": "No additional permanent wall planes are visible beyond the baseline wall set once all wall-edge observations are accounted for.",
+        "scope": "structural",
+        "reasoningLayer": "structural_interpretation",
+        "architecturalContext": "global_geometry",
+        "factType": "global_visible_walls",
+        "failureEventHint": "new_wall_plane_introduced",
+        "supportingFacts": [
+          "wall containing window",
+          "derived_from_verified_edge_observations"
+        ]
+      }
+    ],
+    "baselineVerificationStatements": [
+      {
+        "statementId": "stmt_01",
+        "statement": "wall containing window is partially visible.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "partial",
+          "partial"
+        ]
+      },
+      {
+        "statementId": "stmt_02",
+        "statement": "Wall containing window visibility remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "primary_wall_geometry",
+        "factType": "wall_visibility_magnitude",
+        "failureEventHint": "wall_surface_missing",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_03",
+        "statement": "Wall containing window continues beyond the left image edge.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "wall_continuation",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "continues_beyond_frame"
+        ]
+      },
+      {
+        "statementId": "stmt_04",
+        "statement": "No visible left corner is observed on wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_corner",
+        "failureEventHint": "room_corner_added",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "left_corner_not_visible",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_05",
+        "statement": "A visible right corner is observed on wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "visible_corner",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_visible"
+        ]
+      },
+      {
+        "statementId": "stmt_06",
+        "statement": "Right corner visibility on wall containing window remains partial.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "corner_visibility_magnitude",
+        "failureEventHint": "room_corner_removed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "right_corner_visible",
+          "baseline_magnitude:partial"
+        ]
+      },
+      {
+        "statementId": "stmt_07",
+        "statement": "Wall containing window terminates at an observed corner.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "interior_geometry",
+        "edgeSide": "right",
+        "factType": "terminates_at_corner",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "terminates_at_corner"
+        ]
+      },
+      {
+        "statementId": "stmt_08",
+        "statement": "No visible return wall is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_return_wall",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_09",
+        "statement": "No visible adjoining wall plane is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_adjoining_wall_plane",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_10",
+        "statement": "No visible recess is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_recess",
+        "failureEventHint": "new_wall_plane_introduced",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_11",
+        "statement": "No visible wall termination is present at the left edge of wall containing window.",
+        "scope": "structural",
+        "reasoningLayer": "geometric_observation",
+        "architecturalContext": "frame_edge",
+        "edgeSide": "left",
+        "factType": "no_visible_wall_termination",
+        "failureEventHint": "wall_termination_changed",
+        "relatedWallIndex": 0,
+        "supportingFacts": [
+          "edge:left",
+          "baseline_magnitude:none"
+        ]
+      },
+      {
+        "statementId": "stmt_12",
+        "statement": "No additional permanent wall planes are visible beyond the baseline wall set once all wall-edge observations are accounted for.",
+        "scope": "structural",
+        "reasoningLayer": "structural_interpretation",
+        "architecturalContext": "global_geometry",
+        "factType": "global_visible_walls",
+        "failureEventHint": "new_wall_plane_introduced",
+        "supportingFacts": [
+          "wall containing window",
+          "derived_from_verified_edge_observations"
+        ]
+      }
+    ],
+    "deterministicEnvelopeComparison": {
+      "baselineWallCount": 3,
+      "stagedWallCount": 3,
+      "suspicions": [
+        {
+          "observationId": "obs_wall_0_visibility_changed",
+          "code": "possible_wall_visibility_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: wall visibility classification changed from baseline to staged extraction."
+        },
+        {
+          "observationId": "obs_wall_0_certainty_changed",
+          "code": "possible_architectural_certainty_changed",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: architectural certainty changed from partial to known."
+        },
+        {
+          "observationId": "obs_wall_0_new_corner",
+          "code": "possible_new_visible_corner",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not."
+        },
+        {
+          "observationId": "obs_wall_0_unsupported_completion",
+          "code": "possible_unsupported_architectural_completion",
+          "wallIndex": 0,
+          "note": "front / camera-facing wall: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry."
+        }
+      ],
+      "clarificationQuestions": [
+        "Deterministic comparison suggests a newly visible corner on front / camera-facing wall. Is this a genuine architectural corner, unsupported completion, perspective/framing effect, or baseline visibility limitation?",
+        "Deterministic comparison suggests architectural certainty changed on front / camera-facing wall (partial -> known). Is this supported by direct evidence, or unsupported architectural completion?",
+        "Deterministic comparison suggests unsupported architectural completion on front / camera-facing wall: baseline continuation beyond frame was uncertain but staged extraction appears architecturally complete. Is completion genuinely evidenced or unsupported?",
+        "Deterministic comparison suggests wall visibility changed on front / camera-facing wall. Is this change due to real architectural modification, baseline visibility limits, or camera viewpoint/framing differences?"
+      ]
+    },
+    "deterministicStructuralInterpretations": [
+      {
+        "interpretationId": "interp_wall_window_right_third_mid_zone_shortened",
+        "category": "wall_shortened",
+        "wallSemanticId": "wall_window_right_third_mid_zone",
+        "wallDisplayName": "wall containing window",
+        "severity": "advisory",
+        "confidence": "low",
+        "summary": "wall containing window no longer continues beyond the frame in staged observation.",
+        "supportingFacts": [
+          "baseline continuesBeyondFrame=TRUE",
+          "staged continuesBeyondFrame=FALSE"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_window_right_third_mid_zone_left_corner_added",
+        "category": "corner_introduced",
+        "wallSemanticId": "wall_window_right_third_mid_zone",
+        "wallDisplayName": "wall containing window",
+        "severity": "advisory",
+        "confidence": "medium",
+        "summary": "wall containing window now shows a left corner that baseline did not show.",
+        "supportingFacts": [
+          "baseline leftCornerVisible=FALSE",
+          "staged leftCornerVisible=TRUE",
+          "connected feature significance=partial"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_window_right_third_mid_zone_wall_plane_added",
+        "category": "wall_plane_introduced",
+        "wallSemanticId": "wall_window_right_third_mid_zone",
+        "wallDisplayName": "wall containing window",
+        "severity": "advisory",
+        "confidence": "medium",
+        "summary": "Staged observation introduces a permanent wall plane at the left frame edge of wall containing window.",
+        "supportingFacts": [
+          "baseline continuesBeyondFrame=TRUE",
+          "staged terminatesAtCorner=TRUE",
+          "staged returnWallVisible=TRUE",
+          "staged adjoiningWallVisible=TRUE",
+          "observed wall plane visibility=partial",
+          "architectural significance=potential_structural_concern"
+        ],
+        "corroboratingEvidence": [
+          "permanent wall plane on the left side of the room",
+          "permanent wall plane on the right side of the room",
+          "return wall visible adjacent to the left edge of wall containing window"
+        ],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_window_right_third_mid_zone_return_wall_added",
+        "category": "return_wall_introduced",
+        "wallSemanticId": "wall_window_right_third_mid_zone",
+        "wallDisplayName": "wall containing window",
+        "severity": "advisory",
+        "confidence": "medium",
+        "summary": "wall containing window now has a visible return wall at the frame edge.",
+        "supportingFacts": [
+          "baseline returnWallVisible=FALSE",
+          "staged returnWallVisible=TRUE",
+          "observed return wall visibility=partial",
+          "architectural significance=potential_structural_concern"
+        ],
+        "corroboratingEvidence": [
+          "return wall visible adjacent to the left edge of wall containing window"
+        ],
+        "contradictingEvidence": []
+      },
+      {
+        "interpretationId": "interp_wall_window_right_third_mid_zone_adjoining_wall_added",
+        "category": "adjoining_wall_introduced",
+        "wallSemanticId": "wall_window_right_third_mid_zone",
+        "wallDisplayName": "wall containing window",
+        "severity": "advisory",
+        "confidence": "medium",
+        "summary": "wall containing window now has an adjoining wall plane visible at the frame edge.",
+        "supportingFacts": [
+          "baseline adjoiningWallVisible=FALSE",
+          "staged adjoiningWallVisible=TRUE",
+          "observed adjoining wall visibility=partial",
+          "architectural significance=potential_structural_concern"
+        ],
+        "corroboratingEvidence": [],
+        "contradictingEvidence": []
+      }
+    ],
+    "baselineAdvisoryGeometry": [
+      {
+        "candidateId": "candidate_wall_1",
+        "advisoryWallIndex": 1,
+        "advisoryPositionalLabel": "right wall",
+        "qualificationDecision": "supporting_geometric_evidence",
+        "qualificationReason": "This candidate carries useful geometry but lacks enough architectural evidence to become a semantic wall.",
+        "rawArchitecturalFeatures": [],
+        "evidenceBreakdown": [
+          "visible wall extent partial: +11",
+          "visible corners (1): +8",
+          "continuation beyond frame: +5",
+          "left boundary visible: +3",
+          "architectural certainty partial: +3"
+        ],
+        "descriptor": "Wall begins at a visible inside corner on the left and continues beyond the frame on the right."
+      },
+      {
+        "candidateId": "candidate_wall_3",
+        "advisoryWallIndex": 3,
+        "advisoryPositionalLabel": "left wall",
+        "qualificationDecision": "supporting_geometric_evidence",
+        "qualificationReason": "This candidate carries useful geometry but lacks enough architectural evidence to become a semantic wall.",
+        "rawArchitecturalFeatures": [],
+        "evidenceBreakdown": [
+          "visible wall extent partial: +11",
+          "continuation beyond frame: +5",
+          "architectural certainty unknown: +0"
+        ],
+        "descriptor": "A continuous wall surface that extends beyond both the left and right visible boundaries within the frame."
+      }
+    ],
+    "initialAdvisoryStageExtraction": "Staged Verification\n- Verified baseline walls: 1\n- wall containing window: substantial visibility, extent substantial\n  - wall containing window is partially visible\n  - wall containing window contains window\n  - no visible left corner on wall containing window\n  - wall containing window continues beyond the left image edge\n  - no visible return wall adjacent to the left edge of wall containing window\n  - no visible adjoining wall plane adjacent to the left edge of wall containing window\n  - no visible recess adjacent to the left edge of wall containing window\n  - wall containing window joins right wall at a visible right corner\n  - wall containing window terminates at an observed right corner\n  - return wall visible adjacent to the right edge of wall containing window\n  - adjoining wall plane visible adjacent to the right edge of wall containing window\n  - no visible recess adjacent to the right edge of wall containing window\n  - visible left corner on wall containing window\n  - wall containing window terminates at an observed left corner\n  - adjoining wall plane visible adjacent to the left edge of wall containing window\n  - return wall visible adjacent to the left edge of wall containing window\n- Additional permanent architectural features:\n  - permanent wall plane on the left side of the room\n  - permanent wall plane on the right side of the room\n  - return wall visible adjacent to the left edge of wall containing window",
+    "stagedExtractionIntegrity": {
+      "passed": true,
+      "attempt": 1,
+      "mappingConfidenceThreshold": 0.5,
+      "issues": []
+    },
+    "stagedExtractionRetryStatus": {
+      "triggered": false,
+      "attempts": 1,
+      "finalAttempt": 1,
+      "retrySucceeded": true
+    },
+    "initialStagedWallVerifications": [
+      {
+        "semanticWallId": "wall_window_right_third_mid_zone",
+        "displayName": "wall containing window",
+        "primaryAnchorLabel": "window",
+        "samePermanentWallVisible": "TRUE",
+        "wallVisibility": "substantial",
+        "wallExtent": "substantial",
+        "architecturalCertainty": "known",
+        "leftCornerVisible": false,
+        "rightCornerVisible": true,
+        "continuesBeyondFrame": true,
+        "terminatesAtCorner": true,
+        "returnWallVisible": true,
+        "adjoiningWallVisible": true,
+        "recessVisible": false,
+        "returnWallVisibilityMagnitude": "substantial",
+        "adjoiningWallVisibilityMagnitude": "substantial",
+        "recessVisibilityMagnitude": "none",
+        "confidence": 1,
+        "observations": [
+          "wall containing window is partially visible",
+          "wall containing window contains window",
+          "no visible left corner on wall containing window",
+          "wall containing window continues beyond the left image edge",
+          "no visible return wall adjacent to the left edge of wall containing window",
+          "no visible adjoining wall plane adjacent to the left edge of wall containing window",
+          "no visible recess adjacent to the left edge of wall containing window",
+          "wall containing window joins right wall at a visible right corner",
+          "wall containing window terminates at an observed right corner",
+          "return wall visible adjacent to the right edge of wall containing window",
+          "adjoining wall plane visible adjacent to the right edge of wall containing window",
+          "no visible recess adjacent to the right edge of wall containing window"
+        ]
+      }
+    ],
+    "initialAdditionalArchitecturalEvidence": {
+      "observedFeatures": [
+        "permanent wall plane on the left side of the room",
+        "permanent wall plane on the right side of the room",
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "additionalPermanentWallPlaneDescriptions": [
+        "permanent wall plane on the left side of the room",
+        "permanent wall plane on the right side of the room",
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "additionalPermanentReturnWallDescriptions": [
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "additionalPermanentRecessDescriptions": [],
+      "additionalPermanentCornerDescriptions": [],
+      "unmatchedPermanentFeatureDescriptions": [],
+      "additionalPermanentWallPlaneVisibilityMagnitude": "partial",
+      "additionalPermanentReturnWallVisibilityMagnitude": "partial",
+      "confidence": 1
+    },
+    "initialAdditionalWallPlanes": {
+      "answer": "TRUE",
+      "descriptions": [
+        "permanent wall plane on the left side of the room",
+        "permanent wall plane on the right side of the room",
+        "return wall visible adjacent to the left edge of wall containing window"
+      ],
+      "confidence": 1
+    },
+    "baselineCandidateWallQualifications": [
+      {
+        "candidateId": "candidate_wall_0",
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "qualificationScore": 68,
+        "evidenceBreakdown": [
+          "primary architectural anchor window: +38",
+          "visible wall extent partial: +11",
+          "visible corners (1): +8",
+          "continuation beyond frame: +5",
+          "right boundary visible: +3",
+          "architectural certainty partial: +3"
+        ],
+        "qualificationDecision": "qualified_semantic_wall",
+        "qualificationReason": "Sufficient structural evidence exists to promote this candidate into the semantic wall set.",
+        "primaryAnchorLabel": "window",
+        "primaryAnchorToken": "window:right_third:mid_zone",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "window"
+        ]
+      },
+      {
+        "candidateId": "candidate_wall_1",
+        "advisoryWallIndex": 1,
+        "advisoryPositionalLabel": "right wall",
+        "qualificationScore": 30,
+        "evidenceBreakdown": [
+          "visible wall extent partial: +11",
+          "visible corners (1): +8",
+          "continuation beyond frame: +5",
+          "left boundary visible: +3",
+          "architectural certainty partial: +3"
+        ],
+        "qualificationDecision": "supporting_geometric_evidence",
+        "qualificationReason": "This candidate carries useful geometry but lacks enough architectural evidence to become a semantic wall.",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": []
+      },
+      {
+        "candidateId": "candidate_wall_3",
+        "advisoryWallIndex": 3,
+        "advisoryPositionalLabel": "left wall",
+        "qualificationScore": 16,
+        "evidenceBreakdown": [
+          "visible wall extent partial: +11",
+          "continuation beyond frame: +5",
+          "architectural certainty unknown: +0"
+        ],
+        "qualificationDecision": "supporting_geometric_evidence",
+        "qualificationReason": "This candidate carries useful geometry but lacks enough architectural evidence to become a semantic wall.",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": []
+      }
+    ],
+    "semanticBaselineWallModel": [
+      {
+        "semanticWallId": "wall_window_right_third_mid_zone",
+        "displayName": "wall containing window",
+        "primaryAnchorLabel": "window",
+        "primaryAnchorToken": "window:right_third:mid_zone",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "window"
+        ],
+        "rawAnchorTokens": [
+          "window:right_third:mid_zone"
+        ],
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "referenceAnchors": [
+          "window"
+        ],
+        "anchorTokens": [
+          "window:right_third:mid_zone"
+        ],
+        "geometryLines": [
+          "wall containing window is partially visible",
+          "visibility magnitude: partial",
+          "wall containing window continues beyond the left image edge",
+          "no visible left corner on wall containing window",
+          "wall containing window joins right wall at a visible right corner",
+          "wall containing window terminates at an observed corner",
+          "no visible return wall at the left edge",
+          "no visible adjoining wall plane at the left edge",
+          "no visible recess at the left edge",
+          "no visible wall termination at the left edge"
+        ],
+        "visibility": "partial",
+        "visibleExtent": "partial",
+        "descriptor": "Wall contains a single window on its right side and terminates at an inside corner. The left extent of the wall is beyond the frame."
+      }
+    ],
+    "initialSemanticStagedWallModel": [
+      {
+        "semanticWallId": "wall_window_right_third_mid_zone",
+        "displayName": "wall containing window",
+        "primaryAnchorLabel": "window",
+        "primaryAnchorToken": "window:right_third:mid_zone",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "window"
+        ],
+        "rawAnchorTokens": [
+          "window:right_third:mid_zone"
+        ],
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "referenceAnchors": [
+          "window"
+        ],
+        "anchorTokens": [
+          "window:right_third:mid_zone"
+        ],
+        "geometryLines": [
+          "wall containing window visibility: substantial",
+          "wall extent: substantial",
+          "no visible left corner on wall containing window",
+          "visible right corner on wall containing window",
+          "wall containing window continues beyond the image frame",
+          "wall containing window terminates at an observed corner",
+          "return wall visible adjacent to wall containing window",
+          "adjoining wall plane visible adjacent to wall containing window",
+          "no visible recess adjacent to wall containing window",
+          "wall containing window is partially visible",
+          "wall containing window contains window",
+          "no visible left corner on wall containing window",
+          "wall containing window continues beyond the left image edge",
+          "no visible return wall adjacent to the left edge of wall containing window",
+          "no visible adjoining wall plane adjacent to the left edge of wall containing window",
+          "no visible recess adjacent to the left edge of wall containing window",
+          "wall containing window joins right wall at a visible right corner",
+          "wall containing window terminates at an observed right corner",
+          "return wall visible adjacent to the right edge of wall containing window",
+          "adjoining wall plane visible adjacent to the right edge of wall containing window",
+          "no visible recess adjacent to the right edge of wall containing window"
+        ],
+        "visibility": "substantial",
+        "visibleExtent": "substantial",
+        "descriptor": "wall containing window is partially visible | wall containing window contains window | no visible left corner on wall containing window | wall containing window continues beyond the left image edge | no visible return wall adjacent to the left edge of wall containing window | no visible adjoining wall plane adjacent to the left edge of wall containing window | no visible recess adjacent to the left edge of wall containing window | wall containing window joins right wall at a visible right corner | wall containing window terminates at an observed right corner | return wall visible adjacent to the right edge of wall containing window | adjoining wall plane visible adjacent to the right edge of wall containing window | no visible recess adjacent to the right edge of wall containing window"
+      }
+    ],
+    "semanticStagedWallModel": [
+      {
+        "semanticWallId": "wall_window_right_third_mid_zone",
+        "displayName": "wall containing window",
+        "primaryAnchorLabel": "window",
+        "primaryAnchorToken": "window:right_third:mid_zone",
+        "secondaryArchitecturalFeatures": [],
+        "rawArchitecturalFeatures": [
+          "window"
+        ],
+        "rawAnchorTokens": [
+          "window:right_third:mid_zone"
+        ],
+        "advisoryWallIndex": 0,
+        "advisoryPositionalLabel": "front wall",
+        "referenceAnchors": [
+          "window"
+        ],
+        "anchorTokens": [
+          "window:right_third:mid_zone"
+        ],
+        "geometryLines": [
+          "wall containing window visibility: substantial",
+          "wall extent: substantial",
+          "visible left corner on wall containing window",
+          "visible right corner on wall containing window",
+          "wall containing window does not continue beyond the image frame",
+          "wall containing window terminates at an observed corner",
+          "return wall visible adjacent to wall containing window",
+          "adjoining wall plane visible adjacent to wall containing window",
+          "no visible recess adjacent to wall containing window",
+          "wall containing window is partially visible",
+          "wall containing window contains window",
+          "no visible left corner on wall containing window",
+          "wall containing window continues beyond the left image edge",
+          "no visible return wall adjacent to the left edge of wall containing window",
+          "no visible adjoining wall plane adjacent to the left edge of wall containing window",
+          "no visible recess adjacent to the left edge of wall containing window",
+          "wall containing window joins right wall at a visible right corner",
+          "wall containing window terminates at an observed right corner",
+          "return wall visible adjacent to the right edge of wall containing window",
+          "adjoining wall plane visible adjacent to the right edge of wall containing window",
+          "no visible recess adjacent to the right edge of wall containing window",
+          "visible left corner on wall containing window",
+          "wall containing window terminates at an observed left corner",
+          "adjoining wall plane visible adjacent to the left edge of wall containing window",
+          "return wall visible adjacent to the left edge of wall containing window"
+        ],
+        "visibility": "substantial",
+        "visibleExtent": "substantial",
+        "descriptor": "wall containing window is partially visible | wall containing window contains window | no visible left corner on wall containing window | wall containing window continues beyond the left image edge | no visible return wall adjacent to the left edge of wall containing window | no visible adjoining wall plane adjacent to the left edge of wall containing window | no visible recess adjacent to the left edge of wall containing window | wall containing window joins right wall at a visible right corner | wall containing window terminates at an observed right corner | return wall visible adjacent to the right edge of wall containing window | adjoining wall plane visible adjacent to the right edge of wall containing window | no visible recess adjacent to the right edge of wall containing window | visible left corner on wall containing window | wall containing window terminates at an observed left corner | adjoining wall plane visible adjacent to the left edge of wall containing window | return wall visible adjacent to the left edge of wall containing window"
+      }
+    ],
+    "semanticWallMatches": [
+      {
+        "baselineSemanticWallId": "wall_window_right_third_mid_zone",
+        "baselineDisplayName": "wall containing window",
+        "stagedSemanticWallId": "wall_window_right_third_mid_zone",
+        "stagedDisplayName": "wall containing window",
+        "matched": true,
+        "score": 100,
+        "reasons": [
+          "baseline-guided verification identity preserved"
+        ]
+      }
+    ],
+    "guidedObservationPrompt": "You are observing the staged image using the authoritative baseline semantic wall identities provided below.\n\nReview the BASELINE image and the STAGED image.\n\nOnly evaluate permanent architecture.\nIgnore furniture, decor, styling, and movable objects.\nThe baseline graph is authoritative.\nDo not extract the room again.\nDo not rename walls.\nDo not change wall ordering.\nDo not merge walls.\nDo not split walls.\nDo not invent new semantic identities.\nGemini must only describe staged-image observations.\nDo not compare staged against baseline.\nDo not explain why anything changed.\nDo not conclude whether architecture changed.\n\nYour observation order is mandatory:\n1. Verify each known baseline wall.\n2. Verify the geometry of each known wall.\n3. Observe any additional permanent architectural features not represented by the baseline semantic walls.\n\nCANONICAL BASELINE ARCHITECTURAL MODEL:\nCanonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing window\nWall containing window\n- semantic wall identifier: wall containing window\n- architectural anchors used only for wall identity: window\n- wall visibility observation: wall containing window is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: observed\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing window continues beyond the left image edge\n\nQUALIFIED BASELINE SEMANTIC WALLS TO VERIFY:\n- semanticWallId: wall_window_right_third_mid_zone\n  displayName: wall containing window\n  primaryAnchor: window\n  baseline geometry: wall containing window is partially visible | visibility magnitude: partial | wall containing window continues beyond the left image edge | no visible left corner on wall containing window | wall containing window joins right wall at a visible right corner | wall containing window terminates at an observed corner | no visible return wall at the left edge | no visible adjoining wall plane at the left edge | no visible recess at the left edge | no visible wall termination at the left edge\n\nBASELINE ADVISORY GEOMETRY (CORROBORATING ONLY; NEVER SEMANTIC IDENTITIES):\n- candidate_wall_1 (right wall) [supporting_geometric_evidence]: Wall begins at a visible inside corner on the left and continues beyond the frame on the right. | evidence: visible wall extent partial: +11 | visible corners (1): +8 | continuation beyond frame: +5 | left boundary visible: +3 | architectural certainty partial: +3\n- candidate_wall_3 (left wall) [supporting_geometric_evidence]: A continuous wall surface that extends beyond both the left and right visible boundaries within the frame. | evidence: visible wall extent partial: +11 | continuation beyond frame: +5 | architectural certainty unknown: +0\n\nFor each baseline semantic wall above, answer whether that same permanent wall is visible in the staged image.\nIf TRUE, describe only that wall using observation language that mirrors baseline extraction.\nUse short descriptive observation lines such as:\n- \"wall containing sliding glass door is partially visible\"\n- \"wall containing sliding glass door continues beyond the left image edge\"\n- \"no visible left corner on wall containing sliding glass door\"\n- \"wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner\"\n- \"wall containing sliding glass door terminates at an observed left corner\"\n- \"return wall visible adjacent to the left edge of wall containing sliding glass door\"\n- \"no visible adjoining wall plane adjacent to the left edge of wall containing sliding glass door\"\n- \"no visible recess adjacent to the left edge of wall containing sliding glass door\"\n- \"wall containing sliding glass door contains sliding glass door\"\n\nDo not mention baseline, previous visibility, or change.\nDo not copy baseline geometry text unless that exact condition is visibly true in the staged image.\nA return wall, adjoining wall plane, visible corner, or wall termination visible at a staged frame edge must be described directly in that wall's observations.\nDo not hide such edge geometry by defaulting to continuation beyond frame.\nFor every visible wall, the observations array must explicitly cover the staged image only with:\n- one visibility line\n- one anchor containment line\n- one left-edge corner line\n- one left-edge continuation-or-termination line\n- one left-edge adjacent-geometry line\n- one right-edge corner line\n- one right-edge continuation-or-termination line\n- one right-edge adjacent-geometry line\nIf a wall terminates at a visible corner on an edge, state that directly for that edge and do not also say the wall continues beyond that same edge.\nIf a return wall is visible at an edge, also state the visible corner/termination for that same edge.\nIf an adjoining wall plane is visible at an edge, state it in that wall's observations even when it is the same observed geometry as a return wall.\nIf TRUE, include:\n- wallVisibility\n- wallExtent\n- architecturalCertainty\n- returnWallVisibilityMagnitude\n- adjoiningWallVisibilityMagnitude\n- recessVisibilityMagnitude\n- observations\n- confidence\n- reason\n\nFor returnWallVisibilityMagnitude, adjoiningWallVisibilityMagnitude, and recessVisibilityMagnitude use exactly one of:\n- none\n- minimal\n- small\n- partial\n- substantial\n- full\n\nUse these values only to describe how much of the permanent architectural feature is visible in the staged image.\nDo not interpret what the value means.\n\nAfter every known wall has been verified, report observational-only additional architectural features visible in the staged image but not part of the verified baseline semantic walls.\nUse short descriptive feature lines only.\nDo not list floors, ceilings, lighting, electrical outlets, trim, baseboards, or openings already contained within a verified baseline wall.\nOnly list additional permanent wall planes, return walls, interior corners, adjoining wall planes, recesses, or other room-envelope features not already covered by the verified baseline walls.\nPrefix each listed feature with one visibility significance label:\n- none\n- minimal\n- small\n- partial\n- substantial\n- full\n\nExample:\n- \"minimal: permanent return wall connected to the left edge of wall containing sliding glass door\"\n- \"small: permanent interior corner connecting this return wall\"\n\nIf no such features exist, return \"NONE\".\n\nDo not infer whether these observations imply architectural change.\n\nReturn JSON only:\n\n{\n  \"confidence\":0.0-1.0,\n  \"stagedImageSummary\":\"concise observation-only summary of the staged image\",\n  \"wallVerifications\":[\n    {\n      \"semanticWallId\":\"exact baseline semanticWallId\",\n      \"displayName\":\"exact baseline displayName\",\n      \"primaryAnchorLabel\":\"exact baseline primaryAnchorLabel\",\n      \"samePermanentWallVisible\":\"TRUE\"|\"FALSE\",\n      \"wallVisibility\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"wallExtent\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"architecturalCertainty\":\"known\"|\"partial\"|\"unknown\",\n      \"returnWallVisibilityMagnitude\":\"none\"|\"minimal\"|\"small\"|\"partial\"|\"substantial\"|\"full\",\n      \"adjoiningWallVisibilityMagnitude\":\"none\"|\"minimal\"|\"small\"|\"partial\"|\"substantial\"|\"full\",\n      \"recessVisibilityMagnitude\":\"none\"|\"minimal\"|\"small\"|\"partial\"|\"substantial\"|\"full\",\n      \"confidence\":0.0-1.0,\n      \"reason\":\"required when samePermanentWallVisible is FALSE; otherwise optional\",\n      \"observations\":[\"short descriptive architectural observations only\"]\n    }\n  ],\n  \"additionalPermanentArchitecturalFeatures\":\"NONE\"|[\"descriptive permanent architectural features not part of the verified baseline semantic walls\"]\n}",
+    "guidedObservationRawGeminiJson": "```json\n{\n  \"confidence\": 1.0,\n  \"stagedImageSummary\": \"The staged image displays a bedroom with a bed centered against the wall containing a window. A large plain wall occupies the left side, and a plain wall occupies the right side. Furniture and decor are present.\",\n  \"wallVerifications\": [\n    {\n      \"semanticWallId\": \"wall_window_right_third_mid_zone\",\n      \"displayName\": \"wall containing window\",\n      \"primaryAnchorLabel\": \"window\",\n      \"samePermanentWallVisible\": \"TRUE\",\n      \"wallVisibility\": \"substantial\",\n      \"wallExtent\": \"substantial\",\n      \"architecturalCertainty\": \"known\",\n      \"returnWallVisibilityMagnitude\": \"substantial\",\n      \"adjoiningWallVisibilityMagnitude\": \"substantial\",\n      \"recessVisibilityMagnitude\": \"none\",\n      \"confidence\": 1.0,\n      \"observations\": [\n        \"wall containing window is partially visible\",\n        \"wall containing window contains window\",\n        \"no visible left corner on wall containing window\",\n        \"wall containing window continues beyond the left image edge\",\n        \"no visible return wall adjacent to the left edge of wall containing window\",\n        \"no visible adjoining wall plane adjacent to the left edge of wall containing window\",\n        \"no visible recess adjacent to the left edge of wall containing window\",\n        \"wall containing window joins right wall at a visible right corner\",\n        \"wall containing window terminates at an observed right corner\",\n        \"return wall visible adjacent to the right edge of wall containing window\",\n        \"adjoining wall plane visible adjacent to the right edge of wall containing window\",\n        \"no visible recess adjacent to the right edge of wall containing window\"\n      ]\n    }\n  ],\n  \"additionalPermanentArchitecturalFeatures\": [\n    \"full: permanent wall plane on the left side of the room\",\n    \"substantial: permanent wall plane on the right side of the room\"\n  ]\n}\n```",
+    "finalGeminiPrompt": "You are observing the staged image using the authoritative baseline semantic wall identities provided below.\n\nReview the BASELINE image and the STAGED image.\n\nOnly evaluate permanent architecture.\nIgnore furniture, decor, styling, and movable objects.\nThe baseline graph is authoritative.\nDo not extract the room again.\nDo not rename walls.\nDo not change wall ordering.\nDo not merge walls.\nDo not split walls.\nDo not invent new semantic identities.\nGemini must only describe staged-image observations.\nDo not compare staged against baseline.\nDo not explain why anything changed.\nDo not conclude whether architecture changed.\n\nYour observation order is mandatory:\n1. Verify each known baseline wall.\n2. Verify the geometry of each known wall.\n3. Observe any additional permanent architectural features not represented by the baseline semantic walls.\n\nCANONICAL BASELINE ARCHITECTURAL MODEL:\nCanonical Architectural Constraint Model\n- Camera orientation: unknown\n- Visible wall planes: wall containing window\nWall containing window\n- semantic wall identifier: wall containing window\n- architectural anchors used only for wall identity: window\n- wall visibility observation: wall containing window is partially visible\n- wall visibility: partial\n- Left edge transition\n  - continues beyond frame: yes\n  - visible corner: no\n  - left corner visibility magnitude: none\n  - wall termination visibility: not observed\n  - return wall visibility: none\n  - adjoining wall plane visibility: none\n  - recess visibility: none\n- Right edge transition\n  - continues beyond frame: no\n  - visible corner: yes\n  - right corner visibility magnitude: partial\n  - wall termination visibility: observed\n  - return wall visibility: not resolved from baseline view\n  - adjoining wall plane visibility: not resolved from baseline view\n  - recess visibility: not resolved from baseline view\n- wall containing window continues beyond the left image edge\n\nQUALIFIED BASELINE SEMANTIC WALLS TO VERIFY:\n- semanticWallId: wall_window_right_third_mid_zone\n  displayName: wall containing window\n  primaryAnchor: window\n  baseline geometry: wall containing window is partially visible | visibility magnitude: partial | wall containing window continues beyond the left image edge | no visible left corner on wall containing window | wall containing window joins right wall at a visible right corner | wall containing window terminates at an observed corner | no visible return wall at the left edge | no visible adjoining wall plane at the left edge | no visible recess at the left edge | no visible wall termination at the left edge\n\nBASELINE ADVISORY GEOMETRY (CORROBORATING ONLY; NEVER SEMANTIC IDENTITIES):\n- candidate_wall_1 (right wall) [supporting_geometric_evidence]: Wall begins at a visible inside corner on the left and continues beyond the frame on the right. | evidence: visible wall extent partial: +11 | visible corners (1): +8 | continuation beyond frame: +5 | left boundary visible: +3 | architectural certainty partial: +3\n- candidate_wall_3 (left wall) [supporting_geometric_evidence]: A continuous wall surface that extends beyond both the left and right visible boundaries within the frame. | evidence: visible wall extent partial: +11 | continuation beyond frame: +5 | architectural certainty unknown: +0\n\nFor each baseline semantic wall above, answer whether that same permanent wall is visible in the staged image.\nIf TRUE, describe only that wall using observation language that mirrors baseline extraction.\nUse short descriptive observation lines such as:\n- \"wall containing sliding glass door is partially visible\"\n- \"wall containing sliding glass door continues beyond the left image edge\"\n- \"no visible left corner on wall containing sliding glass door\"\n- \"wall containing sliding glass door joins wall containing built-in AC unit at a visible right corner\"\n- \"wall containing sliding glass door terminates at an observed left corner\"\n- \"return wall visible adjacent to the left edge of wall containing sliding glass door\"\n- \"no visible adjoining wall plane adjacent to the left edge of wall containing sliding glass door\"\n- \"no visible recess adjacent to the left edge of wall containing sliding glass door\"\n- \"wall containing sliding glass door contains sliding glass door\"\n\nDo not mention baseline, previous visibility, or change.\nDo not copy baseline geometry text unless that exact condition is visibly true in the staged image.\nA return wall, adjoining wall plane, visible corner, or wall termination visible at a staged frame edge must be described directly in that wall's observations.\nDo not hide such edge geometry by defaulting to continuation beyond frame.\nFor every visible wall, the observations array must explicitly cover the staged image only with:\n- one visibility line\n- one anchor containment line\n- one left-edge corner line\n- one left-edge continuation-or-termination line\n- one left-edge adjacent-geometry line\n- one right-edge corner line\n- one right-edge continuation-or-termination line\n- one right-edge adjacent-geometry line\nIf a wall terminates at a visible corner on an edge, state that directly for that edge and do not also say the wall continues beyond that same edge.\nIf a return wall is visible at an edge, also state the visible corner/termination for that same edge.\nIf an adjoining wall plane is visible at an edge, state it in that wall's observations even when it is the same observed geometry as a return wall.\nIf TRUE, include:\n- wallVisibility\n- wallExtent\n- architecturalCertainty\n- returnWallVisibilityMagnitude\n- adjoiningWallVisibilityMagnitude\n- recessVisibilityMagnitude\n- observations\n- confidence\n- reason\n\nFor returnWallVisibilityMagnitude, adjoiningWallVisibilityMagnitude, and recessVisibilityMagnitude use exactly one of:\n- none\n- minimal\n- small\n- partial\n- substantial\n- full\n\nUse these values only to describe how much of the permanent architectural feature is visible in the staged image.\nDo not interpret what the value means.\n\nAfter every known wall has been verified, report observational-only additional architectural features visible in the staged image but not part of the verified baseline semantic walls.\nUse short descriptive feature lines only.\nDo not list floors, ceilings, lighting, electrical outlets, trim, baseboards, or openings already contained within a verified baseline wall.\nOnly list additional permanent wall planes, return walls, interior corners, adjoining wall planes, recesses, or other room-envelope features not already covered by the verified baseline walls.\nPrefix each listed feature with one visibility significance label:\n- none\n- minimal\n- small\n- partial\n- substantial\n- full\n\nExample:\n- \"minimal: permanent return wall connected to the left edge of wall containing sliding glass door\"\n- \"small: permanent interior corner connecting this return wall\"\n\nIf no such features exist, return \"NONE\".\n\nDo not infer whether these observations imply architectural change.\n\nReturn JSON only:\n\n{\n  \"confidence\":0.0-1.0,\n  \"stagedImageSummary\":\"concise observation-only summary of the staged image\",\n  \"wallVerifications\":[\n    {\n      \"semanticWallId\":\"exact baseline semanticWallId\",\n      \"displayName\":\"exact baseline displayName\",\n      \"primaryAnchorLabel\":\"exact baseline primaryAnchorLabel\",\n      \"samePermanentWallVisible\":\"TRUE\"|\"FALSE\",\n      \"wallVisibility\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"wallExtent\":\"none\"|\"minimal\"|\"partial\"|\"substantial\"|\"dominant\"|\"complete\"|\"full\",\n      \"architecturalCertainty\":\"known\"|\"partial\"|\"unknown\",\n      \"returnWallVisibilityMagnitude\":\"none\"|\"minimal\"|\"small\"|\"partial\"|\"substantial\"|\"full\",\n      \"adjoiningWallVisibilityMagnitude\":\"none\"|\"minimal\"|\"small\"|\"partial\"|\"substantial\"|\"full\",\n      \"recessVisibilityMagnitude\":\"none\"|\"minimal\"|\"small\"|\"partial\"|\"substantial\"|\"full\",\n      \"confidence\":0.0-1.0,\n      \"reason\":\"required when samePermanentWallVisible is FALSE; otherwise optional\",\n      \"observations\":[\"short descriptive architectural observations only\"]\n    }\n  ],\n  \"additionalPermanentArchitecturalFeatures\":\"NONE\"|[\"descriptive permanent architectural features not part of the verified baseline semantic walls\"]\n}",
+    "advisoryStageExtraction": "Staged Verification\n- Verified baseline walls: 1\n- wall containing window: substantial visibility, extent substantial\n  - wall containing window is partially visible\n  - wall containing window contains window\n  - no visible left corner on wall containing window\n  - wall containing window continues beyond the left image edge\n  - no visible return wall adjacent to the left edge of wall containing window\n  - no visible adjoining wall plane adjacent to the left edge of wall containing window\n  - no visible recess adjacent to the left edge of wall containing window\n  - wall containing window joins right wall at a visible right corner\n  - wall containing window terminates at an observed right corner\n  - return wall visible adjacent to the right edge of wall containing window\n  - adjoining wall plane visible adjacent to the right edge of wall containing window\n  - no visible recess adjacent to the right edge of wall containing window\n  - visible left corner on wall containing window\n  - wall containing window terminates at an observed left corner\n  - adjoining wall plane visible adjacent to the left edge of wall containing window\n  - return wall visible adjacent to the left edge of wall containing window\n- Additional permanent architectural features:\n  - permanent wall plane on the left side of the room\n  - permanent wall plane on the right side of the room\n  - return wall visible adjacent to the left edge of wall containing window",
+    "changedConstraints": [],
+    "baselineVerificationFailures": [],
+    "architecturalEventCandidates": [],
+    "architecturalChangeSummary": "Only advisory deterministic geometry differences were found:\n- wall containing window no longer continues beyond the frame in staged observation.\n- wall containing window now shows a left corner that baseline did not show.\n- Staged observation introduces a permanent wall plane at the left frame edge of wall containing window.\n- wall containing window now has a visible return wall at the frame edge.\n- wall containing window now has an adjoining wall plane visible at the frame edge.",
+    "architecturalClaimSupport": [],
+    "deterministicHypotheses": {
+      "primaryHypothesis": {
+        "hypothesisId": "hyp_unsupported_completion",
+        "category": "possible_unsupported_architectural_completion",
+        "title": "Visible room envelope differs from baseline extraction",
+        "confidence": "High",
+        "statement": "Deterministic comparison identified newly visible structural continuity not present in baseline extraction.",
+        "supportingObservationIds": [
+          "obs_wall_0_certainty_changed",
+          "obs_wall_0_new_corner",
+          "obs_wall_0_unsupported_completion"
+        ],
+        "supportingObservations": [
+          "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from partial to known.",
+          "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+          "possible_unsupported_architectural_completion (front / camera-facing wall): front / camera-facing wall: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry."
+        ],
+        "conflictingObservationIds": [],
+        "conflictingObservations": [],
+        "alternativeExplanationsAlreadyConsidered": [
+          "perspective",
+          "framing",
+          "camera_viewpoint"
+        ]
+      },
+      "hypotheses": [
+        {
+          "hypothesisId": "hyp_unsupported_completion",
+          "category": "possible_unsupported_architectural_completion",
+          "title": "Visible room envelope differs from baseline extraction",
+          "confidence": "High",
+          "statement": "Deterministic comparison identified newly visible structural continuity not present in baseline extraction.",
+          "supportingObservationIds": [
+            "obs_wall_0_certainty_changed",
+            "obs_wall_0_new_corner",
+            "obs_wall_0_unsupported_completion"
+          ],
+          "supportingObservations": [
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from partial to known.",
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not.",
+            "possible_unsupported_architectural_completion (front / camera-facing wall): front / camera-facing wall: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry."
+          ],
+          "conflictingObservationIds": [],
+          "conflictingObservations": [],
+          "alternativeExplanationsAlreadyConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_visibility_ambiguity_compound",
+          "category": "possible_visibility_ambiguity",
+          "title": "Visibility ambiguity",
+          "confidence": "High",
+          "statement": "Deterministic comparison identified internally inconsistent visibility signals requiring contextual review.",
+          "supportingObservationIds": [
+            "obs_wall_0_visibility_changed",
+            "obs_wall_0_certainty_changed",
+            "obs_wall_0_new_corner"
+          ],
+          "supportingObservations": [
+            "possible_wall_visibility_changed (front / camera-facing wall): front / camera-facing wall: wall visibility classification changed from baseline to staged extraction.",
+            "possible_architectural_certainty_changed (front / camera-facing wall): front / camera-facing wall: architectural certainty changed from partial to known.",
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "conflictingObservationIds": [
+            "obs_wall_0_new_corner"
+          ],
+          "conflictingObservations": [
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "alternativeExplanationsAlreadyConsidered": [
+            "perspective",
+            "framing",
+            "camera_viewpoint"
+          ]
+        },
+        {
+          "hypothesisId": "hyp_permanent_wall_added",
+          "category": "possible_permanent_wall_added",
+          "title": "Additional wall surface extracted",
+          "confidence": "Medium",
+          "statement": "Deterministic comparison identified additional wall-surface extraction relative to baseline.",
+          "supportingObservationIds": [
+            "obs_wall_0_new_corner"
+          ],
+          "supportingObservations": [
+            "possible_new_visible_corner (front / camera-facing wall): front / camera-facing wall: staged extraction indicates a corner now visible where baseline did not."
+          ],
+          "conflictingObservationIds": [],
+          "conflictingObservations": [],
+          "alternativeExplanationsAlreadyConsidered": [
+            "camera_viewpoint",
+            "framing",
+            "baseline_visibility_limitation"
+          ]
+        }
+      ]
+    },
+    "structuralPatterns": [
+      {
+        "patternId": "previously_unseen_wall_continues",
+        "patternName": "Previously unseen wall continues",
+        "supportingObservations": [
+          "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+          "front / camera-facing wall: staged extraction resolves geometry that baseline left open at the frame edge.",
+          "front / camera-facing wall: the staged extraction changed certainty for wall geometry interpretation."
+        ],
+        "confidence": 0.7166666666666668
+      },
+      {
+        "patternId": "new_wall_surface_introduced",
+        "patternName": "New wall surface introduced",
+        "supportingObservations": [
+          "front / camera-facing wall: staged extraction indicates a corner that baseline did not show.",
+          "front / camera-facing wall: the staged extraction changed the visible wall extent classification."
+        ],
+        "confidence": 0.6
+      }
+    ],
+    "deterministicAdjudicationCoverage": {
+      "totalSuspicions": 0,
+      "addressedSuspicions": 0,
+      "unresolvedSuspicions": [],
+      "allSuspicionsAddressed": true
+    }
+  }
+}

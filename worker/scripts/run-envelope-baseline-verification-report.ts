@@ -12,13 +12,59 @@ delete process.env.ENVELOPE_CONSTRAINT_VERIFICATION;
 delete process.env.ENVELOPE_BASELINE_VERIFICATION;
 
 const TEST_IMAGE_DIR = "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images";
-const JOB = {
-  label: "job_bb029607",
-  jobId: "job_bb029607-dcd8-4614-997c-406d2ed33142",
-  imageId: "img_e75a5903-34d3-42a2-b93f-b29314a5138d",
-  baselineFile: "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
-  stagedFile: "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
-};
+const JOBS = {
+  job_bb029607: {
+    label: "job_bb029607",
+    jobId: "job_bb029607-dcd8-4614-997c-406d2ed33142",
+    imageId: "img_e75a5903-34d3-42a2-b93f-b29314a5138d",
+    baselineFile: "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+    stagedFile: "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
+  },
+  job_4a87f43b: {
+    label: "job_4a87f43b",
+    jobId: "job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10",
+    imageId: "img_a4f41fe0-ecc8-4bef-9a9b-0715d4e3963c",
+    baselineFile: "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
+    stagedFile: "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or-stage2.jpg",
+  },
+  job_4ceef035: {
+    label: "job_4ceef035",
+    jobId: "job_4ceef035-b334-489c-bf91-3591fa703257",
+    imageId: "img_13682e51-d7fd-4900-9edc-1cffc8c4cd99",
+    baselineFile: "job_4ceef035-stage1A.jpg",
+    stagedFile: "job_4ceef035-stage2.webp",
+    baselineUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782706114147-realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-1a-delivery.jpg",
+    stagedUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_4ceef035-b334-489c-bf91-3591fa703257/realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260629%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260629T040901Z&X-Amz-Expires=86400&X-Amz-Signature=9ba4d12109119c0d5211dc5649079afc760ebdb74e84741fe656d7ffd8a42648&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+  },
+} as const;
+
+const requestedJobLabel = process.env.ENVELOPE_REPORT_JOB || process.argv[2] || "job_bb029607";
+const JOB = JOBS[requestedJobLabel as keyof typeof JOBS];
+
+if (!JOB) {
+  throw new Error(`Unknown report job: ${requestedJobLabel}`);
+}
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function downloadIfMissing(url: string | undefined, destinationPath: string): Promise<void> {
+  if (!url) return;
+  if (await fileExists(destinationPath)) return;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download report artifact: ${response.status} ${response.statusText}`);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await fs.mkdir(path.dirname(destinationPath), { recursive: true });
+  await fs.writeFile(destinationPath, bytes);
+}
 
 function linesForStatementResults(result: Awaited<ReturnType<typeof runEnvelopeValidator>>): string[] {
   const statements = result.constraintVerificationStatements || result.baselineVerificationStatements || [];
@@ -58,13 +104,39 @@ function linesForStructuralBaseline(label: string, baseline?: StructuralBaseline
   const walls = baseline.wallDescriptors || [];
   const openings = baseline.openings || [];
   const fixtures = baseline.anchorFixtures || [];
+  const edgePosition = (wall: NonNullable<StructuralBaseline["wallDescriptors"]>[number], side: "left" | "right"): string => {
+    const visible = side === "left" ? wall.leftCornerVisible === true : wall.rightCornerVisible === true;
+    if (!visible) return "none";
+    const sideBoundaryVisible = side === "left" ? wall.leftBoundaryVisible === true : wall.rightBoundaryVisible === true;
+    const oppositeBoundaryVisible = side === "left" ? wall.rightBoundaryVisible === true : wall.leftBoundaryVisible === true;
+    if (wall.visibility === "minimal") return "image edge";
+    if (sideBoundaryVisible && !oppositeBoundaryVisible) return "image edge";
+    if (sideBoundaryVisible && oppositeBoundaryVisible) return "near image edge";
+    return "inner third";
+  };
+  const edgeCornerVisibility = (wall: NonNullable<StructuralBaseline["wallDescriptors"]>[number], side: "left" | "right"): string => {
+    const visible = side === "left" ? wall.leftCornerVisible === true : wall.rightCornerVisible === true;
+    if (!visible) return "none";
+    if (wall.visibility === "minimal") return "trace";
+    if (wall.visibility === "partial") return "partial";
+    if (wall.visibility === "substantial" || wall.visibility === "dominant") return "substantial";
+    return "complete";
+  };
+  const adjacentWallVisibility = (wall: NonNullable<StructuralBaseline["wallDescriptors"]>[number], side: "left" | "right"): string => {
+    const visible = side === "left" ? wall.leftCornerVisible === true : wall.rightCornerVisible === true;
+    if (!visible) return "none";
+    if (wall.visibility === "minimal") return "minimal";
+    if (wall.visibility === "partial") return "partial";
+    if (wall.visibility === "substantial" || wall.visibility === "dominant") return "substantial";
+    return "full";
+  };
   return [
     `- ${label}: present`,
     `- wall count: ${walls.length}`,
     `- opening count: ${openings.length}`,
     `- anchor fixture count: ${fixtures.length}`,
     ...(walls.length > 0
-      ? walls.map((wall) => `- wall ${wall.wallIndex}: visibility=${wall.visibility}, extent=${wall.visibleExtent || wall.visibility}, certainty=${wall.architecturalCertainty || "unknown"}, leftCorner=${wall.leftCornerVisible === true ? "yes" : "no"}, rightCorner=${wall.rightCornerVisible === true ? "yes" : "no"}, continuesBeyondFrame=${wall.continuesBeyondFrame === true ? "yes" : "no"} -- ${wall.description}`)
+      ? walls.map((wall) => `- wall ${wall.wallIndex}: visibility=${wall.visibility}, extent=${wall.visibleExtent || wall.visibility}, certainty=${wall.architecturalCertainty || "unknown"}, leftCorner=${wall.leftCornerVisible === true ? "yes" : "no"}, leftCornerPosition=${edgePosition(wall, "left")}, leftCornerVisibility=${edgeCornerVisibility(wall, "left")}, leftAdjacentWallVisibility=${adjacentWallVisibility(wall, "left")}, rightCorner=${wall.rightCornerVisible === true ? "yes" : "no"}, rightCornerPosition=${edgePosition(wall, "right")}, rightCornerVisibility=${edgeCornerVisibility(wall, "right")}, rightAdjacentWallVisibility=${adjacentWallVisibility(wall, "right")}, continuesBeyondFrame=${wall.continuesBeyondFrame === true ? "yes" : "no"} -- ${wall.description}`)
       : ["- wall descriptors: none"]),
     ...(openings.length > 0
       ? openings.map((opening) => `- opening ${opening.id}: ${opening.type} on wall ${opening.wallIndex} at ${opening.horizontalBand}/${opening.verticalBand} (confidence ${opening.confidence})`)
@@ -133,23 +205,41 @@ function linesForWallVerifications(
   verifications: NonNullable<Awaited<ReturnType<typeof runEnvelopeValidator>>["stagedWallVerifications"]> | NonNullable<Awaited<ReturnType<typeof runEnvelopeValidator>>["initialStagedWallVerifications"]>,
 ): string[] {
   if (!verifications || verifications.length === 0) return ["- none"];
-  return verifications.flatMap((item) => [
-    `- ${item.displayName} [${item.semanticWallId}]`,
-    `  primary semantic anchor: ${item.primaryAnchorLabel || "none"}`,
-    `  same permanent wall visible: ${item.samePermanentWallVisible}`,
-    `  wall visibility: ${item.wallVisibility || "unknown"}`,
-    `  wall extent: ${item.wallExtent || "unknown"}`,
-    `  left corner visible: ${typeof item.leftCornerVisible === "boolean" ? String(item.leftCornerVisible) : "unknown"}`,
-    `  right corner visible: ${typeof item.rightCornerVisible === "boolean" ? String(item.rightCornerVisible) : "unknown"}`,
-    `  continues beyond frame: ${typeof item.continuesBeyondFrame === "boolean" ? String(item.continuesBeyondFrame) : "unknown"}`,
-    `  terminates at corner: ${typeof item.terminatesAtCorner === "boolean" ? String(item.terminatesAtCorner) : "unknown"}`,
-    `  return wall visible: ${typeof item.returnWallVisible === "boolean" ? String(item.returnWallVisible) : "unknown"}`,
-    `  adjoining wall visible: ${typeof item.adjoiningWallVisible === "boolean" ? String(item.adjoiningWallVisible) : "unknown"}`,
-    `  recess visible: ${typeof item.recessVisible === "boolean" ? String(item.recessVisible) : "unknown"}`,
-    `  confidence: ${typeof item.confidence === "number" ? String(item.confidence) : "unknown"}`,
-    `  reason: ${item.reason || "none"}`,
-    `  observations: ${item.observations.length > 0 ? item.observations.join(" | ") : "none"}`,
-  ]);
+  return verifications.flatMap((item) => {
+    const lines = [
+      `- ${item.displayName} [${item.semanticWallId}]`,
+      `  primary semantic anchor: ${item.primaryAnchorLabel || "none"}`,
+      `  same permanent wall visible: ${item.samePermanentWallVisible}`,
+      `  wall visibility: ${item.wallVisibility || "unknown"}`,
+      `  wall extent: ${item.wallExtent || "unknown"}`,
+      `  architectural certainty: ${item.architecturalCertainty || "unknown"}`,
+      `  confidence: ${typeof item.confidence === "number" ? String(item.confidence) : "unknown"}`,
+      `  reason: ${item.reason || "none"}`,
+    ];
+    if (item.observations.length > 0) {
+      lines.push("  observations:");
+      lines.push(...item.observations.map((observation) => `    - ${observation}`));
+    } else {
+      lines.push("  observations: none");
+    }
+    lines.push(`  derived continues beyond frame: ${typeof item.continuesBeyondFrame === "boolean" ? String(item.continuesBeyondFrame) : "unknown"}`);
+    lines.push(`  derived terminates at corner: ${typeof item.terminatesAtCorner === "boolean" ? String(item.terminatesAtCorner) : "unknown"}`);
+    lines.push(`  derived left corner visible: ${typeof item.leftCornerVisible === "boolean" ? String(item.leftCornerVisible) : "unknown"}`);
+    lines.push(`  derived right corner visible: ${typeof item.rightCornerVisible === "boolean" ? String(item.rightCornerVisible) : "unknown"}`);
+    lines.push(`  left corner position: ${item.leftCornerPosition || "unknown"}`);
+    lines.push(`  left corner visibility: ${item.leftCornerVisibility || "unknown"}`);
+    lines.push(`  left adjacent wall visibility: ${item.leftAdjacentWallVisibility || "unknown"}`);
+    lines.push(`  right corner position: ${item.rightCornerPosition || "unknown"}`);
+    lines.push(`  right corner visibility: ${item.rightCornerVisibility || "unknown"}`);
+    lines.push(`  right adjacent wall visibility: ${item.rightAdjacentWallVisibility || "unknown"}`);
+    lines.push(`  derived return wall visible: ${typeof item.returnWallVisible === "boolean" ? String(item.returnWallVisible) : "unknown"}`);
+    lines.push(`  derived adjoining wall visible: ${typeof item.adjoiningWallVisible === "boolean" ? String(item.adjoiningWallVisible) : "unknown"}`);
+    lines.push(`  derived recess visible: ${typeof item.recessVisible === "boolean" ? String(item.recessVisible) : "unknown"}`);
+    lines.push(`  return wall visibility significance: ${item.returnWallVisibilityMagnitude || "unknown"}`);
+    lines.push(`  adjoining wall visibility significance: ${item.adjoiningWallVisibilityMagnitude || "unknown"}`);
+    lines.push(`  recess visibility significance: ${item.recessVisibilityMagnitude || "unknown"}`);
+    return lines;
+  });
 }
 
 function linesForAdditionalWallPlanes(
@@ -172,6 +262,11 @@ function linesForDeterministicInterpretations(result: Awaited<ReturnType<typeof 
   return interpretations.flatMap((item) => [
     `- ${item.category}: ${item.summary}`,
     `  wall: ${item.wallDisplayName || "n/a"}`,
+    `  detected: ${item.detectedFeature || item.category}`,
+    `  associated wall: ${item.associatedWallMagnitude || "unknown"}`,
+    `  classification: ${item.classification || "unknown"}`,
+    `  decision: ${(item.decision || (item.severity === "significant" ? "fail" : "pass")).toUpperCase()}`,
+    `  explanation: ${item.explanation || "none"}`,
     `  severity: ${item.severity}`,
     `  confidence: ${item.confidence}`,
     `  supporting facts: ${item.supportingFacts.length > 0 ? item.supportingFacts.join(" | ") : "none"}`,
@@ -184,16 +279,13 @@ function linesForAdditionalArchitecturalEvidence(result: Awaited<ReturnType<type
   const evidence = result.additionalArchitecturalEvidence;
   if (!evidence) return ["- none"];
   return [
-    `- additional permanent wall planes: ${evidence.additionalPermanentWallPlanes}`,
-    `- additional permanent wall plane descriptions: ${evidence.additionalPermanentWallPlaneDescriptions.length > 0 ? evidence.additionalPermanentWallPlaneDescriptions.join(" | ") : "none"}`,
-    `- additional permanent return walls: ${evidence.additionalPermanentReturnWalls}`,
-    `- additional permanent return wall descriptions: ${evidence.additionalPermanentReturnWallDescriptions.length > 0 ? evidence.additionalPermanentReturnWallDescriptions.join(" | ") : "none"}`,
-    `- additional permanent recesses: ${evidence.additionalPermanentRecesses}`,
-    `- additional permanent recess descriptions: ${evidence.additionalPermanentRecessDescriptions.length > 0 ? evidence.additionalPermanentRecessDescriptions.join(" | ") : "none"}`,
-    `- additional permanent corners: ${evidence.additionalPermanentCorners}`,
-    `- additional permanent corner descriptions: ${evidence.additionalPermanentCornerDescriptions.length > 0 ? evidence.additionalPermanentCornerDescriptions.join(" | ") : "none"}`,
-    `- unmatched permanent architectural features: ${evidence.unmatchedPermanentArchitecturalFeatures}`,
-    `- unmatched permanent feature descriptions: ${evidence.unmatchedPermanentFeatureDescriptions.length > 0 ? evidence.unmatchedPermanentFeatureDescriptions.join(" | ") : "none"}`,
+    ...(evidence.observedFeatures.length > 0
+      ? evidence.observedFeatures.map((feature) => `- ${feature}`)
+      : ["- none"]),
+    `- additional permanent wall plane visibility significance: ${evidence.additionalPermanentWallPlaneVisibilityMagnitude || "unknown"}`,
+    `- additional permanent return wall visibility significance: ${evidence.additionalPermanentReturnWallVisibilityMagnitude || "unknown"}`,
+    `- additional permanent recess visibility significance: ${evidence.additionalPermanentRecessVisibilityMagnitude || "unknown"}`,
+    `- additional permanent corner visibility significance: ${evidence.additionalPermanentCornerVisibilityMagnitude || "unknown"}`,
     `- confidence: ${typeof evidence.confidence === "number" ? String(evidence.confidence) : "unknown"}`,
     `- reason: ${evidence.reason || "none"}`,
   ];
@@ -255,6 +347,8 @@ function linesForDeterministicComparison(result: Awaited<ReturnType<typeof runEn
 async function main(): Promise<void> {
   const baselinePath = path.join(TEST_IMAGE_DIR, JOB.baselineFile);
   const stagedPath = path.join(TEST_IMAGE_DIR, JOB.stagedFile);
+  await downloadIfMissing((JOB as typeof JOB & { baselineUrl?: string }).baselineUrl, baselinePath);
+  await downloadIfMissing((JOB as typeof JOB & { stagedUrl?: string }).stagedUrl, stagedPath);
   await fs.access(baselinePath);
   await fs.access(stagedPath);
 
@@ -301,12 +395,12 @@ async function main(): Promise<void> {
     "",
     "---",
     "",
-    "## Guided Staged Wall Observations",
+    "## Gemini Observations Summary",
     ...(result.initialAdvisoryStageExtraction ? [result.initialAdvisoryStageExtraction] : ["(not available)"]),
     "",
     "---",
     "",
-    "## Initial Guided Staged Wall Observations",
+    "## Gemini Observations - Initial Wall Facts",
     ...linesForWallVerifications(result.initialStagedWallVerifications || []),
     "",
     "---",
@@ -321,12 +415,12 @@ async function main(): Promise<void> {
     "",
     "---",
     "",
-    "## Final Guided Staged Observation",
+    "## Gemini Observations - Final Summary",
     ...(result.advisoryStageExtraction ? [result.advisoryStageExtraction] : ["(not available)"]),
     "",
     "---",
     "",
-    "## Final Guided Staged Wall Observations",
+    "## Gemini Observations - Final Wall Facts",
     ...linesForWallVerifications(result.stagedWallVerifications || []),
     "",
     "---",
@@ -336,7 +430,7 @@ async function main(): Promise<void> {
     "",
     "---",
     "",
-    "## Deterministic Structural Interpretations",
+    "## Deterministic Interpretation",
     ...linesForDeterministicInterpretations(result),
     "",
     "---",

@@ -2,7 +2,7 @@
  * Envelope Validator Diagnostic Replay
  * 
  * Replays all production jobs with local Stage 1A/Stage 2 image pairs
- * Full decision path tracing: baseline → descriptors → geometric → semantic → merge → result
+ * Full decision path tracing: baseline → descriptors → observation extraction → deterministic interpretation → result
  * 
  * This is a DIAGNOSTIC PASS ONLY - no code modifications
  */
@@ -67,7 +67,55 @@ const TEST_JOBS = [
     stagedFile: "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2-stage2.jpg",
     notes: "Expected PASS: Same room envelope",
   },
+  {
+    label: "job_4ceef035",
+    jobId: "job_4ceef035-b334-489c-bf91-3591fa703257",
+    imageId: "img_13682e51-d7fd-4900-9edc-1cffc8c4cd99",
+    expectedStatus: "pass",
+    baselineFile: "job_4ceef035-stage1A.jpg",
+    stagedFile: "job_4ceef035-stage2.webp",
+    baselineUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782706114147-realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-1a-delivery.jpg",
+    stagedUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_4ceef035-b334-489c-bf91-3591fa703257/realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260629%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260629T040901Z&X-Amz-Expires=86400&X-Amz-Signature=9ba4d12109119c0d5211dc5649079afc760ebdb74e84741fe656d7ffd8a42648&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
+    notes: "Expected PASS: Sixth benchmark recovered from attached worker logs",
+  },
 ];
+
+async function fileExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function downloadIfMissing(url: string | undefined, destinationPath: string): Promise<void> {
+  if (!url) return;
+  if (await fileExists(destinationPath)) return;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download benchmark artifact: ${response.status} ${response.statusText}`);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  await fs.mkdir(path.dirname(destinationPath), { recursive: true });
+  await fs.writeFile(destinationPath, bytes);
+}
+
+async function resolveImagePairPaths(testImageDir: string, testJob: typeof TEST_JOBS[number]): Promise<{ baselinePath: string; stagedPath: string }> {
+  const baselinePath = path.join(testImageDir, testJob.baselineFile);
+  const stagedPath = path.join(testImageDir, testJob.stagedFile);
+
+  if (await fileExists(baselinePath) && await fileExists(stagedPath)) {
+    return { baselinePath, stagedPath };
+  }
+
+  await downloadIfMissing((testJob as any).baselineUrl, baselinePath);
+  await downloadIfMissing((testJob as any).stagedUrl, stagedPath);
+
+  await fs.access(baselinePath);
+  await fs.access(stagedPath);
+  return { baselinePath, stagedPath };
+}
 
 interface DecisionPathTrace {
   stage: string;
@@ -109,22 +157,27 @@ interface DiagnosticResult {
     };
   };
 
-  // Gemini semantic response
-  geminiResponse: {
-    status: string;
+  // Observation extraction
+  observationExtraction: {
+    modelStatus: string;
     reason: string;
     confidence: number;
     issueType: string;
     advisorySignals: string[];
+    stagedWallVerifications: any[];
+    additionalArchitecturalEvidence: Record<string, any> | null;
+    rawObservationJson: string;
   };
 
-  // Decision merge
-  decisionMerge: {
+  // Deterministic decisioning
+  deterministicDecision: {
     geometricSignal: string;
-    semanticSignal: string;
+    structuralSignal: string;
     hardFail: boolean;
-    mergedStatus: string;
+    finalStatus: string;
+    finalReason: string;
     mergeLogic: string;
+    deterministicStructuralInterpretations: any[];
   };
 
   // Final result
@@ -169,8 +222,7 @@ async function runDiagnosticReplay() {
 
     try {
       const ctx = createMockContext(testJob.jobId);
-      const baselinePath = path.join(TEST_IMAGE_DIR, testJob.baselineFile);
-      const stagedPath = path.join(TEST_IMAGE_DIR, testJob.stagedFile);
+      const { baselinePath, stagedPath } = await resolveImagePairPaths(TEST_IMAGE_DIR, testJob);
 
       // Verify files exist
       await fs.access(baselinePath);
@@ -275,20 +327,25 @@ async function runDiagnosticReplay() {
           },
         },
 
-        geminiResponse: {
-          status: validationResult.status || "unknown",
+        observationExtraction: {
+          modelStatus: validationResult.status || "unknown",
           reason: (validationResult as any).reason || "",
           confidence: validationResult.confidence || 0,
           issueType: validationResult.issueType || "none",
           advisorySignals: validationResult.advisorySignals || [],
+          stagedWallVerifications: (validationResult as any).stagedWallVerifications || [],
+          additionalArchitecturalEvidence: (validationResult as any).additionalArchitecturalEvidence || null,
+          rawObservationJson: (validationResult as any).guidedObservationRawGeminiJson || "",
         },
 
-        decisionMerge: {
+        deterministicDecision: {
           geometricSignal: (validationResult as any).verticalEdgeLoss ? "GEOMETRIC_FAILURE" : "GEOMETRIC_OK",
-          semanticSignal: validationResult.status === "pass" ? "SEMANTIC_PASS" : "SEMANTIC_FAIL",
+          structuralSignal: validationResult.status === "pass" ? "DETERMINISTIC_PASS" : "DETERMINISTIC_FAIL",
           hardFail: validationResult.hardFail || false,
-          mergedStatus: validationResult.status || "unknown",
-          mergeLogic: "hardFail overrides all; else use semantic decision",
+          finalStatus: validationResult.status || "unknown",
+          finalReason: (validationResult as any).reason || "",
+          mergeLogic: "hard-fail integrity checks override; otherwise software-determined structural interpretations decide the outcome",
+          deterministicStructuralInterpretations: (validationResult as any).deterministicStructuralInterpretations || [],
         },
 
         actualStatus,
@@ -318,19 +375,27 @@ async function runDiagnosticReplay() {
             },
           },
           {
-            stage: "3_semantic_review",
-            phase: "gemini_flash",
+            stage: "3_observation_extraction",
+            phase: "gemini_guided_wall_observations",
             findings: {
-              status: validationResult.status,
-              reason: (validationResult as any).reason,
+              stagedWallVerifications: ((validationResult as any).stagedWallVerifications || []).length,
+              additionalArchitecturalEvidence: (validationResult as any).additionalArchitecturalEvidence || null,
             },
           },
           {
-            stage: "4_decision_merge",
+            stage: "4_deterministic_interpretation",
+            phase: "software_structural_reasoning",
+            findings: {
+              interpretations: (validationResult as any).deterministicStructuralInterpretations || [],
+            },
+          },
+          {
+            stage: "5_final_software_decision",
             phase: "final_decision",
             findings: {
               hardFail: validationResult.hardFail,
               finalStatus: validationResult.status,
+              finalReason: (validationResult as any).reason,
             },
           },
         ],
@@ -348,8 +413,8 @@ async function runDiagnosticReplay() {
         baseline: { openingsCount: 0, fixturesCount: 0, wallDescriptorsCount: 0, wallDescriptors: [], graphConfidence: 0, baselineMethod: "error" },
         fullyInterpolatedPrompt: "",
         geometricMetrics: { verticalEdgeLoss: false, cornerPersistenceFailure: false, worstRetention: "N/A", junctionCount: 0, beforeEdges: 0, afterEdges: 0, deterministic: { verticalEdgeDeltaTriggered: false, reason: error.message } },
-        geminiResponse: { status: "error", reason: error.message, confidence: 0, issueType: "error", advisorySignals: [] },
-        decisionMerge: { geometricSignal: "ERROR", semanticSignal: "ERROR", hardFail: false, mergedStatus: "error", mergeLogic: "ERROR" },
+        observationExtraction: { modelStatus: "error", reason: error.message, confidence: 0, issueType: "error", advisorySignals: [], stagedWallVerifications: [], additionalArchitecturalEvidence: null, rawObservationJson: "" },
+        deterministicDecision: { geometricSignal: "ERROR", structuralSignal: "ERROR", hardFail: false, finalStatus: "error", finalReason: error.message, mergeLogic: "ERROR", deterministicStructuralInterpretations: [] },
         actualStatus: "error",
         correct: false,
         confidence: 0,
