@@ -27,6 +27,7 @@ const TEST_JOBS = [
     jobId: "job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023",
     imageId: "img_aced9a07-fccd-4e24-b0ee-139d5bbcde1d",
     expectedStatus: "fail",
+    expectedDecision: "fail",
     baselineFile: "1782337783609-realenhance-job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023-1782337782818-ijp1zscim9.jpg",
     stagedFile: "1782337783609-realenhance-job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023-1782337782818-ijp1zscim9-stage2.jpg",
     notes: "Expected FAIL: Envelope anomaly detection",
@@ -36,6 +37,7 @@ const TEST_JOBS = [
     jobId: "job_bb029607-dcd8-4614-997c-406d2ed33142",
     imageId: "img_e75a5903-34d3-42a2-b93f-b29314a5138d",
     expectedStatus: "fail",
+    expectedDecision: "advisory",
     baselineFile: "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
     stagedFile: "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c-stage2.jpg",
     notes: "Expected FAIL: Envelope anomaly detection",
@@ -45,6 +47,7 @@ const TEST_JOBS = [
     jobId: "job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10",
     imageId: "img_a4f41fe0-ecc8-4bef-9a9b-0715d4e3963c",
     expectedStatus: "pass",
+    expectedDecision: "pass",
     baselineFile: "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
     stagedFile: "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or-stage2.jpg",
     notes: "Expected PASS: No envelope change",
@@ -54,6 +57,7 @@ const TEST_JOBS = [
     jobId: "job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1",
     imageId: "img_0c2e8e0d-2e87-4ae2-8b31-9c8c5e8c6f4a",
     expectedStatus: "pass",
+    expectedDecision: "advisory",
     baselineFile: "1782337783586-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap.jpg",
     stagedFile: "1782337783586-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap-stage2.jpg",
     notes: "Expected PASS: No envelope modification",
@@ -63,6 +67,7 @@ const TEST_JOBS = [
     jobId: "job_81e485e7-e3ce-4283-9f5e-e4f931d784bc",
     imageId: "img_228b053c-a06a-4f01-a3bf-123b2deaf8eb",
     expectedStatus: "pass",
+    expectedDecision: "pass",
     baselineFile: "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2.jpg",
     stagedFile: "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2-stage2.jpg",
     notes: "Expected PASS: Same room envelope",
@@ -72,6 +77,7 @@ const TEST_JOBS = [
     jobId: "job_4ceef035-b334-489c-bf91-3591fa703257",
     imageId: "img_13682e51-d7fd-4900-9edc-1cffc8c4cd99",
     expectedStatus: "pass",
+    expectedDecision: "pass",
     baselineFile: "job_4ceef035-stage1A.jpg",
     stagedFile: "job_4ceef035-stage2.webp",
     baselineUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782706114147-realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-1a-delivery.jpg",
@@ -127,6 +133,7 @@ interface DiagnosticResult {
   label: string;
   jobId: string;
   expectedStatus: string;
+  expectedDecision?: "pass" | "advisory" | "fail";
   baselineFile: string;
   stagedFile: string;
   
@@ -138,6 +145,11 @@ interface DiagnosticResult {
     wallDescriptors: Array<{ wallIndex: number; visibility: string; description: string }>;
     graphConfidence: number;
     baselineMethod: string;
+    baselineExtractionStrategy?: string;
+    fallbackExtractionInvoked?: boolean;
+    baselineReliability?: string;
+    baselineConfidence?: number;
+    baselineConfidenceDegraded?: boolean;
   };
 
   // Interpolated prompt
@@ -178,10 +190,29 @@ interface DiagnosticResult {
     finalReason: string;
     mergeLogic: string;
     deterministicStructuralInterpretations: any[];
+    architecturalObservations: any[];
+    rawInterpretationCount: number;
+    weightedEvidenceSummary: {
+      previousModelEvidence: string[];
+      newModelEvidence: string[];
+    };
+    materiallyUsableWallSurfaceInterpretations: Array<{
+      generated: boolean;
+      wallSemanticId?: string;
+      wallDisplayName?: string;
+      supportingGeometricInterpretations: string[];
+      corroboratingEvidence: string[];
+      confidence: string;
+      decision: string;
+      summary: string;
+    }>;
   };
 
   // Final result
   actualStatus: string;
+  actualDecision?: "pass" | "advisory" | "fail";
+  previousDecision?: "pass" | "advisory" | "fail";
+  verificationRequests?: string[];
   correct: boolean;
   confidence: number;
   issueType: string;
@@ -190,6 +221,152 @@ interface DiagnosticResult {
 
   // Diagnostic trace
   decisionPath: DecisionPathTrace[];
+}
+
+function computeRawInterpretationPolicy(validationResult: any): {
+  decision: "pass" | "advisory" | "fail";
+  policyEvidence: string[];
+} {
+  const interpretations = Array.isArray(validationResult?.deterministicStructuralInterpretations)
+    ? validationResult.deterministicStructuralInterpretations
+    : [];
+  const significant = interpretations.filter((item: any) => item?.severity === "significant");
+  const advisory = interpretations.filter((item: any) => item?.severity === "advisory");
+  const structuralFailCategories = new Set([
+    "wall_plane_introduced",
+    "wall_plane_removed",
+    "return_wall_introduced",
+    "return_wall_removed",
+    "recess_introduced",
+    "recess_removed",
+    "adjoining_wall_introduced",
+    "adjoining_wall_removed",
+  ]);
+
+  const failInterpretations = significant.filter((item: any) => {
+    const explicitlyStructural = item?.classification === "structural_addition" || item?.decision === "fail";
+    const structurallyMaterialCategory = structuralFailCategories.has(String(item?.category || ""));
+    const supportingFacts = Array.isArray(item?.supportingFacts) ? item.supportingFacts.length : 0;
+    const corroboratingEvidence = Array.isArray(item?.corroboratingEvidence) ? item.corroboratingEvidence.length : 0;
+    const highSupport = supportingFacts >= 3 || corroboratingEvidence >= 1;
+    return explicitlyStructural && structurallyMaterialCategory && highSupport;
+  });
+
+  if (failInterpretations.length > 0) {
+    return {
+      decision: "fail",
+      policyEvidence: failInterpretations.map((item: any) => `${item.category}:${item.summary}`),
+    };
+  }
+
+  const advisorySignals = Array.isArray(validationResult?.advisorySignals) ? validationResult.advisorySignals : [];
+  const policyEvidence = [
+    ...advisory.map((item: any) => `${item.category}:${item.summary}`),
+    ...significant.map((item: any) => `${item.category}:${item.summary}`),
+    ...advisorySignals.map((signal: string) => `signal:${signal}`),
+  ];
+
+  if (validationResult?.verticalEdgeDelta?.cornerPersistenceFailure) {
+    policyEvidence.push(`signal:corner_persistence_failure:${Number(validationResult.verticalEdgeDelta.worstRetention || 0).toFixed(3)}`);
+  }
+  if (validationResult?.verticalEdgeDelta?.verticalEdgeLossDetected) {
+    policyEvidence.push("signal:vertical_edge_loss_detected");
+  }
+
+  const hasPolicyEvidence = policyEvidence.length > 0
+    || significant.length > 0
+    || advisorySignals.length > 0
+    || !!validationResult?.verticalEdgeDelta?.cornerPersistenceFailure
+    || !!validationResult?.verticalEdgeDelta?.verticalEdgeLossDetected;
+
+  if (hasPolicyEvidence) {
+    return {
+      decision: "advisory",
+      policyEvidence,
+    };
+  }
+  return {
+    decision: "pass",
+    policyEvidence: ["no_meaningful_structural_concern"],
+  };
+}
+
+function computeCollapsedObservationPolicy(validationResult: any): {
+  decision: "pass" | "advisory" | "fail";
+  policyEvidence: string[];
+} {
+  const interpretations = Array.isArray(validationResult?.deterministicStructuralInterpretations)
+    ? validationResult.deterministicStructuralInterpretations
+    : [];
+  const grouped = new Map<string, any[]>();
+
+  const observationKeyFor = (item: any): string => {
+    const wall = String(item?.wallSemanticId || "global");
+    const category = String(item?.category || "unknown");
+    if (["corner_introduced", "wall_plane_introduced", "return_wall_introduced", "adjoining_wall_introduced"].includes(category)) {
+      return `adjacent_wall_geometry_introduced:${wall}`;
+    }
+    if (["corner_removed", "return_wall_removed", "adjoining_wall_removed"].includes(category)) {
+      return `adjacent_wall_geometry_removed:${wall}`;
+    }
+    if (["wall_shortened", "wall_extended"].includes(category)) {
+      return `wall_termination_changed:${wall}`;
+    }
+    return `${category}:${wall}`;
+  };
+
+  for (const interpretation of interpretations) {
+    const key = observationKeyFor(interpretation);
+    const bucket = grouped.get(key) || [];
+    bucket.push(interpretation);
+    grouped.set(key, bucket);
+  }
+
+  const observations = [...grouped.entries()].map(([key, items]) => {
+    const fail = items.some((item: any) => item?.severity === "significant" && item?.decision === "fail");
+    const support = items.reduce((count: number, item: any) => count + (Array.isArray(item?.supportingFacts) ? item.supportingFacts.length : 0) + (Array.isArray(item?.corroboratingEvidence) ? item.corroboratingEvidence.length : 0), 0);
+    const summary = String(items[0]?.summary || key);
+    return {
+      key,
+      fail,
+      support,
+      summary,
+      advisory: items.some((item: any) => item?.severity === "advisory") || !fail,
+    };
+  });
+
+  const failObservations = observations.filter((item) => item.fail && item.support > 0);
+  if (failObservations.length > 0) {
+    return {
+      decision: "fail",
+      policyEvidence: failObservations.map((item) => `${item.key}:${item.summary}`),
+    };
+  }
+
+  const advisorySignals = Array.isArray(validationResult?.advisorySignals) ? validationResult.advisorySignals : [];
+  const policyEvidence = [
+    ...observations.map((item) => `${item.key}:${item.summary}`),
+    ...advisorySignals.map((signal: string) => `signal:${signal}`),
+  ];
+
+  if (validationResult?.verticalEdgeDelta?.cornerPersistenceFailure) {
+    policyEvidence.push(`signal:corner_persistence_failure:${Number(validationResult.verticalEdgeDelta.worstRetention || 0).toFixed(3)}`);
+  }
+  if (validationResult?.verticalEdgeDelta?.verticalEdgeLossDetected) {
+    policyEvidence.push("signal:vertical_edge_loss_detected");
+  }
+
+  if (policyEvidence.length > 0) {
+    return {
+      decision: "advisory",
+      policyEvidence,
+    };
+  }
+
+  return {
+    decision: "pass",
+    policyEvidence: ["no_meaningful_structural_concern"],
+  };
 }
 
 function createMockContext(jobId: string): PipelineContext {
@@ -270,10 +447,53 @@ async function runDiagnosticReplay() {
       );
 
       const actualStatus = validationResult.status || "unknown";
+      const actualDecision = (validationResult as any).decision || (actualStatus === "fail" ? "fail" : "pass");
+      const previousPolicy = computeCollapsedObservationPolicy(validationResult as any);
+      const currentPolicy = computeRawInterpretationPolicy(validationResult as any);
+      const previousDecision = previousPolicy.decision;
+      const rawInterpretationCount = Array.isArray((validationResult as any).deterministicStructuralInterpretations)
+        ? (validationResult as any).deterministicStructuralInterpretations.length
+        : 0;
+      const materiallyUsableInterpretations = ((validationResult as any).deterministicStructuralInterpretations || [])
+        .filter((item: any) => item?.category === "materially_usable_wall_surface_introduced")
+        .map((item: any) => {
+          const supportingFacts = Array.isArray(item?.supportingFacts) ? item.supportingFacts : [];
+          const supportingGeo = supportingFacts
+            .find((fact: string) => fact.startsWith("supporting_geometric_interpretations="))
+            ?.replace("supporting_geometric_interpretations=", "")
+            .split(",")
+            .map((value: string) => value.trim())
+            .filter((value: string) => value.length > 0) || [];
+          return {
+            generated: true,
+            wallSemanticId: item?.wallSemanticId,
+            wallDisplayName: item?.wallDisplayName,
+            supportingGeometricInterpretations: supportingGeo,
+            corroboratingEvidence: Array.isArray(item?.corroboratingEvidence) ? item.corroboratingEvidence : [],
+            confidence: String(item?.confidence || "unknown"),
+            decision: String(item?.decision || "unknown"),
+            summary: String(item?.summary || ""),
+          };
+        });
+      const architecturalObservationsGenerated = Array.isArray((validationResult as any).architecturalObservations)
+        && (validationResult as any).architecturalObservations.length > 0;
+      const advisoryOnlyVerificationRequests = (actualDecision as string) === "advisory"
+        ? ((validationResult as any).verificationRequests || [])
+        : [];
       console.log(`   ✓ Validator decision: ${actualStatus.toUpperCase()}`);
+      console.log(`   ✓ Envelope policy decision: ${String(actualDecision).toUpperCase()}`);
+      console.log(`   ✓ Previous (collapsed observation) decision: ${String(previousDecision).toUpperCase()}`);
+      console.log(`   ✓ Raw interpretation count: ${rawInterpretationCount}`);
+      console.log(`   ✓ Architectural observations generated: ${architecturalObservationsGenerated ? "YES" : "NO"}`);
       console.log(`   ✓ Confidence: ${validationResult.confidence}`);
       console.log(`   ✓ Hard fail: ${validationResult.hardFail}`);
       console.log(`   ✓ Issue type: ${validationResult.issueType || "none"}`);
+      if (Array.isArray(advisoryOnlyVerificationRequests) && advisoryOnlyVerificationRequests.length > 0) {
+        console.log(`   ✓ Verification requests:`);
+        advisoryOnlyVerificationRequests.forEach((request: string) => {
+          console.log(`     - ${request}`);
+        });
+      }
       
       if (validationResult.advisorySignals && validationResult.advisorySignals.length > 0) {
         console.log(`   ✓ Advisory signals:`);
@@ -296,6 +516,7 @@ async function runDiagnosticReplay() {
         label: testJob.label,
         jobId: testJob.jobId,
         expectedStatus: testJob.expectedStatus,
+        expectedDecision: (testJob as any).expectedDecision,
         baselineFile: testJob.baselineFile,
         stagedFile: testJob.stagedFile,
 
@@ -309,7 +530,12 @@ async function runDiagnosticReplay() {
             description: wd.description,
           })),
           graphConfidence: (validationResult as any).graphConfidence || 0,
-          baselineMethod: "graph_consensus",
+          baselineMethod: (baseline as any)?.graphMeta?.baselineMethod || "graph_consensus",
+          baselineExtractionStrategy: (baseline as any)?.observationMeta?.baselineExtractionStrategy || (baseline as any)?.graphMeta?.baselineExtractionStrategy,
+          fallbackExtractionInvoked: !!((baseline as any)?.observationMeta?.fallbackInvoked || (baseline as any)?.graphMeta?.fallbackInvoked),
+          baselineReliability: (baseline as any)?.observationMeta?.baselineReliability || (baseline as any)?.graphMeta?.baselineReliability,
+          baselineConfidence: (baseline as any)?.observationMeta?.baselineConfidence || (baseline as any)?.graphMeta?.baselineConfidence,
+          baselineConfidenceDegraded: !!((baseline as any)?.observationMeta?.baselineConfidenceDegraded || (baseline as any)?.graphMeta?.baselineConfidenceDegraded),
         },
 
         fullyInterpolatedPrompt: interpolatedPrompt,
@@ -346,9 +572,19 @@ async function runDiagnosticReplay() {
           finalReason: (validationResult as any).reason || "",
           mergeLogic: "hard-fail integrity checks override; otherwise software-determined structural interpretations decide the outcome",
           deterministicStructuralInterpretations: (validationResult as any).deterministicStructuralInterpretations || [],
+          architecturalObservations: (validationResult as any).architecturalObservations || [],
+          rawInterpretationCount,
+          weightedEvidenceSummary: {
+            previousModelEvidence: previousPolicy.policyEvidence,
+            newModelEvidence: currentPolicy.policyEvidence,
+          },
+          materiallyUsableWallSurfaceInterpretations: materiallyUsableInterpretations,
         },
 
         actualStatus,
+        actualDecision: actualDecision as "pass" | "advisory" | "fail",
+        previousDecision,
+        verificationRequests: advisoryOnlyVerificationRequests,
         correct,
         confidence: validationResult.confidence || 0,
         issueType: validationResult.issueType || "none",
@@ -387,6 +623,7 @@ async function runDiagnosticReplay() {
             phase: "software_structural_reasoning",
             findings: {
               interpretations: (validationResult as any).deterministicStructuralInterpretations || [],
+              architecturalObservations: (validationResult as any).architecturalObservations || [],
             },
           },
           {
@@ -408,14 +645,33 @@ async function runDiagnosticReplay() {
         label: testJob.label,
         jobId: testJob.jobId,
         expectedStatus: testJob.expectedStatus,
+        expectedDecision: (testJob as any).expectedDecision,
         baselineFile: testJob.baselineFile,
         stagedFile: testJob.stagedFile,
         baseline: { openingsCount: 0, fixturesCount: 0, wallDescriptorsCount: 0, wallDescriptors: [], graphConfidence: 0, baselineMethod: "error" },
         fullyInterpolatedPrompt: "",
         geometricMetrics: { verticalEdgeLoss: false, cornerPersistenceFailure: false, worstRetention: "N/A", junctionCount: 0, beforeEdges: 0, afterEdges: 0, deterministic: { verticalEdgeDeltaTriggered: false, reason: error.message } },
         observationExtraction: { modelStatus: "error", reason: error.message, confidence: 0, issueType: "error", advisorySignals: [], stagedWallVerifications: [], additionalArchitecturalEvidence: null, rawObservationJson: "" },
-        deterministicDecision: { geometricSignal: "ERROR", structuralSignal: "ERROR", hardFail: false, finalStatus: "error", finalReason: error.message, mergeLogic: "ERROR", deterministicStructuralInterpretations: [] },
+        deterministicDecision: {
+          geometricSignal: "ERROR",
+          structuralSignal: "ERROR",
+          hardFail: false,
+          finalStatus: "error",
+          finalReason: error.message,
+          mergeLogic: "ERROR",
+          deterministicStructuralInterpretations: [],
+          architecturalObservations: [],
+          rawInterpretationCount: 0,
+          weightedEvidenceSummary: {
+            previousModelEvidence: [],
+            newModelEvidence: [],
+          },
+          materiallyUsableWallSurfaceInterpretations: [],
+        },
         actualStatus: "error",
+        actualDecision: "advisory",
+        previousDecision: "advisory",
+        verificationRequests: [],
         correct: false,
         confidence: 0,
         issueType: "error",
@@ -460,6 +716,33 @@ async function runDiagnosticReplay() {
 
   console.log(`${"─".repeat(90)}\n`);
 
+  console.log(`Envelope Decision Policy Comparison`);
+  console.log(`${"─".repeat(120)}`);
+  console.log(`| Job ID          | Expected Decision | Previous Decision | New Decision | Verification Requests |`);
+  console.log(`${"─".repeat(120)}`);
+  for (const result of results) {
+    const expectedDecision = (result.expectedDecision || result.expectedStatus || "unknown").padEnd(17);
+    const previousDecision = (result.previousDecision || "unknown").padEnd(17);
+    const newDecision = (result.actualDecision || result.actualStatus || "unknown").padEnd(12);
+    const requests = (result.verificationRequests || []).length;
+    const requestLabel = (requests > 0 ? `${requests} request(s)` : "none").padEnd(21);
+    console.log(`| ${result.label.padEnd(15)} | ${expectedDecision} | ${previousDecision} | ${newDecision} | ${requestLabel} |`);
+  }
+  console.log(`${"─".repeat(120)}\n`);
+
+  console.log(`Architectural Observations & Baseline Strategy`);
+  console.log(`${"─".repeat(140)}`);
+  console.log(`| Job ID          | Observations | Fallback | Strategy                  | Reliability |`);
+  console.log(`${"─".repeat(140)}`);
+  for (const result of results) {
+    const observationCount = (result.deterministicDecision.architecturalObservations || []).length;
+    const fallback = result.baseline.fallbackExtractionInvoked ? "YES" : "NO";
+    const strategy = (result.baseline.baselineExtractionStrategy || result.baseline.baselineMethod || "unknown").slice(0, 24).padEnd(24);
+    const reliability = (result.baseline.baselineReliability || "unknown").padEnd(11);
+    console.log(`| ${result.label.padEnd(15)} | ${String(observationCount).padEnd(12)} | ${fallback.padEnd(8)} | ${strategy} | ${reliability} |`);
+  }
+  console.log(`${"─".repeat(140)}\n`);
+
   // Save detailed report
   const reportDir = path.resolve(path.join(__dirname, "../reports"));
   const reportPath = path.join(reportDir, "envelope-diagnostic-full-trace.json");
@@ -488,11 +771,21 @@ async function runDiagnosticReplay() {
         .map((r) => ({
           jobId: r.label,
           expectedStatus: r.expectedStatus,
+          expectedDecision: r.expectedDecision,
           actualStatus: r.actualStatus,
+          actualDecision: r.actualDecision,
           decisionPath: r.decisionPath,
           geometricFindings: r.geometricMetrics.deterministic,
-          semanticFindings: r.geminiResponse,
-          mergeLogic: r.decisionMerge,
+          semanticFindings: {
+            status: r.actualStatus,
+            decision: r.actualDecision,
+            reason: r.observationExtraction.reason,
+            confidence: r.observationExtraction.confidence,
+            issueType: r.observationExtraction.issueType,
+            advisorySignals: r.observationExtraction.advisorySignals,
+            verificationRequests: r.verificationRequests || [],
+          },
+          mergeLogic: r.deterministicDecision,
           analysisNote:
             r.expectedStatus === "fail" && r.actualStatus === "pass"
               ? "Geometric failure detected but semantic decision overrode to PASS"
@@ -534,20 +827,20 @@ async function runDiagnosticReplay() {
       console.log(`   • Edge count delta: ${result.geometricMetrics.beforeEdges} → ${result.geometricMetrics.afterEdges}`);
 
       console.log(`\n   SEMANTIC REVIEW (GEMINI):`);
-      console.log(`   • Decision: ${result.geminiResponse.status.toUpperCase()}`);
-      console.log(`   • Reason: ${result.geminiResponse.reason}`);
-      console.log(`   • Confidence: ${result.geminiResponse.confidence}`);
-      console.log(`   • Issue type: ${result.geminiResponse.issueType}`);
-      if (result.geminiResponse.advisorySignals.length > 0) {
-        console.log(`   • Advisory signals: ${result.geminiResponse.advisorySignals.join(", ")}`);
+      console.log(`   • Decision: ${String(result.actualDecision || result.actualStatus).toUpperCase()}`);
+      console.log(`   • Reason: ${result.observationExtraction.reason}`);
+      console.log(`   • Confidence: ${result.observationExtraction.confidence}`);
+      console.log(`   • Issue type: ${result.observationExtraction.issueType}`);
+      if ((result.observationExtraction.advisorySignals || []).length > 0) {
+        console.log(`   • Advisory signals: ${result.observationExtraction.advisorySignals.join(", ")}`);
       }
 
       console.log(`\n   DECISION MERGE:`);
-      console.log(`   • Geometric signal: ${result.decisionMerge.geometricSignal}`);
-      console.log(`   • Semantic signal: ${result.decisionMerge.semanticSignal}`);
-      console.log(`   • Hard fail flag: ${result.decisionMerge.hardFail}`);
-      console.log(`   • Merge logic: ${result.decisionMerge.mergeLogic}`);
-      console.log(`   • Final merged status: ${result.decisionMerge.mergedStatus}\n`);
+      console.log(`   • Geometric signal: ${result.deterministicDecision.geometricSignal}`);
+      console.log(`   • Semantic signal: ${result.deterministicDecision.structuralSignal}`);
+      console.log(`   • Hard fail flag: ${result.deterministicDecision.hardFail}`);
+      console.log(`   • Merge logic: ${result.deterministicDecision.mergeLogic}`);
+      console.log(`   • Final merged status: ${result.deterministicDecision.finalStatus}\n`);
 
       console.log(`   ROOT CAUSE ANALYSIS:`);
       if (result.expectedStatus === "fail" && result.actualStatus === "pass") {

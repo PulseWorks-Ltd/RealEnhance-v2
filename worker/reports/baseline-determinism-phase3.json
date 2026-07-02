@@ -1,0 +1,819 @@
+{
+  "title": "Baseline Determinism Phase 3 - Observation-First Canonical Graph",
+  "generatedAt": "2026-07-01T01:12:23.589Z",
+  "overall": {
+    "totalImages": 6,
+    "inventoryStableImages": 1,
+    "observationStableImages": 0,
+    "graphStableImages": 0,
+    "identityStableImages": 3,
+    "confidenceStableImages": 4,
+    "openingStableImages": 2,
+    "inventoryDriftImages": 5,
+    "observationDriftImages": 6,
+    "graphBuilderDriftImages": 0,
+    "identityDriftImages": 3,
+    "confidenceDriftImages": 2
+  },
+  "jobs": [
+    {
+      "label": "job_c11a8e7c",
+      "jobId": "job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023",
+      "baselineFile": "1782337783609-realenhance-job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023-1782337782818-ijp1zscim9.jpg",
+      "stability": {
+        "inventoryStable": true,
+        "observationStable": false,
+        "graphStable": false,
+        "identityStable": true,
+        "confidenceStable": true,
+        "openingStable": false
+      },
+      "attribution": [
+        "observation_drift"
+      ],
+      "diagnostics": {
+        "inventory": {
+          "run1": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [],
+            "architecturalFeatures": []
+          },
+          "run2": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [],
+            "architecturalFeatures": []
+          }
+        },
+        "observationValidation": {
+          "run1": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ]
+          },
+          "run2": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ]
+          }
+        },
+        "canonicalGraph": {
+          "run1": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 1
+          },
+          "run2": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 1
+          }
+        }
+      },
+      "hashes": {
+        "inventoryHashRun1": "00a38fa10c4175d0bec324e5e90e6d9bd811906cbc21aa52e4c0b589f2ff163a",
+        "inventoryHashRun2": "00a38fa10c4175d0bec324e5e90e6d9bd811906cbc21aa52e4c0b589f2ff163a",
+        "observationHashRun1": "6c1e8a8c62f80c635524f81f80a4c91ae58ca0e0aeafed242b68b6dfba11ec0f",
+        "observationHashRun2": "db573395b4476cf0bf3784d80ead7d335888255fa342a4ce30db173af01843a2",
+        "graphHashRun1": "5ee17ea97a661e2e03f31517d7fa1645214c41af62591d430f4326c659088c3f",
+        "graphHashRun2": "907fa2c657d69dcb8d6bb99c95c6765aed79f9eb44fdc9ece51de4814ff8143b",
+        "identityHashRun1": "536c5acf4181c3372cd46208de3a73d14586c1b54dfd65d58fd90d3dfea20dd4",
+        "identityHashRun2": "536c5acf4181c3372cd46208de3a73d14586c1b54dfd65d58fd90d3dfea20dd4"
+      }
+    },
+    {
+      "label": "job_bb029607",
+      "jobId": "job_bb029607-dcd8-4614-997c-406d2ed33142",
+      "baselineFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+      "stability": {
+        "inventoryStable": false,
+        "observationStable": false,
+        "graphStable": false,
+        "identityStable": false,
+        "confidenceStable": true,
+        "openingStable": true
+      },
+      "attribution": [
+        "observation_drift",
+        "inventory_drift",
+        "identity_drift"
+      ],
+      "diagnostics": {
+        "inventory": {
+          "run1": {
+            "openings": [
+              "door"
+            ],
+            "permanentFixtures": [
+              "recess"
+            ],
+            "architecturalFeatures": []
+          },
+          "run2": {
+            "openings": [
+              "door"
+            ],
+            "permanentFixtures": [
+              "ac_unit",
+              "recess"
+            ],
+            "architecturalFeatures": []
+          }
+        },
+        "observationValidation": {
+          "run1": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [
+              "fixture:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:door",
+              "wall_3:wall_plane"
+            ]
+          },
+          "run2": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [
+              "fixture:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:door",
+              "wall_3:ac_unit"
+            ]
+          }
+        },
+        "canonicalGraph": {
+          "run1": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "door_1",
+                "primaryAnchorLabel": "door"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              },
+              {
+                "wallIndex": 2,
+                "canonicalWallId": "blank_wall_2",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:door",
+              "wall_3:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 0.96
+          },
+          "run2": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "door_1",
+                "primaryAnchorLabel": "door"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "ac_unit_1",
+                "primaryAnchorLabel": "ac_unit"
+              },
+              {
+                "wallIndex": 2,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:door",
+              "wall_3:ac_unit"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 0.96
+          }
+        }
+      },
+      "hashes": {
+        "inventoryHashRun1": "3e9c7bf1fdc9c5d949e4918b6a803f25c74edf5d9b49d973429fc718bd115e29",
+        "inventoryHashRun2": "76f1e8ef3997233c3febb9c89f2c22e1591cfc18178f00e4103916df6235dde9",
+        "observationHashRun1": "030541956f6fac47d8f4839f42560a5c800f33aaf5911abc69070418c70f3c4c",
+        "observationHashRun2": "ef138e6aad1ed0740f0f7505be7f862868d2fd70845faff624e44280787a3643",
+        "graphHashRun1": "fd3124a6f722abb94f4d9cc96669f7c6e5334e246556fc3dfc77c36f22385b5d",
+        "graphHashRun2": "a83969fb60760ebb129b0c5e052c4f356ccef6dfc4274ce6bd05c88e26500c52",
+        "identityHashRun1": "552772bca52206ee1f50df1758273664a142deb7cfea22518c7c9d4648405c29",
+        "identityHashRun2": "07a67d14469485ef05db848319ec399e65398d9f7c2193e5f33be8aecbfec182"
+      }
+    },
+    {
+      "label": "job_4a87f43b",
+      "jobId": "job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10",
+      "baselineFile": "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
+      "stability": {
+        "inventoryStable": false,
+        "observationStable": false,
+        "graphStable": false,
+        "identityStable": false,
+        "confidenceStable": true,
+        "openingStable": false
+      },
+      "attribution": [
+        "observation_drift",
+        "inventory_drift",
+        "identity_drift"
+      ],
+      "diagnostics": {
+        "inventory": {
+          "run1": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [
+              "door"
+            ],
+            "architecturalFeatures": []
+          },
+          "run2": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [],
+            "architecturalFeatures": []
+          }
+        },
+        "observationValidation": {
+          "run1": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:door",
+              "wall_2:window",
+              "wall_3:wall_plane"
+            ]
+          },
+          "run2": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:window",
+              "wall_3:wall_plane"
+            ]
+          }
+        },
+        "canonicalGraph": {
+          "run1": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "door_1",
+                "primaryAnchorLabel": "door"
+              },
+              {
+                "wallIndex": 2,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:door",
+              "wall_2:window",
+              "wall_3:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 1
+          },
+          "run2": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              },
+              {
+                "wallIndex": 2,
+                "canonicalWallId": "blank_wall_2",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:window",
+              "wall_3:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 1
+          }
+        }
+      },
+      "hashes": {
+        "inventoryHashRun1": "cf96b1f64f592ff9bc4c05f90fb404b4885b43869852a6bd9850fe20fd9aa44d",
+        "inventoryHashRun2": "00a38fa10c4175d0bec324e5e90e6d9bd811906cbc21aa52e4c0b589f2ff163a",
+        "observationHashRun1": "bee9c7dcd06c0caf859f255e98740442d0f2a5d5eec7799db329f6db3354bc3f",
+        "observationHashRun2": "36dbbf9ac722528b71d492ceaf9125f79fed6049c2e71ffca364d2cf99482168",
+        "graphHashRun1": "c46df21284b2c43213a2ce5c0c919c4910a0cd8153e93e008d1f8be253d497fa",
+        "graphHashRun2": "0c20d73ca58cdf3b75d27c792be8af975d6aa4a025955192bf376329b2a9256a",
+        "identityHashRun1": "2e0ca8fc56a2844cc9c9ad10ba9817c81ea69c402f0cf2a069476ffa1ea5b660",
+        "identityHashRun2": "9a8c9aced3e15a5a5fbf6d528c104697c3abd844768650d86d64e28f4d0e99c3"
+      }
+    },
+    {
+      "label": "job_dfbe98aa",
+      "jobId": "job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1",
+      "baselineFile": "1782337783586-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap.jpg",
+      "stability": {
+        "inventoryStable": false,
+        "observationStable": false,
+        "graphStable": false,
+        "identityStable": true,
+        "confidenceStable": true,
+        "openingStable": false
+      },
+      "attribution": [
+        "observation_drift",
+        "inventory_drift"
+      ],
+      "diagnostics": {
+        "inventory": {
+          "run1": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [
+              "recess"
+            ],
+            "architecturalFeatures": []
+          },
+          "run2": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [],
+            "architecturalFeatures": [
+              "recess"
+            ]
+          }
+        },
+        "observationValidation": {
+          "run1": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [
+              "fixture:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ]
+          },
+          "run2": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [
+              "feature:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ]
+          }
+        },
+        "canonicalGraph": {
+          "run1": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 0.96
+          },
+          "run2": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:window",
+              "wall_2:wall_plane"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 0.96
+          }
+        }
+      },
+      "hashes": {
+        "inventoryHashRun1": "23c6467496eb7046f52235abec02f49f507e8762d2a95df0ba4ee9e0fcea7c3c",
+        "inventoryHashRun2": "b2f13e95afef3deb298200c6c98f8ec18985ae2faaf6742ea058b0e1ebbb3e5b",
+        "observationHashRun1": "e1015d59666a19f2db3483d2af73134c5044052667bf7f8d398dfbe9766dc945",
+        "observationHashRun2": "32d6aec7df94be77a0577f78fc1d406d6229201d8cc2a5b08eccbc3601d0be7b",
+        "graphHashRun1": "179cbcabe9409da1100ca4c71a45d74e92d5b82abe77d860c16456fd0e386c5e",
+        "graphHashRun2": "371b564709a98f0d1a311124eb43dbfd8677c4bb7e1f557b7241685ef6140550",
+        "identityHashRun1": "536c5acf4181c3372cd46208de3a73d14586c1b54dfd65d58fd90d3dfea20dd4",
+        "identityHashRun2": "536c5acf4181c3372cd46208de3a73d14586c1b54dfd65d58fd90d3dfea20dd4"
+      }
+    },
+    {
+      "label": "job_81e485e7",
+      "jobId": "job_81e485e7-e3ce-4283-9f5e-e4f931d784bc",
+      "baselineFile": "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2.jpg",
+      "stability": {
+        "inventoryStable": false,
+        "observationStable": false,
+        "graphStable": false,
+        "identityStable": false,
+        "confidenceStable": false,
+        "openingStable": false
+      },
+      "attribution": [
+        "observation_drift",
+        "inventory_drift",
+        "identity_drift",
+        "confidence_drift"
+      ],
+      "diagnostics": {
+        "inventory": {
+          "run1": {
+            "openings": [
+              "door",
+              "walkthrough",
+              "window"
+            ],
+            "permanentFixtures": [
+              "ac_unit",
+              "built_in_cabinet",
+              "kitchen_island",
+              "recess"
+            ],
+            "architecturalFeatures": []
+          },
+          "run2": {
+            "openings": [
+              "door",
+              "walkthrough",
+              "window"
+            ],
+            "permanentFixtures": [
+              "built_in_cabinet",
+              "kitchen_island"
+            ],
+            "architecturalFeatures": [
+              "ac_unit",
+              "recess"
+            ]
+          }
+        },
+        "observationValidation": {
+          "run1": {
+            "unknownReferences": [],
+            "duplicateReferences": [
+              "wall_3:fixture:built_in_cabinet"
+            ],
+            "unusedInventory": [
+              "fixture:kitchen_island",
+              "fixture:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [
+              "wall_3:built_in_cabinet"
+            ],
+            "chosenAnchors": [
+              "wall_1:walkthrough",
+              "wall_2:door",
+              "wall_3:window",
+              "wall_4:wall_plane"
+            ]
+          },
+          "run2": {
+            "unknownReferences": [],
+            "duplicateReferences": [
+              "wall_3:fixture:built_in_cabinet",
+              "wall_4:fixture:built_in_cabinet"
+            ],
+            "unusedInventory": [
+              "fixture:kitchen_island",
+              "feature:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [
+              "wall_3:built_in_cabinet",
+              "wall_4:built_in_cabinet"
+            ],
+            "chosenAnchors": [
+              "wall_1:walkthrough",
+              "wall_2:door",
+              "wall_3:window",
+              "wall_4:ac_unit",
+              "wall_5:wall_plane"
+            ]
+          }
+        },
+        "canonicalGraph": {
+          "run1": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "door_1",
+                "primaryAnchorLabel": "door"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 2,
+                "canonicalWallId": "walkthrough_1",
+                "primaryAnchorLabel": "walkthrough"
+              },
+              {
+                "wallIndex": 3,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:walkthrough",
+              "wall_2:door",
+              "wall_3:window",
+              "wall_4:wall_plane"
+            ],
+            "rejectedAnchors": [
+              "wall_3:built_in_cabinet"
+            ],
+            "baselineConfidence": 0.87
+          },
+          "run2": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "door_1",
+                "primaryAnchorLabel": "door"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 2,
+                "canonicalWallId": "walkthrough_1",
+                "primaryAnchorLabel": "walkthrough"
+              },
+              {
+                "wallIndex": 3,
+                "canonicalWallId": "ac_unit_1",
+                "primaryAnchorLabel": "ac_unit"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:walkthrough",
+              "wall_2:door",
+              "wall_3:window",
+              "wall_4:ac_unit",
+              "wall_5:wall_plane"
+            ],
+            "rejectedAnchors": [
+              "wall_3:built_in_cabinet",
+              "wall_4:built_in_cabinet"
+            ],
+            "baselineConfidence": 0.82
+          }
+        }
+      },
+      "hashes": {
+        "inventoryHashRun1": "306f444e7c9cfdc973fec8afe50630bc5c5cbc4f8bb40b2926929c53144674df",
+        "inventoryHashRun2": "6d4286e359717383547bd870815444e7c2f7725160cbb3d6497db75afb276a0b",
+        "observationHashRun1": "af039bc8b116f856af78608778ff8e1ed30437eb0c3c03df287c7b15c1a0a9d7",
+        "observationHashRun2": "271b0dbb539a8d95fb33273c2bad714ee2089779ba6e87ad6a0150e799ba7753",
+        "graphHashRun1": "b86c47192263847383ab9e53f5205b9ee0370d81908eb544cd555fc19ad8796f",
+        "graphHashRun2": "a19c1ba5202eff8fea6d282cc529efbabf31e5645ba3575f78c70a98cf2d85cd",
+        "identityHashRun1": "737a1ef9cfe51be2989632c0fe954856c858502d457fd3cfdcf09a9441fc885d",
+        "identityHashRun2": "fbf4e0a3a55ec9e1c92c25d01224d88fc26020127fd2142391427a10fa701a20"
+      }
+    },
+    {
+      "label": "job_4ceef035",
+      "jobId": "job_4ceef035-b334-489c-bf91-3591fa703257",
+      "baselineFile": "job_4ceef035-stage1A.jpg",
+      "stability": {
+        "inventoryStable": false,
+        "observationStable": false,
+        "graphStable": false,
+        "identityStable": true,
+        "confidenceStable": false,
+        "openingStable": true
+      },
+      "attribution": [
+        "observation_drift",
+        "inventory_drift",
+        "confidence_drift"
+      ],
+      "diagnostics": {
+        "inventory": {
+          "run1": {
+            "openings": [
+              "window",
+              "window"
+            ],
+            "permanentFixtures": [],
+            "architecturalFeatures": []
+          },
+          "run2": {
+            "openings": [
+              "window"
+            ],
+            "permanentFixtures": [
+              "recess"
+            ],
+            "architecturalFeatures": []
+          }
+        },
+        "observationValidation": {
+          "run1": {
+            "unknownReferences": [],
+            "duplicateReferences": [],
+            "unusedInventory": [],
+            "inconsistencies": [],
+            "rejectedAnchors": [],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:window"
+            ]
+          },
+          "run2": {
+            "unknownReferences": [],
+            "duplicateReferences": [
+              "wall_2:opening:window"
+            ],
+            "unusedInventory": [
+              "fixture:recess"
+            ],
+            "inconsistencies": [],
+            "rejectedAnchors": [
+              "wall_2:window"
+            ],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:window"
+            ]
+          }
+        },
+        "canonicalGraph": {
+          "run1": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:window"
+            ],
+            "rejectedAnchors": [],
+            "baselineConfidence": 1
+          },
+          "run2": {
+            "wallIdentities": [
+              {
+                "wallIndex": 0,
+                "canonicalWallId": "window_1",
+                "primaryAnchorLabel": "window"
+              },
+              {
+                "wallIndex": 1,
+                "canonicalWallId": "blank_wall_1",
+                "primaryAnchorLabel": "wall_plane"
+              }
+            ],
+            "chosenAnchors": [
+              "wall_1:wall_plane",
+              "wall_2:window"
+            ],
+            "rejectedAnchors": [
+              "wall_2:window"
+            ],
+            "baselineConfidence": 0.91
+          }
+        }
+      },
+      "hashes": {
+        "inventoryHashRun1": "b611188a68a9f897a4ec6f44d517ea10fc7339c7088a377411b54e3561592a38",
+        "inventoryHashRun2": "23c6467496eb7046f52235abec02f49f507e8762d2a95df0ba4ee9e0fcea7c3c",
+        "observationHashRun1": "cab50ab92e2ba1adc66eb40d7df32de23686134b9d6967e6309400a999bf3bb4",
+        "observationHashRun2": "e76e2f99e4c2d5ac743a584fbe336daaadc119ebe4e7cd36f25400964138f99d",
+        "graphHashRun1": "acf4ff9bd86f075e78350c82a11c90d30dccd640acb63c5ea618e0da7b7383ab",
+        "graphHashRun2": "bcb3dfc2d64de7d84d8122dfab646e5061eea8ba84efbc0f084564004d1524bb",
+        "identityHashRun1": "536c5acf4181c3372cd46208de3a73d14586c1b54dfd65d58fd90d3dfea20dd4",
+        "identityHashRun2": "536c5acf4181c3372cd46208de3a73d14586c1b54dfd65d58fd90d3dfea20dd4"
+      }
+    }
+  ]
+}

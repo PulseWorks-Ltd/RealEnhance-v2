@@ -3,6 +3,8 @@ import type { StructuralSignal } from "./structuralSignal";
 
 export type ValidatorOutcome = {
   status: "pass" | "fail";
+  decision?: "pass" | "advisory" | "fail";
+  verificationRequests?: string[];
   reason: string;
   confidence: number;
   hardFail: boolean;

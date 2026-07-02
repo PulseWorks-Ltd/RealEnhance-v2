@@ -35,19 +35,32 @@ export type AnchorFixture = {
 
 export type WallDescriptor = {
   wallIndex: WallIndex;
+  canonicalWallId?: string;
+  primaryAnchorLabel?: string;
+  observedOrdinal?: number;
   visibility: "full" | "partial" | "minimal";
   visibleExtent?: "full" | "partial" | "minimal";
   architecturalCertainty?: "known" | "partial" | "unknown";
+  leftEdgeLocation?: "outside_frame" | "outer_third" | "central_image" | "unknown";
+  rightEdgeLocation?: "outside_frame" | "outer_third" | "central_image" | "unknown";
   leftBoundaryVisible?: boolean;
   rightBoundaryVisible?: boolean;
   leftCornerVisible?: boolean;
   rightCornerVisible?: boolean;
+  leftCornerConfidence?: number;
+  rightCornerConfidence?: number;
   leftCornerPosition?: "none" | "image_edge" | "outer_third" | "inner_third" | "centre";
   rightCornerPosition?: "none" | "image_edge" | "outer_third" | "inner_third" | "centre";
   leftCornerVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
   rightCornerVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
   leftAdjacentWallVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
   rightAdjacentWallVisibility?: "none" | "trace" | "minimal" | "partial" | "substantial" | "full";
+  leftReturnWallVisible?: boolean;
+  rightReturnWallVisible?: boolean;
+  leftReturnWallVisibility?: "none" | "minimal" | "partial" | "full" | "unknown";
+  rightReturnWallVisibility?: "none" | "minimal" | "partial" | "full" | "unknown";
+  leftFrameEdgeContinuation?: "continues_beyond_frame" | "terminates_at_visible_corner" | "unknown";
+  rightFrameEdgeContinuation?: "continues_beyond_frame" | "terminates_at_visible_corner" | "unknown";
   boundaryBehaviour?: "terminates_at_visible_corner" | "continues_beyond_frame" | "unknown";
   terminatesAtCorner?: boolean;
   continuesBeyondFrame?: boolean;
@@ -82,6 +95,33 @@ export type StructuralBaseline = {
   openings: StructuralOpening[];
   anchorFixtures?: AnchorFixture[];
   wallDescriptors?: WallDescriptor[];
+  observationMeta?: {
+    observationHash: string;
+    wallCount: number;
+    inventoryHash?: string;
+    canonicalIdentityHash?: string;
+    inventory?: {
+      openings: string[];
+      permanentFixtures: string[];
+      architecturalFeatures: string[];
+    };
+    validation?: {
+      unknownReferences: string[];
+      duplicateReferences: string[];
+      unusedInventory: string[];
+      inconsistencies: string[];
+      rejectedAnchors: string[];
+      chosenAnchors: string[];
+      reconciliationActions?: string[];
+      reconciliationReasons?: string[];
+    };
+    baselineConfidence?: number;
+    baselineStatus?: "MATCHED" | "RECONCILED" | "IRRECONCILABLE";
+    baselineReliability?: "HIGH" | "MEDIUM" | "LOW";
+    fallbackInvoked?: boolean;
+    baselineExtractionStrategy?: "single_pass_observation" | "graph_reconciliation" | "semantic_relaxed_rebuild";
+    baselineConfidenceDegraded?: boolean;
+  };
   graphMeta?: {
     graphStable: boolean;
     graphConfidence: number;
@@ -94,8 +134,17 @@ export type StructuralBaseline = {
     candidateGraphHashes: string[];
     openingCountRange: { min: number; max: number };
     confirmedAt: string;
-    baselineMethod?: "graph_consensus" | "extraction_verification";
+    baselineMethod?: "graph_consensus" | "extraction_verification" | "single_pass_observation" | "semantic_relaxed_rebuild";
     geminiCalls?: number;
+    observationHash?: string;
+    baselineConfidence?: number;
+    baselineStatus?: "MATCHED" | "RECONCILED" | "IRRECONCILABLE";
+    baselineReliability?: "HIGH" | "MEDIUM" | "LOW";
+    fallbackInvoked?: boolean;
+    baselineExtractionStrategy?: "single_pass_observation" | "graph_reconciliation" | "semantic_relaxed_rebuild";
+    baselineConfidenceDegraded?: boolean;
+    reconciliationActions?: string[];
+    reconciliationReasons?: string[];
     verification?: {
       attempted: boolean;
       accepted: boolean;
@@ -118,7 +167,10 @@ export type StructuralBaseline = {
   };
 };
 
-export type BaselineArchitectureMode = "graph_consensus" | "extraction_verification";
+export type BaselineArchitectureMode = "single_pass_observation";
+type BaselineInternalStatus = "MATCHED" | "RECONCILED" | "IRRECONCILABLE";
+
+type BaselineReliability = "HIGH" | "MEDIUM" | "LOW";
 
 type BaselineVerificationStatus =
   | "confirmed"
@@ -277,18 +329,9 @@ type StructuralBaselineCacheRecord = {
 };
 
 const STRUCTURAL_BASELINE_CACHE_PREFIX = "opening:structural-baseline:v1:";
-const STRUCTURAL_BASELINE_STABILIZATION_PASSES = Math.max(
-  2,
-  Number(process.env.OPENING_BASELINE_STABILIZATION_PASSES || 2)
-);
-const STRUCTURAL_BASELINE_MIN_AGREEMENT = Math.min(
-  1,
-  Math.max(0.5, Number(process.env.OPENING_BASELINE_MIN_AGREEMENT || 0.67))
-);
-const STRUCTURAL_BASELINE_AUTHORITY_MIN_CONFIDENCE = Math.min(
-  1,
-  Math.max(0.6, Number(process.env.OPENING_BASELINE_AUTHORITY_MIN_CONFIDENCE || STRUCTURAL_BASELINE_MIN_AGREEMENT))
-);
+const STRUCTURAL_BASELINE_STABILIZATION_PASSES = 1;
+const STRUCTURAL_BASELINE_MIN_AGREEMENT = 1;
+const STRUCTURAL_BASELINE_AUTHORITY_MIN_CONFIDENCE = 1;
 const OPENING_COORDINATE_PRECISION = Math.max(
   2,
   Math.min(6, Number(process.env.OPENING_COORDINATE_PRECISION || 4))
@@ -301,15 +344,9 @@ const OPENING_BBOX_VARIANCE_THRESHOLD = Math.max(
   0.001,
   Math.min(0.25, Number(process.env.OPENING_BBOX_VARIANCE_THRESHOLD || 0.015))
 );
-const OPENING_BASELINE_VERIFICATION_EXPERIMENT = ["1", "true", "on", "yes"].includes(
-  String(process.env.OPENING_BASELINE_VERIFICATION_EXPERIMENT || "").trim().toLowerCase()
-);
-const OPENING_BASELINE_VERIFICATION_MODEL = String(
-  process.env.OPENING_BASELINE_VERIFICATION_MODEL || ""
-);
-const OPENING_BASELINE_SINGLE_PASS = ["1", "true", "on", "yes"].includes(
-  String(process.env.OPENING_BASELINE_SINGLE_PASS || "").trim().toLowerCase()
-);
+const OPENING_BASELINE_VERIFICATION_EXPERIMENT = false;
+const OPENING_BASELINE_VERIFICATION_MODEL = "";
+const OPENING_BASELINE_SINGLE_PASS = true;
 
 function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
   if (!Number.isFinite(value)) return 0;
@@ -644,133 +681,103 @@ const OPENING_APERTURE_EXPANSION_MAX = Number(process.env.OPENING_APERTURE_EXPAN
 const OPENING_STATE_CONFIDENCE_MIN = Number(process.env.OPENING_STATE_CONFIDENCE_MIN || 0.9);
 const OPENING_APERTURE_CONFIDENCE_MIN = Number(process.env.OPENING_APERTURE_CONFIDENCE_MIN || 0.9);
 
-const BASELINE_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine.
+const BASELINE_SYSTEM_INSTRUCTION = `You are an observation-only architectural extractor.
 
-You must analyze a single interior room image and extract only permanent architectural openings.
+You must only answer: "What do I see?"
+You must produce three outputs only: inventory, observed walls, and confidence facets.
+You must not infer room topology or adjacency.
+You must not decide whether walls connect.
+You must not assign semantic wall identity.
+You must not assign graph relationships.
+You must not decide anchor priority.
+You must not generate canonical wall IDs.
+You must not output PASS/FAIL or structural conclusions.
 
-Permanent openings include:
-- Windows
-- Doors
-- Closet doors
-- Archways
-- Built-in fixed openings
+Stage 1 inventory rules:
+- List only permanent architectural elements.
+- If none exist, return empty arrays.
+- Do not invent items.
 
-Ignore:
-- Furniture
-- Decor
-- Lighting
-- Reflections
-- Curtains
-- Temporary objects
-- Wall art
-- Mirrors
-- Door leaf state must be captured when visible (closed/open/ajar); use unknown if not clearly visible
+Stage 2 wall observation rules:
+- observedOrdinal is left-to-right visual order only.
+- Describe only what is visible on each observed wall plane.
+- Do not name or classify walls semantically.
+- Extract structural building wall planes that define the room envelope.
+- Do not split walls into separate planes because of built-in joinery faces.
+- Built-in cabinetry, pantry faces, appliance surrounds, shelving, and similar joinery are attributes on a structural wall, not separate walls.
+- Kitchen island faces, cabinet sides, wardrobe faces, and furniture-like faces are not structural walls.
+- Only create additional wall planes for genuine structural returns, recesses, projections, or corners.
 
-You must output strict JSON only.
-No explanations.
+Developer Note:
+The Envelope Validator intentionally models the architectural envelope, not every visible vertical surface.
+Built-in joinery frequently subdivides one structural wall into multiple visible faces.
+Treating these as separate walls reduces baseline determinism and provides no additional value for envelope validation.
+When in doubt, prefer the underlying structural wall and record joinery as wall attributes rather than creating extra wall identities.
+
+If uncertain, return "unknown".
+Do not guess.
+Do not invent.
+
+Return strict JSON only.
 No markdown.
 No comments.
-No extra text.
+No extra prose.`;
 
-If something is partially occluded but clearly a structural opening, include it.
-
-Vertical boundary invariant:
-For door-like openings, preserve left/right vertical frame boundaries when visible.
-If a frame boundary is not visible and surface is continuous flat wall, do not infer an opening.
-
-Occlusion vs replacement:
-Objects may sit in front of an opening, but if no opening boundary is visible on any side,
-classify as replacement/infill rather than occlusion.
-
-If you are uncertain whether something is a structural opening, include it.
-
-Do not omit visible openings.`;
-
-const BASELINE_USER_PROMPT = `Analyze this room image and extract a structural baseline.
-
-Return JSON in this exact schema:
+const BASELINE_USER_PROMPT = `Analyze this room image and return baseline observations using this exact schema:
 
 {
-  "openings": [
+  "inventory": {
+    "openings": ["window" | "sliding_door" | "hinged_door" | "closet_door" | "walkthrough"],
+    "permanentFixtures": ["air_conditioner" | "built_in_cabinet" | "fireplace" | "staircase"],
+    "architecturalFeatures": ["recessed_wall" | "chimney" | "structural_column"]
+  },
+  "observedWalls": [
     {
-      "id": string,
-      "type": "window" | "door" | "closet_door" | "walkthrough",
-      "bbox": [x1, y1, x2, y2],
-      "area_pct": number,
-      "wallIndex": 0 | 1 | 2 | 3,
-      "horizontalBand": "left_third" | "center_third" | "right_third",
-      "verticalBand": "floor_zone" | "mid_zone" | "ceiling_zone" | "full_height",
-      "wallCoverageBand": "5-10" | "10-20" | "20-40" | "40-60" | "60+",
-      "orientation": "portrait" | "landscape" | "square",
-      "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
-      "doorLeafState": "closed" | "open" | "ajar" | "unknown",
-      "confidence": number
-    }
-  ],
-  "anchorFixtures": [
-    {
-      "id": string,
-      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "other",
-      "wallIndex": 0 | 1 | 2 | 3,
-      "horizontalBand": "left_third" | "center_third" | "right_third",
-      "bbox": [x1, y1, x2, y2],
-      "confidence": number
-    }
-  ],
-  "wallDescriptors": [
-    {
-      "wallIndex": 0 | 1 | 2 | 3,
-      "visibility": "full" | "partial" | "minimal",
-      "visibleExtent": "full" | "partial" | "minimal",
-      "architecturalCertainty": "known" | "partial" | "unknown",
-      "leftBoundaryVisible": boolean,
-      "rightBoundaryVisible": boolean,
-      "leftCornerVisible": boolean,
-      "rightCornerVisible": boolean,
-      "terminatesAtCorner": boolean,
-      "continuesBeyondFrame": boolean,
-      "description": string
+      "observedOrdinal": number,
+      "containsOpenings": string[],
+      "containsPermanentFixtures": string[],
+      "containsArchitecturalFeatures": string[],
+      "openingObservations": [
+        {
+          "type": "window" | "door" | "closet_door" | "walkthrough",
+          "bbox": [x1, y1, x2, y2]
+        }
+      ],
+      "leftSide": {
+        "cornerVisible": boolean,
+        "cornerPosition": "outer_third" | "middle_third" | "unknown",
+        "returnWallVisible": "none" | "minimal" | "partial" | "full" | "unknown"
+      },
+      "rightSide": {
+        "cornerVisible": boolean,
+        "cornerPosition": "outer_third" | "middle_third" | "unknown",
+        "returnWallVisible": "none" | "minimal" | "partial" | "full" | "unknown"
+      },
+      "frameEdgeObservations": {
+        "leftEdgeLocation": "outside_frame" | "outer_third" | "central_image" | "unknown",
+        "rightEdgeLocation": "outside_frame" | "outer_third" | "central_image" | "unknown"
+      }
     }
   ]
 }
 
 Rules:
-- Assign deterministic IDs like W1, W2, D1, C1, A1.
-- wallIndex mapping: 0=front wall (camera facing), 1=right wall, 2=back wall, 3=left wall.
-- bbox must be normalized to image dimensions (0..1).
-- area_pct must represent % of image area occupied by the opening (0..100).
-- horizontalBand and verticalBand should be stable under mild reframing.
-- wallCoverageBand is approximate percent of the wall occupied by the opening (not image area).
-- orientation should be derived from opening shape (portrait, landscape, square).
-- paneStructure should describe visible pane layout; if uncertain return "unknown".
-- doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
-- Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
-- confidence is 0..1.
-
-Anchor fixture rules:
-- Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
-- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges.
-- Exclude movable furniture/decor.
-- If no stable fixture is visible, return an empty array.
-
-Wall descriptor rules:
-- For each visible wall, provide one descriptive entry.
-- visibility: "full" if entire wall is visible, "partial" if wall is partially occluded or cut by frame, "minimal" if only small portion visible.
-- visibleExtent should mirror observed visible proportion using the same enum as visibility.
-- architecturalCertainty: "known" only when wall envelope boundaries/corners are clearly visible, "partial" when only some boundaries are visible, "unknown" when continuation is not directly observable.
-- leftBoundaryVisible/rightBoundaryVisible: true only if the wall boundary edge is directly visible in the baseline image.
-- leftCornerVisible/rightCornerVisible: true only if a real wall corner/junction is directly visible.
-- terminatesAtCorner: true only when the visible wall clearly ends at an observed corner.
-- continuesBeyondFrame: true only when the wall exits the frame before a terminating corner is visible.
-- description: Brief description of permanent room envelope characteristics only (doorways, built-ins, alcoves, recesses, structural features).
-- Describe only architectural/structural features: wall continuity, openings, built-in elements (cabinets, shelving), fireplaces, structural columns, half-height walls, recesses, alcoves, bulkheads.
-- Do NOT describe furniture, bedding, staging, décor, rugs, curtains, or movable objects.
-- Do NOT duplicate opening descriptions already captured in the openings array; may reference openings only when necessary to explain wall continuity.
-- Use observational certainty language only. Do not speculate.
-- Good examples: "Left boundary exits frame before a corner is visible", "Right corner clearly visible", "No return wall is visible", "Continuation beyond frame is unknown".
-- Bad examples: "Wall probably continues", "Room likely extends", "There is probably another wall".
-- Examples: "Continuous wall with window on right side", "Wall contains doorway on left, recessed alcove on right", "Half-height wall separator".
-- Return empty array if insufficient wall information visible to describe.
+- observedWalls must be listed by observed visual order from left-to-right.
+- observedOrdinal is only observation order, not wall identity.
+- inventory values must use only the allowed ontology values above.
+- If uncertain, omit the inventory item. Never invent inventory anchors.
+- A wall may reference only inventory items or blank wall labels.
+- Allowed blank wall labels: "blank_wall", "largest_blank_wall", "blank_wall_left_of_window", "blank_wall_right_of_window".
+- Extract structural wall planes only (the building envelope that materially defines the room).
+- Do not create separate observed walls for kitchen island faces, pantry faces, cabinet sides, wardrobe faces, appliance enclosures, shelving, or furniture-like vertical faces.
+- If joinery is mounted on a structural wall, keep one structural wall and attach joinery via containsPermanentFixtures/containsArchitecturalFeatures.
+- Only split into additional walls when a genuine structural return, recess, projection, or corner is visible.
+- Do not output wall adjacency claims.
+- bbox values must be normalized (0..1).
+- Exclude temporary/movable objects and decor from structural observations.
+- Do not infer missing geometry.
+- Do not return confidence fields.
+- Do not return free-text observations.
 
 Return only valid JSON.`;
 
@@ -836,9 +843,7 @@ Return only valid JSON.`;
 
 function resolveBaselineMode(options?: BaselineExtractionOptions): BaselineArchitectureMode {
   if (options?.baselineMode) return options.baselineMode;
-  return OPENING_BASELINE_VERIFICATION_EXPERIMENT
-    ? "extraction_verification"
-    : "graph_consensus";
+  return "single_pass_observation";
 }
 
 function getBaselineVerificationModel(): string {
@@ -1564,9 +1569,1479 @@ function normalizeAreaPct(input: any, bbox: [number, number, number, number]): n
   return Math.max(0, Math.min(100, bboxArea));
 }
 
+function normalizeEdgeLocation(value: unknown): "outside_frame" | "outer_third" | "central_image" | "unknown" {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "unknown";
+  if (raw === "outside_frame" || raw === "outside frame" || raw === "off_frame" || raw === "exits_frame") return "outside_frame";
+  if (raw === "outer_third" || raw === "outer third" || raw === "near_frame_edge" || raw === "image_edge") return "outer_third";
+  if (raw === "central_image" || raw === "central image" || raw === "centre" || raw === "center") return "central_image";
+  return "unknown";
+}
+
+function normalizeCornerPositionObservation(value: unknown): WallDescriptor["leftCornerPosition"] {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "unknown" || raw === "none") return "none";
+  if (raw === "middle_third" || raw === "middle third") return "centre";
+  if (raw === "near_frame_edge" || raw === "image_edge" || raw === "outside_frame") return "image_edge";
+  if (raw === "outer_third" || raw === "outer third") return "outer_third";
+  if (raw === "inner_third" || raw === "inner third") return "inner_third";
+  if (raw === "centre" || raw === "center" || raw === "central_image") return "centre";
+  return "none";
+}
+
+function normalizeCornerExtent(value: unknown): WallDescriptor["leftCornerVisibility"] {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "unknown" || raw === "none") return "none";
+  if (raw === "minimal" || raw === "trace") return "minimal";
+  if (raw === "partial") return "partial";
+  if (raw === "full" || raw === "substantial") return "full";
+  return "none";
+}
+
+function normalizeReturnWallExtent(value: unknown): WallDescriptor["leftReturnWallVisibility"] {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return "unknown";
+  if (raw === "none") return "none";
+  if (raw === "minimal") return "minimal";
+  if (raw === "partial") return "partial";
+  if (raw === "full" || raw === "substantial") return "full";
+  return "unknown";
+}
+
+function visibilityFromReturnWallExtent(value: WallDescriptor["leftReturnWallVisibility"]): boolean | undefined {
+  if (value === "none") return false;
+  if (value === "minimal" || value === "partial" || value === "full") return true;
+  return undefined;
+}
+
+function inferHorizontalBandFromBbox(bbox: [number, number, number, number]): HorizontalBand {
+  const cx = (bbox[0] + bbox[2]) / 2;
+  if (cx < 0.33) return "left_third";
+  if (cx > 0.66) return "right_third";
+  return "center_third";
+}
+
+function inferVerticalBandFromBbox(bbox: [number, number, number, number]): VerticalBand {
+  const height = bbox[3] - bbox[1];
+  const cy = (bbox[1] + bbox[3]) / 2;
+  if (height >= 0.8) return "full_height";
+  if (cy < 0.33) return "ceiling_zone";
+  if (cy > 0.66) return "floor_zone";
+  return "mid_zone";
+}
+
+function deriveWallClassRank(value: unknown): number {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "largest_plane") return 0;
+  if (raw === "second_plane") return 1;
+  if (raw === "third_plane") return 2;
+  if (raw === "fragment") return 3;
+  if (raw === "sliver") return 4;
+  return 5;
+}
+
+function deriveWallVisibilityScore(value: unknown): number {
+  const raw = String(value || "").trim().toLowerCase();
+  if (raw === "full") return 3;
+  if (raw === "partial") return 2;
+  if (raw === "minimal") return 1;
+  return 0;
+}
+
+function wallIndexFromSurfaceOrder(index: number, leftEdge: ReturnType<typeof normalizeEdgeLocation>, rightEdge: ReturnType<typeof normalizeEdgeLocation>): WallIndex {
+  if (index <= 3) return index as WallIndex;
+  if (leftEdge === "outside_frame" && rightEdge !== "outside_frame") return 3;
+  if (rightEdge === "outside_frame" && leftEdge !== "outside_frame") return 1;
+  return 2;
+}
+
+function normalizeFeatureTextList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      if (typeof item === "string") return item.trim();
+      if (item && typeof item === "object" && typeof (item as any).type === "string") {
+        return String((item as any).type).trim();
+      }
+      return "";
+    })
+    .filter((item) => item.length > 0);
+}
+
+function normalizePermanentFeature(value: string): string | null {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "unknown" || raw === "none") return null;
+  if (raw.includes("air_conditioner") || raw.includes("air conditioner")) return "ac_unit";
+  if (raw.includes("sliding") && raw.includes("door")) return "sliding_door";
+  if (raw.includes("hinged") && raw.includes("door")) return "door";
+  if (raw.includes("door")) return "door";
+  if (raw.includes("window")) return "window";
+  if (raw.includes("ac") || raw.includes("air conditioning") || raw.includes("aircon")) return "ac_unit";
+  if (raw.includes("fireplace")) return "fireplace";
+  if (raw.includes("chimney")) return "fireplace";
+  if (raw.includes("built-in") || raw.includes("cabinet")) return "built_in_cabinet";
+  if (raw.includes("stair")) return "staircase";
+  if (raw.includes("island")) return "kitchen_island";
+  if (raw.includes("recessed_wall") || raw.includes("recessed wall")) return "recess";
+  if (raw.includes("column")) return "structural_column";
+  if (raw.includes("recess")) return "recess";
+  if (raw.includes("niche")) return "niche";
+  return null;
+}
+
+function isBlankWallReferenceLabel(value: string): boolean {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return false;
+  return raw.includes("blank_wall") || raw.includes("blank wall") || raw === "wall_plane" || raw.includes("plain wall");
+}
+
+function normalizePermanentFeaturesList(value: unknown): string[] {
+  const seen = new Set<string>();
+  for (const feature of normalizeFeatureTextList(value)) {
+    const normalized = normalizePermanentFeature(feature);
+    if (!normalized) continue;
+    seen.add(normalized);
+  }
+  return [...seen].sort(compareStrings);
+}
+
+function anchorFeatureRank(feature: string): number {
+  if (feature === "sliding_door") return 0;
+  if (feature === "door") return 1;
+  if (feature === "window") return 2;
+  if (feature === "ac_unit") return 3;
+  if (feature === "fireplace") return 4;
+  if (feature === "built_in_cabinet") return 5;
+  if (feature === "staircase") return 6;
+  if (feature === "kitchen_island") return 7;
+  if (feature === "structural_column") return 8;
+  if (feature === "recess") return 9;
+  if (feature === "niche") return 10;
+  return 99;
+}
+
+function openingAnchorRank(type: StructuralOpeningType): number {
+  if (type === "door") return 0;
+  if (type === "window") return 1;
+  if (type === "closet_door") return 2;
+  return 3;
+}
+
+function normalizeFrameContinuation(value: unknown): "continues_beyond_frame" | "terminates_at_visible_corner" | "unknown" {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "unknown") return "unknown";
+  if (raw === "continues_out_of_frame") return "continues_beyond_frame";
+  if (raw === "visible_corner") return "terminates_at_visible_corner";
+  if (raw.includes("continue") || raw.includes("beyond")) return "continues_beyond_frame";
+  if (raw.includes("terminate") || raw.includes("corner")) return "terminates_at_visible_corner";
+  return "unknown";
+}
+
+function normalizeInventoryOpeningLabel(value: string): StructuralOpeningType | null {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw || raw === "unknown" || raw === "none") return null;
+  if (raw.includes("sliding_door") || (raw.includes("sliding") && raw.includes("door"))) return "door";
+  if (raw.includes("hinged_door") || (raw.includes("hinged") && raw.includes("door"))) return "door";
+  if (raw.includes("closet")) return "closet_door";
+  if (raw.includes("walk") || raw.includes("arch")) return "walkthrough";
+  if (raw.includes("door")) return "door";
+  if (raw.includes("window")) return "window";
+  return null;
+}
+
+function deriveObservedWallVisibility(params: {
+  leftEdgeLocation: WallDescriptor["leftEdgeLocation"];
+  rightEdgeLocation: WallDescriptor["rightEdgeLocation"];
+  leftCornerVisible: boolean;
+  rightCornerVisible: boolean;
+  leftReturnVisible: boolean | undefined;
+  rightReturnVisible: boolean | undefined;
+  openingCount: number;
+}): WallDescriptor["visibility"] {
+  const boundaryVisibleCount = Number(params.leftEdgeLocation !== "outside_frame") + Number(params.rightEdgeLocation !== "outside_frame");
+  const cornerCount = Number(params.leftCornerVisible) + Number(params.rightCornerVisible);
+  const returnCount = Number(params.leftReturnVisible === true) + Number(params.rightReturnVisible === true);
+  const openingCount = params.openingCount;
+
+  if (boundaryVisibleCount === 2 && (openingCount > 0 || cornerCount > 0)) return "full";
+  if (openingCount > 0 || cornerCount > 0 || returnCount > 0 || boundaryVisibleCount > 0) return "partial";
+  return "minimal";
+}
+
+function deriveArchitecturalCertainty(
+  visibility: WallDescriptor["visibility"],
+  leftEdgeLocation: WallDescriptor["leftEdgeLocation"],
+  rightEdgeLocation: WallDescriptor["rightEdgeLocation"]
+): WallDescriptor["architecturalCertainty"] {
+  const boundaryVisibleCount = Number(leftEdgeLocation !== "outside_frame") + Number(rightEdgeLocation !== "outside_frame");
+  if (visibility === "full" && boundaryVisibleCount === 2) return "known";
+  if (visibility === "minimal") return "unknown";
+  return "partial";
+}
+
+function normalizeInventoryFromInput(input: any): {
+  openings: StructuralOpeningType[];
+  permanentFixtures: string[];
+  architecturalFeatures: string[];
+} {
+  const inventory = input?.inventory && typeof input.inventory === "object" ? input.inventory : {};
+
+  const openings = normalizeFeatureTextList(inventory.openings)
+    .map((item) => normalizeInventoryOpeningLabel(item))
+    .filter((item): item is StructuralOpeningType => item !== null)
+    .sort(compareStrings);
+
+  const permanentFixtures = normalizePermanentFeaturesList(inventory.permanentFixtures);
+  const architecturalFeatures = normalizePermanentFeaturesList(inventory.architecturalFeatures);
+
+  return {
+    openings,
+    permanentFixtures,
+    architecturalFeatures,
+  };
+}
+
+function signatureCount(items: string[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const item of items) {
+    counts.set(item, (counts.get(item) || 0) + 1);
+  }
+  return counts;
+}
+
+function canonicalWallObservationSignature(wall: {
+  ordinal: number;
+  visibility: string;
+  visibleExtent: string;
+  leftEdgeLocation: string;
+  rightEdgeLocation: string;
+  leftCornerVisible: boolean;
+  rightCornerVisible: boolean;
+  leftCornerPosition?: string;
+  rightCornerPosition?: string;
+  leftCornerVisibility?: string;
+  rightCornerVisibility?: string;
+  leftReturnWallVisibility?: string;
+  rightReturnWallVisibility?: string;
+  leftFrameContinuation: string;
+  rightFrameContinuation: string;
+  permanentFeatures: string[];
+  openings: Array<{
+    type: StructuralOpeningType;
+    horizontalBand: HorizontalBand;
+    verticalBand: VerticalBand;
+    wallCoverageBand: WallCoverageBand;
+    paneStructure: PaneStructure;
+    doorLeafState: DoorLeafState;
+    bbox: [number, number, number, number];
+  }>;
+}): string {
+  const canonical = {
+    ordinal: wall.ordinal,
+    visibility: wall.visibility,
+    visibleExtent: wall.visibleExtent,
+    edges: {
+      left: wall.leftEdgeLocation,
+      right: wall.rightEdgeLocation,
+      leftContinuation: wall.leftFrameContinuation,
+      rightContinuation: wall.rightFrameContinuation,
+    },
+    corners: {
+      leftVisible: wall.leftCornerVisible,
+      rightVisible: wall.rightCornerVisible,
+      leftPosition: wall.leftCornerPosition || "none",
+      rightPosition: wall.rightCornerPosition || "none",
+      leftExtent: wall.leftCornerVisibility || "none",
+      rightExtent: wall.rightCornerVisibility || "none",
+    },
+    returnWalls: {
+      left: wall.leftReturnWallVisibility || "unknown",
+      right: wall.rightReturnWallVisibility || "unknown",
+    },
+    permanentFeatures: [...wall.permanentFeatures].sort(compareStrings),
+    openings: [...wall.openings]
+      .map((opening) => ({
+        type: opening.type,
+        horizontalBand: opening.horizontalBand,
+        verticalBand: opening.verticalBand,
+        wallCoverageBand: opening.wallCoverageBand,
+        paneStructure: opening.paneStructure,
+        doorLeafState: opening.doorLeafState,
+        bbox: quantizeBbox(opening.bbox),
+      }))
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right))),
+  };
+
+  return createHash("sha256").update(JSON.stringify(stableSortObject(canonical))).digest("hex");
+}
+
+function classifyAnchorFixtureType(label: string): AnchorFixtureType | null {
+  const normalized = label.toLowerCase();
+  if (normalized.includes("power outlet") || normalized.includes("outlet") || normalized.includes("art") || normalized.includes("painting")) return null;
+  if (normalized.includes("ac") || normalized.includes("air conditioning") || normalized.includes("aircon")) return "ac_unit";
+  if (normalized.includes("fireplace")) return "fireplace";
+  if (normalized.includes("built-in") || normalized.includes("cabinet")) return "built_in_cabinet";
+  if (normalized.includes("island")) return "kitchen_island";
+  if (normalized.includes("stair")) return "staircase";
+  if (normalized.includes("recess") || normalized.includes("niche") || normalized.includes("bulkhead") || normalized.includes("column")) return "other";
+  return null;
+}
+
+function choosePrimaryAnchorLabel(params: {
+  openingCandidates: StructuralOpeningType[];
+  permanentFixtures: string[];
+  architecturalFeatures: string[];
+}): string {
+  const openings = [...params.openingCandidates]
+    .sort((left, right) => compareNumbers(openingAnchorRank(left), openingAnchorRank(right)) || compareStrings(left, right));
+  if (openings.length > 0) return openings[0];
+
+  const fixtures = [...params.permanentFixtures]
+    .sort((left, right) => compareNumbers(anchorFeatureRank(left), anchorFeatureRank(right)) || compareStrings(left, right));
+  if (fixtures.length > 0) return fixtures[0];
+
+  const features = [...params.architecturalFeatures]
+    .sort((left, right) => compareNumbers(anchorFeatureRank(left), anchorFeatureRank(right)) || compareStrings(left, right));
+  if (features.length > 0) return features[0];
+
+  return "wall_plane";
+}
+
+function canonicalizePrimaryAnchorLabel(label: string): string {
+  const normalized = String(label || "").trim().toLowerCase();
+  if (!normalized) return "wall_plane";
+  if (normalized === "sliding_door") return "sliding_door";
+  if (normalized.includes("large window") || normalized === "window" || normalized.includes(" window")) return "window";
+  if (normalized.includes("large door") || normalized.includes("sliding door") || normalized === "door" || normalized.includes(" door")) return "door";
+  if (normalized.includes("closet")) return "closet_door";
+  if (normalized.includes("walkthrough") || normalized.includes("archway")) return "walkthrough";
+  if (normalized.includes("built-in") || normalized.includes("cabinet")) return "built_in_cabinet";
+  if (normalized.includes("air") || normalized.includes("ac") || normalized.includes("aircon")) return "ac_unit";
+  if (normalized.includes("fireplace")) return "fireplace";
+  if (normalized.includes("column")) return "structural_column";
+  if (normalized.includes("recess")) return "recess";
+  if (normalized.includes("niche")) return "niche";
+  if (normalized.includes("wall") || normalized.includes("plane") || normalized.includes("surface")) return "wall_plane";
+  return "wall_plane";
+}
+
+function normalizeBaselineFromWallSurfaces(input: any): StructuralBaseline | null {
+  const rawObservedWalls = Array.isArray(input?.observedWalls)
+    ? input.observedWalls
+    : (Array.isArray(input?.wallSurfaces) ? input.wallSurfaces : []);
+  if (rawObservedWalls.length === 0) return null;
+
+  const inventory = normalizeInventoryFromInput(input);
+  const inventoryOpeningCounts = signatureCount(inventory.openings);
+  const inventoryFixtureCounts = signatureCount(inventory.permanentFixtures);
+  const inventoryFeatureCounts = signatureCount(inventory.architecturalFeatures);
+  const usageOpenings = new Map<string, number>();
+  const usageFixtures = new Map<string, number>();
+  const usageFeatures = new Map<string, number>();
+  const unknownReferences: string[] = [];
+  const duplicateReferences: string[] = [];
+  const inconsistencies: string[] = [];
+  const conflictingObservations: string[] = [];
+  const rejectedAnchors: string[] = [];
+  const chosenAnchors: string[] = [];
+
+  const normalizedWallSurfaces = rawObservedWalls
+    .map((surface: any, index: number) => {
+      const observedWall = surface?.observedWall && typeof surface.observedWall === "object" ? surface.observedWall : surface;
+      if (!observedWall || typeof observedWall !== "object") return null;
+
+      const geometry = observedWall.wallGeometry || {};
+      const frameEdges = observedWall.frameEdgeObservations || {};
+      const leftSide = observedWall.leftSide || {};
+      const rightSide = observedWall.rightSide || {};
+      const corners = observedWall.cornerObservations || {
+        left: {
+          visible: leftSide.cornerVisible,
+          position: leftSide.cornerPosition,
+          extent: leftSide.cornerExtent,
+        },
+        right: {
+          visible: rightSide.cornerVisible,
+          position: rightSide.cornerPosition,
+          extent: rightSide.cornerExtent,
+        },
+      };
+      const returnWalls = observedWall.returnWallObservations || {
+        left: {
+          visible: leftSide.returnWallVisible ? leftSide.returnWallVisible !== "none" : "unknown",
+          extent: leftSide.returnWallVisible,
+        },
+        right: {
+          visible: rightSide.returnWallVisible ? rightSide.returnWallVisible !== "none" : "unknown",
+          extent: rightSide.returnWallVisible,
+        },
+      };
+      const openingObservations = Array.isArray(observedWall.openingObservations) ? observedWall.openingObservations : [];
+
+      const leftEdgeLocation = normalizeEdgeLocation(frameEdges.leftEdgeLocation ?? geometry.leftEdge);
+      const rightEdgeLocation = normalizeEdgeLocation(frameEdges.rightEdgeLocation ?? geometry.rightEdge);
+      const leftFrameContinuation = normalizeFrameContinuation(frameEdges.leftContinuation ?? leftSide.frameContinuation);
+      const rightFrameContinuation = normalizeFrameContinuation(frameEdges.rightContinuation ?? rightSide.frameContinuation);
+      const parsedOpenings = openingObservations
+        .map((opening: any) => {
+          const normalizedType = normalizeOpeningType(opening?.type);
+          if (!normalizedType) return null;
+          const providedHorizontalBand = isHorizontalBand(String(opening?.horizontalBand || ""))
+            ? opening.horizontalBand as HorizontalBand
+            : null;
+          const providedVerticalBand = isVerticalBand(String(opening?.verticalBand || ""))
+            ? opening.verticalBand as VerticalBand
+            : null;
+          const provisionalHorizontalBand = providedHorizontalBand || "center_third";
+          const provisionalVerticalBand = providedVerticalBand || "mid_zone";
+          const bbox = normalizeBbox(opening, provisionalHorizontalBand, provisionalVerticalBand);
+          const horizontalBand = providedHorizontalBand || inferHorizontalBandFromBbox(bbox);
+          const verticalBand = providedVerticalBand || inferVerticalBandFromBbox(bbox);
+          const areaPct = normalizeAreaPct(opening, bbox);
+          const orientation = isOpeningOrientation(String(opening?.orientation || ""))
+            ? opening.orientation as OpeningOrientation
+            : deriveOrientation(Math.max(0.01, (bbox[2] - bbox[0]) / Math.max(0.01, bbox[3] - bbox[1])));
+          const paneStructure = normalizePaneStructure(opening?.paneStructure);
+          const doorLeafState = normalizeDoorLeafState(opening?.doorLeafState, normalizedType);
+          const wallCoverageBand = isWallCoverageBand(String(opening?.wallCoverageBand || ""))
+            ? opening.wallCoverageBand as WallCoverageBand
+            : deriveWallCoverageBand(areaPct);
+          const confidence = typeof opening?.confidence === "number" && Number.isFinite(opening.confidence)
+            ? Math.max(0, Math.min(1, Number(opening.confidence)))
+            : 0.8;
+
+          return {
+            type: normalizedType,
+            bbox,
+            areaPct,
+            horizontalBand,
+            verticalBand,
+            wallCoverageBand,
+            orientation,
+            paneStructure,
+            doorLeafState,
+            confidence,
+          };
+        })
+        .filter((opening): opening is NonNullable<typeof opening> => opening !== null);
+
+      const wallOrdinal = Number.isFinite(Number(observedWall.observedOrdinal ?? observedWall.ordinal))
+        ? Number(observedWall.observedOrdinal ?? observedWall.ordinal)
+        : index + 1;
+
+      const claimedOpenings = normalizeFeatureTextList(observedWall.containsOpenings)
+        .map((item) => normalizeInventoryOpeningLabel(item))
+        .filter((item): item is StructuralOpeningType => item !== null);
+      const claimedFixtures = normalizePermanentFeaturesList(
+        observedWall.containsPermanentFixtures ?? observedWall.visiblePermanentFeatures
+      );
+      const claimedFeatures = normalizePermanentFeaturesList(observedWall.containsArchitecturalFeatures);
+      const rawClaimedFeatureText = normalizeFeatureTextList(observedWall.containsArchitecturalFeatures);
+      const rawClaimedFixtureText = normalizeFeatureTextList(observedWall.containsPermanentFixtures ?? observedWall.visiblePermanentFeatures);
+
+      const validatedOpenings: StructuralOpeningType[] = [];
+      for (const item of (claimedOpenings.length > 0 ? claimedOpenings : parsedOpenings.map((opening) => opening.type))) {
+        const key = String(item);
+        const maxCount = inventoryOpeningCounts.get(key) || 0;
+        if (maxCount === 0) {
+          unknownReferences.push(`wall_${wallOrdinal}:opening:${key}`);
+          rejectedAnchors.push(`wall_${wallOrdinal}:${key}`);
+          continue;
+        }
+        const used = usageOpenings.get(key) || 0;
+        if (used >= maxCount) {
+          duplicateReferences.push(`wall_${wallOrdinal}:opening:${key}`);
+          rejectedAnchors.push(`wall_${wallOrdinal}:${key}`);
+          continue;
+        }
+        usageOpenings.set(key, used + 1);
+        validatedOpenings.push(item);
+      }
+
+      const validatedOpeningQuota = signatureCount(validatedOpenings);
+      const filteredParsedOpenings: typeof parsedOpenings = [];
+      const filteredCounts = new Map<string, number>();
+      for (const opening of parsedOpenings) {
+        const key = String(opening.type);
+        const allowed = validatedOpeningQuota.get(key) || 0;
+        const used = filteredCounts.get(key) || 0;
+        if (used >= allowed) continue;
+        filteredCounts.set(key, used + 1);
+        filteredParsedOpenings.push(opening);
+      }
+
+      const validatedFixtures: string[] = [];
+      for (const item of claimedFixtures) {
+        if (isBlankWallReferenceLabel(item)) continue;
+        const maxCount = inventoryFixtureCounts.get(item) || 0;
+        if (maxCount === 0) {
+          unknownReferences.push(`wall_${wallOrdinal}:fixture:${item}`);
+          rejectedAnchors.push(`wall_${wallOrdinal}:${item}`);
+          continue;
+        }
+        const used = usageFixtures.get(item) || 0;
+        if (used >= maxCount) {
+          duplicateReferences.push(`wall_${wallOrdinal}:fixture:${item}`);
+          rejectedAnchors.push(`wall_${wallOrdinal}:${item}`);
+          continue;
+        }
+        usageFixtures.set(item, used + 1);
+        validatedFixtures.push(item);
+      }
+
+      const validatedFeatures: string[] = [];
+      for (const item of claimedFeatures) {
+        if (isBlankWallReferenceLabel(item)) continue;
+        const maxCount = inventoryFeatureCounts.get(item) || 0;
+        if (maxCount === 0) {
+          unknownReferences.push(`wall_${wallOrdinal}:feature:${item}`);
+          rejectedAnchors.push(`wall_${wallOrdinal}:${item}`);
+          continue;
+        }
+        const used = usageFeatures.get(item) || 0;
+        if (used >= maxCount) {
+          duplicateReferences.push(`wall_${wallOrdinal}:feature:${item}`);
+          rejectedAnchors.push(`wall_${wallOrdinal}:${item}`);
+          continue;
+        }
+        usageFeatures.set(item, used + 1);
+        validatedFeatures.push(item);
+      }
+
+      if (claimedOpenings.length > 0 && parsedOpenings.length === 0) {
+        inconsistencies.push(`wall_${wallOrdinal}:claimed_openings_without_geometry`);
+      }
+      if (parsedOpenings.length > filteredParsedOpenings.length) {
+        rejectedAnchors.push(`wall_${wallOrdinal}:opening_geometry_rejected`);
+      }
+
+      const hasExplicitBlankWallReference = [...rawClaimedFeatureText, ...rawClaimedFixtureText]
+        .some((item) => isBlankWallReferenceLabel(item));
+
+      const primaryAnchor = choosePrimaryAnchorLabel({
+        openingCandidates: validatedOpenings,
+        permanentFixtures: validatedFixtures,
+        architecturalFeatures: validatedFeatures,
+      });
+      const canonicalPrimaryAnchor = canonicalizePrimaryAnchorLabel(primaryAnchor);
+      chosenAnchors.push(`wall_${wallOrdinal}:${canonicalPrimaryAnchor}`);
+
+      const leftCorner = corners.left || {};
+      const rightCorner = corners.right || {};
+      const leftCornerVisible = leftCorner.visible === true;
+      const rightCornerVisible = rightCorner.visible === true;
+      const leftCornerPosition = leftCornerVisible
+        ? normalizeCornerPositionObservation(leftCorner.position || (leftEdgeLocation === "outside_frame" ? "near_frame_edge" : "outer_third"))
+        : "none";
+      const rightCornerPosition = rightCornerVisible
+        ? normalizeCornerPositionObservation(rightCorner.position || (rightEdgeLocation === "outside_frame" ? "near_frame_edge" : "outer_third"))
+        : "none";
+      const leftCornerVisibility = leftCornerVisible ? normalizeCornerExtent(leftCorner.extent) : "none";
+      const rightCornerVisibility = rightCornerVisible ? normalizeCornerExtent(rightCorner.extent) : "none";
+
+      const leftReturnExtent = normalizeReturnWallExtent(returnWalls?.left?.extent);
+      const rightReturnExtent = normalizeReturnWallExtent(returnWalls?.right?.extent);
+      const leftReturnVisible = typeof returnWalls?.left?.visible === "boolean"
+        ? returnWalls.left.visible
+        : visibilityFromReturnWallExtent(leftReturnExtent);
+      const rightReturnVisible = typeof returnWalls?.right?.visible === "boolean"
+        ? returnWalls.right.visible
+        : visibilityFromReturnWallExtent(rightReturnExtent);
+
+      const visibility = deriveObservedWallVisibility({
+        leftEdgeLocation,
+        rightEdgeLocation,
+        leftCornerVisible,
+        rightCornerVisible,
+        leftReturnVisible,
+        rightReturnVisible,
+        openingCount: filteredParsedOpenings.length,
+      });
+      const visibleExtent = visibility;
+
+      if (leftFrameContinuation === "terminates_at_visible_corner" && !leftCornerVisible) {
+        conflictingObservations.push(`wall_${wallOrdinal}:left_continuation_without_corner`);
+      }
+      if (rightFrameContinuation === "terminates_at_visible_corner" && !rightCornerVisible) {
+        conflictingObservations.push(`wall_${wallOrdinal}:right_continuation_without_corner`);
+      }
+      if (leftReturnVisible === true && leftReturnExtent === "none") {
+        conflictingObservations.push(`wall_${wallOrdinal}:left_return_visible_but_none`);
+      }
+      if (rightReturnVisible === true && rightReturnExtent === "none") {
+        conflictingObservations.push(`wall_${wallOrdinal}:right_return_visible_but_none`);
+      }
+
+      const architecturalCertainty = deriveArchitecturalCertainty(visibility, leftEdgeLocation, rightEdgeLocation);
+      const observations = [
+        `anchor:${canonicalPrimaryAnchor}`,
+        `left_edge:${leftEdgeLocation}`,
+        `right_edge:${rightEdgeLocation}`,
+        `left_corner:${leftCornerVisible ? leftCornerPosition : "none"}`,
+        `right_corner:${rightCornerVisible ? rightCornerPosition : "none"}`,
+        `left_return:${leftReturnExtent}`,
+        `right_return:${rightReturnExtent}`,
+        hasExplicitBlankWallReference ? "blank_wall:explicit" : "blank_wall:implicit",
+      ];
+
+      const observationSignature = canonicalWallObservationSignature({
+        ordinal: wallOrdinal,
+        visibility,
+        visibleExtent,
+        leftEdgeLocation,
+        rightEdgeLocation,
+        leftCornerVisible,
+        rightCornerVisible,
+        leftCornerPosition,
+        rightCornerPosition,
+        leftCornerVisibility,
+        rightCornerVisibility,
+        leftReturnWallVisibility: leftReturnExtent,
+        rightReturnWallVisibility: rightReturnExtent,
+        leftFrameContinuation,
+        rightFrameContinuation,
+        permanentFeatures: [...validatedFixtures, ...validatedFeatures],
+        openings: filteredParsedOpenings,
+      });
+
+      return {
+        sourceIndex: index,
+        ordinal: wallOrdinal,
+        visibility,
+        visibleExtent,
+        leftEdgeLocation,
+        rightEdgeLocation,
+        leftFrameContinuation,
+        rightFrameContinuation,
+        leftCornerVisible,
+        rightCornerVisible,
+        leftCornerPosition,
+        rightCornerPosition,
+        leftCornerVisibility,
+        rightCornerVisibility,
+        leftCornerConfidence: typeof leftCorner.confidence === "number" && Number.isFinite(leftCorner.confidence)
+          ? Math.max(0, Math.min(1, Number(leftCorner.confidence)))
+          : undefined,
+        rightCornerConfidence: typeof rightCorner.confidence === "number" && Number.isFinite(rightCorner.confidence)
+          ? Math.max(0, Math.min(1, Number(rightCorner.confidence)))
+          : undefined,
+        leftReturnWallVisible: leftReturnVisible,
+        rightReturnWallVisible: rightReturnVisible,
+        leftReturnWallVisibility: leftReturnExtent,
+        rightReturnWallVisibility: rightReturnExtent,
+        architecturalCertainty,
+        canonicalPrimaryAnchor,
+        chosenOpeningAnchors: validatedOpenings,
+        chosenFixtureAnchors: validatedFixtures,
+        chosenArchitecturalAnchors: validatedFeatures,
+        openings: filteredParsedOpenings,
+        observations,
+        observationSignature,
+      };
+    })
+    .filter((wall): wall is NonNullable<typeof wall> => wall !== null)
+    .sort((left, right) => compareNumbers(left.ordinal, right.ordinal) || compareNumbers(left.sourceIndex, right.sourceIndex));
+
+  const semanticWallSurfaces = normalizedWallSurfaces.filter((wall, index) => {
+    const openingScore = wall.openings.length > 0 ? 3 : 0;
+    const cornerScore = (wall.leftCornerVisible ? 1 : 0) + (wall.rightCornerVisible ? 1 : 0);
+    const returnScore = (wall.leftReturnWallVisible ? 1 : 0) + (wall.rightReturnWallVisible ? 1 : 0);
+    const anchorScore = wall.canonicalPrimaryAnchor !== "wall_plane" ? 1 : 0;
+    const evidenceScore = openingScore + cornerScore + returnScore + anchorScore;
+    if (wall.openings.length > 0) return true;
+    if (wall.canonicalPrimaryAnchor === "wall_plane" && (cornerScore > 0 || returnScore > 0)) return true;
+    if (evidenceScore >= 2) return true;
+    return index === 0;
+  });
+
+  const canonicalWallSurfaces = [...semanticWallSurfaces].sort((left, right) => {
+    const leftOpeningRank = left.chosenOpeningAnchors.length > 0 ? openingAnchorRank(left.chosenOpeningAnchors[0]) : 99;
+    const rightOpeningRank = right.chosenOpeningAnchors.length > 0 ? openingAnchorRank(right.chosenOpeningAnchors[0]) : 99;
+    const leftFeatureRank = anchorFeatureRank(left.canonicalPrimaryAnchor);
+    const rightFeatureRank = anchorFeatureRank(right.canonicalPrimaryAnchor);
+    return (
+      compareNumbers(leftOpeningRank, rightOpeningRank) ||
+      compareNumbers(leftFeatureRank, rightFeatureRank) ||
+      compareNumbers(right.openings.length, left.openings.length) ||
+      compareStrings(left.observationSignature, right.observationSignature) ||
+      compareNumbers(left.ordinal, right.ordinal) ||
+      compareNumbers(left.sourceIndex, right.sourceIndex)
+    );
+  });
+
+  const anchorCounters = new Map<string, number>();
+  const canonicalWallIds = new Map<number, string>();
+  for (const wall of canonicalWallSurfaces) {
+    const anchor = wall.canonicalPrimaryAnchor || "wall_plane";
+    const nextCount = (anchorCounters.get(anchor) || 0) + 1;
+    anchorCounters.set(anchor, nextCount);
+    if (anchor === "wall_plane") {
+      canonicalWallIds.set(wall.ordinal, `blank_wall_${nextCount}`);
+    } else {
+      canonicalWallIds.set(wall.ordinal, `${anchor}_${nextCount}`);
+    }
+  }
+
+  const anchorFixtures: AnchorFixture[] = [];
+  const openingPrototypes: Array<Omit<StructuralOpening, "id"> & { __stableOrder: number }> = [];
+  const wallDescriptors: WallDescriptor[] = [];
+
+  canonicalWallSurfaces.forEach((wall, index) => {
+    const wallIndex = wallIndexFromSurfaceOrder(index, wall.leftEdgeLocation, wall.rightEdgeLocation);
+    const terminatesAtCorner = wall.leftCornerVisible === true || wall.rightCornerVisible === true;
+    const continuesBeyondFrame = wall.leftEdgeLocation === "outside_frame" || wall.rightEdgeLocation === "outside_frame";
+    const canonicalWallId = canonicalWallIds.get(wall.ordinal) || `blank_wall_${index + 1}`;
+
+    wallDescriptors.push({
+      wallIndex,
+      canonicalWallId,
+      primaryAnchorLabel: wall.canonicalPrimaryAnchor,
+      observedOrdinal: wall.ordinal,
+      visibility: wall.visibility,
+      visibleExtent: wall.visibleExtent,
+      architecturalCertainty: wall.architecturalCertainty,
+      leftEdgeLocation: wall.leftEdgeLocation,
+      rightEdgeLocation: wall.rightEdgeLocation,
+      leftBoundaryVisible: wall.leftEdgeLocation !== "outside_frame",
+      rightBoundaryVisible: wall.rightEdgeLocation !== "outside_frame",
+      leftCornerVisible: wall.leftCornerVisible,
+      rightCornerVisible: wall.rightCornerVisible,
+      leftCornerConfidence: wall.leftCornerConfidence,
+      rightCornerConfidence: wall.rightCornerConfidence,
+      leftCornerPosition: wall.leftCornerPosition,
+      rightCornerPosition: wall.rightCornerPosition,
+      leftCornerVisibility: wall.leftCornerVisibility,
+      rightCornerVisibility: wall.rightCornerVisibility,
+      leftAdjacentWallVisibility: wall.leftReturnWallVisible === true ? "partial" : "none",
+      rightAdjacentWallVisibility: wall.rightReturnWallVisible === true ? "partial" : "none",
+      leftReturnWallVisible: wall.leftReturnWallVisible,
+      rightReturnWallVisible: wall.rightReturnWallVisible,
+      leftReturnWallVisibility: wall.leftReturnWallVisibility,
+      rightReturnWallVisibility: wall.rightReturnWallVisibility,
+      leftFrameEdgeContinuation: wall.leftFrameContinuation,
+      rightFrameEdgeContinuation: wall.rightFrameContinuation,
+      terminatesAtCorner,
+      continuesBeyondFrame,
+      boundaryBehaviour: terminatesAtCorner
+        ? "terminates_at_visible_corner"
+        : continuesBeyondFrame
+          ? "continues_beyond_frame"
+          : "unknown",
+      description: wall.observations.slice(0, 6).join("; "),
+    });
+
+    const fixtureType = classifyAnchorFixtureType(wall.canonicalPrimaryAnchor);
+    if (fixtureType) {
+      const fixtureBand = wall.openings[0]?.horizontalBand || "center_third";
+      anchorFixtures.push({
+        id: `F${anchorFixtures.length + 1}`,
+        type: fixtureType,
+        wallIndex,
+        horizontalBand: fixtureBand,
+        bbox: normalizeBbox({ bbox: [fixtureBand === "left_third" ? 0.05 : fixtureBand === "right_third" ? 0.7 : 0.35, 0.25, fixtureBand === "left_third" ? 0.25 : fixtureBand === "right_third" ? 0.95 : 0.65, 0.75] }, fixtureBand, "mid_zone"),
+        confidence: 0.7,
+      });
+    }
+
+    wall.openings.forEach((opening, openingIndex) => {
+      openingPrototypes.push({
+        __stableOrder: (index * 100) + openingIndex,
+        type: opening.type,
+        bbox: opening.bbox,
+        area_pct: opening.areaPct,
+        wallIndex,
+        horizontalBand: opening.horizontalBand,
+        verticalBand: opening.verticalBand,
+        wallCoverageBand: opening.wallCoverageBand,
+        orientation: opening.orientation,
+        paneStructure: opening.paneStructure,
+        doorLeafState: opening.doorLeafState,
+        confidence: opening.confidence,
+        wallPosition: mapIndexToWallPosition(wallIndex),
+        relativeHorizontalPosition: mapBandToLegacyHorizontal(opening.horizontalBand),
+        shape: opening.type,
+        touchesFloor: opening.verticalBand === "floor_zone" || opening.verticalBand === "full_height",
+        touchesCeiling: opening.verticalBand === "ceiling_zone" || opening.verticalBand === "full_height",
+        approxCount: 1,
+      });
+    });
+  });
+
+  const sortedOpenings = openingPrototypes
+    .sort((left, right) => (
+      compareNumbers(left.wallIndex, right.wallIndex) ||
+      compareStrings(left.horizontalBand, right.horizontalBand) ||
+      compareStrings(left.verticalBand, right.verticalBand) ||
+      compareNumbers((left.bbox[0] + left.bbox[2]) / 2, (right.bbox[0] + right.bbox[2]) / 2, 1e-4) ||
+      compareNumbers(left.__stableOrder, right.__stableOrder)
+    ));
+
+  const openingCounters: Record<StructuralOpeningType, number> = {
+    window: 0,
+    door: 0,
+    closet_door: 0,
+    walkthrough: 0,
+  };
+  const openingPrefix: Record<StructuralOpeningType, string> = {
+    window: "W",
+    door: "D",
+    closet_door: "C",
+    walkthrough: "A",
+  };
+
+  const openings: StructuralOpening[] = sortedOpenings.map((opening) => {
+    openingCounters[opening.type] += 1;
+    const id = `${openingPrefix[opening.type]}${openingCounters[opening.type]}`;
+    const { __stableOrder, ...rest } = opening;
+    return { id, ...rest };
+  });
+
+  const unusedInventory: string[] = [];
+  inventoryOpeningCounts.forEach((count, key) => {
+    const used = usageOpenings.get(key) || 0;
+    for (let i = used; i < count; i += 1) unusedInventory.push(`opening:${key}`);
+  });
+  inventoryFixtureCounts.forEach((count, key) => {
+    const used = usageFixtures.get(key) || 0;
+    for (let i = used; i < count; i += 1) unusedInventory.push(`fixture:${key}`);
+  });
+  inventoryFeatureCounts.forEach((count, key) => {
+    const used = usageFeatures.get(key) || 0;
+    for (let i = used; i < count; i += 1) unusedInventory.push(`feature:${key}`);
+  });
+
+  let baselineConfidence = 1;
+  baselineConfidence -= unknownReferences.length * 0.08;
+  baselineConfidence -= duplicateReferences.length * 0.05;
+  baselineConfidence -= rejectedAnchors.length * 0.03;
+  baselineConfidence -= inconsistencies.length * 0.06;
+  baselineConfidence -= conflictingObservations.length * 0.04;
+  baselineConfidence -= unusedInventory.length * 0.04;
+  baselineConfidence -= canonicalWallSurfaces.filter((wall) => wall.canonicalPrimaryAnchor === "wall_plane" && (wall.openings.length > 0)).length * 0.03;
+  const blankWallCount = canonicalWallSurfaces.filter((wall) => wall.canonicalPrimaryAnchor === "wall_plane").length;
+  const blankWallAmbiguityCount = Math.max(0, blankWallCount - 1);
+  baselineConfidence -= blankWallAmbiguityCount * 0.02;
+  baselineConfidence = Math.max(0, Math.min(1, roundDeterministic(baselineConfidence, 3)));
+
+  openings.sort(compareStructuralOpenings);
+  anchorFixtures.sort(compareAnchorFixtures);
+  const canonicalWallDescriptors = wallDescriptors
+    .sort((left, right) => compareNumbers(left.wallIndex, right.wallIndex) || compareStrings(left.description, right.description));
+
+  const observationHash = createHash("sha256")
+    .update(JSON.stringify(normalizedWallSurfaces.map((wall) => wall.observationSignature)))
+    .digest("hex");
+  const inventoryHash = createHash("sha256")
+    .update(JSON.stringify(stableSortObject(inventory)))
+    .digest("hex");
+  const canonicalIdentityHash = createHash("sha256")
+    .update(JSON.stringify(canonicalWallDescriptors.map((wall) => ({ wallIndex: wall.wallIndex, canonicalWallId: wall.canonicalWallId, primaryAnchorLabel: wall.primaryAnchorLabel }))))
+    .digest("hex");
+
+  return {
+    cameraOrientation: typeof input?.cameraOrientation === "string" ? input.cameraOrientation : undefined,
+    openings,
+    anchorFixtures,
+    observationMeta: {
+      observationHash,
+      inventoryHash,
+      canonicalIdentityHash,
+      wallCount: normalizedWallSurfaces.length,
+      inventory: {
+        openings: inventory.openings,
+        permanentFixtures: inventory.permanentFixtures,
+        architecturalFeatures: inventory.architecturalFeatures,
+      },
+      validation: {
+        unknownReferences,
+        duplicateReferences,
+        unusedInventory,
+        inconsistencies,
+        conflictingObservations,
+        rejectedAnchors,
+        chosenAnchors,
+      },
+      baselineConfidence,
+    },
+    wallDescriptors: canonicalWallDescriptors.length > 0 ? canonicalWallDescriptors : undefined,
+  };
+}
+
+type BaselineValidationSnapshot = {
+  unknownReferences: string[];
+  duplicateReferences: string[];
+  unusedInventory: string[];
+  inconsistencies: string[];
+  conflictingObservations?: string[];
+  rejectedAnchors: string[];
+  chosenAnchors: string[];
+  reconciliationActions?: string[];
+  reconciliationReasons?: string[];
+};
+
+function baselineValidationData(baseline: StructuralBaseline): BaselineValidationSnapshot {
+  return {
+    unknownReferences: [],
+    duplicateReferences: [],
+    unusedInventory: [],
+    inconsistencies: [],
+    conflictingObservations: [],
+    rejectedAnchors: [],
+    chosenAnchors: [],
+    ...(baseline.observationMeta?.validation || {}),
+  };
+}
+
+function isBaselineValidationPassed(baseline: StructuralBaseline): boolean {
+  const validation = baselineValidationData(baseline);
+  return validation.unknownReferences.length === 0 &&
+    validation.duplicateReferences.length === 0 &&
+    validation.inconsistencies.length === 0;
+}
+
+function openingTypeCounts(openings: StructuralOpening[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const opening of openings) {
+    const key = String(opening.type);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  return counts;
+}
+
+function structuralDisagreementReasons(left: StructuralBaseline, right: StructuralBaseline): string[] {
+  const reasons: string[] = [];
+  const leftWalls = left.wallDescriptors || [];
+  const rightWalls = right.wallDescriptors || [];
+  if (leftWalls.length !== rightWalls.length) {
+    const leftOpeningWalls = new Set<number>((left.openings || []).map((opening) => opening.wallIndex));
+    const rightOpeningWalls = new Set<number>((right.openings || []).map((opening) => opening.wallIndex));
+
+    const leftSubstantiveWallCount = leftWalls.filter((wall) =>
+      (wall.primaryAnchorLabel || "wall_plane") !== "wall_plane" || leftOpeningWalls.has(wall.wallIndex)
+    ).length;
+    const rightSubstantiveWallCount = rightWalls.filter((wall) =>
+      (wall.primaryAnchorLabel || "wall_plane") !== "wall_plane" || rightOpeningWalls.has(wall.wallIndex)
+    ).length;
+
+    if (leftSubstantiveWallCount !== rightSubstantiveWallCount) {
+      reasons.push(`wall_count_mismatch:${leftWalls.length}_vs_${rightWalls.length}`);
+    }
+  }
+
+  const leftOpenings = openingTypeCounts(left.openings || []);
+  const rightOpenings = openingTypeCounts(right.openings || []);
+  const allTypes = new Set<string>([...leftOpenings.keys(), ...rightOpenings.keys()]);
+  for (const type of allTypes) {
+    const leftCount = leftOpenings.get(type) || 0;
+    const rightCount = rightOpenings.get(type) || 0;
+    if (leftCount !== rightCount) {
+      reasons.push(`opening_type_mismatch:${type}:${leftCount}_vs_${rightCount}`);
+    }
+  }
+
+  const leftByWall = new Map<number, WallDescriptor>(leftWalls.map((wall) => [wall.wallIndex, wall]));
+  const rightByWall = new Map<number, WallDescriptor>(rightWalls.map((wall) => [wall.wallIndex, wall]));
+  for (const wallIndex of [...new Set<number>([...leftByWall.keys(), ...rightByWall.keys()])]) {
+    const l = leftByWall.get(wallIndex);
+    const r = rightByWall.get(wallIndex);
+    if (!l || !r) continue;
+
+    const leftEdgeAmbiguous = l.leftBoundaryVisible !== true || r.leftBoundaryVisible !== true || l.visibility === "minimal" || r.visibility === "minimal";
+    const rightEdgeAmbiguous = l.rightBoundaryVisible !== true || r.rightBoundaryVisible !== true || l.visibility === "minimal" || r.visibility === "minimal";
+
+    if (!leftEdgeAmbiguous && (l.leftCornerVisible === true) !== (r.leftCornerVisible === true)) {
+      reasons.push(`corner_topology_mismatch:wall_${wallIndex}:left`);
+    }
+    if (!rightEdgeAmbiguous && (l.rightCornerVisible === true) !== (r.rightCornerVisible === true)) {
+      reasons.push(`corner_topology_mismatch:wall_${wallIndex}:right`);
+    }
+    if (!leftEdgeAmbiguous && (l.leftReturnWallVisible === true) !== (r.leftReturnWallVisible === true)) {
+      reasons.push(`return_topology_mismatch:wall_${wallIndex}:left`);
+    }
+    if (!rightEdgeAmbiguous && (l.rightReturnWallVisible === true) !== (r.rightReturnWallVisible === true)) {
+      reasons.push(`return_topology_mismatch:wall_${wallIndex}:right`);
+    }
+  }
+
+  return reasons;
+}
+
+function pickConservativeString(
+  left: string | undefined,
+  right: string | undefined,
+  fallback: string
+): string {
+  if (left === right && left) return left;
+  if (!left && right) return fallback;
+  if (!right && left) return fallback;
+  return fallback;
+}
+
+function pickConservativeAnchor(left: string | undefined, right: string | undefined): string {
+  const l = canonicalizePrimaryAnchorLabel(left || "wall_plane");
+  const r = canonicalizePrimaryAnchorLabel(right || "wall_plane");
+  if (l === r) return l;
+  if (l === "wall_plane" || r === "wall_plane") return "wall_plane";
+  return "wall_plane";
+}
+
+function reconcileWallDescriptor(
+  left: WallDescriptor | undefined,
+  right: WallDescriptor | undefined,
+  actions: string[]
+): WallDescriptor | null {
+  const base = left || right;
+  if (!base) return null;
+  if (!left || !right) {
+    actions.push(`wall_${base.wallIndex}:single_source_descriptor`);
+    return { ...base };
+  }
+
+  const anchor = pickConservativeAnchor(left.primaryAnchorLabel, right.primaryAnchorLabel);
+  if ((left.primaryAnchorLabel || "wall_plane") !== (right.primaryAnchorLabel || "wall_plane")) {
+    actions.push(`wall_${base.wallIndex}:identity_disagreement_${left.primaryAnchorLabel || "wall_plane"}_vs_${right.primaryAnchorLabel || "wall_plane"}`);
+  }
+
+  const leftCornerVisible = left.leftCornerVisible === true && right.leftCornerVisible === true;
+  const rightCornerVisible = left.rightCornerVisible === true && right.rightCornerVisible === true;
+
+  return {
+    ...base,
+    primaryAnchorLabel: anchor,
+    leftEdgeLocation: pickConservativeString(left.leftEdgeLocation, right.leftEdgeLocation, "unknown") as WallDescriptor["leftEdgeLocation"],
+    rightEdgeLocation: pickConservativeString(left.rightEdgeLocation, right.rightEdgeLocation, "unknown") as WallDescriptor["rightEdgeLocation"],
+    leftFrameEdgeContinuation: pickConservativeString(left.leftFrameEdgeContinuation, right.leftFrameEdgeContinuation, "unknown") as WallDescriptor["leftFrameEdgeContinuation"],
+    rightFrameEdgeContinuation: pickConservativeString(left.rightFrameEdgeContinuation, right.rightFrameEdgeContinuation, "unknown") as WallDescriptor["rightFrameEdgeContinuation"],
+    leftCornerVisible,
+    rightCornerVisible,
+    leftCornerPosition: leftCornerVisible
+      ? (pickConservativeString(left.leftCornerPosition, right.leftCornerPosition, "none") as WallDescriptor["leftCornerPosition"])
+      : "none",
+    rightCornerPosition: rightCornerVisible
+      ? (pickConservativeString(left.rightCornerPosition, right.rightCornerPosition, "none") as WallDescriptor["rightCornerPosition"])
+      : "none",
+    leftCornerVisibility: leftCornerVisible
+      ? (pickConservativeString(left.leftCornerVisibility, right.leftCornerVisibility, "minimal") as WallDescriptor["leftCornerVisibility"])
+      : "none",
+    rightCornerVisibility: rightCornerVisible
+      ? (pickConservativeString(left.rightCornerVisibility, right.rightCornerVisibility, "minimal") as WallDescriptor["rightCornerVisibility"])
+      : "none",
+    leftReturnWallVisibility: pickConservativeString(left.leftReturnWallVisibility, right.leftReturnWallVisibility, "unknown") as WallDescriptor["leftReturnWallVisibility"],
+    rightReturnWallVisibility: pickConservativeString(left.rightReturnWallVisibility, right.rightReturnWallVisibility, "unknown") as WallDescriptor["rightReturnWallVisibility"],
+    leftReturnWallVisible: left.leftReturnWallVisible === true && right.leftReturnWallVisible === true,
+    rightReturnWallVisible: left.rightReturnWallVisible === true && right.rightReturnWallVisible === true,
+    architecturalCertainty: (left.architecturalCertainty === right.architecturalCertainty
+      ? left.architecturalCertainty
+      : "unknown") as WallDescriptor["architecturalCertainty"],
+  };
+}
+
+function assignCanonicalWallIds(descriptors: WallDescriptor[]): WallDescriptor[] {
+  const counters = new Map<string, number>();
+  return descriptors
+    .sort((left, right) => compareNumbers(left.wallIndex, right.wallIndex) || compareNumbers(left.observedOrdinal || 0, right.observedOrdinal || 0))
+    .map((descriptor) => {
+      const anchor = canonicalizePrimaryAnchorLabel(descriptor.primaryAnchorLabel || "wall_plane");
+      const next = (counters.get(anchor) || 0) + 1;
+      counters.set(anchor, next);
+      const canonicalWallId = anchor === "wall_plane" ? `blank_wall_${next}` : `${anchor}_${next}`;
+      return {
+        ...descriptor,
+        primaryAnchorLabel: anchor,
+        canonicalWallId,
+      };
+    });
+}
+
+function reconcileFailedBaselines(
+  run1: StructuralBaseline,
+  run2: StructuralBaseline,
+  imageHash: string
+): StructuralBaseline | null {
+  const disagreement = structuralDisagreementReasons(run1, run2);
+  if (disagreement.length > 0) return null;
+
+  const actions: string[] = [];
+  const leftByWall = new Map<number, WallDescriptor>((run1.wallDescriptors || []).map((wall) => [wall.wallIndex, wall]));
+  const rightByWall = new Map<number, WallDescriptor>((run2.wallDescriptors || []).map((wall) => [wall.wallIndex, wall]));
+  const wallIndexes = [...new Set<number>([...leftByWall.keys(), ...rightByWall.keys()])].sort((a, b) => a - b);
+  const mergedDescriptors = wallIndexes
+    .map((wallIndex) => reconcileWallDescriptor(leftByWall.get(wallIndex), rightByWall.get(wallIndex), actions))
+    .filter((wall): wall is WallDescriptor => wall !== null);
+  const canonicalDescriptors = assignCanonicalWallIds(mergedDescriptors);
+
+  const preferred = (run1.observationMeta?.baselineConfidence || 0) >= (run2.observationMeta?.baselineConfidence || 0)
+    ? run1
+    : run2;
+  const validation1 = baselineValidationData(run1);
+  const validation2 = baselineValidationData(run2);
+  const reasons = [
+    ...structuralDisagreementReasons(run1, run2),
+    ...validation1.unknownReferences,
+    ...validation1.duplicateReferences,
+    ...validation2.unknownReferences,
+    ...validation2.duplicateReferences,
+  ].filter(Boolean);
+
+  const confidenceBase = Math.min(
+    run1.observationMeta?.baselineConfidence ?? 0.6,
+    run2.observationMeta?.baselineConfidence ?? 0.6
+  );
+  const baselineConfidence = Math.max(0, roundDeterministic(confidenceBase - 0.12 - (actions.length * 0.01), 3));
+
+  const observationHash = createHash("sha256")
+    .update(JSON.stringify([
+      run1.observationMeta?.observationHash || "",
+      run2.observationMeta?.observationHash || "",
+      ...canonicalDescriptors.map((wall) => `${wall.wallIndex}:${wall.canonicalWallId || ""}`),
+    ]))
+    .digest("hex");
+
+  const reconciled: StructuralBaseline = {
+    ...preferred,
+    wallDescriptors: canonicalDescriptors,
+    observationMeta: {
+      ...(preferred.observationMeta || { observationHash: "", wallCount: canonicalDescriptors.length }),
+      observationHash,
+      wallCount: canonicalDescriptors.length,
+      baselineStatus: "RECONCILED",
+      baselineConfidence,
+      validation: {
+        unknownReferences: [...new Set([...(validation1.unknownReferences || []), ...(validation2.unknownReferences || [])])],
+        duplicateReferences: [...new Set([...(validation1.duplicateReferences || []), ...(validation2.duplicateReferences || [])])],
+        unusedInventory: [...new Set([...(validation1.unusedInventory || []), ...(validation2.unusedInventory || [])])],
+        inconsistencies: [...new Set([...(validation1.inconsistencies || []), ...(validation2.inconsistencies || [])])],
+        rejectedAnchors: [...new Set([...(validation1.rejectedAnchors || []), ...(validation2.rejectedAnchors || [])])],
+        chosenAnchors: canonicalDescriptors.map((wall) => `wall_${wall.wallIndex}:${wall.primaryAnchorLabel || "wall_plane"}`),
+        reconciliationActions: actions,
+        reconciliationReasons: reasons,
+      },
+    },
+  };
+
+  const graphHash = hashStructuralBaselineGraph(reconciled);
+  reconciled.graphMeta = {
+    ...(reconciled.graphMeta || {
+      graphStable: false,
+      graphConfidence: 0.5,
+      extractionAgreement: 0.5,
+      passCount: 2,
+      openingCountVariance: 0,
+      cacheStatus: "unstable",
+      candidateGraphHashes: [graphHash],
+      openingCountRange: { min: reconciled.openings.length, max: reconciled.openings.length },
+      confirmedAt: new Date().toISOString(),
+    }),
+    imageHash,
+    graphHash,
+    cacheStatus: "unstable",
+    baselineMethod: "single_pass_observation",
+    baselineStatus: "RECONCILED",
+    baselineConfidence,
+    observationHash,
+    reconciliationActions: actions,
+    reconciliationReasons: reasons,
+  };
+
+  return reconciled;
+}
+
+function toWallDescriptorByOrdinal(
+  baseline: StructuralBaseline
+): Array<{ ordinal: number; descriptor: WallDescriptor }> {
+  return [...(baseline.wallDescriptors || [])]
+    .map((descriptor, index) => ({
+      ordinal: Number.isFinite(Number(descriptor.observedOrdinal))
+        ? Number(descriptor.observedOrdinal)
+        : index + 1,
+      descriptor,
+    }))
+    .sort((left, right) => compareNumbers(left.ordinal, right.ordinal));
+}
+
+function mergeOpeningsRelaxed(
+  left: StructuralOpening[],
+  right: StructuralOpening[]
+): StructuralOpening[] {
+  const merged = new Map<string, StructuralOpening>();
+  const ingest = (opening: StructuralOpening) => {
+    const signature = [
+      getCanonicalOpeningIdentityType(opening.type),
+      String(opening.wallIndex),
+      opening.horizontalBand,
+      opening.verticalBand,
+      bboxKey(opening.bbox),
+    ].join("|");
+    const existing = merged.get(signature);
+    if (!existing || opening.confidence > existing.confidence) {
+      merged.set(signature, opening);
+    }
+  };
+
+  for (const opening of [...left, ...right]) ingest(opening);
+
+  return [...merged.values()]
+    .sort(compareStructuralOpenings)
+    .map((opening, index) => ({
+      ...opening,
+      id: `opening_${index + 1}`,
+    }));
+}
+
+function mergeFixturesRelaxed(
+  left: AnchorFixture[],
+  right: AnchorFixture[]
+): AnchorFixture[] {
+  const merged = new Map<string, AnchorFixture>();
+  const ingest = (fixture: AnchorFixture) => {
+    const signature = [
+      fixture.type,
+      String(fixture.wallIndex),
+      fixture.horizontalBand,
+      bboxKey(fixture.bbox),
+    ].join("|");
+    const existing = merged.get(signature);
+    if (!existing || fixture.confidence > existing.confidence) {
+      merged.set(signature, fixture);
+    }
+  };
+
+  for (const fixture of [...left, ...right]) ingest(fixture);
+
+  return [...merged.values()]
+    .sort(compareAnchorFixtures)
+    .map((fixture, index) => ({
+      ...fixture,
+      id: fixture.id || `fixture_${index + 1}`,
+    }));
+}
+
+function hasUsableBaselineEvidence(baseline: StructuralBaseline | null | undefined): boolean {
+  if (!baseline) return false;
+  return (baseline.wallDescriptors?.length || 0) > 0
+    || (baseline.openings?.length || 0) > 0
+    || (baseline.anchorFixtures?.length || 0) > 0;
+}
+
+function baselineReliabilityScore(reliability: BaselineReliability | undefined): number {
+  if (reliability === "HIGH") return 1;
+  if (reliability === "MEDIUM") return 0.7;
+  return 0.45;
+}
+
+function scoreBaselineCandidate(
+  baseline: StructuralBaseline,
+  reliability: BaselineReliability,
+  confidence: number
+): number {
+  const wallCount = baseline.wallDescriptors?.length || 0;
+  const openingCount = baseline.openings?.length || 0;
+  const fixtureCount = baseline.anchorFixtures?.length || 0;
+  const disagreementPenalty = (baseline.observationMeta?.validation?.reconciliationReasons?.length || 0) * 0.01;
+  return (
+    (confidence * 0.55)
+    + (baselineReliabilityScore(reliability) * 0.2)
+    + (Math.min(wallCount, 4) / 4) * 0.15
+    + (Math.min(openingCount + fixtureCount, 6) / 6) * 0.1
+    - disagreementPenalty
+  );
+}
+
+function markBaselineReliability(params: {
+  baseline: StructuralBaseline;
+  reliability: BaselineReliability;
+  fallbackInvoked: boolean;
+  baselineExtractionStrategy: "single_pass_observation" | "graph_reconciliation" | "semantic_relaxed_rebuild";
+  baselineConfidence: number;
+  baselineConfidenceDegraded: boolean;
+  baselineStatus: BaselineInternalStatus;
+  imageHash: string;
+  passCount: number;
+  reconciliationActions?: string[];
+  reconciliationReasons?: string[];
+}): StructuralBaseline {
+  const graphHash = hashStructuralBaselineGraph(params.baseline);
+  const observationHash = params.baseline.observationMeta?.observationHash || "";
+  const confirmedAt = new Date().toISOString();
+
+  return {
+    ...params.baseline,
+    observationMeta: {
+      ...(params.baseline.observationMeta || {
+        observationHash,
+        wallCount: params.baseline.wallDescriptors?.length || 0,
+      }),
+      baselineStatus: params.baselineStatus,
+      baselineConfidence: params.baselineConfidence,
+      baselineReliability: params.reliability,
+      fallbackInvoked: params.fallbackInvoked,
+      baselineExtractionStrategy: params.baselineExtractionStrategy,
+      baselineConfidenceDegraded: params.baselineConfidenceDegraded,
+    },
+    graphMeta: {
+      ...(params.baseline.graphMeta || {
+        graphStable: params.baselineStatus === "MATCHED",
+        graphConfidence: params.baselineStatus === "MATCHED" ? 1 : 0.6,
+        extractionAgreement: params.baselineStatus === "MATCHED" ? 1 : 0.6,
+        passCount: params.passCount,
+        openingCountVariance: 0,
+        cacheStatus: params.baselineStatus === "MATCHED" ? "stabilized" : "unstable",
+        candidateGraphHashes: [graphHash],
+        openingCountRange: { min: params.baseline.openings.length, max: params.baseline.openings.length },
+        confirmedAt,
+      }),
+      imageHash: params.imageHash,
+      graphHash,
+      passCount: params.passCount,
+      cacheStatus: params.baselineStatus === "MATCHED" ? "stabilized" : "unstable",
+      candidateGraphHashes: [graphHash],
+      openingCountRange: { min: params.baseline.openings.length, max: params.baseline.openings.length },
+      confirmedAt,
+      baselineMethod: params.baselineExtractionStrategy,
+      observationHash,
+      baselineConfidence: params.baselineConfidence,
+      baselineStatus: params.baselineStatus,
+      baselineReliability: params.reliability,
+      fallbackInvoked: params.fallbackInvoked,
+      baselineExtractionStrategy: params.baselineExtractionStrategy,
+      baselineConfidenceDegraded: params.baselineConfidenceDegraded,
+      reconciliationActions: params.reconciliationActions,
+      reconciliationReasons: params.reconciliationReasons,
+      verification: {
+        ...(params.baseline.graphMeta?.verification || {
+          attempted: false,
+          accepted: true,
+          modelAccepted: true,
+          additionalOpeningCount: 0,
+          missingOpeningCount: 0,
+          materiallyDifferentCount: 0,
+          notPresentCount: 0,
+          minorDifferenceCount: 0,
+          rejectedReasonCodes: [],
+          openingStatuses: [],
+          additionalOpenings: [],
+          missingOpenings: [],
+        }),
+        accepted: params.baselineStatus !== "IRRECONCILABLE",
+        modelAccepted: params.baselineStatus !== "IRRECONCILABLE",
+        rejectedReasonCodes: params.baselineStatus === "IRRECONCILABLE" ? ["irreconcilable_baseline"] : [],
+        analysis: params.reconciliationReasons?.join("; "),
+      },
+    },
+  };
+}
+
+function buildRelaxedBaselineFallback(
+  run1: StructuralBaseline,
+  run2: StructuralBaseline,
+  imageHash: string
+): StructuralBaseline | null {
+  const walls1 = toWallDescriptorByOrdinal(run1);
+  const walls2 = toWallDescriptorByOrdinal(run2);
+  const maxWalls = Math.max(walls1.length, walls2.length);
+  if (maxWalls === 0 && !hasUsableBaselineEvidence(run1) && !hasUsableBaselineEvidence(run2)) {
+    return null;
+  }
+
+  const actions: string[] = [];
+  const mergedWalls: WallDescriptor[] = [];
+  for (let index = 0; index < maxWalls; index += 1) {
+    const left = walls1[index]?.descriptor;
+    const right = walls2[index]?.descriptor;
+
+    const leftAdjusted = left ? { ...left, wallIndex: index as WallIndex, observedOrdinal: index + 1 } : undefined;
+    const rightAdjusted = right ? { ...right, wallIndex: index as WallIndex, observedOrdinal: index + 1 } : undefined;
+    const merged = reconcileWallDescriptor(leftAdjusted, rightAdjusted, actions);
+    if (merged) {
+      merged.wallIndex = index as WallIndex;
+      merged.observedOrdinal = index + 1;
+      mergedWalls.push(merged);
+    }
+  }
+
+  const canonicalDescriptors = assignCanonicalWallIds(mergedWalls);
+  const mergedOpenings = mergeOpeningsRelaxed(run1.openings || [], run2.openings || []);
+  const mergedFixtures = mergeFixturesRelaxed(run1.anchorFixtures || [], run2.anchorFixtures || []);
+
+  const preferred = (run1.observationMeta?.baselineConfidence || 0) >= (run2.observationMeta?.baselineConfidence || 0)
+    ? run1
+    : run2;
+
+  const validation1 = baselineValidationData(run1);
+  const validation2 = baselineValidationData(run2);
+  const reconciliationReasons = [
+    ...structuralDisagreementReasons(run1, run2),
+    ...validation1.unknownReferences,
+    ...validation1.duplicateReferences,
+    ...validation2.unknownReferences,
+    ...validation2.duplicateReferences,
+    "fallback:semantic_relaxed_rebuild",
+  ].filter(Boolean);
+
+  const baselineConfidence = Math.max(
+    0.25,
+    roundDeterministic(
+      Math.min(run1.observationMeta?.baselineConfidence ?? 0.65, run2.observationMeta?.baselineConfidence ?? 0.65) - 0.18,
+      3
+    )
+  );
+
+  const observationHash = createHash("sha256")
+    .update(JSON.stringify([
+      run1.observationMeta?.observationHash || "",
+      run2.observationMeta?.observationHash || "",
+      ...canonicalDescriptors.map((wall) => `${wall.wallIndex}:${wall.canonicalWallId || ""}`),
+      ...mergedOpenings.map((opening) => `${opening.type}:${opening.wallIndex}:${bboxKey(opening.bbox)}`),
+    ]))
+    .digest("hex");
+
+  const fallback: StructuralBaseline = {
+    ...preferred,
+    openings: mergedOpenings,
+    anchorFixtures: mergedFixtures,
+    wallDescriptors: canonicalDescriptors,
+    observationMeta: {
+      ...(preferred.observationMeta || { observationHash: "", wallCount: canonicalDescriptors.length }),
+      observationHash,
+      wallCount: canonicalDescriptors.length,
+      baselineStatus: "RECONCILED",
+      baselineConfidence,
+      validation: {
+        unknownReferences: [...new Set([...(validation1.unknownReferences || []), ...(validation2.unknownReferences || [])])],
+        duplicateReferences: [...new Set([...(validation1.duplicateReferences || []), ...(validation2.duplicateReferences || [])])],
+        unusedInventory: [...new Set([...(validation1.unusedInventory || []), ...(validation2.unusedInventory || [])])],
+        inconsistencies: [...new Set([...(validation1.inconsistencies || []), ...(validation2.inconsistencies || [])])],
+        rejectedAnchors: [...new Set([...(validation1.rejectedAnchors || []), ...(validation2.rejectedAnchors || [])])],
+        chosenAnchors: canonicalDescriptors.map((wall) => `wall_${wall.wallIndex}:${wall.primaryAnchorLabel || "wall_plane"}`),
+        reconciliationActions: actions,
+        reconciliationReasons,
+      },
+    },
+  };
+
+  return markBaselineReliability({
+    baseline: fallback,
+    reliability: "LOW",
+    fallbackInvoked: true,
+    baselineExtractionStrategy: "semantic_relaxed_rebuild",
+    baselineConfidence,
+    baselineConfidenceDegraded: true,
+    baselineStatus: "RECONCILED",
+    imageHash,
+    passCount: 2,
+    reconciliationActions: actions,
+    reconciliationReasons,
+  });
+}
+
 function validateStructuralBaseline(input: any): StructuralBaseline {
   if (!input || typeof input !== "object") {
     throw new Error("Structural baseline must be an object");
+  }
+
+  const observedBaseline = normalizeBaselineFromWallSurfaces(input);
+  if (observedBaseline) {
+    return observedBaseline;
   }
 
   if (!Array.isArray(input.openings)) {
@@ -2056,6 +3531,140 @@ function validateOpeningValidationResult(input: any, baseline: StructuralBaselin
   return { results, findings: [], summary, detectedOpenings: [], structuralSignals: [] };
 }
 
+function summarizePerceivedStructuralWalls(rawParsed: any): Record<string, unknown> {
+  const inventory = rawParsed && typeof rawParsed.inventory === "object" ? rawParsed.inventory : {};
+  const rawObservedWalls = Array.isArray(rawParsed?.observedWalls)
+    ? rawParsed.observedWalls
+    : (Array.isArray(rawParsed?.wallSurfaces) ? rawParsed.wallSurfaces : []);
+
+  const inventoryOpenings = Array.isArray(inventory?.openings)
+    ? inventory.openings.filter((item: unknown) => typeof item === "string")
+    : [];
+  const inventoryFixtures = Array.isArray(inventory?.permanentFixtures)
+    ? inventory.permanentFixtures.filter((item: unknown) => typeof item === "string")
+    : [];
+  const inventoryFeatures = Array.isArray(inventory?.architecturalFeatures)
+    ? inventory.architecturalFeatures.filter((item: unknown) => typeof item === "string")
+    : [];
+
+  const blankWallLabels = new Set([
+    "blank_wall",
+    "largest_blank_wall",
+    "blank_wall_left_of_window",
+    "blank_wall_right_of_window",
+    "wall_plane",
+  ]);
+
+  const joineryKeywords = [
+    "kitchen island",
+    "island",
+    "pantry",
+    "wardrobe",
+    "cabinet side",
+    "cabinet face",
+    "appliance enclosure",
+    "fridge surround",
+    "refrigerator surround",
+    "shelving",
+  ];
+
+  const walls = rawObservedWalls.map((surface: any, index: number) => {
+    const wall = surface?.observedWall && typeof surface.observedWall === "object" ? surface.observedWall : surface;
+    const observedOrdinal = Number.isFinite(Number(wall?.observedOrdinal))
+      ? Number(wall.observedOrdinal)
+      : index + 1;
+
+    const containsOpenings = Array.isArray(wall?.containsOpenings)
+      ? wall.containsOpenings.filter((item: unknown) => typeof item === "string")
+      : [];
+    const containsPermanentFixtures = Array.isArray(wall?.containsPermanentFixtures)
+      ? wall.containsPermanentFixtures.filter((item: unknown) => typeof item === "string")
+      : [];
+    const containsArchitecturalFeatures = Array.isArray(wall?.containsArchitecturalFeatures)
+      ? wall.containsArchitecturalFeatures.filter((item: unknown) => typeof item === "string")
+      : [];
+
+    const openingTypes = Array.isArray(wall?.openingObservations)
+      ? wall.openingObservations
+          .map((item: any) => (typeof item?.type === "string" ? item.type : null))
+          .filter((item: string | null): item is string => item !== null)
+      : [];
+
+    const attributes = [
+      ...containsOpenings,
+      ...containsPermanentFixtures,
+      ...containsArchitecturalFeatures,
+      ...openingTypes,
+    ];
+    const loweredAttributes = attributes.map((item) => item.trim().toLowerCase()).filter(Boolean);
+
+    const explicitBlank = loweredAttributes.some((item) => blankWallLabels.has(item));
+    const blankWall = explicitBlank || loweredAttributes.length === 0;
+
+    const leftReturn = String(wall?.leftSide?.returnWallVisible || "").trim().toLowerCase();
+    const rightReturn = String(wall?.rightSide?.returnWallVisible || "").trim().toLowerCase();
+    const leftCornerVisible = wall?.leftSide?.cornerVisible === true;
+    const rightCornerVisible = wall?.rightSide?.cornerVisible === true;
+
+    const wallStructuralReturns: string[] = [];
+    if (leftReturn && leftReturn !== "none" && leftReturn !== "unknown") wallStructuralReturns.push(`wall_${observedOrdinal}:left:${leftReturn}`);
+    if (rightReturn && rightReturn !== "none" && rightReturn !== "unknown") wallStructuralReturns.push(`wall_${observedOrdinal}:right:${rightReturn}`);
+
+    const wallStructuralRecesses = loweredAttributes
+      .filter((item) => item.includes("recess") || item === "recessed_wall")
+      .map((item) => `wall_${observedOrdinal}:${item}`);
+
+    const wallStructuralProjections = loweredAttributes
+      .filter((item) => item.includes("column") || item.includes("chimney"))
+      .map((item) => `wall_${observedOrdinal}:${item}`);
+
+    const ignoredJoinery = loweredAttributes.filter((item) => joineryKeywords.some((token) => item.includes(token)));
+
+    return {
+      observedOrdinal,
+      blankWall,
+      attributes: loweredAttributes,
+      leftCornerVisible,
+      rightCornerVisible,
+      structuralReturns: wallStructuralReturns,
+      structuralRecesses: wallStructuralRecesses,
+      structuralProjections: wallStructuralProjections,
+      ignoredJoinery,
+    };
+  });
+
+  const structuralReturns = walls.flatMap((wall) => wall.structuralReturns);
+  const structuralRecesses = walls.flatMap((wall) => wall.structuralRecesses);
+  const structuralProjections = walls.flatMap((wall) => wall.structuralProjections);
+  const ignoredJoinery = Array.from(new Set(walls.flatMap((wall) => wall.ignoredJoinery)));
+
+  const blankWallCount = walls.filter((wall) => wall.blankWall).length;
+  const structuralWallCount = Math.max(0, walls.length - blankWallCount);
+
+  const wallAttributes = walls.map((wall) => ({
+    observedOrdinal: wall.observedOrdinal,
+    blankWall: wall.blankWall,
+    attributes: wall.attributes,
+    leftCornerVisible: wall.leftCornerVisible,
+    rightCornerVisible: wall.rightCornerVisible,
+  }));
+
+  return {
+    structuralWallCount,
+    blankWallCount,
+    inventoryItems: {
+      openings: inventoryOpenings,
+      permanentFixtures: inventoryFixtures,
+      architecturalFeatures: inventoryFeatures,
+    },
+    wallAttributes,
+    structuralReturns,
+    structuralRecesses,
+    structuralProjections,
+    ...(ignoredJoinery.length > 0 ? { ignoredJoinery } : {}),
+  };
+}
+
 async function extractStructuralBaselineOnce(
   image: { data: string; mime: string },
   options?: { jobId?: string; imageId?: string; attempt?: number; timing?: BaselineExtractionTimingBreakdown }
@@ -2111,6 +3720,12 @@ async function extractStructuralBaselineOnce(
   if (options?.timing) {
     options.timing.jsonParseMs += Date.now() - parseStartedAt;
   }
+  console.log("[ENVELOPE_BASELINE_EXTRACTION_SUMMARY]", JSON.stringify({
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
+    ...summarizePerceivedStructuralWalls(parsed),
+  }));
   const normalizationStartedAt = Date.now();
   const baseline = validateStructuralBaseline(parsed);
   if (options?.timing) {
@@ -2863,76 +4478,229 @@ async function stabilizeStructuralBaselineSinglePass(
 ): Promise<StructuralBaseline> {
   const modeStartedAt = Date.now();
   const timing = timingInput || createBaselineTimingBreakdown();
-  const baseline = await extractStructuralBaselineOnce(image, {
+  const markBaseline = (
+    baseline: StructuralBaseline,
+    params: {
+      extractionCalls: number;
+      baselineStatus: BaselineInternalStatus;
+      reconciliationActions?: string[];
+      reconciliationReasons?: string[];
+      reliability?: BaselineReliability;
+      fallbackInvoked?: boolean;
+      baselineExtractionStrategy?: "single_pass_observation" | "graph_reconciliation" | "semantic_relaxed_rebuild";
+      baselineConfidenceDegraded?: boolean;
+    }
+  ): StructuralBaseline => {
+    const graphBuildStartedAt = Date.now();
+    const graphHash = hashStructuralBaselineGraph(baseline);
+    timing.graphBuildMs += Date.now() - graphBuildStartedAt;
+    const confirmedAt = new Date().toISOString();
+    const baselineConfidence = baseline.observationMeta?.baselineConfidence;
+    const observationHash = baseline.observationMeta?.observationHash;
+
+    return markBaselineReliability({
+      baseline,
+      reliability: params.reliability || (params.baselineStatus === "MATCHED" ? "HIGH" : "MEDIUM"),
+      fallbackInvoked: !!params.fallbackInvoked,
+      baselineExtractionStrategy: params.baselineExtractionStrategy || (params.baselineStatus === "MATCHED" ? "single_pass_observation" : "graph_reconciliation"),
+      baselineConfidence: baselineConfidence ?? 0,
+      baselineConfidenceDegraded: !!params.baselineConfidenceDegraded,
+      baselineStatus: params.baselineStatus,
+      imageHash,
+      passCount: params.extractionCalls,
+      reconciliationActions: params.reconciliationActions,
+      reconciliationReasons: params.reconciliationReasons,
+    });
+  };
+
+  const run1 = await extractStructuralBaselineOnce(image, {
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
     timing,
   });
-  const graphBuildStartedAt = Date.now();
-  const graphHash = hashStructuralBaselineGraph(baseline);
-  timing.graphBuildMs += Date.now() - graphBuildStartedAt;
-  const confirmedAt = new Date().toISOString();
-  const resolvedMode = resolveBaselineMode(options);
 
-  const singlePassBaseline: StructuralBaseline = {
-    ...baseline,
-    graphMeta: {
-      graphStable: false,
-      graphConfidence: 0.5,
-      extractionAgreement: 0.5,
-      passCount: 1,
-      openingCountVariance: 0,
-      imageHash,
-      graphHash,
-      cacheStatus: "unstable",
-      candidateGraphHashes: [graphHash],
-      openingCountRange: {
-        min: baseline.openings.length,
-        max: baseline.openings.length,
-      },
-      confirmedAt,
-      baselineMethod: resolvedMode,
-      geminiCalls: 1,
-      verification: {
-        attempted: false,
-        accepted: true,
-        modelAccepted: true,
-        additionalOpeningCount: 0,
-        missingOpeningCount: 0,
-        materiallyDifferentCount: 0,
-        notPresentCount: 0,
-        minorDifferenceCount: 0,
-        rejectedReasonCodes: [],
-        openingStatuses: [],
-        additionalOpenings: [],
-        missingOpenings: [],
-        analysis: undefined,
-      },
-    },
-  };
+  let finalBaseline: StructuralBaseline;
+  let extractionCalls = 1;
+
+  if (isBaselineValidationPassed(run1)) {
+    finalBaseline = markBaseline(run1, {
+      extractionCalls: 1,
+      baselineStatus: "MATCHED",
+    });
+  } else {
+    const run2 = await extractStructuralBaselineOnce(image, {
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) + 1 : 2,
+      timing,
+    });
+    extractionCalls = 2;
+
+    if (isBaselineValidationPassed(run2)) {
+      finalBaseline = markBaseline(run2, {
+        extractionCalls,
+        baselineStatus: "MATCHED",
+      });
+    } else {
+      const reconciled = reconcileFailedBaselines(run1, run2, imageHash);
+      if (!reconciled) {
+        const irreconcilableReasons = structuralDisagreementReasons(run1, run2);
+        console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+          jobId: options?.jobId,
+          imageId: options?.imageId,
+          imageHash,
+          baselineMode: "single_pass",
+          baselineStatus: "IRRECONCILABLE_PRIMARY",
+          extractionPass: 2,
+          reasons: irreconcilableReasons,
+        }));
+
+        const fallbackCandidates: Array<{
+          label: string;
+          baseline: StructuralBaseline;
+          reliability: BaselineReliability;
+          confidence: number;
+          strategy: "single_pass_observation" | "graph_reconciliation" | "semantic_relaxed_rebuild";
+          fallbackInvoked: boolean;
+          confidenceDegraded: boolean;
+          reasons: string[];
+        }> = [];
+
+        if (hasUsableBaselineEvidence(run1)) {
+          fallbackCandidates.push({
+            label: "primary_run1",
+            baseline: run1,
+            reliability: "LOW",
+            confidence: Math.max(0.25, roundDeterministic((run1.observationMeta?.baselineConfidence ?? 0.55) - 0.2, 3)),
+            strategy: "single_pass_observation",
+            fallbackInvoked: true,
+            confidenceDegraded: true,
+            reasons: [...irreconcilableReasons, "fallback:selected_primary_run1"],
+          });
+        }
+
+        if (hasUsableBaselineEvidence(run2)) {
+          fallbackCandidates.push({
+            label: "primary_run2",
+            baseline: run2,
+            reliability: "LOW",
+            confidence: Math.max(0.25, roundDeterministic((run2.observationMeta?.baselineConfidence ?? 0.55) - 0.2, 3)),
+            strategy: "single_pass_observation",
+            fallbackInvoked: true,
+            confidenceDegraded: true,
+            reasons: [...irreconcilableReasons, "fallback:selected_primary_run2"],
+          });
+        }
+
+        const relaxedFallback = buildRelaxedBaselineFallback(run1, run2, imageHash);
+        if (relaxedFallback && hasUsableBaselineEvidence(relaxedFallback)) {
+          fallbackCandidates.push({
+            label: "semantic_relaxed_rebuild",
+            baseline: relaxedFallback,
+            reliability: "LOW",
+            confidence: relaxedFallback.observationMeta?.baselineConfidence ?? 0.35,
+            strategy: "semantic_relaxed_rebuild",
+            fallbackInvoked: true,
+            confidenceDegraded: true,
+            reasons: [
+              ...irreconcilableReasons,
+              "fallback:semantic_relaxed_rebuild",
+            ],
+          });
+        }
+
+        if (fallbackCandidates.length === 0) {
+          throw new Error(`IRRECONCILABLE_BASELINE:${irreconcilableReasons.join(",") || "unknown"}`);
+        }
+
+        const scoredCandidates = fallbackCandidates.map((candidate) => ({
+          ...candidate,
+          score: scoreBaselineCandidate(candidate.baseline, candidate.reliability, candidate.confidence),
+        })).sort((left, right) => right.score - left.score);
+
+        const best = scoredCandidates[0];
+        const second = scoredCandidates[1];
+        const clearlySuperior = !second || (best.score - second.score) >= 0.12;
+        const reliability: BaselineReliability = clearlySuperior ? best.reliability : "LOW";
+        const confidenceDegraded = !clearlySuperior || best.confidenceDegraded;
+
+        finalBaseline = markBaseline(best.baseline, {
+          extractionCalls,
+          baselineStatus: "RECONCILED",
+          reconciliationActions: [
+            ...(best.baseline.observationMeta?.validation?.reconciliationActions || []),
+            "fallback_candidate_selection",
+          ],
+          reconciliationReasons: [
+            ...(best.reasons || []),
+            clearlySuperior ? "fallback:clearly_superior_candidate" : "fallback:ambiguous_candidates_use_best_available",
+          ],
+          reliability,
+          fallbackInvoked: true,
+          baselineExtractionStrategy: best.strategy,
+          baselineConfidenceDegraded: confidenceDegraded,
+        });
+
+        console.log("[BASELINE_EXTRACTION_FALLBACK]", JSON.stringify({
+          jobId: options?.jobId,
+          imageId: options?.imageId,
+          imageHash,
+          invoked: true,
+          selectedStrategy: best.strategy,
+          selectedCandidate: best.label,
+          selectedScore: roundDeterministic(best.score, 4),
+          runnerUpScore: second ? roundDeterministic(second.score, 4) : null,
+          clearlySuperior,
+          baselineReliability: reliability,
+          baselineConfidence: finalBaseline.observationMeta?.baselineConfidence,
+          baselineConfidenceDegraded: confidenceDegraded,
+        }));
+      } else {
+        finalBaseline = markBaseline(reconciled, {
+          extractionCalls,
+          baselineStatus: "RECONCILED",
+          reconciliationActions: reconciled.observationMeta?.validation?.reconciliationActions,
+          reconciliationReasons: reconciled.observationMeta?.validation?.reconciliationReasons,
+          reliability: "MEDIUM",
+          fallbackInvoked: false,
+          baselineExtractionStrategy: "graph_reconciliation",
+          baselineConfidenceDegraded: false,
+        });
+      }
+    }
+  }
 
   console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "single_pass",
-    extractionCalls: 1,
+    extractionCalls,
+    baselineStatus: finalBaseline.graphMeta?.baselineStatus,
   }));
   console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
     baselineMode: "single_pass",
-    extractionPass: 1,
-    graphHash,
-    openingCount: baseline.openings.length,
+    extractionPass: extractionCalls,
+    baselineStatus: finalBaseline.graphMeta?.baselineStatus,
+    baselineReliability: finalBaseline.observationMeta?.baselineReliability,
+    fallbackInvoked: finalBaseline.observationMeta?.fallbackInvoked,
+    baselineExtractionStrategy: finalBaseline.observationMeta?.baselineExtractionStrategy,
+    baselineConfidenceDegraded: finalBaseline.observationMeta?.baselineConfidenceDegraded,
+    graphHash: finalBaseline.graphMeta?.graphHash,
+    openingCount: finalBaseline.openings.length,
+    reconciliationActions: finalBaseline.graphMeta?.reconciliationActions || [],
+    reconciliationReasons: finalBaseline.graphMeta?.reconciliationReasons || [],
   }));
   console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "single_pass",
+    baselineStatus: finalBaseline.graphMeta?.baselineStatus,
     baselineExtractionDurationMs: Date.now() - modeStartedAt,
-    totalGeminiCalls: 1,
+    totalGeminiCalls: extractionCalls,
   }));
   const totalMs = sumBaselineTimingBreakdown(timing);
   console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
@@ -2951,7 +4719,7 @@ async function stabilizeStructuralBaselineSinglePass(
     totalMs,
   }));
 
-  return singlePassBaseline;
+  return finalBaseline;
 }
 
 async function stabilizeStructuralBaseline(
@@ -2972,14 +4740,7 @@ async function stabilizeStructuralBaseline(
     durationMs: Date.now() - materializationStartedAt,
   }));
   const imageHash = hashStructuralImage(image.data);
-  if (OPENING_BASELINE_SINGLE_PASS) {
-    return stabilizeStructuralBaselineSinglePass(image, imageHash, options, timing);
-  }
-  const mode = resolveBaselineMode(options);
-  if (mode === "extraction_verification") {
-    return stabilizeStructuralBaselineWithVerification(image, imageHash, options, timing);
-  }
-  return stabilizeStructuralBaselineGraphConsensus(image, imageHash, options, timing);
+  return stabilizeStructuralBaselineSinglePass(image, imageHash, options, timing);
 }
 
 export async function extractStructuralBaseline(

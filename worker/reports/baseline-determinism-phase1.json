@@ -1,0 +1,1025 @@
+{
+  "title": "Baseline Determinism Phase 1",
+  "generatedAt": "2026-06-30T23:51:11.627Z",
+  "overall": {
+    "totalImages": 6,
+    "averageStability": 42.5,
+    "fullyStableImages": 0,
+    "unstableImages": 6
+  },
+  "jobs": [
+    {
+      "label": "job_c11a8e7c",
+      "jobId": "job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023",
+      "baselineFile": "1782337783609-realenhance-job_c11a8e7c-ef3b-48c9-9782-3bb41cc12023-1782337782818-ijp1zscim9.jpg",
+      "run1": {
+        "openingCount": 1,
+        "wallCount": 2,
+        "primaryAnchors": [
+          "wall_plane",
+          "window"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "40-60",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          }
+        ],
+        "graphHash": "2fa5d9ede2e358df92487eb46b6d851ebf4c16e09bcd512c27d36524c31d43c1"
+      },
+      "run2": {
+        "openingCount": 1,
+        "wallCount": 3,
+        "primaryAnchors": [
+          "wall_plane",
+          "window",
+          "ac_unit"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "20-40",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "unknown",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "full",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "unknown",
+            "rightEdgeLocation": "unknown",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "image_edge",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "minimal",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "minimal",
+            "visibleExtent": "minimal",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "unknown",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "image_edge",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          }
+        ],
+        "graphHash": "b134c73bf188e118a98524c246e7d7945f60a59879f1882056d2cb71f6303e26"
+      },
+      "differences": {
+        "identityDifferent": true,
+        "geometryDifferent": true,
+        "orderingDifferent": true,
+        "confidenceDifferent": true,
+        "cornersDifferent": true,
+        "frameEdgeDifferent": true,
+        "returnWallsDifferent": true,
+        "openingsDifferent": true,
+        "wallCountDifferent": true
+      },
+      "stabilityScore": 0
+    },
+    {
+      "label": "job_bb029607",
+      "jobId": "job_bb029607-dcd8-4614-997c-406d2ed33142",
+      "baselineFile": "1782337783430-realenhance-job_bb029607-dcd8-4614-997c-406d2ed33142-1782337782828-5pbiinwfb7c.jpg",
+      "run1": {
+        "openingCount": 1,
+        "wallCount": 3,
+        "primaryAnchors": [
+          "ac_unit",
+          "door",
+          "wall_plane"
+        ],
+        "openings": [
+          {
+            "id": "D1",
+            "type": "door",
+            "wallIndex": 1,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "wallCoverageBand": "60+",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "closed"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "minimal",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "minimal",
+            "visibleExtent": "minimal",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "partial"
+          }
+        ],
+        "graphHash": "c13fa370ffe86d6efc53e3b13e6bc6f2f47c6aa6758f5765b9e436c0e6a7be1b"
+      },
+      "run2": {
+        "openingCount": 1,
+        "wallCount": 3,
+        "primaryAnchors": [
+          "ac_unit",
+          "door",
+          "wall_plane"
+        ],
+        "openings": [
+          {
+            "id": "D1",
+            "type": "door",
+            "wallIndex": 1,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "wallCoverageBand": "60+",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "closed"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "centre",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "centre",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "partial"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "partial"
+          }
+        ],
+        "graphHash": "cfc0c3ee0b98f874051cf80aad1a91e7c03576082b5caa0e2a890d99bab410bb"
+      },
+      "differences": {
+        "identityDifferent": false,
+        "geometryDifferent": true,
+        "orderingDifferent": false,
+        "confidenceDifferent": false,
+        "cornersDifferent": true,
+        "frameEdgeDifferent": false,
+        "returnWallsDifferent": true,
+        "openingsDifferent": false,
+        "wallCountDifferent": false
+      },
+      "stabilityScore": 67
+    },
+    {
+      "label": "job_4a87f43b",
+      "jobId": "job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10",
+      "baselineFile": "1782337784628-realenhance-job_4a87f43b-0e1d-4992-ab4b-d39e7cf21f10-1782337782877-o6v436g60or.jpg",
+      "run1": {
+        "openingCount": 1,
+        "wallCount": 3,
+        "primaryAnchors": [
+          "wall_plane",
+          "window",
+          "wall_plane"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "20-40",
+            "paneStructure": "single_fixed",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "full",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          }
+        ],
+        "graphHash": "7f3541afe0a9d67c7304a08a64bf2ce8e34320542e65aec4361adc5266f8675a"
+      },
+      "run2": {
+        "openingCount": 1,
+        "wallCount": 3,
+        "primaryAnchors": [
+          "ac_unit",
+          "window",
+          "ac_unit"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "10-20",
+            "paneStructure": "single_fixed",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "full",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          }
+        ],
+        "graphHash": "fed4f5b8849bcb7b021fcffad01b60033eaffa39dc5a3a34cdf84580daedda64"
+      },
+      "differences": {
+        "identityDifferent": true,
+        "geometryDifferent": true,
+        "orderingDifferent": false,
+        "confidenceDifferent": false,
+        "cornersDifferent": false,
+        "frameEdgeDifferent": false,
+        "returnWallsDifferent": false,
+        "openingsDifferent": true,
+        "wallCountDifferent": false
+      },
+      "stabilityScore": 67
+    },
+    {
+      "label": "job_dfbe98aa",
+      "jobId": "job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1",
+      "baselineFile": "1782337783586-realenhance-job_dfbe98aa-c811-47b5-8c4c-f6ac70f65bb1-1782337782867-5lps3vswgap.jpg",
+      "run1": {
+        "openingCount": 1,
+        "wallCount": 2,
+        "primaryAnchors": [
+          "ac_unit",
+          "window"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "40-60",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          }
+        ],
+        "graphHash": "ee5668c1b82e937be8589ee2b8c97c19d5c10d334b88fcf33c5a168feddc6a7d"
+      },
+      "run2": {
+        "openingCount": 1,
+        "wallCount": 2,
+        "primaryAnchors": [
+          "wall_plane",
+          "window"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "20-40",
+            "paneStructure": "fixed_plus_opening",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "full",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "centre",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "centre",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          }
+        ],
+        "graphHash": "c084d46b83fbf5f13b73b48a93d5308e412dee6d7f036be3e9ad7db9ba541b67"
+      },
+      "differences": {
+        "identityDifferent": true,
+        "geometryDifferent": true,
+        "orderingDifferent": false,
+        "confidenceDifferent": false,
+        "cornersDifferent": true,
+        "frameEdgeDifferent": true,
+        "returnWallsDifferent": false,
+        "openingsDifferent": true,
+        "wallCountDifferent": false
+      },
+      "stabilityScore": 44
+    },
+    {
+      "label": "job_81e485e7",
+      "jobId": "job_81e485e7-e3ce-4283-9f5e-e4f931d784bc",
+      "baselineFile": "1782337783803-realenhance-job_81e485e7-e3ce-4283-9f5e-e4f931d784bc-1782337782967-xhrrckilo2.jpg",
+      "run1": {
+        "openingCount": 2,
+        "wallCount": 4,
+        "primaryAnchors": [
+          "built_in_cabinet",
+          "built_in_cabinet",
+          "door",
+          "wall_plane"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "20-40",
+            "paneStructure": "single_fixed",
+            "doorLeafState": "unknown"
+          },
+          {
+            "id": "D1",
+            "type": "door",
+            "wallIndex": 2,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "wallCoverageBand": "60+",
+            "paneStructure": "unknown",
+            "doorLeafState": "closed"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "image_edge",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "minimal",
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "partial",
+            "rightCornerVisibility": "partial",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "partial"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "partial",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "minimal",
+            "rightReturnWallVisibility": "partial"
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "minimal",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "partial"
+          }
+        ],
+        "graphHash": "ffb7a9add43b94e404b22583013fb4cd1dd08c88acce21c6acb7a854c9ab6285"
+      },
+      "run2": {
+        "openingCount": 2,
+        "wallCount": 4,
+        "primaryAnchors": [
+          "ac_unit",
+          "built_in_cabinet",
+          "door",
+          "wall_plane"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "10-20",
+            "paneStructure": "single_fixed",
+            "doorLeafState": "unknown"
+          },
+          {
+            "id": "D1",
+            "type": "door",
+            "wallIndex": 2,
+            "horizontalBand": "left_third",
+            "verticalBand": "full_height",
+            "wallCoverageBand": "60+",
+            "paneStructure": "unknown",
+            "doorLeafState": "closed"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "centre",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "partial",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "partial",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "centre",
+            "rightCornerPosition": "centre",
+            "leftCornerVisibility": "minimal",
+            "rightCornerVisibility": "partial",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "partial"
+          },
+          {
+            "wallIndex": 2,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outer_third",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": true,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "outer_third",
+            "rightCornerPosition": "centre",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "minimal",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "partial",
+            "rightReturnWallVisibility": "partial"
+          },
+          {
+            "wallIndex": 3,
+            "visibility": "partial",
+            "visibleExtent": "partial",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "outer_third",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "outer_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "partial"
+          }
+        ],
+        "graphHash": "5da59120536c0ed8fccb499c1eccea2689f55cc2ff3e56bd1c489b10dd814ea9"
+      },
+      "differences": {
+        "identityDifferent": true,
+        "geometryDifferent": true,
+        "orderingDifferent": false,
+        "confidenceDifferent": true,
+        "cornersDifferent": true,
+        "frameEdgeDifferent": false,
+        "returnWallsDifferent": true,
+        "openingsDifferent": true,
+        "wallCountDifferent": false
+      },
+      "stabilityScore": 33
+    },
+    {
+      "label": "job_4ceef035",
+      "jobId": "job_4ceef035-b334-489c-bf91-3591fa703257",
+      "baselineFile": "job_4ceef035-stage1A.jpg",
+      "run1": {
+        "openingCount": 2,
+        "wallCount": 2,
+        "primaryAnchors": [
+          "window",
+          "ac_unit"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 0,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "5-10",
+            "paneStructure": "fixed_plus_opening",
+            "doorLeafState": "unknown"
+          },
+          {
+            "id": "W2",
+            "type": "window",
+            "wallIndex": 0,
+            "horizontalBand": "right_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "10-20",
+            "paneStructure": "fixed_plus_opening",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          }
+        ],
+        "graphHash": "50c57215426f9e575c6aead756199794752173f65ee656a50b8857c57357d46b"
+      },
+      "run2": {
+        "openingCount": 2,
+        "wallCount": 2,
+        "primaryAnchors": [
+          "wall_plane",
+          "window"
+        ],
+        "openings": [
+          {
+            "id": "W1",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "center_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "10-20",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "unknown"
+          },
+          {
+            "id": "W2",
+            "type": "window",
+            "wallIndex": 1,
+            "horizontalBand": "left_third",
+            "verticalBand": "mid_zone",
+            "wallCoverageBand": "10-20",
+            "paneStructure": "sliding_panel",
+            "doorLeafState": "unknown"
+          }
+        ],
+        "wallDescriptors": [
+          {
+            "wallIndex": 0,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "outside_frame",
+            "rightEdgeLocation": "central_image",
+            "leftCornerVisible": false,
+            "rightCornerVisible": true,
+            "leftCornerPosition": "none",
+            "rightCornerPosition": "inner_third",
+            "leftCornerVisibility": "none",
+            "rightCornerVisibility": "full",
+            "leftReturnWallVisible": false,
+            "rightReturnWallVisible": true,
+            "leftReturnWallVisibility": "unknown",
+            "rightReturnWallVisibility": "full"
+          },
+          {
+            "wallIndex": 1,
+            "visibility": "partial",
+            "visibleExtent": "full",
+            "architecturalCertainty": "known",
+            "leftEdgeLocation": "central_image",
+            "rightEdgeLocation": "outside_frame",
+            "leftCornerVisible": true,
+            "rightCornerVisible": false,
+            "leftCornerPosition": "inner_third",
+            "rightCornerPosition": "none",
+            "leftCornerVisibility": "full",
+            "rightCornerVisibility": "none",
+            "leftReturnWallVisible": true,
+            "rightReturnWallVisible": false,
+            "leftReturnWallVisibility": "full",
+            "rightReturnWallVisibility": "unknown"
+          }
+        ],
+        "graphHash": "1cf2873298ecadf7ec7464494fa54b9718180093cfeca78aa0ca894584eff42f"
+      },
+      "differences": {
+        "identityDifferent": true,
+        "geometryDifferent": false,
+        "orderingDifferent": false,
+        "confidenceDifferent": false,
+        "cornersDifferent": true,
+        "frameEdgeDifferent": true,
+        "returnWallsDifferent": true,
+        "openingsDifferent": true,
+        "wallCountDifferent": false
+      },
+      "stabilityScore": 44
+    }
+  ]
+}
