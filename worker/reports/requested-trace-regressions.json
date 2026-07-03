@@ -1,0 +1,90 @@
+{
+  "source": "reports/requested-complete-traces.json",
+  "generatedAt": "2026-07-02T09:42:02.849Z",
+  "regressions": [
+    {
+      "label": "job_c11a8e7c",
+      "expectedStatus": "fail",
+      "actualStatus": "pass",
+      "expectedDecision": "fail",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "statusMismatch": true,
+      "decisionMismatch": true,
+      "changedFromPreviousDecision": false,
+      "correct": false,
+      "hardFail": false,
+      "issueType": "envelope_anomaly"
+    },
+    {
+      "label": "job_bb029607",
+      "expectedStatus": "fail",
+      "actualStatus": "pass",
+      "expectedDecision": "advisory",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "statusMismatch": true,
+      "decisionMismatch": false,
+      "changedFromPreviousDecision": false,
+      "correct": false,
+      "hardFail": false,
+      "issueType": "envelope_anomaly"
+    },
+    {
+      "label": "job_4a87f43b",
+      "expectedStatus": "pass",
+      "actualStatus": "pass",
+      "expectedDecision": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "statusMismatch": false,
+      "decisionMismatch": true,
+      "changedFromPreviousDecision": false,
+      "correct": true,
+      "hardFail": false,
+      "issueType": "envelope_anomaly"
+    },
+    {
+      "label": "job_dfbe98aa",
+      "expectedStatus": "pass",
+      "actualStatus": "pass",
+      "expectedDecision": "advisory",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "statusMismatch": false,
+      "decisionMismatch": false,
+      "changedFromPreviousDecision": false,
+      "correct": true,
+      "hardFail": false,
+      "issueType": "envelope_corner_flattened"
+    },
+    {
+      "label": "job_81e485e7",
+      "expectedStatus": "pass",
+      "actualStatus": "pass",
+      "expectedDecision": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "statusMismatch": false,
+      "decisionMismatch": true,
+      "changedFromPreviousDecision": false,
+      "correct": true,
+      "hardFail": false,
+      "issueType": "envelope_anomaly"
+    },
+    {
+      "label": "job_4ceef035",
+      "expectedStatus": "pass",
+      "actualStatus": "pass",
+      "expectedDecision": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "statusMismatch": false,
+      "decisionMismatch": true,
+      "changedFromPreviousDecision": false,
+      "correct": true,
+      "hardFail": false,
+      "issueType": "envelope_corner_flattened"
+    }
+  ]
+}

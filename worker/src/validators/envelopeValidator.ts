@@ -17,8 +17,10 @@ export type EnvelopeValidatorResult = ValidatorOutcome & {
   initialAdvisoryStageExtraction?: string;
   stagedExtractionIntegrity?: StagedExtractionIntegrityResult;
   stagedExtractionRetryStatus?: StagedExtractionRetryStatus;
+  stagedObservationConsistency?: StagedObservationConsistencyResult;
   initialStagedWallVerifications?: BaselineGuidedWallVerification[];
   stagedWallVerifications?: BaselineGuidedWallVerification[];
+  wallUtilisationObservations?: WallUtilisationObservation[];
   initialAdditionalArchitecturalEvidence?: AdditionalArchitecturalEvidence;
   additionalArchitecturalEvidence?: AdditionalArchitecturalEvidence;
   initialAdditionalWallPlanes?: AdditionalWallPlanesResult;
@@ -83,6 +85,9 @@ export type EnvelopeValidatorResult = ValidatorOutcome & {
   rawGeminiJson?: string;
   guidedObservationPrompt?: string;
   guidedObservationRawGeminiJson?: string;
+  rawStructuralObservations?: RawStructuralObservation[];
+  interpretationCoverageAudit?: InterpretationCoverageAudit;
+  wallEvidenceLineage?: WallEvidenceLineage[];
 };
 
 type EnvelopeDeterministicSuspicion = {
@@ -98,6 +103,8 @@ type EnvelopeDeterministicSuspicion = {
     | "possible_missing_corner"
     | "possible_wall_visibility_changed"
     | "possible_architectural_certainty_changed";
+  wallSemanticId?: string;
+  wallDisplayName?: string;
   wallIndex: number;
   note: string;
 };
@@ -162,7 +169,7 @@ type EnvelopeObservationAdjudication = {
 type EnvelopeAdjudicationCoverage = {
   totalSuspicions: number;
   addressedSuspicions: number;
-  unresolvedSuspicions: Array<{ code: string; wallIndex: number }>;
+  unresolvedSuspicions: Array<{ code: string; wallSemanticId?: string; wallIndex: number }>;
   allSuspicionsAddressed: boolean;
 };
 
@@ -352,6 +359,7 @@ export type AdditionalWallPlanesResult = {
 
 export type AdditionalArchitecturalEvidence = {
   observedFeatures: string[];
+  ownedFeatures: AdditionalEvidenceOwnedFeature[];
   additionalPermanentWallPlaneDescriptions: string[];
   additionalPermanentReturnWallDescriptions: string[];
   additionalPermanentRecessDescriptions: string[];
@@ -365,10 +373,28 @@ export type AdditionalArchitecturalEvidence = {
   reason?: string;
 };
 
+export type AdditionalEvidenceOwnedFeature = {
+  description: string;
+  semanticWallId?: string;
+  wallDisplayName?: string;
+  side?: "left" | "right";
+  scope: "semantic_wall" | "global";
+};
+
+export type WallUtilisationObservation = {
+  semanticWallId: string;
+  utilisationType: "wall_art" | "tv_unit" | "console" | "shelving" | "sofa" | "headboard" | "other";
+  evidence: string;
+  confidence?: number;
+};
+
 export type DeterministicStructuralInterpretation = {
   interpretationId: string;
   category:
+    | "staged_observation_contradiction"
+    | "functional_wall_utilisation"
     | "materially_usable_wall_surface_introduced"
+    | "unsupported_boundary_expansion"
     | "wall_plane_introduced"
     | "wall_plane_removed"
     | "wall_shortened"
@@ -444,6 +470,69 @@ export type StagedExtractionRetryStatus = {
   finalAttempt: number;
   retrySucceeded: boolean;
   reason?: string;
+};
+
+export type StagedObservationConsistencyFailure = {
+  code:
+    | "return_wall_without_corner"
+    | "boundary_exit_incompatible_side_geometry"
+    | "additional_evidence_contradiction"
+    | "wall_identity_mismatch";
+  severity: "hard" | "soft";
+  message: string;
+  semanticWallId?: string;
+  wallDisplayName?: string;
+  side?: "left" | "right";
+};
+
+export type StagedObservationConsistencyResult = {
+  status: "CONSISTENT" | "RECONCILABLE" | "INCONSISTENT";
+  attempt: number;
+  consistencyFailures: string[];
+  failureDetails: StagedObservationConsistencyFailure[];
+};
+
+export type RawStructuralObservation = {
+  observationId: string;
+  code: EnvelopeDeterministicSuspicion["code"];
+  wallIndex: number;
+  wallSemanticId?: string;
+  wallDisplayName?: string;
+  note: string;
+};
+
+export type InterpretationCoverageAuditRow = {
+  rawStructuralObservation: string;
+  deterministicInterpretations: string[];
+  lost: boolean;
+  reason?: string;
+};
+
+export type InterpretationCoverageAudit = {
+  architecturalInvariant: "interpretation_layer_information_preserving";
+  rawStructuralObservationCount: number;
+  deterministicInterpretationCount: number;
+  coveredObservationCount: number;
+  coveragePercent: number;
+  missingObservations: Array<{
+    observationId: string;
+    code: EnvelopeDeterministicSuspicion["code"];
+    wallIndex: number;
+    wallDisplayName?: string;
+    reason: string;
+  }>;
+  rows: InterpretationCoverageAuditRow[];
+};
+
+export type WallEvidenceLineage = {
+  semanticWallId: string;
+  wallDisplayName: string;
+  advisoryWallIndex: number;
+  rawStructuralObservations: RawStructuralObservation[];
+  additionalArchitecturalEvidence: AdditionalEvidenceOwnedFeature[];
+  wallUtilisationObservations: WallUtilisationObservation[];
+  deterministicInterpretations: DeterministicStructuralInterpretation[];
+  policyEvidence: string[];
 };
 
 export type CandidateWallQualificationDecision = "qualified_semantic_wall" | "supporting_geometric_evidence" | "rejected";
@@ -1204,6 +1293,13 @@ Example:
 
 If no such features exist, return "NONE".
 
+Also report wall utilisation observations as purely observational staging context.
+These observations must only be emitted when staging/decor clearly relies on a specific verified wall.
+Valid examples: wall art mounted on a wall, TV unit against a wall, console against a wall, shelving against a wall, sofa against a wall, headboard against a wall.
+Do not emit utilisation observations for furniture that is not clearly wall-dependent.
+Do not infer architectural change from utilisation observations.
+If none exist, return "NONE".
+
 Do not infer whether these observations imply architectural change.
 ${retryText}
 Return JSON only:
@@ -1238,7 +1334,15 @@ Return JSON only:
       "observations":["short descriptive architectural observations only"]
     }
   ],
-  "additionalPermanentArchitecturalFeatures":"NONE"|["descriptive permanent architectural features not part of the verified baseline semantic walls"]
+  "additionalPermanentArchitecturalFeatures":"NONE"|["descriptive permanent architectural features not part of the verified baseline semantic walls"],
+  "wallUtilisationObservations":"NONE"|[
+    {
+      "semanticWallId":"exact semanticWallId from wallVerifications",
+      "utilisationType":"wall_art"|"tv_unit"|"console"|"shelving"|"sofa"|"headboard"|"other",
+      "evidence":"short factual description of staging/decor relying on this wall",
+      "confidence":0.0-1.0
+    }
+  ]
 }`;
 }
 
@@ -1676,6 +1780,48 @@ function parseFeatureLineWithSignificance(value: string): { magnitude?: Architec
   };
 }
 
+function detectOwnedSemanticWallForFeature(
+  feature: string,
+  baselineWalls: SemanticWallModel[],
+): { semanticWallId?: string; wallDisplayName?: string; scope: "semantic_wall" | "global" } {
+  const normalized = normalizeObservationLine(feature).toLowerCase();
+  const matches = baselineWalls.filter((wall) => {
+    const display = wall.displayName.toLowerCase();
+    const anchor = (wall.primaryAnchorLabel || "").toLowerCase();
+    return normalized.includes(display)
+      || (anchor.length > 0 && normalized.includes(anchor));
+  });
+  if (matches.length === 1) {
+    return {
+      semanticWallId: matches[0].semanticWallId,
+      wallDisplayName: matches[0].displayName,
+      scope: "semantic_wall",
+    };
+  }
+  return { scope: "global" };
+}
+
+function scopeAdditionalArchitecturalEvidenceByWall(params: {
+  evidence?: AdditionalArchitecturalEvidence;
+  baselineWalls: SemanticWallModel[];
+}): AdditionalArchitecturalEvidence | undefined {
+  if (!params.evidence) return undefined;
+  const ownedFeatures: AdditionalEvidenceOwnedFeature[] = params.evidence.observedFeatures.map((description) => {
+    const owner = detectOwnedSemanticWallForFeature(description, params.baselineWalls);
+    return {
+      description,
+      semanticWallId: owner.semanticWallId,
+      wallDisplayName: owner.wallDisplayName,
+      side: detectObservationSide(description),
+      scope: owner.scope,
+    };
+  });
+  return {
+    ...params.evidence,
+    ownedFeatures,
+  };
+}
+
 function enrichAdditionalArchitecturalEvidence(params: {
   baseline: StructuralBaseline | null | undefined;
   baselineWalls: SemanticWallModel[];
@@ -1705,11 +1851,15 @@ function enrichAdditionalArchitecturalEvidence(params: {
     }
   }
 
-  return categorizeAdditionalArchitecturalFeatures(
+  const categorized = categorizeAdditionalArchitecturalFeatures(
     derivedFeatureLines,
     params.additionalEvidence?.confidence,
     params.additionalEvidence?.reason,
   );
+  return scopeAdditionalArchitecturalEvidenceByWall({
+    evidence: categorized,
+    baselineWalls: params.baselineWalls,
+  });
 }
 
 function reconcileWallVerificationsWithAdditionalFeatures(params: {
@@ -1728,14 +1878,13 @@ function reconcileWallVerificationsWithAdditionalFeatures(params: {
     const frameSide = descriptor ? exitedFrameSide(descriptor) : null;
     if (!baselineWall || !frameSide || item.samePermanentWallVisible !== "TRUE") return item;
 
-    const relevantFeatures = additionalEvidence.observedFeatures.filter((feature) => {
-      const normalized = feature.toLowerCase();
-      const detectedSide = detectObservationSide(normalized);
+    const ownedForWall = (additionalEvidence.ownedFeatures || [])
+      .filter((feature) => feature.scope === "semantic_wall" && feature.semanticWallId === item.semanticWallId)
+      .map((feature) => feature.description);
+    const relevantFeatures = sortUniqueStrings(ownedForWall).filter((feature) => {
+      const detectedSide = detectObservationSide(feature);
       if (detectedSide && detectedSide !== frameSide) return false;
-      if (normalized.includes(item.displayName.toLowerCase())) return true;
-      if (frameSide === "left" && (normalized.includes("far left") || normalized.includes("left edge") || normalized.includes("to the left") || normalized.includes("to its left"))) return true;
-      if (frameSide === "right" && (normalized.includes("far right") || normalized.includes("right edge") || normalized.includes("to the right") || normalized.includes("to its right"))) return true;
-      return false;
+      return true;
     });
     if (relevantFeatures.length === 0) return item;
 
@@ -1825,6 +1974,7 @@ function categorizeAdditionalArchitecturalFeatures(features: string[], confidenc
 
   return {
     observedFeatures,
+    ownedFeatures: [],
     additionalPermanentWallPlaneDescriptions: sortUniqueStrings(wallPlaneDescriptions),
     additionalPermanentReturnWallDescriptions: sortUniqueStrings(returnWallDescriptions),
     additionalPermanentRecessDescriptions: sortUniqueStrings(recessDescriptions),
@@ -2274,21 +2424,256 @@ function deriveMateriallyUsableWallSurfaceInterpretation(params: {
   };
 }
 
+function deriveFunctionalWallUtilisationInterpretation(params: {
+  wall: SemanticWallModel;
+  wallInterpretations: DeterministicStructuralInterpretation[];
+  wallUtilisationObservations?: WallUtilisationObservation[];
+}): DeterministicStructuralInterpretation | null {
+  const structuralSupport = params.wallInterpretations.filter((item) => (
+    item.category === "return_wall_introduced"
+    || item.category === "adjoining_wall_introduced"
+    || item.category === "wall_plane_introduced"
+    || item.category === "unsupported_boundary_expansion"
+  ));
+  if (structuralSupport.length === 0) return null;
+
+  const wallDisplay = params.wall.displayName.toLowerCase();
+  const strongUtilisationTypes = new Set<WallUtilisationObservation["utilisationType"]>([
+    "wall_art",
+    "tv_unit",
+    "console",
+    "shelving",
+  ]);
+  const wallSignals = (params.wallUtilisationObservations || [])
+    .filter((item) => item.semanticWallId === params.wall.semanticWallId)
+    .filter((item) => strongUtilisationTypes.has(item.utilisationType))
+    .filter((item) => /(mounted|against|on|anchored|backed|relies on|attached)/i.test(item.evidence));
+  if (wallSignals.length === 0) return null;
+
+  const confidence: DeterministicStructuralInterpretation["confidence"] = wallSignals.some((item) => Number(item.confidence || 0) >= 0.8)
+    ? "high"
+    : "medium";
+
+  return {
+    interpretationId: `interp_${params.wall.semanticWallId}_functional_wall_utilisation`,
+    category: "functional_wall_utilisation",
+    wallSemanticId: params.wall.semanticWallId,
+    wallDisplayName: params.wall.displayName,
+    severity: "advisory",
+    confidence,
+    summary: `${params.wall.displayName} shows functional staging utilisation of newly introduced wall geometry.`,
+    detectedFeature: "functional wall utilisation",
+    associatedWallMagnitude: maxArchitecturalFeatureVisibilityMagnitude(...structuralSupport.map((item) => item.associatedWallMagnitude)),
+    classification: "structural_addition",
+    decision: "pass",
+    explanation: "Functional staging usage corroborates that the introduced wall geometry is treated as usable wall surface.",
+    supportingFacts: sortUniqueStrings([
+      `supporting_structural_interpretations=${sortUniqueStrings(structuralSupport.map((item) => item.category)).join(",")}`,
+      `utilisation_observation_count=${wallSignals.length}`,
+    ]),
+    corroboratingEvidence: sortUniqueStrings(wallSignals.map((item) => `${item.utilisationType}:${item.evidence}`)),
+    contradictingEvidence: [],
+  };
+}
+
+function deriveUnsupportedBoundaryExpansionInterpretations(params: {
+  baseline: StructuralBaseline | null | undefined;
+  wall: SemanticWallModel;
+  descriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number];
+  staged: BaselineGuidedWallVerification;
+  additionalEvidence?: AdditionalArchitecturalEvidence;
+  wallOwnedAdditionalFeatures?: AdditionalEvidenceOwnedFeature[];
+}): DeterministicStructuralInterpretation[] {
+  const results: DeterministicStructuralInterpretation[] = [];
+
+  const sideMatchesFeature = (feature: string, side: "left" | "right"): boolean => {
+    const normalized = feature.toLowerCase();
+    const detectedSide = detectObservationSide(normalized);
+    if (detectedSide && detectedSide !== side) return false;
+    if (normalized.includes(params.wall.displayName.toLowerCase())) return true;
+    if (side === "left") {
+      return normalized.includes("left edge")
+        || normalized.includes("left side")
+        || normalized.includes("far left")
+        || normalized.includes("to the left")
+        || normalized.includes("to its left");
+    }
+    return normalized.includes("right edge")
+      || normalized.includes("right side")
+      || normalized.includes("far right")
+      || normalized.includes("to the right")
+      || normalized.includes("to its right");
+  };
+
+  for (const side of ["left", "right"] as const) {
+    const edgeObservation = deriveFrameEdgeFeatureObservation(params.staged.observations, side);
+    const baselineCornerVisible = side === "left"
+      ? params.descriptor.leftCornerVisible === true
+      : params.descriptor.rightCornerVisible === true;
+    const baselineBoundaryVisible = side === "left"
+      ? params.descriptor.leftBoundaryVisible === true
+      : params.descriptor.rightBoundaryVisible === true;
+    const stagedCornerVisible = side === "left"
+      ? params.staged.leftCornerVisible === true
+      : params.staged.rightCornerVisible === true;
+    const stagedAdjacentVisibility = side === "left"
+      ? edgeObservation.leftAdjacentWallVisibility ?? params.staged.leftAdjacentWallVisibility
+      : edgeObservation.rightAdjacentWallVisibility ?? params.staged.rightAdjacentWallVisibility;
+    const stagedBoundaryMagnitude = maxArchitecturalFeatureVisibilityMagnitude(
+      edgeObservation.returnWallVisibilityMagnitude,
+      edgeObservation.adjoiningWallVisibilityMagnitude,
+      edgeObservation.recessVisibilityMagnitude,
+      mapAdjacentWallVisibilityToArchitecturalFeature(stagedAdjacentVisibility),
+      side === "left"
+        ? mapAdjacentWallVisibilityToArchitecturalFeature(params.staged.leftAdjacentWallVisibility)
+        : mapAdjacentWallVisibilityToArchitecturalFeature(params.staged.rightAdjacentWallVisibility),
+    );
+    const stagedReturnVisible = edgeObservation.returnWallVisible === true
+      || (params.staged.returnWallVisible === true && edgeAdjacentWallVisibilityRank(stagedAdjacentVisibility) >= edgeAdjacentWallVisibilityRank("partial"));
+    const stagedAdjoiningVisible = edgeObservation.adjoiningWallVisible === true
+      || (params.staged.adjoiningWallVisible === true && edgeAdjacentWallVisibilityRank(stagedAdjacentVisibility) >= edgeAdjacentWallVisibilityRank("partial"));
+    const baselineCornerVisibilityValue = baselineCornerVisibility(params.descriptor, side);
+    const baselineAdjacentVisibility = baselineAdjacentWallVisibility(params.baseline, params.descriptor, side);
+    const baselineCornerSupported = cornerVisibilityRank(baselineCornerVisibilityValue) > cornerVisibilityRank("minimal");
+    const baselineAdjacentSupported = edgeAdjacentWallVisibilityRank(baselineAdjacentVisibility) > edgeAdjacentWallVisibilityRank("partial");
+    const baselineInsufficient = !baselineCornerSupported && !baselineAdjacentSupported;
+
+    const wallOwnedFeatures = (params.wallOwnedAdditionalFeatures || [])
+      .filter((feature) => feature.semanticWallId === params.wall.semanticWallId)
+      .map((feature) => feature.description);
+    const corroboratingEvidence = sortUniqueStrings(
+      wallOwnedFeatures.filter((feature) => sideMatchesFeature(feature, side)),
+    );
+    const hasPerpendicularEvidence = corroboratingEvidence.some((feature) => /perpendicular/.test(feature.toLowerCase()));
+    const hasBoundaryUncertainty = !baselineBoundaryVisible || baselineInsufficient;
+
+    const stagedBoundaryExpanded = stagedCornerVisible && (stagedReturnVisible || stagedAdjoiningVisible);
+    const stagedMeaningfulMagnitude = architecturalFeatureVisibilityRank(stagedBoundaryMagnitude) >= architecturalFeatureVisibilityRank("partial");
+
+    console.log("[ENVELOPE_BOUNDARY_TRANSITION_EVAL]", JSON.stringify({
+      wallSemanticId: params.wall.semanticWallId,
+      wallDisplayName: params.wall.displayName,
+      boundary: side,
+      baseline: {
+        boundaryVisible: baselineBoundaryVisible,
+        cornerVisible: baselineCornerVisible,
+        cornerVisibility: baselineCornerVisibilityValue,
+        adjacentWallVisibility: baselineAdjacentVisibility,
+        cornerSupported: baselineCornerSupported,
+        adjacentSupported: baselineAdjacentSupported,
+      },
+      staged: {
+        cornerVisible: stagedCornerVisible,
+        returnWallVisible: stagedReturnVisible,
+        adjoiningWallVisible: stagedAdjoiningVisible,
+        boundaryMagnitude: stagedBoundaryMagnitude || "none",
+      },
+      additionalEvidence: {
+        sideCorroborationCount: corroboratingEvidence.length,
+        perpendicularEvidence: hasPerpendicularEvidence,
+      },
+      gating: {
+        hasBoundaryUncertainty,
+        baselineInsufficient,
+        stagedBoundaryExpanded,
+        stagedMeaningfulMagnitude,
+      },
+    }));
+
+    if (!hasBoundaryUncertainty || !stagedBoundaryExpanded || !stagedMeaningfulMagnitude) {
+      continue;
+    }
+
+    const hasStrongMagnitude = architecturalFeatureVisibilityRank(stagedBoundaryMagnitude) >= architecturalFeatureVisibilityRank("substantial");
+
+    let confidenceScore = 0;
+    confidenceScore += stagedCornerVisible ? 1 : 0;
+    confidenceScore += stagedReturnVisible ? 1 : 0;
+    confidenceScore += stagedAdjoiningVisible ? 1 : 0;
+    confidenceScore += hasStrongMagnitude ? 1 : 0;
+    confidenceScore += hasPerpendicularEvidence ? 1 : 0;
+    confidenceScore += !baselineBoundaryVisible ? 1 : 0;
+
+    const confidence: DeterministicStructuralInterpretation["confidence"] = confidenceScore >= 5 ? "high" : "low";
+    const severity: DeterministicStructuralInterpretation["severity"] = confidence === "high" ? "significant" : "advisory";
+    const decision: DeterministicStructuralInterpretation["decision"] = confidence === "high" ? "fail" : "pass";
+
+    const summary = confidence === "high"
+      ? `${params.wall.displayName} shows unsupported ${side} boundary expansion with materially meaningful return geometry.`
+      : `${params.wall.displayName} shows unsupported ${side} boundary expansion that warrants verification.`;
+
+    const supportingFacts = sortUniqueStrings([
+      `boundary_side=${side}`,
+      `baseline cornerVisible=${baselineCornerVisible ? "TRUE" : "FALSE"}`,
+      `baseline cornerVisibility=${baselineCornerVisibilityValue}`,
+      `baseline adjacentWallVisibility=${baselineAdjacentVisibility}`,
+      `staged cornerVisible=${stagedCornerVisible ? "TRUE" : "FALSE"}`,
+      `staged returnWallVisible=${stagedReturnVisible ? "TRUE" : "FALSE"}`,
+      `staged adjoiningWallVisible=${stagedAdjoiningVisible ? "TRUE" : "FALSE"}`,
+      `staged boundaryMagnitude=${stagedBoundaryMagnitude || "none"}`,
+      `baseline_boundary_supported=${baselineInsufficient ? "FALSE" : "TRUE"}`,
+      `perpendicular_evidence=${hasPerpendicularEvidence}`,
+    ]);
+
+    console.log("[ENVELOPE_BOUNDARY_TRANSITION]", JSON.stringify({
+      wallSemanticId: params.wall.semanticWallId,
+      wallDisplayName: params.wall.displayName,
+      boundary: side,
+      baseline: {
+        cornerVisible: baselineCornerVisible,
+        cornerVisibility: baselineCornerVisibilityValue,
+        adjacentWallVisibility: baselineAdjacentVisibility,
+      },
+      staged: {
+        cornerVisible: stagedCornerVisible,
+        returnWallVisible: stagedReturnVisible,
+        adjoiningWallVisible: stagedAdjoiningVisible,
+        boundaryMagnitude: stagedBoundaryMagnitude || "none",
+      },
+      interpretation: "unsupported_boundary_expansion",
+      confidence: confidence.toUpperCase(),
+      decisionWeight: confidence === "high" ? "HIGH" : "LOW",
+    }));
+
+    results.push(buildDeterministicStructuralInterpretation({
+      interpretationId: `interp_${params.wall.semanticWallId}_${side}_unsupported_boundary_expansion`,
+      category: "unsupported_boundary_expansion",
+      wall: params.wall,
+      severity,
+      confidence,
+      summary,
+      detectedFeature: "unsupported boundary expansion",
+      associatedWallMagnitude: stagedBoundaryMagnitude,
+      classification: "structural_addition",
+      decision,
+      explanation: confidence === "high"
+        ? "Staged boundary introduces meaningful return geometry where baseline lacked sufficient corner/adjacent-wall evidence."
+        : "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+      supportingFacts,
+      corroboratingEvidence,
+      contradictingEvidence: [],
+    }));
+  }
+
+  return results;
+}
+
 function deriveDeterministicStructuralInterpretations(params: {
   baseline: StructuralBaseline | null | undefined;
   baselineWalls: SemanticWallModel[];
   stagedObservations: BaselineGuidedWallVerification[];
   additionalEvidence?: AdditionalArchitecturalEvidence;
+  wallUtilisationObservations?: WallUtilisationObservation[];
 }): DeterministicStructuralInterpretation[] {
   const stagedById = new Map(params.stagedObservations.map((item) => [item.semanticWallId, item] as const));
   const interpretations: DeterministicStructuralInterpretation[] = [];
-  const appendCorroboration = (category: DeterministicStructuralInterpretation["category"], evidence: string[]) => {
-    if (evidence.length === 0) return;
-    for (const item of interpretations) {
-      if (item.category !== category) continue;
-      item.corroboratingEvidence = sortUniqueStrings([...item.corroboratingEvidence, ...evidence]);
-    }
-  };
+  const ownedAdditionalByWall = new Map<string, AdditionalEvidenceOwnedFeature[]>();
+  for (const feature of params.additionalEvidence?.ownedFeatures || []) {
+    if (!feature.semanticWallId) continue;
+    const bucket = ownedAdditionalByWall.get(feature.semanticWallId) || [];
+    bucket.push(feature);
+    ownedAdditionalByWall.set(feature.semanticWallId, bucket);
+  }
 
   for (const baselineWall of params.baselineWalls) {
     const wallInterpretationStart = interpretations.length;
@@ -2633,13 +3018,31 @@ function deriveDeterministicStructuralInterpretations(params: {
       }));
     }
 
+    const unsupportedBoundaryInterpretations = deriveUnsupportedBoundaryExpansionInterpretations({
+      baseline: params.baseline,
+      wall: baselineWall,
+      descriptor,
+      staged,
+      additionalEvidence: params.additionalEvidence,
+      wallOwnedAdditionalFeatures: ownedAdditionalByWall.get(baselineWall.semanticWallId) || [],
+    });
+    for (const interpretation of unsupportedBoundaryInterpretations) {
+      interpretations.push(interpretation);
+    }
+
     const wallInterpretations = interpretations
       .slice(wallInterpretationStart)
       .filter((item) => item.wallSemanticId === baselineWall.semanticWallId);
+    const wallOwnedAdditionalEvidence: AdditionalArchitecturalEvidence | undefined = params.additionalEvidence
+      ? {
+        ...params.additionalEvidence,
+        observedFeatures: (ownedAdditionalByWall.get(baselineWall.semanticWallId) || []).map((feature) => feature.description),
+      }
+      : undefined;
     const materialInterpretation = deriveMateriallyUsableWallSurfaceInterpretation({
       wall: baselineWall,
       wallInterpretations,
-      additionalEvidence: params.additionalEvidence,
+      additionalEvidence: wallOwnedAdditionalEvidence,
     });
     if (materialInterpretation) {
       interpretations.push(materialInterpretation);
@@ -2657,13 +3060,30 @@ function deriveDeterministicStructuralInterpretations(params: {
         decision: materialInterpretation.decision,
       }));
     }
-  }
 
-  if (params.additionalEvidence) {
-    appendCorroboration("wall_plane_introduced", params.additionalEvidence.additionalPermanentWallPlaneDescriptions);
-    appendCorroboration("return_wall_introduced", params.additionalEvidence.additionalPermanentReturnWallDescriptions);
-    appendCorroboration("recess_introduced", params.additionalEvidence.additionalPermanentRecessDescriptions);
-    appendCorroboration("corner_introduced", params.additionalEvidence.additionalPermanentCornerDescriptions);
+    const functionalUtilisationInterpretation = deriveFunctionalWallUtilisationInterpretation({
+      wall: baselineWall,
+      wallInterpretations: interpretations
+        .slice(wallInterpretationStart)
+        .filter((item) => item.wallSemanticId === baselineWall.semanticWallId),
+      wallUtilisationObservations: params.wallUtilisationObservations,
+    });
+    if (functionalUtilisationInterpretation) {
+      interpretations.push(functionalUtilisationInterpretation);
+      console.log("[ENVELOPE_ARCH_INTERPRETATION]", JSON.stringify({
+        interpretation: "functional_wall_utilisation",
+        wallSemanticId: baselineWall.semanticWallId,
+        wallDisplayName: baselineWall.displayName,
+        supportingInterpretations: sortUniqueStrings(
+          interpretations
+            .filter((item) => item.wallSemanticId === baselineWall.semanticWallId)
+            .map((item) => item.category),
+        ),
+        corroboratingEvidence: functionalUtilisationInterpretation.corroboratingEvidence,
+        confidence: functionalUtilisationInterpretation.confidence,
+        severity: functionalUtilisationInterpretation.severity,
+      }));
+    }
   }
 
   return interpretations;
@@ -2689,6 +3109,7 @@ function buildArchitecturalObservations(params: {
   const groupKeyFor = (item: DeterministicStructuralInterpretation): string => {
     if (
       item.category === "materially_usable_wall_surface_introduced"
+      || item.category === "unsupported_boundary_expansion"
       ||
       item.category === "corner_introduced"
       || item.category === "wall_plane_introduced"
@@ -2851,6 +3272,158 @@ function materializeSemanticWallModelsFromVerifications(
         descriptor: item.reason || item.observations.join(" | ") || displayName,
       } satisfies SemanticWallModel;
     });
+}
+
+function detectContinuationSides(observations: string[]): Set<"left" | "right"> {
+  const sides = new Set<"left" | "right">();
+  for (const raw of observations) {
+    const line = normalizeObservationLine(raw).toLowerCase();
+    if (!/continues beyond/.test(line)) continue;
+    if (/left image edge|left edge|left side/.test(line)) {
+      sides.add("left");
+    }
+    if (/right image edge|right edge|right side/.test(line)) {
+      sides.add("right");
+    }
+  }
+  return sides;
+}
+
+function evaluateStagedObservationConsistency(params: {
+  baselineWalls: SemanticWallModel[];
+  wallVerifications: BaselineGuidedWallVerification[];
+  additionalEvidence?: AdditionalArchitecturalEvidence;
+  attempt: number;
+}): StagedObservationConsistencyResult {
+  const failures: StagedObservationConsistencyFailure[] = [];
+
+  const baselineById = new Map(params.baselineWalls.map((item) => [item.semanticWallId, item] as const));
+  const wallByDisplayName = new Map(
+    params.wallVerifications.map((item) => [normalizeObservationLine(item.displayName).toLowerCase(), item] as const),
+  );
+
+  for (const wall of params.wallVerifications) {
+    if (wall.samePermanentWallVisible !== "TRUE") continue;
+
+    const wallDisplayName = wall.displayName;
+    const continuationSides = detectContinuationSides(wall.observations || []);
+
+    for (const side of ["left", "right"] as const) {
+      const edge = deriveFrameEdgeFeatureObservation(wall.observations || [], side);
+      const sideCornerVisible = side === "left"
+        ? wall.leftCornerVisible === true
+        : wall.rightCornerVisible === true;
+      const sideReturnVisible = edge.returnWallVisible ?? wall.returnWallVisible;
+      const sideAdjoiningVisible = edge.adjoiningWallVisible ?? wall.adjoiningWallVisible;
+
+      // Rule 1: a return wall cannot exist without a visible corner on the same side.
+      if (sideReturnVisible === true && !sideCornerVisible) {
+        failures.push({
+          code: "return_wall_without_corner",
+          severity: "hard",
+          semanticWallId: wall.semanticWallId,
+          wallDisplayName,
+          side,
+          message: `${wallDisplayName}:${side}:return wall is visible while corner is not visible.`,
+        });
+      }
+
+      // Rule 2: if the wall exits frame on this side, new side geometry requires a visible corner.
+      if (continuationSides.has(side) && (sideReturnVisible === true || sideAdjoiningVisible === true) && !sideCornerVisible) {
+        failures.push({
+          code: "boundary_exit_incompatible_side_geometry",
+          severity: "hard",
+          semanticWallId: wall.semanticWallId,
+          wallDisplayName,
+          side,
+          message: `${wallDisplayName}:${side}:wall exits frame but staged side geometry was introduced without a visible corner.`,
+        });
+      }
+    }
+  }
+
+  const additionalLines = [
+    ...(params.additionalEvidence?.additionalPermanentWallPlaneDescriptions || []),
+    ...(params.additionalEvidence?.additionalPermanentReturnWallDescriptions || []),
+    ...(params.additionalEvidence?.additionalPermanentCornerDescriptions || []),
+    ...(params.additionalEvidence?.unmatchedPermanentFeatureDescriptions || []),
+  ];
+
+  for (const rawLine of additionalLines) {
+    const line = normalizeObservationLine(rawLine).toLowerCase();
+    if (!line) continue;
+
+    const side = /\bleft\b/.test(line) ? "left" : /\bright\b/.test(line) ? "right" : undefined;
+    const mentionsReturn = /return wall/.test(line);
+    const mentionsAdjoining = /adjoining wall|wall plane/.test(line);
+    const mentionsCorner = /corner/.test(line);
+
+    let matchedWall: BaselineGuidedWallVerification | undefined;
+    for (const wall of params.wallVerifications) {
+      if (wall.samePermanentWallVisible !== "TRUE") continue;
+      const displayName = normalizeObservationLine(wall.displayName).toLowerCase();
+      const primaryAnchor = normalizeObservationLine(wall.primaryAnchorLabel || "").toLowerCase();
+      if ((displayName && line.includes(displayName)) || (primaryAnchor && line.includes(primaryAnchor))) {
+        matchedWall = wall;
+        break;
+      }
+    }
+
+    // Rule 4: additional evidence must resolve to known verified wall geometry.
+    if (!matchedWall && (mentionsReturn || mentionsAdjoining || mentionsCorner)) {
+      const knownWallMention = Array.from(wallByDisplayName.keys()).some((label) => label.length > 0 && line.includes(label));
+      if (!knownWallMention) {
+        failures.push({
+          code: "wall_identity_mismatch",
+          severity: "soft",
+          message: `additional evidence could not be mapped to a verified wall identity: ${normalizeObservationLine(rawLine)}`,
+        });
+      }
+      continue;
+    }
+
+    if (!matchedWall || !side) continue;
+
+    const edge = deriveFrameEdgeFeatureObservation(matchedWall.observations || [], side);
+    const sideCornerVisible = side === "left"
+      ? matchedWall.leftCornerVisible === true
+      : matchedWall.rightCornerVisible === true;
+    const sideReturnVisible = edge.returnWallVisible ?? matchedWall.returnWallVisible;
+    const sideAdjoiningVisible = edge.adjoiningWallVisible ?? matchedWall.adjoiningWallVisible;
+
+    // Rule 3: additional evidence can reinforce, never contradict staged wall observations.
+    const contradiction = (
+      (mentionsReturn && sideReturnVisible === false)
+      || (mentionsAdjoining && sideAdjoiningVisible === false)
+      || (mentionsCorner && !sideCornerVisible)
+    );
+
+    if (contradiction) {
+      const baselineWall = baselineById.get(matchedWall.semanticWallId);
+      failures.push({
+        code: "additional_evidence_contradiction",
+        severity: "soft",
+        semanticWallId: matchedWall.semanticWallId,
+        wallDisplayName: baselineWall?.displayName || matchedWall.displayName,
+        side,
+        message: `${matchedWall.displayName}:${side}:additional evidence contradicts staged wall observations (${normalizeObservationLine(rawLine)}).`,
+      });
+    }
+  }
+
+  const hasHardFailure = failures.some((failure) => failure.severity === "hard");
+  const status: StagedObservationConsistencyResult["status"] = hasHardFailure
+    ? "INCONSISTENT"
+    : failures.length > 0
+      ? "RECONCILABLE"
+      : "CONSISTENT";
+
+  return {
+    status,
+    attempt: params.attempt,
+    consistencyFailures: failures.map((failure) => `${failure.code}:${failure.message}`),
+    failureDetails: failures,
+  };
 }
 
 function evaluateStagedVerificationIntegrity(
@@ -3666,6 +4239,30 @@ function normalizeWallCertainty(certainty?: string): "known" | "partial" | "unkn
   return "partial";
 }
 
+function hasMaterialSupportedWallSurfaceIncrease(
+  baselineDescriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number],
+  stagedDescriptor: NonNullable<StructuralBaseline["wallDescriptors"]>[number],
+): boolean {
+  const baselineExtentRank = visibilityRank(baselineDescriptor.visibleExtent || baselineDescriptor.visibility);
+  const stagedExtentRank = visibilityRank(stagedDescriptor.visibleExtent || stagedDescriptor.visibility);
+  const baselineAdjacentRank = Math.max(
+    edgeAdjacentWallVisibilityRank(normalizeEdgeAdjacentWallVisibility(baselineDescriptor.leftAdjacentWallVisibility)),
+    edgeAdjacentWallVisibilityRank(normalizeEdgeAdjacentWallVisibility(baselineDescriptor.rightAdjacentWallVisibility)),
+  );
+  const stagedAdjacentRank = Math.max(
+    edgeAdjacentWallVisibilityRank(normalizeEdgeAdjacentWallVisibility(stagedDescriptor.leftAdjacentWallVisibility)),
+    edgeAdjacentWallVisibilityRank(normalizeEdgeAdjacentWallVisibility(stagedDescriptor.rightAdjacentWallVisibility)),
+  );
+
+  const gainedFrameContinuation = baselineDescriptor.continuesBeyondFrame !== true && stagedDescriptor.continuesBeyondFrame === true;
+  const gainedMaterialAdjacentSupport = stagedAdjacentRank >= edgeAdjacentWallVisibilityRank("partial")
+    && stagedAdjacentRank - baselineAdjacentRank >= 2;
+  const gainedWallExtentWithSupport = stagedExtentRank > baselineExtentRank
+    && stagedAdjacentRank >= edgeAdjacentWallVisibilityRank("partial");
+
+  return gainedFrameContinuation || gainedMaterialAdjacentSupport || gainedWallExtentWithSupport;
+}
+
 function sortUniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values)).sort((a, b) => a.localeCompare(b));
 }
@@ -3673,6 +4270,7 @@ function sortUniqueStrings(values: string[]): string[] {
 export function buildEnvelopeDeterministicComparison(
   baseline?: StructuralBaseline | null,
   staged?: StructuralBaseline | null,
+  baselineWalls?: SemanticWallModel[],
 ): EnvelopeDeterministicComparison {
   const baselineDescriptors = Array.isArray(baseline?.wallDescriptors) ? baseline!.wallDescriptors! : [];
   const stagedDescriptors = Array.isArray(staged?.wallDescriptors) ? staged!.wallDescriptors! : [];
@@ -3682,19 +4280,33 @@ export function buildEnvelopeDeterministicComparison(
   baselineDescriptors.forEach((descriptor) => baselineByWall.set(descriptor.wallIndex, descriptor));
   stagedDescriptors.forEach((descriptor) => stagedByWall.set(descriptor.wallIndex, descriptor));
 
-  const wallIndices = [0, 1, 2, 3];
+  const semanticBaselineEntries = (baselineWalls || []).map((wall) => ({
+    wallIndex: wall.advisoryWallIndex,
+    wallSemanticId: wall.semanticWallId,
+    wallDisplayName: wall.displayName,
+  }));
+  const wallEntries = semanticBaselineEntries.length > 0
+    ? semanticBaselineEntries
+    : [0, 1, 2, 3].map((wallIndex) => ({
+      wallIndex,
+      wallSemanticId: undefined,
+      wallDisplayName: undefined,
+    }));
   const suspicions: EnvelopeDeterministicSuspicion[] = [];
   const questions: string[] = [];
 
-  for (const wallIndex of wallIndices) {
+  for (const wallEntry of wallEntries) {
+    const wallIndex = wallEntry.wallIndex;
     const base = baselineByWall.get(wallIndex);
     const next = stagedByWall.get(wallIndex);
-    const wallLabel = wallLabelForEnvelope(wallIndex);
+    const wallLabel = wallEntry.wallDisplayName || wallLabelForEnvelope(wallIndex);
 
     if (!base && next) {
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_added`,
         code: "possible_wall_added",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: staged extraction has a visible wall descriptor where baseline had none.`,
       });
@@ -3706,6 +4318,8 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_removed`,
         code: "possible_wall_removed",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: baseline had a visible wall descriptor but staged extraction does not.`,
       });
@@ -3719,6 +4333,8 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_visibility_changed`,
         code: "possible_wall_visibility_changed",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: wall visibility classification changed from baseline to staged extraction.`,
       });
@@ -3731,6 +4347,8 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_certainty_changed`,
         code: "possible_architectural_certainty_changed",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: architectural certainty changed from ${baseCertainty} to ${stagedCertainty}.`,
       });
@@ -3743,6 +4361,8 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_new_corner`,
         code: "possible_new_visible_corner",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: staged extraction indicates a corner now visible where baseline did not.`,
       });
@@ -3752,26 +4372,35 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_missing_corner`,
         code: "possible_missing_corner",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: a baseline-visible corner is not visible in staged extraction.`,
       });
       questions.push(`Deterministic comparison suggests a potentially missing corner on ${wallLabel}. Was a permanent corner removed/flattened, or is this visibility/extraction uncertainty?`);
     }
 
-    if (base.terminatesAtCorner === true && next.terminatesAtCorner !== true) {
+    if (
+      (base.terminatesAtCorner === true && next.terminatesAtCorner !== true)
+      || hasMaterialSupportedWallSurfaceIncrease(base, next)
+    ) {
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_extended`,
         code: "possible_wall_extended",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
-        note: `${wallLabel}: baseline wall terminated at an observed corner, staged wall does not.`,
+        note: `${wallLabel}: staged observation represents materially more supported wall surface than baseline support.`,
       });
-      questions.push(`Deterministic comparison suggests possible wall extension on ${wallLabel} beyond the baseline corner termination. Is this a true extension or an uncertainty/framing artefact?`);
+      questions.push(`Deterministic comparison suggests materially increased supported wall surface on ${wallLabel}. Is this genuine envelope expansion or explainable by uncertainty/framing artefact?`);
     }
 
     if (base.terminatesAtCorner !== true && next.terminatesAtCorner === true) {
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_shortened`,
         code: "possible_wall_shortened",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: staged wall now terminates at a corner where baseline did not show a termination.`,
       });
@@ -3782,6 +4411,8 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_unsupported_completion`,
         code: "possible_unsupported_architectural_completion",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: baseline wall continued beyond frame with uncertainty, staged extraction resolves known completed geometry.`,
       });
@@ -3792,6 +4423,8 @@ export function buildEnvelopeDeterministicComparison(
       suspicions.push({
         observationId: `obs_wall_${wallIndex}_interrupted`,
         code: "possible_wall_interrupted",
+        wallSemanticId: wallEntry.wallSemanticId,
+        wallDisplayName: wallEntry.wallDisplayName,
         wallIndex,
         note: `${wallLabel}: a baseline-visible boundary is not visible in staged extraction.`,
       });
@@ -3829,7 +4462,7 @@ function confidenceFromEvidence(supportCount: number, conflictCount: number): "L
 }
 
 function formatObservationLine(item: EnvelopeDeterministicSuspicion): string {
-  return `${item.code} (${wallLabelForEnvelope(item.wallIndex)}): ${item.note}`;
+  return `${item.code} (${item.wallDisplayName || wallLabelForEnvelope(item.wallIndex)}): ${item.note}`;
 }
 
 function buildEnvelopeHypothesis(params: {
@@ -3857,7 +4490,7 @@ function buildEnvelopeHypothesis(params: {
 }
 
 function evidenceLineFromSuspicion(item: EnvelopeDeterministicSuspicion): string {
-  const wall = wallLabelForEnvelope(item.wallIndex);
+  const wall = item.wallDisplayName || wallLabelForEnvelope(item.wallIndex);
   if (item.code === "possible_wall_added") {
     return `${wall}: staged extraction shows a wall surface where baseline did not.`;
   }
@@ -4671,6 +5304,24 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     : typeof parsed?.additionalPermanentArchitecturalFeatures === "string"
       ? [normalizeObservationLine(parsed.additionalPermanentArchitecturalFeatures)]
       : [];
+  const wallUtilisationObservations: WallUtilisationObservation[] = Array.isArray(parsed?.wallUtilisationObservations)
+    ? parsed.wallUtilisationObservations
+      .map((item: any): WallUtilisationObservation | null => {
+        if (!item || typeof item !== "object") return null;
+        const semanticWallId = typeof item.semanticWallId === "string" ? item.semanticWallId.trim() : "";
+        const evidence = typeof item.evidence === "string" ? normalizeObservationLine(item.evidence) : "";
+        const utilisationType = typeof item.utilisationType === "string" ? item.utilisationType.trim().toLowerCase() : "";
+        const allowed = new Set(["wall_art", "tv_unit", "console", "shelving", "sofa", "headboard", "other"]);
+        if (!semanticWallId || !evidence || !allowed.has(utilisationType)) return null;
+        return {
+          semanticWallId,
+          utilisationType: utilisationType as WallUtilisationObservation["utilisationType"],
+          evidence,
+          confidence: Number.isFinite(item.confidence) ? Number(item.confidence) : undefined,
+        };
+      })
+      .filter((item: WallUtilisationObservation | null): item is WallUtilisationObservation => item !== null)
+    : [];
   const additionalArchitecturalEvidence = categorizeAdditionalArchitecturalFeatures(
     additionalFeatureList,
     Number.isFinite(parsed?.confidence) ? Number(parsed.confidence) : undefined,
@@ -4684,7 +5335,7 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
       reason: additionalArchitecturalEvidence.reason,
     }
     : undefined;
-  const observationOnlySchema = wallVerifications.length > 0 || additionalFeatureList.length > 0 || statementVerifications.length > 0;
+  const observationOnlySchema = wallVerifications.length > 0 || additionalFeatureList.length > 0 || wallUtilisationObservations.length > 0 || statementVerifications.length > 0;
 
   if (!observationOnlySchema) {
     throw new Error("validator_error_invalid_schema");
@@ -4760,6 +5411,7 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     structuredIssues,
     selectedExplanation,
     stagedWallVerifications: wallVerifications,
+    wallUtilisationObservations,
     additionalWallPlanes,
     additionalArchitecturalEvidence,
     baselineVerificationResults: statementVerifications,
@@ -4789,15 +5441,179 @@ type EnvelopePolicyDecision = "pass" | "advisory" | "fail";
 function buildEnvelopeVerificationRequests(params: {
   observations: ArchitecturalObservation[];
 }): string[] {
-  const requests = new Set<string>();
+  if (!params.observations.length) return [];
+
+  const normalizeText = (value: string): string => value.trim().replace(/\s+/g, " ");
+  const toSentence = (parts: string[]): string => parts.filter((part) => part.trim()).join(" ");
+
+  const changePhraseForType = (type: ArchitecturalObservation["type"]): string => {
+    if (type === "adjacent_wall_geometry_introduced") return "new adjacent wall geometry is now visible";
+    if (type === "adjacent_wall_geometry_removed") return "adjacent wall geometry visibility appears reduced";
+    if (type === "wall_plane_introduced") return "a new wall plane is now visible";
+    if (type === "wall_plane_removed") return "a previously visible wall plane is no longer visible";
+    if (type === "wall_termination_changed") return "wall termination at the frame edge appears different";
+    if (type === "corner_visibility_changed") return "corner visibility appears changed";
+    if (type === "recess_changed") return "recess/projection geometry appears changed";
+    return "architectural visibility signals remain uncertain";
+  };
+
+  const extractLocationsFromFacts = (facts: string[], type: ArchitecturalObservation["type"]): string[] => {
+    const locations = new Set<string>();
+    const lowerFacts = facts.map((fact) => fact.toLowerCase());
+
+    const hasLeftSide = lowerFacts.some((fact) => fact.includes("boundary_side=left") || fact.includes("consistency_side=left"));
+    const hasRightSide = lowerFacts.some((fact) => fact.includes("boundary_side=right") || fact.includes("consistency_side=right"));
+    const hasLeftCorner = lowerFacts.some((fact) => fact.includes("leftcorner") || fact.includes("left corner"));
+    const hasRightCorner = lowerFacts.some((fact) => fact.includes("rightcorner") || fact.includes("right corner"));
+    const hasLeftAdjacent = lowerFacts.some((fact) => fact.includes("left adjacent") || fact.includes("leftadjacent"));
+    const hasRightAdjacent = lowerFacts.some((fact) => fact.includes("right adjacent") || fact.includes("rightadjacent"));
+    const hasReturnWall = lowerFacts.some((fact) => fact.includes("returnwallvisible") || fact.includes("return wall"));
+    const hasAdjoiningWall = lowerFacts.some((fact) => fact.includes("adjoiningwallvisible") || fact.includes("adjoining wall"));
+
+    if (hasLeftCorner) locations.add("left corner");
+    if (hasRightCorner) locations.add("right corner");
+
+    if (hasReturnWall) {
+      if (hasLeftSide) locations.add("left return wall");
+      if (hasRightSide) locations.add("right return wall");
+      if (!hasLeftSide && !hasRightSide) locations.add("return wall");
+    }
+
+    if (hasAdjoiningWall || hasLeftAdjacent || hasRightAdjacent) {
+      if (hasLeftSide || hasLeftAdjacent) locations.add("left boundary");
+      if (hasRightSide || hasRightAdjacent) locations.add("right boundary");
+      if (!hasLeftSide && !hasRightSide && !hasLeftAdjacent && !hasRightAdjacent) locations.add("central wall plane");
+    }
+
+    if (type === "corner_visibility_changed" && locations.size === 0) locations.add("corner region");
+    if (type === "wall_termination_changed") {
+      if (hasLeftSide) locations.add("left boundary");
+      if (hasRightSide) locations.add("right boundary");
+      if (!hasLeftSide && !hasRightSide) locations.add("central wall plane");
+    }
+    if (type === "signal_uncertainty" && locations.size === 0) locations.add("corner region");
+
+    return Array.from(locations);
+  };
+
+  type WallRequestBucket = {
+    semanticWallId?: string;
+    wallLabel: string;
+    observations: ArchitecturalObservation[];
+  };
+
+  const wallBuckets = new Map<string, WallRequestBucket>();
+  const globalObservations: ArchitecturalObservation[] = [];
 
   for (const observation of params.observations) {
-    for (const request of observation.verificationRequests) {
-      if (request.trim()) requests.add(request.trim());
+    const wallFromInterpretation = observation.supportingInterpretations.find((item) => item.wallSemanticId || item.wallDisplayName);
+    const semanticWallId = wallFromInterpretation?.wallSemanticId;
+    const wallLabel = wallFromInterpretation?.wallDisplayName || observation.affectedWall;
+
+    if (!semanticWallId && !wallLabel) {
+      globalObservations.push(observation);
+      continue;
+    }
+
+    const key = semanticWallId || `label:${wallLabel}`;
+    const existing = wallBuckets.get(key);
+    if (existing) {
+      existing.observations.push(observation);
+    } else {
+      wallBuckets.set(key, {
+        semanticWallId,
+        wallLabel: wallLabel || "affected wall",
+        observations: [observation],
+      });
     }
   }
 
-  return Array.from(requests);
+  if (globalObservations.length > 0) {
+    if (wallBuckets.size === 1) {
+      const onlyBucket = Array.from(wallBuckets.values())[0];
+      onlyBucket.observations.push(...globalObservations);
+    } else {
+      wallBuckets.set("global", {
+        semanticWallId: undefined,
+        wallLabel: "global envelope region",
+        observations: globalObservations,
+      });
+    }
+  }
+
+  const renderWallRequest = (bucket: WallRequestBucket): string => {
+    const changePhrases = new Set<string>();
+    const locations = new Set<string>();
+    const uncertainty = new Set<string>();
+    const evidence = new Set<string>();
+
+    for (const observation of bucket.observations) {
+      changePhrases.add(changePhraseForType(observation.type));
+      evidence.add(normalizeText(observation.summary));
+
+      for (const item of observation.supportingEvidence || []) {
+        const normalized = normalizeText(item);
+        if (!normalized) continue;
+        if (normalized.startsWith("raw_observation_") || normalized.startsWith("signal:")) continue;
+        evidence.add(normalized);
+      }
+
+      const allFacts = observation.supportingInterpretations.flatMap((item) => item.supportingFacts || []);
+      for (const location of extractLocationsFromFacts(allFacts, observation.type)) {
+        locations.add(location);
+      }
+
+      const lowerFacts = allFacts.map((fact) => fact.toLowerCase());
+      if (lowerFacts.some((fact) => fact.includes("baseline_boundary_supported=false"))) {
+        uncertainty.add("baseline boundary support is limited");
+      }
+      if (lowerFacts.some((fact) => fact.includes("baseline cornervisibility=none") || fact.includes("baseline adjacentwallvisibility=none") || fact.includes("baseline adjacentwallvisibility=partial"))) {
+        uncertainty.add("baseline corner/adjacent-wall evidence is partial or missing");
+      }
+      if (lowerFacts.some((fact) => fact.includes("baseline continuesbeyondframe=true"))) {
+        uncertainty.add("baseline framing terminated at the image edge");
+      }
+      if (observation.classification === "perspective_variation" || observation.type === "signal_uncertainty") {
+        uncertainty.add("perspective or framing ambiguity remains");
+      }
+      if ((observation.supportingEvidence || []).some((item) => item.toLowerCase().includes("contradiction"))) {
+        uncertainty.add("staged observations contain conflicting signals");
+      }
+    }
+
+    if (locations.size === 0) {
+      locations.add("central wall plane");
+    }
+    if (uncertainty.size === 0) {
+      uncertainty.add("available evidence is advisory and not independently conclusive");
+    }
+
+    const wallRef = bucket.semanticWallId
+      ? `${bucket.wallLabel} (${bucket.semanticWallId})`
+      : bucket.wallLabel;
+
+    const changeClause = Array.from(changePhrases).join("; ");
+    const locationClause = Array.from(locations).join(", ");
+    const evidenceClause = Array.from(evidence).slice(0, 5).join("; ");
+    const uncertaintyClause = Array.from(uncertainty).join("; ");
+
+    return toSentence([
+      `${wallRef}: ${changeClause}.`,
+      `Concerned region: ${locationClause}.`,
+      evidenceClause ? `Compiled Envelope evidence: ${evidenceClause}.` : "",
+      `Envelope uncertainty: ${uncertaintyClause}.`,
+      "Compare baseline vs staged imagery and determine whether this represents genuine architectural change (FAIL) or expected perspective/framing variation (PASS).",
+    ]);
+  };
+
+  return Array.from(wallBuckets.values())
+    .sort((left, right) => {
+      const leftSeverity = left.observations.some((item) => item.severity === "significant") ? 1 : 0;
+      const rightSeverity = right.observations.some((item) => item.severity === "significant") ? 1 : 0;
+      if (leftSeverity !== rightSeverity) return rightSeverity - leftSeverity;
+      return left.wallLabel.localeCompare(right.wallLabel);
+    })
+    .map((bucket) => renderWallRequest(bucket));
 }
 
 function buildAdvisorySignalObservations(params: {
@@ -4863,6 +5679,44 @@ function buildAdvisorySignalObservations(params: {
   return observations;
 }
 
+function buildStagedConsistencyInterpretations(params: {
+  consistency: StagedObservationConsistencyResult;
+  baselineWalls: SemanticWallModel[];
+}): DeterministicStructuralInterpretation[] {
+  if (!params.consistency.failureDetails.length) return [];
+  const byWall = new Map(params.baselineWalls.map((wall) => [wall.semanticWallId, wall] as const));
+
+  return params.consistency.failureDetails.map((failure, index) => {
+    const baselineWall = failure.semanticWallId ? byWall.get(failure.semanticWallId) : undefined;
+    const wallDisplayName = baselineWall?.displayName || failure.wallDisplayName;
+    const severity: DeterministicStructuralInterpretation["severity"] = "advisory";
+    const confidence: DeterministicStructuralInterpretation["confidence"] = failure.severity === "hard" ? "high" : "medium";
+
+    return {
+      interpretationId: `interp_staged_consistency_${failure.code}_${index + 1}`,
+      category: "staged_observation_contradiction",
+      wallSemanticId: failure.semanticWallId,
+      wallDisplayName,
+      severity,
+      confidence,
+      summary: `Staged consistency flagged ${failure.code.replace(/_/g, " ")} for ${wallDisplayName || "global geometry"}.`,
+      detectedFeature: "staged observation consistency",
+      associatedWallMagnitude: "none",
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "Staged extraction contains internally conflicting or uncertain evidence that requires reviewer confirmation.",
+      supportingFacts: sortUniqueStrings([
+        `staged_consistency_status=${params.consistency.status}`,
+        `consistency_code=${failure.code}`,
+        `consistency_severity=${failure.severity}`,
+        failure.side ? `consistency_side=${failure.side}` : "",
+      ]),
+      corroboratingEvidence: [],
+      contradictingEvidence: [failure.message],
+    };
+  });
+}
+
 function applyEnvelopeDecisionPolicy(params: {
   significantInterpretations: DeterministicStructuralInterpretation[];
   advisoryInterpretations: DeterministicStructuralInterpretation[];
@@ -4874,6 +5728,7 @@ function applyEnvelopeDecisionPolicy(params: {
 } {
   const structuralChangeCategories = new Set<DeterministicStructuralInterpretation["category"]>([
     "materially_usable_wall_surface_introduced",
+    "unsupported_boundary_expansion",
     "wall_plane_introduced",
     "wall_plane_removed",
     "return_wall_introduced",
@@ -4925,15 +5780,48 @@ function applyEnvelopeDecisionPolicy(params: {
     return !contradictoryWalls.has(wallId);
   });
 
-  const hasHighConfidenceSingleWallFail = eligibleFailInterpretations.some((item) => (
-    item.confidence === "high"
-    && (item.corroboratingEvidence.length >= 2 || item.supportingFacts.length >= 5)
-  ));
+  const wallLevelFailures: string[] = [];
+  for (const [wallId, items] of interpretationsByWall.entries()) {
+    if (contradictoryWalls.has(wallId)) continue;
+    const wallLabel = items.find((item) => item.wallDisplayName)?.wallDisplayName || wallId;
+    const significantStructural = items.filter((item) => (
+      item.severity === "significant"
+      && (item.classification === "structural_addition" || item.decision === "fail")
+      && structuralChangeCategories.has(item.category)
+      && (item.supportingFacts.length >= 3 || item.corroboratingEvidence.length >= 1)
+    ));
 
-  const shouldFail = eligibleFailInterpretations.length >= 2 || hasHighConfidenceSingleWallFail;
+    const hasReturnWallIntroduced = items.some((item) => item.category === "return_wall_introduced");
+    const hasMateriallyUsableSurface = items.some((item) => item.category === "materially_usable_wall_surface_introduced");
+    const hasFunctionalUtilisation = items.some((item) => item.category === "functional_wall_utilisation");
+    const boundaryExpansion = items.filter((item) => item.category === "unsupported_boundary_expansion");
+    const hasUnsupportedBoundary = boundaryExpansion.length > 0;
+    const hasWeakBaselineSupport = boundaryExpansion.some((item) =>
+      item.supportingFacts.some((fact) => fact === "baseline_boundary_supported=FALSE"),
+    );
+
+    const comboFail = hasReturnWallIntroduced
+      && hasMateriallyUsableSurface
+      && hasFunctionalUtilisation
+      && hasUnsupportedBoundary
+      && hasWeakBaselineSupport;
+    const significantFail = significantStructural.some((item) => (
+      item.confidence === "high"
+      && (item.corroboratingEvidence.length >= 2 || item.supportingFacts.length >= 5)
+    ));
+
+    if (comboFail || significantFail) {
+      wallLevelFailures.push(wallLabel);
+    }
+  }
+
+  const shouldFail = wallLevelFailures.length > 0 || eligibleFailInterpretations.length >= 2;
 
   if (shouldFail) {
-    const policyEvidence = eligibleFailInterpretations.map((item) => `${item.category}:${item.summary}`);
+    const policyEvidence = [
+      ...eligibleFailInterpretations.map((item) => `${item.category}:${item.summary}`),
+      ...wallLevelFailures.map((wallLabel) => `wall_level_structural_fail:${wallLabel}`),
+    ];
     return {
       decision: "fail",
       policyEvidence,
@@ -4974,6 +5862,226 @@ function applyEnvelopeDecisionPolicy(params: {
   };
 }
 
+const ENVELOPE_INTERPRETATION_INVARIANT = "interpretation_layer_information_preserving" as const;
+
+function expectedInterpretationCategoriesForSuspicion(
+  code: EnvelopeDeterministicSuspicion["code"],
+): Set<DeterministicStructuralInterpretation["category"]> {
+  if (code === "possible_wall_added") {
+    return new Set(["wall_plane_introduced", "materially_usable_wall_surface_introduced", "unsupported_boundary_expansion"]);
+  }
+  if (code === "possible_wall_removed") {
+    return new Set(["wall_plane_removed"]);
+  }
+  if (code === "possible_wall_extended") {
+    return new Set(["wall_extended", "wall_plane_introduced", "unsupported_boundary_expansion"]);
+  }
+  if (code === "possible_wall_shortened") {
+    return new Set(["wall_shortened", "wall_plane_removed"]);
+  }
+  if (code === "possible_wall_interrupted") {
+    return new Set(["wall_shortened", "recess_introduced", "recess_removed"]);
+  }
+  if (code === "possible_unsupported_architectural_completion") {
+    return new Set(["unsupported_boundary_expansion", "materially_usable_wall_surface_introduced", "wall_plane_introduced"]);
+  }
+  if (code === "possible_new_visible_corner") {
+    return new Set(["corner_introduced", "return_wall_introduced", "adjoining_wall_introduced"]);
+  }
+  if (code === "possible_missing_corner") {
+    return new Set(["corner_removed", "return_wall_removed", "adjoining_wall_removed"]);
+  }
+  if (code === "possible_wall_visibility_changed") {
+    return new Set([
+      "wall_plane_introduced",
+      "wall_plane_removed",
+      "return_wall_introduced",
+      "return_wall_removed",
+      "adjoining_wall_introduced",
+      "adjoining_wall_removed",
+      "recess_introduced",
+      "recess_removed",
+      "corner_introduced",
+      "corner_removed",
+      "materially_usable_wall_surface_introduced",
+      "unsupported_boundary_expansion",
+    ]);
+  }
+  if (code === "possible_architectural_certainty_changed") {
+    return new Set(["staged_observation_contradiction"]);
+  }
+  return new Set();
+}
+
+function buildInterpretationCoverageAudit(params: {
+  comparison: EnvelopeDeterministicComparison;
+  interpretations: DeterministicStructuralInterpretation[];
+  baselineWalls: SemanticWallModel[];
+}): { rawStructuralObservations: RawStructuralObservation[]; audit: InterpretationCoverageAudit } {
+  const rawStructuralObservations: RawStructuralObservation[] = params.comparison.suspicions.map((suspicion) => {
+    return {
+      observationId: suspicion.observationId,
+      code: suspicion.code,
+      wallIndex: suspicion.wallIndex,
+      wallSemanticId: suspicion.wallSemanticId,
+      wallDisplayName: suspicion.wallDisplayName,
+      note: suspicion.note,
+    };
+  });
+
+  const rows: InterpretationCoverageAuditRow[] = [];
+  const missing: InterpretationCoverageAudit["missingObservations"] = [];
+  let coveredObservationCount = 0;
+
+  for (const raw of rawStructuralObservations) {
+    const expected = expectedInterpretationCategoriesForSuspicion(raw.code);
+    const candidates = params.interpretations.filter((interpretation) => {
+      const sameWall = raw.wallSemanticId
+        ? interpretation.wallSemanticId === raw.wallSemanticId
+        : true;
+      return sameWall && expected.has(interpretation.category);
+    });
+    const produced = sortUniqueStrings(candidates.map((item) => item.category));
+    const lost = produced.length === 0;
+    if (!lost) {
+      coveredObservationCount += 1;
+    } else {
+      missing.push({
+        observationId: raw.observationId,
+        code: raw.code,
+        wallIndex: raw.wallIndex,
+        wallDisplayName: raw.wallDisplayName,
+        reason: "No deterministic interpretation category matched this raw structural observation.",
+      });
+    }
+
+    rows.push({
+      rawStructuralObservation: `${raw.code}:${raw.note}`,
+      deterministicInterpretations: produced,
+      lost,
+      reason: lost ? "Interpretation loss: observation did not survive into deterministic interpretation layer." : undefined,
+    });
+  }
+
+  const rawCount = rawStructuralObservations.length;
+  const coveragePercent = rawCount > 0
+    ? Number(((coveredObservationCount / rawCount) * 100).toFixed(2))
+    : 100;
+
+  return {
+    rawStructuralObservations,
+    audit: {
+      architecturalInvariant: ENVELOPE_INTERPRETATION_INVARIANT,
+      rawStructuralObservationCount: rawCount,
+      deterministicInterpretationCount: params.interpretations.length,
+      coveredObservationCount,
+      coveragePercent,
+      missingObservations: missing,
+      rows,
+    },
+  };
+}
+
+function buildWallEvidenceLineage(params: {
+  baselineWalls: SemanticWallModel[];
+  rawStructuralObservations: RawStructuralObservation[];
+  additionalEvidence?: AdditionalArchitecturalEvidence;
+  wallUtilisationObservations?: WallUtilisationObservation[];
+  interpretations: DeterministicStructuralInterpretation[];
+}): WallEvidenceLineage[] {
+  const rawByWall = new Map<string, RawStructuralObservation[]>();
+  for (const observation of params.rawStructuralObservations || []) {
+    if (!observation.wallSemanticId) continue;
+    const bucket = rawByWall.get(observation.wallSemanticId) || [];
+    bucket.push(observation);
+    rawByWall.set(observation.wallSemanticId, bucket);
+  }
+
+  const addlByWall = new Map<string, AdditionalEvidenceOwnedFeature[]>();
+  for (const feature of params.additionalEvidence?.ownedFeatures || []) {
+    if (!feature.semanticWallId) continue;
+    const bucket = addlByWall.get(feature.semanticWallId) || [];
+    bucket.push(feature);
+    addlByWall.set(feature.semanticWallId, bucket);
+  }
+
+  const utilByWall = new Map<string, WallUtilisationObservation[]>();
+  for (const utilisation of params.wallUtilisationObservations || []) {
+    if (!utilisation.semanticWallId || utilisation.semanticWallId.toLowerCase() === "none") continue;
+    const bucket = utilByWall.get(utilisation.semanticWallId) || [];
+    bucket.push(utilisation);
+    utilByWall.set(utilisation.semanticWallId, bucket);
+  }
+
+  const interpByWall = new Map<string, DeterministicStructuralInterpretation[]>();
+  for (const interpretation of params.interpretations || []) {
+    if (!interpretation.wallSemanticId) continue;
+    const bucket = interpByWall.get(interpretation.wallSemanticId) || [];
+    bucket.push(interpretation);
+    interpByWall.set(interpretation.wallSemanticId, bucket);
+  }
+
+  return params.baselineWalls.map((wall) => {
+    const interpretations = interpByWall.get(wall.semanticWallId) || [];
+    const policyEvidence = sortUniqueStrings(interpretations.map((item) => `${item.category}:${item.decision}:${item.severity}`));
+    return {
+      semanticWallId: wall.semanticWallId,
+      wallDisplayName: wall.displayName,
+      advisoryWallIndex: wall.advisoryWallIndex,
+      rawStructuralObservations: rawByWall.get(wall.semanticWallId) || [],
+      additionalArchitecturalEvidence: addlByWall.get(wall.semanticWallId) || [],
+      wallUtilisationObservations: utilByWall.get(wall.semanticWallId) || [],
+      deterministicInterpretations: interpretations,
+      policyEvidence,
+    };
+  });
+}
+
+function buildRawObservationPreservationInterpretations(params: {
+  comparison: EnvelopeDeterministicComparison;
+  interpretations: DeterministicStructuralInterpretation[];
+  baselineWalls: SemanticWallModel[];
+}): DeterministicStructuralInterpretation[] {
+  const bySemanticWallId = new Map(params.baselineWalls.map((wall) => [wall.semanticWallId, wall] as const));
+  const additions: DeterministicStructuralInterpretation[] = [];
+
+  for (const suspicion of params.comparison.suspicions) {
+    const wall = suspicion.wallSemanticId ? bySemanticWallId.get(suspicion.wallSemanticId) : undefined;
+    const alreadyRepresented = params.interpretations.some((item) => {
+      const sameWall = wall?.semanticWallId ? item.wallSemanticId === wall.semanticWallId : true;
+      const facts = Array.isArray(item.supportingFacts) ? item.supportingFacts : [];
+      return sameWall && facts.includes(`raw_observation_id=${suspicion.observationId}`);
+    });
+    if (alreadyRepresented) continue;
+
+    const descriptor = `${wall?.displayName || suspicion.wallDisplayName || `wall_${suspicion.wallIndex}`} raw observation preserved: ${suspicion.code}`;
+
+    additions.push({
+      interpretationId: `interp_${wall?.semanticWallId || `wall_${suspicion.wallIndex}`}_raw_observation_preserved_${additions.length + 1}`,
+      category: "staged_observation_contradiction",
+      wallSemanticId: wall?.semanticWallId,
+      wallDisplayName: wall?.displayName,
+      severity: "advisory",
+      confidence: "medium",
+      summary: `${descriptor}.`,
+      detectedFeature: "raw structural observation preserved",
+      associatedWallMagnitude: "none",
+      classification: "perspective_variation",
+      decision: "pass",
+      explanation: "Raw structural observation is preserved explicitly at interpretation layer to satisfy information-preserving invariant without collapsing wall-level evidence.",
+      supportingFacts: [
+        `raw_observation_id=${suspicion.observationId}`,
+        `raw_observation_code=${suspicion.code}`,
+        `raw_observation_wall_index=${suspicion.wallIndex}`,
+      ],
+      corroboratingEvidence: [suspicion.note],
+      contradictingEvidence: [],
+    });
+  }
+
+  return additions;
+}
+
 export async function runEnvelopeValidator(
   beforeImageUrl: string,
   afterImageUrl: string,
@@ -5002,7 +6110,7 @@ export async function runEnvelopeValidator(
   const semanticBaselineWallModel = buildSemanticWallModels(options?.baseline ?? null);
   const baselineCandidateWallQualifications = buildCandidateWallQualifications(options?.baseline ?? null);
   const baselineAdvisoryGeometry = buildAdvisoryGeometryObservations(options?.baseline ?? null, baselineCandidateWallQualifications);
-  const deterministicComparison = buildEnvelopeDeterministicComparison(options?.baseline ?? null, options?.baseline ?? null);
+  const deterministicComparison = buildEnvelopeDeterministicComparison(options?.baseline ?? null, options?.baseline ?? null, semanticBaselineWallModel);
   const deterministicHypotheses = buildEnvelopeHypotheses(deterministicComparison);
   const primaryHypothesis = deterministicHypotheses.primaryHypothesis;
   const inferredEvents = inferArchitecturalEvents(deterministicComparison);
@@ -5129,21 +6237,66 @@ export async function runEnvelopeValidator(
 
     // Gemini semantic analysis
     const initialAttemptResult = await runVerificationAttempt();
-    const initialStagedWallVerifications = initialAttemptResult.stagedWallVerifications || [];
+    const initialRawStagedWallVerifications = initialAttemptResult.stagedWallVerifications || [];
+    const initialRawAdditionalArchitecturalEvidence = initialAttemptResult.additionalArchitecturalEvidence;
+    const initialWallUtilisationObservations = initialAttemptResult.wallUtilisationObservations || [];
+
+    const initialStagedObservationConsistency = evaluateStagedObservationConsistency({
+      baselineWalls: semanticBaselineWallModel,
+      wallVerifications: initialRawStagedWallVerifications,
+      additionalEvidence: initialRawAdditionalArchitecturalEvidence,
+      attempt: 1,
+    });
+
+    let geminiResult = initialAttemptResult;
+    let finalRawStagedWallVerifications = initialRawStagedWallVerifications;
+    let finalRawAdditionalArchitecturalEvidence = initialRawAdditionalArchitecturalEvidence;
+    let wallUtilisationObservations = initialWallUtilisationObservations;
+    let stagedObservationConsistency = initialStagedObservationConsistency;
+
+    let stagedExtractionRetryStatus: StagedExtractionRetryStatus = {
+      triggered: initialStagedObservationConsistency.status === "INCONSISTENT",
+      attempts: initialStagedObservationConsistency.status === "INCONSISTENT" ? 2 : 1,
+      finalAttempt: initialStagedObservationConsistency.status === "INCONSISTENT" ? 2 : 1,
+      retrySucceeded: initialStagedObservationConsistency.status !== "INCONSISTENT",
+      reason: initialStagedObservationConsistency.consistencyFailures[0],
+    };
+
+    if (initialStagedObservationConsistency.status === "INCONSISTENT") {
+      geminiResult = await runVerificationAttempt(initialStagedObservationConsistency.consistencyFailures[0]);
+      finalRawStagedWallVerifications = geminiResult.stagedWallVerifications || [];
+      finalRawAdditionalArchitecturalEvidence = geminiResult.additionalArchitecturalEvidence;
+      wallUtilisationObservations = geminiResult.wallUtilisationObservations || [];
+      stagedObservationConsistency = evaluateStagedObservationConsistency({
+        baselineWalls: semanticBaselineWallModel,
+        wallVerifications: finalRawStagedWallVerifications,
+        additionalEvidence: finalRawAdditionalArchitecturalEvidence,
+        attempt: 2,
+      });
+      stagedExtractionRetryStatus.retrySucceeded = stagedObservationConsistency.status !== "INCONSISTENT";
+    }
+
+    console.log("[STAGED_OBSERVATION_VALIDATION]", JSON.stringify({
+      status: stagedObservationConsistency.status,
+      consistencyFailures: stagedObservationConsistency.consistencyFailures,
+      retryPerformed: stagedExtractionRetryStatus.triggered,
+      retrySucceeded: stagedExtractionRetryStatus.retrySucceeded,
+      attempts: stagedExtractionRetryStatus.attempts,
+      finalAttempt: stagedExtractionRetryStatus.finalAttempt,
+    }));
+
     const initialAdditionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
       baseline: options?.baseline ?? null,
       baselineWalls: semanticBaselineWallModel,
-      stagedObservations: initialStagedWallVerifications,
-      additionalEvidence: initialAttemptResult.additionalArchitecturalEvidence,
+      stagedObservations: initialRawStagedWallVerifications,
+      additionalEvidence: initialRawAdditionalArchitecturalEvidence,
     });
-    initialAttemptResult.additionalArchitecturalEvidence = initialAdditionalArchitecturalEvidence;
-    const reconciledInitialStagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
+    const initialStagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
       baseline: options?.baseline ?? null,
       baselineWalls: semanticBaselineWallModel,
-      wallVerifications: initialStagedWallVerifications,
+      wallVerifications: initialRawStagedWallVerifications,
       additionalEvidence: initialAdditionalArchitecturalEvidence,
     });
-    initialAttemptResult.stagedWallVerifications = reconciledInitialStagedWallVerifications;
     const initialAdditionalWallPlanes = initialAdditionalArchitecturalEvidence
       ? {
         answer: initialAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
@@ -5152,59 +6305,44 @@ export async function runEnvelopeValidator(
         reason: initialAdditionalArchitecturalEvidence.reason,
       } satisfies AdditionalWallPlanesResult
       : initialAttemptResult.additionalWallPlanes;
-    initialAttemptResult.additionalWallPlanes = initialAdditionalWallPlanes;
-    const initialAdvisoryStageExtraction = buildStageVerificationDescription(reconciledInitialStagedWallVerifications, initialAdditionalArchitecturalEvidence);
-    let geminiResult = initialAttemptResult;
-    let stagedExtractionIntegrity = evaluateStagedVerificationIntegrity(semanticBaselineWallModel, reconciledInitialStagedWallVerifications, 1);
-    let stagedExtractionRetryStatus: StagedExtractionRetryStatus = {
-      triggered: false,
-      attempts: 1,
-      finalAttempt: 1,
-      retrySucceeded: stagedExtractionIntegrity.passed,
-    };
-    let stagedWallVerifications = reconciledInitialStagedWallVerifications;
-    let additionalWallPlanes = initialAdditionalWallPlanes;
 
-    if (!stagedExtractionIntegrity.passed) {
-      stagedExtractionRetryStatus = {
-        triggered: true,
-        attempts: 2,
-        finalAttempt: 2,
-        retrySucceeded: false,
-        reason: stagedExtractionIntegrity.issues[0]?.message,
-      };
-      geminiResult = await runVerificationAttempt(stagedExtractionIntegrity.issues[0]?.message);
-      stagedWallVerifications = geminiResult.stagedWallVerifications || [];
-      const retryAdditionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
-        baseline: options?.baseline ?? null,
-        baselineWalls: semanticBaselineWallModel,
-        stagedObservations: stagedWallVerifications,
-        additionalEvidence: geminiResult.additionalArchitecturalEvidence,
-      });
-      geminiResult.additionalArchitecturalEvidence = retryAdditionalArchitecturalEvidence;
-      stagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
-        baseline: options?.baseline ?? null,
-        baselineWalls: semanticBaselineWallModel,
-        wallVerifications: stagedWallVerifications,
-        additionalEvidence: retryAdditionalArchitecturalEvidence,
-      });
-      geminiResult.stagedWallVerifications = stagedWallVerifications;
-      additionalWallPlanes = retryAdditionalArchitecturalEvidence
-        ? {
-          answer: retryAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
-          descriptions: retryAdditionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
-          confidence: retryAdditionalArchitecturalEvidence.confidence,
-          reason: retryAdditionalArchitecturalEvidence.reason,
-        } satisfies AdditionalWallPlanesResult
-        : geminiResult.additionalWallPlanes;
-      geminiResult.additionalWallPlanes = additionalWallPlanes;
-      stagedExtractionIntegrity = evaluateStagedVerificationIntegrity(semanticBaselineWallModel, stagedWallVerifications, 2);
-      stagedExtractionRetryStatus.retrySucceeded = stagedExtractionIntegrity.passed;
-    }
+    const additionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
+      baseline: options?.baseline ?? null,
+      baselineWalls: semanticBaselineWallModel,
+      stagedObservations: finalRawStagedWallVerifications,
+      additionalEvidence: finalRawAdditionalArchitecturalEvidence,
+    });
+    let stagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
+      baseline: options?.baseline ?? null,
+      baselineWalls: semanticBaselineWallModel,
+      wallVerifications: finalRawStagedWallVerifications,
+      additionalEvidence: additionalArchitecturalEvidence,
+    });
+    let additionalWallPlanes = additionalArchitecturalEvidence
+      ? {
+        answer: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
+        descriptions: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
+        confidence: additionalArchitecturalEvidence.confidence,
+        reason: additionalArchitecturalEvidence.reason,
+      } satisfies AdditionalWallPlanesResult
+      : geminiResult.additionalWallPlanes;
+
+    geminiResult.additionalArchitecturalEvidence = additionalArchitecturalEvidence;
+    geminiResult.stagedWallVerifications = stagedWallVerifications;
+    geminiResult.additionalWallPlanes = additionalWallPlanes;
+    geminiResult.wallUtilisationObservations = wallUtilisationObservations;
+
+    const initialAdvisoryStageExtraction = buildStageVerificationDescription(initialStagedWallVerifications, initialAdditionalArchitecturalEvidence);
+    const advisoryStageExtraction = buildStageVerificationDescription(stagedWallVerifications, additionalArchitecturalEvidence);
+
+    let stagedExtractionIntegrity = evaluateStagedVerificationIntegrity(
+      semanticBaselineWallModel,
+      stagedWallVerifications,
+      stagedExtractionRetryStatus.finalAttempt,
+    );
 
     const semanticStagedWallModel = materializeSemanticWallModelsFromVerifications(semanticBaselineWallModel, stagedWallVerifications);
     const initialSemanticStagedWallModel = materializeSemanticWallModelsFromVerifications(semanticBaselineWallModel, initialStagedWallVerifications);
-    const advisoryStageExtraction = buildStageVerificationDescription(stagedWallVerifications, geminiResult.additionalArchitecturalEvidence);
     const semanticWallMatches = semanticBaselineWallModel.map((wall) => ({
       baselineSemanticWallId: wall.semanticWallId,
       baselineDisplayName: wall.displayName,
@@ -5217,22 +6355,29 @@ export async function runEnvelopeValidator(
         : ["wall verification missing"],
     } satisfies SemanticWallMatch));
 
-    if (!stagedExtractionIntegrity.passed) {
+    const hasUnresolvedStagedInconsistency = stagedObservationConsistency.status === "INCONSISTENT";
+    if (!stagedExtractionIntegrity.passed && hasUnresolvedStagedInconsistency) {
       const integrityVerificationRequests = stagedExtractionIntegrity.issues.map(
         (issue) => `Verify envelope continuity for extraction integrity issue: ${issue.message}`
+      );
+      const consistencyVerificationRequests = stagedObservationConsistency.consistencyFailures.map(
+        (failure) => `Verify staged observation consistency: ${failure}`,
       );
       const integrityFailureResult: EnvelopeValidatorResult = {
         ...geminiResult,
         status: "pass",
         decision: "advisory",
-        verificationRequests: integrityVerificationRequests,
+        verificationRequests: [...integrityVerificationRequests, ...consistencyVerificationRequests],
         reason: "envelope_advisory_extraction_integrity_uncertain",
         confidence: 0.6,
         hardFail: false,
         advisory: true,
         issueType: ISSUE_TYPES.ENVELOPE_ANOMALY,
         issueTier: classifyIssueTier(ISSUE_TYPES.ENVELOPE_ANOMALY),
-        advisorySignals: stagedExtractionIntegrity.issues.map((issue) => issue.message),
+        advisorySignals: [
+          ...stagedExtractionIntegrity.issues.map((issue) => issue.message),
+          ...stagedObservationConsistency.consistencyFailures,
+        ],
         selectedExplanation: stagedExtractionIntegrity.issues[0]?.message || "Staged verification failed integrity validation.",
         deterministicEnvelopeComparison: deterministicComparison,
         deterministicHypotheses: deterministicHypotheses,
@@ -5241,6 +6386,7 @@ export async function runEnvelopeValidator(
         advisoryStageExtraction,
         stagedExtractionIntegrity,
         stagedExtractionRetryStatus,
+        stagedObservationConsistency,
         initialStagedWallVerifications,
         stagedWallVerifications,
         initialAdditionalWallPlanes,
@@ -5282,6 +6428,22 @@ export async function runEnvelopeValidator(
     const joinWaitStartedAt = Date.now();
     const vedResult = await verticalEdgeDeltaPromise;
     logEnvelopePhaseEnd(options?.jobId, "join_wait", Date.now() - joinWaitStartedAt);
+    const strongUtilisationTypes = new Set<WallUtilisationObservation["utilisationType"]>([
+      "wall_art",
+      "tv_unit",
+      "console",
+      "shelving",
+    ]);
+    const hasCoLocatedWallCorroboration = (semanticWallId: string): boolean => {
+      const hasOwnedArchitecturalEvidence = (additionalArchitecturalEvidence?.ownedFeatures || []).some((feature) => (
+        feature.scope === "semantic_wall" && feature.semanticWallId === semanticWallId
+      ));
+      const hasStrongUtilisationEvidence = (wallUtilisationObservations || []).some((item) => (
+        item.semanticWallId === semanticWallId && strongUtilisationTypes.has(item.utilisationType)
+      ));
+      return hasOwnedArchitecturalEvidence || hasStrongUtilisationEvidence;
+    };
+
     const deterministicComparisonFinal = buildEnvelopeDeterministicComparison(options?.baseline ?? null, {
       cameraOrientation: options?.baseline?.cameraOrientation,
       openings: options?.baseline?.openings || [],
@@ -5292,6 +6454,8 @@ export async function runEnvelopeValidator(
           return wall?.semanticWallId === item.semanticWallId;
         });
         if (!staged || staged.samePermanentWallVisible !== "TRUE") return descriptor;
+        const baselineWall = semanticBaselineWallModel.find((item) => item.advisoryWallIndex === descriptor.wallIndex);
+        const coLocatedCorroboration = baselineWall ? hasCoLocatedWallCorroboration(baselineWall.semanticWallId) : false;
         return {
           ...descriptor,
           visibility: staged.wallVisibility === "full" || staged.wallVisibility === "substantial" || staged.wallVisibility === "complete"
@@ -5304,42 +6468,43 @@ export async function runEnvelopeValidator(
             : staged.wallExtent === "minimal"
               ? "minimal"
               : "partial",
-          architecturalCertainty: staged.architecturalCertainty || descriptor.architecturalCertainty,
+          architecturalCertainty: coLocatedCorroboration
+            ? (staged.architecturalCertainty || descriptor.architecturalCertainty)
+            : descriptor.architecturalCertainty,
+          leftAdjacentWallVisibility: coLocatedCorroboration
+            ? (normalizeEdgeAdjacentWallVisibility(staged.leftAdjacentWallVisibility) || descriptor.leftAdjacentWallVisibility)
+            : descriptor.leftAdjacentWallVisibility,
+          rightAdjacentWallVisibility: coLocatedCorroboration
+            ? (normalizeEdgeAdjacentWallVisibility(staged.rightAdjacentWallVisibility) || descriptor.rightAdjacentWallVisibility)
+            : descriptor.rightAdjacentWallVisibility,
           leftCornerVisible: staged.leftCornerVisible,
           rightCornerVisible: staged.rightCornerVisible,
-          terminatesAtCorner: staged.terminatesAtCorner,
-          continuesBeyondFrame: staged.continuesBeyondFrame,
+          terminatesAtCorner: coLocatedCorroboration ? staged.terminatesAtCorner : descriptor.terminatesAtCorner,
+          continuesBeyondFrame: coLocatedCorroboration ? staged.continuesBeyondFrame : descriptor.continuesBeyondFrame,
         };
       }),
-    });
-    const additionalArchitecturalEvidence = enrichAdditionalArchitecturalEvidence({
-      baseline: options?.baseline ?? null,
-      baselineWalls: semanticBaselineWallModel,
-      stagedObservations: stagedWallVerifications,
-      additionalEvidence: geminiResult.additionalArchitecturalEvidence,
-    });
-    geminiResult.additionalArchitecturalEvidence = additionalArchitecturalEvidence;
-    stagedWallVerifications = reconcileWallVerificationsWithAdditionalFeatures({
-      baseline: options?.baseline ?? null,
-      baselineWalls: semanticBaselineWallModel,
-      wallVerifications: stagedWallVerifications,
-      additionalEvidence: additionalArchitecturalEvidence,
-    });
-    geminiResult.stagedWallVerifications = stagedWallVerifications;
-    additionalWallPlanes = additionalArchitecturalEvidence
-      ? {
-        answer: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions.length > 0 ? "TRUE" : "FALSE",
-        descriptions: additionalArchitecturalEvidence.additionalPermanentWallPlaneDescriptions,
-        confidence: additionalArchitecturalEvidence.confidence,
-        reason: additionalArchitecturalEvidence.reason,
-      } satisfies AdditionalWallPlanesResult
-      : additionalWallPlanes;
-    const finalDeterministicStructuralInterpretations = deriveDeterministicStructuralInterpretations({
+    }, semanticBaselineWallModel);
+    const baseDeterministicStructuralInterpretations = deriveDeterministicStructuralInterpretations({
       baseline: options?.baseline ?? null,
       baselineWalls: semanticBaselineWallModel,
       stagedObservations: stagedWallVerifications,
       additionalEvidence: additionalArchitecturalEvidence,
+      wallUtilisationObservations,
     });
+    const consistencyInterpretations = buildStagedConsistencyInterpretations({
+      consistency: stagedObservationConsistency,
+      baselineWalls: semanticBaselineWallModel,
+    });
+    const rawObservationPreservationInterpretations = buildRawObservationPreservationInterpretations({
+      comparison: deterministicComparisonFinal,
+      interpretations: [...baseDeterministicStructuralInterpretations, ...consistencyInterpretations],
+      baselineWalls: semanticBaselineWallModel,
+    });
+    const finalDeterministicStructuralInterpretations = [
+      ...baseDeterministicStructuralInterpretations,
+      ...consistencyInterpretations,
+      ...rawObservationPreservationInterpretations,
+    ];
     const finalDeterministicHypotheses = buildEnvelopeHypotheses(deterministicComparisonFinal);
     const finalInferredEvents = inferArchitecturalEvents(deterministicComparisonFinal);
     const finalMergeStartedAt = Date.now();
@@ -5356,6 +6521,7 @@ export async function runEnvelopeValidator(
     geminiResult.initialAdvisoryStageExtraction = initialAdvisoryStageExtraction;
     geminiResult.stagedExtractionIntegrity = stagedExtractionIntegrity;
     geminiResult.stagedExtractionRetryStatus = stagedExtractionRetryStatus;
+    geminiResult.stagedObservationConsistency = stagedObservationConsistency;
     geminiResult.initialStagedWallVerifications = initialStagedWallVerifications;
     geminiResult.stagedWallVerifications = stagedWallVerifications;
     geminiResult.initialAdditionalArchitecturalEvidence = initialAttemptResult.additionalArchitecturalEvidence;
@@ -5426,6 +6592,18 @@ export async function runEnvelopeValidator(
       : advisoryInterpretations.length > 0
         ? 0.65
         : 1;
+
+    if (stagedObservationConsistency.status === "INCONSISTENT") {
+      geminiResult.confidence = Math.min(geminiResult.confidence, 0.55);
+      geminiResult.advisorySignals = Array.isArray(geminiResult.advisorySignals)
+        ? [...geminiResult.advisorySignals, ...stagedObservationConsistency.consistencyFailures]
+        : [...stagedObservationConsistency.consistencyFailures];
+    } else if (stagedObservationConsistency.status === "RECONCILABLE") {
+      geminiResult.confidence = Math.min(geminiResult.confidence, 0.7);
+      geminiResult.advisorySignals = Array.isArray(geminiResult.advisorySignals)
+        ? [...geminiResult.advisorySignals, ...stagedObservationConsistency.consistencyFailures]
+        : [...stagedObservationConsistency.consistencyFailures];
+    }
     geminiResult.constraintVerificationResults = [];
     geminiResult.baselineVerificationResults = [];
 
@@ -5601,6 +6779,21 @@ export async function runEnvelopeValidator(
       geminiResult.confidence = Math.max(geminiResult.confidence, 0.9);
     }
 
+    const interpretationCoverage = buildInterpretationCoverageAudit({
+      comparison: deterministicComparisonFinal,
+      interpretations: finalDeterministicStructuralInterpretations,
+      baselineWalls: semanticBaselineWallModel,
+    });
+    geminiResult.rawStructuralObservations = interpretationCoverage.rawStructuralObservations;
+    geminiResult.interpretationCoverageAudit = interpretationCoverage.audit;
+    geminiResult.wallEvidenceLineage = buildWallEvidenceLineage({
+      baselineWalls: semanticBaselineWallModel,
+      rawStructuralObservations: interpretationCoverage.rawStructuralObservations,
+      additionalEvidence: additionalArchitecturalEvidence,
+      wallUtilisationObservations,
+      interpretations: finalDeterministicStructuralInterpretations,
+    });
+
     console.log("[ENVELOPE_DECISION_POLICY]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
@@ -5621,7 +6814,7 @@ export async function runEnvelopeValidator(
     const covered = new Set(adjudications.map((item) => String(item.observationId)));
     const unresolved = deterministicComparison.suspicions
       .filter((item) => !covered.has(String(item.observationId)))
-      .map((item) => ({ code: item.code, wallIndex: item.wallIndex }));
+      .map((item) => ({ code: item.code, wallSemanticId: item.wallSemanticId, wallIndex: item.wallIndex }));
 
     geminiResult.deterministicEnvelopeComparison = deterministicComparisonFinal;
     geminiResult.deterministicHypotheses = finalDeterministicHypotheses;

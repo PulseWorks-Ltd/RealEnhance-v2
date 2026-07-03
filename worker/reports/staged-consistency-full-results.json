@@ -1,0 +1,769 @@
+{
+  "generatedAt": "2026-07-02T17:58:07.432Z",
+  "source": "reports/envelope-diagnostic-full-trace.json",
+  "summary": {
+    "totalJobs": 6,
+    "retriesRequired": 2,
+    "retriesResolved": 2,
+    "retriesUnresolved": 0,
+    "correct": 5,
+    "incorrect": 1,
+    "accuracy": "83%"
+  },
+  "jobs": [
+    {
+      "label": "job_c11a8e7c",
+      "expectedStatus": "fail",
+      "expectedDecision": "fail",
+      "actualStatus": "fail",
+      "actualDecision": "fail",
+      "previousDecision": "fail",
+      "stagedConsistencyStatus": "CONSISTENT",
+      "retryPerformed": true,
+      "retrySuccess": true,
+      "consistencyFailures": [],
+      "deterministicInterpretations": [
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_shortened",
+          "category": "wall_shortened",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window no longer continues beyond the frame in staged observation.",
+          "supportingFacts": [
+            "baseline continuesBeyondFrame=TRUE",
+            "staged continuesBeyondFrame=FALSE"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_left_corner_added",
+          "category": "corner_introduced",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "significant",
+          "confidence": "medium",
+          "summary": "wall containing window now shows a left corner that baseline did not show.",
+          "detectedFeature": "corner introduced",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "fail",
+          "explanation": "The introduced edge exposes a meaningful amount of adjacent permanent wall geometry.",
+          "supportingFacts": [
+            "baseline leftCornerVisible=FALSE",
+            "staged leftCornerVisible=TRUE",
+            "staged left corner position=none",
+            "staged left corner visibility=none",
+            "staged left adjacent wall visibility=none",
+            "associated wall magnitude=partial",
+            "connected feature significance=partial"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting wall containing window and the adjacent wall plane"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_wall_plane_added",
+          "category": "wall_plane_introduced",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "significant",
+          "confidence": "medium",
+          "summary": "Staged observation introduces a permanent wall plane at the left frame edge of wall containing window.",
+          "detectedFeature": "wall plane introduced",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "fail",
+          "explanation": "The introduced edge exposes a meaningful amount of adjacent permanent wall geometry.",
+          "supportingFacts": [
+            "baseline continuesBeyondFrame=TRUE",
+            "staged terminatesAtCorner=TRUE",
+            "staged returnWallVisible=TRUE",
+            "staged adjoiningWallVisible=TRUE",
+            "associated wall magnitude=partial",
+            "observed wall plane visibility=partial",
+            "architectural significance=structural_addition"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting wall containing window and the adjacent wall plane",
+            "permanent wall plane adjacent to the right edge of wall containing window"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_return_wall_added",
+          "category": "return_wall_introduced",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "significant",
+          "confidence": "medium",
+          "summary": "wall containing window now has a visible return wall at the frame edge.",
+          "detectedFeature": "return wall introduced",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "fail",
+          "explanation": "The introduced edge exposes a meaningful amount of adjacent permanent wall geometry.",
+          "supportingFacts": [
+            "baseline returnWallVisible=FALSE",
+            "staged returnWallVisible=TRUE",
+            "associated wall magnitude=partial",
+            "observed return wall visibility=partial",
+            "architectural significance=structural_addition"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_adjoining_wall_added",
+          "category": "adjoining_wall_introduced",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "significant",
+          "confidence": "medium",
+          "summary": "wall containing window now has an adjoining wall plane visible at the frame edge.",
+          "detectedFeature": "adjoining wall introduced",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "fail",
+          "explanation": "The introduced edge exposes a meaningful amount of adjacent permanent wall geometry.",
+          "supportingFacts": [
+            "baseline adjoiningWallVisible=FALSE",
+            "staged adjoiningWallVisible=TRUE",
+            "associated wall magnitude=partial",
+            "observed adjoining wall visibility=partial",
+            "architectural significance=structural_addition"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_left_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window shows unsupported left boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=FALSE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=left",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=partial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting wall containing window and the adjacent wall plane"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_right_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window shows unsupported right boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "substantial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=right",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=substantial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting wall containing window and the adjacent wall plane",
+            "permanent wall plane adjacent to the right edge of wall containing window"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_materially_usable_surface_introduced",
+          "category": "materially_usable_wall_surface_introduced",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "significant",
+          "confidence": "high",
+          "summary": "wall containing window now exposes a materially usable wall surface, indicating a meaningful envelope expansion.",
+          "detectedFeature": "materially usable wall surface introduced",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "fail",
+          "explanation": "Newly introduced wall geometry exceeds perspective sliver thresholds and is materially usable within the room envelope.",
+          "supportingFacts": [
+            "architectural significance=structural_addition",
+            "associated wall magnitude=partial",
+            "baseline adjoiningWallVisible=FALSE",
+            "baseline continuesBeyondFrame=TRUE",
+            "baseline leftCornerVisible=FALSE",
+            "baseline returnWallVisible=FALSE",
+            "connected feature significance=partial",
+            "material_use_corroboration=false",
+            "max_associated_wall_magnitude_rank=3",
+            "observed adjoining wall visibility=partial",
+            "observed return wall visibility=partial",
+            "observed wall plane visibility=partial",
+            "staged adjoiningWallVisible=TRUE",
+            "staged left adjacent wall visibility=none",
+            "staged left corner position=none",
+            "staged left corner visibility=none",
+            "staged leftCornerVisible=TRUE",
+            "staged returnWallVisible=TRUE",
+            "staged terminatesAtCorner=TRUE",
+            "support_category_count=4",
+            "supporting_geometric_interpretations=corner_introduced,wall_plane_introduced,return_wall_introduced,adjoining_wall_introduced"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting wall containing window and the adjacent wall plane",
+            "permanent wall plane adjacent to the right edge of wall containing window"
+          ],
+          "contradictingEvidence": []
+        }
+      ],
+      "finalDecision": {
+        "hardFail": true,
+        "confidence": 1,
+        "issueType": "envelope_anomaly",
+        "verificationRequests": []
+      },
+      "correct": true
+    },
+    {
+      "label": "job_bb029607",
+      "expectedStatus": "fail",
+      "expectedDecision": "advisory",
+      "actualStatus": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "stagedConsistencyStatus": "CONSISTENT",
+      "retryPerformed": false,
+      "retrySuccess": true,
+      "consistencyFailures": [],
+      "deterministicInterpretations": [
+        {
+          "interpretationId": "interp_wall_door_center_third_mid_zone_left_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_door_center_third_mid_zone",
+          "wallDisplayName": "wall containing sliding glass door",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing sliding glass door shows unsupported left boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "substantial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=left",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=substantial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [
+            "interior corner where the permanent wall plane meets the left edge of the wall containing sliding glass door",
+            "permanent wall plane located to the left of the wall containing sliding glass door"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_door_center_third_mid_zone_right_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_door_center_third_mid_zone",
+          "wallDisplayName": "wall containing sliding glass door",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing sliding glass door shows unsupported right boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "substantial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=right",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=substantial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_ac_unit_center_third_left_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_ac_unit_center_third",
+          "wallDisplayName": "wall containing built-in AC unit",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing built-in AC unit shows unsupported left boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "full",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=left",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=full",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=FALSE"
+          ],
+          "corroboratingEvidence": [
+            "interior corner where the permanent wall plane meets the left edge of the wall containing sliding glass door",
+            "permanent wall plane located to the left of the wall containing sliding glass door"
+          ],
+          "contradictingEvidence": []
+        }
+      ],
+      "finalDecision": {
+        "hardFail": false,
+        "confidence": 0.65,
+        "issueType": "envelope_anomaly",
+        "verificationRequests": [
+          "Verify whether the newly visible adjacent wall geometry (corner, adjoining wall and return wall) represents genuine architectural change or expected perspective variation."
+        ]
+      },
+      "correct": false
+    },
+    {
+      "label": "job_4a87f43b",
+      "expectedStatus": "pass",
+      "expectedDecision": "pass",
+      "actualStatus": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "stagedConsistencyStatus": "RECONCILABLE",
+      "retryPerformed": false,
+      "retrySuccess": true,
+      "consistencyFailures": [
+        "wall_identity_mismatch:additional evidence could not be mapped to a verified wall identity: permanent wall plane on the left side of the room",
+        "wall_identity_mismatch:additional evidence could not be mapped to a verified wall identity: permanent wall plane on the right side of the room"
+      ],
+      "deterministicInterpretations": [
+        {
+          "interpretationId": "interp_wall_window_right_third_mid_zone_left_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_window_right_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window shows unsupported left boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "full",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=left",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=full",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting the left wall plane and the wall containing window",
+            "permanent interior corner connecting the wall containing window and the right wall plane",
+            "permanent wall plane on the left side of the room"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_window_right_third_mid_zone_right_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_window_right_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window shows unsupported right boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=right",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=partial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting the left wall plane and the wall containing window",
+            "permanent interior corner connecting the wall containing window and the right wall plane",
+            "permanent wall plane on the right side of the room"
+          ],
+          "contradictingEvidence": []
+        }
+      ],
+      "finalDecision": {
+        "hardFail": false,
+        "confidence": 0.65,
+        "issueType": "envelope_anomaly",
+        "verificationRequests": [
+          "Verify whether the newly visible adjacent wall geometry (corner, adjoining wall and return wall) represents genuine architectural change or expected perspective variation."
+        ]
+      },
+      "correct": true
+    },
+    {
+      "label": "job_dfbe98aa",
+      "expectedStatus": "pass",
+      "expectedDecision": "advisory",
+      "actualStatus": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "stagedConsistencyStatus": "CONSISTENT",
+      "retryPerformed": false,
+      "retrySuccess": true,
+      "consistencyFailures": [],
+      "deterministicInterpretations": [
+        {
+          "interpretationId": "interp_wall_window_left_third_mid_zone_right_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_window_left_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window shows unsupported right boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "substantial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=right",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=substantial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=FALSE"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting the permanent wall plane adjacent to the right edge of wall containing window to the permanent wall plane adjacent to its right edge",
+            "permanent interior corner connecting the right edge of wall containing window to the permanent wall plane adjacent to its right edge",
+            "permanent wall plane adjacent to the right edge of the permanent wall plane adjacent to the right edge of wall containing window",
+            "permanent wall plane adjacent to the right edge of wall containing window"
+          ],
+          "contradictingEvidence": []
+        }
+      ],
+      "finalDecision": {
+        "hardFail": false,
+        "confidence": 0.65,
+        "issueType": "envelope_corner_flattened",
+        "verificationRequests": [
+          "Verify whether the newly visible adjacent wall geometry (corner, adjoining wall and return wall) represents genuine architectural change or expected perspective variation.",
+          "Verify whether the apparent corner flattening reflects actual wall-plane merging or camera perspective.",
+          "Verify whether the affected corner retention drop indicates changed structural geometry in the same wall region."
+        ]
+      },
+      "correct": true
+    },
+    {
+      "label": "job_81e485e7",
+      "expectedStatus": "pass",
+      "expectedDecision": "pass",
+      "actualStatus": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "stagedConsistencyStatus": "RECONCILABLE",
+      "retryPerformed": false,
+      "retrySuccess": true,
+      "consistencyFailures": [
+        "additional_evidence_contradiction:wall containing window:right:additional evidence contradicts staged wall observations (permanent interior corner connecting the permanent wall plane forming the right boundary of the kitchen space to the wall containing window).",
+        "wall_identity_mismatch:additional evidence could not be mapped to a verified wall identity: permanent wall plane containing a hinged door",
+        "wall_identity_mismatch:additional evidence could not be mapped to a verified wall identity: permanent wall plane forming the right boundary of the kitchen space",
+        "additional_evidence_contradiction:wall containing window:right:additional evidence contradicts staged wall observations (permanent interior corner connecting the permanent wall plane forming the right boundary of the kitchen space to the wall containing window)."
+      ],
+      "deterministicInterpretations": [
+        {
+          "interpretationId": "interp_wall_door_left_third_full_height_removed",
+          "category": "wall_plane_removed",
+          "wallSemanticId": "wall_door_left_third_full_height",
+          "wallDisplayName": "wall containing sliding glass door",
+          "severity": "significant",
+          "confidence": "high",
+          "summary": "wall containing sliding glass door is no longer visible in the staged image.",
+          "supportingFacts": [
+            "baseline visibility=full",
+            "staged samePermanentWallVisible=FALSE"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_walkthrough_left_third_full_height_shortened",
+          "category": "wall_shortened",
+          "wallSemanticId": "wall_walkthrough_left_third_full_height",
+          "wallDisplayName": "wall containing walkthrough opening",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing walkthrough opening no longer continues beyond the frame in staged observation.",
+          "supportingFacts": [
+            "baseline continuesBeyondFrame=TRUE",
+            "staged continuesBeyondFrame=FALSE"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_walkthrough_left_third_full_height_left_corner_added",
+          "category": "corner_introduced",
+          "wallSemanticId": "wall_walkthrough_left_third_full_height",
+          "wallDisplayName": "wall containing walkthrough opening",
+          "severity": "advisory",
+          "confidence": "medium",
+          "summary": "wall containing walkthrough opening now shows a left corner that baseline did not show.",
+          "detectedFeature": "corner introduced",
+          "associatedWallMagnitude": "small",
+          "classification": "perspective_variation",
+          "decision": "pass",
+          "explanation": "Adjacent baseline wall visibility reduces the significance of this introduced edge.",
+          "supportingFacts": [
+            "baseline leftCornerVisible=FALSE",
+            "staged leftCornerVisible=TRUE",
+            "staged left corner position=none",
+            "staged left corner visibility=none",
+            "staged left adjacent wall visibility=none",
+            "baseline adjacent wall visibility=full",
+            "associated wall magnitude=small",
+            "connected feature significance=partial"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting the permanent wall plane containing a hinged door to the wall containing walkthrough opening",
+            "permanent interior corner connecting the permanent wall plane containing a hinged door to the wall containing window",
+            "permanent interior corner connecting the permanent wall plane forming the right boundary of the kitchen space to the wall containing window"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_walkthrough_left_third_full_height_wall_plane_added",
+          "category": "wall_plane_introduced",
+          "wallSemanticId": "wall_walkthrough_left_third_full_height",
+          "wallDisplayName": "wall containing walkthrough opening",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "Staged observation introduces a permanent wall plane at the left frame edge of wall containing walkthrough opening.",
+          "detectedFeature": "wall plane introduced",
+          "associatedWallMagnitude": "small",
+          "classification": "perspective_variation",
+          "decision": "pass",
+          "explanation": "Adjacent baseline wall visibility reduces the significance of this introduced edge.",
+          "supportingFacts": [
+            "baseline continuesBeyondFrame=TRUE",
+            "staged terminatesAtCorner=TRUE",
+            "staged returnWallVisible=TRUE",
+            "staged adjoiningWallVisible=TRUE",
+            "baseline adjacent wall visibility=full",
+            "associated wall magnitude=small",
+            "observed wall plane visibility=partial",
+            "architectural significance=acceptable_perspective_variation"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting the permanent wall plane containing a hinged door to the wall containing walkthrough opening",
+            "permanent interior corner connecting the permanent wall plane containing a hinged door to the wall containing window",
+            "permanent interior corner connecting the permanent wall plane forming the right boundary of the kitchen space to the wall containing window",
+            "permanent wall plane containing a hinged door",
+            "permanent wall plane forming the right boundary of the kitchen space"
+          ],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_walkthrough_left_third_full_height_return_wall_added",
+          "category": "return_wall_introduced",
+          "wallSemanticId": "wall_walkthrough_left_third_full_height",
+          "wallDisplayName": "wall containing walkthrough opening",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing walkthrough opening now has a visible return wall at the frame edge.",
+          "detectedFeature": "return wall introduced",
+          "associatedWallMagnitude": "small",
+          "classification": "perspective_variation",
+          "decision": "pass",
+          "explanation": "Adjacent baseline wall visibility reduces the significance of this introduced edge.",
+          "supportingFacts": [
+            "baseline returnWallVisible=FALSE",
+            "staged returnWallVisible=TRUE",
+            "baseline adjacent wall visibility=full",
+            "associated wall magnitude=small",
+            "observed return wall visibility=partial",
+            "architectural significance=acceptable_perspective_variation"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_walkthrough_left_third_full_height_adjoining_wall_added",
+          "category": "adjoining_wall_introduced",
+          "wallSemanticId": "wall_walkthrough_left_third_full_height",
+          "wallDisplayName": "wall containing walkthrough opening",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing walkthrough opening now has an adjoining wall plane visible at the frame edge.",
+          "detectedFeature": "adjoining wall introduced",
+          "associatedWallMagnitude": "small",
+          "classification": "perspective_variation",
+          "decision": "pass",
+          "explanation": "Adjacent baseline wall visibility reduces the significance of this introduced edge.",
+          "supportingFacts": [
+            "baseline adjoiningWallVisible=FALSE",
+            "staged adjoiningWallVisible=TRUE",
+            "baseline adjacent wall visibility=full",
+            "associated wall magnitude=small",
+            "observed adjoining wall visibility=partial",
+            "architectural significance=acceptable_perspective_variation"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        },
+        {
+          "interpretationId": "interp_wall_walkthrough_left_third_full_height_left_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_walkthrough_left_third_full_height",
+          "wallDisplayName": "wall containing walkthrough opening",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing walkthrough opening shows unsupported left boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "partial",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=none",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=FALSE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=left",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=partial",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=TRUE"
+          ],
+          "corroboratingEvidence": [
+            "permanent interior corner connecting the permanent wall plane containing a hinged door to the wall containing walkthrough opening"
+          ],
+          "contradictingEvidence": []
+        }
+      ],
+      "finalDecision": {
+        "hardFail": false,
+        "confidence": 0.7,
+        "issueType": "envelope_anomaly",
+        "verificationRequests": [
+          "Verify whether a previously visible structural wall plane is no longer visible in the staged image.",
+          "Verify whether the newly visible adjacent wall geometry (corner, adjoining wall and return wall) represents genuine architectural change or expected perspective variation.",
+          "Verify whether wall termination changed structurally or only due to framing and perspective."
+        ]
+      },
+      "correct": true
+    },
+    {
+      "label": "job_4ceef035",
+      "expectedStatus": "pass",
+      "expectedDecision": "pass",
+      "actualStatus": "pass",
+      "actualDecision": "advisory",
+      "previousDecision": "advisory",
+      "stagedConsistencyStatus": "CONSISTENT",
+      "retryPerformed": true,
+      "retrySuccess": true,
+      "consistencyFailures": [],
+      "deterministicInterpretations": [
+        {
+          "interpretationId": "interp_wall_window_center_third_mid_zone_left_unsupported_boundary_expansion",
+          "category": "unsupported_boundary_expansion",
+          "wallSemanticId": "wall_window_center_third_mid_zone",
+          "wallDisplayName": "wall containing window",
+          "severity": "advisory",
+          "confidence": "low",
+          "summary": "wall containing window shows unsupported left boundary expansion that warrants verification.",
+          "detectedFeature": "unsupported boundary expansion",
+          "associatedWallMagnitude": "full",
+          "classification": "structural_addition",
+          "decision": "pass",
+          "explanation": "Staged boundary introduces likely return geometry from an unsupported baseline boundary and needs verification.",
+          "supportingFacts": [
+            "baseline adjacentWallVisibility=partial",
+            "baseline cornerVisibility=none",
+            "baseline cornerVisible=TRUE",
+            "baseline_boundary_supported=FALSE",
+            "boundary_side=left",
+            "perpendicular_evidence=false",
+            "staged adjoiningWallVisible=TRUE",
+            "staged boundaryMagnitude=full",
+            "staged cornerVisible=TRUE",
+            "staged returnWallVisible=FALSE"
+          ],
+          "corroboratingEvidence": [],
+          "contradictingEvidence": []
+        }
+      ],
+      "finalDecision": {
+        "hardFail": false,
+        "confidence": 0.65,
+        "issueType": "envelope_corner_flattened",
+        "verificationRequests": [
+          "Verify whether the newly visible adjacent wall geometry (corner, adjoining wall and return wall) represents genuine architectural change or expected perspective variation.",
+          "Verify whether the apparent corner flattening reflects actual wall-plane merging or camera perspective.",
+          "Verify whether the affected corner retention drop indicates changed structural geometry in the same wall region."
+        ]
+      },
+      "correct": true
+    }
+  ]
+}
