@@ -28,6 +28,8 @@ const USE_STABILITY_STAGE1A_QUALITY_GATE = process.env.USE_STABILITY_STAGE1A_QUA
 const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
 // Optional strict diff gate: reroute to Gemini on content diff failure
 const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
+// Diagnostic toggle: bypass post-generation enhancement filters for Stage1A output.
+const STAGE1A_DIAGNOSTIC_BYPASS_POSTGEN_ENHANCEMENTS = true;
 // Automatically disable Stability primary after a payment/credit error
 const DISABLE_STABILITY_ON_PAYMENT_REQUIRED = process.env.STABILITY_STAGE1A_DISABLE_ON_PAYMENT_REQUIRED !== "0";
 function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
@@ -1149,7 +1151,15 @@ export async function runStage1A(
       options.jobSampling
     );
 
-    if (!ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH) {
+    if (!ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH || STAGE1A_DIAGNOSTIC_BYPASS_POSTGEN_ENHANCEMENTS) {
+      if (STAGE1A_DIAGNOSTIC_BYPASS_POSTGEN_ENHANCEMENTS) {
+        console.warn("[stage1A] diagnostic_bypass_postgen_finish", {
+          jobId: jobIdResolved,
+          sceneType: effectiveSceneType,
+          roomType: roomTypeResolved ?? null,
+          reason: "stage1a_postgen_enhancement_bypassed_for_ab_test",
+        });
+      }
       return geminiOutputPath;
     }
 
