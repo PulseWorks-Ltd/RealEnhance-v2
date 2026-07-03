@@ -155,6 +155,7 @@ const DELIVERY_EXPORT_ENHANCE_ENABLED = String(process.env.DELIVERY_EXPORT_ENHAN
 const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY_EXPORT_MIN_LONG_SIDE || 2048));
 const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
 const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.04)));
+const DELIVERY_EXPORT_STAGE1A_SHARPEN_SCALE = Math.max(0.4, Math.min(1.0, Number(process.env.DELIVERY_EXPORT_STAGE1A_SHARPEN_SCALE || 0.5)));
 const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 // SINGLE-AUTHORITY: composite local validator always blocks
@@ -3804,6 +3805,15 @@ function isStage2DeliveryStage(stageLabel: string): boolean {
     || normalizedStageLabel.includes("partial-2");
 }
 
+function isStage1ADeliveryStage(stageLabel: string): boolean {
+  const normalizedStageLabel = String(stageLabel || "").trim().toLowerCase();
+  return normalizedStageLabel === "1a"
+    || normalizedStageLabel.startsWith("1a-")
+    || normalizedStageLabel.endsWith("-1a")
+    || normalizedStageLabel.includes("stage1a")
+    || normalizedStageLabel.includes("1a-final");
+}
+
 async function upscaleAndEnhanceForDelivery(
   inputBuffer: Buffer,
   stageLabel: string,
@@ -3823,8 +3833,12 @@ async function upscaleAndEnhanceForDelivery(
     ? { width: targetLongSide }
     : { height: targetLongSide };
   const isStage2 = isStage2DeliveryStage(stageLabel);
+  const isStage1A = isStage1ADeliveryStage(stageLabel);
   const enhancementsApplied = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2;
   const shouldApplyStage2Polish = isStage2;
+  const sharpenStrength = isStage1A
+    ? DELIVERY_EXPORT_SHARPEN_STRENGTH * DELIVERY_EXPORT_STAGE1A_SHARPEN_SCALE
+    : DELIVERY_EXPORT_SHARPEN_STRENGTH;
 
   let pipeline = baseImage.clone();
 
@@ -3841,7 +3855,7 @@ async function upscaleAndEnhanceForDelivery(
     pipeline = pipeline
       .gamma(DELIVERY_EXPORT_GAMMA)
       .sharpen({
-        sigma: DELIVERY_EXPORT_SHARPEN_STRENGTH,
+        sigma: sharpenStrength,
         m1: 1.0,
         m2: 2.0,
         x1: 2.0,
@@ -3855,6 +3869,8 @@ async function upscaleAndEnhanceForDelivery(
     stageLabel,
     enhancementsApplied,
     isStage2,
+    isStage1A,
+    sharpenStrength,
     stage2PolishApplied: shouldApplyStage2Polish,
     resized: shouldResize,
   });
