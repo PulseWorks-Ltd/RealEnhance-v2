@@ -25,7 +25,7 @@ export type OpeningValidatorDetail = {
   question?: string;
 };
 
-export type OpeningValidatorResult = ValidatorOutcome & {
+export type OpeningValidatorResult = Omit<ValidatorOutcome, "decision"> & {
   explanation?: string;
   findings?: OpeningDiagnosticFinding[];
   advisoryObservations?: AdvisoryObservation[];

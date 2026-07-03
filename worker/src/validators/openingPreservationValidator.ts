@@ -110,6 +110,7 @@ export type StructuralBaseline = {
       duplicateReferences: string[];
       unusedInventory: string[];
       inconsistencies: string[];
+      conflictingObservations?: string[];
       rejectedAnchors: string[];
       chosenAnchors: string[];
       reconciliationActions?: string[];
@@ -2897,7 +2898,9 @@ function markBaselineReliability(params: {
       candidateGraphHashes: [graphHash],
       openingCountRange: { min: params.baseline.openings.length, max: params.baseline.openings.length },
       confirmedAt,
-      baselineMethod: params.baselineExtractionStrategy,
+      baselineMethod: params.baselineExtractionStrategy === "graph_reconciliation"
+        ? "graph_consensus"
+        : params.baselineExtractionStrategy,
       observationHash,
       baselineConfidence: params.baselineConfidence,
       baselineStatus: params.baselineStatus,
