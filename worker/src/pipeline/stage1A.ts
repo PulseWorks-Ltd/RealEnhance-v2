@@ -517,47 +517,40 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
  */
-const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `If exterior sky is clearly visible through existing windows or doors, enhance the visible outdoor sky and natural daylight conditions so the scene appears bright, clear, and photographed on a pleasant sunny day.
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `Primary objective: Deliver a premium real estate exterior outlook through existing windows and doors so the property appears professionally photographed on an ideal bright, clear day while maintaining a realistic, natural photographic appearance.
 
-If exterior views are visible through existing windows or doors, improve the exterior outlook naturally.
+When exterior views are visible:
 
-Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, or similar temporary weather effects from the glass only to improve visibility.
+- Transform dull, overcast, flat, or poorly lit outdoor conditions into bright, inviting sunny daylight where appropriate.
+- The desired result is a bright, sunny, welcoming exterior with clear natural blue skies, attractive daylight, healthy landscaping, and excellent visibility consistent with premium real estate photography.
+- Where the sky is already visible, replace dull grey or overcast skies with clean natural blue skies containing realistic soft white clouds appropriate for a bright sunny day.
+- Improve outdoor brightness, natural contrast, colour, atmospheric clarity, and visibility while maintaining a realistic photographic appearance.
+- Improve natural sunlight, shadow definition, and overall outdoor lighting so the scene resembles a professionally photographed property captured under ideal daytime conditions.
+- Enhance the colour and vitality of visible lawns, trees, shrubs, gardens, and landscaping while maintaining a natural, believable appearance.
+- Adjust interior illumination naturally so sunlight and daylight entering through existing windows and doors appear consistent with the improved outdoor lighting conditions.
+- Improve the overall outlook visible through windows and doors so it appears clean, vibrant, inviting, and professionally presented without looking stylized, artificial, or HDR processed.
 
-Only remove temporary weather-related visibility obstructions when clearly present.
+Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, water spotting, smudges, dirt, haze, residue, and similar temporary visibility obstructions from the glass surface only.
 
-Only perform this cleanup on clearly transparent glass where the exterior view is already genuinely visible through the opening.
+Keep the final result realistic, natural, and high-end. The image should resemble a professionally edited real estate photograph, never an AI-generated or heavily processed image.
 
-Clean window glass by removing visible rain droplets, water spotting, streaks, smudges, dirt, haze, residue, and other minor contamination from the glass surface.
+Safety constraints that must always hold:
 
-Preserve the authentic exterior view beyond the window and maintain the existing glass material and properties exactly as they exist, including frosted, opaque, stained, tinted, textured, patterned, privacy, or decorative glass.
+- Preserve the architectural layout, room geometry, scene composition, and visible landscape while improving only weather, lighting, colour, atmosphere, and overall visual presentation.
+- Do not alter, redesign, reshape, move, resize, relocate, replace, remove, or invent any architectural element.
+- Do not alter neighboring buildings, roads, fences, retaining walls, driveways, paths, terrain, pools, decks, landscaping layout, or surrounding structures.
+- Do not move, remove, resize, or invent trees, gardens, lawns, shrubs, plants, or landscape features. Only improve their appearance through lighting, colour, weather, seasonal vibrancy, and atmospheric conditions.
+- Do not invent exterior scenery, structures, objects, shapes, silhouettes, or details that are not genuinely visible in the original image.
+- Do not reveal any scenery or detail hidden by blinds, curtains, shutters, frosted glass, privacy film, textured glass, patterned glass, decorative glazing, reflections, or any other obstruction.
+- Do not open, close, move, remove, or modify blinds, curtains, shutters, window coverings, windows, doors, frames, mullions, glazing, or opening geometry.
+- Do not alter, replace, redesign, reshape, tint, resize, relocate, or invent any window, door, glazing, frame, mullion, blind, curtain, or opening component.
+- Preserve all existing glass materials and glazing behaviour exactly, including frosted, opaque, stained, tinted, textured, patterned, decorative, translucent, obscured, privacy, or intentionally treated glass.
+- Do not increase transparency, reduce opacity, or otherwise change the concealment characteristics of any glazing.
+- If privacy, frosted, textured, patterned, decorative, translucent, or obscured glazing is present, preserve the same opacity, diffusion, concealment, and visibility characteristics exactly.
+- If an exterior view is intentionally obscured or covered, leave it unchanged.
+- If the sky is not clearly visible through an existing opening, make no sky-specific modifications.
 
-Clean only the existing glass surface and do not alter, replace, increase transparency, reduce opacity, or change the appearance of the glass itself.
-
-Preserve the existing exterior view exactly as shown.
-
-Do not alter neighboring buildings, landscaping, trees, roads, fences, terrain, or surrounding structures.
-
-Do not invent exterior content that is not visible in the original image.
-
-Do not reveal areas hidden by blinds, curtains, shutters, frosted glass, privacy film, textured glass, patterned glass, reflections, or obstructions.
-
-Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors.
-
-Do not alter, replace, redesign, reshape, tint, resize, relocate, or invent any window, glazing, frame, mullion, blind, curtain, or opening component.
-
-Do not remove privacy glass, frosted glass, textured glass, patterned glass, obscured glazing, decorative glazing, or any intentional architectural glass treatment.
-
-If privacy, frosted, textured, patterned, decorative, translucent, or obscured glazing is present, preserve the same opacity, diffusion, and concealment level exactly as shown.
-
-Do not reveal additional scenery, shapes, silhouettes, or detail behind intentionally obscured glazing.
-
-If exterior visibility is poor because the opening is intentionally covered, leave it unchanged.
-
-Only improve exterior sky appearance and visible natural daylight where the sky is already clearly visible.
-
-If the sky is not clearly visible through an existing opening, make no sky-related modifications.
-
-Structural preservation requirements always take priority.`;
+Architectural accuracy always takes priority over visual enhancement. Improve only weather, lighting, atmosphere, colour, and environmental appearance. Never alter the physical structure, layout, or architectural features of the property.`;
 
 async function enhanceWithGeminiStage1A(
   sharpPath: string,
