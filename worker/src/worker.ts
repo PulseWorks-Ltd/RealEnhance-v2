@@ -3814,6 +3814,144 @@ function isStage1ADeliveryStage(stageLabel: string): boolean {
     || normalizedStageLabel.includes("1a-final");
 }
 
+function percentileFromHistogram(histogram: Uint32Array, percentile: number, total: number): number {
+  if (total <= 0) return 0;
+  const target = Math.max(1, Math.min(total, Math.round(total * percentile)));
+  let cumulative = 0;
+  for (let i = 0; i < histogram.length; i += 1) {
+    cumulative += histogram[i] || 0;
+    if (cumulative >= target) {
+      return i;
+    }
+  }
+  return histogram.length - 1;
+}
+
+function smoothstep01(t: number): number {
+  const x = Math.max(0, Math.min(1, t));
+  return x * x * (3 - (2 * x));
+}
+
+async function applyEdgeAwareSharpen(
+  inputBuffer: Buffer,
+  sharpenSigma: number,
+): Promise<{ buffer: Buffer; edgeLow: number; edgeHigh: number }> {
+  const grayRaw = await sharp(inputBuffer)
+    .removeAlpha()
+    .greyscale()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const width = grayRaw.info.width || 0;
+  const height = grayRaw.info.height || 0;
+  if (!width || !height) {
+    return { buffer: inputBuffer, edgeLow: 0, edgeHigh: 0 };
+  }
+
+  const pixelCount = width * height;
+  const grayscale = grayRaw.data;
+  const magnitude = new Uint16Array(pixelCount);
+  const histogram = new Uint32Array(2041);
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const idx = (y * width) + x;
+
+      const tl = grayscale[((y - 1) * width) + (x - 1)] || 0;
+      const tc = grayscale[((y - 1) * width) + x] || 0;
+      const tr = grayscale[((y - 1) * width) + (x + 1)] || 0;
+      const ml = grayscale[(y * width) + (x - 1)] || 0;
+      const mr = grayscale[(y * width) + (x + 1)] || 0;
+      const bl = grayscale[((y + 1) * width) + (x - 1)] || 0;
+      const bc = grayscale[((y + 1) * width) + x] || 0;
+      const br = grayscale[((y + 1) * width) + (x + 1)] || 0;
+
+      const gx = (-tl - (2 * ml) - bl) + (tr + (2 * mr) + br);
+      const gy = (-tl - (2 * tc) - tr) + (bl + (2 * bc) + br);
+      const edgeMag = Math.min(2040, Math.abs(gx) + Math.abs(gy));
+
+      magnitude[idx] = edgeMag;
+      histogram[edgeMag] = (histogram[edgeMag] || 0) + 1;
+    }
+  }
+
+  const edgeLow = percentileFromHistogram(histogram, 0.80, pixelCount);
+  const edgeHighRaw = percentileFromHistogram(histogram, 0.96, pixelCount);
+  const edgeHigh = Math.max(edgeLow + 12, edgeHighRaw);
+
+  const mask = Buffer.alloc(pixelCount);
+  const denom = Math.max(1, edgeHigh - edgeLow);
+  for (let i = 0; i < pixelCount; i += 1) {
+    const m = magnitude[i] || 0;
+    if (m <= edgeLow) {
+      mask[i] = 0;
+      continue;
+    }
+    if (m >= edgeHigh) {
+      mask[i] = 255;
+      continue;
+    }
+    const t = (m - edgeLow) / denom;
+    mask[i] = Math.round(smoothstep01(t) * 255);
+  }
+
+  const softenedMask = await sharp(mask, { raw: { width, height, channels: 1 } })
+    .blur(1)
+    .raw()
+    .toBuffer();
+
+  const sharpenedRaw = await sharp(inputBuffer)
+    .removeAlpha()
+    .sharpen({
+      sigma: sharpenSigma,
+      m1: 1.0,
+      m2: 2.0,
+      x1: 2.0,
+      y2: 10.0,
+      y3: 20.0,
+    })
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const baseRaw = await sharp(inputBuffer)
+    .removeAlpha()
+    .ensureAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const overlay = Buffer.from(sharpenedRaw.data);
+  const channels = sharpenedRaw.info.channels || 4;
+  for (let i = 0; i < pixelCount; i += 1) {
+    overlay[(i * channels) + (channels - 1)] = softenedMask[i] || 0;
+  }
+
+  const composited = await sharp(baseRaw.data, {
+    raw: {
+      width,
+      height,
+      channels: baseRaw.info.channels || 4,
+    },
+  })
+    .composite([{
+      input: overlay,
+      raw: {
+        width,
+        height,
+        channels,
+      },
+      blend: "over",
+    }])
+    .removeAlpha()
+    .toBuffer();
+
+  return {
+    buffer: composited,
+    edgeLow,
+    edgeHigh,
+  };
+}
+
 async function upscaleAndEnhanceForDelivery(
   inputBuffer: Buffer,
   stageLabel: string,
@@ -3839,6 +3977,8 @@ async function upscaleAndEnhanceForDelivery(
   const sharpenStrength = isStage1A
     ? DELIVERY_EXPORT_SHARPEN_STRENGTH * DELIVERY_EXPORT_STAGE1A_SHARPEN_SCALE
     : DELIVERY_EXPORT_SHARPEN_STRENGTH;
+  let edgeLow = 0;
+  let edgeHigh = 0;
 
   let pipeline = baseImage.clone();
 
@@ -3852,16 +3992,15 @@ async function upscaleAndEnhanceForDelivery(
   }
 
   if (enhancementsApplied) {
-    pipeline = pipeline
+    const toneBuffer = await pipeline
       .gamma(DELIVERY_EXPORT_GAMMA)
-      .sharpen({
-        sigma: sharpenStrength,
-        m1: 1.0,
-        m2: 2.0,
-        x1: 2.0,
-        y2: 10.0,
-        y3: 20.0,
-      })
+      .toBuffer();
+
+    const edgeAware = await applyEdgeAwareSharpen(toneBuffer, sharpenStrength);
+    edgeLow = edgeAware.edgeLow;
+    edgeHigh = edgeAware.edgeHigh;
+
+    pipeline = sharp(edgeAware.buffer)
       .modulate({ saturation: 1.03 });
   }
 
@@ -3871,6 +4010,9 @@ async function upscaleAndEnhanceForDelivery(
     isStage2,
     isStage1A,
     sharpenStrength,
+    edgeAwareSharpen: enhancementsApplied,
+    edgeLow,
+    edgeHigh,
     stage2PolishApplied: shouldApplyStage2Polish,
     resized: shouldResize,
   });
