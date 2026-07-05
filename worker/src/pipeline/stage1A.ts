@@ -528,6 +528,11 @@ Where weather-related glass artifacts are clearly visible, gently remove tempora
 
 Keep the final result realistic, natural, and high-end. The image should resemble a professionally edited real estate photograph, never an AI-generated or heavily processed image.
 
+Do not add or remove any architectural elements.
+Do not add or remove any vegetation or landscaping elements, furniture, or other objects. 
+Do not change the physical structure, layout, or architectural features of any properties in the image. 
+Do not add any new buildings or structures. 
+
 Architectural accuracy always takes priority over visual enhancement. Improve only weather, lighting, atmosphere, colour, and environmental appearance. Never alter the physical structure, layout, or architectural features of the property.`;
 
 async function enhanceWithGeminiStage1A(
