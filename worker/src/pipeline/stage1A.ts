@@ -30,6 +30,10 @@ const FORCE_GEMINI_STAGE1A = process.env.FORCE_GEMINI_STAGE1A === "1";
 const STAGE1A_STRICT_DIFF = process.env.STAGE1A_STRICT_DIFF === "1";
 // Diagnostic toggle: bypass post-generation enhancement filters for Stage1A output.
 const STAGE1A_DIAGNOSTIC_BYPASS_POSTGEN_ENHANCEMENTS = true;
+const STAGE1A_GEMINI_MAX_PORTRAIT_HEIGHT = Math.max(
+  1024,
+  Number(process.env.STAGE1A_GEMINI_MAX_PORTRAIT_HEIGHT || 2048)
+);
 // Automatically disable Stability primary after a payment/credit error
 const DISABLE_STABILITY_ON_PAYMENT_REQUIRED = process.env.STABILITY_STAGE1A_DISABLE_ON_PAYMENT_REQUIRED !== "0";
 function parseOptionalBoolean(raw: string | undefined): boolean | undefined {
@@ -548,6 +552,12 @@ async function enhanceWithGeminiStage1A(
   roomType?: string,
   jobSampling?: { temperature?: number; topP?: number; topK?: number }
 ): Promise<string> {
+    const normalizedGeminiInputPath = await normalizePortraitGeminiInput(
+      sharpPath,
+      jobId,
+      roomType
+    );
+
   let enhancementPrompt: string | undefined = undefined;
   let nzTemp: number | undefined = undefined;
   let nzTopP: number | undefined = undefined;
@@ -593,7 +603,7 @@ async function enhanceWithGeminiStage1A(
     promptInjected,
   });
 
-  const geminiPath = await enhanceWithGemini(sharpPath, {
+  const geminiPath = await enhanceWithGemini(normalizedGeminiInputPath, {
     replaceSky: replaceSky,
     declutter: false,
     sceneType: sceneType,
@@ -621,6 +631,80 @@ async function enhanceWithGeminiStage1A(
   });
 
   return geminiPath;
+}
+
+async function normalizePortraitGeminiInput(
+  inputPath: string,
+  jobId: string,
+  roomType?: string
+): Promise<string> {
+  const meta = await sharp(inputPath).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  const orientation = meta.orientation ?? null;
+  if (!width || !height) {
+    return inputPath;
+  }
+
+  const isPortrait = height > width;
+  if (!isPortrait || height <= STAGE1A_GEMINI_MAX_PORTRAIT_HEIGHT) {
+    console.log("[STAGE1A_PORTRAIT_GUARD]", {
+      jobId,
+      roomType: roomType || null,
+      inputPath,
+      inputWidth: width,
+      inputHeight: height,
+      orientation,
+      applied: false,
+      reason: !isPortrait ? "not_portrait" : "within_height_limit",
+      threshold: STAGE1A_GEMINI_MAX_PORTRAIT_HEIGHT,
+    });
+    return inputPath;
+  }
+
+  let targetHeight = STAGE1A_GEMINI_MAX_PORTRAIT_HEIGHT;
+  let targetWidth = Math.max(1, Math.round((width * targetHeight) / height));
+  if (targetWidth > 1 && targetWidth % 2 !== 0) {
+    targetWidth -= 1;
+  }
+  if (targetHeight > 1 && targetHeight % 2 !== 0) {
+    targetHeight -= 1;
+  }
+
+  const normalizedPath = inputPath.replace(/-1A-sharp\.webp$/i, "-1A-sharp-portrait-normalized.webp");
+  await sharp(inputPath)
+    .resize({
+      width: targetWidth,
+      height: targetHeight,
+      fit: "inside",
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: true,
+    })
+    .webp({
+      quality: 97,
+      effort: 6,
+      smartSubsample: true,
+      nearLossless: false,
+    })
+    .toFile(normalizedPath);
+
+  const outMeta = await sharp(normalizedPath).metadata().catch(() => null);
+  console.warn("[STAGE1A_PORTRAIT_GUARD]", {
+    jobId,
+    roomType: roomType || null,
+    inputPath,
+    outputPath: normalizedPath,
+    inputWidth: width,
+    inputHeight: height,
+    outputWidth: outMeta?.width || null,
+    outputHeight: outMeta?.height || null,
+    orientation,
+    applied: true,
+    reason: "portrait_height_capped_for_gemini_stage1a",
+    threshold: STAGE1A_GEMINI_MAX_PORTRAIT_HEIGHT,
+  });
+
+  return normalizedPath;
 }
 
 /**

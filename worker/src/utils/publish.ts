@@ -1,8 +1,58 @@
 import fs from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { logIfNotFocusMode } from "../logger";
 
 type EdgeTrim = { top: number; right: number; bottom: number; left: number };
+
+const IMAGE_TRACE = process.env.IMAGE_TRACE === "1";
+
+async function readImageMetaBestEffort(source: string | Buffer): Promise<Record<string, unknown>> {
+  try {
+    const importer: any = new Function("p", "return import(p)");
+    const sharpMod: any = await importer("sharp");
+    const sharp = sharpMod?.default ?? sharpMod;
+    const meta = await sharp(source).metadata();
+    return {
+      width: meta.width ?? null,
+      height: meta.height ?? null,
+      channels: meta.channels ?? null,
+      space: meta.space ?? null,
+      format: meta.format ?? null,
+    };
+  } catch {
+    return {
+      width: null,
+      height: null,
+      channels: null,
+      space: null,
+      format: null,
+    };
+  }
+}
+
+async function logImageTrace(label: string, source: string | Buffer, extras: Record<string, unknown> = {}): Promise<void> {
+  if (!IMAGE_TRACE) return;
+  try {
+    const buf = Buffer.isBuffer(source) ? source : fs.readFileSync(source);
+    const sha256 = createHash("sha256").update(buf).digest("hex");
+    const meta = await readImageMetaBestEffort(buf);
+    console.log("[IMAGE_TRACE]", {
+      label,
+      bytes: buf.length,
+      sha256,
+      ...meta,
+      ...(Buffer.isBuffer(source) ? {} : { path: source }),
+      ...extras,
+    });
+  } catch (err: any) {
+    console.warn("[IMAGE_TRACE] publish trace failed", {
+      label,
+      error: err?.message || String(err),
+      ...extras,
+    });
+  }
+}
 
 function parseEnvInt(raw: string | undefined, fallback: number, min = 0, max = Number.MAX_SAFE_INTEGER): number {
   const parsed = Number(raw);
@@ -20,6 +70,7 @@ function parseEnvFloat(raw: string | undefined, fallback: number, min = 0, max =
 async function loadImageWithFinalBorderGuard(
   filePath: string
 ): Promise<{ body: Buffer; didTrim: boolean; trim?: EdgeTrim }> {
+  await logImageTrace("publish.border_guard.input", filePath, { filePath });
   const ext = path.extname(filePath).toLowerCase();
   if (ext !== ".jpg" && ext !== ".jpeg" && ext !== ".png" && ext !== ".webp") {
     return { body: fs.readFileSync(filePath), didTrim: false };
@@ -148,6 +199,11 @@ async function loadImageWithFinalBorderGuard(
     body = await extracted.webp({ quality: 90 }).toBuffer();
   }
 
+  await logImageTrace("publish.border_guard.output", body, {
+    filePath,
+    trim,
+  });
+
   return { body, didTrim: true, trim };
 }
 
@@ -270,6 +326,13 @@ export async function publishThumbnailVariant(
   const sharpMod: any = await importer('sharp');
   const sharp = sharpMod?.default ?? sharpMod;
 
+  await logImageTrace("publish.thumbnail.input", sourcePath, {
+    sourcePath,
+    width,
+    height,
+    quality,
+  });
+
   const thumbBuffer = await sharp(sourcePath)
     .rotate()
     .resize({
@@ -287,6 +350,13 @@ export async function publishThumbnailVariant(
     })
     .toBuffer();
 
+  await logImageTrace("publish.thumbnail.output", thumbBuffer, {
+    sourcePath,
+    width,
+    height,
+    quality,
+  });
+
   const thumbKey = deriveThumbnailKey(options.baseKeyHint, width, height);
   const published = await uploadBufferToS3(thumbBuffer, thumbKey, 'image/webp');
 
@@ -301,6 +371,11 @@ export async function publishThumbnailVariant(
  */
 export async function publishImage(filePath: string): Promise<PublishResult> {
   const guarded = await loadImageWithFinalBorderGuard(filePath);
+  await logImageTrace("publish.image.body", guarded.body, {
+    filePath,
+    didTrim: guarded.didTrim,
+    trim: guarded.trim || null,
+  });
   if (guarded.didTrim && guarded.trim) {
     logIfNotFocusMode(`[PUBLISH] Anti-border trim applied top=${guarded.trim.top} right=${guarded.trim.right} bottom=${guarded.trim.bottom} left=${guarded.trim.left}`);
   }

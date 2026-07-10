@@ -19,6 +19,56 @@ import { findOrCreateProperty } from "../services/properties.js";
 import { auditLog } from "../utils/audit.js";
 import * as crypto from "node:crypto";
 
+const IMAGE_TRACE = process.env.IMAGE_TRACE === "1";
+
+async function readImageMetaBestEffort(localPath: string): Promise<Record<string, unknown>> {
+  try {
+    const importer: any = new Function("p", "return import(p)");
+    const sharpMod: any = await importer("sharp");
+    const sharp = sharpMod?.default ?? sharpMod;
+    const meta = await sharp(localPath).metadata();
+    return {
+      width: meta.width ?? null,
+      height: meta.height ?? null,
+      channels: meta.channels ?? null,
+      space: meta.space ?? null,
+      format: meta.format ?? null,
+    };
+  } catch {
+    return {
+      width: null,
+      height: null,
+      channels: null,
+      space: null,
+      format: null,
+    };
+  }
+}
+
+async function logImageTraceFromPath(label: string, localPath: string, extras: Record<string, unknown> = {}): Promise<void> {
+  if (!IMAGE_TRACE) return;
+  try {
+    const buf = await fs.readFile(localPath);
+    const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
+    const meta = await readImageMetaBestEffort(localPath);
+    console.log("[IMAGE_TRACE]", {
+      label,
+      path: localPath,
+      bytes: buf.length,
+      sha256,
+      ...meta,
+      ...extras,
+    });
+  } catch (err: any) {
+    console.warn("[IMAGE_TRACE] failed", {
+      label,
+      path: localPath,
+      error: err?.message || String(err),
+      ...extras,
+    });
+  }
+}
+
 function timingSafeEqual(a: string, b: string): boolean {
   try {
     return crypto.timingSafeEqual(Buffer.from(a), Buffer.from(b));
@@ -898,6 +948,12 @@ export function uploadRouter() {
         }
 
         recordOriginalPath = localFinalPath;
+
+        await logImageTraceFromPath("upload.local_persist", localFinalPath, {
+          jobId,
+          imageIndex: i,
+          userId: sessUser.id,
+        });
       }
 
       const rec = createImageRecord({
@@ -917,9 +973,27 @@ export function uploadRouter() {
       // In non-strict mode, we continue but mark lack of remoteOriginalUrl.
       if (!directUpload && finalPath) {
         try {
+          await logImageTraceFromPath("upload.pre_s3_original", finalPath, {
+            jobId,
+            imageIndex: i,
+            userId: sessUser.id,
+          });
           const up = await uploadOriginalToS3(finalPath);
           remoteOriginalUrl = up.url;
           remoteOriginalKey = up.key;
+          if (IMAGE_TRACE) {
+            console.log("[IMAGE_TRACE]", {
+              label: "upload.post_s3_original",
+              jobId,
+              imageIndex: i,
+              userId: sessUser.id,
+              key: up.key,
+              bucket: up.bucket,
+              bytes: up.size,
+              contentType: up.contentType,
+              url: up.url,
+            });
+          }
         } catch (e) {
           const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
           const msg = (e as any)?.message || String(e);

@@ -406,6 +406,30 @@ export async function enhanceWithGemini(
   try {
     const client = getGeminiClient();
     focusLog("GEMINI_CLIENT", `[Gemini] ✓ Gemini client initialized`);
+    try {
+      const inputMeta = await require("sharp")(inputPath).metadata();
+      focusLog("GEMINI_INPUT_META", "[GEMINI_GEOMETRY] input", {
+        jobId,
+        imageId,
+        stage: stage || null,
+        inputPath,
+        width: inputMeta?.width || null,
+        height: inputMeta?.height || null,
+        exifOrientation: inputMeta?.orientation ?? null,
+        rotationApplied: inputMeta?.orientation && inputMeta.orientation !== 1 ? "exif-auto" : "none",
+        cropRect: null,
+        tileCoords: null,
+        compositeCoords: null,
+      });
+    } catch (metaErr: any) {
+      focusLog("GEMINI_INPUT_META", "[GEMINI_GEOMETRY] input_meta_failed", {
+        jobId,
+        imageId,
+        stage: stage || null,
+        inputPath,
+        error: metaErr?.message || String(metaErr),
+      });
+    }
     const modelReasonText = (modelReason || "").toLowerCase();
     const isStage1BFullDeclutter =
       stage === "1B" &&
@@ -698,6 +722,30 @@ export async function enhanceWithGemini(
     }
     writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);
     focusLog("GEMINI_SAVE", `[Gemini] 💾 Saved enhanced image to: ${out}`);
+    try {
+      const outputMeta = await require("sharp")(out).metadata();
+      focusLog("GEMINI_OUTPUT_META", "[GEMINI_GEOMETRY] output", {
+        jobId,
+        imageId,
+        stage: stage || null,
+        outputPath: out,
+        width: outputMeta?.width || null,
+        height: outputMeta?.height || null,
+        exifOrientation: outputMeta?.orientation ?? null,
+        rotationApplied: "none",
+        cropRect: null,
+        tileCoords: null,
+        compositeCoords: null,
+      });
+    } catch (metaErr: any) {
+      focusLog("GEMINI_OUTPUT_META", "[GEMINI_GEOMETRY] output_meta_failed", {
+        jobId,
+        imageId,
+        stage: stage || null,
+        outputPath: out,
+        error: metaErr?.message || String(metaErr),
+      });
+    }
     return out;
   } catch (error) {
     console.error(`❌ FATAL: Gemini ${operationType} failed — cannot continue AI pipeline.`);

@@ -10,7 +10,32 @@ import {
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import fs from "fs";
 import path from "path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+
+const IMAGE_TRACE = process.env.IMAGE_TRACE === "1";
+
+async function readBufferMetaBestEffort(buf: Buffer): Promise<Record<string, unknown>> {
+  try {
+    const sharpMod: any = await import("sharp");
+    const sharp: any = (sharpMod as any)?.default ?? sharpMod;
+    const meta = await sharp(buf).metadata();
+    return {
+      width: meta.width ?? null,
+      height: meta.height ?? null,
+      channels: meta.channels ?? null,
+      space: meta.space ?? null,
+      format: meta.format ?? null,
+    };
+  } catch {
+    return {
+      width: null,
+      height: null,
+      channels: null,
+      space: null,
+      format: null,
+    };
+  }
+}
 
 export interface S3UploadResult {
   key: string;
@@ -113,6 +138,19 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   const buf = fs.readFileSync(localPath);
   const contentType = guessMime(localPath);
   const size = buf.length;
+  const sha256 = createHash("sha256").update(buf).digest("hex");
+  const traceMeta = IMAGE_TRACE ? await readBufferMetaBestEffort(buf) : null;
+
+  if (IMAGE_TRACE) {
+    console.log("[IMAGE_TRACE]", {
+      label: "s3.upload_original.input",
+      path: localPath,
+      bytes: size,
+      sha256,
+      contentType,
+      ...(traceMeta || {}),
+    });
+  }
 
   const client = getClient();
 
@@ -153,6 +191,18 @@ export async function uploadOriginalToS3(localPath: string): Promise<S3UploadRes
   }
 
   const url = getS3PublicUrl(key);
+  if (IMAGE_TRACE) {
+    console.log("[IMAGE_TRACE]", {
+      label: "s3.upload_original.output",
+      key,
+      bucket,
+      url,
+      bytes: size,
+      sha256,
+      contentType,
+      ...(traceMeta || {}),
+    });
+  }
   return { key, url, bucket, size, contentType };
 }
 

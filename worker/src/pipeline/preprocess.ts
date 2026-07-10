@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { promises as fs } from "fs";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 import { assertNoDarkBorder } from "../utils/finalBlackEdgeGuard";
@@ -9,8 +9,43 @@ import { resolveStage1AAblationSettings } from "./stage1A-presets";
 type CropRect = { left: number; top: number; width: number; height: number };
 
 const PREPROCESS_DEBUG = process.env.PREPROCESS_DEBUG === "1" || process.env.DEBUG_PREPROCESS === "1";
+const IMAGE_TRACE = process.env.IMAGE_TRACE === "1";
 let preprocessInvalidCropRectCount = 0;
 let preprocessSkippedCropCount = 0;
+
+async function logImageTrace(label: string, source: string | Buffer, extras: Record<string, unknown> = {}): Promise<void> {
+  if (!IMAGE_TRACE) return;
+  try {
+    const buf = Buffer.isBuffer(source) ? source : await fs.readFile(source);
+    const sha256 = createHash("sha256").update(buf).digest("hex");
+    const meta = await sharp(buf).metadata().catch(() => null);
+    console.log("[IMAGE_TRACE]", {
+      label,
+      bytes: buf.length,
+      sha256,
+      width: meta?.width ?? null,
+      height: meta?.height ?? null,
+      channels: meta?.channels ?? null,
+      space: meta?.space ?? null,
+      format: meta?.format ?? null,
+      ...(Buffer.isBuffer(source) ? {} : { path: source }),
+      ...extras,
+    });
+  } catch (err: any) {
+    console.warn("[IMAGE_TRACE] preprocess trace failed", {
+      label,
+      error: err?.message || String(err),
+      ...extras,
+    });
+  }
+}
+
+function logPreprocessGeometry(label: string, payload: Record<string, unknown>): void {
+  console.log("[PREPROCESS_GEOMETRY]", {
+    label,
+    ...payload,
+  });
+}
 
 interface TransformDiagnosticMeta {
   width: number | null;
@@ -724,6 +759,11 @@ export async function preprocessToCanonical(
   sceneType: string,
   options: { buildArtifacts?: boolean; smallSize?: number; stage1ABorderRetryIndex?: number; jobId?: string } = {}
 ): Promise<BaseArtifacts | undefined> {
+  await logImageTrace("preprocess.input", inputPath, {
+    jobId: options.jobId || null,
+    sceneType,
+  });
+
   const { presetName, settings: ablationSettings } = resolveStage1AAblationSettings(sceneType);
   const highFidelityCanonical = ablationSettings.PREPROCESS_CANONICAL_HIGH_FIDELITY;
   const canonicalWebpQuality = parseQuality(
@@ -741,11 +781,33 @@ export async function preprocessToCanonical(
 
   let img = sharp(inputPath);
   const inputMeta = await img.metadata();
+  logPreprocessGeometry("input", {
+    jobId: options.jobId || null,
+    sceneType,
+    width: inputMeta.width || null,
+    height: inputMeta.height || null,
+    exifOrientation: inputMeta.orientation ?? null,
+    rotationApplied: inputMeta.orientation && inputMeta.orientation !== 1 ? "exif-auto" : "none",
+    cropRect: null,
+    tileCoords: null,
+    compositeCoords: null,
+  });
   console.log(`[stage0] ROTATE size=before ${inputMeta.width || 0}x${inputMeta.height || 0}`);
   // Auto-orient (EXIF)
   img = img.rotate();
   const rotatedMeta = await img.metadata();
   console.log(`[stage0] ROTATE size=after ${rotatedMeta.width || 0}x${rotatedMeta.height || 0}`);
+  logPreprocessGeometry("after_rotate", {
+    jobId: options.jobId || null,
+    sceneType,
+    width: rotatedMeta.width || null,
+    height: rotatedMeta.height || null,
+    exifOrientation: inputMeta.orientation ?? null,
+    rotationApplied: inputMeta.orientation && inputMeta.orientation !== 1 ? "exif-auto" : "none",
+    cropRect: null,
+    tileCoords: null,
+    compositeCoords: null,
+  });
 
   // Deterministic pre-Stage1A geometric straightening (global roll only)
   // Keeps correction conservative to avoid over-cropping and structural drift.
@@ -787,9 +849,22 @@ export async function preprocessToCanonical(
     img = safeRotate.image;
     straightenAngle = safeRotate.straightenAngle;
     straightenCropRect = safeRotate.cropRect;
+    const afterStraightenMeta = await img.metadata().catch(() => null);
+    logPreprocessGeometry("after_straighten", {
+      jobId: options.jobId || null,
+      sceneType,
+      width: afterStraightenMeta?.width || null,
+      height: afterStraightenMeta?.height || null,
+      exifOrientation: inputMeta.orientation ?? null,
+      rotationApplied: straightenAngle,
+      cropRect: straightenCropRect,
+      tileCoords: null,
+      compositeCoords: null,
+      reason: safeRotate.reason,
+      estimatedRoll,
+    });
 
     if (PREPROCESS_DEBUG) {
-      const afterStraightenMeta = await img.metadata();
       console.log(
         `[preprocess] straightenAngle=${straightenAngle.toFixed(4)} originalWidth=${rotatedMeta.width || 0} originalHeight=${rotatedMeta.height || 0} boundingCropWidth=${straightenCropRect?.width ?? (afterStraightenMeta.width || 0)} boundingCropHeight=${straightenCropRect?.height ?? (afterStraightenMeta.height || 0)} reason=${safeRotate.reason}`
       );
@@ -802,6 +877,10 @@ export async function preprocessToCanonical(
   logTransformDiagnostic("removeAlpha", "after", canonicalMeta, "canonical");
 
   let stage0ResultBuffer = await img.toBuffer();
+  await logImageTrace("preprocess.after_remove_alpha", stage0ResultBuffer, {
+    jobId: options.jobId || null,
+    sceneType,
+  });
   console.log(`[STRAIGHTEN_ATTEMPT] jobId=${options.jobId || 'unknown'}`);
   if (await detectBlackBorders(stage0ResultBuffer)) {
     console.log(`[BLACK_BORDER_DETECTED] jobId=${options.jobId || 'unknown'}`);
@@ -815,6 +894,18 @@ export async function preprocessToCanonical(
       if (w < 10 || h < 10) break;
       const cropW = Math.max(1, w - 4);
       const cropH = Math.max(1, h - 4);
+      logPreprocessGeometry("black_border_retry", {
+        jobId: options.jobId || null,
+        sceneType,
+        attempt,
+        width: w,
+        height: h,
+        exifOrientation: inputMeta.orientation ?? null,
+        rotationApplied: straightenAngle,
+        cropRect: { left: 2, top: 2, width: cropW, height: cropH },
+        tileCoords: null,
+        compositeCoords: null,
+      });
       currentBuffer = await sharp(currentBuffer).extract({ left: 2, top: 2, width: cropW, height: cropH }).toBuffer();
       if (!(await detectBlackBorders(currentBuffer))) {
         fixed = true;
@@ -823,11 +914,31 @@ export async function preprocessToCanonical(
     }
     if (fixed) {
       img = sharp(currentBuffer);
+      await logImageTrace("preprocess.after_black_border_rescue", currentBuffer, {
+        jobId: options.jobId || null,
+        sceneType,
+      });
     } else {
       console.log(`[STRAIGHTEN_FALLBACK_ORIGINAL] jobId=${options.jobId || 'unknown'} reason=black_edges_after_stage0_rescue`);
       console.log(`[STRAIGHTEN_SKIPPED] jobId=${options.jobId || 'unknown'}`);
       img = sharp(inputPath);
       img = img.rotate();
+      await logImageTrace("preprocess.fallback_to_oriented_original", inputPath, {
+        jobId: options.jobId || null,
+        sceneType,
+      });
+      const fallbackMeta = await img.metadata().catch(() => null);
+      logPreprocessGeometry("fallback_oriented_original", {
+        jobId: options.jobId || null,
+        sceneType,
+        width: fallbackMeta?.width || null,
+        height: fallbackMeta?.height || null,
+        exifOrientation: inputMeta.orientation ?? null,
+        rotationApplied: inputMeta.orientation && inputMeta.orientation !== 1 ? "exif-auto" : "none",
+        cropRect: null,
+        tileCoords: null,
+        compositeCoords: null,
+      });
     }
   }
 
@@ -917,6 +1028,21 @@ export async function preprocessToCanonical(
   try {
     const finalMeta = await sharp(outputPath).metadata();
     console.log(`[stage0] FINAL size=${finalMeta.width || 0}x${finalMeta.height || 0}`);
+    logPreprocessGeometry("final", {
+      jobId: options.jobId || null,
+      sceneType,
+      width: finalMeta.width || null,
+      height: finalMeta.height || null,
+      exifOrientation: inputMeta.orientation ?? null,
+      rotationApplied: straightenAngle,
+      cropRect: straightenCropRect,
+      tileCoords: null,
+      compositeCoords: null,
+    });
   } catch {}
+  await logImageTrace("preprocess.output", outputPath, {
+    jobId: options.jobId || null,
+    sceneType,
+  });
   return artifactsPromise ? await artifactsPromise : undefined;
 }
