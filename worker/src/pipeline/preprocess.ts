@@ -866,7 +866,7 @@ export async function preprocessToCanonical(
 
     if (PREPROCESS_DEBUG) {
       console.log(
-        `[preprocess] straightenAngle=${straightenAngle.toFixed(4)} originalWidth=${rotatedMeta.width || 0} originalHeight=${rotatedMeta.height || 0} boundingCropWidth=${straightenCropRect?.width ?? (afterStraightenMeta.width || 0)} boundingCropHeight=${straightenCropRect?.height ?? (afterStraightenMeta.height || 0)} reason=${safeRotate.reason}`
+        `[preprocess] straightenAngle=${straightenAngle.toFixed(4)} originalWidth=${rotatedMeta.width || 0} originalHeight=${rotatedMeta.height || 0} boundingCropWidth=${straightenCropRect?.width ?? (afterStraightenMeta?.width || 0)} boundingCropHeight=${straightenCropRect?.height ?? (afterStraightenMeta?.height || 0)} reason=${safeRotate.reason}`
       );
     }
   }
