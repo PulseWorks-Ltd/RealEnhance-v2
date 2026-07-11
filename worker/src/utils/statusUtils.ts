@@ -14,6 +14,12 @@ export async function safeWriteJobStatus(
   const evidenceGatingVariant = getEvidenceGatingVariant(String(jobId));
   const patchWithEvidence = {
     ...patch,
+    ...(patch && Object.prototype.hasOwnProperty.call(patch, "stageUrls")
+      ? {
+          __stageUrlReason: reason,
+          __stageUrlCaller: "safeWriteJobStatus",
+        }
+      : {}),
     validatorMeta: {
       ...(patch?.validatorMeta || {}),
       evidenceGatingVariant,

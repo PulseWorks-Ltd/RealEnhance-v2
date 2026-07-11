@@ -1,3 +1,4 @@
+const STAGE1B_TRACE = import.meta.env.VITE_STAGE1B_TRACE === "1";
 // Client-side stub for room type detection (replace with real logic as needed)
   // Replaced by backend ML API call below
 import React, { useEffect, useMemo, useState, useRef, useCallback } from "react";
@@ -4403,6 +4404,37 @@ export default function BatchProcessor({
                         stage1A: stageUrlsMap.stage1A || stageUrlsMap['1A'] || stageUrlsMap['1'] || existingStageMapObj?.stage1A || existingStageMapObj?.['1A'] || existingStageMapObj?.['1a'] || existingStageMapObj?.['1'] || null,
                       }
                     : (existingStageMapObj || null);
+              if (STAGE1B_TRACE) {
+                const prevStage1B =
+                  toDisplayUrl(existingStageMapObj?.stage1B) ||
+                  toDisplayUrl(existingStageMapObj?.["1B"]) ||
+                  toDisplayUrl(existingStageMapObj?.["1b"]) ||
+                  null;
+                const incomingStage1B =
+                  toDisplayUrl(stageUrlsMap?.stage1B) ||
+                  toDisplayUrl(stageUrlsMap?.["1B"]) ||
+                  toDisplayUrl(stageUrlsMap?.["1b"]) ||
+                  null;
+                const nextStage1B =
+                  toDisplayUrl((mergedStageUrls as any)?.stage1B) ||
+                  toDisplayUrl((mergedStageUrls as any)?.["1B"]) ||
+                  toDisplayUrl((mergedStageUrls as any)?.["1b"]) ||
+                  null;
+                console.log("[STAGE1B_CLIENT_TRACE]", {
+                  ts: new Date().toISOString(),
+                  idx,
+                  polledId: polledId || null,
+                  parentJobId: parentJobId || null,
+                  prevStage1B,
+                  incomingStage1B,
+                  nextStage1B,
+                  reason: "batch_results_merge",
+                  caller: "updateBatchResults",
+                  isRetryChildJob,
+                  mappedViaParent,
+                  mappedViaImage,
+                });
+              }
               const mergedResultUrl = preserveExistingStage2Artifacts
                 ? (
                     existing.resultUrl ||

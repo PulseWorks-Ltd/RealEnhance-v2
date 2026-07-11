@@ -14,6 +14,7 @@ type QueueStatus = "queued" | "active" | "completed" | "failed" | "delayed" | "u
 type NormalizedState = "queued" | "awaiting_payment" | "processing" | "completed" | "failed" | "cancelled" | "unknown";
 
 const STUCK_PROCESSING_MS = 15 * 60 * 1000; // 15 minutes
+const STAGE1B_TRACE = process.env.STAGE1B_TRACE === "1";
 
 type StatusItem = {
   id: string;
@@ -658,6 +659,36 @@ export function statusRouter() {
           meta: local.meta ?? {},
           error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,
         };
+
+        if (STAGE1B_TRACE) {
+          const localStage1B =
+            local?.stageUrls?.stage1B ||
+            local?.stageUrls?.["1B"] ||
+            local?.stageUrls?.["1b"] ||
+            local?.meta?.stageUrls?.stage1B ||
+            local?.meta?.stageUrls?.["1B"] ||
+            null;
+          const rvStage1B =
+            rv?.stageUrls?.stage1B ||
+            rv?.stageUrls?.["1B"] ||
+            rv?.stageUrls?.["1b"] ||
+            null;
+          const outStage1B =
+            item?.stageUrls?.stage1B ||
+            item?.stageUrls?.["1B"] ||
+            item?.stageUrls?.["1b"] ||
+            null;
+          console.log("[STAGE1B_API_TRACE]", {
+            ts: new Date().toISOString(),
+            jobId: id,
+            localStage1B,
+            rvStage1B,
+            outStage1B,
+            stageUrlsNull: item.stageUrls === null,
+            status: item.status,
+            reason: "status_batch_emit",
+          });
+        }
         // Add mode if it exists
         if (mode) {
           item.mode = mode;

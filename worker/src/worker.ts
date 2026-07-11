@@ -10523,6 +10523,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       break;
     }
 
+    // Keep commit eligibility aligned with accepted Stage1B output to avoid
+    // regressions where publish gating is skipped due to flag drift.
+    if (path1B && !stage1BValidatedForCommit) {
+      nLog("[STAGE1B_COMMIT_FLAG_NORMALIZED] path1B present with unset commit flag; normalizing", {
+        jobId: payload.jobId,
+        stage: "1B",
+      });
+      stage1BValidatedForCommit = true;
+    }
+
     if (!path1B || !stage1BValidatedForCommit) {
       nLog(`[STAGE1B_FALLBACK] triggered after attempts exhausted`);
       await completePartialJobWithSummary({

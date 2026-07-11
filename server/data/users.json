@@ -9,5 +9,23 @@
     "imageIds": [],
     "createdAt": "2025-11-03T00:00:00.000Z",
     "updatedAt": "2026-03-12T00:00:00.000Z"
+  },
+  "user_6ffd875b-13f7-4e23-8e8c-86d7968e3cc4": {
+    "id": "user_6ffd875b-13f7-4e23-8e8c-86d7968e3cc4",
+    "email": "test@example.com",
+    "emailVerified": false,
+    "name": "Test User",
+    "authProvider": "email",
+    "isActive": true,
+    "isSystemUser": false,
+    "creditUsageCount": 0,
+    "hasSeenWelcome": false,
+    "hasReceivedSignupCredits": false,
+    "credits": 1000,
+    "imageIds": [
+      "img_d9edd18d-f962-4ff7-832a-5a0c3811efe8"
+    ],
+    "createdAt": "2026-07-11T00:21:05.384Z",
+    "updatedAt": "2026-07-11T00:21:05.511Z"
   }
 }

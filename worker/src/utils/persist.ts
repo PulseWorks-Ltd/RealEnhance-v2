@@ -13,6 +13,53 @@ import {
 } from "@realenhance/shared/types";
 import { mergeStageUrls, resolveStageUrl } from "@realenhance/shared/stageUrlResolver";
 
+const STAGE1B_TRACE = process.env.STAGE1B_TRACE === "1";
+
+function resolveStage1BValue(stageUrls: any): string | null {
+  if (!stageUrls || typeof stageUrls !== "object") return null;
+  return (
+    resolveStageUrl(stageUrls as any, "1B") ||
+    (typeof stageUrls["1B"] === "string" && stageUrls["1B"].trim() ? String(stageUrls["1B"]).trim() : null) ||
+    (typeof stageUrls.stage1B === "string" && stageUrls.stage1B.trim() ? String(stageUrls.stage1B).trim() : null) ||
+    (typeof stageUrls["1b"] === "string" && stageUrls["1b"].trim() ? String(stageUrls["1b"]).trim() : null)
+  );
+}
+
+function inferCaller(): string {
+  try {
+    const stack = String(new Error().stack || "").split("\n");
+    const line = stack.find((entry) =>
+      entry.includes("/worker/src/") &&
+      !entry.includes("persist.ts")
+    );
+    return line ? line.trim() : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
+function logStage1BWrite(params: {
+  op: "updateJob" | "updateJobIf";
+  jobId: JobId;
+  previousValue: string | null;
+  nextValue: string | null;
+  reason: string;
+  caller: string;
+  patchKeys: string[];
+}) {
+  if (!STAGE1B_TRACE) return;
+  console.log("[STAGE1B_WRITE_TRACE]", {
+    ts: new Date().toISOString(),
+    op: params.op,
+    jobId: params.jobId,
+    previousValue: params.previousValue,
+    nextValue: params.nextValue,
+    reason: params.reason,
+    caller: params.caller,
+    patchKeys: params.patchKeys,
+  });
+}
+
 function logMergedStageUrls(jobId: JobId, stageUrls: Record<string, string | null | undefined>) {
   console.log("[STAGE_URLS_WRITE]", { jobId, stageUrls });
   const stage1AUrl = resolveStageUrl(stageUrls as any, "1A");
@@ -62,6 +109,10 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
     // Continue with empty record
   }
   
+  const stageUrlReason = String((patch as any)?.__stageUrlReason || "unspecified");
+  const stageUrlCaller = String((patch as any)?.__stageUrlCaller || inferCaller());
+  const previousStage1B = resolveStage1BValue(rec?.stageUrls || null);
+
   // If caller is updating stageUrls, merge with existing stageUrls instead of overwriting
   if (patch && typeof patch === 'object' && patch.stageUrls) {
     try {
@@ -74,6 +125,24 @@ export async function updateJob(jobId: JobId, patch: Partial<JobRecord> & Record
     } catch (mergeErr) {
       console.error(`[updateJob] Failed to merge stageUrls for job ${jobId}:`, mergeErr);
     }
+  }
+
+  const nextStage1B = resolveStage1BValue((patch as any)?.stageUrls || rec?.stageUrls || null);
+  if (patch && typeof patch === "object" && Object.prototype.hasOwnProperty.call(patch, "stageUrls")) {
+    logStage1BWrite({
+      op: "updateJob",
+      jobId,
+      previousValue: previousStage1B,
+      nextValue: nextStage1B,
+      reason: stageUrlReason,
+      caller: stageUrlCaller,
+      patchKeys: Object.keys(patch),
+    });
+  }
+
+  if (patch && typeof patch === "object") {
+    delete (patch as any).__stageUrlReason;
+    delete (patch as any).__stageUrlCaller;
   }
 
   rec = {
@@ -133,6 +202,9 @@ export async function updateJobIf(
       }
 
       let mergedPatch: any = patch;
+      const stageUrlReason = String((mergedPatch as any)?.__stageUrlReason || "unspecified");
+      const stageUrlCaller = String((mergedPatch as any)?.__stageUrlCaller || inferCaller());
+      const previousStage1B = resolveStage1BValue(current?.stageUrls || null);
       if (mergedPatch && typeof mergedPatch === "object" && mergedPatch.stageUrls) {
         try {
           const existing = current && current.stageUrls ? current.stageUrls : {};
@@ -144,6 +216,24 @@ export async function updateJobIf(
         } catch (mergeErr) {
           console.error(`[updateJobIf] Failed to merge stageUrls for job ${jobId}:`, mergeErr);
         }
+      }
+
+      const nextStage1B = resolveStage1BValue(mergedPatch?.stageUrls || current?.stageUrls || null);
+      if (mergedPatch && typeof mergedPatch === "object" && Object.prototype.hasOwnProperty.call(mergedPatch, "stageUrls")) {
+        logStage1BWrite({
+          op: "updateJobIf",
+          jobId,
+          previousValue: previousStage1B,
+          nextValue: nextStage1B,
+          reason: stageUrlReason,
+          caller: stageUrlCaller,
+          patchKeys: Object.keys(mergedPatch),
+        });
+      }
+
+      if (mergedPatch && typeof mergedPatch === "object") {
+        delete mergedPatch.__stageUrlReason;
+        delete mergedPatch.__stageUrlCaller;
       }
 
       if (mergedPatch && typeof mergedPatch === "object" && mergedPatch.validatorMeta) {
