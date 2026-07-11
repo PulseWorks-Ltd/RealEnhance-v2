@@ -10610,7 +10610,32 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Record Stage 1B publish if it exists and is different from 1A
   // pub1BUrl already declared above; removed duplicate
-  if (path1B && stage1BValidatedForCommit && path1B !== path1A) {
+  const stage1BMainPublishGate = {
+    path1BPresent: !!path1B,
+    path1APresent: !!path1A,
+    path1BDiffersFrom1A: !!(path1B && path1A && path1B !== path1A),
+    stage1BValidatedForCommit,
+    declutterEnabled: !!payload.options.declutter,
+    virtualStageEnabled: !!payload.options.virtualStage,
+  };
+  const shouldEnterStage1BMainPublish =
+    stage1BMainPublishGate.path1BPresent &&
+    stage1BMainPublishGate.stage1BValidatedForCommit &&
+    stage1BMainPublishGate.path1BDiffersFrom1A;
+  const stage1BMainPublishPath = path1B;
+  nLog("[STAGE1B_PUBLISH_DECISION_MAIN]", {
+    jobId: payload.jobId,
+    gate: stage1BMainPublishGate,
+    enteringPublishBlock: shouldEnterStage1BMainPublish,
+    blockedReasons: shouldEnterStage1BMainPublish
+      ? []
+      : [
+          ...(stage1BMainPublishGate.path1BPresent ? [] : ["path1B_missing"]),
+          ...(stage1BMainPublishGate.stage1BValidatedForCommit ? [] : ["stage1b_not_validated_for_commit"]),
+          ...(stage1BMainPublishGate.path1BDiffersFrom1A ? [] : ["path1b_equals_path1a_or_missing"]),
+        ],
+  });
+  if (shouldEnterStage1BMainPublish && stage1BMainPublishPath) {
     // ═══ FINAL STATUS GUARD ═══
     const latestJob = await getJob(payload.jobId);
     if (isTerminalStatus(latestJob?.status)) {
@@ -10622,11 +10647,23 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return;
     }
 
+    const stage1BMainPublishStartedAt = Date.now();
+    nLog("[STAGE1B_PUBLISH_BEGIN]", {
+      jobId: payload.jobId,
+      mode: "main",
+      path: stage1BMainPublishPath,
+    });
     try {
       nLog(`[STAGE1B_PUBLISH] starting jobId=${payload.jobId}`);
-      const pub1B = await publishWithOptionalBlackEdgeGuard(path1B, "1B");
+      const pub1B = await publishWithOptionalBlackEdgeGuard(stage1BMainPublishPath, "1B");
       pub1BUrl = pub1B.url;
       nLog(`[STAGE1B_PUBLISH] completed jobId=${payload.jobId} url=${pub1BUrl}`);
+      nLog("[STAGE1B_PUBLISH_SUCCESS]", {
+        jobId: payload.jobId,
+        mode: "main",
+        url: pub1BUrl,
+        elapsedMs: Date.now() - stage1BMainPublishStartedAt,
+      });
       await safeWriteJobStatus(
         payload.jobId,
         { status: "processing", currentStage: payload.options.declutter ? "1B" : "1A", stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl },
@@ -10634,6 +10671,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       );
     } catch (e) {
       nLog('[worker] failed to publish 1B', e);
+      nLog("[STAGE1B_PUBLISH_FAILURE]", {
+        jobId: payload.jobId,
+        mode: "main",
+        elapsedMs: Date.now() - stage1BMainPublishStartedAt,
+        error: (e as any)?.message || String(e),
+        stack: (e as any)?.stack || null,
+      });
     }
   }
 
@@ -14936,7 +14980,25 @@ All openings must remain identical in position and size to the original image.`;
 
   // stage 1B publishing was deferred until here; attach URL and surface progress
   // pub1BUrl already declared above; removed duplicate
-  if (payload.options.declutter) {
+  const stage1BDeferredPublishGate = {
+    declutterEnabled: !!payload.options.declutter,
+    path1BPresent: !!path1B,
+    path1APresent: !!path1A,
+    path1BDiffersFrom1A: !!(path1B && path1A && path1B !== path1A),
+    stage1BValidatedForCommit,
+    stage1BUrlAlreadyPresent: !!pub1BUrl,
+    stage2Requested: !!payload.options.virtualStage,
+  };
+  const shouldEnterStage1BDeferredPublish = stage1BDeferredPublishGate.declutterEnabled;
+  nLog("[STAGE1B_PUBLISH_DECISION_DEFERRED]", {
+    jobId: payload.jobId,
+    gate: stage1BDeferredPublishGate,
+    enteringPublishBlock: shouldEnterStage1BDeferredPublish,
+    blockedReasons: shouldEnterStage1BDeferredPublish
+      ? []
+      : ["declutter_disabled_before_deferred_publish"],
+  });
+  if (shouldEnterStage1BDeferredPublish) {
     if (!path1B) {
       logJobErrorAndThrow(payload, "Stage 1B path is undefined", {
         stage: "Stage1B",
@@ -14960,6 +15022,12 @@ All openings must remain identical in position and size to the original image.`;
     } catch (e) {
       // Silently ignore - images.json is not available in multi-service deployment
     }
+    const stage1BDeferredPublishStartedAt = Date.now();
+    nLog("[STAGE1B_PUBLISH_BEGIN]", {
+      jobId: payload.jobId,
+      mode: "deferred",
+      path: path1B,
+    });
     try {
       const pub1B = await publishWithOptionalBlackEdgeGuard(path1B, "1B-deferred");
       pub1BUrl = pub1B.url;
@@ -14981,10 +15049,23 @@ All openings must remain identical in position and size to the original image.`;
         { status: deferredPublishStatus, stage: "1B", progress: 55, stageUrls: { "1B": pub1BUrl } },
         "stage1b_deferred_publish"
       );
+      nLog("[STAGE1B_PUBLISH_SUCCESS]", {
+        jobId: payload.jobId,
+        mode: "deferred",
+        url: pub1BUrl,
+        elapsedMs: Date.now() - stage1BDeferredPublishStartedAt,
+      });
       // VALIDATOR FOCUS: Log Stage 1B URL
       vLog(`[VAL][job=${payload.jobId}] stage1BUrl=${pub1BUrl}`);
     } catch (e) {
       nLog('[worker] failed to publish 1B', e);
+      nLog("[STAGE1B_PUBLISH_FAILURE]", {
+        jobId: payload.jobId,
+        mode: "deferred",
+        elapsedMs: Date.now() - stage1BDeferredPublishStartedAt,
+        error: (e as any)?.message || String(e),
+        stack: (e as any)?.stack || null,
+      });
     }
   }
 
