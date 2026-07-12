@@ -3945,6 +3945,7 @@ async function applyEdgeAwareSharpen(
       blend: "over",
     }])
     .removeAlpha()
+    .webp({ lossless: true })
     .toBuffer();
 
   return {
