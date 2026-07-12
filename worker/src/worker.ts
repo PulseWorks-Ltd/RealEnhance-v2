@@ -10602,6 +10602,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       },
       "stage1b_progress"
     );
+    nLog("[STAGE1B_PROGRESS_STATUS_WRITE]", {
+      jobId: payload.jobId,
+      reason: "stage1b_progress",
+      stage1AUrlPresent: !!pub1AUrl,
+      stage1BUrlPresent: !!pub1BUrl,
+    });
     if (await isCancelled(payload.jobId)) {
       await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
       return;
@@ -10623,6 +10629,16 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     stage1BMainPublishGate.stage1BValidatedForCommit &&
     stage1BMainPublishGate.path1BDiffersFrom1A;
   const stage1BMainPublishPath = path1B;
+  nLog("[STAGE1B_PUBLISH_GATE]", {
+    jobId: payload.jobId,
+    path1BPresent: stage1BMainPublishGate.path1BPresent,
+    path1A,
+    path1B,
+    stage1BValidatedForCommit: stage1BMainPublishGate.stage1BValidatedForCommit,
+    path1BDiffersFrom1A: stage1BMainPublishGate.path1BDiffersFrom1A,
+    stage1BMainPublishPath,
+    shouldEnterStage1BMainPublish,
+  });
   nLog("[STAGE1B_PUBLISH_DECISION_MAIN]", {
     jobId: payload.jobId,
     gate: stage1BMainPublishGate,
@@ -10657,6 +10673,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[STAGE1B_PUBLISH] starting jobId=${payload.jobId}`);
       const pub1B = await publishWithOptionalBlackEdgeGuard(stage1BMainPublishPath, "1B");
       pub1BUrl = pub1B.url;
+      nLog("[STAGE1B_PUBLISH_RETURN]", {
+        jobId: payload.jobId,
+        pub1BUrl,
+      });
       nLog(`[STAGE1B_PUBLISH] completed jobId=${payload.jobId} url=${pub1BUrl}`);
       nLog("[STAGE1B_PUBLISH_SUCCESS]", {
         jobId: payload.jobId,
@@ -10669,7 +10689,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         { status: "processing", currentStage: payload.options.declutter ? "1B" : "1A", stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl },
         "stage1b_publish"
       );
+      nLog("[STAGE1B_PUBLISH_STATUS_WRITE]", {
+        jobId: payload.jobId,
+        reason: "stage1b_publish",
+        stage1BUrlPresent: !!pub1BUrl,
+        imageUrlPresent: !!pub1BUrl,
+      });
     } catch (e) {
+      console.error("[STAGE1B_PUBLISH_EXCEPTION]", {
+        jobId: payload.jobId,
+        stage: "1B",
+        exceptionType: (e as any)?.name || typeof e,
+        exceptionMessage: (e as any)?.message || String(e),
+        stack: (e as any)?.stack || null,
+      });
       nLog('[worker] failed to publish 1B', e);
       nLog("[STAGE1B_PUBLISH_FAILURE]", {
         jobId: payload.jobId,
@@ -15058,6 +15091,13 @@ All openings must remain identical in position and size to the original image.`;
       // VALIDATOR FOCUS: Log Stage 1B URL
       vLog(`[VAL][job=${payload.jobId}] stage1BUrl=${pub1BUrl}`);
     } catch (e) {
+      console.error("[STAGE1B_PUBLISH_EXCEPTION]", {
+        jobId: payload.jobId,
+        stage: "1B-deferred",
+        exceptionType: (e as any)?.name || typeof e,
+        exceptionMessage: (e as any)?.message || String(e),
+        stack: (e as any)?.stack || null,
+      });
       nLog('[worker] failed to publish 1B', e);
       nLog("[STAGE1B_PUBLISH_FAILURE]", {
         jobId: payload.jobId,
