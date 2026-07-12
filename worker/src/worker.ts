@@ -10518,16 +10518,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       break;
     }
 
-    // Keep commit eligibility aligned with accepted Stage1B output to avoid
-    // regressions where publish gating is skipped due to flag drift.
-    if (path1B && !stage1BValidatedForCommit) {
-      nLog("[STAGE1B_COMMIT_FLAG_NORMALIZED] path1B present with unset commit flag; normalizing", {
-        jobId: payload.jobId,
-        stage: "1B",
-      });
-      stage1BValidatedForCommit = true;
-    }
-
     if (!path1B || !stage1BValidatedForCommit) {
       nLog(`[STAGE1B_FALLBACK] triggered after attempts exhausted`);
       await completePartialJobWithSummary({
@@ -10597,12 +10587,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       },
       "stage1b_progress"
     );
-    nLog("[STAGE1B_PROGRESS_STATUS_WRITE]", {
-      jobId: payload.jobId,
-      reason: "stage1b_progress",
-      stage1AUrlPresent: !!pub1AUrl,
-      stage1BUrlPresent: !!pub1BUrl,
-    });
     if (await isCancelled(payload.jobId)) {
       await safeWriteJobStatus(payload.jobId, { status: "cancelled", errorMessage: "cancelled" }, "cancel");
       return;
@@ -10611,42 +10595,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // Record Stage 1B publish if it exists and is different from 1A
   // pub1BUrl already declared above; removed duplicate
-  const stage1BMainPublishGate = {
-    path1BPresent: !!path1B,
-    path1APresent: !!path1A,
-    path1BDiffersFrom1A: !!(path1B && path1A && path1B !== path1A),
-    stage1BValidatedForCommit,
-    declutterEnabled: !!payload.options.declutter,
-    virtualStageEnabled: !!payload.options.virtualStage,
-  };
-  const shouldEnterStage1BMainPublish =
-    stage1BMainPublishGate.path1BPresent &&
-    stage1BMainPublishGate.stage1BValidatedForCommit &&
-    stage1BMainPublishGate.path1BDiffersFrom1A;
-  const stage1BMainPublishPath = path1B;
-  nLog("[STAGE1B_PUBLISH_GATE]", {
-    jobId: payload.jobId,
-    path1BPresent: stage1BMainPublishGate.path1BPresent,
-    path1A,
-    path1B,
-    stage1BValidatedForCommit: stage1BMainPublishGate.stage1BValidatedForCommit,
-    path1BDiffersFrom1A: stage1BMainPublishGate.path1BDiffersFrom1A,
-    stage1BMainPublishPath,
-    shouldEnterStage1BMainPublish,
-  });
-  nLog("[STAGE1B_PUBLISH_DECISION_MAIN]", {
-    jobId: payload.jobId,
-    gate: stage1BMainPublishGate,
-    enteringPublishBlock: shouldEnterStage1BMainPublish,
-    blockedReasons: shouldEnterStage1BMainPublish
-      ? []
-      : [
-          ...(stage1BMainPublishGate.path1BPresent ? [] : ["path1B_missing"]),
-          ...(stage1BMainPublishGate.stage1BValidatedForCommit ? [] : ["stage1b_not_validated_for_commit"]),
-          ...(stage1BMainPublishGate.path1BDiffersFrom1A ? [] : ["path1b_equals_path1a_or_missing"]),
-        ],
-  });
-  if (shouldEnterStage1BMainPublish && stage1BMainPublishPath) {
+  if (path1B && stage1BValidatedForCommit && path1B !== path1A) {
     // ═══ FINAL STATUS GUARD ═══
     const latestJob = await getJob(payload.jobId);
     if (isTerminalStatus(latestJob?.status)) {
@@ -10658,54 +10607,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return;
     }
 
-    const stage1BMainPublishStartedAt = Date.now();
-    nLog("[STAGE1B_PUBLISH_BEGIN]", {
-      jobId: payload.jobId,
-      mode: "main",
-      path: stage1BMainPublishPath,
-    });
     try {
       nLog(`[STAGE1B_PUBLISH] starting jobId=${payload.jobId}`);
-      const pub1B = await publishWithOptionalBlackEdgeGuard(stage1BMainPublishPath, "1B");
+      const pub1B = await publishWithOptionalBlackEdgeGuard(path1B, "1B");
       pub1BUrl = pub1B.url;
-      nLog("[STAGE1B_PUBLISH_RETURN]", {
-        jobId: payload.jobId,
-        pub1BUrl,
-      });
       nLog(`[STAGE1B_PUBLISH] completed jobId=${payload.jobId} url=${pub1BUrl}`);
-      nLog("[STAGE1B_PUBLISH_SUCCESS]", {
-        jobId: payload.jobId,
-        mode: "main",
-        url: pub1BUrl,
-        elapsedMs: Date.now() - stage1BMainPublishStartedAt,
-      });
       await safeWriteJobStatus(
         payload.jobId,
         { status: "processing", currentStage: payload.options.declutter ? "1B" : "1A", stage: payload.options.declutter ? "1B" : "1A", progress: 55, stageUrls: { "1B": pub1BUrl }, imageUrl: pub1BUrl },
         "stage1b_publish"
       );
-      nLog("[STAGE1B_PUBLISH_STATUS_WRITE]", {
-        jobId: payload.jobId,
-        reason: "stage1b_publish",
-        stage1BUrlPresent: !!pub1BUrl,
-        imageUrlPresent: !!pub1BUrl,
-      });
     } catch (e) {
-      console.error("[STAGE1B_PUBLISH_EXCEPTION]", {
-        jobId: payload.jobId,
-        stage: "1B",
-        exceptionType: (e as any)?.name || typeof e,
-        exceptionMessage: (e as any)?.message || String(e),
-        stack: (e as any)?.stack || null,
-      });
       nLog('[worker] failed to publish 1B', e);
-      nLog("[STAGE1B_PUBLISH_FAILURE]", {
-        jobId: payload.jobId,
-        mode: "main",
-        elapsedMs: Date.now() - stage1BMainPublishStartedAt,
-        error: (e as any)?.message || String(e),
-        stack: (e as any)?.stack || null,
-      });
     }
   }
 
