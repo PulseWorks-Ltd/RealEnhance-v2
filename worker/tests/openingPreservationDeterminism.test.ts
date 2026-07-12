@@ -11,18 +11,13 @@ function makeOpening(overrides: Partial<StructuralOpening> & Pick<StructuralOpen
     type: overrides.type,
     bbox: overrides.bbox,
     area_pct: overrides.area_pct ?? 12,
-    aspect_ratio: overrides.aspect_ratio ?? 1,
-    structuralClass: overrides.structuralClass ?? (overrides.type === "window" ? "exterior" : "circulation"),
     wallIndex: overrides.wallIndex ?? 3,
     horizontalBand: overrides.horizontalBand ?? "center_third",
     verticalBand: overrides.verticalBand ?? "mid_zone",
-    widthBand: overrides.widthBand ?? "single",
     wallCoverageBand: overrides.wallCoverageBand ?? "10-20",
     orientation: overrides.orientation ?? "portrait",
     paneStructure: overrides.paneStructure ?? "single_fixed",
-    heightClass: overrides.heightClass ?? "standard",
     doorLeafState: overrides.doorLeafState ?? "unknown",
-    approxAspectRatio: overrides.approxAspectRatio ?? 1,
     confidence: overrides.confidence ?? 0.95,
     wallPosition: overrides.wallPosition ?? "left_wall",
     relativeHorizontalPosition: overrides.relativeHorizontalPosition ?? "center",
@@ -36,7 +31,6 @@ function makeOpening(overrides: Partial<StructuralOpening> & Pick<StructuralOpen
 function makeBaseline(openings: StructuralOpening[]): StructuralBaseline {
   return {
     openings,
-    wallCount: 4,
     anchorFixtures: [],
   };
 }

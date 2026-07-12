@@ -7441,9 +7441,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
             const openingTimeoutMs = Math.max(
               0,
-              Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || 120000)
+              Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
             );
-            const envelopeTimeoutMs = Math.max(timeoutMs, 120000);
             const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
               jobId: payload.jobId,
               imageId: payload.imageId,
@@ -7455,7 +7454,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                 opening: openingTimeoutMs,
                 fixture: timeoutMs,
                 floor: timeoutMs,
-                envelope: envelopeTimeoutMs,
+                envelope: timeoutMs,
               },
               tasks: {
                 opening: () => runSpecialistWithTiming("opening", async () => {
@@ -7480,14 +7479,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   attempt: stage2OnlyAttemptNo,
                 })),
                 envelope: () => runSpecialistWithTiming("envelope", async () => {
-                  const stage2OnlyBaseline = await stage2OnlyBaselinePromise;
-                  const stage2OnlyDetectedBaseline = await stage2OnlyDetectedBaselinePromise;
                   return runEnvelopeValidator(validationBaseline, path2, {
                     jobId: payload.jobId,
                     imageId: payload.imageId,
                     attempt: stage2OnlyAttemptNo,
-                    baseline: stage2OnlyBaseline || undefined,
-                    detectedBaseline: stage2OnlyDetectedBaseline || undefined,
                   });
                 }),
               },
@@ -12774,9 +12769,8 @@ All openings must remain identical in position and size to the original image.`;
         const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
         const openingTimeoutMs = Math.max(
           0,
-          Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || 120000)
+          Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
         );
-        const envelopeTimeoutMs = Math.max(timeoutMs, 120000);
         const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
           jobId: payload.jobId,
           imageId: payload.imageId,
@@ -12788,7 +12782,7 @@ All openings must remain identical in position and size to the original image.`;
             opening: openingTimeoutMs,
             fixture: timeoutMs,
             floor: timeoutMs,
-            envelope: envelopeTimeoutMs,
+            envelope: timeoutMs,
           },
           tasks: {
             opening: () => runSpecialistWithTiming("opening", async () => {
@@ -12813,14 +12807,10 @@ All openings must remain identical in position and size to the original image.`;
               attempt,
             })),
             envelope: () => runSpecialistWithTiming("envelope", async () => {
-              const resolvedOpeningBaseline = await openingBaselinePromise;
-              const resolvedDetectedBaseline = await stage2DetectedBaselinePromise;
               return runEnvelopeValidator(validationBasePath, path2, {
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt,
-                baseline: resolvedOpeningBaseline || undefined,
-                detectedBaseline: resolvedDetectedBaseline || undefined,
               });
             }),
           },

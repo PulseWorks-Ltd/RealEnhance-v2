@@ -81,7 +81,7 @@ const TEST_JOBS = [
     baselineFile: "job_4ceef035-stage1A.jpg",
     stagedFile: "job_4ceef035-stage2.webp",
     baselineUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/realenhance/outputs/1782706114147-realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-1a-delivery.jpg",
-    stagedUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_4ceef035-b334-489c-bf91-3591fa703257/realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-2.webp",
+    stagedUrl: "https://realenhance-bucket.s3.ap-southeast-2.amazonaws.com/debug-attempts/job_4ceef035-b334-489c-bf91-3591fa703257/realenhance-job_4ceef035-b334-489c-bf91-3591fa703257-1782706084255-xp9qm6xmlj-canonical-1A-2.webp?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Content-Sha256=UNSIGNED-PAYLOAD&X-Amz-Credential=AKIA3Y3F4KBX2GFVGYDR%2F20260629%2Fap-southeast-2%2Fs3%2Faws4_request&X-Amz-Date=20260629T040901Z&X-Amz-Expires=86400&X-Amz-Signature=9ba4d12109119c0d5211dc5649079afc760ebdb74e84741fe656d7ffd8a42648&X-Amz-SignedHeaders=host&x-amz-checksum-mode=ENABLED&x-id=GetObject",
     notes: "Expected PASS: Sixth benchmark recovered from attached worker logs",
   },
 ];
@@ -127,17 +127,6 @@ interface DecisionPathTrace {
   stage: string;
   phase: string;
   findings: Record<string, any>;
-}
-
-interface WallEvidenceLineageTrace {
-  semanticWallId: string;
-  wallDisplayName: string;
-  advisoryWallIndex: number;
-  rawStructuralObservations: any[];
-  additionalArchitecturalEvidence: any[];
-  wallUtilisationObservations: any[];
-  deterministicInterpretations: any[];
-  policyEvidence: string[];
 }
 
 interface DiagnosticResult {
@@ -188,17 +177,7 @@ interface DiagnosticResult {
     issueType: string;
     advisorySignals: string[];
     stagedWallVerifications: any[];
-    wallUtilisationObservations: any[];
     additionalArchitecturalEvidence: Record<string, any> | null;
-    rawStructuralObservations: any[];
-    wallEvidenceLineage: WallEvidenceLineageTrace[];
-    stagedConsistency: {
-      status: "CONSISTENT" | "RECONCILABLE" | "INCONSISTENT" | "UNKNOWN";
-      retryPerformed: boolean;
-      retrySuccess: boolean;
-      consistencyFailures: string[];
-    };
-    interpretationCoverageAudit: Record<string, any> | null;
     rawObservationJson: string;
   };
 
@@ -254,7 +233,6 @@ function computeRawInterpretationPolicy(validationResult: any): {
   const significant = interpretations.filter((item: any) => item?.severity === "significant");
   const advisory = interpretations.filter((item: any) => item?.severity === "advisory");
   const structuralFailCategories = new Set([
-    "unsupported_boundary_expansion",
     "wall_plane_introduced",
     "wall_plane_removed",
     "return_wall_introduced",
@@ -274,32 +252,10 @@ function computeRawInterpretationPolicy(validationResult: any): {
     return explicitlyStructural && structurallyMaterialCategory && highSupport;
   });
 
-  const hasUnsupportedBoundaryAndMaterialUsePair = (() => {
-    const byWall = new Map<string, any[]>();
-    for (const item of interpretations) {
-      const wall = String(item?.wallSemanticId || "__global__");
-      const bucket = byWall.get(wall) || [];
-      bucket.push(item);
-      byWall.set(wall, bucket);
-    }
-    for (const items of byWall.values()) {
-      const hasUnsupported = items.some((item) => String(item?.category || "") === "unsupported_boundary_expansion");
-      const hasMaterial = items.some((item) => String(item?.category || "") === "materially_usable_wall_surface_introduced");
-      if (hasUnsupported && hasMaterial) return true;
-    }
-    return false;
-  })();
-
-  if (failInterpretations.length > 0 || hasUnsupportedBoundaryAndMaterialUsePair) {
-    const pairedEvidence = hasUnsupportedBoundaryAndMaterialUsePair
-      ? ["unsupported_boundary_expansion+materially_usable_wall_surface_introduced:combined_boundary_material_signal"]
-      : [];
+  if (failInterpretations.length > 0) {
     return {
       decision: "fail",
-      policyEvidence: [
-        ...failInterpretations.map((item: any) => `${item.category}:${item.summary}`),
-        ...pairedEvidence,
-      ],
+      policyEvidence: failInterpretations.map((item: any) => `${item.category}:${item.summary}`),
     };
   }
 
@@ -347,7 +303,7 @@ function computeCollapsedObservationPolicy(validationResult: any): {
   const observationKeyFor = (item: any): string => {
     const wall = String(item?.wallSemanticId || "global");
     const category = String(item?.category || "unknown");
-    if (["corner_introduced", "wall_plane_introduced", "return_wall_introduced", "adjoining_wall_introduced", "unsupported_boundary_expansion"].includes(category)) {
+    if (["corner_introduced", "wall_plane_introduced", "return_wall_introduced", "adjoining_wall_introduced"].includes(category)) {
       return `adjacent_wall_geometry_introduced:${wall}`;
     }
     if (["corner_removed", "return_wall_removed", "adjoining_wall_removed"].includes(category)) {
@@ -433,24 +389,8 @@ async function runDiagnosticReplay() {
 
   const TEST_IMAGE_DIR = "/workspaces/RealEnhance-v2/Test Images/Envelope Test Images";
   const results: DiagnosticResult[] = [];
-  const requestedJobLabel = process.argv.find((value) => value.startsWith("--job="))?.split("=")[1]
-    || (() => {
-      const idx = process.argv.indexOf("--job");
-      return idx >= 0 ? process.argv[idx + 1] : undefined;
-    })();
-  const selectedJobs = requestedJobLabel
-    ? TEST_JOBS.filter((job) => job.label === requestedJobLabel || job.jobId === requestedJobLabel)
-    : TEST_JOBS;
 
-  if (requestedJobLabel && selectedJobs.length === 0) {
-    throw new Error(`No benchmark job matched --job ${requestedJobLabel}`);
-  }
-
-  if (requestedJobLabel) {
-    console.log(`Running single-job replay for ${requestedJobLabel}`);
-  }
-
-  for (const testJob of selectedJobs) {
+  for (const testJob of TEST_JOBS) {
     console.log(`\n${"═".repeat(70)}`);
     console.log(`📋 JOB: ${testJob.label}`);
     console.log(`   Expected: ${testJob.expectedStatus.toUpperCase()}`);
@@ -540,48 +480,11 @@ async function runDiagnosticReplay() {
       const advisoryOnlyVerificationRequests = (actualDecision as string) === "advisory"
         ? ((validationResult as any).verificationRequests || [])
         : [];
-      const stagedConsistencyStatus = ((validationResult as any).stagedObservationConsistency?.status || "UNKNOWN") as "CONSISTENT" | "RECONCILABLE" | "INCONSISTENT" | "UNKNOWN";
-      const stagedRetryPerformed = !!((validationResult as any).stagedExtractionRetryStatus?.triggered);
-      const stagedRetrySuccess = !!((validationResult as any).stagedExtractionRetryStatus?.retrySucceeded);
-      const stagedConsistencyFailures = Array.isArray((validationResult as any).stagedObservationConsistency?.consistencyFailures)
-        ? (validationResult as any).stagedObservationConsistency.consistencyFailures
-        : [];
-      const rawStructuralObservations = Array.isArray((validationResult as any).rawStructuralObservations)
-        ? (validationResult as any).rawStructuralObservations
-        : [];
-      const wallUtilisationObservations = Array.isArray((validationResult as any).wallUtilisationObservations)
-        ? (validationResult as any).wallUtilisationObservations
-        : [];
-      const wallEvidenceLineage = Array.isArray((validationResult as any).wallEvidenceLineage)
-        ? (validationResult as any).wallEvidenceLineage
-        : [];
-      const interpretationCoverageAudit = (validationResult as any).interpretationCoverageAudit || null;
       console.log(`   ✓ Validator decision: ${actualStatus.toUpperCase()}`);
       console.log(`   ✓ Envelope policy decision: ${String(actualDecision).toUpperCase()}`);
       console.log(`   ✓ Previous (collapsed observation) decision: ${String(previousDecision).toUpperCase()}`);
       console.log(`   ✓ Raw interpretation count: ${rawInterpretationCount}`);
       console.log(`   ✓ Architectural observations generated: ${architecturalObservationsGenerated ? "YES" : "NO"}`);
-      console.log(`   ✓ Staged consistency status: ${stagedConsistencyStatus}`);
-      console.log(`   ✓ Staged retry performed: ${stagedRetryPerformed ? "YES" : "NO"}`);
-      console.log(`   ✓ Staged retry success: ${stagedRetrySuccess ? "YES" : "NO"}`);
-      console.log(`   ✓ Raw structural observations: ${rawStructuralObservations.length}`);
-      console.log(`   ✓ Wall utilisation observations: ${wallUtilisationObservations.length}`);
-      console.log(`   ✓ Wall evidence lineage rows: ${wallEvidenceLineage.length}`);
-      if (interpretationCoverageAudit) {
-        console.log(`   ✓ Interpretation coverage: ${interpretationCoverageAudit.coveragePercent}% (${interpretationCoverageAudit.coveredObservationCount}/${interpretationCoverageAudit.rawStructuralObservationCount})`);
-        if (Array.isArray(interpretationCoverageAudit.missingObservations) && interpretationCoverageAudit.missingObservations.length > 0) {
-          console.log(`   ✓ Missing observations (coverage loss):`);
-          interpretationCoverageAudit.missingObservations.forEach((item: any) => {
-            console.log(`     - ${item.code}:${item.reason}`);
-          });
-        }
-      }
-      if (stagedConsistencyFailures.length > 0) {
-        console.log(`   ✓ Staged consistency failures:`);
-        stagedConsistencyFailures.forEach((failure: string) => {
-          console.log(`     - ${failure}`);
-        });
-      }
       console.log(`   ✓ Confidence: ${validationResult.confidence}`);
       console.log(`   ✓ Hard fail: ${validationResult.hardFail}`);
       console.log(`   ✓ Issue type: ${validationResult.issueType || "none"}`);
@@ -657,17 +560,7 @@ async function runDiagnosticReplay() {
           issueType: validationResult.issueType || "none",
           advisorySignals: validationResult.advisorySignals || [],
           stagedWallVerifications: (validationResult as any).stagedWallVerifications || [],
-          wallUtilisationObservations,
           additionalArchitecturalEvidence: (validationResult as any).additionalArchitecturalEvidence || null,
-          rawStructuralObservations,
-          wallEvidenceLineage,
-          stagedConsistency: {
-            status: stagedConsistencyStatus,
-            retryPerformed: stagedRetryPerformed,
-            retrySuccess: stagedRetrySuccess,
-            consistencyFailures: stagedConsistencyFailures,
-          },
-          interpretationCoverageAudit,
           rawObservationJson: (validationResult as any).guidedObservationRawGeminiJson || "",
         },
 
@@ -723,11 +616,6 @@ async function runDiagnosticReplay() {
             findings: {
               stagedWallVerifications: ((validationResult as any).stagedWallVerifications || []).length,
               additionalArchitecturalEvidence: (validationResult as any).additionalArchitecturalEvidence || null,
-              wallEvidenceLineageRows: wallEvidenceLineage.length,
-              stagedConsistencyStatus,
-              stagedRetryPerformed,
-              stagedRetrySuccess,
-              stagedConsistencyFailures,
             },
           },
           {
@@ -736,8 +624,6 @@ async function runDiagnosticReplay() {
             findings: {
               interpretations: (validationResult as any).deterministicStructuralInterpretations || [],
               architecturalObservations: (validationResult as any).architecturalObservations || [],
-              rawStructuralObservations,
-              interpretationCoverageAudit,
             },
           },
           {
@@ -753,31 +639,6 @@ async function runDiagnosticReplay() {
       };
 
       results.push(diagnosticResult);
-
-      const coverage = diagnosticResult.observationExtraction.interpretationCoverageAudit;
-      if (coverage) {
-        console.log(`   Evidence Loss Audit (Raw Structural Observations -> Deterministic Interpretations):`);
-        for (const row of coverage.rows || []) {
-          const status = row.lost ? "LOST" : "PRESERVED";
-          const interpretations = Array.isArray(row.deterministicInterpretations) && row.deterministicInterpretations.length > 0
-            ? row.deterministicInterpretations.join(", ")
-            : "none";
-          console.log(`     - ${status} | ${row.rawStructuralObservation} -> ${interpretations}${row.reason ? ` | ${row.reason}` : ""}`);
-        }
-      }
-
-      if (Array.isArray(diagnosticResult.observationExtraction.wallEvidenceLineage) && diagnosticResult.observationExtraction.wallEvidenceLineage.length > 0) {
-        console.log(`   Semantic Wall Lineage Matrix:`);
-        console.log(`     Semantic Wall ↓ Raw Structural Observations ↓ Additional Architectural Evidence ↓ Wall Utilisation ↓ Deterministic Interpretations ↓ Policy Evidence`);
-        for (const row of diagnosticResult.observationExtraction.wallEvidenceLineage) {
-          const rawCount = Array.isArray(row.rawStructuralObservations) ? row.rawStructuralObservations.length : 0;
-          const addlCount = Array.isArray(row.additionalArchitecturalEvidence) ? row.additionalArchitecturalEvidence.length : 0;
-          const utilCount = Array.isArray(row.wallUtilisationObservations) ? row.wallUtilisationObservations.length : 0;
-          const interpCount = Array.isArray(row.deterministicInterpretations) ? row.deterministicInterpretations.length : 0;
-          const policyCount = Array.isArray(row.policyEvidence) ? row.policyEvidence.length : 0;
-          console.log(`     - ${row.wallDisplayName} (${row.semanticWallId}): raw=${rawCount}, additional=${addlCount}, utilisation=${utilCount}, interpretations=${interpCount}, policy=${policyCount}`);
-        }
-      }
     } catch (error: any) {
       console.error(`   ❌ ERROR: ${error.message}\n`);
       results.push({
@@ -790,26 +651,7 @@ async function runDiagnosticReplay() {
         baseline: { openingsCount: 0, fixturesCount: 0, wallDescriptorsCount: 0, wallDescriptors: [], graphConfidence: 0, baselineMethod: "error" },
         fullyInterpolatedPrompt: "",
         geometricMetrics: { verticalEdgeLoss: false, cornerPersistenceFailure: false, worstRetention: "N/A", junctionCount: 0, beforeEdges: 0, afterEdges: 0, deterministic: { verticalEdgeDeltaTriggered: false, reason: error.message } },
-        observationExtraction: {
-          modelStatus: "error",
-          reason: error.message,
-          confidence: 0,
-          issueType: "error",
-          advisorySignals: [],
-          stagedWallVerifications: [],
-          wallUtilisationObservations: [],
-          additionalArchitecturalEvidence: null,
-          rawStructuralObservations: [],
-          wallEvidenceLineage: [],
-          stagedConsistency: {
-            status: "UNKNOWN",
-            retryPerformed: false,
-            retrySuccess: false,
-            consistencyFailures: [],
-          },
-          interpretationCoverageAudit: null,
-          rawObservationJson: "",
-        },
+        observationExtraction: { modelStatus: "error", reason: error.message, confidence: 0, issueType: "error", advisorySignals: [], stagedWallVerifications: [], additionalArchitecturalEvidence: null, rawObservationJson: "" },
         deterministicDecision: {
           geometricSignal: "ERROR",
           structuralSignal: "ERROR",
@@ -898,20 +740,6 @@ async function runDiagnosticReplay() {
     const strategy = (result.baseline.baselineExtractionStrategy || result.baseline.baselineMethod || "unknown").slice(0, 24).padEnd(24);
     const reliability = (result.baseline.baselineReliability || "unknown").padEnd(11);
     console.log(`| ${result.label.padEnd(15)} | ${String(observationCount).padEnd(12)} | ${fallback.padEnd(8)} | ${strategy} | ${reliability} |`);
-  }
-  console.log(`${"─".repeat(140)}\n`);
-
-  console.log(`Interpretation Coverage`);
-  console.log(`${"─".repeat(140)}`);
-  console.log(`| Job ID          | Raw Structural Observations | Deterministic Interpretations | Coverage | Missing |`);
-  console.log(`${"─".repeat(140)}`);
-  for (const result of results) {
-    const coverage = result.observationExtraction.interpretationCoverageAudit || {};
-    const rawCount = Number.isFinite(Number(coverage.rawStructuralObservationCount)) ? Number(coverage.rawStructuralObservationCount) : 0;
-    const interpCount = Number.isFinite(Number(coverage.deterministicInterpretationCount)) ? Number(coverage.deterministicInterpretationCount) : 0;
-    const coverageLabel = Number.isFinite(Number(coverage.coveragePercent)) ? `${Number(coverage.coveragePercent).toFixed(2)}%` : "n/a";
-    const missingCount = Array.isArray(coverage.missingObservations) ? coverage.missingObservations.length : 0;
-    console.log(`| ${result.label.padEnd(15)} | ${String(rawCount).padEnd(27)} | ${String(interpCount).padEnd(29)} | ${coverageLabel.padEnd(8)} | ${String(missingCount).padEnd(7)} |`);
   }
   console.log(`${"─".repeat(140)}\n`);
 
