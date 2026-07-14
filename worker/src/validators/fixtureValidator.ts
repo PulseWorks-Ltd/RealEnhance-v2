@@ -3,7 +3,7 @@ import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { computeMaterialSignal, computeOpeningGeometrySignal } from "./signalMetrics";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, normalizeReason, splitIssueTokens, type StructuredIssue } from "./issueTypes";
-import type { ValidatorOutcome } from "./validatorOutcome";
+import { ValidatorAuthority, assertValidatorAuthorityInvariant, type ValidatorOutcome } from "./validatorOutcome";
 
 const logger = console;
 const FIXTURE_HARD_FAIL_CONFIDENCE_THRESHOLD = 0.9;
@@ -255,8 +255,21 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
     issueType,
   });
 
+  const authority = hardFail
+    ? ValidatorAuthority.BLOCKING
+    : parsed.ok
+      ? ValidatorAuthority.PASS
+      : ValidatorAuthority.ADVISORY;
+  assertValidatorAuthorityInvariant({
+    authority,
+    passed: parsed.ok,
+    hardFail,
+    source: "fixture.parseFixtureResult",
+  });
+
   return {
     status: parsed.ok ? "pass" : "fail",
+    authority,
     reason,
     confidence,
     hardFail,

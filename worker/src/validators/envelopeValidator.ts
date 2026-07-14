@@ -2,7 +2,7 @@ import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
-import type { ValidatorOutcome } from "./validatorOutcome";
+import { ValidatorAuthority, assertValidatorAuthorityInvariant, type ValidatorOutcome } from "./validatorOutcome";
 import { computeVerticalEdgeDelta, type VerticalEdgeDeltaResult } from "./verticalEdgeDelta";
 import type { StructuralSignal } from "./structuralSignal";
 
@@ -147,12 +147,25 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     reason: reasonCode || "envelope_preserved",
   });
 
+  const authority = hardFail
+    ? ValidatorAuthority.BLOCKING
+    : parsed.ok
+      ? ValidatorAuthority.PASS
+      : ValidatorAuthority.ADVISORY;
+  assertValidatorAuthorityInvariant({
+    authority,
+    passed: parsed.ok,
+    hardFail,
+    source: "envelope.parseEnvelopeResult",
+  });
+
   // ENVELOPE ADVISORY DEMOTION: Envelope validator is always advisory.
   // Subtle geometry changes (recess flattened, indentation removed, corner smoothed,
   // vertical edge loss) must NOT hard-fail. These signals are passed to Unified for
   // adjudication. True opening removals are caught by the opening validator.
   return {
     status: parsed.ok ? "pass" : "fail",
+    authority,
     reason,
     confidence,
     hardFail,

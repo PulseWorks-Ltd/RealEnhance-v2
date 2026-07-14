@@ -12,7 +12,7 @@ import {
 } from "./openingPreservationValidator";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue, type ValidationIssueType } from "./issueTypes";
 import { computeOpeningGeometrySignal } from "./signalMetrics";
-import type { ValidatorOutcome } from "./validatorOutcome";
+import { ValidatorAuthority, assertValidatorAuthorityInvariant, type ValidatorOutcome } from "./validatorOutcome";
 import type { AdvisoryObservation } from "./runValidation";
 
 export type OpeningValidatorDetail = {
@@ -1175,8 +1175,21 @@ export function parseOpeningResult(rawText: string): OpeningValidatorResult {
 
   console.log("[OPENINGS_COMPARISON]", comparisonResult);
 
+  const authority = hardFail
+    ? ValidatorAuthority.BLOCKING
+    : advisorySignals.length > 0
+      ? ValidatorAuthority.ADVISORY
+      : ValidatorAuthority.PASS;
+  assertValidatorAuthorityInvariant({
+    authority,
+    passed: pass,
+    hardFail,
+    source: "opening.fallbackComparison",
+  });
+
   return {
     status: pass ? "pass" : "fail",
+    authority,
     reason,
     confidence,
     hardFail,
@@ -2544,8 +2557,20 @@ export async function runOpeningValidator(
 
     logOpeningPhaseStart(options?.jobId, "decision_generation");
     const decisionGenerationStartedAt = Date.now();
+    const decisionAuthority = hardFail
+      ? ValidatorAuthority.BLOCKING
+      : hasAdvisoryIssue
+        ? ValidatorAuthority.ADVISORY
+        : ValidatorAuthority.PASS;
+    assertValidatorAuthorityInvariant({
+      authority: decisionAuthority,
+      passed: !hardFail,
+      hardFail,
+      source: "opening.decisionResult",
+    });
     const decisionResult: OpeningValidatorResult = {
       status: hardFail ? "fail" as const : "pass" as const,
+      authority: decisionAuthority,
       reason,
       confidence: comparisonResult.confidence,
       hardFail,

@@ -1,8 +1,35 @@
 import type { StructuredIssue, ValidationIssueTier, ValidationIssueType } from "./issueTypes";
 import type { StructuralSignal } from "./structuralSignal";
 
+export enum ValidatorAuthority {
+  PASS = "pass",
+  ADVISORY = "advisory",
+  BLOCKING = "blocking",
+}
+
+export function assertValidatorAuthorityInvariant(params: {
+  authority: ValidatorAuthority;
+  passed: boolean;
+  hardFail: boolean;
+  source: string;
+}): void {
+  if (params.authority === ValidatorAuthority.BLOCKING && params.passed) {
+    throw new Error(`[VALIDATOR_AUTHORITY_INVARIANT] ${params.source}: blocking authority cannot be passed=true`);
+  }
+  if (params.authority === ValidatorAuthority.PASS && !params.passed) {
+    throw new Error(`[VALIDATOR_AUTHORITY_INVARIANT] ${params.source}: pass authority cannot be passed=false`);
+  }
+  if (params.authority === ValidatorAuthority.BLOCKING && params.hardFail !== true) {
+    throw new Error(`[VALIDATOR_AUTHORITY_INVARIANT] ${params.source}: blocking authority requires hardFail=true`);
+  }
+  if (params.hardFail === true && params.authority !== ValidatorAuthority.BLOCKING) {
+    throw new Error(`[VALIDATOR_AUTHORITY_INVARIANT] ${params.source}: hardFail=true requires blocking authority`);
+  }
+}
+
 export type ValidatorOutcome = {
   status: "pass" | "fail";
+  authority: ValidatorAuthority;
   decision?: "pass" | "advisory" | "fail";
   verificationRequests?: string[];
   reason: string;

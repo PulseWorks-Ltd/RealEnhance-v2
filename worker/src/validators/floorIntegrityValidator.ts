@@ -2,7 +2,7 @@ import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
-import type { ValidatorOutcome } from "./validatorOutcome";
+import { ValidatorAuthority, assertValidatorAuthorityInvariant, type ValidatorOutcome } from "./validatorOutcome";
 
 export type FloorIntegrityValidatorResult = ValidatorOutcome;
 
@@ -229,8 +229,21 @@ export function parseFloorIntegrityResult(rawText: string): FloorIntegrityValida
     issueType,
   });
 
+  const authority = hardFail
+    ? ValidatorAuthority.BLOCKING
+    : finalOk
+      ? ValidatorAuthority.PASS
+      : ValidatorAuthority.ADVISORY;
+  assertValidatorAuthorityInvariant({
+    authority,
+    passed: finalOk,
+    hardFail,
+    source: "floor.parseFloorIntegrityResult",
+  });
+
   return {
     status: finalOk ? "pass" : "fail",
+    authority,
     reason,
     confidence,
     hardFail,

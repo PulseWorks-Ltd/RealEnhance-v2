@@ -104,6 +104,7 @@ import {
   type UnifiedValidationResult,
   type AdvisoryObservation,
 } from "./validators/runValidation";
+import { ValidatorAuthority, assertValidatorAuthorityInvariant } from "./validators/validatorOutcome";
 import { runStage1BUnifiedGate } from "./validators/stage1BUnifiedGate";
 import { getStage2ValidationModeFromPromptMode } from "./validators/stage2ValidationMode";
 import { shouldRetry as evidenceShouldRetry, classifyRisk, type ValidationEvidence } from "./validators/validationEvidence";
@@ -12210,6 +12211,7 @@ All openings must remain identical in position and size to the original image.`;
       };
 
       type SpecialistDecisionResult = {
+        authority: ValidatorAuthority;
         pass: boolean;
         hardFail: boolean;
         confidence: number;
@@ -12227,8 +12229,8 @@ All openings must remain identical in position and size to the original image.`;
 
       const normalizeSpecialistResult = (params: {
         validator: "opening" | "fixture" | "envelope" | "floor";
+        authority: ValidatorAuthority;
         status?: string;
-        hardFail?: boolean;
         reason?: string;
         confidence?: number;
         advisorySignals?: string[];
@@ -12237,9 +12239,21 @@ All openings must remain identical in position and size to the original image.`;
         primaryStructuredIssue?: StructuredIssue;
         structuredIssues?: StructuredIssue[];
       }): SpecialistDecisionResult => {
-        // SINGLE-AUTHORITY: Only explicit hardFail determines specialist failure.
-        // status="fail" with hardFail=false is advisory — passed to Unified for adjudication.
-        const pass = params.hardFail !== true;
+        // Specialist validators own authority decisions. Worker consumes authority as-is.
+        const pass = params.authority !== ValidatorAuthority.BLOCKING;
+        const hardFail = params.authority === ValidatorAuthority.BLOCKING;
+        assertValidatorAuthorityInvariant({
+          authority: params.authority,
+          passed: pass,
+          hardFail,
+          source: `worker.normalizeSpecialistResult:${params.validator}`,
+        });
+        if (params.status === "pass" && params.authority === ValidatorAuthority.BLOCKING) {
+          throw new Error(`[VALIDATOR_AUTHORITY_INVARIANT] worker.normalizeSpecialistResult:${params.validator}: status=pass cannot use blocking authority`);
+        }
+        if (params.status === "fail" && params.authority === ValidatorAuthority.PASS) {
+          throw new Error(`[VALIDATOR_AUTHORITY_INVARIANT] worker.normalizeSpecialistResult:${params.validator}: status=fail cannot use pass authority`);
+        }
         const preserveSemanticAuthority =
           (params.validator === "opening" || params.validator === "envelope") &&
           !!params.issueType &&
@@ -12249,7 +12263,7 @@ All openings must remain identical in position and size to the original image.`;
           ? clamp01(rawConfidence)
           : pass
             ? 0
-            : params.hardFail === true
+            : hardFail
               ? 0.9
               : 0.6;
         const issueType: ValidationIssueType = preserveSemanticAuthority
@@ -12271,8 +12285,9 @@ All openings must remain identical in position and size to the original image.`;
               : "low";
 
         return {
+          authority: params.authority,
           pass,
-          hardFail: params.hardFail === true,
+          hardFail,
           confidence,
           reason: params.reason,
           issueType,
@@ -12507,14 +12522,15 @@ All openings must remain identical in position and size to the original image.`;
         envelope: SpecialistDecisionResult;
         floor: SpecialistDecisionResult;
       } = {
-        opening: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
-        fixture: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
-        envelope: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
-        floor: { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        opening: { authority: ValidatorAuthority.PASS, pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        fixture: { authority: ValidatorAuthority.PASS, pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        envelope: { authority: ValidatorAuthority.PASS, pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
+        floor: { authority: ValidatorAuthority.PASS, pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" },
       };
 
       type SpecialistIssueSignal = {
         validator: Stage2SignalValidator;
+        authority?: ValidatorAuthority;
         issueType?: string;
         semanticIssueType?: string;
         semanticIssueTier?: string;
@@ -12601,6 +12617,7 @@ All openings must remain identical in position and size to the original image.`;
       ) => {
         specialistIssueSignals.push({
           validator,
+          authority: result.authority,
           issueType: result.issueType,
           semanticIssueType: result.semanticIssueType,
           semanticIssueTier: result.semanticIssueTier,
@@ -12802,8 +12819,8 @@ All openings must remain identical in position and size to the original image.`;
         }
         specialistResults.opening = normalizeSpecialistResult({
           validator: "opening",
+          authority: opRes.authority,
           status: opRes.status,
-          hardFail: opRes.hardFail,
           reason: opRes.reason,
           confidence: opRes.confidence,
           advisorySignals: opRes.advisorySignals,
@@ -13024,8 +13041,8 @@ All openings must remain identical in position and size to the original image.`;
 
         specialistResults.fixture = normalizeSpecialistResult({
           validator: "fixture",
+          authority: fixRes.authority,
           status: fixRes.status,
-          hardFail: fixRes.hardFail,
           reason: fixRes.reason,
           confidence: fixRes.confidence,
           advisorySignals: fixRes.advisorySignals,
@@ -13098,8 +13115,8 @@ All openings must remain identical in position and size to the original image.`;
 
         specialistResults.floor = normalizeSpecialistResult({
           validator: "floor",
+          authority: floorRes.authority,
           status: floorRes.status,
-          hardFail: floorRes.hardFail,
           reason: floorRes.reason,
           confidence: floorRes.confidence,
           advisorySignals: floorRes.advisorySignals,
@@ -13175,8 +13192,8 @@ All openings must remain identical in position and size to the original image.`;
         }
         specialistResults.envelope = normalizeSpecialistResult({
           validator: "envelope",
+          authority: envRes.authority,
           status: envRes.status,
-          hardFail: envRes.hardFail,
           reason: envRes.reason,
           confidence: envRes.confidence,
           advisorySignals: envRes.advisorySignals,
@@ -13655,6 +13672,84 @@ All openings must remain identical in position and size to the original image.`;
           reason: specialistReason,
           action: "telemetry_only",
         });
+      }
+
+      // STRICT SPECIALIST AUTHORITY:
+      // A specialist-authoritative hard fail is non-overridable.
+      // The specialist owns confidence/issue policy internally.
+      // Worker only consumes authority=blocking and skips Unified.
+      const nonOverridableSpecialistHardFail = specialistIssueSignals.find((signal) => {
+        return signal.authority === ValidatorAuthority.BLOCKING;
+      });
+
+      if (nonOverridableSpecialistHardFail) {
+        const blockedIssueType = (nonOverridableSpecialistHardFail.issueType || ISSUE_TYPES.UNIFIED_FAILURE) as ValidationIssueType;
+        const blockedReason = normalizeValidatorReason(nonOverridableSpecialistHardFail.reason || "specialist_hardfail");
+        const decisionReason = `specialist_hardfail_short_circuit:${blockedIssueType}:${blockedReason}`;
+
+        nLog("[STAGE2_SPECIALIST_HARDFAIL_SHORT_CIRCUIT]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          validator: nonOverridableSpecialistHardFail.validator,
+          authority: nonOverridableSpecialistHardFail.authority,
+          issueType: blockedIssueType,
+          reason: nonOverridableSpecialistHardFail.reason,
+          source: "specialist_hardfail_short_circuit",
+          action: "blocked_pre_unified",
+        });
+
+        unifiedValidation = {
+          passed: false,
+          hardFail: true,
+          blockSource: "specialist_hardfail_short_circuit" as any,
+          reasons: [decisionReason],
+          warnings: [decisionReason],
+          issueType: blockedIssueType,
+          issueTier: classifyIssueTier(blockedIssueType),
+          score: 0,
+        } as any;
+
+        setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+        pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [blockedIssueType]);
+
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logRefreshValidationTrace({
+            specialistHardFail: true,
+            geminiDecision: "FAIL",
+            finalDecision: "RETRY",
+            reason: decisionReason,
+          });
+          logValidateFinal(attempt, "retry", attempt);
+          logStage2Retry(attempt, normalizeValidatorReason(decisionReason));
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: normalizeValidatorReason(decisionReason),
+          });
+          continue;
+        }
+
+        const fallbackPath = stageLineage.stage1B.committed && stageLineage.stage1B.output
+          ? stageLineage.stage1B.output
+          : path1A;
+        const fallbackStage = fallbackPath === path1A ? "1A" : "1B";
+        stage2Blocked = true;
+        stage2FallbackStage = fallbackStage;
+        stage2BlockedReason = `specialist_hardfail_short_circuit_exhausted:${normalizeValidatorReason(decisionReason)}`;
+        fallbackUsed = fallbackStage === "1B" ? "stage2_structure_fallback_1b" : "stage2_structure_fallback_1a";
+        path2 = fallbackPath;
+        stage2CandidatePath = fallbackPath;
+        logRefreshValidationTrace({
+          specialistHardFail: true,
+          geminiDecision: "FAIL",
+          finalDecision: "RETRY",
+          reason: decisionReason,
+        });
+        logValidateFinal(attempt, "reject", attempt - 1);
+        break;
       }
 
       const isTargetCriticalFixtureChange = (signal: SpecialistIssueSignal): boolean => {
