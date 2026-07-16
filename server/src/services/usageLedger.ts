@@ -134,17 +134,47 @@ export async function consumeFreeEditCount(params: {
 
 async function getPlanLimitForAgency(agencyId: string): Promise<number> {
   const agency = await getAgency(agencyId);
-  const hasActiveStripeSubscription =
-    !!agency?.stripeSubscriptionId &&
-    (agency?.subscriptionStatus === "ACTIVE" || agency?.subscriptionStatus === "TRIAL");
+  const allowanceRow = await pool.query<{ monthly_included_images: number | null }>(
+    `SELECT monthly_included_images FROM agency_accounts WHERE agency_id = $1 LIMIT 1`,
+    [agencyId]
+  );
+  const monthlyImageAllowance = Number(allowanceRow.rows[0]?.monthly_included_images || 0);
 
-  if (!hasActiveStripeSubscription) {
+  const logEntitlementDecision = (calculatedIncludedLimit: number, reasonIncludedLimitWasChosen: string) => {
+    if (String(process.env.USAGE_ENTITLEMENT_DEBUG || "").trim() !== "1") return;
+    console.log("[USAGE_ENTITLEMENT_DECISION]", {
+      "agency.id": agency?.agencyId || agencyId,
+      "agency.name": agency?.name || null,
+      "agency.planTier": agency?.planTier || null,
+      "agency.subscriptionStatus": agency?.subscriptionStatus || null,
+      "agency.stripeSubscriptionId": agency?.stripeSubscriptionId || null,
+      "agency.stripeCustomerId": agency?.stripeCustomerId || null,
+      "agency.monthlyImageAllowance": monthlyImageAllowance,
+      calculatedIncludedLimit,
+      reasonIncludedLimitWasChosen,
+    });
+  };
+
+  const hasEntitledStatus =
+    agency?.subscriptionStatus === "ACTIVE" || agency?.subscriptionStatus === "TRIAL";
+
+  if (!hasEntitledStatus) {
+    logEntitlementDecision(0, "subscription_status_not_entitled");
     return 0;
   }
 
-  const tier = (agency?.planTier as PlanTier) || "starter";
+  // Do not infer starter allowance when planTier is missing; this avoids
+  // granting quota to legacy/null-plan agencies that only carry defaulted status.
+  const tier = agency?.planTier as PlanTier | null | undefined;
+  if (!tier) {
+    logEntitlementDecision(0, "missing_plan_tier");
+    return 0;
+  }
+
   const limits = PLAN_LIMITS[tier];
-  return limits.mainAllowance;
+  const includedLimit = limits.mainAllowance;
+  logEntitlementDecision(includedLimit, "entitled_status_and_plan_tier");
+  return includedLimit;
 }
 
 async function getBillingCycleKey(agencyId: string): Promise<string> {
