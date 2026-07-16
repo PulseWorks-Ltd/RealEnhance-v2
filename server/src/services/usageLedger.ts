@@ -133,16 +133,20 @@ export async function consumeFreeEditCount(params: {
 }
 
 async function getPlanLimitForAgency(agencyId: string): Promise<number> {
+  console.log("ALLOWANCE_ROOT_CAUSE_TRACE enter getPlanLimitForAgency", { agencyId });
   const agency = await getAgency(agencyId);
   const allowanceRow = await pool.query<{ monthly_included_images: number | null }>(
     `SELECT monthly_included_images FROM agency_accounts WHERE agency_id = $1 LIMIT 1`,
     [agencyId]
   );
   const monthlyImageAllowance = Number(allowanceRow.rows[0]?.monthly_included_images || 0);
+  const tier = agency?.planTier as PlanTier | null | undefined;
+  const expectedPlanAllowance = tier && PLAN_LIMITS[tier]
+    ? PLAN_LIMITS[tier].mainAllowance
+    : 0;
 
   const logEntitlementDecision = (calculatedIncludedLimit: number, reasonIncludedLimitWasChosen: string) => {
-    if (String(process.env.USAGE_ENTITLEMENT_DEBUG || "").trim() !== "1") return;
-    console.log("[USAGE_ENTITLEMENT_DECISION]", {
+    console.log("ALLOWANCE_ROOT_CAUSE_TRACE return getPlanLimitForAgency", {
       "agency.id": agency?.agencyId || agencyId,
       "agency.name": agency?.name || null,
       "agency.planTier": agency?.planTier || null,
@@ -150,13 +154,27 @@ async function getPlanLimitForAgency(agencyId: string): Promise<number> {
       "agency.stripeSubscriptionId": agency?.stripeSubscriptionId || null,
       "agency.stripeCustomerId": agency?.stripeCustomerId || null,
       "agency.monthlyImageAllowance": monthlyImageAllowance,
+      expectedPlanAllowance,
       calculatedIncludedLimit,
       reasonIncludedLimitWasChosen,
+      zeroOrigin: expectedPlanAllowance > 0 && calculatedIncludedLimit === 0,
     });
   };
 
   const hasEntitledStatus =
     agency?.subscriptionStatus === "ACTIVE" || agency?.subscriptionStatus === "TRIAL";
+  console.log("ALLOWANCE_ROOT_CAUSE_TRACE inputs getPlanLimitForAgency", {
+    agencyId,
+    agencyFound: Boolean(agency),
+    agencyName: agency?.name || null,
+    agencyPlanTier: agency?.planTier || null,
+    agencySubscriptionStatus: agency?.subscriptionStatus || null,
+    agencyStripeSubscriptionId: agency?.stripeSubscriptionId || null,
+    agencyStripeCustomerId: agency?.stripeCustomerId || null,
+    monthlyImageAllowance,
+    expectedPlanAllowance,
+    hasEntitledStatus,
+  });
 
   if (!hasEntitledStatus) {
     logEntitlementDecision(0, "subscription_status_not_entitled");
@@ -165,14 +183,12 @@ async function getPlanLimitForAgency(agencyId: string): Promise<number> {
 
   // Do not infer starter allowance when planTier is missing; this avoids
   // granting quota to legacy/null-plan agencies that only carry defaulted status.
-  const tier = agency?.planTier as PlanTier | null | undefined;
   if (!tier) {
     logEntitlementDecision(0, "missing_plan_tier");
     return 0;
   }
 
-  const limits = PLAN_LIMITS[tier];
-  const includedLimit = limits.mainAllowance;
+  const includedLimit = expectedPlanAllowance;
   logEntitlementDecision(includedLimit, "entitled_status_and_plan_tier");
   return includedLimit;
 }
@@ -207,6 +223,11 @@ async function lockAgencyAccount(client: PoolClient, agencyId: string) {
 }
 
 async function ensureMonthUsage(client: PoolClient, agencyId: string, monthKey: string, includedLimit: number) {
+  console.log("ALLOWANCE_ROOT_CAUSE_TRACE enter ensureMonthUsage", {
+    agencyId,
+    monthKey,
+    inputIncludedLimit: includedLimit,
+  });
   await client.query(
     `INSERT INTO agency_month_usage (agency_id, yyyymm, included_limit)
      VALUES ($1, $2, $3)
@@ -219,12 +240,45 @@ async function ensureMonthUsage(client: PoolClient, agencyId: string, monthKey: 
     `SELECT * FROM agency_month_usage WHERE agency_id = $1 AND yyyymm = $2 FOR UPDATE`,
     [agencyId, monthKey]
   );
-  return res.rows[0];
+  const row = res.rows[0];
+  const rowIncludedLimit = Number(row?.included_limit || 0);
+  console.log("ALLOWANCE_ROOT_CAUSE_TRACE return ensureMonthUsage", {
+    agencyId,
+    monthKey,
+    previousValue: includedLimit,
+    nextValue: rowIncludedLimit,
+    inputIncludedLimit: includedLimit,
+    rowIncludedLimit,
+    rowIncludedUsed: Number(row?.included_used || 0),
+    valueChanged: rowIncludedLimit !== includedLimit,
+    zeroOrigin: includedLimit > 0 && rowIncludedLimit === 0,
+    reason: rowIncludedLimit === includedLimit
+      ? "month_usage_row_preserved_included_limit"
+      : "month_usage_row_changed_included_limit",
+  });
+  return row;
 }
 
 function buildSnapshot(row: any, addonRemaining: number, monthKey: string): UsageSnapshot {
   const safeAddon = Math.max(0, addonRemaining);
   const includedRemaining = Math.max(0, row.included_limit - row.included_used);
+  console.log("ALLOWANCE_ROOT_CAUSE_TRACE buildSnapshot", {
+    monthKey,
+    previousValue: Number(row.included_limit || 0),
+    nextValue: includedRemaining,
+    rowIncludedLimit: row.included_limit,
+    rowIncludedUsed: row.included_used,
+    rowAddonUsed: row.addon_used,
+    addonRemaining,
+    safeAddon,
+    includedRemaining,
+    totalRemaining: includedRemaining + safeAddon,
+    valueChanged: includedRemaining !== Number(row.included_limit || 0),
+    zeroOrigin: Number(row.included_limit || 0) > 0 && includedRemaining === 0,
+    reason: includedRemaining === 0
+      ? "included_used_exhausted_or_exceeded_included_limit"
+      : "included_remaining_nonzero",
+  });
   return {
     includedLimit: row.included_limit,
     includedUsed: row.included_used,
@@ -733,10 +787,26 @@ export async function incrementEdit(jobId: string): Promise<{ locked: boolean; e
 }
 
 export async function getUsageSnapshot(agencyId: string, userId?: string): Promise<UsageSnapshot> {
+  console.log("ALLOWANCE_ROOT_CAUSE_TRACE enter getUsageSnapshot", { agencyId, userId: userId || null });
   const monthKey = await getBillingCycleKey(agencyId);
   return withTransaction(async (client) => {
     const includedLimit = await getPlanLimitForAgency(agencyId);
     const agency = await getAgency(agencyId);
+    const expectedPlanAllowance = agency?.planTier && PLAN_LIMITS[agency.planTier as PlanTier]
+      ? PLAN_LIMITS[agency.planTier as PlanTier].mainAllowance
+      : 0;
+    console.log("ALLOWANCE_ROOT_CAUSE_TRACE after getPlanLimitForAgency", {
+      agencyId,
+      monthKey,
+      previousValue: expectedPlanAllowance,
+      nextValue: includedLimit,
+      includedLimit,
+      agencyPlanTier: agency?.planTier || null,
+      agencySubscriptionStatus: agency?.subscriptionStatus || null,
+      agencyStripeSubscriptionId: agency?.stripeSubscriptionId || null,
+      valueChanged: includedLimit !== expectedPlanAllowance,
+      zeroOrigin: expectedPlanAllowance > 0 && includedLimit === 0,
+    });
     await upsertAgencyAccount(client, agencyId, includedLimit, agency?.planTier ?? undefined);
     const usage = await ensureMonthUsage(client, agencyId, monthKey, includedLimit);
     const addonRemaining = await getTotalBundleRemaining(agencyId, monthKey);
@@ -744,6 +814,23 @@ export async function getUsageSnapshot(agencyId: string, userId?: string): Promi
     if (userId) {
       snap.pilotPromo = await getPilotPromoSummary(agencyId, userId);
     }
+    console.log("ALLOWANCE_ROOT_CAUSE_TRACE return getUsageSnapshot", {
+      agencyId,
+      userId: userId || null,
+      monthKey,
+      previousValue: snap.includedLimit,
+      nextValue: snap.remaining,
+      includedLimit: snap.includedLimit,
+      includedUsed: snap.includedUsed,
+      includedRemaining: snap.includedRemaining,
+      addonRemaining: snap.addonRemaining,
+      remaining: snap.remaining,
+      pilotPromoRemaining: snap.pilotPromo?.promoCreditsRemaining || null,
+      zeroOrigin: snap.includedLimit > 0 && snap.remaining === 0,
+      reason: snap.remaining === 0
+        ? "snapshot_total_remaining_zero"
+        : "snapshot_total_remaining_nonzero",
+    });
     return snap;
   });
 }
