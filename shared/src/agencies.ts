@@ -10,6 +10,32 @@ function normalizeAgencyProcessingMode(value: unknown): AgencyProcessingMode {
   return String(value || "").trim().toLowerCase() === "safe" ? "safe" : "full";
 }
 
+// Statuses that entitle an agency to a monthly image allowance (see usageLedger.ts
+// getPlanLimitForAgency). Any agency persisted in one of these statuses must carry
+// a planTier, or allowance calculation will correctly-but-uselessly return 0.
+const ENTITLED_SUBSCRIPTION_STATUSES: SubscriptionStatus[] = ["ACTIVE", "TRIAL"];
+const DEFAULT_PLAN_TIER: PlanTier = "starter";
+
+/**
+ * Single choke point for the planTier/subscriptionStatus invariant: an agency
+ * with an entitled status (ACTIVE/TRIAL) must have a planTier. createAgency()
+ * and updateAgency() are the only functions that write the Redis agency hash,
+ * so enforcing it here guarantees no write path (signup, webhook, admin API,
+ * CLI script) can persist the inconsistent state.
+ */
+function enforcePlanTierInvariant(
+  planTier: PlanTier | null | undefined,
+  subscriptionStatus: SubscriptionStatus
+): PlanTier | null {
+  if (!planTier && ENTITLED_SUBSCRIPTION_STATUSES.includes(subscriptionStatus)) {
+    console.warn(
+      `[AGENCY] subscriptionStatus=${subscriptionStatus} requires a planTier; defaulting to "${DEFAULT_PLAN_TIER}"`
+    );
+    return DEFAULT_PLAN_TIER;
+  }
+  return planTier ?? null;
+}
+
 /**
  * Create a new agency (with unlimited users)
  */
@@ -20,8 +46,8 @@ export async function createAgency(params: {
   subscriptionStatus?: SubscriptionStatus;
   agencyId?: string;
 }): Promise<Agency> {
-  const planTier = params.planTier ?? null;
   const subscriptionStatus = params.subscriptionStatus || "TRIAL"; // New agencies start as TRIAL
+  const planTier = enforcePlanTierInvariant(params.planTier ?? null, subscriptionStatus);
 
   const agency: Agency = {
     agencyId: params.agencyId || `agency_${uuidv4()}`,
@@ -106,6 +132,13 @@ export async function updateAgency(agency: Agency): Promise<void> {
   try {
     const client = getRedis();
     const key = `agency:${agency.agencyId}`;
+
+    // Enforce the invariant here too (not just in createAgency): callers may
+    // transition subscriptionStatus to ACTIVE/TRIAL without touching planTier
+    // (e.g. admin "activate", Stripe webhooks, CLI scripts). Mutate the passed-in
+    // object so callers that read agency.planTier back after this call see the
+    // corrected value, not the stale null.
+    agency.planTier = enforcePlanTierInvariant(agency.planTier, agency.subscriptionStatus);
 
     const data: Record<string, string> = {
       agencyId: agency.agencyId,
