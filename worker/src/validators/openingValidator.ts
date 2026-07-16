@@ -150,6 +150,8 @@ const OPENING_ADDED_MICRO_CORROBORATION_CONFIDENCE = Number(process.env.OPENING_
 const OPENING_ADDED_CONSENSUS_MIN_IOU = Number(process.env.OPENING_ADDED_CONSENSUS_MIN_IOU || 0.2);
 const OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES = Number(process.env.OPENING_ADDED_STRUCTURAL_PRECHECK_MIN_MATCHES || 1);
 const OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD = Number(process.env.OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD || 20);
+const OPENING_SEMANTIC_VETO_CONFIDENCE_THRESHOLD = Number(process.env.OPENING_SEMANTIC_VETO_CONFIDENCE_THRESHOLD || 0.9);
+const OPENING_REMOVED_GRAPH_MIN_CONFIDENCE = Number(process.env.OPENING_REMOVED_GRAPH_MIN_CONFIDENCE || 0.67);
 
 function logOpeningInstrumentation(event: string, payload: Record<string, unknown>): void {
   console.log(JSON.stringify({
@@ -486,6 +488,7 @@ export function analyzeOpeningSignalCoherence(params: {
   hasResize: boolean;
   hasOcclusion: boolean;
   hasBandMismatch: boolean;
+  semanticNonDestructiveVerdict?: boolean;
 }): OpeningSignalCoherenceAnalysis {
   const tokens = uniqueTokens(params.allIssueTypes.map((token) => String(token || "").trim().toLowerCase()));
   const primaryDestructiveStates = uniqueTokens(tokens.filter((token) =>
@@ -562,6 +565,22 @@ export function analyzeOpeningSignalCoherence(params: {
     !tokens.includes("opening_sealed")
   ) {
     contradictions.push("occlusion_only_conflicts_with_destructive_state");
+  }
+
+  // A resize-only destructive bundle (no removal/infill/seal/light-anchor claim)
+  // that the semantic geometry reviewer has independently confirmed as preserved,
+  // at high confidence, is treated as a contradiction rather than accepted.
+  const resizeOnlyDestructiveBundle =
+    primaryDestructiveStates.length > 0 &&
+    primaryDestructiveStates.every((token) => token === "opening_resized_major") &&
+    !tokens.includes("opening_removed") &&
+    !tokens.includes("opening_infilled") &&
+    !tokens.includes("opening_sealed") &&
+    !tokens.includes("light_anchor_opening_removed") &&
+    !tokens.includes("light_anchor_opening_infilled");
+
+  if (params.semanticNonDestructiveVerdict && resizeOnlyDestructiveBundle) {
+    contradictions.push("semantic_review_confirmed_opening_preserved");
   }
 
   return {
@@ -2104,6 +2123,18 @@ export async function runOpeningValidator(
         };
       }
     }
+    // The resize specialist review is an independent Gemini pass over the actual images
+    // (not just bbox math). When it confidently confirms the opening envelope is intact
+    // and the reduction cause isn't a real structural replacement, a pure resize/relocation
+    // destructive bundle is treated as a false positive rather than accepted outright.
+    const semanticNonDestructiveVerdict =
+      resizeSpecialistShouldRun &&
+      semanticEvidence.originalOpeningPreserved === true &&
+      semanticEvidence.openingEnvelopeModified === false &&
+      semanticEvidence.confidence >= OPENING_SEMANTIC_VETO_CONFIDENCE_THRESHOLD &&
+      semanticEvidence.primaryReductionCause !== "architectural_surface_replacement" &&
+      semanticEvidence.glazingReplacedByWall !== true &&
+      semanticEvidence.architecturalSurfaceReplacement !== true;
     const observabilityEvidence: OpeningObservabilityEvidence = {
       geometryMetrics,
       relocationFingerprints,
@@ -2209,6 +2240,15 @@ export async function runOpeningValidator(
       strongFrameDestructionEvidence
     );
 
+    // Removed/infilled claims sourced from a low-confidence (e.g. single-pass) baseline
+    // or candidate graph get no independent corroboration today unless the caller happens
+    // to also be occlusion-susceptible. Force corroboration via the light-anchor micro-check
+    // for these specifically, mirroring the existing added-opening consensus requirement.
+    const removedOrInfilledGraphLowConfidence =
+      !openingGraphStable || openingGraphConfidence < OPENING_REMOVED_GRAPH_MIN_CONFIDENCE;
+    const removedOrInfilledNeedsCorroboration =
+      (strongRemovedEvidence || strongInfilledEvidence) && removedOrInfilledGraphLowConfidence;
+
     if (strongRemovedEvidence) {
       reasonParts.push("opening_removed");
     } else if (deterministic.summary.openingRemoved) {
@@ -2267,6 +2307,14 @@ export async function runOpeningValidator(
     if (semanticEvidence.softFurnishingOcclusion) {
       advisorySignals.push("soft_furnishing_occlusion_semantic");
     }
+    if (resizeSpecialistShouldRun) {
+      advisorySignals.push(
+        `opening_semantic_verdict:${semanticEvidence.originalOpeningPreserved}|${semanticEvidence.openingEnvelopeModified}|${semanticEvidence.primaryReductionCause}|${semanticEvidence.confidence.toFixed(2)}`
+      );
+      if (semanticNonDestructiveVerdict) {
+        advisorySignals.push("opening_semantic_veto_eligible");
+      }
+    }
     if (deterministic.summary.openingResized) {
       reasonParts.push("opening_resized");
     }
@@ -2297,10 +2345,11 @@ export async function runOpeningValidator(
     if (strictWindowOcclusionFail) advisorySignals.push("window_occlusion_review");
 
     const microCheckRisk =
-      (!deterministicHardFailIssue || deterministicHardFailButOcclusionSusceptible) && (
+      (!deterministicHardFailIssue || deterministicHardFailButOcclusionSusceptible || removedOrInfilledNeedsCorroboration) && (
         deterministicHardFailButOcclusionSusceptible ||
         deterministic.summary.openingResized ||
-        areaDelta >= 0.25
+        areaDelta >= 0.25 ||
+        removedOrInfilledNeedsCorroboration
       );
 
     const baseConfidence = Number(deterministic.summary.confidence || 0);
@@ -2375,6 +2424,11 @@ export async function runOpeningValidator(
     );
     const addedHardFailCorroborated = reasonParts.includes("light_anchor_opening_added_confirmed");
 
+    if (removedOrInfilledNeedsCorroboration && !hasHighConfidenceMicroHardFailSignal) {
+      advisorySignals.push("opening_removed_or_infilled_graph_confidence_unconfirmed");
+      advisorySignals.push(`opening_removed_graph_confidence:${openingGraphConfidence.toFixed(3)}`);
+    }
+
     if (!hardFail && deterministicStrongAddedOpening) {
       const addedCorroboration = await getMicroCheck();
       if (
@@ -2425,11 +2479,13 @@ export async function runOpeningValidator(
       hasResize: openingSizeReductionDetected || !!deterministic.summary.openingResized,
       hasOcclusion: strictDoorOcclusionFail || strictWindowOcclusionFail,
       hasBandMismatch: !!deterministic.summary.openingBandMismatch,
+      semanticNonDestructiveVerdict,
     });
     const signalCoherent = coherenceAnalysis.coherent || addedHardFailCorroborated;
 
     const deterministicEscalationEligible =
       deterministicHardFailIssue &&
+      (!removedOrInfilledNeedsCorroboration || hasHighConfidenceMicroHardFailSignal) &&
       (deterministicStructuralCorroborated || hasHighConfidenceMicroHardFailSignal || addedHardFailCorroborated);
 
     hardFail = (deterministicEscalationEligible || hasHighConfidenceMicroHardFailSignal || addedHardFailCorroborated) &&

@@ -118,6 +118,47 @@ describe("opening validator structured issue emission", () => {
     expect(analysis.contradictions).toEqual([]);
   });
 
+  it("downgrades a resize-only bundle when the semantic reviewer confirms the opening is preserved", () => {
+    const analysis = analyzeOpeningSignalCoherence({
+      issueType: "none",
+      allIssueTypes: ["opening_relocated", "opening_resized", "opening_size_reduction_ge_0.25:0.596", "opening_resized_major", "opening_band_mismatch"],
+      hasResize: true,
+      hasOcclusion: false,
+      hasBandMismatch: true,
+      semanticNonDestructiveVerdict: true,
+    });
+
+    expect(analysis.coherent).toBe(false);
+    expect(analysis.contradictions).toContain("semantic_review_confirmed_opening_preserved");
+  });
+
+  it("does not downgrade a resize-only bundle when the semantic verdict is absent", () => {
+    const analysis = analyzeOpeningSignalCoherence({
+      issueType: "none",
+      allIssueTypes: ["opening_relocated", "opening_resized", "opening_size_reduction_ge_0.25:0.596", "opening_resized_major", "opening_band_mismatch"],
+      hasResize: true,
+      hasOcclusion: false,
+      hasBandMismatch: true,
+    });
+
+    expect(analysis.coherent).toBe(true);
+    expect(analysis.contradictions).toEqual([]);
+  });
+
+  it("never lets a semantic non-destructive verdict veto a bundle that also contains a real removal claim", () => {
+    const analysis = analyzeOpeningSignalCoherence({
+      issueType: "opening_removed",
+      allIssueTypes: ["opening_removed", "opening_resized", "opening_resized_major", "opening_band_mismatch"],
+      hasResize: true,
+      hasOcclusion: false,
+      hasBandMismatch: true,
+      semanticNonDestructiveVerdict: true,
+    });
+
+    expect(analysis.coherent).toBe(true);
+    expect(analysis.contradictions).toEqual([]);
+  });
+
   it("requires strong deterministic added-opening criteria before signaling addition", () => {
     const baseline: any = {
       openings: [
