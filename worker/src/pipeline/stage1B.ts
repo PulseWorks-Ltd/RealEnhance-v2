@@ -9,6 +9,7 @@ import { logIfNotFocusMode } from "../logger";
 import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import type { PipelineContext } from "../types/pipelineContext";
+import { buildStage1BRetryCorrectionPrompt } from "../validators/stage1BOpeningClosureSignal";
 
 /**
  * Stage 1B: Furniture & Clutter Removal
@@ -36,9 +37,13 @@ export async function runStage1B(
     jobDeclutterIntensity?: "light" | "standard" | "heavy";
     jobSampling?: { temperature?: number; topP?: number; topK?: number };
     attempt?: number;
+    // The specific opening a prior attempt incorrectly closed off, if known. Appended to
+    // the retry prompt as a targeted correction instead of relying on sampling changes
+    // alone to avoid repeating the same mistake.
+    retryCorrection?: { location: string; openingType: string; explanation: string };
   }
 ): Promise<string> {
-  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, imageId, attempt = 0 } = options;
+  const { replaceSky = false, sceneType, roomType, declutterMode, jobId: jobIdOpt, imageId, attempt = 0, retryCorrection } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobId" });
   const jobId = jobIdOpt;
   const attemptIndex = Number.isFinite(attempt) && attempt > 0 ? Math.floor(attempt) : 0;
@@ -157,6 +162,15 @@ CRITICAL CAMERA AND STRUCTURE RULES:
 
 If there is any ambiguity, leave the area unchanged.
 `;
+
+    if (attemptIndex > 0 && retryCorrection) {
+      promptOverride += buildStage1BRetryCorrectionPrompt(retryCorrection);
+      logIfNotFocusMode("[stage1B] Applying retry correction from previous attempt", {
+        attemptIndex,
+        openingType: retryCorrection.openingType,
+        location: retryCorrection.location,
+      });
+    }
 
     // ✅ FINAL MODE RESOLUTION LOGGING (for acceptance criteria verification)
     const promptUsed = declutterMode === "light" ? "light (declutter-only)" : "structured-retain (stage-ready token)";

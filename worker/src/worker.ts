@@ -128,6 +128,7 @@ import {
   type StructuralBaseline,
 } from "./validators/openingPreservationValidator";
 import { runEditOpeningsValidator } from "./validators/editOpeningsValidator";
+import { computeStage1BOpeningClosureSignal } from "./validators/stage1BOpeningClosureSignal";
 import { pool as workerDbPool } from "./db/index";
 import {
   classifyIssueTier,
@@ -1639,7 +1640,8 @@ type Stage1BPolicyDecision = {
   effectiveReasons: string[];
   openingSignal?: boolean;
   layoutRisk?: boolean;
-  openingViolationType?: "door_state_changed" | "opening_aperture_expanded" | null;
+  openingViolationType?: "door_state_changed" | "opening_aperture_expanded" | "opening_closed" | null;
+  openingClosureDetail?: { location: string; openingType: string; explanation: string };
 };
 
 type Stage1BFullGeminiValidationResult = {
@@ -1985,7 +1987,7 @@ async function evaluateStage1BFullPolicy(input: {
 }): Promise<Stage1BPolicyDecision> {
   nLog("[STAGE1B_POLICY]", {
     mode: "FULL_FURNITURE_REMOVAL",
-    heuristicValidators: "LOG_ONLY",
+    heuristicValidators: "LOG_ONLY_EXCEPT_HIGH_CONFIDENCE_OPENING_CLOSURE",
     decisionSource: "GEMINI_ONLY",
     attempt: input.attemptNo,
     jobId: input.jobId,
@@ -2015,7 +2017,12 @@ async function evaluateStage1BFullPolicy(input: {
   let openingAreaDelta = 0;
   let openingStateChanged = false;
   let openingApertureExpanded = false;
-  let openingViolationType: "door_state_changed" | "opening_aperture_expanded" | null = null;
+  let openingViolationType: "door_state_changed" | "opening_aperture_expanded" | "opening_closed" | null = null;
+  // Populated whenever the deterministic reconciliation finds a closed/infilled opening,
+  // regardless of whether that alone triggers the fail-fast path below. Surfaced on the
+  // returned decision so a retry can reference the specific opening/location instead of
+  // only tightening sampling params.
+  let openingClosureDetail: { location: string; openingType: string; explanation: string } | undefined;
 
   nLog("[STAGE1B_EXTREME_GATE]", {
     jobId: input.jobId,
@@ -2061,18 +2068,33 @@ async function evaluateStage1BFullPolicy(input: {
 
       openingStateChanged = openingValidation.summary.openingStateChanged === true;
       openingApertureExpanded = openingValidation.summary.openingApertureExpanded === true;
-      openingSignal = openingStateChanged || openingApertureExpanded;
+      // Opening closure (infilled/removed/sealed — a wall painted/built over an opening)
+      // was previously missing from this signal entirely: only expansion/state-change was
+      // detected, never closure. Closure is arguably the more serious event since it
+      // permanently removes an architectural feature rather than just changing its state.
+      const closureSignal = computeStage1BOpeningClosureSignal({
+        summary: openingValidation.summary,
+        findings: openingValidation.findings,
+      });
+      const openingClosed = closureSignal.openingClosed;
+      openingSignal = openingStateChanged || openingApertureExpanded || openingClosed;
       openingViolationType = openingStateChanged
         ? "door_state_changed"
         : openingApertureExpanded
           ? "opening_aperture_expanded"
-          : null;
+          : openingClosed
+            ? "opening_closed"
+            : null;
+      // Surfaced for a retry-content correction regardless of which path (fail-fast below,
+      // or full_gemini afterward) ends up hard-failing.
+      openingClosureDetail = closureSignal.openingClosureDetail;
 
       logger.info("STAGE1B_OPENING_SIGNAL", {
         jobId: input.jobId,
         openingSignal,
         openingStateChanged,
         openingApertureExpanded,
+        openingClosed,
       });
 
       if (openingSignal) {
@@ -2081,9 +2103,36 @@ async function evaluateStage1BFullPolicy(input: {
           attempt: input.attemptNo,
           openingStateChanged,
           openingApertureExpanded,
+          openingClosed,
           confidence: openingValidation.summary.confidence,
           openingCount: openingValidation.summary.openingCount,
         });
+      }
+
+      // Narrow fail-fast: only short-circuit straight to a hard fail (skipping full_gemini)
+      // when a specific finding independently corroborates the closure with the same
+      // high-confidence "wall continuity" evidence openingValidator.ts already treats as
+      // strong elsewhere. Ambiguous or lower-confidence closures still fall back to
+      // full_gemini, preserving GEMINI_ONLY as the authority for anything less clear-cut.
+      if (closureSignal.failFastFinding) {
+        const failFastFinding = closureSignal.failFastFinding;
+        nLog("[STAGE1B_OPENING_CLOSURE_FAILFAST]", {
+          jobId: input.jobId,
+          attempt: input.attemptNo,
+          openingId: failFastFinding.id,
+          status: failFastFinding.status,
+          confidence: failFastFinding.confidence,
+          machineReasons: failFastFinding.machineReasons,
+          action: "hard_fail_without_full_gemini",
+        });
+        return {
+          effectiveHardFail: true,
+          effectiveViolationType: "opening_closure_deterministic_high_confidence",
+          effectiveReasons: [`deterministic:${failFastFinding.status}:${failFastFinding.machineReasons.join("|")}`],
+          openingSignal,
+          openingViolationType,
+          openingClosureDetail,
+        };
       }
     } catch (openingErr: any) {
       nLog("[STAGE1B_FULL_OPENING_VETO_ERROR]", {
@@ -2223,6 +2272,7 @@ If layout has changed in any way → hardFail = true`
     openingSignal,
     layoutRisk,
     openingViolationType,
+    openingClosureDetail,
   };
 }
 
@@ -9946,6 +9996,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const maxAttempts = Math.max(1, Number(process.env.STAGE1B_MAX_ATTEMPTS ?? 2));
     stage1BDeclutterReasons = [];
     stage1BDeclutterResult = undefined;
+    // Carries the specific opening/location a prior attempt walled over into the next
+    // attempt's prompt, instead of retrying with only tightened sampling params. See
+    // evaluateStage1BFullPolicy's openingClosureDetail.
+    let pendingOpeningClosureCorrection: { location: string; openingType: string; explanation: string } | undefined;
 
     while (attempt < maxAttempts) {
       if (await stopIfCancelled("stage1b_retry_loop")) return;
@@ -10005,6 +10059,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             ...(jobContext.jobSampling || {}),
             ...geminiConfig,
           },
+          retryCorrection: pendingOpeningClosureCorrection,
         })
       );
       await consumeManualRetryAttemptIfNeeded("stage1b", true);
@@ -10315,6 +10370,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         effectiveHardFail = fullPolicyDecision.effectiveHardFail;
         effectiveViolationType = fullPolicyDecision.effectiveViolationType;
         effectiveReasons = fullPolicyDecision.effectiveReasons;
+        // Reflects this attempt's own finding (or its absence) so a retry prompt never
+        // references a stale correction from an earlier, differently-failed attempt.
+        pendingOpeningClosureCorrection = fullPolicyDecision.openingClosureDetail;
       }
 
       if (wallDelta.hardFail) {
@@ -10421,10 +10479,21 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
 
       if (effectiveHardFail) {
+        // Distinguishes WHICH check actually produced the hard fail. Previously this log
+        // hardcoded validator="gemini_semantic" regardless of source — misleading for the
+        // deterministic opening-closure fail-fast path, which explicitly does NOT call
+        // full_gemini. Future log investigations should be able to tell these apart from
+        // this single field rather than having to infer it from effectiveViolationType.
+        const hardFailSource =
+          effectiveViolationType === "opening_closure_deterministic_high_confidence"
+            ? "deterministic_opening_closure"
+            : effectiveViolationType === "stage1b_unified_failure"
+              ? "stage1b_unified_gate"
+              : "gemini_semantic";
         logger.error("VALIDATION_FAIL", jobLogContext(payload, {
           event: "VALIDATION_FAIL",
           stage: "Stage1B",
-          validator: "gemini_semantic",
+          validator: hardFailSource,
           reason: effectiveViolationType || "hard_fail",
           details: effectiveReasons,
         }));
@@ -10433,6 +10502,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             result: "FAILED",
             finalHard: true,
             finalCategory: "structure",
+            hardFailSource,
             retryTriggered: attempt + 1 < maxAttempts,
             retriesExhausted: attempt + 1 >= maxAttempts,
             reason: effectiveViolationType || "structure_hard_fail",

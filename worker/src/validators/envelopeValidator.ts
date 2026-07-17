@@ -84,6 +84,52 @@ function buildEnvelopeStructuredIssues(params: {
   })];
 }
 
+// Any deterministic envelope signal that only reaches `advisorySignals` and never
+// `structuredIssues` is invisible to Unified adjudication (STAGE2_ADVISORY_INJECTION only
+// reads `structuredIssues`). This builds the structured-issue counterpart for the
+// deterministic Vertical-Edge-Delta (VED) signals, independent of what Gemini's own quick
+// envelope pass/fail call decided, so an advisory VED finding still reaches the adjudicator
+// as a non-binding question even when Gemini's own check passed.
+export function buildEnvelopeAdvisoryStructuredIssues(params: {
+  claim: "wall_plane_modified" | "corner_flattened";
+  confidence: number;
+  worstRetention: number;
+  junctionCount: number;
+  locationHint?: string;
+}): StructuredIssue[] {
+  const issueType = params.claim === "corner_flattened"
+    ? ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED
+    : ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS;
+  const issueTier = classifyIssueTier(issueType);
+  const object = params.locationHint ? `wall_plane (${params.locationHint})` : "wall_plane";
+  const action = params.claim === "corner_flattened" ? "flattened" : "changed";
+  const evidence = [
+    params.claim,
+    "deterministic_vertical_edge_delta",
+    `worst_retention_${params.worstRetention.toFixed(3)}`,
+    `junction_count_${params.junctionCount}`,
+  ];
+
+  return [createStructuredIssue({
+    type: "envelope_change",
+    object,
+    action,
+    severity: mapIssueTierToSeverity(issueTier),
+    source: "envelope_validator_ved",
+    confidence: params.confidence,
+    evidence,
+  })];
+}
+
+// Translate a normalized (0-1) region center into a coarse left/center/right phrase so the
+// advisory question has some spatial grounding, the same way opening findings phrase e.g.
+// "window opening in the right side of the left wall".
+export function describeCenterFractionLocation(centerFraction: number): string {
+  if (centerFraction < 0.33) return "left side of the image";
+  if (centerFraction > 0.66) return "right side of the image";
+  return "center of the image";
+}
+
 export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
   const cleaned = String(rawText || "").replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] ?? cleaned;
@@ -501,6 +547,34 @@ Non-fail certainty guard:
         }
       }
       geminiResult.structuralSignals = envelopeStructuralSignals;
+
+      // Ensure the deterministic VED signal reaches Unified adjudication as a structured
+      // issue, not just `advisorySignals` (STAGE2_ADVISORY_INJECTION only reads
+      // `structuredIssues`). This runs regardless of whether Gemini's own quick envelope
+      // call agreed — the finding stays advisory (non-binding) either way, it just becomes
+      // visible to the final adjudicator instead of being silently dropped.
+      if (vedResult.verticalEdgeLossDetected || vedResult.cornerPersistenceFailure) {
+        const claim: "wall_plane_modified" | "corner_flattened" = vedResult.cornerPersistenceFailure
+          ? "corner_flattened"
+          : "wall_plane_modified";
+        const primarySignal = envelopeStructuralSignals.find((s) => s.claim === claim) || envelopeStructuralSignals[0];
+        const locationHint = primarySignal
+          ? describeCenterFractionLocation((primarySignal.region.x1 + primarySignal.region.x2) / 2)
+          : undefined;
+        const advisoryConfidence = claim === "corner_flattened"
+          ? Math.max(0.85, geminiResult.confidence)
+          : geminiResult.confidence;
+        geminiResult.structuredIssues = [
+          ...(geminiResult.structuredIssues || []),
+          ...buildEnvelopeAdvisoryStructuredIssues({
+            claim,
+            confidence: advisoryConfidence,
+            worstRetention: vedResult.worstRetention,
+            junctionCount: vedResult.junctions.length,
+            locationHint,
+          }),
+        ];
+      }
     }
 
     logEnvelopePhaseEnd(options?.jobId, "final_merge", Date.now() - finalMergeStartedAt);
