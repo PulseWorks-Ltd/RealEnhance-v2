@@ -8742,8 +8742,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     })
   );
 
-  if (exteriorLightingDecision?.shouldRelight) {
+  if (exteriorLightingDecision?.shouldRelight && stage1ASceneLabel === "exterior" && !detectorConfidentInterior) {
     path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
+  } else if (exteriorLightingDecision?.shouldRelight) {
+    nLog(`[WORKER] Exterior relighting skipped: scene not confidently exterior (stage1AScene=${stage1ASceneLabel}, detectorConfidentInterior=${detectorConfidentInterior})`);
   }
 
   const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
