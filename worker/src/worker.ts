@@ -6524,7 +6524,14 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     isExteriorScene: boolean;
   }): Promise<Stage2LayoutPlan | null> => {
     const plannerEnabled = String(process.env.USE_GEMINI_LAYOUT_PLANNER || "1") !== "0";
-    if (!plannerEnabled) return null;
+    if (!plannerEnabled) {
+      nLog("[STAGE2_LAYOUT_PLANNER_DISABLED]", {
+        jobId: payload.jobId,
+        path: ctx.path,
+        reason: "USE_GEMINI_LAYOUT_PLANNER=0",
+      });
+      return null;
+    }
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
 

@@ -1,7 +1,7 @@
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
-import type { StructuralBaseline, WallIndex } from "../validators/openingPreservationValidator";
+import type { StructuralBaseline, WallCoverageBand, WallIndex } from "../validators/openingPreservationValidator";
 
 export type AnchorOrientation = "facing_camera" | "facing_anchor_wall";
 export type AnchorItem = "bed" | "tv_unit" | "dining_table" | "sofa_group";
@@ -32,6 +32,12 @@ export type FurnitureVisibilityRules = {
   rules?: string[];
 };
 
+export type SecondaryMediaWall = {
+  available: boolean;
+  wallLabel?: string;
+  mountMode?: "wall_mount" | "console_only";
+};
+
 export type Stage2LayoutPlan = {
   room_type: string;
   layout: Array<{
@@ -47,6 +53,13 @@ export type Stage2LayoutPlan = {
   anchorConfidence?: number;
   decorRestrictions?: DecorRestriction[];
   furnitureVisibilityRules?: FurnitureVisibilityRules;
+  /**
+   * Deterministic answer to "is there a genuinely low-window wall, other
+   * than the primary anchor wall, suitable for a TV/media unit?" — grounds
+   * the living-room TV/media decision in the structural baseline instead of
+   * leaving it to the model's own visual guess.
+   */
+  secondaryMediaWall?: SecondaryMediaWall;
 };
 
 const LAYOUT_PLANNER_PROMPT = `Analyze this empty room and produce a structured furniture layout plan suitable for real estate staging.
@@ -238,6 +251,28 @@ function bboxCoverage(bbox: [number, number, number, number] | undefined): numbe
   return x2 - x1;
 }
 
+/**
+ * Representative coverage fraction (0..1) for a wallCoverageBand bucket.
+ * Uses the already-computed, validator-consistent band instead of
+ * re-deriving an approximate bbox x-width fraction.
+ */
+function wallCoverageBandToFraction(band: WallCoverageBand): number {
+  switch (band) {
+    case "5-10": return 0.10;
+    case "10-20": return 0.20;
+    case "20-40": return 0.40;
+    case "40-60": return 0.60;
+    case "60+": return 0.75;
+    default: return 0;
+  }
+}
+
+function openingCoverage(opening: StructuralBaseline["openings"][number]): number {
+  return opening.wallCoverageBand
+    ? wallCoverageBandToFraction(opening.wallCoverageBand)
+    : bboxCoverage(opening.bbox);
+}
+
 function buildWallSuitability(baseline: StructuralBaseline): WallSuitability[] {
   const byWall = new Map<WallIndex, StructuralBaseline["openings"]>();
   (baseline.openings || []).forEach((opening) => {
@@ -254,7 +289,7 @@ function buildWallSuitability(baseline: StructuralBaseline): WallSuitability[] {
     const hasClosetDoor = openings.some((opening) => opening.type === "closet_door");
     const windowCount = openings.filter((opening) => opening.type === "window").length;
     const nonWindowOpenings = openings.filter((opening) => opening.type !== "window").length;
-    const totalOpeningCoverage = openings.reduce((acc, opening) => acc + bboxCoverage(opening.bbox), 0);
+    const totalOpeningCoverage = openings.reduce((acc, opening) => acc + openingCoverage(opening), 0);
     const hasMultipleInterferingOpenings = openings.length >= 2 && totalOpeningCoverage >= 0.55;
 
     let classification: WallSuitabilityClass = "ideal";
@@ -284,6 +319,41 @@ function buildWallSuitability(baseline: StructuralBaseline): WallSuitability[] {
       hasMultipleInterferingOpenings,
     };
   });
+}
+
+const SECONDARY_MEDIA_WALL_MAX_COVERAGE = 0.20;
+
+/**
+ * Deterministic answer to "besides the primary anchor wall, is there a wall
+ * genuinely suitable for a TV/media unit?" — a wall_mount candidate needs
+ * zero windows; a console_only candidate tolerates a small window presence
+ * below SECONDARY_MEDIA_WALL_MAX_COVERAGE. Returns unavailable when no wall
+ * clears the bar, so the model gets a grounded instruction instead of
+ * guessing from pixels alone (see livingRoomFocalPointBlock fallback text).
+ */
+function findSecondaryMediaWall(
+  suitability: WallSuitability[],
+  excludeWallIndex: WallIndex
+): SecondaryMediaWall {
+  const candidates = suitability.filter(
+    (wall) => wall.wallIndex !== excludeWallIndex && wall.classification !== "disallowed"
+  );
+
+  const idealCandidate = candidates
+    .filter((wall) => wall.classification === "ideal")
+    .sort((a, b) => b.score - a.score)[0];
+  if (idealCandidate) {
+    return { available: true, wallLabel: idealCandidate.label, mountMode: "wall_mount" };
+  }
+
+  const lowWindowCandidate = candidates
+    .filter((wall) => wall.classification === "conditional_window" && wall.totalOpeningCoverage < SECONDARY_MEDIA_WALL_MAX_COVERAGE)
+    .sort((a, b) => b.score - a.score)[0];
+  if (lowWindowCandidate) {
+    return { available: true, wallLabel: lowWindowCandidate.label, mountMode: "console_only" };
+  }
+
+  return { available: false };
 }
 
 function buildAnchorRegionForWall(anchorWall: WallIndex, opts?: { preferLowerHalf?: boolean }): AnchorRegion {
@@ -434,6 +504,15 @@ function buildDeterministicLayoutPlan(opts: {
 
   const avoidZones = (opts.structuralBaseline.openings || []).map(openingToAvoidZone);
 
+  // The deterministic anchor for living rooms is always sofa_group (a sofa
+  // tolerates a window wall fine) — the TV/media unit is a secondary,
+  // optional item that genuinely needs its own low-window wall. Evaluate
+  // that separately against the structural baseline rather than leaving it
+  // to the model's own visual judgment (see livingRoomFocalPointBlock).
+  const secondaryMediaWall = (anchorItem === "sofa_group" && normalizeRoomTypeKey(roomType).includes("living"))
+    ? findSecondaryMediaWall(suitability, selectedWallIndex)
+    : undefined;
+
   return {
     room_type: roomType,
     layout: buildBaseLayoutItems(anchorItem, roomType),
@@ -446,6 +525,7 @@ function buildDeterministicLayoutPlan(opts: {
     anchorConfidence: 0.98,
     decorRestrictions,
     furnitureVisibilityRules,
+    secondaryMediaWall,
   };
 }
 
@@ -614,6 +694,7 @@ export async function planStage2Layout(
       fallbackMode: wallSuitability.every((wall) => wall.classification === "disallowed"),
       hasWindowWallFallback: wallSuitability.some((wall) => wall.classification === "conditional_window") &&
         !wallSuitability.some((wall) => wall.classification === "ideal"),
+      secondaryMediaWall: deterministicPlan.secondaryMediaWall || null,
       walls: wallSuitability.map((wall) => ({
         wallIndex: wall.wallIndex,
         wall: wall.label,
@@ -748,6 +829,12 @@ export function formatStage2LayoutPlanForPrompt(plan: Stage2LayoutPlan): string 
       ].filter((line): line is string => Boolean(line)).join("\n")
     : "";
 
+  const secondaryMediaWallDirective = plan.secondaryMediaWall
+    ? plan.secondaryMediaWall.available
+      ? `SECONDARY MEDIA WALL: available (wall=${plan.secondaryMediaWall.wallLabel}, ${plan.secondaryMediaWall.mountMode === "console_only" ? "console-only — no wall mount, wall has a window" : "wall-mount safe — wall has no window"}). You may add a freestanding TV/media console there.`
+      : "SECONDARY MEDIA WALL: none available — do NOT include a TV/media unit. Use conversation grouping, fireplace, or view as the focal point instead."
+    : "";
+
   const serialized = JSON.stringify(
     {
       room_type: plan.room_type,
@@ -765,14 +852,16 @@ export function formatStage2LayoutPlanForPrompt(plan: Stage2LayoutPlan): string 
         : undefined,
       decorRestrictions: plan.decorRestrictions,
       furnitureVisibilityRules: plan.furnitureVisibilityRules,
+      secondaryMediaWall: plan.secondaryMediaWall,
     },
     null,
     2
   );
 
-  if (!anchorDirective) {
+  const sections = [anchorDirective, secondaryMediaWallDirective].filter(Boolean);
+  if (sections.length === 0) {
     return serialized;
   }
 
-  return `${anchorDirective}\n\nPLAN_JSON:\n${serialized}`;
+  return `${sections.join("\n\n")}\n\nPLAN_JSON:\n${serialized}`;
 }
