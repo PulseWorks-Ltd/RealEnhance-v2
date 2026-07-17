@@ -2072,8 +2072,13 @@ export async function runOpeningValidator(
     const openingShapeDistortionDetected = geometryMetrics.some((entry) =>
       Math.abs(entry.widthHeightDifferencePct) > OPENING_SHAPE_DISTORTION_DIFF_THRESHOLD
     );
+      // Also run when only the geometric ratio flags a reduction (openingResized is a
+      // separate signal from wall-coverage-band/pane/orientation/aperture/sill changes
+      // and doesn't reliably fire for furniture occlusion) — otherwise the one check
+      // built to distinguish "sofa in front of window" from "wall built over window"
+      // never runs for exactly the cases that need it most.
       const resizeSpecialistShouldRun =
-        deterministic.summary.openingResized === true &&
+        (deterministic.summary.openingResized === true || openingSizeReductionDetected) &&
         geometryMetrics.some((entry) => entry.openingType === "window");
     let semanticEvidence: OpeningSemanticGeometryEvidence = {
       primaryReductionCause: "none",
@@ -2202,9 +2207,15 @@ export async function runOpeningValidator(
       deterministic.summary.openingApertureExpanded === true ||
       deterministic.summary.openingStateChanged === true ||
       authoritativeAddedOpenings;
+    // openingSizeReductionDetected intentionally excluded here: it already feeds
+    // rawDeterministicHardFailSignal below, and letting it also count as this signal's
+    // own corroboration means a single geometric ratio (which furniture occlusion can
+    // trigger on its own) could self-corroborate into a hard fail with no independent
+    // evidence. A pure reduction with nothing else now falls through to
+    // deterministicHardFailButOcclusionSusceptible -> the existing microCheckRisk
+    // escalation for a second, independent verification pass instead.
     const deterministicStructuralCorroborated =
       strongTopologyBreakEvidence ||
-      openingSizeReductionDetected ||
       strongContinuityBreakEvidence ||
       strongBandCorroboration ||
       strongCrossAnchorInconsistency ||
