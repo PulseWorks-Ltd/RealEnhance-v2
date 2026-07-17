@@ -13784,6 +13784,11 @@ All openings must remain identical in position and size to the original image.`;
 
         setStage2AttemptValidation(path2, "gemini", [decisionReason]);
         pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [blockedIssueType]);
+        pendingStage2StructuralFailureType =
+          blockedIssueType === ISSUE_TYPES.OPENING_REMOVED ? "opening_removed" :
+          blockedIssueType === ISSUE_TYPES.OPENING_INFILLED ? "opening_infilled" :
+          blockedIssueType === ISSUE_TYPES.OPENING_RELOCATED ? "opening_relocated" :
+          "STRUCTURAL_INVARIANT";
 
         if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
@@ -13971,6 +13976,7 @@ All openings must remain identical in position and size to the original image.`;
         } as any;
 
         setStage2AttemptValidation(path2, "gemini", [decisionReason]);
+        pendingStage2StructuralFailureType = "STRUCTURAL_DISTORTION";
 
         if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
@@ -14414,6 +14420,13 @@ All openings must remain identical in position and size to the original image.`;
         const unifiedDecisionReason = `unified_failure:${unifiedIssueType}:${unifiedReason}`;
         setStage2AttemptValidation(path2, "gemini", [unifiedDecisionReason]);
         pendingStage2ValidatorTriggers = accumulateValidatorTriggers(pendingStage2ValidatorTriggers, [unifiedIssueType]);
+        if ((unifiedValidation as any).blockSource === "deterministic_corroborated") {
+          pendingStage2StructuralFailureType =
+            unifiedIssueType === ISSUE_TYPES.OPENING_REMOVED ? "opening_removed" :
+            unifiedIssueType === ISSUE_TYPES.OPENING_INFILLED ? "opening_infilled" :
+            unifiedIssueType === ISSUE_TYPES.OPENING_RELOCATED ? "opening_relocated" :
+            "STRUCTURAL_DISTORTION";
+        }
         if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
             specialistHardFail: false,

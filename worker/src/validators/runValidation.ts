@@ -39,7 +39,7 @@ import {
   STRUCTURAL_SIGNALS_MODE,
   STAGE2_ENABLE_SPECIALIST_ADVISORY,
 } from "../config";
-import { PROHIBITED_STRUCTURAL_CLAIMS } from "./structuralSignal";
+import { PROHIBITED_STRUCTURAL_CLAIMS, isCorroboratedStructuralFailure, regionIoU } from "./structuralSignal";
 import type { StructuralClaim, AdjudicatedClaim } from "./structuralSignal";
 
 // Re-export the normalized adapter for downstream consumers
@@ -62,7 +62,7 @@ export type ValidatorResult = {
 export type UnifiedValidationResult = {
   passed: boolean;
   hardFail: boolean;         // true only when enforcement or Gemini block the image
-  blockSource?: "local" | "gemini" | null; // where the hard fail originated
+  blockSource?: "local" | "gemini" | "deterministic_corroborated" | null; // where the hard fail originated
   score: number;             // aggregate structural score 0–1
   reasons: string[];         // human-readable hard-fail reasons
   warnings: string[];        // non-fatal warnings
@@ -1889,7 +1889,21 @@ export async function runUnifiedValidation(
   }
 
   const finalDecisionStartedAt = Date.now();
-  let blockSource: "local" | "gemini" | null = geminiHardFail ? "gemini" : null;
+  let blockSource: "local" | "gemini" | "deterministic_corroborated" | null = geminiHardFail ? "gemini" : null;
+
+  // Map a structural claim to a canonical issue type. Shared by Step 3
+  // (Gemini-confirmed claims) and Step 3a (deterministic-corroborated claims).
+  const claimToIssueType = (claim: StructuralClaim): ValidationIssueType => {
+    switch (claim) {
+      case "opening_removed": return ISSUE_TYPES.OPENING_REMOVED;
+      case "opening_added": return ISSUE_TYPES.OPENING_ANOMALY;
+      case "opening_resized_major": return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
+      case "wall_plane_modified": return ISSUE_TYPES.WALL_CHANGED;
+      case "corner_flattened": return ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
+      case "recess_removed": return ISSUE_TYPES.WALL_CHANGED;
+      default: return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
+    }
+  };
 
   // ── Step 3: Structural claim enforcement ──────────────────────────
   // SINGLE-AUTHORITY: If Gemini CONFIRMED or was UNCERTAIN about any
@@ -1900,30 +1914,19 @@ export async function runUnifiedValidation(
     stage === "2" &&
     Array.isArray(geminiVerdict?.adjudicatedClaims)
   ) {
-    // Map claim to a canonical issue type
-    const claimToIssueType = (claim: StructuralClaim): ValidationIssueType => {
-      switch (claim) {
-        case "opening_removed": return ISSUE_TYPES.OPENING_REMOVED;
-        case "opening_added": return ISSUE_TYPES.OPENING_ANOMALY;
-        case "opening_resized_major": return ISSUE_TYPES.OPENING_RESIZED_MAJOR;
-        case "wall_plane_modified": return ISSUE_TYPES.WALL_CHANGED;
-        case "corner_flattened": return ISSUE_TYPES.ENVELOPE_CORNER_FLATTENED;
-        case "recess_removed": return ISSUE_TYPES.WALL_CHANGED;
-        default: return ISSUE_TYPES.ROOM_ENVELOPE_CHANGED;
-      }
-    };
-
     const confirmedProhibited = geminiVerdict!.adjudicatedClaims!.filter(
       (c) => c.result === "CONFIRMED" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
     );
 
-    // SINGLE-AUTHORITY: UNCERTAIN claims on prohibited structures are advisory only.
-    // Per intended architecture: UNCERTAIN → PASS (default). Only CONFIRMED triggers enforcement.
+    // Conservative: UNCERTAIN on a prohibited structural claim (including
+    // Gemini JSON parse failures, which mark every claim UNCERTAIN) is
+    // treated as a failure, not a silent pass — an unresolved structural
+    // question must not be equivalent to "no problem found".
     const uncertainProhibited = geminiVerdict!.adjudicatedClaims!.filter(
       (c) => c.result === "UNCERTAIN" && PROHIBITED_STRUCTURAL_CLAIMS.has(c.claim),
     );
 
-    const actionableClaims = [...confirmedProhibited];
+    const actionableClaims = [...confirmedProhibited, ...uncertainProhibited];
 
     if (actionableClaims.length > 0) {
       blockSource = "gemini";
@@ -1953,6 +1956,39 @@ export async function runUnifiedValidation(
         })),
         enforcedIssueType: claimEnforcedIssueType,
       });
+    }
+  }
+
+  // ── Step 3a: Corroborated deterministic override ───────────────────
+  // A single Gemini vision call is not allowed unconditional authority when
+  // an independent deterministic signal agrees with a high-confidence
+  // specialist claim. If Gemini did NOT confirm a prohibited claim (it said
+  // NOT_PRESENT or UNCERTAIN) but a local heuristic check for the same claim
+  // category also failed, force a block rather than trust the single call.
+  if (!blockSource && STRUCTURAL_SIGNALS_ACTIVE && stage === "2" && Array.isArray(structuralSignals)) {
+    const adjudicatedClaims = Array.isArray(geminiVerdict?.adjudicatedClaims) ? geminiVerdict!.adjudicatedClaims! : [];
+    for (const signal of structuralSignals as import("./structuralSignal").StructuralSignal[]) {
+      const matchingClaim = adjudicatedClaims.find(
+        (c) => c.claim === signal.claim && regionIoU(c.region, signal.region) > 0.3,
+      );
+      if (matchingClaim?.result === "CONFIRMED") continue; // already handled by Step 3 above
+
+      if (isCorroboratedStructuralFailure(signal, results)) {
+        blockSource = "deterministic_corroborated";
+        claimEnforcedIssueType = claimToIssueType(signal.claim);
+        reasons.push(
+          `deterministic_corroborated_override: claim=${signal.claim} confidence=${signal.confidence.toFixed(3)} geminiResult=${matchingClaim?.result || "no_match"}`,
+        );
+        nLog("[DETERMINISTIC_CORROBORATED_OVERRIDE]", {
+          jobId: jobId || "unknown",
+          stage,
+          claim: signal.claim,
+          confidence: signal.confidence,
+          geminiResult: matchingClaim?.result || "no_match",
+          source: signal.source,
+        });
+        break;
+      }
     }
   }
 

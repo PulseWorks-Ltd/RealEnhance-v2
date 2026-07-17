@@ -74,7 +74,7 @@ export const PROHIBITED_STRUCTURAL_CLAIMS = new Set<StructuralClaim>([
 // ── Signal deduplication ──────────────────────────────────────────────
 
 /** Intersection-over-Union of two normalised bounding boxes. */
-function regionIoU(a: SignalRegion, b: SignalRegion): number {
+export function regionIoU(a: SignalRegion, b: SignalRegion): number {
   const ix1 = Math.max(a.x1, b.x1);
   const iy1 = Math.max(a.y1, b.y1);
   const ix2 = Math.min(a.x2, b.x2);
@@ -244,4 +244,43 @@ export function parseStructuralClaims(
       detail: "claim_not_in_response",
     };
   });
+}
+
+// ── Deterministic corroboration ────────────────────────────────────────
+
+/**
+ * Which local heuristic check(s) can corroborate a given specialist claim.
+ * Adding a new claim/specialist only requires a new map entry, not a code branch.
+ */
+const CLAIM_COROBORATION_CHECKS: Record<StructuralClaim, string[]> = {
+  opening_removed: ["windows"],
+  opening_added: ["windows"],
+  opening_resized_major: ["windows"],
+  wall_plane_modified: ["walls", "structuralMask", "globalEdge"],
+  corner_flattened: ["walls", "structuralMask", "globalEdge"],
+  recess_removed: ["walls", "structuralMask", "globalEdge"],
+};
+
+/** Minimal shape needed from runValidation.ts's per-check `results` map. */
+export type LocalCheckResults = Record<string, { passed: boolean } | undefined>;
+
+/**
+ * True when a high-confidence specialist signal on a prohibited structural
+ * claim is corroborated by an independent local heuristic check also failing.
+ *
+ * This exists so that a single Gemini vision adjudication call is never the
+ * sole authority when deterministic evidence agrees: SINGLE-AUTHORITY is
+ * appropriate when only one signal exists, but two independent signals
+ * agreeing on structural loss must not be silently overridden by a single
+ * (possibly wrong) Gemini answer.
+ */
+export function isCorroboratedStructuralFailure(
+  signal: StructuralSignal,
+  localResults: LocalCheckResults,
+  confidenceThreshold = 0.90,
+): boolean {
+  if (signal.confidence < confidenceThreshold) return false;
+  if (!PROHIBITED_STRUCTURAL_CLAIMS.has(signal.claim)) return false;
+  const corroboratingChecks = CLAIM_COROBORATION_CHECKS[signal.claim] || [];
+  return corroboratingChecks.some((checkName) => localResults[checkName]?.passed === false);
 }
