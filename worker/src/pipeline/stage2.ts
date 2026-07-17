@@ -936,22 +936,9 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
       promptVariant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy",
     });
 
-    const anchorRegion = opts.layoutPlan.anchorRegion;
-    if (anchorRegion) {
-      textPrompt += `
-
-ANCHOR REGION GUIDANCE (SOFT, NOT A HARD MASK)
-Prefer placing the primary anchor furniture within this normalized region when structurally valid:
-- x=${anchorRegion.x.toFixed(3)}
-- y=${anchorRegion.y.toFixed(3)}
-- width=${anchorRegion.width.toFixed(3)}
-- height=${anchorRegion.height.toFixed(3)}
-
-This region is guidance only. You may adjust slightly for realism and circulation.
-Do NOT modify architecture, openings, or permanent fixtures to satisfy this guidance.
-`;
-    }
-
+    // Anchor region guidance is now rendered inside formatStage2LayoutPlanForPrompt's
+    // "Anchor Wall" section, as part of one coherent room layout plan rather than a
+    // separately-formatted block.
     textPrompt += `
 
 ${plannerInstructionLine}
