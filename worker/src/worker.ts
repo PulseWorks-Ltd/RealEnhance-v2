@@ -13788,6 +13788,7 @@ All openings must remain identical in position and size to the original image.`;
           blockedIssueType === ISSUE_TYPES.OPENING_REMOVED ? "opening_removed" :
           blockedIssueType === ISSUE_TYPES.OPENING_INFILLED ? "opening_infilled" :
           blockedIssueType === ISSUE_TYPES.OPENING_RELOCATED ? "opening_relocated" :
+          nonOverridableSpecialistHardFail.validator === "envelope" ? "STRUCTURAL_DISTORTION" :
           "STRUCTURAL_INVARIANT";
 
         if (attempt < MAX_STAGE2_RETRIES) {
@@ -13976,7 +13977,10 @@ All openings must remain identical in position and size to the original image.`;
         } as any;
 
         setStage2AttemptValidation(path2, "gemini", [decisionReason]);
-        pendingStage2StructuralFailureType = "STRUCTURAL_DISTORTION";
+        // Note: this block is unreachable whenever envelopeSignal.hardFail is true, since that
+        // implies authority === BLOCKING, which the nonOverridableSpecialistHardFail short-circuit
+        // above already catches and continues/breaks on first. Failure-type routing for envelope
+        // hard-fails lives there (validator === "envelope" -> STRUCTURAL_DISTORTION).
 
         if (attempt < MAX_STAGE2_RETRIES) {
           logRefreshValidationTrace({
