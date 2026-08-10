@@ -1,4 +1,4 @@
-import { getGeminiClient } from "../ai/gemini";
+import { grokAnalyzeImages } from "../ai/grok";
 import { toBase64 } from "../utils/images";
 import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import { createEmptyEvidence, shouldInjectEvidence } from "./validationEvidence";
@@ -8,7 +8,6 @@ import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { validateStage2Refresh } from "./stage2/refresh.validator";
 import { validateStage2Full } from "./stage2/full.validator";
 import { detectWindowsLocal, type BBox } from "./local-windows";
-import { logGeminiUsage } from "../ai/usageTelemetry";
 import {
   hasStage1BStructuralSignal,
   isStage1BMinorReconstructionSignal,
@@ -131,11 +130,8 @@ function hasStage1AOpeningSuspicion(evidence?: ValidationEvidence): boolean {
  * Model routing: LOW risk → fast model, MEDIUM/HIGH risk → strong model
  */
 function getModelForRisk(riskLevel?: RiskLevel): string {
-  const strongModel = process.env.GEMINI_VALIDATOR_MODEL_STRONG || "gemini-2.5-pro";
-  const fastModel = process.env.GEMINI_VALIDATOR_MODEL_FAST || "gemini-2.5-flash";
-
-  if (!riskLevel || riskLevel === "LOW") return fastModel;
-  return strongModel; // MEDIUM and HIGH → strong model
+  void riskLevel; // Grok exposes a single vision model — no fast/strong risk tiering today.
+  return process.env.GROK_VISION_MODEL || "grok-4.5";
 }
 
 function collectEvidenceKeys(evidence: ValidationEvidence): string[] {
@@ -1458,10 +1454,9 @@ export async function validateStage1BStructure(
   evidence?: ValidationEvidence,
   options?: { imageId?: string; attempt?: number }
 ): Promise<GeminiSemanticVerdict> {
-  const ai = getGeminiClient();
   const before = toBase64(beforeImage).data;
   const after = toBase64(afterImage).data;
-  const model = process.env.GEMINI_VALIDATOR_MODEL_PRIMARY || "gemini-2.5-flash";
+  const model = process.env.GROK_VISION_MODEL || "grok-4.5";
   const jobId = evidence?.jobId;
   const variant = getEvidenceGatingVariant(jobId);
   const gatingEnabled = isEvidenceGatingEnabledForJob(jobId);
@@ -1540,37 +1535,19 @@ export async function validateStage1BStructure(
   }
 
   try {
-    const requestStartedAt = Date.now();
-    const response = await (ai as any).models.generateContent({
-      model,
-      contents,
-      generationConfig: {
-        temperature: 0,
-        topP: 0,
-        maxOutputTokens: 256,
-      },
-    } as any);
-    // Only log usage when both identifiers are present — assertContext throws on empty strings.
-    if (jobId && options?.imageId) {
-      logGeminiUsage({
-        ctx: {
-          jobId,
-          imageId: options.imageId,
-          stage: "validator",
-          attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
-        },
-        model,
-        callType: "validator",
-        response,
-        latencyMs: Date.now() - requestStartedAt,
-      });
-    }
-
-    const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
-    const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
+    const text = (await grokAnalyzeImages({
+      images: [
+        { buffer: Buffer.from(before, "base64"), mimeType: "image/webp", label: "IMAGE_BEFORE:" },
+        { buffer: Buffer.from(after, "base64"), mimeType: "image/webp", label: "IMAGE_AFTER:" },
+      ],
+      prompt: stage1BPrompt,
+      jobId,
+      imageId: options?.imageId,
+      reason: "stage1b_structure",
+    })).trim();
 
     if (VALIDATOR_AUDIT_ENABLED) {
-      console.log(`[VALIDATOR AUDIT][GEMINI_STAGE1B_RESPONSE_RAW] job=${jobId || "unknown"} raw=${text}`);
+      console.log(`[VALIDATOR AUDIT][GROK_STAGE1B_RESPONSE_RAW] job=${jobId || "unknown"} raw=${text}`);
     }
 
     const parsed = parseGeminiSemanticText(text);
@@ -3042,7 +3019,6 @@ export async function runGeminiSemanticValidator(opts: {
       .join("\n");
   };
 
-  const ai = getGeminiClient();
   const before = toBase64(opts.basePath).data;
   const after = toBase64(opts.candidatePath).data;
 
@@ -3174,36 +3150,16 @@ export async function runGeminiSemanticValidator(opts: {
   const stageForPostProcessing: "1A" | "1B" | "2" = opts.stage;
 
   try {
-    const start = Date.now();
-    const deterministicStructureJson = opts.deterministicStructureJson === true;
-    const response = await (ai as any).models.generateContent({
-      model,
-      contents,
-      generationConfig: {
-        temperature: 0,
-        topP: 0,
-        maxOutputTokens: 512,
-        responseMimeType: deterministicStructureJson ? "application/json" : undefined,
-      },
-    } as any);
-    // Only log usage when both identifiers are present — assertContext throws on empty strings.
-    if (jobId && opts.imageId) {
-      logGeminiUsage({
-        ctx: {
-          jobId,
-          imageId: opts.imageId,
-          stage: "validator",
-          attempt: Number.isFinite(opts.attempt) ? Number(opts.attempt) : 1,
-        },
-        model,
-        callType: "validator",
-        response,
-        latencyMs: Date.now() - start,
-      });
-    }
-
-    const textParts = (response as any)?.candidates?.[0]?.content?.parts || [];
-    const text = textParts.map((p: any) => p?.text || "").join(" ").trim();
+    const text = (await grokAnalyzeImages({
+      images: [
+        { buffer: Buffer.from(before, "base64"), mimeType: "image/webp", label: "IMAGE_BEFORE:" },
+        { buffer: Buffer.from(after, "base64"), mimeType: "image/webp", label: "IMAGE_AFTER:" },
+      ],
+      prompt,
+      jobId,
+      imageId: opts.imageId,
+      reason: `${opts.stage}_semantic_adjudication`,
+    })).trim();
     const parsed = parseGeminiSemanticText(text);
     parsed.rawText = text;
 
@@ -3268,7 +3224,7 @@ export async function runGeminiSemanticValidator(opts: {
         adjudicatedClaims: parsed.adjudicatedClaims,
       };
 
-      const ms = Date.now() - start;
+      const ms = Date.now() - semanticStartedAt;
       debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} stage=2 authority=gemini_raw (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
       emitSemanticEnd(Date.now() - semanticStartedAt, { hardFail: verdict.hardFail, category: verdict.category });
       return verdict;
@@ -3567,7 +3523,7 @@ export async function runGeminiSemanticValidator(opts: {
       );
     }
 
-    const ms = Date.now() - start;
+    const ms = Date.now() - semanticStartedAt;
     debugLog(`[gemini-semantic] completed in ${ms}ms model=${model} risk=${opts.riskLevel || "N/A"} (hardFail=${verdict.hardFail} conf=${verdict.confidence} cat=${verdict.category})`);
     emitSemanticEnd(Date.now() - semanticStartedAt, { hardFail: verdict.hardFail, category: verdict.category });
     return verdict;

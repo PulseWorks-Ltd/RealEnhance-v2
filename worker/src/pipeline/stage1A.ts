@@ -1,6 +1,6 @@
 import sharp from "sharp";
 import { enhanceWithStabilityConservativeStage1A } from "../ai/stabilityConservativeUpscaleStage1A";
-import { enhanceWithGemini } from "../ai/gemini";
+import { enhanceWithGrok } from "../ai/grok";
 import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
@@ -603,8 +603,7 @@ async function enhanceWithGeminiStage1A(
     promptInjected,
   });
 
-  const geminiPath = await enhanceWithGemini(normalizedGeminiInputPath, {
-    replaceSky: replaceSky,
+  const geminiPath = await enhanceWithGrok(normalizedGeminiInputPath, {
     declutter: false,
     sceneType: sceneType,
     stage: "1A",
@@ -613,11 +612,6 @@ async function enhanceWithGeminiStage1A(
     roomType,
     modelReason: sceneType ? `${sceneType} enhance` : "enhance",
     promptOverride: enhancementPrompt,
-    temperature: jobSampling?.temperature ?? nzTemp,
-    topP: jobSampling?.topP ?? nzTopP,
-    topK: jobSampling?.topK ?? nzTopK,
-    floorClean: false,
-    hardscapeClean: sceneType === "exterior",
   });
 
   await logImageAttemptUrl({

@@ -1,4 +1,4 @@
-import type { GoogleGenAI } from "@google/genai";
+import { grokAnalyzeImages } from "./grok";
 
 /**
  * Staging Area Detection for Exterior Scenes
@@ -19,7 +19,6 @@ export interface StagingAreaResult {
  * Uses AI to identify deck/patio/balcony/terrace/verandah with strict criteria
  */
 export async function detectStagingArea(
-  ai: GoogleGenAI,
   imageB64: string
 ): Promise<StagingAreaResult> {
   const prompt = `You are an expert at analyzing outdoor property photos for real estate staging.
@@ -56,18 +55,11 @@ Return ONLY valid JSON in this exact format:
 }`;
 
   try {
-    const result = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: [{
-        role: 'user',
-        parts: [
-          { text: prompt },
-          { inlineData: { mimeType: "image/png", data: imageB64 } },
-        ],
-      }],
+    const text = await grokAnalyzeImages({
+      images: [{ buffer: Buffer.from(imageB64, "base64"), mimeType: "image/png" }],
+      prompt,
+      reason: "exterior_staging_area_detection",
     });
-
-    const text = result.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || "";
     console.log("[STAGING AREA] Raw AI response:", text);
     
     // Extract JSON from response (handle markdown code blocks)

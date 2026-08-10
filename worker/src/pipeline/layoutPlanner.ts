@@ -1,4 +1,4 @@
-import { getGeminiClient } from "../ai/gemini";
+import { grokAnalyzeImages } from "../ai/grok";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
 import type { AnchorFixture, AnchorFixtureType, StructuralBaseline, WallCoverageBand, WallIndex } from "../validators/openingPreservationValidator";
@@ -1090,39 +1090,20 @@ export async function planStage2Layout(
   }
 
   try {
-    const ai = getGeminiClient();
-    if (!ai) return null;
-
     const { data, mime } = toBase64(imagePath);
-    const model = (ai as any).getGenerativeModel({
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        temperature: 0.1,
-        topP: 0.9,
-        topK: 20,
-        maxOutputTokens: 512,
-        responseMimeType: "application/json",
-      },
-    });
 
-    const response = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: mime,
-          data,
-        },
-      },
-      {
-        text: `${LAYOUT_PLANNER_PROMPT}
+    const text = await grokAnalyzeImages({
+      images: [{ buffer: Buffer.from(data, "base64"), mimeType: mime }],
+      prompt: `${LAYOUT_PLANNER_PROMPT}
 
 CONTEXT:
 - Room type target: ${String(opts?.roomType || "unknown")}
 - Staging style target: ${String(opts?.stagingStyle || "standard_listing")}
 ${plannerPriorityBlock}`,
-      },
-    ]);
+      jobId: opts?.jobId,
+      reason: "stage2_layout_plan",
+    });
 
-    const text = response?.response?.text?.();
     if (!text) {
       focusLog("LAYOUT_PLANNER", "[pipeline/layoutPlanner] empty response", {
         jobId: opts?.jobId,
@@ -1133,7 +1114,9 @@ ${plannerPriorityBlock}`,
 
     let parsed: any;
     try {
-      parsed = JSON.parse(text);
+      const cleaned = text.replace(/```json|```/gi, "").trim();
+      const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] || cleaned;
+      parsed = JSON.parse(jsonCandidate);
     } catch {
       focusLog("LAYOUT_PLANNER", "[pipeline/layoutPlanner] non-JSON response", {
         jobId: opts?.jobId,

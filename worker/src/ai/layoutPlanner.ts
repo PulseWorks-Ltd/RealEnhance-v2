@@ -1,4 +1,4 @@
-import { getGeminiClient } from "./gemini";
+import { grokAnalyzeImages } from "./grok";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
 
@@ -93,52 +93,29 @@ export async function buildLayoutContext(imageUrl: string): Promise<LayoutContex
   try {
     focusLog("LAYOUT_PLANNER", "[layoutPlanner] Starting vision pre-pass", { imageUrl });
 
-    // Get Gemini client
-    const ai = getGeminiClient();
-    if (!ai) {
-      focusLog("LAYOUT_PLANNER", "[layoutPlanner] No Gemini client available");
-      return null;
-    }
-
     // Load image
     const { data, mime } = toBase64(imageUrl);
 
-    // Build request
-    const model = (ai as any).getGenerativeModel({
-      model: "gemini-2.5-flash", // Low-cost model for analysis
-      generationConfig: {
-        temperature: 0.1, // Very low for deterministic output
-        maxOutputTokens: 512, // Small output
-        topP: 0.95,
-        topK: 40,
-        responseMimeType: "application/json", // Force JSON output
-      },
+    // Make vision call
+    const text = await grokAnalyzeImages({
+      images: [{ buffer: Buffer.from(data, "base64"), mimeType: mime }],
+      prompt: LAYOUT_PLANNER_PROMPT,
+      reason: "stage2_layout_context",
     });
 
-    // Make vision call
-    const response = await model.generateContent([
-      {
-        inlineData: {
-          mimeType: mime,
-          data: data,
-        },
-      },
-      { text: LAYOUT_PLANNER_PROMPT },
-    ]);
-
     const elapsed = Date.now() - startTime;
-    
-    // Parse response
-    const text = response.response?.text?.();
+
     if (!text) {
       focusLog("LAYOUT_PLANNER", "[layoutPlanner] No text response", { elapsed });
       return null;
     }
 
-    // Parse JSON
+    // Parse JSON (regex-extract first — Grok is asked for JSON-only but may still wrap it)
     let result: LayoutContextResult;
     try {
-      result = JSON.parse(text);
+      const cleaned = text.replace(/```json|```/gi, "").trim();
+      const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] || cleaned;
+      result = JSON.parse(jsonCandidate);
     } catch (parseError) {
       focusLog("LAYOUT_PLANNER", "[layoutPlanner] JSON parse failed", { 
         elapsed, 

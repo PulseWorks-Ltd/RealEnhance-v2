@@ -1,4 +1,4 @@
-import { getGeminiClient } from "../ai/gemini";
+import { grokAnalyzeImages, grokImageEdit } from "../ai/grok";
 import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
@@ -22,8 +22,7 @@ import { buildLayoutContext, type LayoutContextResult } from "../ai/layoutPlanne
 import { formatStage2LayoutPlanForPrompt, type Stage2LayoutPlan } from "./layoutPlanner";
 import { buildStructuralRetryInjection, type StructuralFailureType } from "./structuralRetryHelpers";
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
-import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
-import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
+import { logEvent as logPipelineEvent } from "../ai/usageTelemetry";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 
 const logger = console;
@@ -208,44 +207,19 @@ export async function runGeminiStructuralReviewPro(
   stagedImagePath: string,
   options?: { jobId?: string; imageId?: string; attempt?: number }
 ): Promise<StructuralReviewProResult> {
-  const ai = getGeminiClient();
   const original = toBase64(originalImagePath);
   const staged = toBase64(stagedImagePath);
 
-  const requestStartedAt = Date.now();
-  const response = await (ai as any).models.generateContent({
-    model: "gemini-2.5-pro",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: STRUCTURAL_IDENTITY_REVIEW_PROMPT },
-          { text: "Image A (original uploaded room):" },
-          { inlineData: { mimeType: original.mime, data: original.data } },
-          { text: "Image B (staged output):" },
-          { inlineData: { mimeType: staged.mime, data: staged.data } },
-        ],
-      },
+  const text = await grokAnalyzeImages({
+    images: [
+      { buffer: Buffer.from(original.data, "base64"), mimeType: original.mime, label: "Image A (original uploaded room):" },
+      { buffer: Buffer.from(staged.data, "base64"), mimeType: staged.mime, label: "Image B (staged output):" },
     ],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: "application/json",
-    },
+    prompt: STRUCTURAL_IDENTITY_REVIEW_PROMPT,
+    jobId: options?.jobId,
+    imageId: options?.imageId,
+    reason: "final_structural_review",
   });
-  logGeminiUsage({
-    ctx: {
-      jobId: options?.jobId || "",
-      imageId: options?.imageId || "",
-      stage: "validator",
-      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
-    },
-    model: "gemini-2.5-pro",
-    callType: "validator",
-    response,
-    latencyMs: Date.now() - requestStartedAt,
-  });
-
-  const text = String(response?.candidates?.[0]?.content?.parts?.[0]?.text || "").trim();
   const cleaned = text.replace(/```json|```/gi, "").trim();
   const jsonCandidate = cleaned.match(/\{[\s\S]*\}/)?.[0] || cleaned;
 
@@ -292,7 +266,7 @@ export function resolveStage2Model(attempt: number, reason: Stage2RetryReason, p
   void reason;
   void previousModel;
   const resolved = resolveStage2ImageModel(attempt);
-  return ensureImageCapableModel(resolved, "gemini-2.5-flash-image");
+  return ensureImageCapableModel(resolved, process.env.GROK_IMAGE_MODEL || "grok-imagine-image-quality");
 }
 
 function resolveStage2Temperature(attempt: number, reason: Stage2RetryReason, previousTemperature?: number): number {
@@ -993,32 +967,19 @@ Do not add blinds, rods, tracks, or new window coverings.
 `;
   }
 
-  const requestParts: any[] = [];
-  // Preferred ordering: text prompt first, then base image(s), then explicit mask (if available)
-  requestParts.push({ text: textPrompt });
-  requestParts.push({ inlineData: { mimeType: mime, data } });
+  const referenceImages: Buffer[] = [];
   if (opts.referenceImagePath) {
     const ref = toBase64(opts.referenceImagePath);
-    requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
+    referenceImages.push(Buffer.from(ref.data, "base64"));
   }
   if (stagingMaskBuffer) {
-    try {
-      const maskB64 = stagingMaskBuffer.toString("base64");
-      requestParts.push({ inlineData: { mimeType: "image/png", data: maskB64 } });
-    } catch (e) {
-      focusLog("STAGE2_MASK", "[stage2] Failed to attach mask to requestParts", { error: String(e), jobId: opts.jobId });
-    }
+    // Grok's image-edit API has no mask parameter; the darkened region overlay already
+    // baked into `inputForStage2` (see stagingRegion handling above) is the guidance signal.
+    focusLog("STAGE2_MASK", "[stage2] Grok has no mask input — relying on the region-overlay guidance image only", { jobId: opts.jobId });
   }
 
   logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);
   logger.info(`[STAGE2_MODEL] attempt=${attemptNumber} model=${generationPlan.model}`);
-  const generationConfig: any = {
-    temperature: generationPlan.temperature,
-    topP: generationPlan.topP,
-    topK: generationPlan.topK,
-    ...(opts.maxOutputTokens !== undefined ? { maxOutputTokens: opts.maxOutputTokens } : {}),
-    ...(opts.profile?.seed !== undefined ? { seed: opts.profile.seed } : {}),
-  };
 
   // Fail early — before spending any API budget — if logging context is incomplete.
   // Without both jobId and imageId, assertContext() in usageTelemetry throws AFTER the
@@ -1032,51 +993,27 @@ Do not add blinds, rods, tracks, or new window coverings.
     );
   }
 
-  const ai = getGeminiClient();
-  let resp: any;
-  let modelUsed = generationPlan.model;
+  let outImageBuffer: Buffer;
+  const modelUsed = generationPlan.model;
   try {
-    const run = await runWithSelectedImageModel({
-      stageLabel: "2",
-      ai: ai as any,
-      model: generationPlan.model,
-      baseRequest: {
-        contents: requestParts,
-        generationConfig,
-      } as any,
-      context: "stage2_generation_attempt",
-      meta: {
-        stage: "2",
-        jobId: opts.jobId,
-        imageId: opts.imageId,
-        roomType: opts.roomType,
-        reason: opts.modelReason || `stage2_attempt_${attemptNumber}_${retryReason}`,
-        attempt: attemptNumber,
-      },
+    const run = await grokImageEdit({
+      imageBuffer: Buffer.from(data, "base64"),
+      mimeType: mime,
+      prompt: textPrompt,
+      referenceImages,
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      reason: opts.modelReason || `stage2_attempt_${attemptNumber}_${retryReason}`,
     });
-    resp = run.resp;
-    modelUsed = run.modelUsed;
+    outImageBuffer = run.buffer;
   } catch (error: any) {
     const message = String(error?.message || error || "unknown_error");
-    if (/no inline image data|no image data in gemini response/i.test(message)) {
+    if (/no image data|no image in response/i.test(message)) {
       emitStage2AttemptComplete(false, message);
       throw new Stage2GenerationNoImageError(message);
     }
     emitStage2AttemptComplete(false, message);
     throw new Stage2GenerationFailure(`[stage2] generation failed: ${message}`);
-  }
-
-  const responseParts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
-  const img = responseParts.find((p) => p.inlineData);
-  if (!img?.inlineData?.data) {
-    const inlineDataPresent = responseParts.some((part: any) => !!part?.inlineData?.data);
-    console.warn(
-      `[stage2_generation_no_image] model=${modelUsed} attempt=${attemptNumber} response_parts=${summarizeResponsePartTypes(
-        responseParts
-      )} inlineData_present=${inlineDataPresent}`
-    );
-    emitStage2AttemptComplete(false, "no_inline_image_data");
-    throw new Stage2GenerationNoImageError();
   }
 
   console.log("[STAGE2_OUTPUT]", {
@@ -1085,7 +1022,7 @@ Do not add blinds, rods, tracks, or new window coverings.
     attempt: attemptNumber,
     model: modelUsed,
     hasImage: true,
-    imageSize: img.inlineData.data.length,
+    imageSize: outImageBuffer.length,
   });
 
   if (path.resolve(opts.outputPath) === path.resolve(basePath)) {
@@ -1093,7 +1030,8 @@ Do not add blinds, rods, tracks, or new window coverings.
     throw new Stage2GenerationFailure("stage2_candidate_collapse: candidate_path_equals_baseline", "stage2_candidate_collapse");
   }
 
-  writeImageDataUrl(opts.outputPath, `data:image/webp;base64,${img.inlineData.data}`);
+  const outWebpBuffer: Buffer = await sharp(outImageBuffer).webp({ quality: 92 }).toBuffer();
+  writeImageDataUrl(opts.outputPath, `data:image/webp;base64,${outWebpBuffer.toString("base64")}`);
   try {
     await fs.access(opts.outputPath);
   } catch {

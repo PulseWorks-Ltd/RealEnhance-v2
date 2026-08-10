@@ -315,7 +315,7 @@ export function getGeminiClient(): GoogleGenAI {
   return singleton as any;
 }
 
-function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean }): string {
+export function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean }): string {
   const useTest = process.env.USE_TEST_PROMPTS === "1";
   const stage = options as any as { stage?: "1A"|"1B"|"2"; };
   if (useTest && stage.stage) {

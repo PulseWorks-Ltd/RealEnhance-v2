@@ -1,6 +1,5 @@
-import type { GoogleGenAI } from "@google/genai";
 import type { Stage2ValidationMode } from "../validators/stage2ValidationMode";
-import { logGeminiUsage } from "./usageTelemetry";
+import { grokAnalyzeImages } from "./grok";
 
 export type ComplianceVerdict = {
   ok: boolean;
@@ -45,7 +44,6 @@ function resolveTier(confidence: number): number {
 }
 
 async function ask(
-  ai: GoogleGenAI,
   originalB64: string,
   editedB64: string,
   prompt: string,
@@ -53,39 +51,23 @@ async function ask(
   telemetry?: { jobId?: string; imageId?: string; attempt?: number },
   phasePrefix?: "structural" | "placement"
 ) {
-  const complianceModel = modelOverride || process.env.GEMINI_COMPLIANCE_MODEL || "gemini-2.5-flash";
+  const complianceModel = modelOverride || process.env.GROK_VISION_MODEL || "grok-4.5";
   const requestStartedAt = Date.now();
-  const resp = await (ai as any).models.generateContent({
-    model: complianceModel,
-    contents: [{
-      role: "user",
-      parts: [
-        { text: prompt },
-        { text: "ORIGINAL:" },
-        { inlineData: { mimeType: "image/webp", data: originalB64 } },
-        { text: "EDITED:" },
-        { inlineData: { mimeType: "image/webp", data: editedB64 } },
-      ],
-    }],
+  const text = await grokAnalyzeImages({
+    images: [
+      { buffer: Buffer.from(originalB64, "base64"), mimeType: "image/webp", label: "ORIGINAL:" },
+      { buffer: Buffer.from(editedB64, "base64"), mimeType: "image/webp", label: "EDITED:" },
+    ],
+    prompt,
+    jobId: telemetry?.jobId,
+    imageId: telemetry?.imageId,
+    reason: phasePrefix ? `compliance_${phasePrefix}` : "compliance",
   });
   if (phasePrefix) {
     logCompliancePhaseEnd(telemetry?.jobId, `${phasePrefix}_gemini_call`, Date.now() - requestStartedAt, {
       model: complianceModel,
     });
   }
-  logGeminiUsage({
-    ctx: {
-      jobId: telemetry?.jobId || "",
-      imageId: telemetry?.imageId || "",
-      stage: "compliance",
-      attempt: Number.isFinite(telemetry?.attempt) ? Number(telemetry?.attempt) : 1,
-    },
-    model: complianceModel,
-    callType: "validator",
-    response: resp,
-    latencyMs: Date.now() - requestStartedAt,
-  });
-  const text = resp.candidates?.[0]?.content?.parts?.map((p: any) => p.text).join("\n") || "{}";
   const parseStartedAt = Date.now();
   try {
     const cleaned = text.replace(/```json|```/g, "").trim();
@@ -121,7 +103,6 @@ function buildStage2ComplianceContext(mode?: Stage2ValidationMode): string[] {
 }
 
 export async function checkCompliance(
-  ai: GoogleGenAI,
   originalB64: string,
   editedB64: string,
   opts?: {
@@ -156,7 +137,7 @@ export async function checkCompliance(
   ].join("\n");
   logCompliancePhaseEnd(opts?.jobId, "structural_prompt_build", Date.now() - structuralPromptBuildStartedAt);
 
-  const s = await ask(ai, originalB64, editedB64, structuralPrompt, opts?.modelOverride, {
+  const s = await ask(originalB64, editedB64, structuralPrompt, opts?.modelOverride, {
     jobId: opts?.jobId,
     imageId: opts?.imageId,
     attempt: opts?.attempt,
@@ -211,7 +192,7 @@ export async function checkCompliance(
   ].join("\n");
   logCompliancePhaseEnd(opts?.jobId, "placement_prompt_build", Date.now() - placementPromptBuildStartedAt);
 
-  const p = await ask(ai, originalB64, editedB64, placementPrompt, opts?.modelOverride, {
+  const p = await ask(originalB64, editedB64, placementPrompt, opts?.modelOverride, {
     jobId: opts?.jobId,
     imageId: opts?.imageId,
     attempt: opts?.attempt,

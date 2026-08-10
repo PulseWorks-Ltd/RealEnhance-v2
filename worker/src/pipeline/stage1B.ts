@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { siblingOutPath } from "../utils/images";
-import { enhanceWithGemini, STAGE1B_FULL_SAMPLING } from "../ai/gemini";
+import { STAGE1B_FULL_SAMPLING } from "../ai/gemini";
+import { enhanceWithGrok } from "../ai/grok";
 import { buildStage1BPromptNZStyle, buildLightDeclutterPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
@@ -217,8 +218,7 @@ If there is any ambiguity, leave the area unchanged.
 
     logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobDeclutterIntensity" });
     logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1B.ts", variable: "__jobSampling" });
-    const declutteredPath = await enhanceWithGemini(stage1APath, {
-      replaceSky,
+    const declutteredPath = await enhanceWithGrok(stage1APath, {
       declutter: true,
       sceneType,
       stage: "1B",
@@ -227,23 +227,15 @@ If there is any ambiguity, leave the area unchanged.
       roomType,
       modelReason: declutterMode ? `declutter:${declutterMode}` : "declutter",
       outputPath,
-      // Low-temp for deterministic, aggressive removal
-      temperature: retryTemp,
-      topP: samplingTopP,
-      topK: samplingTopK,
       // NZ explicit 1B prompt (mode-specific)
       promptOverride,
-      // When decluttering, allow interior floor cleanup and exterior hardscape cleanup
-      floorClean: sceneType === "interior",
-      hardscapeClean: sceneType === "exterior",
       declutterIntensity: options.jobDeclutterIntensity || undefined,
-      ...(options.jobSampling || {}),
     });
-    
-    logIfNotFocusMode(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
-    logIfNotFocusMode(`[stage1B] 🔍 Checking if Gemini succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
-    
-    // If Gemini succeeded, validate against canonical base (not 1A)
+
+    logIfNotFocusMode(`[stage1B] 📊 Grok returned: ${declutteredPath}`);
+    logIfNotFocusMode(`[stage1B] 🔍 Checking if Grok succeeded: ${declutteredPath !== stage1APath ? 'YES ✅' : 'NO ❌'}`);
+
+    // If Grok succeeded, validate against canonical base (not 1A)
     if (declutteredPath !== stage1APath) {
       await logImageAttemptUrl({
         ctx: stage1BCtx,
