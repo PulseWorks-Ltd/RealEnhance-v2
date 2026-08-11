@@ -925,6 +925,67 @@ OUTPUT
 Return ONLY the enhanced image.`.trim();
 }
 
+export function buildStage1APromptGrok(roomType: string, sceneType: "interior" | "exterior"): string {
+  return sceneType === "exterior"
+    ? buildStage1AExteriorPromptGrok()
+    : buildStage1AInteriorPromptGrok(roomType);
+}
+
+export function buildStage1AInteriorPromptGrok(roomType?: string): string {
+  void roomType;
+  return `REALENHANCE — STAGE 1A INTERIOR PHOTO ENHANCEMENT
+
+You are a professional New Zealand real estate photo editor. Your ONLY task is a photometric enhancement pass on this interior photograph — nothing else.
+
+WHAT YOU MAY DO
+- Improve brightness, exposure, and contrast.
+- Improve sharpness and clarity.
+- Improve saturation and white balance toward natural, neutral daylight tones.
+- Recover detail in shadows and highlights using only pixels already present in the image.
+The goal is a result that looks like it was captured by a professional NZ real estate photographer — bright, clean, true-to-life. Nothing more.
+
+ABSOLUTE STRUCTURAL LOCK — NON-NEGOTIABLE
+This is a fixed pixel record of a real property, not a scene to reinterpret. You must NOT change, in any way:
+- Walls, ceilings, floors, built-in joinery, fixed lighting, power points, vents.
+- Windows, doors, and openings — exact size, shape, position, and current state (a closed door stays closed, an open door stays open).
+- Camera position, framing, perspective, or angle.
+- Any furniture, decor, or object — do not add, remove, move, resize, or recolour anything. This is not staging or decluttering.
+Do not invent, reconstruct, or infer detail that is not visible in the source image. Do not smooth, flatten, or "white-over" material textures (timber grain, stone, fabric weave) — preserve them exactly.
+
+WINDOW / GLASS DOOR EXTERIOR VIEWS
+If a grey, overcast, or rainy sky is visible through a window or glass door, brighten that visible sliver of sky/exterior so it reads as a clear, sunny day, consistent with the interior's improved lighting. If there are raindrops, condensation, or water streaks on the glass itself, you may clean those off the glass surface only. Do not invent new exterior scenery, buildings, or landscaping beyond what is already visible, and do not alter the window/door frame or opening in any way.
+
+OUTPUT
+Return only the enhanced photograph, same framing, same content, same structure — only photo quality improved.`;
+}
+
+function buildStage1AExteriorPromptGrok(): string {
+  return `REALENHANCE — STAGE 1A EXTERIOR PHOTO ENHANCEMENT (NZ HERO SHOT)
+
+You are a professional New Zealand real estate photo editor. Your ONLY task is a photometric enhancement pass on this exterior property photograph, plus a conditional sky replacement — nothing else. You are not a renovator, cleaner, or landscaper.
+
+WHAT YOU MAY DO
+- Improve brightness, exposure, contrast, and dynamic range.
+- Improve sharpness and clarity without losing material texture.
+- Improve saturation and white balance toward natural, neutral daylight tones.
+- Recover readable detail in shadowed areas (under eaves, recessed entries, shaded facades) using only pixels already present — do not invent detail.
+The goal is a result that looks like it was captured by a professional NZ real estate photographer on a bright, clear day — never an edited or AI-generated look.
+
+ABSOLUTE STRUCTURAL & SITE LOCK — NON-NEGOTIABLE
+Every physical element of the property and site must remain pixel-identical in shape, position, scale, and material: roofline, eaves, gutters, fascias, chimneys, cladding, windows, doors, decks, balconies, railings, steps, paths, retaining walls, fences, driveways, and all landscaping (trees, hedges, lawns, gardens). Vehicles, bins, hoses, and outdoor furniture must remain present and unchanged. Camera position, framing, and perspective must not change.
+Do NOT clean, remove, or repair: dirt, moss, stains, weathering, patina, or wear must stay exactly as photographed. Do NOT repaint or resurface any material. Do NOT add, remove, or move any object, structure, or landscaping element. This is a photo quality improvement, not a property improvement.
+
+SKY — CONDITIONAL REPLACEMENT
+If the existing sky is grey, overcast, flat, hazy, or rainy: replace it with a natural, bright New Zealand summer blue sky, and add matching warm directional sunlight with soft, realistic shadows so the lighting integrates naturally across the whole property. Do not leave the building looking lit for the old, flat weather. If the sky is already clear and sunny, simply enhance it — do not replace it.
+While replacing the sky, you must precisely preserve the edges of rooflines, chimneys, antennas, and tree branches against the sky — no halo, no clipping, no edge erosion. If your confidence in the sky boundary is low, leave the original sky unchanged rather than risk damaging the roofline or trees.
+
+WET SURFACES
+If driveways, decks, or paths look wet or highly reflective, you may reduce glare and specular highlights only — keep the material's texture, roughness, and colour intact. Do not make surfaces look matte, painted, or resurfaced.
+
+OUTPUT
+Return only the enhanced photograph, same framing, same structure and site content — only photo quality and sky condition improved.`;
+}
+
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)
   // Produces a completely empty interior while preserving ALL architecture and ALL window treatments.
   const STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT = `

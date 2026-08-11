@@ -6,7 +6,7 @@ import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 import { getAverageLuminance, selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
-import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { buildStage1APromptNZStyle, buildStage1APromptGrok } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
 import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import type { EnhancementProfile } from "../config/enhancementProfiles";
@@ -563,8 +563,23 @@ async function enhanceWithGeminiStage1A(
   let nzTopP: number | undefined = undefined;
   let nzTopK: number | undefined = undefined;
 
-  // Priority 1: NZ-style prompts if enabled (for NZ market)
-  if (isNZStyleEnabled()) {
+  const stage1APromptVariant = String(process.env.STAGE1A_PROMPT_VARIANT || "gemini").toLowerCase();
+  const useGrokStage1APrompt = stage1APromptVariant === "grok";
+
+  console.log("[STAGE1A_PROMPT_VARIANT]", {
+    jobId,
+    requested: process.env.STAGE1A_PROMPT_VARIANT || "gemini",
+    variant: useGrokStage1APrompt ? "grok" : "gemini",
+  });
+
+  // Priority 0: Grok-specific prompt, opted into via STAGE1A_PROMPT_VARIANT=grok
+  if (useGrokStage1APrompt) {
+    enhancementPrompt = buildStage1APromptGrok("room", (sceneType === "interior" ? "interior" : "exterior") as any);
+    const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
+    nzTemp = preset.temperature;
+    nzTopP = preset.topP;
+    nzTopK = preset.topK;
+  } else if (isNZStyleEnabled()) {
     const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
     const interiorCfg = INTERIOR_PROFILE_CONFIG[interiorProfileKey];
 

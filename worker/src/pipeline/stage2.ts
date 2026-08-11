@@ -785,8 +785,37 @@ Camera & Perspective Constraint:
 The camera viewpoint, lens perspective, and framing of the image must remain exactly the same as in the original photo. Do not zoom, crop, rotate, widen, narrow, or otherwise shift the camera position or perspective. The final staged image must appear as though the exact same photo was taken from the same camera position, with furniture simply placed into the scene.
    `;
 
+  const STAGE2_PROMPT_GROK_NZ = `Virtual Staging & Enhancement Instructions — NZ Real Estate Compliance Mode
+
+You are editing a real New Zealand real-estate listing photograph. Your ONLY task is to (1) apply light photographic enhancement — improve brightness, clarity, sharpness, and natural colour balance — and (2) add realistic, correctly-scaled furniture and decor for virtual staging. You are a photo editor and decorator only — never a renovator, architect, or interior redesigner.
+
+STRUCTURAL PRESERVATION — ABSOLUTE, NON-NEGOTIABLE
+Every structural and permanent feature of this photograph must remain completely identical to the original: walls, windows, doors, floors, ceilings, roofing, cladding, fireplaces, built-in joinery, stairs, existing fixed lighting, power points, vents, beams, columns, and all proportions and camera perspective. Do not move, remove, resize, reshape, recolour, repaint, or hide any of these elements in any way. Do not alter room shape, room size, or architecture. Do not invent or remove windows, doors, or openings.
+
+NO FIXED LIGHTING MAY BE ADDED
+Do not add chandeliers, hanging pendant lights, wall sconces, flush mounts, recessed lighting, track lighting, or any other ceiling- or wall-mounted light fixture. These are treated as fixed/permanent features. Freestanding or table/floor lamps ARE allowed as movable decor.
+
+PERMITTED CHANGES ONLY
+1. Photographic enhancement: improve brightness, clarity, sharpness, and natural colour balance. Do not alter the room's actual finishes, materials, or colours to look different than they really are — enhancement must stay photographically honest.
+2. Furniture & decor staging: add realistic, correctly-scaled furniture, rugs, curtains, soft furnishings, plants, artwork (on open wall space only, never over windows/doors), and decor items appropriate to the room type and requested style. All items must sit in correct perspective and scale, with realistic lighting and shadows matching the existing scene.
+
+FORBIDDEN
+- Do not change wall colour, flooring, or any fixed finish.
+- Do not remove or hide defects, cracks, stains, or visible wear.
+- Do not enlarge rooms, add/remove windows or doors, or change ceiling height or layout.
+- Do not add any fixed/mounted lighting of any kind.
+- Do not generate a new image — this must be an edit of the exact supplied photo, same camera position and framing.
+
+CAMERA & PERSPECTIVE LOCK
+The camera viewpoint, lens perspective, and framing must remain exactly as in the original photo. Do not zoom, crop, rotate, widen, narrow, or shift the camera position. The result must look like the same photo, from the same position, with furniture placed into the scene and light enhancement applied.
+
+This edit must remain a true representation of the property, consistent with NZ Fair Trading Act 1986 and Real Estate Agents Act 2008 requirements — the structure shown must be identical to the real property.
+   `;
+
   const USE_NANO_BANANA_PROMPT =
     process.env.STAGE2_PROMPT_VARIANT === "nano" && resolvedPromptMode === "full";
+  const USE_GROK_SKILL_PROMPT =
+    process.env.STAGE2_PROMPT_VARIANT === "grok" && resolvedPromptMode === "full";
 
   const nanoRoomProgramGuidance = buildNanoRoomProgramGuidance({
     roomType: canonicalRoomType,
@@ -795,12 +824,14 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
 
   const stage2Prompt = USE_NANO_BANANA_PROMPT
     ? `${STAGE2_PROMPT_NANO_BANANA}\n\n${nanoRoomProgramGuidance}`
-    : STAGE2_PROMPT_LEGACY;
+    : USE_GROK_SKILL_PROMPT
+      ? `${STAGE2_PROMPT_GROK_NZ}\n\n${nanoRoomProgramGuidance}`
+      : STAGE2_PROMPT_LEGACY;
 
   nLog("[STAGE2_PROMPT_VARIANT]", {
     requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
     mode: resolvedPromptMode,
-    variant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"
+    variant: USE_NANO_BANANA_PROMPT ? "nano_banana" : USE_GROK_SKILL_PROMPT ? "grok_skill" : "legacy"
   });
 
   let textPrompt = stage2Prompt;
@@ -907,7 +938,7 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
       attemptNumber,
       retryAttempt: Math.max(0, attemptNumber - 1),
       plannerInstructionMode,
-      promptVariant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy",
+      promptVariant: USE_NANO_BANANA_PROMPT ? "nano_banana" : USE_GROK_SKILL_PROMPT ? "grok_skill" : "legacy",
     });
 
     // Anchor region guidance is now rendered inside formatStage2LayoutPlanForPrompt's
