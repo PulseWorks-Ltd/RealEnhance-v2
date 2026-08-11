@@ -14668,6 +14668,13 @@ All openings must remain identical in position and size to the original image.`;
         vLog(`[VAL][job=${payload.jobId}] stage2Url=${pub2Url}`);
         nLog(`[worker] ✅ Stage 2 published: ${pub2Url}`);
       } catch (e) {
+        console.error('[STAGE2_PUBLISH_EXCEPTION]', {
+          jobId: payload.jobId,
+          stage2CandidatePath,
+          exceptionType: (e as any)?.name || typeof e,
+          exceptionMessage: (e as any)?.message || String(e),
+          stack: (e as any)?.stack || null,
+        });
         nLog('[worker] failed to publish Stage 2', e);
       }
     }
@@ -14825,6 +14832,13 @@ All openings must remain identical in position and size to the original image.`;
         }
       }
     } catch (recoverErr) {
+      console.error("[STAGE2_RECOVERY_EXCEPTION]", {
+        jobId: payload.jobId,
+        stage2CandidatePath,
+        exceptionType: (recoverErr as any)?.name || typeof recoverErr,
+        exceptionMessage: (recoverErr as any)?.message || String(recoverErr),
+        stack: (recoverErr as any)?.stack || null,
+      });
       nLog("[STAGE2_RECOVERY] Recovery publish failed (non-blocking)", {
         jobId: payload.jobId,
         error: (recoverErr as any)?.message || String(recoverErr),
