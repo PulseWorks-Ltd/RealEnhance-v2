@@ -35,6 +35,7 @@ import {
   runStage2GenerationAttempt,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
+import { renderStagingWithVertexInpaint } from "./providers/vertexInpaint/renderer";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
@@ -10645,6 +10646,150 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     using: stage2InputUsing,
     pathSuffix: stage2InputSuffix,
   });
+
+  // ═══ EXPERIMENTAL: Vertex mask-constrained inpainting Stage 2 provider ═══
+  // Gated entirely behind STAGE2_RENDER_PROVIDER=vertex_inpaint (default remains
+  // the existing Gemini/Grok path below, byte-for-byte unchanged). Per
+  // VERTEX_INPAINTING_INVESTIGATION.md: single-image Gemini furniture-placement
+  // mask -> Vertex Imagen EDIT_MODE_INPAINT_INSERTION -> deterministic
+  // outside-mask drift check as the primary structural gate. The existing
+  // specialist validator gauntlet (opening/fixture/floor/envelope + Unified
+  // Validator) is NOT invoked on this path — out of scope for this experiment
+  // per the investigation's §14 guidance to avoid redesigning the validator
+  // system. The existing final semantic validator (runGeminiStructuralReviewPro)
+  // runs afterward in ADVISORY/log-only mode for comparison against the
+  // deterministic drift result — it cannot fail this path.
+  if (
+    payload.options.virtualStage
+    && !stage2Blocked
+    && stage2InputPath
+    && String(process.env.STAGE2_RENDER_PROVIDER || "gemini").toLowerCase() === "vertex_inpaint"
+  ) {
+    console.log("[STAGE2_VERTEX_INPAINT] starting", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage2BaseStage,
+      roomType: payload.options.roomType,
+      stagingStyle: (payload.options as any)?.stagingStyle,
+    });
+
+    let vertexResult: Awaited<ReturnType<typeof renderStagingWithVertexInpaint>>;
+    try {
+      vertexResult = await renderStagingWithVertexInpaint({
+        basePath: stage2InputPath,
+        roomType: payload.options.roomType || "",
+        stagingStyle: (payload.options as any)?.stagingStyle,
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+      });
+    } catch (vertexErr: any) {
+      const reason = vertexErr?.name === "GeminiMaskGenerationError"
+        ? "vertex_inpaint_mask_generation_failed"
+        : vertexErr?.name === "MaskValidationError"
+          ? "vertex_inpaint_mask_invalid"
+          : vertexErr?.name === "VertexAuthError"
+            ? "vertex_inpaint_auth_failed"
+            : vertexErr?.name === "VertexApiError"
+              ? "vertex_inpaint_api_error"
+              : vertexErr?.name === "OutsideMaskDriftError"
+                ? "vertex_inpaint_outside_mask_drift_failed"
+                : "vertex_inpaint_generation_error";
+      console.error("[STAGE2_VERTEX_INPAINT] generation failed", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        reason,
+        error: vertexErr?.message || String(vertexErr),
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: `${reason}: ${vertexErr?.message || vertexErr}` },
+        "stage2_vertex_inpaint_failed"
+      );
+      return;
+    }
+
+    let vertexPublished: { url: string };
+    try {
+      vertexPublished = await publishWithOptionalBlackEdgeGuard(vertexResult.localPath, "2-vertex-inpaint");
+    } catch (publishErr: any) {
+      console.error("[STAGE2_VERTEX_INPAINT] publish failed", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        error: publishErr?.message || String(publishErr),
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: `vertex_inpaint_publish_failed: ${publishErr?.message || publishErr}` },
+        "stage2_vertex_inpaint_failed"
+      );
+      return;
+    }
+
+    // Advisory-only: compare the deterministic outside-mask drift gate against
+    // the existing semantic validator. Never blocks this experimental path —
+    // a failure or error here is logged and recorded, not enforced.
+    let advisorySemanticReview: { result: "PASS" | "FAIL"; confidence: number; explanation: string } | null = null;
+    try {
+      advisorySemanticReview = await runGeminiStructuralReviewPro(stage2InputPath, vertexResult.localPath, {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        attempt: 1,
+      });
+      console.log("[STAGE2_VERTEX_INPAINT] advisory_semantic_review", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        result: advisorySemanticReview.result,
+        confidence: advisorySemanticReview.confidence,
+        blocking: false,
+      });
+    } catch (advisoryErr: any) {
+      console.error("[STAGE2_VERTEX_INPAINT] advisory_semantic_review_error", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        error: advisoryErr?.message || String(advisoryErr),
+        blocking: false,
+      });
+    }
+
+    console.log("[STAGE2_VERTEX_INPAINT] complete", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      model: vertexResult.model,
+      outputUrl: vertexPublished.url,
+      driftPassed: vertexResult.driftResult.passed,
+      maskGenerationDurationMs: vertexResult.maskGenerationDurationMs,
+      vertexRenderDurationMs: vertexResult.vertexRenderDurationMs,
+    });
+
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "complete",
+        finalOutputUrl: vertexPublished.url,
+        resultUrl: vertexPublished.url,
+        stageUrls: {
+          "1A": pub1AUrl ?? null,
+          "1B": pub1BUrl ?? null,
+          "2": vertexPublished.url,
+        },
+        meta: {
+          ...sceneMeta,
+          stage2Provider: "vertex_inpaint",
+          vertexInpaintModel: vertexResult.model,
+          vertexInpaintMaskMetrics: vertexResult.maskMetrics,
+          vertexInpaintAspectRatioNormalization: vertexResult.aspectRatioNormalization,
+          vertexInpaintDriftResult: vertexResult.driftResult,
+          vertexInpaintSubmittedAt: vertexResult.submittedAt,
+          vertexInpaintCompletedAt: vertexResult.completedAt,
+          vertexInpaintMaskGenerationDurationMs: vertexResult.maskGenerationDurationMs,
+          vertexInpaintRenderDurationMs: vertexResult.vertexRenderDurationMs,
+          vertexInpaintAdvisorySemanticReview: advisorySemanticReview,
+        },
+      },
+      "stage2_vertex_inpaint_complete"
+    );
+    return;
+  }
 
   if (payload.options.virtualStage && !isExteriorScene && stage2InputPath) {
     const resolvedRefreshGate =
