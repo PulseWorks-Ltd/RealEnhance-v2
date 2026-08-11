@@ -564,6 +564,61 @@ export function resolveStage2MaxAttempts(): number {
   return getStage2ConfiguredMaxAttempts();
 }
 
+function describeStructuralFailureForCorrection(failureType: StructuralFailureType | null): string {
+  switch (failureType) {
+    case "STRUCTURAL_DISTORTION":
+      return "the room's wall shape, corners, or boundaries were altered — a wall plane may have been extended, a corner or return removed, or the room's proportions changed";
+    case "STRUCTURAL_INVARIANT":
+      return "a structural element (a wall, corner, opening, or room boundary) was changed from the original";
+    case "CATASTROPHIC_ORIENTATION":
+      return "the camera perspective, orientation, or framing was altered from the original";
+    case "OPENING_SUPPRESSION":
+    case "opening_removed":
+    case "opening_infilled":
+      return "a window or door opening was removed or infilled";
+    case "opening_relocated":
+      return "a window or door opening was moved or resized from its original position";
+    default:
+      return "a structural element of the room was altered from the original";
+  }
+}
+
+/**
+ * Corrective 2-image retry prompt: unlike the normal staging prompt, this is not
+ * building a room from a blank/empty photo — it is repairing a specific, already-
+ * identified structural defect in an already-staged candidate while preserving the
+ * staging that candidate already has. First image = flawed candidate to fix.
+ * Second image (referenceImages[0]) = original, unstaged room photo — ground truth
+ * for real structure.
+ */
+export function buildStage2CorrectivePrompt(context: {
+  failureType: StructuralFailureType | null;
+  failureReason?: string | null;
+}): string {
+  const failureDescription = describeStructuralFailureForCorrection(context.failureType);
+  const reasonLine = context.failureReason && context.failureReason.trim().length > 0
+    ? ` (validator finding: ${context.failureReason.trim()})`
+    : "";
+
+  return `CORRECTIVE STRUCTURAL EDIT — TWO IMAGES SUPPLIED
+
+The FIRST image is a virtually staged room photo with a structural error: ${failureDescription}${reasonLine}.
+
+The SECOND image is the original, unstaged room photo and is the sole source of truth for the room's real structure — walls, corners, room boundaries, openings, and proportions.
+
+YOUR ONLY TASK: correct the structural error in the first image so its walls, corners, room boundaries, openings, and proportions exactly match the second (original) image. Do not otherwise change the first image.
+
+STRICT RULES:
+- Restore any wall, corner, junction, return, or room boundary in the first image back to match the second (original) image exactly, in position, shape, and angle.
+- Do not remove, resize, or reposition any furniture, rug, curtain, artwork, or decor already present in the first image — preserve the existing staging exactly as it is.
+- Do not revert any legitimate photographic enhancement (brightness, clarity, colour) already present in the first image — only fix the specific structural error described above.
+- Camera position, framing, and perspective must remain as they are in the first image.
+- Do not introduce any structural change that is not present in the second (original) image.
+- If you cannot identify the described structural discrepancy between the two images, make no changes and return the first image unmodified.
+
+OUTPUT: Return only the corrected image — the first image with its structure realigned to match the second (original) image, staging preserved.`;
+}
+
 export async function runStage2GenerationAttempt(
   basePath: string,
   opts: {
@@ -595,6 +650,19 @@ export async function runStage2GenerationAttempt(
     structuralConstraintBlock?: string;
     retryType?: string;
     retryInstructions?: string | null;
+    /**
+     * Corrective 2-image retry: when set, basePath is treated as the FLAWED
+     * candidate to edit (not a fresh room to stage), opts.referenceImagePath
+     * is treated as the structural ground-truth baseline, and the normal
+     * staging prompt is replaced entirely with a targeted structural-repair
+     * instruction. Existing staging/furniture in basePath is preserved;
+     * only the flagged structural issue is corrected.
+     */
+    correctiveMode?: boolean;
+    correctiveContext?: {
+      failureType: StructuralFailureType | null;
+      failureReason?: string | null;
+    };
   }
 ): Promise<string> {
   const attemptNumber = Math.max(1, opts.attempt ?? 1);
@@ -791,6 +859,10 @@ You are editing a real New Zealand real-estate listing photograph. Your ONLY tas
 
 STRUCTURAL PRESERVATION — ABSOLUTE, NON-NEGOTIABLE
 Every structural and permanent feature of this photograph must remain completely identical to the original: walls, windows, doors, floors, ceilings, roofing, cladding, fireplaces, built-in joinery, stairs, existing fixed lighting, power points, vents, beams, columns, and all proportions and camera perspective. Do not move, remove, resize, reshape, recolour, repaint, or hide any of these elements in any way. Do not alter room shape, room size, or architecture. Do not invent or remove windows, doors, or openings.
+Room boundaries, wall corners, junctions, returns, and any change in wall plane must remain exactly as photographed. Do not extend, shorten, straighten, "complete", or push back any wall. Do not invent a continuous wall surface where a corner, recess, alcove, or adjacent wall/entrance return exists in the original — every corner and edge return visible in the source image must remain present, in its identical position.
+
+ROOM GEOMETRY LOCK
+Treat the original photograph's wall planes, corners, and spatial layout as fixed geometry. Before placing any furniture, confirm every wall edge, corner, and ceiling line matches the source image pixel-for-pixel in location and angle. Room shape and proportions are inviolable — furniture must adapt to the room; the room must never be reshaped, widened, or "cleaned up" to better fit furniture or look more spacious.
 
 NO FIXED LIGHTING MAY BE ADDED
 Do not add chandeliers, hanging pendant lights, wall sconces, flush mounts, recessed lighting, track lighting, or any other ceiling- or wall-mounted light fixture. These are treated as fixed/permanent features. Freestanding or table/floor lamps ARE allowed as movable decor.
@@ -803,6 +875,8 @@ FORBIDDEN
 - Do not change wall colour, flooring, or any fixed finish.
 - Do not remove or hide defects, cracks, stains, or visible wear.
 - Do not enlarge rooms, add/remove windows or doors, or change ceiling height or layout.
+- Do not extend, complete, or "clean up" any wall by removing a corner, return, recess, or adjacent wall plane that exists in the original.
+- Do not make any change that alters the apparent shape, width, or depth of the room.
 - Do not add any fixed/mounted lighting of any kind.
 - Do not generate a new image — this must be an edit of the exact supplied photo, same camera position and framing.
 
@@ -1007,6 +1081,25 @@ Do not add blinds, rods, tracks, or new window coverings.
     // Grok's image-edit API has no mask parameter; the darkened region overlay already
     // baked into `inputForStage2` (see stagingRegion handling above) is the guidance signal.
     focusLog("STAGE2_MASK", "[stage2] Grok has no mask input — relying on the region-overlay guidance image only", { jobId: opts.jobId });
+  }
+
+  if (opts.correctiveMode) {
+    // basePath (already loaded into `data`/`mime` above) is the flawed candidate to
+    // repair, not a fresh room to stage — discard the staging prompt entirely and
+    // replace it with a targeted structural-correction instruction. The baseline
+    // supplied via opts.referenceImagePath is the ground-truth reference image.
+    textPrompt = buildStage2CorrectivePrompt({
+      failureType: opts.correctiveContext?.failureType ?? null,
+      failureReason: opts.correctiveContext?.failureReason,
+    });
+    logger.info("[STAGE2_CORRECTIVE_RETRY]", {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      attempt: attemptNumber,
+      failureType: opts.correctiveContext?.failureType ?? null,
+      hasBaselineReference: referenceImages.length > 0,
+      promptLength: textPrompt.length,
+    });
   }
 
   logger.info(`[STAGE2_MODEL_ESCALATION] job_id=${opts.jobId} attempt=${attemptNumber} model=${generationPlan.model} temperature=${generationPlan.temperature} retry_reason=${retryReason}`);

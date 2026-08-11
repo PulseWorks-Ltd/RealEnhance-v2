@@ -11946,16 +11946,53 @@ All openings must remain identical in position and size to the original image.`;
           instructionCount: autoRetryGuidance.instructionCount,
         });
 
+        // ═══ Corrective 2-image retry (attempt 1 → retry 1 only) ═══
+        // For a geometry-class structural failure on attempt 1, prefer editing the
+        // flawed candidate itself (grounded against the original baseline photo) over
+        // blindly regenerating from scratch with only a text correction. Grok can see
+        // exactly what it got wrong and fix only that, preserving the rest of the
+        // staging that was already correct.
+        const correctiveRetryEnabled = (() => {
+          const raw = String(process.env.STAGE2_CORRECTIVE_RETRY ?? "true").trim().toLowerCase();
+          return !["off", "false", "0", "no"].includes(raw);
+        })();
+        const CORRECTIVE_RETRY_FAILURE_TYPES = new Set<StructuralFailureType>([
+          "STRUCTURAL_DISTORTION",
+          "STRUCTURAL_INVARIANT",
+          "CATASTROPHIC_ORIENTATION",
+        ]);
+        const flawedCandidateCheck = path2 ? checkStageOutput(path2, "2", payload.jobId) : { readable: false };
+        const useCorrective2ImageRetry =
+          correctiveRetryEnabled
+          && retryAttempt === 1
+          && !!retryFailureType
+          && CORRECTIVE_RETRY_FAILURE_TYPES.has(retryFailureType)
+          && !!path2
+          && path2 !== stage2InputResolved
+          && flawedCandidateCheck.readable;
+
+        nLog("[STAGE2_CORRECTIVE_RETRY_DECISION]", {
+          jobId: payload.jobId,
+          attempt,
+          correctiveRetryEnabled,
+          retryAttempt,
+          retryFailureType,
+          flawedCandidateReadable: flawedCandidateCheck.readable,
+          useCorrective2ImageRetry,
+        });
+
         let retryStage2Path: string;
         try {
           retryStage2Path = await withMemoryPhase(
             "stage2_generation_retry_attempt",
-            { attempt, strategy: useReinforcedRetry ? "reinforced" : "normal" },
-            () => runStage2GenerationAttempt(stage2InputResolved, {
+            { attempt, strategy: useCorrective2ImageRetry ? "corrective_2image" : useReinforcedRetry ? "reinforced" : "normal" },
+            () => runStage2GenerationAttempt(
+              useCorrective2ImageRetry ? path2 : stage2InputResolved,
+              {
             roomType: payload.options.roomType,
             sceneType: sceneLabel as any,
             profile,
-            referenceImagePath: undefined,
+            referenceImagePath: useCorrective2ImageRetry ? stage2InputResolved : undefined,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: payload.options.stagingStyle || "standard_listing",
             sourceStage: stage2SourceStage,
@@ -11965,16 +12002,23 @@ All openings must remain identical in position and size to the original image.`;
             imageId: payload.imageId,
             outputPath: retryOutputPath,
             attempt,
-            retryType: "validator_forced_retry",
-            retryInstructions: autoRetryGuidance.text || undefined,
+            retryType: useCorrective2ImageRetry ? "corrective_structural_retry" : "validator_forced_retry",
+            retryInstructions: useCorrective2ImageRetry ? undefined : (autoRetryGuidance.text || undefined),
             structuralRetryContext: {
                 compositeFail: useReinforcedRetry,
                 failureType: retryFailureType,
                 attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
               },
-            layoutPlan: stage2LayoutPlan,
-            structuralConstraintBlock,
-            modelReason: `stage2 unified retry ${attempt - 1}`,
+            layoutPlan: useCorrective2ImageRetry ? undefined : stage2LayoutPlan,
+            structuralConstraintBlock: useCorrective2ImageRetry ? undefined : structuralConstraintBlock,
+            correctiveMode: useCorrective2ImageRetry,
+            correctiveContext: useCorrective2ImageRetry ? {
+              failureType: retryFailureType,
+              failureReason: pendingStage2RetryReason,
+            } : undefined,
+            modelReason: useCorrective2ImageRetry
+              ? `stage2 corrective retry ${attempt - 1}`
+              : `stage2 unified retry ${attempt - 1}`,
           })
         );
           await consumeManualRetryAttemptIfNeeded("stage2_retry_generation", true);
