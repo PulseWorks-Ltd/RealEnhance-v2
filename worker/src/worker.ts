@@ -7327,28 +7327,298 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           const specialistAdvisorySignals: string[] = [];
           const specialistResults: Record<string, any> = {};
           let specialistCompletionSummary: SpecialistCompletionSummary | undefined;
-          // ═══ Specialist Validators (opening, fixture, floor, envelope) — DISABLED ═══
-          // Stage 2 specialist validators are turned off on this branch — only the Unified
-          // Validator (runUnifiedValidation, below) runs on Stage 2 images. Skipped entirely
-          // rather than stubbed as "missing", since this path's own gate treats a missing
-          // specialist as an infra failure and fail-closes the retry — that's not desired here.
-          specialistCompletionSummary = {
-            expectedSpecialistCount: 0,
-            completedCount: 0,
-            failedCount: 0,
-            retryFailedCount: 0,
-            namesOfMissingSpecialists: [],
-            allSpecialistsSettled: true,
-            allSpecialistsCompleted: true,
-            lifecycles: [],
-          };
-          nLog("[SPECIALIST_VALIDATION_DISABLED]", {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt: stage2OnlyAttemptNo,
-            source: "stage2_only_retry",
-            reason: "stage2_specialists_disabled_grok_test_branch",
-          });
+
+          const stage2OnlySpecialistsEnabled = (() => {
+            const raw = String(process.env.STAGE2_SPECIALIST_VALIDATORS ?? "true").trim().toLowerCase();
+            return !["off", "false", "0", "no"].includes(raw);
+          })();
+
+          if (!stage2OnlySpecialistsEnabled) {
+            // Opt-out path: STAGE2_SPECIALIST_VALIDATORS=off/false. Unified Validator (below)
+            // still runs and still compares this candidate against the Stage 1A baseline
+            // directly, independent of specialist signals.
+            specialistCompletionSummary = {
+              expectedSpecialistCount: 0,
+              completedCount: 0,
+              failedCount: 0,
+              retryFailedCount: 0,
+              namesOfMissingSpecialists: [],
+              allSpecialistsSettled: true,
+              allSpecialistsCompleted: true,
+              lifecycles: [],
+            };
+            nLog("[SPECIALIST_VALIDATION_DISABLED]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              source: "stage2_only_retry",
+              reason: "STAGE2_SPECIALIST_VALIDATORS_env_off",
+            });
+
+            return {
+              specialistResults,
+              specialistAdvisorySignals,
+              specialistCompletionSummary,
+            };
+          }
+
+          // ═══ Specialist Validators (opening, fixture, floor, envelope) ═══
+          // Run the same specialist stack as main Stage 2 path while keeping Stage-2-only generation.
+          try {
+            const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
+            const { runOpeningValidator } = await import("./validators/openingValidator.js");
+            const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+            const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
+
+            const specialistHardFailReasons: string[] = [];
+            const appendAdvisories = (validator: "openings" | "fixtures" | "floor" | "envelope", advisories: string[] | undefined) => {
+              if (!Array.isArray(advisories) || advisories.length === 0) return;
+              for (const advisory of advisories) {
+                const normalized = String(advisory || "").trim();
+                if (!normalized) continue;
+                specialistAdvisorySignals.push(`${validator}:${normalized}`);
+              }
+            };
+
+            const specialistBatchStartedAt = Date.now();
+            const specialistTiming: Record<"opening" | "fixture" | "floor" | "envelope", {
+              startTimestamp: number;
+              endTimestamp: number;
+              durationMs: number;
+            }> = {
+              opening: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+              fixture: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+              floor: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+              envelope: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
+            };
+
+            const runSpecialistWithTiming = async <T>(
+              validator: "opening" | "fixture" | "floor" | "envelope",
+              runner: () => Promise<T>
+            ): Promise<T> => {
+              const startTimestamp = Date.now();
+              specialistTiming[validator].startTimestamp = startTimestamp;
+              nLog("[SPECIALIST_VALIDATION_START]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                source: "stage2_only_retry",
+                validator,
+                startTimestamp,
+              });
+              try {
+                const result = await runner();
+                const endTimestamp = Date.now();
+                const durationMs = Math.max(0, endTimestamp - startTimestamp);
+                specialistTiming[validator].endTimestamp = endTimestamp;
+                specialistTiming[validator].durationMs = durationMs;
+                nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                  source: "stage2_only_retry",
+                  validator,
+                  startTimestamp,
+                  endTimestamp,
+                  durationMs,
+                });
+                emitValidatorBlockEnd(payload.jobId, validator, durationMs, { source: "stage2_only_retry" });
+                return result;
+              } catch (err) {
+                const endTimestamp = Date.now();
+                const durationMs = Math.max(0, endTimestamp - startTimestamp);
+                specialistTiming[validator].endTimestamp = endTimestamp;
+                specialistTiming[validator].durationMs = durationMs;
+                throw err;
+              }
+            };
+
+            // CRITICAL: baseline extraction is awaited HERE, before runOpeningValidator runs.
+            const stage2OnlyBaselinePromise = resolveStructuralBaselineForValidation("stage2_only_retry_opening_validator");
+            const stage2OnlyDetectedBaselinePromise = extractStructuralBaseline(path2, {
+              jobId: payload.jobId,
+              imageId: payload.imageId ? `${payload.imageId}_stage2_detected` : undefined,
+              attempt: stage2OnlyAttemptNo,
+            });
+            const maxRetries = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_RETRIES || 1));
+            const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
+            const openingTimeoutMs = Math.max(
+              0,
+              Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
+            );
+            const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              source: "stage2_only_retry",
+              maxRetries,
+              timeoutMs,
+              timeoutMsBySpecialist: {
+                opening: openingTimeoutMs,
+                fixture: timeoutMs,
+                floor: timeoutMs,
+                envelope: timeoutMs,
+              },
+              tasks: {
+                opening: () => runSpecialistWithTiming("opening", async () => {
+                  const stage2OnlyBaseline = await stage2OnlyBaselinePromise;
+                  const stage2OnlyDetectedBaseline = await stage2OnlyDetectedBaselinePromise;
+                  return runOpeningValidator(validationBaseline, path2, {
+                    jobId: payload.jobId,
+                    imageId: payload.imageId,
+                    attempt: stage2OnlyAttemptNo,
+                    baseline: stage2OnlyBaseline || undefined,
+                    detectedBaseline: stage2OnlyDetectedBaseline || undefined,
+                  });
+                }),
+                fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBaseline, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                })),
+                floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBaseline, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt: stage2OnlyAttemptNo,
+                })),
+                envelope: () => runSpecialistWithTiming("envelope", async () => {
+                  return runEnvelopeValidator(validationBaseline, path2, {
+                    jobId: payload.jobId,
+                    imageId: payload.imageId,
+                    attempt: stage2OnlyAttemptNo,
+                  });
+                }),
+              },
+            });
+            specialistCompletionSummary = specialistOrchestration.summary;
+
+            const missingSpecialists = specialistCompletionSummary.namesOfMissingSpecialists;
+            const specialistExecutionFailed = missingSpecialists.length > 0;
+            const specialistQuorumFailed = specialistCompletionSummary.completedCount === 0;
+            if (specialistExecutionFailed || specialistQuorumFailed) {
+              stage2ValidationPassed = false;
+              if (!stage2OnlyBlockedReason) {
+                const reasonTokens: string[] = [];
+                if (specialistQuorumFailed) reasonTokens.push("quorum_zero");
+                if (specialistExecutionFailed) {
+                  reasonTokens.push(`missing_${missingSpecialists.join("_") || "unknown"}`);
+                }
+                stage2OnlyBlockedReason = `stage2_specialist_execution_failed:${reasonTokens.join("|")}`;
+              }
+              nLog("[STAGE2_ONLY_SPECIALIST_EXECUTION_FAIL_CLOSED]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                completedCount: specialistCompletionSummary.completedCount,
+                expectedSpecialistCount: specialistCompletionSummary.expectedSpecialistCount,
+                unavailableSpecialists: missingSpecialists,
+                action: "block_stage2_retry",
+              });
+            }
+
+            const opRes = specialistOrchestration.results.opening;
+            const fixRes = specialistOrchestration.results.fixture;
+            const floorRes = specialistOrchestration.results.floor;
+            const envRes = specialistOrchestration.results.envelope;
+
+            const totalConcurrentDurationMs = Math.max(0, Date.now() - specialistBatchStartedAt);
+            const equivalentSequentialDurationMs =
+              specialistTiming.opening.durationMs
+              + specialistTiming.fixture.durationMs
+              + specialistTiming.floor.durationMs
+              + specialistTiming.envelope.durationMs;
+            const estimatedSavingsMs = Math.max(0, equivalentSequentialDurationMs - totalConcurrentDurationMs);
+            nLog("[SPECIALIST_VALIDATION_SUMMARY]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              source: "stage2_only_retry",
+              openingDurationMs: specialistTiming.opening.durationMs,
+              fixtureDurationMs: specialistTiming.fixture.durationMs,
+              floorDurationMs: specialistTiming.floor.durationMs,
+              envelopeDurationMs: specialistTiming.envelope.durationMs,
+              totalConcurrentDurationMs,
+              equivalentSequentialDurationMs,
+              estimatedSavingsMs,
+            });
+
+            const opHardFail = opRes?.hardFail === true;
+            specialistResults.openings = opRes;
+            if (opHardFail) {
+              specialistHardFailReasons.push(`openings:${String(opRes?.reason || "opening_hard_fail").trim()}`);
+            }
+            appendAdvisories("openings", opRes?.advisorySignals);
+
+            const fixHardFail = fixRes?.hardFail === true;
+            specialistResults.fixtures = fixRes;
+            if (fixHardFail) {
+              specialistHardFailReasons.push(`fixtures:${String(fixRes?.reason || "fixture_hard_fail").trim()}`);
+            }
+            appendAdvisories("fixtures", fixRes?.advisorySignals);
+
+            const floorHardFail = floorRes?.hardFail === true;
+            specialistResults.floor = floorRes;
+            if (floorHardFail) {
+              specialistHardFailReasons.push(`floor:${String(floorRes?.reason || "floor_hard_fail").trim()}`);
+            }
+            appendAdvisories("floor", floorRes?.advisorySignals);
+
+            const envHardFail = envRes?.hardFail === true;
+            specialistResults.envelope = envRes;
+            if (envHardFail) {
+              specialistHardFailReasons.push(`envelope:${String(envRes?.reason || "envelope_hard_fail").trim()}`);
+            }
+            appendAdvisories("envelope", envRes?.advisorySignals);
+
+            nLog("[STAGE2_ONLY_SPECIALIST_SIGNALS]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt: stage2OnlyAttemptNo,
+              opening: { status: opRes?.status || "unknown", hardFail: opHardFail, reason: opRes?.reason || "none" },
+              fixture: { status: fixRes?.status || "unknown", hardFail: fixHardFail, reason: fixRes?.reason || "none" },
+              floor: { status: floorRes?.status || "unknown", hardFail: floorHardFail, reason: floorRes?.reason || "none" },
+              envelope: { status: envRes?.status || "unknown", hardFail: envHardFail, reason: envRes?.reason || "none" },
+              advisorySignals: specialistAdvisorySignals,
+            });
+
+            if (specialistCompletionSummary && specialistCompletionSummary.namesOfMissingSpecialists.length > 0) {
+              nLog("[STAGE2_ONLY_SPECIALIST_UNAVAILABLE]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                unavailableSpecialists: specialistCompletionSummary.namesOfMissingSpecialists,
+                action: "block_stage2_retry",
+              });
+            }
+
+            if (specialistHardFailReasons.length > 0) {
+              stage2ValidationPassed = false;
+              if (!stage2OnlyBlockedReason) {
+                const normalizedStage2OnlyReason = String(specialistHardFailReasons[0] || "specialist_hard_fail")
+                  .trim()
+                  .toLowerCase()
+                  .replace(/\s+/g, "_")
+                  .replace(/[^a-z0-9:_-]+/g, "_")
+                  .replace(/_+/g, "_")
+                  .replace(/^_+|_+$/g, "");
+                stage2OnlyBlockedReason = `stage2_specialist_hard_fail:${normalizedStage2OnlyReason || "specialist_hard_fail"}`;
+              }
+              nLog("[STAGE2_ONLY_SPECIALIST_HARD_FAIL_OBSERVED]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: stage2OnlyAttemptNo,
+                reasons: specialistHardFailReasons,
+                action: "block_stage2_retry",
+              });
+            }
+          } catch (specialistErr: any) {
+            const specialistErrorText = String(specialistErr?.message || specialistErr || "specialist_validation_error");
+            stage2ValidationPassed = false;
+            if (!stage2OnlyBlockedReason) {
+              stage2OnlyBlockedReason = `stage2_specialist_execution_error:${specialistErrorText}`;
+            }
+            nLog("[worker] Specialist validation error (stage2-only, fail-closed):", specialistErrorText);
+          }
 
           return {
             specialistResults,
@@ -12381,6 +12651,11 @@ All openings must remain identical in position and size to the original image.`;
         });
       };
 
+      const stage2SpecialistValidatorsEnabled = (() => {
+        const raw = String(process.env.STAGE2_SPECIALIST_VALIDATORS ?? "true").trim().toLowerCase();
+        return !["off", "false", "0", "no"].includes(raw);
+      })();
+
       try {
         const specialistBatchStartedAt = Date.now();
         const specialistTiming: Record<"opening" | "fixture" | "floor" | "envelope", {
@@ -12394,34 +12669,148 @@ All openings must remain identical in position and size to the original image.`;
           envelope: { startTimestamp: 0, endTimestamp: 0, durationMs: 0 },
         };
 
-        // Stage 2 specialist validators (opening/fixture/floor/envelope) are disabled on this
-        // branch — only the Unified Validator (runUnifiedValidation) runs on Stage 2 images.
-        // Synthesize the same "no specialists available" shape orchestrateSpecialistsWithRetry
-        // would produce, so every downstream reader of specialistOrchestration/specialistResults
-        // keeps working unmodified (empty signals, categorical gate becomes a no-op below).
-        const specialistOrchestration: {
+        let specialistOrchestration: {
           results: Partial<Record<"opening" | "fixture" | "floor" | "envelope", any>>;
           summary: SpecialistCompletionSummary;
-        } = {
-          results: {},
-          summary: {
-            expectedSpecialistCount: 4,
-            completedCount: 0,
-            failedCount: 0,
-            retryFailedCount: 0,
-            namesOfMissingSpecialists: ["opening", "fixture", "floor", "envelope"],
-            allSpecialistsSettled: true,
-            allSpecialistsCompleted: false,
-            lifecycles: [],
-          },
         };
-        nLog("[SPECIALIST_VALIDATION_DISABLED]", {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          source: "main_stage2",
-          reason: "stage2_specialists_disabled_grok_test_branch",
-        });
+
+        if (!stage2SpecialistValidatorsEnabled) {
+          // Opt-out path: STAGE2_SPECIALIST_VALIDATORS=off/false. Synthesize the same
+          // "no specialists available" shape orchestrateSpecialistsWithRetry would produce,
+          // so every downstream reader of specialistOrchestration/specialistResults keeps
+          // working unmodified (empty signals, categorical gate becomes a no-op below).
+          // Unified Validator still runs afterward and still compares this Stage 2 candidate
+          // against the Stage 1A baseline directly (originalPath/stage1APath), independent
+          // of specialist signals.
+          nLog("[SPECIALIST_VALIDATION_DISABLED]", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "main_stage2",
+            reason: "STAGE2_SPECIALIST_VALIDATORS_env_off",
+          });
+          specialistOrchestration = {
+            results: {},
+            summary: {
+              expectedSpecialistCount: 4,
+              completedCount: 0,
+              failedCount: 0,
+              retryFailedCount: 0,
+              namesOfMissingSpecialists: ["opening", "fixture", "floor", "envelope"],
+              allSpecialistsSettled: true,
+              allSpecialistsCompleted: false,
+              lifecycles: [],
+            },
+          };
+        } else {
+          const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
+          const { runOpeningValidator } = await import("./validators/openingValidator.js");
+          const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
+          const { runFloorIntegrityValidator } = await import("./validators/floorIntegrityValidator.js");
+
+          const runSpecialistWithTiming = async <T>(
+            validator: "opening" | "fixture" | "floor" | "envelope",
+            runner: () => Promise<T>
+          ): Promise<T> => {
+            const startTimestamp = Date.now();
+            specialistTiming[validator].startTimestamp = startTimestamp;
+            nLog("[SPECIALIST_VALIDATION_START]", {
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              attempt,
+              source: "main_stage2",
+              validator,
+              startTimestamp,
+            });
+            try {
+              const result = await runner();
+              const endTimestamp = Date.now();
+              const durationMs = Math.max(0, endTimestamp - startTimestamp);
+              specialistTiming[validator].endTimestamp = endTimestamp;
+              specialistTiming[validator].durationMs = durationMs;
+              nLog("[SPECIALIST_VALIDATION_COMPLETE]", {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+                source: "main_stage2",
+                validator,
+                startTimestamp,
+                endTimestamp,
+                durationMs,
+              });
+              emitValidatorBlockEnd(payload.jobId, validator, durationMs);
+              return result;
+            } catch (err) {
+              const endTimestamp = Date.now();
+              const durationMs = Math.max(0, endTimestamp - startTimestamp);
+              specialistTiming[validator].endTimestamp = endTimestamp;
+              specialistTiming[validator].durationMs = durationMs;
+              throw err;
+            }
+          };
+
+          // CRITICAL: baseline extraction is awaited HERE, inside the opening task, before
+          // runOpeningValidator is called. resolveStructuralBaselineForValidation() properly
+          // awaits the in-flight structuralBaselinePromise kicked off during Stage 1A instead
+          // of reading a possibly-still-null variable — this is what stops the opening
+          // validator from ever running/passing against a missing baseline.
+          const openingBaselinePromise = resolveStructuralBaselineForValidation("stage2_opening_validator");
+          const stage2DetectedBaselinePromise = extractStructuralBaseline(path2, {
+            jobId: payload.jobId,
+            imageId: payload.imageId ? `${payload.imageId}_stage2_detected` : undefined,
+            attempt,
+          });
+          const maxRetries = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_RETRIES || 1));
+          const timeoutMs = Math.max(0, Number(process.env.STAGE2_SPECIALIST_EXEC_TIMEOUT_MS || 45000));
+          const openingTimeoutMs = Math.max(
+            0,
+            Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
+          );
+          specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "main_stage2",
+            maxRetries,
+            timeoutMs,
+            timeoutMsBySpecialist: {
+              opening: openingTimeoutMs,
+              fixture: timeoutMs,
+              floor: timeoutMs,
+              envelope: timeoutMs,
+            },
+            tasks: {
+              opening: () => runSpecialistWithTiming("opening", async () => {
+                const resolvedOpeningBaseline = await openingBaselinePromise;
+                const resolvedDetectedBaseline = await stage2DetectedBaselinePromise;
+                return runOpeningValidator(validationBasePath, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt,
+                  baseline: resolvedOpeningBaseline || undefined,
+                  detectedBaseline: resolvedDetectedBaseline || undefined,
+                });
+              }),
+              fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+              floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+              envelope: () => runSpecialistWithTiming("envelope", async () => {
+                return runEnvelopeValidator(validationBasePath, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt,
+                });
+              }),
+            },
+          });
+        }
         specialistCompletionSummary = specialistOrchestration.summary;
 
         const opRes = specialistOrchestration.results.opening || {
@@ -14568,6 +14957,16 @@ All openings must remain identical in position and size to the original image.`;
     });
     return;
   }
+
+  console.error("[STAGE2_PUBLISH_GATE_STATE]", {
+    jobId: payload.jobId,
+    virtualStage: payload.options.virtualStage,
+    stage2Blocked,
+    stage2BlockedReason,
+    stage2FallbackStage,
+    hasStage2CandidatePath: !!stage2CandidatePath,
+    stage2CandidatePathEqualsPath1A: stage2CandidatePath === path1A,
+  });
 
   // Publish Stage 2 only if it passed blocking validation
   if (payload.options.virtualStage && !stage2Blocked && stage2CandidatePath) {
