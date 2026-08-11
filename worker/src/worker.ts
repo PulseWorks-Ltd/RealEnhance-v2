@@ -13393,7 +13393,7 @@ All openings must remain identical in position and size to the original image.`;
           nonBlocking: true,
         });
 
-        if (specialistCompletionSummary && specialistCompletionSummary.namesOfMissingSpecialists.length > 0) {
+        if (stage2SpecialistValidatorsEnabled && specialistCompletionSummary && specialistCompletionSummary.namesOfMissingSpecialists.length > 0) {
           nLog("[STAGE2_SPECIALIST_UNAVAILABLE]", {
             jobId: payload.jobId,
             imageId: payload.imageId,
@@ -13403,7 +13403,11 @@ All openings must remain identical in position and size to the original image.`;
           });
         }
 
-        if (specialistCompletionSummary) {
+        // Only fail-closed on "specialists missing" when specialists were actually enabled
+        // (a real execution/infra failure). When STAGE2_SPECIALIST_VALIDATORS=off, the
+        // "all 4 missing" shape is the deliberate opt-out stub, not a failure — Unified
+        // Validator below still runs its own direct Stage1A-vs-Stage2 comparison.
+        if (stage2SpecialistValidatorsEnabled && specialistCompletionSummary) {
           const missingSpecialists = specialistCompletionSummary.namesOfMissingSpecialists;
           const specialistExecutionFailed = missingSpecialists.length > 0;
           const specialistQuorumFailed = specialistCompletionSummary.completedCount === 0;
