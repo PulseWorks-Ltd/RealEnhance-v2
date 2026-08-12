@@ -1,0 +1,10 @@
+[
+  {
+    "label": "bedroom_12",
+    "ok": false,
+    "error": {
+      "name": "MaskValidationError",
+      "message": "Extraction mask failed validation: mask_effectively_entire_image: ratio=1.0000"
+    }
+  }
+]
