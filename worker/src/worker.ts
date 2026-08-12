@@ -35,6 +35,7 @@ import {
   runStage2GenerationAttempt,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
+import { renderStagingWithGeminiMerge } from "./providers/geminiMerge/renderer";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
@@ -10781,6 +10782,124 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     reason: stage2Routing.reason,
     stage2ModeOverride: explicitStage2ModeMain || null,
   });
+
+  // ═══ EXPERIMENTAL: Gemini generate-then-extract-and-merge Stage 2 provider ═══
+  // Gated entirely behind STAGE2_RENDER_PROVIDER=gemini_merge (default remains the
+  // existing production Gemini/Grok path below, byte-for-byte unchanged). Flow:
+  // reuse the existing Gemini/Nano Banana staging generation (runStage2) to produce
+  // a complete staged candidate, then make a second Gemini call to extract ONLY the
+  // newly-introduced staging layer (furniture + its shadows) as an alpha mask, then
+  // deterministically composite that layer onto the ORIGINAL Stage 1A/1B image
+  // locally (Sharp, not Gemini). The original image remains the structural
+  // authority for every pixel outside the extracted mask. No specialist validator
+  // chain, no Vertex, no EdenSign, no pre-generation masks are involved here — this
+  // experiment tests generation + extraction + compositing only.
+  if (
+    payload.options.virtualStage
+    && !stage2Blocked
+    && stage2InputPath
+    && String(process.env.STAGE2_RENDER_PROVIDER || "gemini").toLowerCase() === "gemini_merge"
+  ) {
+    console.log("[STAGE2_GEMINI_MERGE] starting", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      stage2BaseStage,
+      sourceStage: stage2SourceStage,
+      roomType: payload.options.roomType,
+      stagingStyle: (payload.options as any)?.stagingStyle,
+    });
+
+    let mergeResult: Awaited<ReturnType<typeof renderStagingWithGeminiMerge>>;
+    try {
+      mergeResult = await renderStagingWithGeminiMerge({
+        basePath: stage2InputPath,
+        roomType: payload.options.roomType || "",
+        sceneType: isExteriorScene ? "exterior" : "interior",
+        stagingStyle: (payload.options as any)?.stagingStyle,
+        sourceStage: stage2SourceStage,
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+      });
+    } catch (mergeErr: any) {
+      const reason = mergeErr?.name === "StagingGenerationError"
+        ? "gemini_merge_staging_generation_failed"
+        : mergeErr?.name === "ExtractionError"
+          ? "gemini_merge_extraction_failed"
+          : mergeErr?.name === "MaskValidationError"
+            ? "gemini_merge_mask_invalid"
+            : mergeErr?.name === "CompositeError"
+              ? "gemini_merge_composite_failed"
+              : "gemini_merge_generation_error";
+      console.error("[STAGE2_GEMINI_MERGE] failed", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        reason,
+        error: mergeErr?.message || String(mergeErr),
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: `${reason}: ${mergeErr?.message || mergeErr}` },
+        "stage2_gemini_merge_failed"
+      );
+      return;
+    }
+
+    let mergePublished: { url: string };
+    try {
+      mergePublished = await publishWithOptionalBlackEdgeGuard(mergeResult.finalLocalPath, "2-gemini-merge");
+    } catch (publishErr: any) {
+      console.error("[STAGE2_GEMINI_MERGE] publish failed", {
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        error: publishErr?.message || String(publishErr),
+      });
+      await safeWriteJobStatus(
+        payload.jobId,
+        { status: "failed", errorMessage: `gemini_merge_publish_failed: ${publishErr?.message || publishErr}` },
+        "stage2_gemini_merge_failed"
+      );
+      return;
+    }
+
+    console.log("[STAGE2_GEMINI_MERGE] complete", {
+      jobId: payload.jobId,
+      imageId: payload.imageId,
+      outputUrl: mergePublished.url,
+      maskCoveragePercent: Number((mergeResult.maskMetrics.nonZeroPixelRatio * 100).toFixed(2)),
+      generationDurationMs: mergeResult.generationDurationMs,
+      extractionDurationMs: mergeResult.extractionDurationMs,
+      compositeDurationMs: mergeResult.compositeDurationMs,
+    });
+
+    await safeWriteJobStatus(
+      payload.jobId,
+      {
+        status: "complete",
+        finalOutputUrl: mergePublished.url,
+        resultUrl: mergePublished.url,
+        stageUrls: {
+          "1A": pub1AUrl ?? null,
+          "1B": pub1BUrl ?? null,
+          "2": mergePublished.url,
+        },
+        meta: {
+          ...sceneMeta,
+          stage2Provider: "gemini_merge",
+          geminiMergeStagedCandidatePath: mergeResult.stagedCandidatePath,
+          geminiMergeExtractionMaskPath: mergeResult.extractionMaskPath,
+          geminiMergeOverlayDebugPath: mergeResult.overlayDebugPath,
+          geminiMergeMaskMetrics: mergeResult.maskMetrics,
+          geminiMergeStagingModel: mergeResult.stagingModel,
+          geminiMergeExtractionModel: mergeResult.extractionModel,
+          geminiMergeGenerationDurationMs: mergeResult.generationDurationMs,
+          geminiMergeExtractionDurationMs: mergeResult.extractionDurationMs,
+          geminiMergeCompositeDurationMs: mergeResult.compositeDurationMs,
+        },
+      },
+      "stage2_gemini_merge_complete"
+    );
+    return;
+  }
 
   // ═══ STAGE 2 INPUT LINEAGE GUARD ═══
   if (payload.options.virtualStage && !stage2Blocked) {
