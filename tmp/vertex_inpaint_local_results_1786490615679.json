@@ -1,0 +1,18 @@
+[
+  {
+    "label": "living_33_kaipuke_07",
+    "ok": false,
+    "error": {
+      "name": "VertexApiError",
+      "message": "Vertex Imagen predict call failed: got status: 404 Not Found. {\"error\":{\"code\":404,\"message\":\"Publisher model `projects/realenhance-vertex-prod/locations/us-central1/publishers/google/models/imagen-3.0-capability-001` was not found or your project does not have access to it. Ensure you are using a valid model name and that the model is available in the specified region. For more information, see: https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations.\",\"status\":\"NOT_FOUND\"}}"
+    }
+  },
+  {
+    "label": "bedroom_12",
+    "ok": false,
+    "error": {
+      "name": "VertexApiError",
+      "message": "Vertex Imagen predict call failed: got status: 404 Not Found. {\"error\":{\"code\":404,\"message\":\"Publisher model `projects/realenhance-vertex-prod/locations/us-central1/publishers/google/models/imagen-3.0-capability-001` was not found or your project does not have access to it. Ensure you are using a valid model name and that the model is available in the specified region. For more information, see: https://docs.cloud.google.com/gemini-enterprise-agent-platform/resources/locations.\",\"status\":\"NOT_FOUND\"}}"
+    }
+  }
+]
