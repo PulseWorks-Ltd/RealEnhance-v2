@@ -1,0 +1,299 @@
+{
+  "wallVis": {
+    "wallCount": 4,
+    "wallCountReasoning": "A clear corner exists between the wall with the large window (W1) and the dining area wall (with F1/A1), indicated by a change in direction of the ceiling cornice. The kitchen back wall (with W2) is a separate parallel plane visible through the walkthrough opening. The far right wall (with W3) is at another distinct angle.",
+    "walls": [
+      {
+        "id": "wall_0",
+        "wallLabel": "Dining area wall with walkthrough",
+        "extent": {
+          "polygon": [
+            [
+              0.486,
+              0.084
+            ],
+            [
+              0.585,
+              0.101
+            ],
+            [
+              0.585,
+              0.888
+            ],
+            [
+              0.478,
+              0.854
+            ]
+          ]
+        },
+        "openingIds": [
+          "A1",
+          "F1"
+        ],
+        "usableWidthFraction": 0.35,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.35
+            ],
+            "widthFraction": 0.35,
+            "description": "Wall space to the left of the AC unit"
+          }
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "wall_1",
+        "wallLabel": "Far right wall",
+        "extent": {
+          "polygon": [
+            [
+              0.932,
+              0.168
+            ],
+            [
+              1,
+              0.186
+            ],
+            [
+              1,
+              0.901
+            ],
+            [
+              0.932,
+              0.881
+            ]
+          ]
+        },
+        "openingIds": [
+          "W3"
+        ],
+        "usableWidthFraction": 0,
+        "usableSegments": [],
+        "confidence": 0.95
+      },
+      {
+        "id": "wall_2",
+        "wallLabel": "Kitchen back wall",
+        "extent": {
+          "polygon": [
+            [
+              0.624,
+              0.106
+            ],
+            [
+              0.93,
+              0.165
+            ],
+            [
+              0.93,
+              0.652
+            ],
+            [
+              0.624,
+              0.615
+            ]
+          ]
+        },
+        "openingIds": [
+          "W2",
+          "F2",
+          "F3"
+        ],
+        "usableWidthFraction": 0.25,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.05
+            ],
+            "widthFraction": 0.05,
+            "description": "Narrow space to the left of the window"
+          },
+          {
+            "range": [
+              0.8,
+              1
+            ],
+            "widthFraction": 0.2,
+            "description": "Wall space between the window and the side cabinet"
+          }
+        ],
+        "confidence": 0.9
+      },
+      {
+        "id": "wall_3",
+        "wallLabel": "Main living room wall",
+        "extent": {
+          "polygon": [
+            [
+              0,
+              0.021
+            ],
+            [
+              0.486,
+              0.084
+            ],
+            [
+              0.478,
+              0.854
+            ],
+            [
+              0,
+              0.748
+            ]
+          ]
+        },
+        "openingIds": [
+          "W1"
+        ],
+        "usableWidthFraction": 0.28,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.28
+            ],
+            "widthFraction": 0.28,
+            "description": "Wall space to the left of the window"
+          }
+        ],
+        "confidence": 1
+      }
+    ]
+  },
+  "zoning": {
+    "zones": [
+      {
+        "id": "zone_living",
+        "purpose": "living",
+        "floorRegion": {
+          "polygon": [
+            [
+              0,
+              1
+            ],
+            [
+              0.8,
+              1
+            ],
+            [
+              0.6,
+              0.6
+            ],
+            [
+              0,
+              0.65
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          3,
+          0
+        ],
+        "reasoning": "Defined by the cohesive grouping of seating furniture (armchairs, sofa) and an area rug, occupying the foreground and left side of the room."
+      },
+      {
+        "id": "zone_dining",
+        "purpose": "dining",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.8,
+              1
+            ],
+            [
+              1,
+              0.9
+            ],
+            [
+              1,
+              0.55
+            ],
+            [
+              0.58,
+              0.55
+            ],
+            [
+              0.6,
+              0.6
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          0,
+          1
+        ],
+        "reasoning": "Defined by the placement of the dining table and chairs in the recessed area adjacent to the kitchen opening, distinct from the main seating group."
+      }
+    ],
+    "kitchenSignal": {
+      "present": true,
+      "openingId": "A1",
+      "confidence": 0.98,
+      "evidence": "The walkthrough opening A1 provides a clear and direct view into an area with a kitchen counter, white cabinetry, a stainless steel range hood, a sink, and track lighting, all characteristic features of a kitchen."
+    }
+  },
+  "plan": {
+    "kitchenSignal": {
+      "present": true,
+      "openingId": "A1",
+      "confidence": 0.98,
+      "evidence": "The walkthrough opening A1 provides a clear and direct view into an area with a kitchen counter, white cabinetry, a stainless steel range hood, a sink, and track lighting, all characteristic features of a kitchen."
+    },
+    "zones": [
+      {
+        "id": "zone_living",
+        "purpose": "living",
+        "borderingWallIndices": [
+          3,
+          0
+        ],
+        "reasoning": "Defined by the cohesive grouping of seating furniture (armchairs, sofa) and an area rug, occupying the foreground and left side of the room."
+      },
+      {
+        "id": "zone_dining",
+        "purpose": "dining",
+        "borderingWallIndices": [
+          0,
+          1
+        ],
+        "reasoning": "Defined by the placement of the dining table and chairs in the recessed area adjacent to the kitchen opening, distinct from the main seating group."
+      }
+    ],
+    "diningPlan": {
+      "center": [
+        0.796,
+        0.72
+      ],
+      "footprint": {
+        "halfWidth": 0.12,
+        "halfHeight": 0.08
+      },
+      "borderingWallIndices": [
+        0,
+        1
+      ],
+      "reasoning": "Table centered within zone_dining's floor region (centroid [0.796, 0.720]), inset from bordering walls for chair clearance."
+    },
+    "tvPlan": {
+      "wallId": "wall_0",
+      "wallLabel": "Dining area wall with walkthrough",
+      "segmentDescription": "Wall space to the left of the AC unit",
+      "largestSegment": 0.35,
+      "reasoning": "TV wall selected first (living-zone walls only): wall_0 has the largest qualifying usable segment (0.350)."
+    },
+    "sofaPlan": {
+      "wallId": null,
+      "floorCentered": true,
+      "facingWallId": "wall_0",
+      "reasoning": "Only one living-zone wall qualified (the TV wall itself), so the sofa is floor-centered within the living zone rather than wall-anchored, still explicitly oriented to face wall_0."
+    },
+    "reasoning": [
+      "Table centered within zone_dining's floor region (centroid [0.796, 0.720]), inset from bordering walls for chair clearance.",
+      "TV wall selected first (living-zone walls only): wall_0 has the largest qualifying usable segment (0.350).",
+      "Only one living-zone wall qualified (the TV wall itself), so the sofa is floor-centered within the living zone rather than wall-anchored, still explicitly oriented to face wall_0."
+    ]
+  }
+}

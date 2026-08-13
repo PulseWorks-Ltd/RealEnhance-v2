@@ -1,0 +1,57 @@
+{
+  "kitchenSignal": {
+    "present": true,
+    "openingId": "A1",
+    "confidence": 0.98,
+    "evidence": "The walkthrough opening A1 provides a clear and direct view into an area with a kitchen counter, white cabinetry, a stainless steel range hood, a sink, and track lighting, all characteristic features of a kitchen."
+  },
+  "zones": [
+    {
+      "id": "zone_living",
+      "purpose": "living",
+      "borderingWallIndices": [
+        3,
+        0
+      ]
+    },
+    {
+      "id": "zone_dining",
+      "purpose": "dining",
+      "borderingWallIndices": [
+        0,
+        1
+      ]
+    }
+  ],
+  "diningPlan": {
+    "center": [
+      0.796,
+      0.72
+    ],
+    "footprint": {
+      "halfWidth": 0.12,
+      "halfHeight": 0.08
+    },
+    "reasoning": "Table centered within zone_dining's floor region (centroid [0.796, 0.720]), inset from bordering walls for chair clearance."
+  },
+  "tvPlan": {
+    "wallId": "wall_3",
+    "wallLabel": "Main living room wall",
+    "segmentDescription": "Wall space to the left of the window",
+    "largestSegment": 0.28,
+    "reasoning": "TV wall selected: wall_3 (Main living room wall) is zone-exclusive to living (not shared with dining), clears the TV usable-width threshold (0.280 >= 0.2), and the zone has sufficient floor depth for a facing sofa."
+  },
+  "noTvReason": null,
+  "sofaPlan": {
+    "wallId": "wall_0",
+    "wallLabel": "Dining area wall with walkthrough",
+    "facingWallId": "wall_3",
+    "reasoning": "Sofa placed against wall_0 (Dining area wall with walkthrough), a different living-zone wall from the TV, oriented to face wall_3 directly."
+  },
+  "reasoning": [
+    "Living zone borders wall indices [3, 0]. Zone-exclusive: [3]. Shared with another zone (excluded from TV candidacy by construction): [0].",
+    "Living zone floor-region depth proxy (bbox y-extent): 0.400 (threshold 0.25) — sufficient for a sofa to sit back and face a TV.",
+    "TV wall selected: wall_3 (Main living room wall) is zone-exclusive to living (not shared with dining), clears the TV usable-width threshold (0.280 >= 0.2), and the zone has sufficient floor depth for a facing sofa.",
+    "Sofa placed against wall_0 (Dining area wall with walkthrough), a different living-zone wall from the TV, oriented to face wall_3 directly."
+  ]
+}
