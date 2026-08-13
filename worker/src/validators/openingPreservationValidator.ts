@@ -33,6 +33,12 @@ export type AnchorFixture = {
   horizontalBand: HorizontalBand;
   bbox: [number, number, number, number];
   confidence: number;
+  // Short, concrete, plain-language description of what the object actually
+  // looks like and where it is — required for `other`, encouraged for every
+  // type, since a category label alone (e.g. "fireplace") isn't specific
+  // enough for a downstream instruction to bind protection to the right
+  // object when the label itself may be an approximate/best-guess category.
+  description?: string;
 };
 
 export type StructuralOpening = {
@@ -48,6 +54,7 @@ export type StructuralOpening = {
   paneStructure: PaneStructure;
   doorLeafState: DoorLeafState;
   confidence: number;
+  description?: string;
 
   // Legacy compatibility fields used by existing downstream systems
   wallPosition: WallPosition;
@@ -684,7 +691,8 @@ Return JSON in this exact schema:
       "orientation": "portrait" | "landscape" | "square",
       "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
       "doorLeafState": "closed" | "open" | "ajar" | "unknown",
-      "confidence": number
+      "confidence": number,
+      "description": string
     }
   ],
   "anchorFixtures": [
@@ -694,7 +702,8 @@ Return JSON in this exact schema:
       "wallIndex": 0 | 1 | 2 | 3,
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "bbox": [x1, y1, x2, y2],
-      "confidence": number
+      "confidence": number,
+      "description": string
     }
   ]
 }
@@ -711,12 +720,14 @@ Rules:
 - doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
+- description (required for every opening and every anchor fixture): a short, concrete, plain-language description of what the object actually looks like and roughly where it is — e.g. "timber-framed sliding glass door with frosted glass panels" or "decorative white wall-mounted corbel/bracket, roughly waist-height". Describe what you actually see, not just a restatement of the type label. This is used downstream to generate a specific protection instruction for this exact object, so it must be accurate and specific, not generic filler like "a fixture" or "a window".
 
 Anchor fixture rules:
 - Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
 - Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges, fixed plumbing fixtures (sinks, taps, built-in tubs, showers), ceiling-mounted light fixtures (flush-mount, pendant, chandelier).
 - Use type "plumbing_fixture" for fixed sinks, taps, tubs, and showers.
 - Use type "light_fixture" for ceiling-mounted light fixtures (flush-mount, semi-flush, pendant, chandelier) — not for movable lamps.
+- Use type "other" for any stable, fixed architectural feature that doesn't genuinely match one of the named categories — e.g. a decorative corbel/bracket, a built-in shelf remnant, an unusual wall-mounted fixture. Guessing a close-but-wrong named category is WORSE than using "other" with an accurate description: the description (not the type label) is what downstream staging uses to protect the object, so a correct "other" with a precise description is strictly better than a confident-sounding but incorrect named type. Do not force an ambiguous object into "fireplace", "built_in_cabinet", or any other named type unless it genuinely, unambiguously matches — when in doubt, use "other" and describe exactly what you see.
 - Exclude movable furniture/decor.
 - If no stable fixture is visible, return an empty array.
 
@@ -1615,6 +1626,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         ? opening.doorLeafState
         : normalizeDoorLeafState(opening.doorLeafState, normalizedType);
 
+    const descriptionCandidate =
+      typeof opening.description === "string" && opening.description.trim().length > 0
+        ? opening.description.trim()
+        : undefined;
+
     return {
       id: opening.id,
       type: normalizedType,
@@ -1628,6 +1644,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       paneStructure: paneStructureCandidate,
       doorLeafState: doorLeafStateCandidate,
       confidence: confidenceCandidate,
+      description: descriptionCandidate,
 
       wallPosition: wallPositionCandidate,
       relativeHorizontalPosition: relativeHorizontalCandidate,
@@ -1660,6 +1677,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
               ? Math.max(0, Math.min(1, fixture.confidence))
               : 0.75;
 
+          const descriptionCandidate =
+            typeof fixture.description === "string" && fixture.description.trim().length > 0
+              ? fixture.description.trim()
+              : undefined;
+
           return {
             id: typeof fixture.id === "string" && fixture.id.trim().length > 0
               ? fixture.id.trim()
@@ -1669,6 +1691,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
             horizontalBand: horizontalBandCandidate,
             bbox: bboxCandidate,
             confidence: confidenceCandidate,
+            description: descriptionCandidate,
           } as AnchorFixture;
         })
         .filter((item: AnchorFixture | null): item is AnchorFixture => item !== null)

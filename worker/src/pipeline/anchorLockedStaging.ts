@@ -75,52 +75,70 @@ Perspective lines, wall intersections, and opening proportions must align with t
 Camera & Perspective Constraint:
 The camera viewpoint, lens perspective, and framing must remain exactly as in the original photo — do not zoom, crop, rotate, widen, narrow, or otherwise shift camera position or perspective. The final image must look like the same photo with furniture simply placed into the scene.`;
 
-// ── Category B: room-specific clauses, included only when the real
-// baseline extraction detects the corresponding item for this image.
-// Keyed by a matcher against the real StructuralBaseline rather than a
-// flat type->string map, since "Closets and their doors" depends on an
-// OPENING type (closet_door) while the rest depend on anchorFixture types —
-// a flat lookup on AnchorFixtureType alone can't express that. ──
-type CategoryBRule = { id: string; clause: string; matches: (baseline: StructuralBaseline) => boolean };
+// ── Universal position-bound feature protection (replaces the old fixed
+// per-type CATEGORY_B_RULES lookup for this layer). Every real compliance
+// failure found this session traced to the same root cause: a real,
+// correctly-detected fact from extraction never made it into the specific
+// instruction Gemini reasons from at generation time — a category name
+// alone ("Fireplaces, mantels, and hearths.") wasn't enough to protect
+// Diningroom 01's wall bracket even though it WAS detected and named.
+// Fix: generate one specific, position-bound sentence per item the
+// baseline extraction actually found for THIS image — using its own
+// type/description and detected position — instead of a hand-curated
+// clause keyed by type. A novel object gets the same treatment as a
+// correctly-typed fixture, because the sentence is built from what
+// extraction found, not from whether a developer wrote a template for
+// that category. Applies to every opening AND every anchor fixture, not a
+// curated subset. ──
 
-const hasFixtureType = (baseline: StructuralBaseline, ...types: AnchorFixtureType[]) =>
-  (baseline.anchorFixtures || []).some((f) => types.includes(f.type));
+function resolveWallLabel(walls: WallVisibilityWall[] | null | undefined, wallIndex: number): string {
+  const wall = (walls || []).find((w) => w.id === `wall_${wallIndex}`);
+  return wall ? `${wall.id} (${wall.wallLabel})` : `wall_${wallIndex}`;
+}
 
-export const CATEGORY_B_RULES: CategoryBRule[] = [
-  {
-    id: "kitchen_built_ins",
-    clause: "Kitchen islands, cabinetry, and countertops.",
-    matches: (b) => hasFixtureType(b, "kitchen_island", "built_in_cabinet"),
-  },
-  {
-    id: "fireplace",
-    clause: "Fireplaces, mantels, and hearths.",
-    matches: (b) => hasFixtureType(b, "fireplace"),
-  },
-  {
-    id: "closets",
-    clause: "Closets and their doors.",
-    matches: (b) => b.openings.some((o) => o.type === "closet_door"),
-  },
-  {
-    id: "plumbing",
-    clause: "Faucets, sinks, tubs, and showers.",
-    matches: (b) => hasFixtureType(b, "plumbing_fixture"),
-  },
-  {
-    id: "pendant_ceiling_lighting",
-    clause: "Pendant lights, chandeliers, recessed lighting, or ceiling fans.",
-    matches: (b) => hasFixtureType(b, "light_fixture"),
-  },
-];
+function fallbackItemDescription(type: string): string {
+  return type.replace(/_/g, " ");
+}
 
-function selectCategoryBClauses(baseline: StructuralBaseline): { included: CategoryBRule[]; excluded: CategoryBRule[] } {
-  const included: CategoryBRule[] = [];
-  const excluded: CategoryBRule[] = [];
-  for (const rule of CATEGORY_B_RULES) {
-    (rule.matches(baseline) ? included : excluded).push(rule);
+function describeItemPosition(
+  walls: WallVisibilityWall[] | null | undefined,
+  wallIndex: number,
+  horizontalBand: string,
+  verticalBand?: string
+): string {
+  const wallRef = resolveWallLabel(walls, wallIndex);
+  const horizontal = describeHorizontalBand(horizontalBand);
+  const vertical = verticalBand ? `, in the ${describeVerticalBand(verticalBand)} area` : "";
+  return `${wallRef}, ${horizontal}${vertical}`;
+}
+
+export function buildUniversalFeatureProtectionSection(
+  baseline: StructuralBaseline,
+  walls: WallVisibilityWall[] | null | undefined
+): { section: string; itemCount: number; sentences: string[] } {
+  const sentences: string[] = [];
+
+  for (const opening of baseline.openings || []) {
+    const description = opening.description || fallbackItemDescription(opening.type);
+    const position = describeItemPosition(walls, opening.wallIndex, opening.horizontalBand, opening.verticalBand);
+    sentences.push(
+      `This room has ${description}, located at/on ${position}. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.`
+    );
   }
-  return { included, excluded };
+  for (const fixture of baseline.anchorFixtures || []) {
+    const description = fixture.description || fallbackItemDescription(fixture.type);
+    const position = describeItemPosition(walls, fixture.wallIndex, fixture.horizontalBand);
+    sentences.push(
+      `This room has ${description}, located at/on ${position}. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.`
+    );
+  }
+
+  const section =
+    sentences.length > 0
+      ? `\n\nROOM-SPECIFIC PROTECTED FEATURES — detected in this photo, each must remain exactly as shown and fully unobstructed:\n${sentences.map((s) => `* ${s}`).join("\n")}`
+      : "";
+
+  return { section, itemCount: sentences.length, sentences };
 }
 
 // ── Wall-visibility extraction: per-job, real Gemini call. Ported from
@@ -287,22 +305,6 @@ function describeVerticalBand(band: string): string {
   return "middle";
 }
 
-export function describeCoLocatedFeatures(baseline: StructuralBaseline, anchorWallIndex: number): string[] {
-  const openingLines = baseline.openings
-    .filter((o) => o.wallIndex === anchorWallIndex)
-    .map(
-      (o) =>
-        `* ${o.id} (${o.type}), in the ${describeVerticalBand(o.verticalBand)} area, ${describeHorizontalBand(o.horizontalBand)} of this wall: must remain fully visible. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it, and do not obstruct it with furniture.`
-    );
-  const fixtureLines = (baseline.anchorFixtures || [])
-    .filter((f) => f.wallIndex === anchorWallIndex)
-    .map(
-      (f) =>
-        `* ${f.id} (${f.type}), in the ${describeHorizontalBand(f.horizontalBand)} of this wall: must remain fully visible and unobstructed. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it.`
-    );
-  return [...openingLines, ...fixtureLines];
-}
-
 function wallBBox(wall: WallVisibilityWall) {
   const xs = wall.extent.polygon.map((p) => p[0]);
   const ys = wall.extent.polygon.map((p) => p[1]);
@@ -397,9 +399,8 @@ export type AnchorLockedPromptResult = {
     wallVisibilityExtracted: boolean;
     anchorWallId: string | null;
     anchorConfidence: number | null;
-    categoryBIncluded: string[];
-    categoryBExcluded: string[];
-    coLocatedFeatures: string[];
+    protectedFeatureCount: number;
+    protectedFeatureSentences: string[];
     wallPartiallyVisible: boolean;
   };
 };
@@ -418,9 +419,8 @@ export async function buildAnchorLockedStage2Prompt(opts: {
     wallVisibilityExtracted: false,
     anchorWallId: null as string | null,
     anchorConfidence: null as number | null,
-    categoryBIncluded: [] as string[],
-    categoryBExcluded: [] as string[],
-    coLocatedFeatures: [] as string[],
+    protectedFeatureCount: 0,
+    protectedFeatureSentences: [] as string[],
     wallPartiallyVisible: false,
   };
 
@@ -457,37 +457,25 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   baseDiagnostics.anchorConfidence = plan.confidence;
   baseDiagnostics.wallPartiallyVisible = plan.wallPartiallyVisible;
 
-  const { included, excluded } = selectCategoryBClauses(baseline);
-  baseDiagnostics.categoryBIncluded = included.map((r) => r.id);
-  baseDiagnostics.categoryBExcluded = excluded.map((r) => r.id);
-
-  const categoryBSection =
-    included.length > 0
-      ? `\n\nROOM-SPECIFIC PROTECTED FEATURES — detected in this photo, also do not alter, remove, or obstruct:\n${included.map((r) => `* ${r.clause}`).join("\n")}`
-      : "";
+  const { section: protectedFeatureSection, itemCount, sentences } = buildUniversalFeatureProtectionSection(baseline, walls);
+  baseDiagnostics.protectedFeatureCount = itemCount;
+  baseDiagnostics.protectedFeatureSentences = sentences;
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
   const noDecorLine = plan.noDecorAboveBedNote ? `\n* ${plan.noDecorAboveBedNote}` : "";
 
-  const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
-  baseDiagnostics.coLocatedFeatures = coLocatedFeatures;
-  const anchorWallFeaturesSection =
-    coLocatedFeatures.length > 0
-      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible; nothing may cover or obstruct them, including the bed)\n\nThe wall selected for the bed also has the following existing feature(s) on it. Position the bed within the clear segment described above so that it does NOT overlap or obstruct any of these — the bed must be positioned to avoid them, even if that means it does not span the entire wall. No new item (artwork, mirrors, shelving, or any other wall-mounted decor) may be placed over them either, even though it may look conventional to decorate that spot:\n${coLocatedFeatures.join("\n")}`
-      : "";
-
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
-${CATEGORY_A_LOCKS}${categoryBSection}
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
 ANCHOR ITEM — BED (must be followed exactly)
 
 * Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${anchorWallFeaturesSection}
+* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
-Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the co-located features named above and the no-decor-above-bed rule if it applies. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the protected features named above and the no-decor-above-bed rule if it applies. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
 
   nLog("[STAGE2_ANCHOR_LOCKED_PLAN]", {
     jobId: opts.jobId,
@@ -498,9 +486,7 @@ Beyond the bed placement above and the structural constraints above, use your ow
     anchorWallIndex: plan.anchorWallIndex,
     anchorConfidence: plan.confidence,
     selectionReason: plan.selectionReason,
-    categoryBIncluded: baseDiagnostics.categoryBIncluded,
-    categoryBExcluded: baseDiagnostics.categoryBExcluded,
-    coLocatedFeatures,
+    protectedFeatureCount: itemCount,
     wallPartiallyVisible: plan.wallPartiallyVisible,
     noDecorAboveBedRuleApplied: !!plan.noDecorAboveBedNote,
     fallbackTriggered: false,
