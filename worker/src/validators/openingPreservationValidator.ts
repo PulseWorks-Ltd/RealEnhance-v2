@@ -22,6 +22,8 @@ export type AnchorFixtureType =
   | "built_in_cabinet"
   | "kitchen_island"
   | "staircase"
+  | "plumbing_fixture"
+  | "light_fixture"
   | "other";
 
 export type AnchorFixture = {
@@ -636,7 +638,7 @@ Permanent openings include:
 Ignore:
 - Furniture
 - Decor
-- Lighting
+- Decorative or movable lighting (table lamps, floor lamps) — but DO capture permanent ceiling-mounted light fixtures as anchorFixtures (type: light_fixture), see anchor fixture rules below
 - Reflections
 - Curtains
 - Temporary objects
@@ -688,7 +690,7 @@ Return JSON in this exact schema:
   "anchorFixtures": [
     {
       "id": string,
-      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "other",
+      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "plumbing_fixture" | "light_fixture" | "other",
       "wallIndex": 0 | 1 | 2 | 3,
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "bbox": [x1, y1, x2, y2],
@@ -712,7 +714,9 @@ Rules:
 
 Anchor fixture rules:
 - Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
-- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges.
+- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges, fixed plumbing fixtures (sinks, taps, built-in tubs, showers), ceiling-mounted light fixtures (flush-mount, pendant, chandelier).
+- Use type "plumbing_fixture" for fixed sinks, taps, tubs, and showers.
+- Use type "light_fixture" for ceiling-mounted light fixtures (flush-mount, semi-flush, pendant, chandelier) — not for movable lamps.
 - Exclude movable furniture/decor.
 - If no stable fixture is visible, return an empty array.
 
@@ -938,6 +942,8 @@ function isAnchorFixtureType(value: string): value is AnchorFixtureType {
     value === "built_in_cabinet" ||
     value === "kitchen_island" ||
     value === "staircase" ||
+    value === "plumbing_fixture" ||
+    value === "light_fixture" ||
     value === "other"
   );
 }
@@ -949,6 +955,8 @@ function normalizeAnchorFixtureType(value: unknown): AnchorFixtureType {
   if (raw === "built_in_cabinet" || raw === "built_in" || raw === "cabinetry") return "built_in_cabinet";
   if (raw === "kitchen_island" || raw === "island") return "kitchen_island";
   if (raw === "staircase" || raw === "stairs") return "staircase";
+  if (raw === "plumbing_fixture" || raw === "plumbing" || raw === "sink" || raw === "faucet" || raw === "tap") return "plumbing_fixture";
+  if (raw === "light_fixture" || raw === "ceiling_light" || raw === "pendant_light" || raw === "pendant" || raw === "chandelier" || raw === "ceiling_fixture") return "light_fixture";
   return "other";
 }
 

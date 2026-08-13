@@ -25,6 +25,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
+import { buildAnchorLockedStage2Prompt } from "./anchorLockedStaging";
 
 const logger = console;
 
@@ -813,20 +814,48 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
 
   const USE_NANO_BANANA_PROMPT =
     process.env.STAGE2_PROMPT_VARIANT === "nano" && resolvedPromptMode === "full";
+  // New, additive, switchable prompt path (see worker/src/pipeline/anchorLockedStaging.ts).
+  // Only takes effect when explicitly selected via STAGE2_PROMPT_VARIANT; every other
+  // value (including unset / "legacy" / "nano" / "grok") is completely unaffected by
+  // this branch and resolves exactly as it did before this flag existed.
+  const USE_ANCHOR_LOCKED_PROMPT =
+    process.env.STAGE2_PROMPT_VARIANT === "anchor_locked" && resolvedPromptMode === "full";
 
   const nanoRoomProgramGuidance = buildNanoRoomProgramGuidance({
     roomType: canonicalRoomType,
     stagingStyle: selectedStyleRaw,
   });
 
-  const stage2Prompt = USE_NANO_BANANA_PROMPT
+  const defaultStage2Prompt = USE_NANO_BANANA_PROMPT
     ? `${STAGE2_PROMPT_NANO_BANANA}\n\n${nanoRoomProgramGuidance}`
     : STAGE2_PROMPT_LEGACY;
+
+  let stage2Prompt = defaultStage2Prompt;
+  let anchorLockedFallbackReason: string | null = null;
+  if (USE_ANCHOR_LOCKED_PROMPT) {
+    const anchorLockedResult = await buildAnchorLockedStage2Prompt({
+      imagePath: basePath,
+      roomType: canonicalRoomType,
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+    });
+    if (anchorLockedResult.prompt) {
+      stage2Prompt = anchorLockedResult.prompt;
+    } else {
+      // Never fail the job because the new path couldn't produce a plan —
+      // fall back to whatever the existing default resolution already is.
+      anchorLockedFallbackReason = anchorLockedResult.fallbackReason;
+      stage2Prompt = defaultStage2Prompt;
+    }
+  }
 
   nLog("[STAGE2_PROMPT_VARIANT]", {
     requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
     mode: resolvedPromptMode,
-    variant: USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"
+    variant: USE_ANCHOR_LOCKED_PROMPT
+      ? (anchorLockedFallbackReason ? "anchor_locked_fallback" : "anchor_locked")
+      : (USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"),
+    ...(anchorLockedFallbackReason ? { anchorLockedFallbackReason } : {}),
   });
 
   let textPrompt = stage2Prompt;
