@@ -283,6 +283,8 @@ type AnchorPlan = {
   anchorSegmentDescription: string;
   anchorOrientationInstruction: string;
   anchorFramingNote: string | null;
+  wallPartiallyVisible: boolean;
+  noDecorAboveBedNote: string | null;
   confidence: number;
   selectionReason: string;
 };
@@ -380,10 +382,22 @@ export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisib
   const { minX, maxX } = wallBBox(selectedWall);
   const touchesRight = maxX >= 1 - FRAME_EDGE_EPSILON;
   const touchesLeft = minX <= FRAME_EDGE_EPSILON;
-  const anchorFramingNote =
-    touchesLeft || touchesRight
-      ? `${selectedWall.id} is only partially visible in the frame (truncated at the ${touchesRight ? "right" : "left"} edge). Edge-cropped placement is acceptable.`
-      : null;
+  const wallPartiallyVisible = touchesLeft || touchesRight;
+  const anchorFramingNote = wallPartiallyVisible
+    ? `${selectedWall.id} is only partially visible in the frame (truncated at the ${touchesRight ? "right" : "left"} edge). Edge-cropped placement is acceptable.`
+    : null;
+
+  // A wall that's cropped by the frame edge can't be fully verified —
+  // whatever's just off-frame (another opening, a fixture) isn't visible
+  // to the baseline extraction at all, so co-located-feature protection
+  // can't cover it either. Bedroom 11/14 both involved decor or the bed
+  // itself landing on an opening that undermined a "should be fine"
+  // assumption about the wall; an edge-cropped wall is exactly the case
+  // where that assumption is least trustworthy. Conservative backstop:
+  // no wall-mounted decor above the bed at all on a wall we can't fully see.
+  const noDecorAboveBedNote = wallPartiallyVisible
+    ? `${selectedWall.id} is only partially visible in this photo, so its full extent cannot be verified. Do NOT place any wall-mounted artwork, mirrors, shelving, or other decor above the bed on this wall, even if it looks like there is room for it — leave the wall above the headboard bare.`
+    : null;
 
   return {
     anchorWallId: selectedWall.id,
@@ -392,6 +406,8 @@ export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisib
     anchorSegmentDescription: bestSegment.description,
     anchorOrientationInstruction,
     anchorFramingNote,
+    wallPartiallyVisible,
+    noDecorAboveBedNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
     selectionReason: `${selectedWall.id} (${selectedWall.wallLabel}) selected: largest contiguous usable segment ${selected.largestSegment.toFixed(3)} ("${bestSegment.description}"), meets the ${MIN_USABLE_FRACTION_FOR_ANCHOR} minimum threshold.`,
   };
@@ -410,6 +426,7 @@ export type AnchorLockedPromptResult = {
     categoryBIncluded: string[];
     categoryBExcluded: string[];
     coLocatedFeatures: string[];
+    wallPartiallyVisible: boolean;
   };
 };
 
@@ -430,6 +447,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
     categoryBIncluded: [] as string[],
     categoryBExcluded: [] as string[],
     coLocatedFeatures: [] as string[],
+    wallPartiallyVisible: false,
   };
 
   const fallback = (reason: string, diagnostics = baseDiagnostics): AnchorLockedPromptResult => {
@@ -463,6 +481,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   }
   baseDiagnostics.anchorWallId = plan.anchorWallId;
   baseDiagnostics.anchorConfidence = plan.confidence;
+  baseDiagnostics.wallPartiallyVisible = plan.wallPartiallyVisible;
 
   const { included, excluded } = selectCategoryBClauses(baseline);
   baseDiagnostics.categoryBIncluded = included.map((r) => r.id);
@@ -474,6 +493,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
       : "";
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
+  const noDecorLine = plan.noDecorAboveBedNote ? `\n* ${plan.noDecorAboveBedNote}` : "";
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   baseDiagnostics.coLocatedFeatures = coLocatedFeatures;
@@ -489,11 +509,11 @@ ${CATEGORY_A_LOCKS}${categoryBSection}
 ANCHOR ITEM — BED (must be followed exactly)
 
 * Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${anchorWallFeaturesSection}
+* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${anchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
-Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the co-located features named above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the co-located features named above and the no-decor-above-bed rule if it applies. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
 
   nLog("[STAGE2_ANCHOR_LOCKED_PLAN]", {
     jobId: opts.jobId,
@@ -507,6 +527,8 @@ Beyond the bed placement above and the structural constraints above, use your ow
     categoryBIncluded: baseDiagnostics.categoryBIncluded,
     categoryBExcluded: baseDiagnostics.categoryBExcluded,
     coLocatedFeatures,
+    wallPartiallyVisible: plan.wallPartiallyVisible,
+    noDecorAboveBedRuleApplied: !!plan.noDecorAboveBedNote,
     fallbackTriggered: false,
   });
 
