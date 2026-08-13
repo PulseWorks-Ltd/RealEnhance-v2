@@ -31,11 +31,20 @@ const WALL_VISIBILITY_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "
 // ── Category A: general structural locks — ALWAYS included in full,
 // regardless of room contents. Verbatim from STAGE2_PROMPT_NANO_BANANA
 // (worker/src/pipeline/stage2.ts:755-812), audited clause-by-clause in
-// tmp/stage2_nanobanana_prompt_audit.md, with three additions validated in
-// tmp/test_anchor_only_staging_v3.ts: an explicit AC/HVAC-unit clause, an
-// explicit ceiling-fixture/smoke-detector clause, and a general catch-all
-// backstop. Do not add room-specific (category-B) content here — that goes
-// in CATEGORY_B_RULES below, conditionally. ──
+// tmp/stage2_nanobanana_prompt_audit.md, with four additions:
+// - AC/HVAC-unit clause, ceiling-fixture/smoke-detector clause, and a
+//   general catch-all backstop, validated in tmp/test_anchor_only_staging_v3.ts.
+// - A GEOMETRIC ENVELOPE LOCK block (Bedroom 2 production incident: room
+//   depth/proportions subtly redrawn — "back wall pushed back" — without
+//   this ever registering as camera zoom/crop/rotate, since nano-banana's
+//   camera-lock section only constrains camera MOVEMENT, not room geometry
+//   independent of the camera). Nano-banana never had this; it's ported
+//   from the fuller STAGE2_PROMPT_LEGACY prompt (buildStage2FullPromptNZ's
+//   STRUCTURAL_HARDENING_LAYER_V2, worker/src/ai/prompts/stage2/full.prompt.ts),
+//   which already carries dedicated, repeated language for exactly this —
+//   distinct from and in addition to camera lock, not a replacement for it.
+// Do not add room-specific (category-B) content here — that goes in
+// CATEGORY_B_RULES below, conditionally. ──
 export const CATEGORY_A_LOCKS = `As an advanced virtual staging AI, your only role is to add realistic, correctly-scaled furniture and decor to the provided room photo. You are to act only as an decorator, placing items within the unchanging physical structure of the room.
 
 STRUCTURAL PRIORITY RULE — NON-NEGOTIABLE
@@ -74,6 +83,17 @@ Ceiling-mounted light fixtures (including flush-mount, semi-flush, pendant, and 
 View: Do not change the existing view through windows or doors.
 
 Do not alter, remove, or add any other fixed fixture, fitting, appliance, or built-in feature visible in the original photo, even if not individually named above.
+
+GEOMETRIC ENVELOPE LOCK — ZERO TOLERANCE:
+The architectural envelope must remain visually and geometrically identical to the original photo. You must NOT:
+* change wall positions, lengths, or angles
+* alter corner locations
+* modify ceiling height or plane geometry
+* change window-to-wall ratio or door-to-wall ratio
+* alter visible wall spacing
+* adjust depth perspective or compression
+* modify vanishing point alignment
+Perspective lines, wall intersections, and opening proportions must align with the original image. Do NOT "improve" room proportions, straighten perspective, extend wall planes for compositional symmetry, or reinterpret spatial depth in any way — even subtly, even if it would make the room look larger or more spacious. This is a separate, additional requirement to the Camera & Perspective Constraint below, not covered by it: the camera may stay perfectly still while the room's geometry is redrawn, and that is equally prohibited.
 
 Core Principle:
 The photo of the room must remain an exact structural and architectural copy of the original. Your function is limited entirely to placing a realistic layer of furniture and decor within this unchanging, permanent framework. Do not extend, expand, contract, or warp any space or element of the original photo. Only place furniture and decor in logical, realistic positions within the room.
@@ -133,9 +153,9 @@ function selectCategoryBClauses(baseline: StructuralBaseline): { included: Categ
 // tmp/investigate_wall_visibility_v2.ts (the corrected, wall-count-aware
 // version) — same system instruction, same JSON schema, same
 // deterministic (temperature 0) call pattern. ──
-type Point = [number, number];
-type WallVisibilitySegment = { range: [number, number]; widthFraction: number; description: string };
-type WallVisibilityWall = {
+export type Point = [number, number];
+export type WallVisibilitySegment = { range: [number, number]; widthFraction: number; description: string };
+export type WallVisibilityWall = {
   id: string;
   wallLabel: string;
   extent: { polygon: Point[] };
@@ -260,6 +280,7 @@ type AnchorPlan = {
   anchorWallId: string;
   anchorWallLabel: string;
   anchorWallIndex: number;
+  anchorSegmentDescription: string;
   anchorOrientationInstruction: string;
   anchorFramingNote: string | null;
   confidence: number;
@@ -312,7 +333,7 @@ function wallBBox(wall: WallVisibilityWall) {
   return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
 }
 
-function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
+export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
   const wallCandidates = walls.map((wall) => {
     const largestSegment = wall.usableSegments.reduce((max, s) => Math.max(max, s.widthFraction), 0);
     return { wall, largestSegment };
@@ -368,6 +389,7 @@ function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWa
     anchorWallId: selectedWall.id,
     anchorWallLabel: selectedWall.wallLabel,
     anchorWallIndex: selectedWallIndex,
+    anchorSegmentDescription: bestSegment.description,
     anchorOrientationInstruction,
     anchorFramingNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
@@ -457,7 +479,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   baseDiagnostics.coLocatedFeatures = coLocatedFeatures;
   const anchorWallFeaturesSection =
     coLocatedFeatures.length > 0
-      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible, do not place any new decor over them)\n\nThe wall selected for the bed also has the following existing feature(s) on it. The bed itself may go against this wall as instructed above, but no other new item — artwork, mirrors, shelving, or any other wall-mounted decor — may be placed over any of these, even though it may look conventional to decorate that spot:\n${coLocatedFeatures.join("\n")}`
+      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible; nothing may cover or obstruct them, including the bed)\n\nThe wall selected for the bed also has the following existing feature(s) on it. Position the bed within the clear segment described above so that it does NOT overlap or obstruct any of these — the bed must be positioned to avoid them, even if that means it does not span the entire wall. No new item (artwork, mirrors, shelving, or any other wall-mounted decor) may be placed over them either, even though it may look conventional to decorate that spot:\n${coLocatedFeatures.join("\n")}`
       : "";
 
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
@@ -466,7 +488,7 @@ ${CATEGORY_A_LOCKS}${categoryBSection}
 
 ANCHOR ITEM — BED (must be followed exactly)
 
-* Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}" — this is the wall selected as the anchor wall by the room's own layout analysis.
+* Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
 * ${plan.anchorOrientationInstruction}${framingLine}${anchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
