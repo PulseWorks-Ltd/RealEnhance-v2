@@ -259,11 +259,52 @@ const FRAME_EDGE_EPSILON = 0.03;
 type AnchorPlan = {
   anchorWallId: string;
   anchorWallLabel: string;
+  anchorWallIndex: number;
   anchorOrientationInstruction: string;
   anchorFramingNote: string | null;
   confidence: number;
   selectionReason: string;
 };
+
+// Bedroom 11 production incident (real job, anchor_locked path): the bed
+// was correctly placed against a wall that also had a small window on it
+// (W2), but the model then added a mirror/artwork above the headboard —
+// landing directly on the window's footprint and visually "walling it
+// over." The generic category-A "do not cover openings" instruction
+// wasn't concrete enough to stop this once the model was independently
+// deciding where to hang decor. Fix: explicitly name every opening/fixture
+// that shares the anchor wall's wallIndex, with its real detected
+// position, and forbid new decor over each one specifically — not a
+// blanket "no decor above the bed" rule, which would also suppress the
+// (normal, desirable) above-headboard-art convention in every bedroom
+// that DOESN'T have this conflict.
+function describeHorizontalBand(band: string): string {
+  if (band === "left_third") return "left portion";
+  if (band === "right_third") return "right portion";
+  return "center";
+}
+function describeVerticalBand(band: string): string {
+  if (band === "floor_zone") return "lower";
+  if (band === "ceiling_zone") return "upper, near the ceiling";
+  if (band === "full_height") return "full-height";
+  return "middle";
+}
+
+export function describeCoLocatedFeatures(baseline: StructuralBaseline, anchorWallIndex: number): string[] {
+  const openingLines = baseline.openings
+    .filter((o) => o.wallIndex === anchorWallIndex)
+    .map(
+      (o) =>
+        `* ${o.id} (${o.type}), in the ${describeVerticalBand(o.verticalBand)} area, ${describeHorizontalBand(o.horizontalBand)} of this wall: must remain fully visible. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it, and do not obstruct it with furniture.`
+    );
+  const fixtureLines = (baseline.anchorFixtures || [])
+    .filter((f) => f.wallIndex === anchorWallIndex)
+    .map(
+      (f) =>
+        `* ${f.id} (${f.type}), in the ${describeHorizontalBand(f.horizontalBand)} of this wall: must remain fully visible and unobstructed. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it.`
+    );
+  return [...openingLines, ...fixtureLines];
+}
 
 function wallBBox(wall: WallVisibilityWall) {
   const xs = wall.extent.polygon.map((p) => p[0]);
@@ -326,6 +367,7 @@ function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWa
   return {
     anchorWallId: selectedWall.id,
     anchorWallLabel: selectedWall.wallLabel,
+    anchorWallIndex: selectedWallIndex,
     anchorOrientationInstruction,
     anchorFramingNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
@@ -345,6 +387,7 @@ export type AnchorLockedPromptResult = {
     anchorConfidence: number | null;
     categoryBIncluded: string[];
     categoryBExcluded: string[];
+    coLocatedFeatures: string[];
   };
 };
 
@@ -364,6 +407,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
     anchorConfidence: null as number | null,
     categoryBIncluded: [] as string[],
     categoryBExcluded: [] as string[],
+    coLocatedFeatures: [] as string[],
   };
 
   const fallback = (reason: string, diagnostics = baseDiagnostics): AnchorLockedPromptResult => {
@@ -409,6 +453,13 @@ export async function buildAnchorLockedStage2Prompt(opts: {
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
 
+  const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
+  baseDiagnostics.coLocatedFeatures = coLocatedFeatures;
+  const anchorWallFeaturesSection =
+    coLocatedFeatures.length > 0
+      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible, do not place any new decor over them)\n\nThe wall selected for the bed also has the following existing feature(s) on it. The bed itself may go against this wall as instructed above, but no other new item — artwork, mirrors, shelving, or any other wall-mounted decor — may be placed over any of these, even though it may look conventional to decorate that spot:\n${coLocatedFeatures.join("\n")}`
+      : "";
+
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
 ${CATEGORY_A_LOCKS}${categoryBSection}
@@ -416,11 +467,11 @@ ${CATEGORY_A_LOCKS}${categoryBSection}
 ANCHOR ITEM — BED (must be followed exactly)
 
 * Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}" — this is the wall selected as the anchor wall by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}
+* ${plan.anchorOrientationInstruction}${framingLine}${anchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
-Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+Beyond the bed placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a bedroom, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the co-located features named above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
 
   nLog("[STAGE2_ANCHOR_LOCKED_PLAN]", {
     jobId: opts.jobId,
@@ -428,10 +479,12 @@ Beyond the bed placement above and the structural constraints above, use your ow
     roomType: opts.roomType,
     anchorWallId: plan.anchorWallId,
     anchorWallLabel: plan.anchorWallLabel,
+    anchorWallIndex: plan.anchorWallIndex,
     anchorConfidence: plan.confidence,
     selectionReason: plan.selectionReason,
     categoryBIncluded: baseDiagnostics.categoryBIncluded,
     categoryBExcluded: baseDiagnostics.categoryBExcluded,
+    coLocatedFeatures,
     fallbackTriggered: false,
   });
 
