@@ -184,6 +184,16 @@ For each distinct wall you identify:
 - List which of the GIVEN opening/fixture IDs (from the baseline below) fall on this wall, if any.
 - Estimate usableWidthFraction: the fraction (0-1) of this wall's total width that is clear, usable
   wall space once the openings/fixtures on it are subtracted.
+  FLOOR-CLEARANCE RULE — only subtract an opening/fixture's full horizontal span as unusable if it
+  touches the floor (touchesFloor: true in the baseline below — e.g. doors, sliding doors,
+  walkthroughs, and full-height windows genuinely block furniture placement in front of them). An
+  opening with touchesFloor: false (e.g. a half-height or high window with a sill well above floor
+  level) does NOT block furniture below it — a bed, headboard, or other furniture can legitimately sit
+  against the wall beneath it. Do not subtract a non-floor-touching opening's horizontal span from
+  usableWidthFraction or usableSegments; count that span as clear, usable width, exactly as if the
+  opening were not there for this purpose. A wall with a real floor-touching door must score lower
+  usable width than a wall with a similarly-sized non-floor-touching window — they are not
+  interchangeable for this estimate.
 - Describe usableSegments as horizontal fraction ranges [start, end] along that wall, each with a
   short plain description.
 - Give a confidence value (0-1) for this wall's existence as a distinct wall.
