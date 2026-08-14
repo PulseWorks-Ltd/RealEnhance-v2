@@ -71,6 +71,9 @@ The architectural envelope must remain visually and geometrically identical to t
 * modify vanishing point alignment
 Perspective lines, wall intersections, and opening proportions must align with the original image. Do NOT "improve" room proportions, straighten perspective, extend wall planes for symmetry, or reinterpret spatial depth in any way, even subtly or to make the room look larger — the camera may stay perfectly still while the room's geometry is redrawn, and that is equally prohibited.
 
+Core Principle:
+The photo of the room must remain an exact structural and architectural copy of the original. Your function is limited entirely to placing a realistic layer of furniture and decor within this unchanging, permanent framework. Do not extend, expand, contract, or warp any space or element of the original photo. Only place furniture and decor in logical, realistic positions within the room.
+
 Camera & Perspective Constraint:
 The camera viewpoint, lens perspective, and framing must remain exactly as in the original photo — do not zoom, crop, rotate, widen, narrow, or otherwise shift camera position or perspective. The final image must look like the same photo with furniture simply placed into the scene.`;
 
@@ -302,6 +305,36 @@ function describeVerticalBand(band: string): string {
   if (band === "ceiling_zone") return "upper, near the ceiling";
   if (band === "full_height") return "full-height";
   return "middle";
+}
+
+// INCIDENT RESTORATION (see git history around commit 0ba68803): this
+// anchor-wall-proximate, position-adjacent protection was removed when
+// buildUniversalFeatureProtectionSection was introduced, on the theory
+// that the general section already covers every detected item. It does —
+// but it lost two properties that made this specific mechanism work for
+// the Bedroom 11 (window-walled-over) and Bedroom 14 (door-walled-over)
+// incidents it was built for: (1) proximity — this text sits directly
+// next to the ANCHOR ITEM — BED instruction, in the same breath as the
+// placement decision, not a distant top-of-prompt list; (2) an explicit
+// "the bed must be positioned to avoid them" + "even though it may look
+// conventional to decorate that spot" framing that the generic section's
+// wording doesn't carry. Restored as an ADDITION alongside the universal
+// section, not a replacement for it — the universal section still adds
+// real value for items the taxonomy can't name (Diningroom 01's bracket).
+function describeCoLocatedFeatures(baseline: StructuralBaseline, anchorWallIndex: number): string[] {
+  const openingLines = baseline.openings
+    .filter((o) => o.wallIndex === anchorWallIndex)
+    .map(
+      (o) =>
+        `* ${o.id} (${o.description || o.type}), in the ${describeVerticalBand(o.verticalBand)} area, ${describeHorizontalBand(o.horizontalBand)} of this wall: must remain fully visible. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it, and do not obstruct it with furniture.`
+    );
+  const fixtureLines = (baseline.anchorFixtures || [])
+    .filter((f) => f.wallIndex === anchorWallIndex)
+    .map(
+      (f) =>
+        `* ${f.id} (${f.description || f.type}), in the ${describeHorizontalBand(f.horizontalBand)} of this wall: must remain fully visible and unobstructed. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it.`
+    );
+  return [...openingLines, ...fixtureLines];
 }
 
 function wallBBox(wall: WallVisibilityWall) {
@@ -751,6 +784,12 @@ function buildBedroomPrompt(
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
   const noDecorLine = plan.noDecorAboveBedNote ? `\n* ${plan.noDecorAboveBedNote}` : "";
 
+  const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
+  const anchorWallFeaturesSection =
+    coLocatedFeatures.length > 0
+      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible; nothing may cover or obstruct them, including the bed)\n\nThe wall selected for the bed also has the following existing feature(s) on it. Position the bed within the clear segment described above so that it does NOT overlap or obstruct any of these — the bed must be positioned to avoid them, even if that means it does not span the entire wall. No new item (artwork, mirrors, shelving, or any other wall-mounted decor) may be placed over them either, even though it may look conventional to decorate that spot:\n${coLocatedFeatures.join("\n")}`
+      : "";
+
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
 ${CATEGORY_A_LOCKS}${protectedFeatureSection}
@@ -758,7 +797,7 @@ ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 ANCHOR ITEM — BED (must be followed exactly)
 
 * Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}
+* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${anchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
