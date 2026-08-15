@@ -104,6 +104,9 @@ export type OcclusionObservationRaw = {
   currentSurfaceDescription: string;
   coverageExtentDescription: string;
   extentComparisonDescription: string;
+  // Fifth question (sliding/pocket door fix): see classifyStructuralEvidence
+  // and combineOcclusionAnswer's "preserved_closed" path below.
+  structuralEvidenceDescription: string;
 };
 
 export type ClassificationConfidence = "high" | "low";
@@ -124,6 +127,12 @@ export type OcclusionCheckAnswer = {
   replacedByContinuousSurface: boolean;
   itemExtendsBeyondCoveringObject: boolean;
   extentChanged: boolean;
+  // True when the fifth question found concrete structural evidence (a
+  // track, frame, jamb, pocket edge, reveal, hinge, threshold, or sill) —
+  // see combineOcclusionAnswer's "preserved_closed" path. Does NOT by
+  // itself mean occlusion; it only rescues what would otherwise be
+  // "removed"/"replaced" specifically.
+  structuralEvidenceFound: boolean;
   confidence: number;
   // Audit trail
   rawObservation: OcclusionObservationRaw;
@@ -133,10 +142,11 @@ export type OcclusionCheckAnswer = {
     extent: ClassifiedSignal;
     resized: ClassifiedSignal;
     repositioned: ClassifiedSignal;
+    structuralEvidence: ClassifiedSignal;
   };
 };
 
-export type OcclusionVerdict = "occlusion" | "removed" | "replaced" | "fully_covered" | "resized";
+export type OcclusionVerdict = "occlusion" | "removed" | "replaced" | "fully_covered" | "resized" | "preserved_closed";
 
 export type OcclusionCombinedResult = OcclusionCheckAnswer & {
   altered: boolean;
@@ -150,13 +160,30 @@ export type OcclusionCombinedResult = OcclusionCheckAnswer & {
 //     - itemExtendsBeyondCoveringObject = true
 //   any single failure of those three => altered = true.
 //
-// v3.1 (this task) adds one more conjunct: even when all three original
-// checks would say "occlusion" (present, not replaced, not fully covered),
-// a material item whose own visible size or position has genuinely
-// changed relative to its known baseline extent is still altered — this
-// is a different failure mode (a resize/reposition, not a coverage issue)
-// and gets its own distinguishable verdict ("resized") rather than being
-// folded into "occlusion" or any of the other three labels.
+// v3.1 adds one more conjunct: even when all three original checks would
+// say "occlusion" (present, not replaced, not fully covered), a material
+// item whose own visible size or position has genuinely changed relative
+// to its known baseline extent is still altered — this is a different
+// failure mode (a resize/reposition, not a coverage issue) and gets its
+// own distinguishable verdict ("resized") rather than being folded into
+// "occlusion" or any of the other three labels.
+//
+// v3.2 (sliding/pocket door fix) adds a rescue path, NOT a fifth conjunct
+// on isOcclusion — it only ever activates once isOcclusion has already
+// failed, and only ever overrides "replaced" or "removed" specifically.
+// Real, confirmed case (Bedroom 14 Run 2's closet, user-verified by direct
+// visual crop inspection): a CLOSED sliding/pocket door can genuinely fail
+// both traceVisible (Q1 sees no door leaf, correctly — the leaf is
+// retracted into the wall) and replacedByContinuousSurface (Q2 describes
+// the visible surface as plain wall, also correctly — that's what a closed
+// pocket door's face looks like) while the opening itself is completely
+// intact. The fifth question (structuralEvidenceDescription) asks
+// specifically for track/frame/jamb/pocket/hinge/threshold/sill evidence —
+// a different, more forceful observation than "does this look like a
+// wall," the same design principle that made the resize/reposition and
+// flooring-boundary questions work where a generic description question
+// didn't. Deliberately does NOT touch "fully_covered" or "resized" — this
+// signal has no bearing on either failure mode.
 export function combineOcclusionAnswer(answer: OcclusionCheckAnswer): OcclusionCombinedResult {
   const isOcclusion =
     answer.traceVisible === true &&
@@ -166,6 +193,12 @@ export function combineOcclusionAnswer(answer: OcclusionCheckAnswer): OcclusionC
 
   if (isOcclusion) {
     return { ...answer, altered: false, verdict: "occlusion" };
+  }
+  if (
+    answer.structuralEvidenceFound === true &&
+    (answer.replacedByContinuousSurface === true || !answer.traceVisible)
+  ) {
+    return { ...answer, altered: false, verdict: "preserved_closed" };
   }
   if (answer.replacedByContinuousSurface) {
     return { ...answer, altered: true, verdict: "replaced" };
@@ -277,16 +310,50 @@ const PRESENCE_FIXTURE_PATTERN =
 const AFFIRMATIVE_PRESENCE_PATTERN =
   /\b(is|are|remains?|stays?|appears? to be)\b[^.]{0,25}\b(clearly |fully |still |plainly )?(visible|present|there|intact|unchanged)\b/;
 
+// AUDIT FIX: this function had zero negation guarding anywhere — the
+// ad-hoc `!/\bnot\b/.test(affirmativeMatch[0])` check only ever existed on
+// the last branch, and PRESENCE_PART_PATTERN/PRESENCE_FIXTURE_PATTERN (the
+// most-hit branch in practice) had none at all. Confirmed vulnerable
+// offline before this fix: classifyPresence("The window isn't visible
+// anywhere in this region; only a blank painted wall is present where it
+// used to be.") returned {value: true, matchedPattern: "window"} — the
+// bare noun match fired with no check that "window" sat right next to an
+// explicit negation.
 export function classifyPresence(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of ABSENCE_PATTERNS) {
-    if (p.test(t)) return { value: false, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
   }
+  // Bare single-noun match is unlike every other pattern in this file: a
+  // lone noun has no fixed word-order relationship to a nearby negation.
+  // "There isn't a window visible" (cue before) and "the window isn't
+  // visible" (cue after) are equally natural phrasing, but isLikelyNegated
+  // only looks backward from the match. Checked in both directions here —
+  // a match negated either way should not stand — without adding any new
+  // vocabulary pattern.
   const partMatch = t.match(PRESENCE_PART_PATTERN) || t.match(PRESENCE_FIXTURE_PATTERN);
-  if (partMatch) return { value: true, confidence: "high", matchedPattern: partMatch[0] };
+  if (partMatch && partMatch.index !== undefined) {
+    const matchEnd = partMatch.index + partMatch[0].length;
+    const negatedBefore = isLikelyNegated(t, partMatch.index);
+    const negatedAfter = NEGATION_CUE_PATTERN.test(t.slice(matchEnd, matchEnd + 50));
+    if (!negatedBefore && !negatedAfter) {
+      return { value: true, confidence: "high", matchedPattern: partMatch[0] };
+    }
+  }
+  // AFFIRMATIVE_PRESENCE_PATTERN's own [^.]{0,25} gap can itself contain a
+  // negation ("is NOT clearly visible") — checked through the match's END
+  // (not just its start) so an interior negation is still caught, the way
+  // the old ad-hoc check did, but via the shared, contraction-aware helper
+  // instead of a bespoke literal-"not" test that missed "isn't"/"doesn't".
   const affirmativeMatch = t.match(AFFIRMATIVE_PRESENCE_PATTERN);
-  if (affirmativeMatch && !/\bnot\b/.test(affirmativeMatch[0])) {
-    return { value: true, confidence: "high", matchedPattern: affirmativeMatch[0] };
+  if (affirmativeMatch && affirmativeMatch.index !== undefined) {
+    const matchEnd = affirmativeMatch.index + affirmativeMatch[0].length;
+    if (!isLikelyNegated(t, matchEnd)) {
+      return { value: true, confidence: "high", matchedPattern: affirmativeMatch[0] };
+    }
   }
   return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_absent" };
 }
@@ -320,13 +387,56 @@ const NOT_REPLACED_PATTERNS: RegExp[] = [
   /\b(attached to|mounted (on|to)|installed (on|in)|fixed to|fitted to|sitting on|resting on)\b/,
 ];
 
+// Real, stable bug found investigating Bedroom 11-FIXED's A1 (an unframed
+// walkthrough opening): confirmed via git-stash A/B this predates the
+// negation audit entirely, and via 4 independent Grok runs (1 pre-audit +
+// 3 fresh) that it's 100% consistent, not model-perception noise. An
+// UNFRAMED walkthrough's jamb is, by definition, just the room's own wall
+// paint continuing around the corner — there is no distinct trim/material.
+// Every run described it exactly that way: "Plain white painted wall
+// surface forming the right jamb/edge of the room opening," while the SAME
+// observation's currentStateDescription plainly said the opening remains
+// open ("consistent with an open opening," "confirming the open walkthrough
+// remains"). REPLACED_PATTERNS[0] fired on "plain...wall" every time,
+// reading the jamb's own ordinary material as evidence of infill — not a
+// negation-blindness bug (there's no missed "not"), a genuine context gap:
+// "plain wall" describing an opening's own jamb means something different
+// from "plain wall" describing what now occupies where an opening used to
+// be. Checked before REPLACED_PATTERNS specifically because this evidence
+// is unambiguous when present — an opening's own jamb being invoked by name
+// is a stronger, more specific signal than the generic material adjectives
+// REPLACED_PATTERNS looks for.
+const OPENING_JAMB_CONTEXT_PATTERNS: RegExp[] = [
+  /\b(jamb|edge|side|boundary)[^.]{0,25}\bof (the )?(room )?(entrance |open )?(opening|walkthrough|doorway|entrance)\b/,
+];
+
+// AUDIT FIX: this classifier had zero negation guarding. Confirmed
+// vulnerable offline before this fix: classifyReplacement("The closet door
+// is still fully present here - it has definitely not been replaced by a
+// continuous wall.") returned {value: true, matchedPattern: "...continuous
+// ... wall..."} — REPLACED_PATTERNS[0] matched "continuous wall" while
+// ignoring the "not... replaced by a" immediately before it, the same bug
+// shape as the real production case that broke classifyMaterialMatch ("no
+// change to a different material").
 export function classifyReplacement(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
+  for (const p of OPENING_JAMB_CONTEXT_PATTERNS) {
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
+  }
   for (const p of REPLACED_PATTERNS) {
-    if (p.test(t)) return { value: true, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: true, confidence: "high", matchedPattern: p.source };
+    }
   }
   for (const p of NOT_REPLACED_PATTERNS) {
-    if (p.test(t)) return { value: false, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
   }
   return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_not_replaced" };
 }
@@ -441,7 +551,30 @@ const RESIZED_PATTERNS: RegExp[] = [
 // "n't", "never", "no longer", "without") — mirroring the negation
 // awareness classifyPresence already had, which this file's two newest
 // classifiers (added for the fourth question) never got.
-const NEGATION_CUE_PATTERN = /\b(not|n't|never|no longer|without)\b/;
+// AUDIT FIX: "n't" was listed as a cue but could never actually match any
+// real contraction. `\b(...)\b` requires a word boundary immediately before
+// "n't", but in every real contraction ("isn't", "doesn't", "can't",
+// "wasn't"...) the letter before "n" is itself a word character (s, s, n,
+// a...) — there is no boundary there, so `\bn't\b` never fired. Verified
+// offline: the old pattern matched 0 of {isn't, doesn't, can't, wasn't,
+// didn't, hasn't}. This silently weakened every classifier already using
+// isLikelyNegated (classifyResized, classifyRepositioned, classifyExtent,
+// classifySeamVisible, and classifyMaterialMatch's same-branch) whenever the
+// model used a contraction instead of the spelled-out "is not" form. Fixed
+// by pulling "n't" out of the bounded group into its own trailing-boundary
+// alternative, since it's always fused to a preceding word, never preceded
+// by one of its own.
+// SLIDING-DOOR-FIX-ADJACENT FINDING: "neither" added after a real Grok
+// response (Bedroom 14 Run 2, W2) wrote "...neither markedly larger,
+// smaller, nor shifted" — an unambiguous assertion of no change that
+// classifyResized's RESIZED_PATTERNS matched on "larger"/"smaller" without
+// recognizing the "neither...nor" construction, wrongly returning
+// resized=true. Unlike bare "no" (kept scoped to flooring only, since "no"
+// is common enough in unrelated nearby clauses to risk new false
+// negatives), "neither" is distinctive enough to be safe in the shared
+// default — confirmed by re-checking it doesn't collide with any of the
+// already-validated resize/reposition/extent/presence/replacement patterns.
+const NEGATION_CUE_PATTERN = /\b(not|never|no longer|without|neither)\b|n't\b/;
 
 // customCuePattern defaults to the exact pattern above, so every existing
 // call site (classifyResized/classifyRepositioned below) is byte-for-byte
@@ -515,12 +648,59 @@ export function classifyRepositioned(text: string): ClassifiedSignal {
   return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_not_repositioned" };
 }
 
+// ── Fifth question's classifier: structural evidence of a door/opening
+// mechanism (track/frame/jamb/pocket/hinge/threshold/sill), independent of
+// whether the door LEAF itself is currently visible. Built specifically for
+// the sliding/pocket door gap (see combineOcclusionAnswer's "preserved_
+// closed" path): a closed pocket door genuinely fails the first two
+// questions (no leaf visible, surface looks like plain wall) while this
+// evidence is still there if the model is asked to look for it directly.
+//
+// Deliberately asymmetric safe default: unlike every other classifier in
+// this file, an ambiguous/unparseable answer here defaults to FALSE (no
+// evidence found) even though "found" is the interesting/rare signal —
+// because this classifier's whole job is to RESCUE what would otherwise be
+// a hard-fail. A low-confidence "maybe" should never grant that rescue;
+// only a clear, specific finding should. NONE-patterns are checked first
+// for the same reason: any hint of "looked and found nothing" should win
+// over a possible false trigger on stray vocabulary elsewhere in the text.
+const STRUCTURAL_EVIDENCE_NONE_PATTERNS: RegExp[] = [
+  /\bfound none\b/,
+  /\bno (track|frame|jamb|reveal|pocket( edge)?|threshold|sill|hinges?)\b/,
+  /\bnot applicable\b/,
+  /\bno (such )?(structural )?evidence\b/,
+  /\b(cannot|can't|unable to) (find|locate|see|identify|detect) (any|a|the)\b/,
+];
+const STRUCTURAL_EVIDENCE_FOUND_PATTERNS: RegExp[] = [
+  /\b(track|frame|jamb|reveal|pocket( edge)?|threshold|sill|hinges?)\b[^.]{0,40}\b(is |are |remains? |still )?(visible|present|found|there)\b/,
+  /\b(visible|present|found)[^.]{0,30}\b(track|frame|jamb|reveal|pocket( edge)?|threshold|sill|hinges?)\b/,
+  /\bcan (see|identify|make out)[^.]{0,30}\b(track|frame|jamb|reveal|pocket|threshold|sill)\b/,
+];
+
+export function classifyStructuralEvidence(text: string): ClassifiedSignal {
+  const t = ` ${String(text || "").toLowerCase()} `;
+  for (const p of STRUCTURAL_EVIDENCE_NONE_PATTERNS) {
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
+  }
+  for (const p of STRUCTURAL_EVIDENCE_FOUND_PATTERNS) {
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: true, confidence: "high", matchedPattern: p.source };
+    }
+  }
+  return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_no_structural_evidence" };
+}
+
 export function classifyObservation(raw: OcclusionObservationRaw): Omit<OcclusionCheckAnswer, "rawObservation"> {
   const trace = classifyPresence(raw.currentStateDescription);
   const replacement = classifyReplacement(raw.currentSurfaceDescription);
   const extent = classifyExtent(raw.coverageExtentDescription);
   const resized = classifyResized(raw.extentComparisonDescription);
   const repositioned = classifyRepositioned(raw.extentComparisonDescription);
+  const structuralEvidence = classifyStructuralEvidence(raw.structuralEvidenceDescription);
   const anyLow = trace.confidence === "low" || replacement.confidence === "low" || extent.confidence === "low";
   return {
     id: raw.id,
@@ -528,8 +708,9 @@ export function classifyObservation(raw: OcclusionObservationRaw): Omit<Occlusio
     replacedByContinuousSurface: replacement.value,
     itemExtendsBeyondCoveringObject: extent.value,
     extentChanged: resized.value || repositioned.value,
+    structuralEvidenceFound: structuralEvidence.value,
     confidence: anyLow ? 0.5 : 0.9,
-    classification: { trace, replacement, extent, resized, repositioned },
+    classification: { trace, replacement, extent, resized, repositioned, structuralEvidence },
   };
 }
 
@@ -540,12 +721,27 @@ function formatBboxRegion(bbox: [number, number, number, number] | undefined): s
 }
 
 export function buildObservationOnlyItemList(items: OcclusionCheckItem[]): string {
-  // Deliberately id + bbox ONLY — no type, no description anywhere here.
-  return items.map((it) => `- id: ${it.id}, region: ${formatBboxRegion(it.bbox)}`).join("\n");
+  // Deliberately id + bbox ONLY — no type, no description anywhere here,
+  // EXCEPT an optional structural hint (extra.structuralHint), used only to
+  // flag doors where the baseline leaf state is relevant — most importantly
+  // sliding/pocket doors, where "closed" is a valid, unaltered state that
+  // can otherwise look identical to a section of plain wall. This is a
+  // targeted structural FACT ("what to look for"), not a content
+  // description ("here's what this item is") — the same category of
+  // reveal already used safely for the resize/reposition question's
+  // baseline bbox and the flooring check's baseline material description,
+  // neither of which reproduced the original yes/no agreement-bias problem
+  // this file's two-phase structure exists to prevent.
+  return items
+    .map((it) => {
+      const hint = typeof it.extra?.structuralHint === "string" ? (it.extra.structuralHint as string) : undefined;
+      return `- id: ${it.id}, region: ${formatBboxRegion(it.bbox)}${hint ? ` [${hint}]` : ""}`;
+    })
+    .join("\n");
 }
 
 export function buildObservationQuestionsInstruction(itemLabelPlural: string): string {
-  return `For EACH ${itemLabelPlural} region listed below, answer four questions by describing what you actually see — do not answer yes/no, and do not state a conclusion without describing the concrete visual evidence for it.
+  return `For EACH ${itemLabelPlural} region listed below, answer five questions by describing what you actually see — do not answer yes/no, and do not state a conclusion without describing the concrete visual evidence for it.
 
 1. currentStateDescription — Look at the CURRENT (staged) image at this region. Describe literally what is visible there right now. If you can identify any part of the original item's own physical structure — a frame edge, glass, a door leaf, a track, a mounting bracket, a mirror surface, a sill, molding, trim, or similar — name specifically which part(s) you see and roughly where within the region. If you cannot find anything resembling such structure anywhere in or immediately around that region, state that plainly and describe what occupies the space instead. IMPORTANT: a single small piece of hardware alone — a doorknob, hinge, handle, or latch — with NO door leaf, panel, or frame around it is NOT evidence the door is present; a real door leaf/panel must actually be visible, not just its hardware. Hardware sitting on an otherwise flat, continuous wall with no panel or frame around it means the item has likely been removed or moved elsewhere — describe this plainly as an anomaly, not as "the door is visible."
 
@@ -555,9 +751,11 @@ export function buildObservationQuestionsInstruction(itemLabelPlural: string): s
 
 4. extentComparisonDescription — Independent of coverage by furniture, look at the item's OWN edges (its own frame/boundary, not anything placed in front of it) in the CURRENT image and compare them to the region given for it above. Does it occupy roughly the same footprint and shape as that region, or is the item itself visibly larger, smaller, taller, wider, more/less square, or shifted in position along the wall relative to that region? Describe concretely what you observe about its own size, shape, and position — do not just answer "changed" or "unchanged," and do not discuss furniture or obstruction here, only the item's own extent.
 
+5. structuralEvidenceDescription — Independent of all of the above, look specifically for any physical evidence that a door, doorway, or opening mechanism exists at this exact location — a track (overhead or floor-mounted), a frame, a jamb, a reveal, a pocket edge, hinges, a threshold, or a sill. This matters most for any region above flagged with a "SLIDING PANEL door" note: a CLOSED sliding or pocket door can look like a plain, uninterrupted section of wall at first glance (your answers to questions 1 and 2 above might genuinely and correctly say so), but the track/frame/jamb evidence is usually still there if you look for it specifically — a closed door is not the same as a missing opening, and this question exists to catch that difference. Describe concretely whatever such evidence you find, however subtle, and where; or state plainly that you looked carefully and found none.
+
 ${HUMAN_EYE_FRAMING}
 
-Do this for EVERY region above BEFORE reading anything else in this prompt. You do not need to know what each region originally contained to answer these four questions — describe only what you currently observe there.`;
+Do this for EVERY region above BEFORE reading anything else in this prompt. You do not need to know what each region originally contained to answer these five questions — describe only what you currently observe there.`;
 }
 
 export function buildObservationSchemaText(): string {
@@ -566,7 +764,8 @@ export function buildObservationSchemaText(): string {
       "currentStateDescription": string,
       "currentSurfaceDescription": string,
       "coverageExtentDescription": string,
-      "extentComparisonDescription": string
+      "extentComparisonDescription": string,
+      "structuralEvidenceDescription": string
     }`;
 }
 

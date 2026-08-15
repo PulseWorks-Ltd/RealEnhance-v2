@@ -65,7 +65,12 @@ const FLOORING_ZONE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "ge
 // at classifyMaterialMatch below. Not added to the shared default itself,
 // to avoid risking new false negatives on the already-validated resize/
 // reposition classifiers that pattern also guards.
-const FLOORING_NEGATION_CUE_PATTERN = /\b(not|n't|never|no longer|no|without)\b/;
+//
+// AUDIT FIX (same as occlusionVsRemovalCheck.ts's shared pattern): "n't"
+// inside `\b(...)\b` never actually matched any real contraction, since the
+// letter before "n" in "isn't"/"doesn't"/etc. is always a word character —
+// no boundary there. Pulled out to its own trailing-boundary alternative.
+const FLOORING_NEGATION_CUE_PATTERN = /\b(not|never|no longer|no|without)\b|n't\b/;
 
 export type FlooringZone = {
   id: string;

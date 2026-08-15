@@ -26,9 +26,28 @@
 // there is no premise sitting next to those questions for the model to
 // echo. See occlusionVsRemovalCheck.ts's header for the same caveat stated
 // in full.
+//
+// ONE DELIBERATE, NARROW EXCEPTION (sliding/pocket door fix): Phase A now
+// also reveals a per-item STRUCTURAL hint (via buildObservationOnlyItemList's
+// extra.structuralHint) for door-type items, most importantly flagging
+// sliding-panel doors. Confirmed real gap this closes: baseline extraction
+// already detects doorLeafState and paneStructure (StructuralOpening), but
+// neither ever reached the observation prompt before this fix — Phase A's
+// item list was id+bbox only, and Phase B's paneStructure reveal happens
+// only after the observation questions are already answered, informing
+// nothing but the separate materiality judgment. A closed sliding/pocket
+// door can genuinely look like plain wall at a glance; without being told
+// "closed is an expected state here, look for track/frame/jamb," a real,
+// visually-confirmed case (Bedroom 14 Run 2's closet) produced a confident
+// false "removed" verdict. This is judged NOT to reproduce the yes/no
+// agreement-bias problem the hidden-type/description design exists to
+// prevent, for the same reason the resize/reposition question's baseline
+// bbox reveal and the flooring check's baseline material description
+// reveal don't: it's a targeted structural FACT to look for, not a content
+// description sitting next to a yes/no question for the model to echo.
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
-import type { StructuralBaseline } from "./openingPreservationValidator";
+import type { StructuralBaseline, StructuralOpening } from "./openingPreservationValidator";
 import { runEnvelopeValidator } from "./envelopeValidator";
 import {
   HUMAN_EYE_FRAMING,
@@ -41,6 +60,20 @@ import {
   type OcclusionCombinedResult,
   type OcclusionObservationRaw,
 } from "./occlusionVsRemovalCheck";
+
+function buildStructuralHint(o: StructuralOpening): string | undefined {
+  const isDoorLike = o.type === "door" || o.type === "closet_door" || o.type === "walkthrough";
+  if (!isDoorLike) return undefined;
+  const leafState = o.doorLeafState && o.doorLeafState !== "unknown" ? o.doorLeafState : undefined;
+  const isSliding = o.paneStructure === "sliding_panel";
+  if (isSliding) {
+    return `baseline structural note: this location is a SLIDING PANEL door${leafState ? `, baseline leaf state: ${leafState}` : ""} — a CLOSED sliding or pocket door is a completely normal, unaltered state and can look like a plain section of wall at a glance; look specifically for a track, frame, jamb, pocket edge, or reveal as evidence the opening mechanism is still there`;
+  }
+  if (leafState) {
+    return `baseline structural note: this location is a door, baseline leaf state: ${leafState}`;
+  }
+  return undefined;
+}
 
 const OPENING_ENVELOPE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
 
@@ -64,9 +97,9 @@ ${HUMAN_EYE_FRAMING}
 You must output strict JSON only: {"observations": [...], "materiality": [...]}. No explanations outside the JSON. No markdown. No comments.`;
 
 function buildOpeningPhaseAPrompt(baseline: StructuralBaseline): string {
-  return `PHASE A — OBSERVATION ONLY. Below are opening regions from the original photo, identified only by id and their approximate location (no other information — do not guess what type of feature each one is; just look and describe).
+  return `PHASE A — OBSERVATION ONLY. Below are opening regions from the original photo, identified only by id and their approximate location (no type or description — do not guess what kind of feature each one is beyond any structural note shown; just look and describe). A bracketed structural note, where present, is a fact about what to look for, not a description of the item — it does not tell you whether anything has changed.
 
-${buildObservationOnlyItemList(baseline.openings.map((o) => ({ id: o.id, type: "", description: "", bbox: o.bbox })))}
+${buildObservationOnlyItemList(baseline.openings.map((o) => ({ id: o.id, type: "", description: "", bbox: o.bbox, extra: { structuralHint: buildStructuralHint(o) } })))}
 
 ${buildObservationQuestionsInstruction("opening")}
 
@@ -100,7 +133,12 @@ export async function runOpeningEnvelopeValidator(
       model: OPENING_ENVELOPE_MODEL,
       ctx: { ...ctx, callLabel: "opening" },
     }),
-    runEnvelopeValidator(baselineImagePath, stagedImagePath, ctx),
+    runEnvelopeValidator(baselineImagePath, stagedImagePath, {
+      ...ctx,
+      slidingDoorHints: baseline.openings
+        .filter((o) => o.paneStructure === "sliding_panel")
+        .map((o) => o.description || `${o.type} on ${o.wallPosition || `wall ${o.wallIndex}`}`),
+    }),
   ]);
 
   const observations: OcclusionObservationRaw[] = Array.isArray(raw?.observations) ? raw.observations : [];

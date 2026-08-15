@@ -170,7 +170,7 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
 export async function runEnvelopeValidator(
   beforeImageUrl: string,
   afterImageUrl: string,
-  options?: { jobId?: string; imageId?: string; attempt?: number }
+  options?: { jobId?: string; imageId?: string; attempt?: number; slidingDoorHints?: string[] }
 ): Promise<EnvelopeValidatorResult> {
   const validatorStartedAt = Date.now();
   logEnvelopeEvent("ENVELOPE_VALIDATOR_START", {
@@ -242,7 +242,10 @@ This catches:
 * doorway infill
 * closet recess flattening
 * wall extensions
-
+${options?.slidingDoorHints && options.slidingDoorHints.length > 0 ? `
+KNOWN EXCEPTION — CLOSED SLIDING/POCKET DOORS (MANDATORY)
+This room's baseline includes one or more SLIDING PANEL doors or closets: ${options.slidingDoorHints.join("; ")}. A CLOSED sliding or pocket door's visible face is normally a flat, continuous surface that can closely match the surrounding wall in color and texture — this is a NORMAL, EXPECTED appearance for these specific locations and must NOT by itself be treated as evidence of wall infill, a filled recess, or an added wall segment. Only set ok=false for one of these locations if you find OTHER independent evidence of genuine structural change beyond the door face looking flat — for example, the door's own track, frame, jamb, or reveal has visibly disappeared where it used to be, or the wall plane now extends further than that door's own footprint in a way a closed door could not explain.
+` : ""}
 Treat these as architectural invariants:
 * wall layout and envelope geometry
 * room proportions and segmentation
