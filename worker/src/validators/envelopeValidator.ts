@@ -1,7 +1,9 @@
 import { getGeminiClient } from "../ai/gemini";
+import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
+import { resolveValidatorModel } from "./occlusionVsRemovalCheck";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import { computeVerticalEdgeDelta, type VerticalEdgeDeltaResult } from "./verticalEdgeDelta";
 import type { StructuralSignal } from "./structuralSignal";
@@ -335,6 +337,32 @@ Non-fail certainty guard:
     return parsed;
   };
 
+  // STAGE2_VALIDATOR_MODEL=grok routing. Same prompt, same parseEnvelopeResult
+  // — only the call mechanics differ (no flash/pro escalation tier on Grok,
+  // just one call). Added per explicit request to close this untested gap;
+  // no change to the prompt content, the geometric-certainty logic, or the
+  // vertical-edge-delta merge below, all of which stay identical regardless
+  // of which model answered.
+  const runWithGrok = async (): Promise<EnvelopeValidatorResult> => {
+    const requestStartedAt = Date.now();
+    const text = await grokAnalyzeImages({
+      images: [
+        { buffer: Buffer.from(before, "base64"), mimeType: "image/webp", label: "IMAGE_BEFORE:" },
+        { buffer: Buffer.from(after, "base64"), mimeType: "image/webp", label: "IMAGE_AFTER:" },
+      ],
+      prompt,
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      reason: "envelope_check",
+      expectJson: true,
+    });
+    logEnvelopePhaseEnd(options?.jobId, "grok_call", Date.now() - requestStartedAt, { model: grokVisionModel() });
+    const parseStartedAt = Date.now();
+    const parsed = parseEnvelopeResult(text);
+    logEnvelopePhaseEnd(options?.jobId, "grok_parse", Date.now() - parseStartedAt, { model: grokVisionModel() });
+    return parsed;
+  };
+
   try {
     const verticalEdgeStartedAt = Date.now();
     // Run vertical-edge delta detection in parallel with Gemini calls.
@@ -355,22 +383,30 @@ Non-fail certainty guard:
         return undefined;
       });
 
-    // Gemini semantic analysis
+    // Semantic analysis — model chosen by STAGE2_VALIDATOR_MODEL, independent
+    // of STAGE2_PROMPT_VARIANT, same as occlusionVsRemovalCheck.ts. Grok has
+    // no flash/pro escalation tier, so that logic is simply skipped for it.
     let geminiResult: EnvelopeValidatorResult;
-    const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY, "flash");
-    if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
-      geminiResult = flashResult;
-      logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true });
-      logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true });
+    if (resolveValidatorModel() === "grok") {
+      geminiResult = await runWithGrok();
+      logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true, reason: "grok_no_escalation_tier" });
+      logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, reason: "grok_no_escalation_tier" });
     } else {
-      try {
-        const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION, "pro");
-        geminiResult = (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE)
-          ? proResult
-          : flashResult;
-      } catch {
+      const flashResult = await runWithModel(ENVELOPE_MODEL_PRIMARY, "flash");
+      if (Number.isFinite(flashResult.confidence) && flashResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE) {
         geminiResult = flashResult;
-        logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, error: "pro_call_failed" });
+        logEnvelopePhaseEnd(options?.jobId, "pro_escalation", 0, { skipped: true });
+        logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true });
+      } else {
+        try {
+          const proResult = await runWithModel(ENVELOPE_MODEL_ESCALATION, "pro");
+          geminiResult = (Number.isFinite(proResult.confidence) && proResult.confidence >= ENVELOPE_ESCALATION_CONFIDENCE)
+            ? proResult
+            : flashResult;
+        } catch {
+          geminiResult = flashResult;
+          logEnvelopePhaseEnd(options?.jobId, "pro_parse", 0, { skipped: true, error: "pro_call_failed" });
+        }
       }
     }
 

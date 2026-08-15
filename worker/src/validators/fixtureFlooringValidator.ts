@@ -2,18 +2,28 @@
 // cabinetry, kitchen island, staircase, plumbing, light fixtures, AC units,
 // etc.) using the same locate-and-describe occlusion-vs-removal mechanism
 // as openingEnvelopeValidator.ts (see occlusionVsRemovalCheck.ts's header
-// for the full history), plus floor material integrity.
+// for the full history), plus flooring material/boundary integrity.
 //
-// FLOORING reuses the existing runFloorIntegrityValidator() unmodified —
-// it already asks the model for narrow signals (baseline/staged material
-// visibility, full-coverage-by-movables, material-changed) and combines
-// them in code with an explicit deterministic rule, which is the same
-// shape this whole exercise is built around. See git history for the
-// reasoning; unchanged from the prior split-validator round.
+// FLOORING now runs via runFlooringBoundaryCheck() (flooringBoundaryCheck.ts),
+// SUPERSEDING the old runFloorIntegrityValidator() within this split-validator
+// path. Reasoning: floorIntegrityValidator.ts asks for one dominant material
+// class for the whole room and cannot express "is a material boundary
+// preserved" — confirmed structurally blind on a real case (Living 07's
+// carpet/linoleum boundary loss: both Gemini and Grok answered "carpet vs
+// carpet" 4/4 through the old question, because nothing in its schema could
+// surface a second zone or a seam). The new check is a strict capability
+// superset — a single-material room degenerates to exactly the old
+// validator's own comparison, done via the same locate-and-describe +
+// code-side-classification pattern as every other check here, and a
+// multi-zone room additionally catches boundary loss the old validator
+// could never see regardless of model. Running both would only add cost,
+// not detection power, so the old validator is not called from this file
+// anymore. floorIntegrityValidator.ts itself is untouched and still backs
+// the original ("on") validator chain in runValidation.ts.
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline } from "./openingPreservationValidator";
-import { runFloorIntegrityValidator } from "./floorIntegrityValidator";
+import { runFlooringBoundaryCheck } from "./flooringBoundaryCheck";
 import {
   HUMAN_EYE_FRAMING,
   buildObservationOnlyItemList,
@@ -77,7 +87,7 @@ export async function runFixtureFlooringValidator(
 ): Promise<FixtureFlooringValidatorResult> {
   const fixtures = baseline.anchorFixtures || [];
 
-  const [raw, floorResult] = await Promise.all([
+  const [raw, floorCheckResult] = await Promise.all([
     fixtures.length === 0
       ? Promise.resolve({ observations: [], materiality: [] })
       : runOcclusionObservationCall({
@@ -88,8 +98,9 @@ export async function runFixtureFlooringValidator(
           model: FIXTURE_FLOORING_MODEL,
           ctx: { ...ctx, callLabel: "fixture" },
         }),
-    runFloorIntegrityValidator(baselineImagePath, stagedImagePath, ctx),
+    runFlooringBoundaryCheck(baselineImagePath, stagedImagePath, ctx),
   ]);
+  const floorResult = floorCheckResult.floor;
 
   const observations: OcclusionObservationRaw[] = Array.isArray(raw?.observations) ? raw.observations : [];
   const materialityById = new Map<string, { materiality: Materiality; materialityReason: string }>(

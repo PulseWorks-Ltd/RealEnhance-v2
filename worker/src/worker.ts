@@ -13871,25 +13871,111 @@ All openings must remain identical in position and size to the original image.`;
       });
 
       const unifiedBlockStartedAt = Date.now();
-      unifiedValidation = await runUnifiedValidation({
-        originalPath: validationBasePath,
-        enhancedPath: path2,
-        stage: "2",
-        sceneType: sceneLabel as any,
-        roomType: payload.options.roomType,
-        mode: "enforce",
-        jobId: payload.jobId,
-        imageId: payload.imageId,
-        stagingStyle: payload.options.stagingStyle,
-        stage1APath: validationBasePath,
-        sourceStage: stage2SourceStage,
-        validationMode: stage2SelectedValidationMode,
-        geminiPolicy: stage2GeminiPolicy,
-        specialistAdvisorySignals,
-        specialistAdvisoryObservations,
-        specialistStructuredIssues,
-        structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
-      });
+      // Recomputed locally (identical to the derivation at the top of
+      // specialist orchestration above) because that declaration lives
+      // inside the try{} block wrapping specialist execution and doesn't
+      // survive past its closing brace — this call site is well outside it.
+      const stage2SpecialistValidatorsModeAtUnified = String(process.env.STAGE2_SPECIALIST_VALIDATORS || "on").trim().toLowerCase();
+      if (stage2SpecialistValidatorsModeAtUnified === "off") {
+        // Product decision: when the split Grok/Gemini specialist validators
+        // (openingEnvelopeValidator + fixtureFlooringValidator) are active,
+        // they are the SOLE deciding factor for Stage 2 acceptance —
+        // runUnifiedValidation (a separate Gemini semantic call plus legacy
+        // heuristics such as window_size_change) is skipped entirely. This
+        // was confirmed necessary from a real production case (job_b29d5e7d,
+        // "Bedroom 14"): the split validators passed an attempt cleanly
+        // (opening/envelope/fixture/floor all "pass"), but runUnifiedValidation
+        // then independently hard-failed it on a stale ceiling-fixture claim
+        // and the legacy window_size_change heuristic, blocking a valid image.
+        // openingPass/fixturePass/floorPass/envelopePass (set above from
+        // opRes/fixRes/floorRes/envRes.hardFail) are the specialists' own
+        // unfiltered verdicts — not reinterpreted through the
+        // ALLOWED_HARDFAIL_ISSUES whitelist above, which was tuned for the
+        // older, noisier 4-specialist chain and would silently wave through
+        // specialist hard-fails it doesn't recognize (e.g. non-HVAC fixture
+        // changes) once Unified is no longer there to catch them.
+        const specialistsAllPass = openingPass && fixturePass && floorPass && envelopePass;
+        if (specialistsAllPass) {
+          unifiedValidation = {
+            passed: true,
+            hardFail: false,
+            blockSource: null,
+            score: 1,
+            reasons: [],
+            warnings: [],
+            raw: {},
+            issueType: ISSUE_TYPES.NONE,
+            issueTier: "none",
+          } as any;
+        } else {
+          // specialistResults.X.reason isn't part of the normalized shape —
+          // build a reason string from issueType + whatever structured-issue
+          // evidence the specialist attached, both of which do survive past
+          // the try{} block (specialistResults is mutated there, not
+          // redeclared, so the outer binding stays populated).
+          const describeFailure = (validator: string, result: any): string => {
+            const evidence = Array.isArray(result?.primaryStructuredIssue?.evidence) && result.primaryStructuredIssue.evidence.length > 0
+              ? result.primaryStructuredIssue.evidence.join("; ")
+              : undefined;
+            return `${validator}:${result?.issueType || "hard_fail"}${evidence ? `:${evidence}` : ""}`;
+          };
+          const failureReasons = [
+            !openingPass ? describeFailure("opening", specialistResults.opening) : null,
+            !envelopePass ? describeFailure("envelope", specialistResults.envelope) : null,
+            !fixturePass ? describeFailure("fixture", specialistResults.fixture) : null,
+            !floorPass ? describeFailure("floor", specialistResults.floor) : null,
+          ].filter((r): r is string => r !== null);
+          const failingIssueType: ValidationIssueType =
+            (!openingPass && specialistResults.opening.issueType) ||
+            (!envelopePass && specialistResults.envelope.issueType) ||
+            (!fixturePass && specialistResults.fixture.issueType) ||
+            (!floorPass && specialistResults.floor.issueType) ||
+            ISSUE_TYPES.UNIFIED_FAILURE;
+          unifiedValidation = {
+            passed: false,
+            hardFail: true,
+            blockSource: "local",
+            score: 0,
+            reasons: failureReasons.length > 0 ? failureReasons : ["specialist_hard_fail"],
+            warnings: [],
+            raw: {},
+            issueType: failingIssueType,
+            issueTier: classifyIssueTier(failingIssueType),
+          } as any;
+        }
+        nLog("[UNIFIED_VALIDATOR_BYPASSED]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          attempt,
+          reason: "stage2_specialist_validators_off",
+          specialistsAllPass,
+          openingPass,
+          envelopePass,
+          fixturePass,
+          floorPass,
+          decision: unifiedValidation.passed ? "PASS" : "FAIL",
+        });
+      } else {
+        unifiedValidation = await runUnifiedValidation({
+          originalPath: validationBasePath,
+          enhancedPath: path2,
+          stage: "2",
+          sceneType: sceneLabel as any,
+          roomType: payload.options.roomType,
+          mode: "enforce",
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          stagingStyle: payload.options.stagingStyle,
+          stage1APath: validationBasePath,
+          sourceStage: stage2SourceStage,
+          validationMode: stage2SelectedValidationMode,
+          geminiPolicy: stage2GeminiPolicy,
+          specialistAdvisorySignals,
+          specialistAdvisoryObservations,
+          specialistStructuredIssues,
+          structuralSignals: collectedStructuralSignals.length > 0 ? collectedStructuralSignals : undefined,
+        });
+      }
       emitValidatorBlockEnd(payload.jobId, "unified", Date.now() - unifiedBlockStartedAt);
 
       nLog("[UNIFIED_RESULT]", {

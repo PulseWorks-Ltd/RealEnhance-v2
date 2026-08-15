@@ -226,6 +226,17 @@ const ABSENCE_PATTERNS: RegExp[] = [
   /\bno visible (sign|trace|evidence|indication)s? of\b/,
   /\bhas been (removed|eliminated)\b/,
   /\bno longer any (trace|sign|evidence)\b/,
+  // "There is no visible door, frame, handle, or seam indicating an
+  // opening" — real production case (job_b29d5e7d, "Bedroom 14", Run 2):
+  // "no visible" is directly followed by the noun itself (door/frame/
+  // handle/seam), not by sign/trace/evidence/indication as the pattern
+  // above expects, and the noun list is followed by a purpose clause
+  // ("indicating an opening") rather than ending cleanly. This fell
+  // through to the bare "door" match in PRESENCE_PART_PATTERN and was
+  // wrongly classified as presence despite the model plainly stating the
+  // opposite. Only needs to match the first noun after "no visible" —
+  // the absence-patterns-win-first design handles the rest.
+  /\bno visible (door|window|opening|frame|handle|knob|hinge|seam|track|sill|jamb|threshold|casing|molding|moulding)/,
 ];
 
 // Opening-specific part vocabulary. Real testing found two classes of bug
@@ -281,7 +292,14 @@ export function classifyPresence(text: string): ClassifiedSignal {
 }
 
 const REPLACED_PATTERNS: RegExp[] = [
-  /\b(continuous|unbroken|seamless|uninterrupted)\b[^.]{0,30}\b(wall|surface|drywall|plaster)\b/,
+  // "plain" added alongside continuous/unbroken/seamless/uninterrupted:
+  // real production case (job_b29d5e7d, "Bedroom 14", Run 2) described the
+  // covering surface as "a plain, off-white painted wall" — a plausible,
+  // less formal way of saying the same thing that none of the other four
+  // adjectives caught, so this fell through to the low-confidence default
+  // of "not replaced" despite the model explicitly describing a
+  // feature-less wall standing where the opening's region should be.
+  /\b(plain|continuous|unbroken|seamless|uninterrupted)\b[^.]{0,30}\b(wall|surface|drywall|plaster)\b/,
   /\bno (seam|break|gap|joint|discontinuity)\b/,
   /\breplaced (by|with) a\b/,
   /\bflush (against|with)[^.]{0,20}\b(plain )?wall\b/,
@@ -323,26 +341,60 @@ const STAYS_WITHIN_PATTERNS: RegExp[] = [
   /\bwithin (that|the|its) (region|footprint|extent|bounds?)\b/,
   /\bdoes not extend (beyond|past)\b/,
   /\bremains? within\b/,
+  // Real bug found on Living 07's D1 (sliding glass door, fully visible per
+  // Q1's currentStateDescription): "The new furniture (couch and table)
+  // partially occupies the region. The couch extends past the region's
+  // right boundary." — "partially occupies" is a direct, strong statement
+  // that the furniture does NOT dominate the region, but the classifier
+  // still matched the later "extends past" phrase (see EXTENDS_BEYOND_
+  // PATTERNS below) and returned itemExtendsBeyondCoveringObject=false,
+  // driving a wrong "fully_covered" verdict despite the item being
+  // explicitly described as fully visible. Checked here, before
+  // EXTENDS_BEYOND_PATTERNS, so "partially occupies" wins even when the
+  // same text also mentions the furniture poking past one edge.
+  /\bpartially (occupies|covers|occupied|covered)\b/,
+  /\bonly partially\b/,
 ];
+// SUBJECT-SCOPING FIX: the old single pattern `/\bextends?[^.]{0,25}\b
+// (beyond|past)\b/` matched ANY "extends...past" phrase regardless of
+// whether the covering object dominates the whole region or merely pokes
+// past ONE edge while leaving most of the item visible — confirmed on the
+// same Living 07 D1 case: "the couch extends past the region's RIGHT
+// boundary" is true and describes real geometry, but a directional,
+// partial overhang on one side is not evidence the item is swallowed the
+// way "completely covers" or "extends past on all sides" would be. Now
+// requires whole-region-scoped language, not a bare directional mention.
 const EXTENDS_BEYOND_PATTERNS: RegExp[] = [
-  /\bextends?[^.]{0,25}\b(beyond|past)\b/,
+  /\b(completely|entirely|fully)[^.]{0,20}\bcovers?\b/,
+  /\bextends? (past|beyond)[^.]{0,30}\b(on all sides|entirely|completely|in every direction|the entire)\b/,
   /\bexceeds?[^.]{0,25}\b(region|footprint|extent|bounds?)\b/,
   /\blarger than[^.]{0,20}(region|footprint|extent)\b/,
 ];
 
 // true = item extends beyond the covering object (occlusion-friendly);
 // false = the covering object's own edge extends beyond/over the item's
-// region (the item is more fully swallowed).
+// region (the item is more fully swallowed). Negation-aware (isLikelyNegated,
+// same helper classifyResized/classifyRepositioned use) applied uniformly
+// across all three lists for consistency with the rest of this file.
 export function classifyExtent(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of NO_NEW_OBJECT_PATTERNS) {
-    if (p.test(t)) return { value: true, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: true, confidence: "high", matchedPattern: p.source };
+    }
   }
   for (const p of STAYS_WITHIN_PATTERNS) {
-    if (p.test(t)) return { value: true, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: true, confidence: "high", matchedPattern: p.source };
+    }
   }
   for (const p of EXTENDS_BEYOND_PATTERNS) {
-    if (p.test(t)) return { value: false, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
   }
   return { value: true, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_extends_beyond" };
 }
@@ -365,6 +417,11 @@ const SAME_SIZE_PATTERNS: RegExp[] = [
   /\b(consistent with|matches?)[^.]{0,25}\boriginal (size|footprint|shape|region|extent)\b/,
   /\bunchanged in size\b/,
   /\bno (significant |noticeable |real |visible )?(change|difference)[^.]{0,20}\bsize\b/,
+  // "same general height and width" — a real production phrasing this list
+  // originally missed (found on Bedroom 14's job_b29d5e7d): only
+  // size/footprint/shape/proportions/dimensions were recognized as
+  // size-synonyms, not the more literal "height and width".
+  /\bsame[^.]{0,15}\b(height and width|width and height)\b/,
 ];
 const RESIZED_PATTERNS: RegExp[] = [
   /\b(narrower|wider|taller|shorter|smaller|larger|bigger)\b/,
@@ -374,13 +431,51 @@ const RESIZED_PATTERNS: RegExp[] = [
   /\bsubstantially (smaller|larger)\b/,
 ];
 
+// Real production bug found (Bedroom 14, "job_b29d5e7d"): the model wrote
+// "...same general height and width, not visibly shortened, narrowed, or
+// shifted along the wall" — a plain assertion of NO change — but the old
+// version of this classifier matched the bare phrase "shifted along the
+// wall" without checking whether it sat inside a negated clause, and
+// wrongly returned resized/repositioned = true. isLikelyNegated scans a
+// window of text immediately before a match for a negation cue ("not",
+// "n't", "never", "no longer", "without") — mirroring the negation
+// awareness classifyPresence already had, which this file's two newest
+// classifiers (added for the fourth question) never got.
+const NEGATION_CUE_PATTERN = /\b(not|n't|never|no longer|without)\b/;
+
+// customCuePattern defaults to the exact pattern above, so every existing
+// call site (classifyResized/classifyRepositioned below) is byte-for-byte
+// unaffected. Added for flooringBoundaryCheck.ts, which needs bare "no" as
+// a cue too ("no change to a different material") — deliberately NOT added
+// to the default pattern here, since bare "no" is common enough in
+// unrelated nearby clauses that broadening the default risks new false
+// negatives on the already-validated resize/reposition patterns below.
+export function isLikelyNegated(
+  text: string,
+  matchIndex: number,
+  windowChars = 50,
+  customCuePattern: RegExp = NEGATION_CUE_PATTERN
+): boolean {
+  const start = Math.max(0, matchIndex - windowChars);
+  return customCuePattern.test(text.slice(start, matchIndex));
+}
+
 export function classifyResized(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of SAME_SIZE_PATTERNS) {
-    if (p.test(t)) return { value: false, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
   }
   for (const p of RESIZED_PATTERNS) {
-    if (p.test(t)) return { value: true, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined) {
+      if (isLikelyNegated(t, m.index)) {
+        return { value: false, confidence: "high", matchedPattern: `negated:${p.source}` };
+      }
+      return { value: true, confidence: "high", matchedPattern: p.source };
+    }
   }
   return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_not_resized" };
 }
@@ -403,10 +498,19 @@ const REPOSITIONED_PATTERNS: RegExp[] = [
 export function classifyRepositioned(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of SAME_POSITION_PATTERNS) {
-    if (p.test(t)) return { value: false, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
   }
   for (const p of REPOSITIONED_PATTERNS) {
-    if (p.test(t)) return { value: true, confidence: "high", matchedPattern: p.source };
+    const m = t.match(p);
+    if (m && m.index !== undefined) {
+      if (isLikelyNegated(t, m.index)) {
+        return { value: false, confidence: "high", matchedPattern: `negated:${p.source}` };
+      }
+      return { value: true, confidence: "high", matchedPattern: p.source };
+    }
   }
   return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_not_repositioned" };
 }
@@ -443,7 +547,7 @@ export function buildObservationOnlyItemList(items: OcclusionCheckItem[]): strin
 export function buildObservationQuestionsInstruction(itemLabelPlural: string): string {
   return `For EACH ${itemLabelPlural} region listed below, answer four questions by describing what you actually see — do not answer yes/no, and do not state a conclusion without describing the concrete visual evidence for it.
 
-1. currentStateDescription — Look at the CURRENT (staged) image at this region. Describe literally what is visible there right now. If you can identify any part of the original item's own physical structure — a frame edge, glass, a door leaf, a track, a mounting bracket, a mirror surface, a sill, molding, trim, or similar — name specifically which part(s) you see and roughly where within the region. If you cannot find anything resembling such structure anywhere in or immediately around that region, state that plainly and describe what occupies the space instead.
+1. currentStateDescription — Look at the CURRENT (staged) image at this region. Describe literally what is visible there right now. If you can identify any part of the original item's own physical structure — a frame edge, glass, a door leaf, a track, a mounting bracket, a mirror surface, a sill, molding, trim, or similar — name specifically which part(s) you see and roughly where within the region. If you cannot find anything resembling such structure anywhere in or immediately around that region, state that plainly and describe what occupies the space instead. IMPORTANT: a single small piece of hardware alone — a doorknob, hinge, handle, or latch — with NO door leaf, panel, or frame around it is NOT evidence the door is present; a real door leaf/panel must actually be visible, not just its hardware. Hardware sitting on an otherwise flat, continuous wall with no panel or frame around it means the item has likely been removed or moved elsewhere — describe this plainly as an anomaly, not as "the door is visible."
 
 2. currentSurfaceDescription — Independent of the above, describe what physically covers or occupies this exact region in the CURRENT image. Describe the actual material, surface, or object present (for example: "painted drywall, no seam or break visible," "a large framed painting hanging flush against a plain wall," "a wooden dresser with a mirror door track visible above and beside it," "a dining chair positioned in front of a glass pane"). Do not answer with a category label alone.
 
