@@ -12391,46 +12391,133 @@ All openings must remain identical in position and size to the original image.`;
           0,
           Number(process.env.STAGE2_SPECIALIST_OPENING_TIMEOUT_MS || timeoutMs * 2)
         );
-        const specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+
+        // Additive, switchable toggle (same discipline as STAGE2_PROMPT_VARIANT,
+        // stage2.ts:815-859): only "off" changes anything. Unset / any other
+        // value falls through to the existing chain, completely unaffected.
+        // Testing-environment only — see worker/src/validators/openingEnvelopeValidator.ts
+        // and worker/src/validators/fixtureFlooringValidator.ts for the split
+        // validators the "off" path now runs (superseding singleCallStructuralValidator.ts,
+        // which is retained unmodified for reference/comparison but is no
+        // longer invoked from here).
+        const stage2SpecialistValidatorsMode = String(process.env.STAGE2_SPECIALIST_VALIDATORS || "on").trim().toLowerCase();
+        nLog("[STAGE2_SPECIALIST_VALIDATORS_MODE]", {
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          source: "main_stage2",
-          maxRetries,
-          timeoutMs,
-          timeoutMsBySpecialist: {
-            opening: openingTimeoutMs,
-            fixture: timeoutMs,
-            floor: timeoutMs,
-            envelope: timeoutMs,
-          },
-          tasks: {
-            opening: () => runSpecialistWithTiming("opening", async () => {
-              const resolvedOpeningBaseline = await openingBaselinePromise;
-              return runOpeningValidator(validationBasePath, path2, {
+          requested: process.env.STAGE2_SPECIALIST_VALIDATORS || "on",
+          mode: stage2SpecialistValidatorsMode,
+        });
+
+        let specialistOrchestration: { results: Record<string, any>; summary: any };
+        if (stage2SpecialistValidatorsMode === "off") {
+          const { runOpeningEnvelopeValidator } = await import("./validators/openingEnvelopeValidator.js");
+          const { runFixtureFlooringValidator } = await import("./validators/fixtureFlooringValidator.js");
+          const splitValidatorBaseline = await openingBaselinePromise;
+          if (!splitValidatorBaseline) {
+            // Fail closed, same posture as the existing chain's own fail-closed
+            // check (namesOfMissingSpecialists / completedCount===0 gate) —
+            // don't silently pass a job we couldn't actually validate.
+            specialistOrchestration = {
+              results: {},
+              summary: {
+                expectedSpecialistCount: 4,
+                completedCount: 0,
+                failedCount: 4,
+                retryFailedCount: 0,
+                namesOfMissingSpecialists: ["opening", "fixture", "floor", "envelope"],
+                allSpecialistsSettled: true,
+                allSpecialistsCompleted: false,
+                lifecycles: [],
+              },
+            };
+          } else {
+            const [openingEnvelopeResult, fixtureFlooringResult] = await Promise.all([
+              runOpeningEnvelopeValidator(validationBasePath, path2, splitValidatorBaseline, {
                 jobId: payload.jobId,
                 imageId: payload.imageId,
                 attempt,
-                baseline: resolvedOpeningBaseline || undefined,
-              });
-            }),
-            fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
+              }),
+              runFixtureFlooringValidator(validationBasePath, path2, splitValidatorBaseline, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              }),
+            ]);
+            nLog("[STAGE2_SPLIT_VALIDATOR_RESULT]", {
               jobId: payload.jobId,
               imageId: payload.imageId,
               attempt,
-            })),
-            floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-            })),
-            envelope: () => runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-            })),
-          },
-        });
+              openingStatus: openingEnvelopeResult.opening.status,
+              envelopeStatus: openingEnvelopeResult.envelope.status,
+              fixtureStatus: fixtureFlooringResult.fixture.status,
+              floorStatus: fixtureFlooringResult.floor.status,
+              openingMaterialAlteredItemIds: openingEnvelopeResult.materialAlteredItems.map((i) => i.id),
+              openingLowMaterialityItemIds: openingEnvelopeResult.lowMaterialityItems.map((i) => i.id),
+              fixtureMaterialAlteredItemIds: fixtureFlooringResult.materialAlteredItems.map((i) => i.id),
+              fixtureLowMaterialityItemIds: fixtureFlooringResult.lowMaterialityItems.map((i) => i.id),
+            });
+            specialistOrchestration = {
+              results: {
+                opening: openingEnvelopeResult.opening,
+                envelope: openingEnvelopeResult.envelope,
+                fixture: fixtureFlooringResult.fixture,
+                floor: fixtureFlooringResult.floor,
+              },
+              summary: {
+                expectedSpecialistCount: 4,
+                completedCount: 4,
+                failedCount: 0,
+                retryFailedCount: 0,
+                namesOfMissingSpecialists: [],
+                allSpecialistsSettled: true,
+                allSpecialistsCompleted: true,
+                lifecycles: [],
+              },
+            };
+          }
+        } else {
+          specialistOrchestration = await orchestrateSpecialistsWithRetry<any>({
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            source: "main_stage2",
+            maxRetries,
+            timeoutMs,
+            timeoutMsBySpecialist: {
+              opening: openingTimeoutMs,
+              fixture: timeoutMs,
+              floor: timeoutMs,
+              envelope: timeoutMs,
+            },
+            tasks: {
+              opening: () => runSpecialistWithTiming("opening", async () => {
+                const resolvedOpeningBaseline = await openingBaselinePromise;
+                return runOpeningValidator(validationBasePath, path2, {
+                  jobId: payload.jobId,
+                  imageId: payload.imageId,
+                  attempt,
+                  baseline: resolvedOpeningBaseline || undefined,
+                });
+              }),
+              fixture: () => runSpecialistWithTiming("fixture", async () => runFixtureValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+              floor: () => runSpecialistWithTiming("floor", async () => runFloorIntegrityValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+              envelope: () => runSpecialistWithTiming("envelope", async () => runEnvelopeValidator(validationBasePath, path2, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt,
+              })),
+            },
+          });
+        }
         specialistCompletionSummary = specialistOrchestration.summary;
 
         const opRes = specialistOrchestration.results.opening || {

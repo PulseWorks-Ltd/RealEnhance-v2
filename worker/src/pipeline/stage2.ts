@@ -26,6 +26,7 @@ import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemet
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 import { buildAnchorLockedStage2Prompt } from "./anchorLockedStaging";
+import { grokImageEdit, grokImageModel } from "../ai/grok";
 
 const logger = console;
 
@@ -816,10 +817,23 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
     process.env.STAGE2_PROMPT_VARIANT === "nano" && resolvedPromptMode === "full";
   // New, additive, switchable prompt path (see worker/src/pipeline/anchorLockedStaging.ts).
   // Only takes effect when explicitly selected via STAGE2_PROMPT_VARIANT; every other
-  // value (including unset / "legacy" / "nano" / "grok") is completely unaffected by
-  // this branch and resolves exactly as it did before this flag existed.
+  // value (including unset / "legacy" / "nano") is completely unaffected by this
+  // branch and resolves exactly as it did before this flag existed.
+  //
+  // "grok" was previously mentioned only in this comment as an inert example value —
+  // it was never wired to anything (confirmed by investigation: no branch anywhere in
+  // this file, or the rest of worker/src, checked for it). It now shares the SAME
+  // anchor-locked prompt construction as "anchor_locked" — category-A locks,
+  // buildUniversalFeatureProtectionSection, real planner anchor placement — the prompt
+  // text is identical either way. USE_GROK_GENERATION below is what actually changes:
+  // it routes the finished prompt to Grok's image-edit API instead of Gemini's, at the
+  // single generation-call site further down. Nothing about prompt construction differs
+  // between "anchor_locked" and "grok" — only which model receives the same prompt.
   const USE_ANCHOR_LOCKED_PROMPT =
-    process.env.STAGE2_PROMPT_VARIANT === "anchor_locked" && resolvedPromptMode === "full";
+    (process.env.STAGE2_PROMPT_VARIANT === "anchor_locked" || process.env.STAGE2_PROMPT_VARIANT === "grok") &&
+    resolvedPromptMode === "full";
+  const USE_GROK_GENERATION =
+    process.env.STAGE2_PROMPT_VARIANT === "grok" && resolvedPromptMode === "full";
 
   const nanoRoomProgramGuidance = buildNanoRoomProgramGuidance({
     roomType: canonicalRoomType,
@@ -853,8 +867,9 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
     requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
     mode: resolvedPromptMode,
     variant: USE_ANCHOR_LOCKED_PROMPT
-      ? (anchorLockedFallbackReason ? "anchor_locked_fallback" : "anchor_locked")
+      ? (anchorLockedFallbackReason ? (USE_GROK_GENERATION ? "grok_anchor_locked_fallback" : "anchor_locked_fallback") : (USE_GROK_GENERATION ? "grok_anchor_locked" : "anchor_locked"))
       : (USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"),
+    generationModel: USE_GROK_GENERATION ? "grok" : "gemini",
     ...(anchorLockedFallbackReason ? { anchorLockedFallbackReason } : {}),
   });
 
@@ -1065,26 +1080,62 @@ Do not add blinds, rods, tracks, or new window coverings.
   let resp: any;
   let modelUsed = generationPlan.model;
   try {
-    const run = await runWithSelectedImageModel({
-      stageLabel: "2",
-      ai: ai as any,
-      model: generationPlan.model,
-      baseRequest: {
-        contents: requestParts,
-        generationConfig,
-      } as any,
-      context: "stage2_generation_attempt",
-      meta: {
-        stage: "2",
+    if (USE_GROK_GENERATION) {
+      // Adapter point: same textPrompt as the Gemini path (identical prompt
+      // content — see USE_ANCHOR_LOCKED_PROMPT above), just a different
+      // model receiving it. Grok's /images/edits call takes a raw image
+      // buffer + prompt and returns a raw image buffer — nothing like
+      // Gemini's candidates/parts response shape. Rather than branch every
+      // downstream consumer (extraction, retry classification, file
+      // writing), the adapter is contained entirely here: wrap Grok's
+      // output into the same {candidates:[{content:{parts:[{inlineData}]}}]}
+      // shape Gemini returns, so everything below this block — which only
+      // ever reads img.inlineData.data — is completely unaffected by which
+      // model actually ran.
+      const referenceImages = opts.referenceImagePath
+        ? [Buffer.from(toBase64(opts.referenceImagePath).data, "base64")]
+        : undefined;
+      const grokResult = await grokImageEdit({
+        imageBuffer: Buffer.from(data, "base64"),
+        mimeType: mime,
+        prompt: textPrompt,
+        referenceImages,
         jobId: opts.jobId,
         imageId: opts.imageId,
-        roomType: opts.roomType,
-        reason: opts.modelReason || `stage2_attempt_${attemptNumber}_${retryReason}`,
-        attempt: attemptNumber,
-      },
-    });
-    resp = run.resp;
-    modelUsed = run.modelUsed;
+        reason: opts.modelReason || `stage2_grok_attempt_${attemptNumber}_${retryReason}`,
+      });
+      modelUsed = grokImageModel();
+      resp = {
+        candidates: [
+          {
+            content: {
+              parts: [{ inlineData: { mimeType: grokResult.mimeType, data: grokResult.buffer.toString("base64") } }],
+            },
+          },
+        ],
+      };
+    } else {
+      const run = await runWithSelectedImageModel({
+        stageLabel: "2",
+        ai: ai as any,
+        model: generationPlan.model,
+        baseRequest: {
+          contents: requestParts,
+          generationConfig,
+        } as any,
+        context: "stage2_generation_attempt",
+        meta: {
+          stage: "2",
+          jobId: opts.jobId,
+          imageId: opts.imageId,
+          roomType: opts.roomType,
+          reason: opts.modelReason || `stage2_attempt_${attemptNumber}_${retryReason}`,
+          attempt: attemptNumber,
+        },
+      });
+      resp = run.resp;
+      modelUsed = run.modelUsed;
+    }
   } catch (error: any) {
     const message = String(error?.message || error || "unknown_error");
     if (/no inline image data|no image data in gemini response/i.test(message)) {
