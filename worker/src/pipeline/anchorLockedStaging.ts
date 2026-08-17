@@ -9,13 +9,35 @@
 // wall + orientation come from a real, per-job wall-visibility extraction
 // and deterministic planner — not a hand-authored or reused test result.
 //
-// SCOPE: only "bedroom" has validated anchor-item placement logic right
-// now (bed against the planner-selected wall, oriented toward a focal
-// opening). Any other room type — and any failure at any stage of
-// baseline extraction, wall-visibility extraction, or planning — falls
-// back to null (caller uses the existing default prompt path). This
-// module never throws; every failure mode returns a explicit, logged
-// fallback reason instead.
+// SCOPE (as of the room-type coverage extension — see git history for the
+// order these were added in):
+// - "bedroom": single anchor item (bed), real wall selection via
+//   planBedroomAnchor.
+// - "study": same single-anchor mechanism as bedroom (planDeskAnchor,
+//   sharing planSingleAnchorWall with planBedroomAnchor), desk instead of
+//   bed. Distinct from, and does not cover, "office".
+// - "living_dining": real zoning split (extractZoning) + multi-anchor
+//   (TV/sofa + dining table) via planMultiAnchor.
+// - "living_room" / "living" (standalone living): reuses planMultiAnchor
+//   and the same circulation-aware floating-sofa logic as living_dining,
+//   UNCHANGED, applied to a synthetic whole-room zone instead of a real
+//   zoning-extraction result — no second zone exists to split against, so
+//   extractZoning is skipped entirely for this room type.
+// - "kitchen" / "kitchen_dining" / "kitchen_living": deliberately simple,
+//   non-anchor light-staging path (countertop items only) — no zoning
+//   extraction, no geometric anchor selection, because a kitchen doesn't
+//   need spatial planning the same way a bed or sofa does.
+// - "bathroom" / "bathroom_1" / "bathroom_2", "hallway", "garage": same
+//   no-anchor, light-staging shape as kitchen, each with its own
+//   type-appropriate rule (bathroom: towels/toiletries; hallway: runner
+//   rug + conditional console/mirror; garage: structural-protection-only,
+//   no staging — a deliberate, time-boxed scope default, see this
+//   function's git history / the task report for reasoning).
+// Any other room type — and any failure at any stage of baseline
+// extraction, wall-visibility extraction, or planning — falls back to
+// null (caller uses the existing default prompt path). This module never
+// throws; every failure mode returns an explicit, logged fallback reason
+// instead.
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
@@ -353,29 +375,226 @@ function wallBBox(wall: WallVisibilityWall) {
   return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
 }
 
-export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
-  const wallCandidates = walls.map((wall) => {
-    const largestSegment = wall.usableSegments.reduce((max, s) => Math.max(max, s.widthFraction), 0);
-    return { wall, largestSegment };
-  });
+// Shared single-item, single-wall selection mechanism — used by both
+// planBedroomAnchor (bed) and planDeskAnchor (desk), and conceptually
+// applicable to any future single-anchor room type. planBedroomAnchor
+// below is a thin wrapper that passes bed's exact original orientation/
+// no-decor text; this function owns wall SELECTION only.
+type SingleAnchorItemConfig = {
+  buildOrientationInstruction: (focalFeatureId: string | null, focalFeatureType: string | null, focalFeatureWallIndex: number | null) => string;
+  buildNoDecorNote?: (wallId: string) => string;
+};
 
-  const ranked = [...wallCandidates].sort((a, b) => b.largestSegment - a.largestSegment);
-  const qualifying = ranked.filter((w) => w.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR);
+// ── Four-tier wall-selection decision tree (replaces the old single
+// continuous "largest usable segment wins" score). Rebuilt because the
+// old scoring treated every wall's clear space as fungible — a wall with
+// a big blank stretch next to a small window scored the same as an
+// equally-sized wall with no window at all, when a real stager would
+// always prefer the genuinely blank wall; and a wall with a door scored
+// on size alone even though a door implies foot traffic through it. The
+// four tiers below are a strict priority order, not a weighted blend:
+// tier 1 always beats tier 2 regardless of any tier-2 wall's size
+// advantage, and so on. Size sufficiency (largestSegment >=
+// MIN_USABLE_FRACTION_FOR_ANCHOR, the same 0.35 threshold and the same
+// wall.usableSegments data as before) is evaluated FIRST, as a floor that
+// applies uniformly across all four tiers — a wall that fails it is never
+// a candidate at any tier, not just excluded from being "the biggest." ──
+
+const WINDOW_COVERAGE_TIER2_THRESHOLD = 0.5;
+// Return-wall visibility gate for tier 3: the wall's OWN bounding-box
+// span as a fraction of the total frame width (wallBBox(wall).maxX -
+// minX) — a different quantity from usableWidthFraction (which is a
+// fraction of the WALL's own width, not the frame's). A wall that only
+// occupies a thin sliver of the frame can't be reasoned about with any
+// confidence, and furniture placed against it would barely read as
+// staged in the final image — 0.15 (15% of frame width) is the cutoff
+// chosen for that reason: enough of the wall must actually be on-camera
+// for both the model and a viewer to make sense of what's placed there.
+const RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH = 0.15;
+
+// Upper-bound numeric estimate for a WallCoverageBand ("5-10" | "10-20" |
+// "20-40" | "40-60" | "60+"), used for the tier-2 <50% gate and for
+// ranking among qualifying window walls. Deliberately uses each band's
+// upper bound rather than its midpoint — a "40-60" window is treated as
+// up to 60% for this check, not a hopeful 50% — consistent with this
+// file's established pattern of resolving ambiguous extraction data
+// toward the safer, more protective reading (e.g. materiality defaults
+// elsewhere in this pipeline). An unrecognized/missing band is treated as
+// the worst case (1.0) so it fails the gate rather than silently
+// qualifying.
+function wallCoverageBandUpperBound(band: string): number {
+  if (band === "5-10") return 0.1;
+  if (band === "10-20") return 0.2;
+  if (band === "20-40") return 0.4;
+  if (band === "40-60") return 0.6;
+  if (band === "60+") return 1.0;
+  return 1.0;
+}
+
+type WallTierInfo = {
+  wall: WallVisibilityWall;
+  wallIndex: number;
+  largestSegment: number;
+  isBlank: boolean;
+  hasAnyWindow: boolean;
+  windowCoverage: number;
+  hasNonFloorWindow: boolean;
+  hasDoorOrWalkthrough: boolean;
+  hasSlidingDoor: boolean;
+  frameVisibleWidth: number;
+};
+
+function analyzeWallForTiers(baseline: StructuralBaseline, wall: WallVisibilityWall): WallTierInfo {
+  const wallIndex = Number(String(wall.id).replace("wall_", ""));
+  const openingsOnWall = baseline.openings.filter((o) => o.wallIndex === wallIndex);
+  const fixturesOnWall = (baseline.anchorFixtures || []).filter((f) => f.wallIndex === wallIndex);
+  const isBlank = openingsOnWall.length === 0 && fixturesOnWall.length === 0;
+
+  const windowsOnWall = openingsOnWall.filter((o) => o.type === "window");
+  const hasAnyWindow = windowsOnWall.length > 0;
+  const windowCoverage = windowsOnWall.reduce((sum, w) => sum + wallCoverageBandUpperBound(w.wallCoverageBand), 0);
+  // Conservative aggregate: ALL windows on this wall must be non-floor-
+  // touching / non-full-height for the wall to earn the "higher-
+  // positioned" preference — one floor-length window is enough to treat
+  // the wall as floor-touching for ranking purposes, the safer reading.
+  const hasNonFloorWindow = hasAnyWindow && windowsOnWall.every((w) => !w.touchesFloor && w.verticalBand !== "full_height");
+
+  // Circulation-implying openings only: real doors and walkthroughs create
+  // foot traffic through the wall into another space. Closet doors are
+  // deliberately excluded from this category — a closet door doesn't lead
+  // anywhere a person walks, so it doesn't carry the same "don't block
+  // this path" reasoning tier 4 exists for. A wall with only a closet
+  // door on it is not blank, not a window wall, and not a door wall in
+  // this scheme — it falls to tier 3, gated by the same visibility
+  // threshold as any other non-door wall. Documented judgment call, not
+  // an oversight.
+  const circulationOpenings = openingsOnWall.filter((o) => o.type === "door" || o.type === "walkthrough");
+  const hasDoorOrWalkthrough = circulationOpenings.length > 0;
+  const hasSlidingDoor = circulationOpenings.some((o) => o.paneStructure === "sliding_panel");
+
+  const largestSegment = wall.usableSegments.reduce((max, s) => Math.max(max, s.widthFraction), 0);
+  const { minX, maxX } = wallBBox(wall);
+
+  return { wall, wallIndex, largestSegment, isBlank, hasAnyWindow, windowCoverage, hasNonFloorWindow, hasDoorOrWalkthrough, hasSlidingDoor, frameVisibleWidth: maxX - minX };
+}
+
+function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibilityWall[]): { info: WallTierInfo; reason: string } | null {
+  const analyzed = walls.map((w) => analyzeWallForTiers(baseline, w));
+
+  // Floor requirement, applied before any tier is evaluated: no wall is a
+  // candidate anywhere below unless it clears this bar first.
+  const sizeQualifying = analyzed.filter((w) => w.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR);
+  if (sizeQualifying.length === 0) return null;
+
+  // Tier 1 — genuinely blank wall wins outright, regardless of any other
+  // wall's size advantage. Ties broken by largest usable segment.
+  const blankWalls = sizeQualifying.filter((w) => w.isBlank);
+  if (blankWalls.length > 0) {
+    const picked = [...blankWalls].sort((a, b) => b.largestSegment - a.largestSegment)[0];
+    return { info: picked, reason: `tier 1: ${picked.wall.id} (${picked.wall.wallLabel}) — zero openings or fixtures detected on this wall, blank wall takes outright priority over every other candidate.` };
+  }
+
+  // Tier 2 — sub-50% window wall, least coverage first, higher-positioned
+  // window preferred over floor-touching/full-height as the tiebreak.
+  // This is an ADDITIVE signal computed directly from baseline.openings'
+  // own wallCoverageBand/touchesFloor fields — it does not read or
+  // override wall.usableWidthFraction (which still comes from the
+  // existing floor-clearance mechanism in the wall-visibility extraction
+  // prompt and still gates the size floor above). The two mechanisms
+  // COMBINE rather than one superseding the other: floor-clearance
+  // continues to ensure a high, non-floor-touching window doesn't get
+  // unfairly zeroed out of size eligibility; tier 2 separately uses the
+  // baseline's own coverage/position data to rank window-walls against
+  // each other and against every other tier. Deliberately not merged
+  // into one mechanism — they read different raw data for different
+  // purposes, and combining them keeps the size floor's meaning
+  // unchanged for every existing caller.
+  const windowWalls = sizeQualifying.filter((w) => w.hasAnyWindow && w.windowCoverage < WINDOW_COVERAGE_TIER2_THRESHOLD);
+  if (windowWalls.length > 0) {
+    const picked = [...windowWalls].sort((a, b) => {
+      if (a.windowCoverage !== b.windowCoverage) return a.windowCoverage - b.windowCoverage;
+      if (a.hasNonFloorWindow !== b.hasNonFloorWindow) return a.hasNonFloorWindow ? -1 : 1;
+      return b.largestSegment - a.largestSegment;
+    })[0];
+    return {
+      info: picked,
+      reason: `tier 2: ${picked.wall.id} (${picked.wall.wallLabel}) — window coverage ${picked.windowCoverage.toFixed(2)} (< ${WINDOW_COVERAGE_TIER2_THRESHOLD} threshold), ${picked.hasNonFloorWindow ? "higher-positioned (non-floor-touching)" : "includes a floor-touching/full-height window"}. Combines with (does not supersede) the existing floor-clearance usable-width mechanism — see reconciliation note above.`,
+    };
+  }
+
+  // Tier 3 — return wall, gated by a real frame-visibility threshold, not
+  // a qualitative judgment. Door/walkthrough walls are excluded entirely
+  // here (reserved for tier 4) so a door-wall can never sneak into tier 3
+  // on visibility alone. Ties broken by the most substantially visible.
+  const nonDoorWalls = sizeQualifying.filter((w) => !w.hasDoorOrWalkthrough);
+  const returnWalls = nonDoorWalls.filter((w) => w.frameVisibleWidth >= RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH);
+  if (returnWalls.length > 0) {
+    const picked = [...returnWalls].sort((a, b) => b.frameVisibleWidth - a.frameVisibleWidth)[0];
+    return {
+      info: picked,
+      reason: `tier 3: ${picked.wall.id} (${picked.wall.wallLabel}) — return wall, frame-visible width ${picked.frameVisibleWidth.toFixed(3)} >= ${RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH} threshold.`,
+    };
+  }
+
+  // Tier 4 — wall containing a door, lowest priority, reached only when
+  // nothing above qualified at all: a door implies an active circulation
+  // path through that wall, so placing a large anchor item there is more
+  // disruptive than any alternative, even when the wall itself is large
+  // enough. Within this tier, a sliding/glass door wall is preferred over
+  // a hinged/walkthrough interior door wall — a sliding/glass door
+  // typically retains genuine usable floor area directly in front of it,
+  // while an interior walkthrough implies a narrower, more direct travel
+  // path that's worse to place furniture near.
+  const doorWalls = sizeQualifying.filter((w) => w.hasDoorOrWalkthrough);
+  if (doorWalls.length > 0) {
+    const picked = [...doorWalls].sort((a, b) => {
+      if (a.hasSlidingDoor !== b.hasSlidingDoor) return a.hasSlidingDoor ? -1 : 1;
+      return b.largestSegment - a.largestSegment;
+    })[0];
+    const failedReturnWalls = nonDoorWalls.filter((w) => w.wall.id !== picked.wall.id);
+    const failedReturnWallsNote =
+      failedReturnWalls.length > 0
+        ? failedReturnWalls.map((w) => `${w.wall.id} visible width ${w.frameVisibleWidth.toFixed(3)} below ${RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH} threshold`).join(", ")
+        : "no other non-door wall was size-qualifying";
+    return {
+      info: picked,
+      reason: `tier 4: ${picked.wall.id} (${picked.wall.wallLabel}) — ${picked.hasSlidingDoor ? "sliding/glass door" : "hinged/walkthrough interior door"}. No blank wall, no qualifying sub-50% window wall, no return wall met the ${RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH} visibility threshold (${failedReturnWallsNote}).`,
+    };
+  }
+
+  // Defensive fallback beyond the four described tiers: a wall that is
+  // not blank, has no qualifying window, has no door/walkthrough, AND
+  // fails the tier-3 visibility threshold (e.g. a wall with only a
+  // closet door or a fixture, that's also a thin frame sliver) isn't
+  // covered by any of tiers 1-4 as specified. Rather than silently
+  // returning null and forcing an unnecessary fallback to the legacy
+  // prompt when a real, size-qualifying wall does exist, pick the largest
+  // remaining size-qualifying wall and log it plainly as outside the
+  // four-tier scheme, so this is honestly distinguishable from a real
+  // tier 1-4 selection if it ever fires.
+  const picked = [...sizeQualifying].sort((a, b) => b.largestSegment - a.largestSegment)[0];
+  return {
+    info: picked,
+    reason: `tier 5 (defensive fallback, outside the four described tiers): ${picked.wall.id} (${picked.wall.wallLabel}) — not blank, no qualifying window, no door/walkthrough, and below the tier-3 visibility threshold (frame-visible width ${picked.frameVisibleWidth.toFixed(3)}); picked as the largest remaining size-qualifying wall rather than discarding a viable anchor plan.`,
+  };
+}
+
+function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilityWall[], config: SingleAnchorItemConfig): AnchorPlan | null {
+  const selection = selectAnchorWallByTier(baseline, walls);
 
   // Production behavior differs from the tmp/ exploratory scripts here:
   // those always returned a plan (with a low-confidence fallback wall) so
   // the reasoning could be inspected. In production, "no wall confidently
   // qualifies" is itself a fallback trigger — callers should use the
-  // existing prompt path rather than stage a bed against a wall that
-  // doesn't have enough clear space, however plausible-looking.
-  if (qualifying.length === 0) {
+  // existing prompt path rather than stage the anchor item against a wall
+  // that doesn't have enough clear space, however plausible-looking.
+  if (!selection) {
     return null;
   }
 
-  const selected = qualifying[0];
-  const selectedWall = selected.wall;
+  const selectedWall = selection.info.wall;
   const bestSegment = [...selectedWall.usableSegments].sort((a, b) => b.widthFraction - a.widthFraction)[0];
-  const selectedWallIndex = Number(String(selectedWall.id).replace("wall_", ""));
+  const selectedWallIndex = selection.info.wallIndex;
 
   // Orientation: prefer a focal opening (window > door) not on the anchor's
   // own wall; fall back to whatever's available.
@@ -393,9 +612,7 @@ export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisib
       break;
     }
   }
-  const anchorOrientationInstruction = focalFeatureId
-    ? `Orient the bed so its foot end points toward ${focalFeatureId} (the ${focalFeatureType} on wall_${focalFeatureWallIndex}) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on.`
-    : `No focal opening identified; orient the bed facing into the open floor area of the room.`;
+  const anchorOrientationInstruction = config.buildOrientationInstruction(focalFeatureId, focalFeatureType, focalFeatureWallIndex);
 
   const { minX, maxX } = wallBBox(selectedWall);
   const touchesRight = maxX >= 1 - FRAME_EDGE_EPSILON;
@@ -412,10 +629,9 @@ export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisib
   // itself landing on an opening that undermined a "should be fine"
   // assumption about the wall; an edge-cropped wall is exactly the case
   // where that assumption is least trustworthy. Conservative backstop:
-  // no wall-mounted decor above the bed at all on a wall we can't fully see.
-  const noDecorAboveBedNote = wallPartiallyVisible
-    ? `${selectedWall.id} is only partially visible in this photo, so its full extent cannot be verified. Do NOT place any wall-mounted artwork, mirrors, shelving, or other decor above the bed on this wall, even if it looks like there is room for it — leave the wall above the headboard bare.`
-    : null;
+  // no wall-mounted decor above the anchor item at all on a wall we can't
+  // fully see, where the caller opts into this note at all.
+  const noDecorAboveBedNote = wallPartiallyVisible && config.buildNoDecorNote ? config.buildNoDecorNote(selectedWall.id) : null;
 
   return {
     anchorWallId: selectedWall.id,
@@ -427,8 +643,36 @@ export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisib
     wallPartiallyVisible,
     noDecorAboveBedNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
-    selectionReason: `${selectedWall.id} (${selectedWall.wallLabel}) selected: largest contiguous usable segment ${selected.largestSegment.toFixed(3)} ("${bestSegment.description}"), meets the ${MIN_USABLE_FRACTION_FOR_ANCHOR} minimum threshold.`,
+    selectionReason: `${selection.reason} (clear segment: "${bestSegment.description}", ${selection.info.largestSegment.toFixed(3)} >= ${MIN_USABLE_FRACTION_FOR_ANCHOR} size floor.)`,
   };
+}
+
+export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
+  return planSingleAnchorWall(baseline, walls, {
+    buildOrientationInstruction: (focalFeatureId, focalFeatureType, focalFeatureWallIndex) =>
+      focalFeatureId
+        ? `Orient the bed so its foot end points toward ${focalFeatureId} (the ${focalFeatureType} on wall_${focalFeatureWallIndex}) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on.`
+        : `No focal opening identified; orient the bed facing into the open floor area of the room.`,
+    buildNoDecorNote: (wallId) =>
+      `${wallId} is only partially visible in this photo, so its full extent cannot be verified. Do NOT place any wall-mounted artwork, mirrors, shelving, or other decor above the bed on this wall, even if it looks like there is room for it — leave the wall above the headboard bare.`,
+  });
+}
+
+// Study's desk anchor — same wall-selection mechanism as bedroom's bed
+// anchor (largest-qualifying-usable-segment wall, off-anchor-wall focal
+// opening for orientation), per the task's explicit instruction to reuse
+// bedroom's mechanism rather than invent a new one. No noDecorNote: the
+// bed's version exists because headboard-adjacent decor was a real
+// incident category (Bedroom 11); no equivalent incident exists for
+// desks, so this deliberately doesn't invent a defensive rule that has no
+// grounding.
+function planDeskAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
+  return planSingleAnchorWall(baseline, walls, {
+    buildOrientationInstruction: (focalFeatureId, focalFeatureType, focalFeatureWallIndex) =>
+      focalFeatureId
+        ? `Orient the desk so a person sitting at it would face toward ${focalFeatureId} (the ${focalFeatureType} on wall_${focalFeatureWallIndex}) for natural light and an outward view — do not place the desk facing directly into the wall with its back to the room.`
+        : `No focal opening identified; orient the desk facing into the open floor area of the room, not directly facing the wall.`,
+  });
 }
 
 // ── Living/dining zoning + multi-anchor planning. Ported from the real,
@@ -757,6 +1001,189 @@ function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstructionOv
   return `ANCHOR ITEMS — LIVING ZONE (must be followed exactly)\n\n${livingLines.join("\n")}\n\nANCHOR ITEM — DINING ZONE (must be followed exactly)\n\n${diningLines.join("\n")}\n\nZONING CONTEXT: this is a single open-plan room combining two functional zones — a living/seating zone and a dining zone. Stage each zone according to its function as instructed above, so the two areas read as distinct, intentional zones within the same open room, not one undifferentiated furniture arrangement.`;
 }
 
+// ── Standalone living room — reuses living-dining's real TV-wall/sofa
+// planner (planMultiAnchor) and circulation-aware floating-sofa logic
+// (findLivingZoneEntryOpenings/computeFloatingSofaPosition/checkClearance)
+// UNCHANGED, applied to the whole room as a single zone. No extractZoning
+// call: there is no second zone to divide against, so a synthetic zone
+// covering the full visible floor is built locally from data already in
+// hand (walls), at zero extra API cost. planMultiAnchor itself is
+// untouched — passing it a one-element zones array with no "dining"
+// zone present is enough to make it skip all dining-anchor logic (its own
+// `zones.find(z => z.purpose === "dining")` naturally returns undefined)
+// and run its living-zone TV/sofa logic exactly as it already does for
+// the living_dining path. ──
+function buildSyntheticWholeRoomLivingZone(walls: WallVisibilityWall[]): LivingDiningZone {
+  // Depth proxy: the shallowest (smallest-y, i.e. furthest from camera)
+  // wall/floor junction across all visible walls approximates how deep
+  // the visible floor extends — the same quantity a real zoning
+  // extraction's floorRegion bbox would yield for a single full-room
+  // zone. Full x-range [0,1] approximates the floor spanning the visible
+  // frame width; only used as a fallback centering reference if no wall
+  // qualifies for sofa placement.
+  const floorMinY = walls.length > 0 ? Math.min(...walls.map((w) => wallBBox(w).maxY)) : 0;
+  return {
+    id: "zone_living_wholeroom",
+    purpose: "living",
+    floorRegion: {
+      polygon: [
+        [0, floorMinY],
+        [1, floorMinY],
+        [1, 1],
+        [0, 1],
+      ],
+    },
+    borderingWallIndices: walls.map((w) => Number(String(w.id).replace("wall_", ""))),
+    reasoning: "Synthetic whole-room zone for a standalone living room (no zoning split needed — only one functional zone exists). Not model-inferred.",
+  };
+}
+
+function buildLivingRoomOnlyAnchorSection(plan: MultiAnchorPlan, sofaInstructionOverride?: string): string {
+  const livingLines: string[] = [];
+  if (plan.tvPlan && sofaInstructionOverride) {
+    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallId} (${plan.tvPlan.wallLabel}), within the segment described as "${plan.tvPlan.segmentDescription}".`);
+    livingLines.push(`* ${sofaInstructionOverride}`);
+  } else if (plan.sofaPlan) {
+    const where = plan.sofaPlan.wallId ? `against ${plan.sofaPlan.wallId} (${plan.sofaPlan.wallLabel})` : `floor-centered within the room (no wall is suitable for large furniture)`;
+    livingLines.push(`* Place a sofa ${where}. ${plan.sofaPlan.orientationInstruction || ""}`.trim());
+  }
+  return `ANCHOR ITEMS — LIVING ROOM (must be followed exactly)\n\n${livingLines.join("\n")}`;
+}
+
+function buildLivingRoomPrompt(
+  baseline: StructuralBaseline,
+  walls: WallVisibilityWall[],
+  protectedFeatureSection: string
+): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  const wholeRoomZone = buildSyntheticWholeRoomLivingZone(walls);
+  const plan = planMultiAnchor(baseline, walls, [wholeRoomZone]);
+  if (!plan.sofaPlan) {
+    return { prompt: null, fallbackReason: "no_valid_living_anchor", extra: {} };
+  }
+
+  let sofaInstructionOverride: string | undefined;
+  if (plan.tvPlan) {
+    const livingWallIndices: number[] = wholeRoomZone.borderingWallIndices || [];
+    const entryOpenings = findLivingZoneEntryOpenings(baseline, livingWallIndices);
+    const sofaPos = computeFloatingSofaPosition(wholeRoomZone, entryOpenings);
+    const clearance = checkClearance(sofaPos, entryOpenings);
+    if (!clearance.clear) {
+      return { prompt: null, fallbackReason: `sofa_clearance_check_failed:${clearance.reason}`, extra: { tvPlaced: true } };
+    }
+    const clearanceClause =
+      entryOpenings.length > 0
+        ? ` This position is deliberately clear of the direct path from ${entryOpenings.map((o) => o.id).join("/")} into the room — do not place the sofa against a side or adjacent wall, and do not place it so it blocks the walking path from that opening into the rest of the room.`
+        : ` Do not place the sofa against a side or adjacent wall.`;
+    sofaInstructionOverride = `Place the sofa floating in the room (not against any wall), facing directly toward ${plan.tvPlan.wallId} (the TV wall), positioned at approximately normalized coordinates [${sofaPos.x.toFixed(3)}, ${sofaPos.y.toFixed(3)}] of the full photo.${clearanceClause}`;
+  }
+
+  const anchorSection = buildLivingRoomOnlyAnchorSection(plan, sofaInstructionOverride);
+
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+${anchorSection}
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the anchor items above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a living room, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+
+  return {
+    prompt,
+    fallbackReason: null,
+    extra: {
+      tvPlaced: !!plan.tvPlan,
+      sofaFloating: !!sofaInstructionOverride,
+      anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
+    },
+  };
+}
+
+// ── No-anchor, light-staging room types (bathroom, hallway, garage) —
+// kitchen's proven shape: full category-A locks + universal feature
+// protection, no wall-selection/anchor-placement logic, just a
+// type-appropriate light-decor instruction. ──
+function buildBathroomPrompt(
+  protectedFeatureSection: string
+): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+BATHROOM — LIGHT STAGING ONLY (must be followed exactly)
+
+* The bathroom's existing vanity, tub, shower, toilet, mirror, and any built-in cabinetry or shelving are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
+* Do NOT add any large furniture or fixtures to the bathroom — no additional cabinetry, no benches, stools, or chairs, no freestanding storage units.
+* You may add ONLY small, soft-good and surface-level items: fresh folded or hung towels (on an existing rail, hook, or vanity surface), a bath mat on the floor (clear of any door swing path), and up to 3 small decor/toiletry items (e.g. a soap dispenser, a small plant, a candle, neatly arranged toiletries) placed only on existing counter or shelf surfaces.
+* Do not obstruct, cover, or place any new item in front of any detected window, opening, or fixture named in the protected-features section above.
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the bathroom rules above and the structural constraints above, use your own professional staging judgment to complete the space appropriately, producing a realistic, market-ready real estate listing photo. Keep staging light and true to a real bathroom — do not overfill a small space.`;
+
+  return { prompt, fallbackReason: null, extra: {} };
+}
+
+function buildHallwayPrompt(
+  walls: WallVisibilityWall[],
+  protectedFeatureSection: string
+): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  // Reuses the same "largest usable wall segment" signal bedroom/study's
+  // anchor selection is built on, but only as a conditional allowance —
+  // a hallway with no qualifying wall still stages fine with decor alone,
+  // so this never triggers a fallback the way bedroom/study's hard anchor
+  // requirement does.
+  const hasQualifyingWallSegment = walls.some((w) => (w.usableSegments || []).some((s) => s.widthFraction >= MIN_USABLE_FRACTION_FOR_ANCHOR));
+  const consoleLine = hasQualifyingWallSegment
+    ? "This hallway has at least one wall segment with genuinely clear width (confirmed by the room's own wall analysis) — you may optionally add ONE small console table or wall-mounted mirror there, sized appropriately for a hallway, only if it does not reduce the walking path width."
+    : "No wall segment in this hallway has confirmed clear width for furniture — do not add a console table, mirror, or any other wall-mounted or floor-standing furniture item; decor-only staging (per below) is correct here.";
+
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+HALLWAY — LIGHT STAGING ONLY (must be followed exactly)
+
+* Do NOT add any large furniture to the hallway — no benches, cabinets, or seating of any kind.
+* You may add a runner rug along the walking path, sized to leave clear space on both sides and at both ends (doorways, stair edges) — do not let it bunch, overlap a threshold, or narrow the usable walking width.
+* ${consoleLine}
+* Do not obstruct, cover, or place any new item in front of any detected door, doorway, or fixture named in the protected-features section above, and do not reduce the clear walking width of the hallway at any point.
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the hallway rules above and the structural constraints above, use your own professional staging judgment to add light, tasteful decor (e.g. wall art, a small plant) appropriate for a hallway, producing a realistic, market-ready real estate listing photo. Keep staging minimal — a hallway is a transition space, not a room to furnish.`;
+
+  return { prompt, fallbackReason: null, extra: {} };
+}
+
+// Garage — scope decision (see Task report): defaulted to the
+// conservative option, structural-protection-only with an explicit
+// "add nothing" instruction, since garages aren't typically staged with
+// decor the way living spaces are and no time was available to confirm
+// otherwise before this ships. If a lighter organizational-decor pass is
+// wanted instead, this is the one function to change — nothing else in
+// the room-type routing depends on which choice this makes.
+function buildGaragePrompt(
+  protectedFeatureSection: string
+): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+GARAGE — STRUCTURAL PROTECTION ONLY, NO STAGING (must be followed exactly)
+
+* Do NOT add any furniture, decor, storage items, vehicles, tools, or any other object to this photo. This is a decluttering/structural-protection-only pass, not a staging pass — garages are not staged with decor the way living spaces are.
+* Do not add anything beyond what is already present in the photo. If the photo looks empty or sparse, leave it that way.
+* All structural constraints above still apply in full: do not alter walls, flooring, the garage door, windows, built-in shelving/racking, or any other fixed element.
+
+EVERYTHING ELSE
+
+There is no "everything else" for this room type — add nothing beyond what is already in the photo.`;
+
+  return { prompt, fallbackReason: null, extra: {} };
+}
+
 // ── Orchestrator ──
 export type AnchorLockedPromptResult = {
   prompt: string | null;
@@ -773,13 +1200,99 @@ export type AnchorLockedPromptResult = {
     zoningExtracted?: boolean;
     tvPlaced?: boolean;
     sofaFloating?: boolean;
+    // Full tier audit trail from planSingleAnchorWall's four-tier decision
+    // (bedroom/study only) — which tier fired, the winning wall's stats,
+    // and why higher-priority tiers didn't qualify. Logged here so it
+    // flows through the same [STAGE2_ANCHOR_LOCKED_PLAN] log line every
+    // other decision in this pipeline already does, rather than a
+    // separate ad-hoc log call.
+    anchorSelectionReason?: string;
   };
 };
 
 // "living_dining" is the real room-type identifier used by job intake —
 // confirmed against worker/src/ai/roomTypeDetector.ts, shared/src/types.ts,
-// and server/src/routes/upload.ts, not assumed.
-const SUPPORTED_ROOM_TYPES = new Set(["bedroom", "living_dining"]);
+// and server/src/routes/upload.ts, not assumed. "kitchen" / "kitchen_dining"
+// / "kitchen_living" are likewise real, distinct identifiers used elsewhere
+// in the codebase (e.g. stage2.ts's legacy room-type switch), not a naming
+// variant of anything already in this set.
+//
+// "living_room" (standalone living), "study" (confirmed distinct from
+// "office" — both are separate real values, "office" is deliberately NOT
+// added here since it wasn't in scope), "bathroom"/"bathroom_1"/
+// "bathroom_2", "hallway", and "garage" are all confirmed real, canonical
+// identifiers via shared/src/types.ts's RoomType union and both server
+// intake allowlists (server/src/routes/upload.ts's and retrySingle.ts's
+// CANONICAL_ROOM_TYPES), not assumed. "living" (bare) is included
+// defensively alongside "living_room": upload.ts/retrySingle.ts both
+// normalize "living" -> "living_room" at intake via an explicit alias, so
+// "living_room" is what should actually reach this function in practice,
+// but stage2.ts's own legacy switch still treats bare "living" as
+// equivalent, so it's added here too at zero cost in case any intake path
+// ever bypasses that normalization.
+const SUPPORTED_ROOM_TYPES = new Set([
+  "bedroom",
+  "living_dining",
+  "kitchen",
+  "kitchen_dining",
+  "kitchen_living",
+  "living_room",
+  "living",
+  "study",
+  "bathroom",
+  "bathroom_1",
+  "bathroom_2",
+  "hallway",
+  "garage",
+]);
+const KITCHEN_ROOM_TYPES = new Set(["kitchen", "kitchen_dining", "kitchen_living"]);
+const LIVING_ROOM_ONLY_TYPES = new Set(["living_room", "living"]);
+const STUDY_ROOM_TYPES = new Set(["study"]);
+const BATHROOM_ROOM_TYPES = new Set(["bathroom", "bathroom_1", "bathroom_2"]);
+const HALLWAY_ROOM_TYPES = new Set(["hallway"]);
+const GARAGE_ROOM_TYPES = new Set(["garage"]);
+
+// Kitchen path is deliberately the simple pattern, not the zoning/anchor
+// pattern living-dining uses: no extractZoning call, no planMultiAnchor —
+// a kitchen's cabinetry/counters/island are already-existing fixtures
+// covered by CATEGORY_A_LOCKS and buildUniversalFeatureProtectionSection,
+// so there's no wall to select or item to anchor, just a light-staging
+// instruction layered on the same shared structural protections bedroom
+// and living-dining use. kitchen_dining/kitchen_living get an additional
+// natural-language (not geometric) instruction for the non-kitchen zone,
+// same "your professional judgment" pattern bedroom already uses for its
+// non-anchor furniture — reusing living-dining's real zoning mechanism
+// (extractZoning + planMultiAnchor) isn't possible without also extending
+// it past its hardcoded living/dining pair, which is out of scope for a
+// same-day, minimal kitchen fix.
+function buildKitchenPrompt(
+  roomType: string,
+  protectedFeatureSection: string
+): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  const secondaryZoneInstruction =
+    roomType === "kitchen_dining"
+      ? `\n\nDINING ZONE — YOUR PROFESSIONAL JUDGMENT\n\nThis room also includes a dining area separate from the kitchen work area. Stage the dining area with a full, to-scale dining table and chairs appropriate for the space, positioned using your own professional judgment. Do not place dining furniture inside the kitchen work area — not on or against cabinetry or countertops, and not on the kitchen floor zone directly in front of them.`
+      : roomType === "kitchen_living"
+        ? `\n\nLIVING ZONE — YOUR PROFESSIONAL JUDGMENT\n\nThis room also includes a living/lounge area separate from the kitchen work area. Stage the living area with seating (sofa or armchairs) and supporting furniture appropriate for the space, positioned using your own professional judgment. Do not place living-room furniture inside the kitchen work area — not on or against cabinetry or countertops, and not on the kitchen floor zone directly in front of them.`
+        : "";
+
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+KITCHEN ZONE — LIGHT STAGING ONLY (must be followed exactly)
+
+* The kitchen's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
+* Do NOT add any large furniture to the kitchen area — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.
+* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.
+* Do not obstruct, cover, or place any new item in front of any detected window, opening, or fixture named in the protected-features section above — including on a countertop or windowsill directly beneath a window.${secondaryZoneInstruction}
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the kitchen rules above and the structural constraints above, use your own professional staging judgment to complete the space appropriately, producing a realistic, market-ready real estate listing photo. Do not leave the space sparse or under-furnished outside the kitchen zone; stage it as a professional would for a real listing.`;
+
+  return { prompt, fallbackReason: null, extra: {} };
+}
 
 function buildBedroomPrompt(
   baseline: StructuralBaseline,
@@ -820,6 +1333,54 @@ Beyond the bed placement above and the structural constraints above, use your ow
       anchorWallId: plan.anchorWallId,
       anchorConfidence: plan.confidence,
       wallPartiallyVisible: plan.wallPartiallyVisible,
+      anchorSelectionReason: plan.selectionReason,
+    },
+  };
+}
+
+// Study — bedroom's exact pattern (single anchor item, real wall
+// selection via planDeskAnchor, which shares planSingleAnchorWall with
+// planBedroomAnchor) with desk-specific prompt text.
+function buildStudyPrompt(
+  baseline: StructuralBaseline,
+  walls: WallVisibilityWall[],
+  protectedFeatureSection: string
+): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  const plan = planDeskAnchor(baseline, walls);
+  if (!plan) {
+    return { prompt: null, fallbackReason: "no_wall_meets_anchor_threshold", extra: {} };
+  }
+
+  const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
+
+  const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
+  const anchorWallFeaturesSection =
+    coLocatedFeatures.length > 0
+      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible; nothing may cover or obstruct them, including the desk)\n\nThe wall selected for the desk also has the following existing feature(s) on it. Position the desk within the clear segment described above so that it does NOT overlap or obstruct any of these — the desk must be positioned to avoid them, even if that means it does not span the entire wall. No new item (artwork, mirrors, shelving, or any other wall-mounted decor) may be placed over them either, even though it may look conventional to decorate that spot:\n${coLocatedFeatures.join("\n")}`
+      : "";
+
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+ANCHOR ITEM — DESK (must be followed exactly)
+
+* Place a desk against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
+* ${plan.anchorOrientationInstruction}${framingLine}${anchorWallFeaturesSection}
+* Include a desk chair at the desk, and keep the desk surface realistically tidy (e.g. a laptop or monitor, a small lamp, a few books or folders) — not empty, and not cluttered.
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the desk placement above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a home study/office, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above, including the protected features named above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+
+  return {
+    prompt,
+    fallbackReason: null,
+    extra: {
+      anchorWallId: plan.anchorWallId,
+      anchorConfidence: plan.confidence,
+      wallPartiallyVisible: plan.wallPartiallyVisible,
+      anchorSelectionReason: plan.selectionReason,
     },
   };
 }
@@ -936,10 +1497,24 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   baseDiagnostics.protectedFeatureCount = itemCount;
   baseDiagnostics.protectedFeatureSentences = sentences;
 
-  const roomResult =
-    opts.roomType === "bedroom"
-      ? buildBedroomPrompt(baseline, walls, protectedFeatureSection)
-      : await buildLivingDiningPrompt(opts.imagePath, baseline, walls, protectedFeatureSection, { jobId: opts.jobId, imageId: opts.imageId });
+  let roomResult: { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> };
+  if (opts.roomType === "bedroom") {
+    roomResult = buildBedroomPrompt(baseline, walls, protectedFeatureSection);
+  } else if (STUDY_ROOM_TYPES.has(opts.roomType)) {
+    roomResult = buildStudyPrompt(baseline, walls, protectedFeatureSection);
+  } else if (KITCHEN_ROOM_TYPES.has(opts.roomType)) {
+    roomResult = buildKitchenPrompt(opts.roomType, protectedFeatureSection);
+  } else if (BATHROOM_ROOM_TYPES.has(opts.roomType)) {
+    roomResult = buildBathroomPrompt(protectedFeatureSection);
+  } else if (HALLWAY_ROOM_TYPES.has(opts.roomType)) {
+    roomResult = buildHallwayPrompt(walls, protectedFeatureSection);
+  } else if (GARAGE_ROOM_TYPES.has(opts.roomType)) {
+    roomResult = buildGaragePrompt(protectedFeatureSection);
+  } else if (LIVING_ROOM_ONLY_TYPES.has(opts.roomType)) {
+    roomResult = buildLivingRoomPrompt(baseline, walls, protectedFeatureSection);
+  } else {
+    roomResult = await buildLivingDiningPrompt(opts.imagePath, baseline, walls, protectedFeatureSection, { jobId: opts.jobId, imageId: opts.imageId });
+  }
 
   const diagnostics: AnchorLockedPromptResult["diagnostics"] = { ...baseDiagnostics, ...roomResult.extra };
 
