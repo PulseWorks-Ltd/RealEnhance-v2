@@ -72,6 +72,18 @@ const FLOORING_ZONE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "ge
 // no boundary there. Pulled out to its own trailing-boundary alternative.
 const FLOORING_NEGATION_CUE_PATTERN = /\b(not|never|no longer|no|without)\b|n't\b/;
 
+// Strips the REJECTED clause of a "X rather than Y" / "X instead of Z"
+// construction (including the connecting phrase itself) before any
+// keyword pattern runs against the text — see the real production misses
+// documented at MATERIAL_CHANGED_PATTERNS above. A clause boundary is the
+// next sentence/clause-ending punctuation (. ; — –) or the end of the
+// string; a comma is deliberately NOT a boundary here, since "rather than
+// X, Y" often continues the same rejected clause across a comma (e.g.
+// "...rather than blending, unifying, or merging into one surface").
+function stripRejectedContrastiveClause(text: string): string {
+  return text.replace(/\b(rather than|instead of)\b[^.;—–]*/gi, " ");
+}
+
 export type FlooringZone = {
   id: string;
   bbox: [number, number, number, number];
@@ -211,14 +223,31 @@ Respond with ONLY a single valid JSON object: {"zones": [${schemaFields}]}`;
 // CHANGED/LOST patterns first (matching classifyPresence's absence-wins
 // design) and widening windows / adding the missing phrasing, all
 // calibrated against this real response text.
+// CONTRASTIVE-CLAUSE FIX: "X rather than Y" / "X instead of Z" is a
+// two-clause construction — the model is ASSERTING X and REJECTING Y/Z,
+// not describing the current state as Y/Z. The bare `/\brather than\b/`
+// and `/\binstead of\b/` patterns below fire on the phrase's mere
+// presence, and other CHANGED/LOST patterns can independently land inside
+// the rejected clause (e.g. "...remain distinct rather than blending into
+// one continuous surface" — "one continuous surface" sits in the
+// REJECTED clause, but BOUNDARY_LOST_PATTERNS matches it anyway). Real
+// production misses, confirmed: job_4f09191f attempt 2, job_f53669f1 and
+// job_3e255f88 (both attempts) all used this construction with the
+// keyword in the rejected clause, and all wrongly classified as
+// changed/lost. Fixed structurally, not by adding "rather than" to a
+// negation-cue list (a cue-window scan doesn't know which clause a match
+// falls in, and could misfire on a genuinely two-sided sentence) —
+// stripRejectedContrastiveClause below removes the rejected clause (and
+// the connecting phrase itself) from the text BEFORE any pattern list
+// runs, so a keyword there can never be seen at all. This also retires
+// the bare `/\brather than\b/` / `/\binstead of\b/` pattern entries
+// themselves, since the whole phrase is now stripped rather than matched.
 const MATERIAL_CHANGED_PATTERNS: RegExp[] = [
   /\bis (now )?gone\b/,
   /\bno longer (the same|matches?|present|there|visible)\b/,
   /\bdifferent material\b/,
   /\bnow (looks?|appears?|resembles?)[^.]{0,20}\blike\b/,
-  /\binstead of\b/,
   /\bhas (changed|been changed) to\b/,
-  /\brather than\b/,
   /\bhas been (unified|replaced|eliminated|erased)\b/,
   // "now covered with the same ... carpet that is in ... (Zone 1)" — the
   // real bug case above: referencing a DIFFERENT zone by name/number as the
@@ -252,7 +281,7 @@ const MATERIAL_SAME_PATTERNS: RegExp[] = [
 // re-check against the exact failing text after this fix: now correctly
 // returns materialMatchesOriginalZone=true.
 export function classifyMaterialMatch(text: string): ClassifiedSignal {
-  const t = ` ${String(text || "").toLowerCase()} `;
+  const t = ` ${stripRejectedContrastiveClause(String(text || "").toLowerCase())} `;
   for (const p of MATERIAL_CHANGED_PATTERNS) {
     const m = t.match(p);
     if (m && m.index !== undefined && !isLikelyNegated(t, m.index, 50, FLOORING_NEGATION_CUE_PATTERN)) {
@@ -329,7 +358,7 @@ const BOUNDARY_VISIBLE_PATTERNS: RegExp[] = [
 // by actually passing FLOORING_NEGATION_CUE_PATTERN here, matching
 // classifyMaterialMatch's CHANGED-loop exactly.
 export function classifySeamVisible(text: string): ClassifiedSignal {
-  const t = ` ${String(text || "").toLowerCase()} `;
+  const t = ` ${stripRejectedContrastiveClause(String(text || "").toLowerCase())} `;
   // Loss patterns checked first: "no seam visible" would otherwise also
   // match a naive "visible" affirmative check.
   for (const p of BOUNDARY_LOST_PATTERNS) {

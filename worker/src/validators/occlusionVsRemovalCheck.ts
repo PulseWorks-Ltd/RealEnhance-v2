@@ -593,18 +593,35 @@ export function isLikelyNegated(
   return customCuePattern.test(text.slice(start, matchIndex));
 }
 
+// Scoped for classifyResized/classifyRepositioned only — bare "no" needed
+// for real captured misses (job_f53669f1's window, job_3e255f88's ceiling
+// lights: "...with no apparent change in size, shape, or shift along the
+// wall/ceiling"). REPOSITIONED_PATTERNS's /\bshift(?:ed)?[^.]{0,20}\b(left|
+// right|up|down|along)\b/ matches "shift along" in that text, and the
+// default NEGATION_CUE_PATTERN above doesn't recognize the bare "no"
+// ~40 chars earlier as a negation cue, wrongly returning repositioned=true
+// — which alone flips the final verdict to "resized" via
+// classifyObservation's extentChanged = resized.value || repositioned.value
+// and combineOcclusionAnswer's final-fallback verdict=resized. Not added to
+// the shared default above for the same reason flooringBoundaryCheck.ts's
+// equivalent widening wasn't: bare "no" is common enough in unrelated
+// nearby clauses that broadening the default risks new false negatives on
+// other callers (classifyExtent, classifyStructuralEvidence,
+// classifyPresence, classifyReplacement) never audited against it.
+const RESIZE_REPOSITION_NEGATION_CUE_PATTERN = /\b(not|never|no longer|without|neither|no)\b|n't\b/;
+
 export function classifyResized(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of SAME_SIZE_PATTERNS) {
     const m = t.match(p);
-    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index, 50, RESIZE_REPOSITION_NEGATION_CUE_PATTERN)) {
       return { value: false, confidence: "high", matchedPattern: p.source };
     }
   }
   for (const p of RESIZED_PATTERNS) {
     const m = t.match(p);
     if (m && m.index !== undefined) {
-      if (isLikelyNegated(t, m.index)) {
+      if (isLikelyNegated(t, m.index, 50, RESIZE_REPOSITION_NEGATION_CUE_PATTERN)) {
         return { value: false, confidence: "high", matchedPattern: `negated:${p.source}` };
       }
       return { value: true, confidence: "high", matchedPattern: p.source };
@@ -632,14 +649,14 @@ export function classifyRepositioned(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of SAME_POSITION_PATTERNS) {
     const m = t.match(p);
-    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index, 50, RESIZE_REPOSITION_NEGATION_CUE_PATTERN)) {
       return { value: false, confidence: "high", matchedPattern: p.source };
     }
   }
   for (const p of REPOSITIONED_PATTERNS) {
     const m = t.match(p);
     if (m && m.index !== undefined) {
-      if (isLikelyNegated(t, m.index)) {
+      if (isLikelyNegated(t, m.index, 50, RESIZE_REPOSITION_NEGATION_CUE_PATTERN)) {
         return { value: false, confidence: "high", matchedPattern: `negated:${p.source}` };
       }
       return { value: true, confidence: "high", matchedPattern: p.source };
@@ -749,7 +766,7 @@ export function buildObservationQuestionsInstruction(itemLabelPlural: string): s
 
 3. coverageExtentDescription — Compare the region's own boundary to whatever new furniture, decor, or object occupies it now. Does the new object's own visible edge stay entirely within the region, or does it extend past the region's boundary (name the direction — up/down/left/right — and roughly by how much)? If nothing new occupies the region at all, say so.
 
-4. extentComparisonDescription — Independent of coverage by furniture, look at the item's OWN edges (its own frame/boundary, not anything placed in front of it) in the CURRENT image and compare them to the region given for it above. Does it occupy roughly the same footprint and shape as that region, or is the item itself visibly larger, smaller, taller, wider, more/less square, or shifted in position along the wall relative to that region? Describe concretely what you observe about its own size, shape, and position — do not just answer "changed" or "unchanged," and do not discuss furniture or obstruction here, only the item's own extent.
+4. extentComparisonDescription — Independent of coverage by furniture, look at the item's OWN edges (its own frame/boundary, not anything placed in front of it) in the CURRENT image and compare them to the region given for it above. Two photos of the exact same real object, taken from slightly different camera positions or with different lenses, will always show small apparent differences in size and position — that is normal and does NOT mean the item was resized or moved. Only describe it as a size or position change if it is large and obvious: roughly 25% or more different in apparent size relative to the wall or frame it occupies, or clearly shifted to a different part of the wall — the kind of difference an ordinary person glancing at both photos would immediately call "bigger," "smaller," or "moved," not a subtle or borderline difference you have to look closely to notice. If the difference is anything less than that, describe it as the same size and position. IMPORTANT: this camera-angle allowance only excuses SMALL, subtle differences — it is NOT a reason to dismiss a difference that is actually large and obvious. If the item's own edges clearly take up a noticeably bigger or smaller share of the wall or frame around it than the given region does, or it has clearly moved to a different spot on the wall, report that plainly as a real change even if the two photos were taken from somewhat different positions — a real 25%+ size or position difference does not become invisible just because the camera also moved. Describe concretely what you observe about its own size, shape, and position — do not just answer "changed" or "unchanged," and do not discuss furniture or obstruction here, only the item's own extent.
 
 5. structuralEvidenceDescription — Independent of all of the above, look specifically for any physical evidence that a door, doorway, or opening mechanism exists at this exact location — a track (overhead or floor-mounted), a frame, a jamb, a reveal, a pocket edge, hinges, a threshold, or a sill. This matters most for any region above flagged with a "SLIDING PANEL door" note: a CLOSED sliding or pocket door can look like a plain, uninterrupted section of wall at first glance (your answers to questions 1 and 2 above might genuinely and correctly say so), but the track/frame/jamb evidence is usually still there if you look for it specifically — a closed door is not the same as a missing opening, and this question exists to catch that difference. Describe concretely whatever such evidence you find, however subtle, and where; or state plainly that you looked carefully and found none.
 
