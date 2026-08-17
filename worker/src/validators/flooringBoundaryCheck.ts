@@ -283,7 +283,13 @@ export function classifyMaterialMatch(text: string): ClassifiedSignal {
 // visible edge" (two adjectives joined by "and" before the noun, wider than
 // a single optional-word slot could match).
 const BOUNDARY_LOST_PATTERNS: RegExp[] = [
-  /\bno (visible |longer visible )?(seam|threshold|boundary|transition|break|line)\b/,
+  // Widened to tolerate a single adjective between "no" and the noun —
+  // real captured misses tonight (Living 07 verification): "no obvious
+  // seam", "no clear boundary line visible", "no distinct seam" all fell
+  // through the original (visible |longer visible )?-only slot. Adjectives
+  // added are the ones actually observed in real model output, not a
+  // generic wildcard, per this session's established widening discipline.
+  /\bno (visible |longer visible |obvious |clear |distinct |noticeable |discernible )?(seam|threshold|boundary|transition|break|line)\b/,
   /\b(single|one) (continuous |uniform )?(flooring |floor )?(surface|expanse|material)\b/,
   /\bhas been eliminated\b/,
   /\bno longer present\b/,
@@ -307,24 +313,34 @@ const BOUNDARY_VISIBLE_PATTERNS: RegExp[] = [
   /\b(seam|threshold|boundary|transition|edge)[^.]{0,60}\bvisible\b/,
 ];
 
-// Same negation fix applied here for consistency, even though the
-// BOUNDARY_LOST list's own patterns mostly already embed "no"/"no longer" —
-// a doubly-negated construction ("not... no longer visible") is rare but
-// the uniform treatment costs nothing and matches how both pattern lists
-// in classifyMaterialMatch above are now handled.
+// CORRECTION (this task): the comment previously here claimed "the same
+// negation fix applied here for consistency" — that was inaccurate. Both
+// loops below were actually still calling isLikelyNegated with its
+// DEFAULT pattern (not|never|no longer|without|neither — no bare "no"),
+// never wired to FLOORING_NEGATION_CUE_PATTERN the way
+// classifyMaterialMatch's CHANGED-loop was. Confirmed as a real,
+// reproducible false-pass on Living 07's actual regression case: Grok's
+// own text plainly said "no obvious seam... no clear boundary line
+// visible" and "no distinct seam... visible anymore" — genuine bare-"no"
+// negations of a BOUNDARY_VISIBLE_PATTERNS match ("boundary...visible",
+// "seam...visible") — but the default pattern doesn't recognize bare "no"
+// as a negation cue, so the match was never suppressed, flipping a
+// correctly-perceived boundary loss into a false "still visible". Fixed
+// by actually passing FLOORING_NEGATION_CUE_PATTERN here, matching
+// classifyMaterialMatch's CHANGED-loop exactly.
 export function classifySeamVisible(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   // Loss patterns checked first: "no seam visible" would otherwise also
   // match a naive "visible" affirmative check.
   for (const p of BOUNDARY_LOST_PATTERNS) {
     const m = t.match(p);
-    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index, 50, FLOORING_NEGATION_CUE_PATTERN)) {
       return { value: false, confidence: "high", matchedPattern: p.source };
     }
   }
   for (const p of BOUNDARY_VISIBLE_PATTERNS) {
     const m = t.match(p);
-    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index, 50, FLOORING_NEGATION_CUE_PATTERN)) {
       return { value: true, confidence: "high", matchedPattern: p.source };
     }
   }
