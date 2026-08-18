@@ -410,6 +410,56 @@ const OPENING_JAMB_CONTEXT_PATTERNS: RegExp[] = [
   /\b(jamb|edge|side|boundary)[^.]{0,25}\bof (the )?(room )?(entrance |open )?(opening|walkthrough|doorway|entrance)\b/,
 ];
 
+// Real production miss (job_3e255f88 attempt 2, W2 window):
+// currentSurfaceDescription = "Window glass and grey blind near the ceiling;
+// plain white wall continues below it down to a white dresser." —
+// REPLACED_PATTERNS[0] matches "plain white wall" and fires replaced=true,
+// even though the SAME sentence's own subject ("it") is the window's glass
+// and blind, described as directly present — "wall continues below it" is
+// describing ordinary wall space ADJACENT to the item, not the item's own
+// location being replaced by wall. This is the same class of context gap as
+// OPENING_JAMB_CONTEXT_PATTERNS above (a wall-adjective phrase whose true
+// referent isn't "this region was replaced"), so checked the same way:
+// before REPLACED_PATTERNS, as a stronger, more specific override.
+//
+// SECOND real captured variant, found live-retesting this exact fix on the
+// same W2 window (a fresh Grok call, same image): "Window glass, white
+// frame trim, and a light roller blind; plain white wall surrounds it,
+// with a mirror and dresser below outside the region." — same underlying
+// fact (window present, wall merely nearby), different verb ("surrounds"
+// instead of "continues below/beside/above/beneath/under"). Widened from
+// the single-verb-plus-preposition form to any of these confirmed verbs
+// followed by "it" within a short window, still requiring the pronoun "it"
+// referencing the item as directly present — not broadened to any "wall"
+// mention, since a genuine violation can also legitimately use "plain
+// wall" near other words.
+// THIRD and FOURTH real captured variants — this time from the FIXTURE
+// check (fixtureFlooringValidator.ts), which shares this exact function via
+// classifyObservation/combineOcclusionAnswer, confirming the bug isn't
+// scoped to openings alone. job_8505488a attempt 1, F1 (AC unit):
+// currentSurfaceDescription = "White plastic AC unit housing mounted high
+// on the plain painted wall." — the AC unit is named FIRST, then "on the
+// plain painted wall" describes the wall as the unit's ordinary mounting
+// surface/background, not the region's new occupant. Same underlying shape
+// as a case found live-retesting the fix above on the SAME W2 window in a
+// third fresh call: "Window glass and white frame with roller shade
+// against plain white wall" — item named first, "against plain white wall"
+// again describing background, not replacement, and NOT covered by the
+// verb+"it" patterns above since there's no pronoun here at all. Both real
+// cases share one structural signal: the wall-adjective phrase is
+// introduced by a preposition that means "this item sits on/against this
+// backdrop" (on/onto/against/into), immediately before the phrase — as
+// opposed to a genuine violation's typical phrasing ("replaced BY a plain
+// wall", "now shows a plain wall"), which uses a different class of
+// preposition/verb entirely. This is a broader, preposition-based guard
+// rather than another single-verb patch, justified by two independently
+// captured real cases converging on the same structural shape.
+const WALL_ADJACENT_TO_ITEM_PATTERNS: RegExp[] = [
+  /\b(continues?|extends?)[^.]{0,15}\b(below|beside|above|beneath|under)\s+it\b/,
+  /\b(surrounds?|wraps?( around)?)[^.]{0,10}\bit\b/,
+  /\b(on|onto|against|into)\s+(the\s+)?(plain|continuous|unbroken|seamless|uninterrupted)\b[^.]{0,30}\b(wall|surface|drywall|plaster)\b/,
+];
+
 // AUDIT FIX: this classifier had zero negation guarding. Confirmed
 // vulnerable offline before this fix: classifyReplacement("The closet door
 // is still fully present here - it has definitely not been replaced by a
@@ -421,6 +471,12 @@ const OPENING_JAMB_CONTEXT_PATTERNS: RegExp[] = [
 export function classifyReplacement(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
   for (const p of OPENING_JAMB_CONTEXT_PATTERNS) {
+    const m = t.match(p);
+    if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
+      return { value: false, confidence: "high", matchedPattern: p.source };
+    }
+  }
+  for (const p of WALL_ADJACENT_TO_ITEM_PATTERNS) {
     const m = t.match(p);
     if (m && m.index !== undefined && !isLikelyNegated(t, m.index)) {
       return { value: false, confidence: "high", matchedPattern: p.source };
