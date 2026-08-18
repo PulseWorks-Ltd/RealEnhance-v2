@@ -6998,6 +6998,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: stage2OnlyRouting.sourceStage,
         isExteriorScene: payload.options.sceneType === "exterior",
       });
+      const stage2OnlyStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
       const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
         stagingStyle: payload.options.stagingStyle || "standard_listing",
         roomType: payload.options.roomType,
@@ -7005,6 +7006,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         angleHint: undefined,
         profile: undefined,
         stagingRegion: undefined,
+        structuralBaseline: stage2OnlyStructuralBaseline,
         sourceStage: stage2OnlyRouting.sourceStage,
         promptMode: stage2OnlyPromptMode,
         stage2Mode: explicitStage2ModeStage2Only,
@@ -10880,6 +10882,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
       if (await stopIfCancelled("pre_stage2")) return;
+      const stage2MainStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
       const stage2Promise = payload.options.virtualStage && !stage2Blocked
         ? withMemoryPhase(
             "stage2_generation_main",
@@ -10894,6 +10897,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             sceneType: sceneLabel as any,
             profile,
             angleHint,
+            structuralBaseline: stage2MainStructuralBaseline,
             stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
             stagingStyle: stagingStyleNorm,
             sourceStage: stage2SourceStage,
@@ -11167,6 +11171,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         sourceStage: fallbackRouting.sourceStage,
         isExteriorScene: sceneLabel === "exterior",
       });
+      const stage2BackstopStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
       let stage2Outcome: any;
       try {
         stage2Outcome = await runStage2(stage2InputResolved, stage2BaseStage, {
@@ -11179,6 +11184,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           sceneType: sceneLabel as any,
           profile,
           angleHint,
+          structuralBaseline: stage2BackstopStructuralBaseline,
           stagingRegion: (sceneLabel === "exterior" && allowStaging) ? (stagingRegionGlobal as any) : undefined,
           stagingStyle: stagingStyleFallback,
           sourceStage: fallbackRouting.sourceStage,
@@ -11629,6 +11635,7 @@ All openings must remain identical in position and size to the original image.`;
           console.log("[STAGE2] Retry using corrective structural prompt");
         }
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
+        const retryStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
         const retryOutputPath = siblingOutPath(stage2InputResolved, `-2-retry${attempt - 1}`, ".webp");
         // IMPORTANT:
         // Retry-1 remains near-identical to initial Stage-2 generation except targeted
@@ -11666,6 +11673,7 @@ All openings must remain identical in position and size to the original image.`;
                 attemptNumber: useReinforcedRetry ? 1 : attempt - 1,
               },
             layoutPlan: stage2LayoutPlan,
+            structuralBaseline: retryStructuralBaseline,
             structuralConstraintBlock,
             modelReason: `stage2 unified retry ${attempt - 1}`,
           })

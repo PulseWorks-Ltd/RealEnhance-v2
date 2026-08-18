@@ -26,6 +26,7 @@ import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemet
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
 import { buildAnchorLockedStage2Prompt } from "./anchorLockedStaging";
+import type { StructuralBaseline } from "../validators/openingPreservationValidator";
 import { grokImageEdit, grokImageModel } from "../ai/grok";
 
 const logger = console;
@@ -623,6 +624,8 @@ export async function runStage2GenerationAttempt(
     structuralConstraintBlock?: string;
     retryType?: string;
     retryInstructions?: string | null;
+    /** Pre-resolved structural baseline — see buildAnchorLockedStage2Prompt's own doc comment. */
+    structuralBaseline?: StructuralBaseline | null;
   }
 ): Promise<string> {
   const attemptNumber = Math.max(1, opts.attempt ?? 1);
@@ -852,6 +855,7 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
       roomType: canonicalRoomType,
       jobId: opts.jobId,
       imageId: opts.imageId,
+      structuralBaseline: opts.structuralBaseline,
     });
     if (anchorLockedResult.prompt) {
       stage2Prompt = anchorLockedResult.prompt;
@@ -1224,6 +1228,8 @@ export async function runStage2(
     layoutPlan?: Stage2LayoutPlan | null;
     retryType?: string;
     retryInstructions?: string | null;
+    /** Pre-resolved structural baseline — see buildAnchorLockedStage2Prompt's own doc comment. */
+    structuralBaseline?: StructuralBaseline | null;
   }
 ): Promise<Stage2Result> {
   const validationBaseline = opts.stage1APath || basePath;
@@ -1295,6 +1301,7 @@ export async function runStage2(
       retryInstructions: opts.retryInstructions,
       modelReason: attempt === 1 ? "stage2_initial_generation" : `stage2_retry_generation_attempt_${attempt}`,
       structuralRetryContext,
+      structuralBaseline: opts.structuralBaseline,
     });
 
     if (path.resolve(generatedPath) === path.resolve(validationBaseline)) {

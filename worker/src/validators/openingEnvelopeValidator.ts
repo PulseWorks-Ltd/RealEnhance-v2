@@ -49,6 +49,7 @@ import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline, StructuralOpening } from "./openingPreservationValidator";
 import { runEnvelopeValidator } from "./envelopeValidator";
+import { runFabricatedOpeningCheck, type FabricatedOpeningCheckResult } from "./fabricatedOpeningCheck";
 import {
   HUMAN_EYE_FRAMING,
   buildObservationOnlyItemList,
@@ -86,6 +87,7 @@ export type OpeningEnvelopeValidatorResult = {
   itemResults: EnrichedOpeningResult[];
   materialAlteredItems: EnrichedOpeningResult[];
   lowMaterialityItems: EnrichedOpeningResult[];
+  fabricatedOpeningCheck: FabricatedOpeningCheckResult;
 };
 
 const OPENING_SYSTEM_INSTRUCTION = `You are checking whether architectural openings (windows, doors, walkthroughs, closet doors) from a room's baseline photo are still genuinely present in a staged (furnished) version — as opposed to merely being partly hidden behind normal staging furniture, which is expected and acceptable.
@@ -124,7 +126,7 @@ export async function runOpeningEnvelopeValidator(
   baseline: StructuralBaseline,
   ctx: { jobId: string; imageId: string; attempt?: number }
 ): Promise<OpeningEnvelopeValidatorResult> {
-  const [raw, envelopeResult] = await Promise.all([
+  const [raw, envelopeResult, fabricatedOpeningCheck] = await Promise.all([
     runOcclusionObservationCall({
       systemInstruction: OPENING_SYSTEM_INSTRUCTION,
       userPrompt: `${buildOpeningPhaseAPrompt(baseline)}\n\n${buildOpeningPhaseBPrompt(baseline)}`,
@@ -139,6 +141,12 @@ export async function runOpeningEnvelopeValidator(
         .filter((o) => o.paneStructure === "sliding_panel")
         .map((o) => o.description || `${o.type} on ${o.wallPosition || `wall ${o.wallIndex}`}`),
     }),
+    // Independent of the two calls above — see fabricatedOpeningCheck.ts's
+    // header for why this exists as a separate two-call structure rather
+    // than folding into either. Always runs call 1 (cheap, single call);
+    // call 2 only fires when call 1 actually flags something, so the
+    // common (clean-image) case costs one extra call, not two.
+    runFabricatedOpeningCheck(baselineImagePath, stagedImagePath, baseline, ctx),
   ]);
 
   const observations: OcclusionObservationRaw[] = Array.isArray(raw?.observations) ? raw.observations : [];
@@ -158,7 +166,7 @@ export async function runOpeningEnvelopeValidator(
   const materialAlteredItems = itemResults.filter((r) => r.materiality === "material" && r.altered);
   const lowMaterialityItems = itemResults.filter((r) => r.materiality === "low_materiality");
 
-  const opening: ValidatorOutcome =
+  const standardOpening: ValidatorOutcome =
     materialAlteredItems.length === 0
       ? { status: "pass", reason: "opening_envelope_validator: no material alteration detected", confidence: 0.9, hardFail: false, issueType: ISSUE_TYPES.NONE, issueTier: "none", advisorySignals: [] }
       : {
@@ -171,5 +179,30 @@ export async function runOpeningEnvelopeValidator(
           advisorySignals: materialAlteredItems.map((a) => `${a.id}:${a.verdict}`),
         };
 
-  return { opening, envelope: envelopeResult, itemResults, materialAlteredItems, lowMaterialityItems };
+  // Combine with the fabricated-opening check's verdict (deterministic,
+  // code-side — see the task's own decision-logic spec):
+  // - "clean" (call 1 found nothing unlisted) → standard result stands.
+  // - "fabricated" (call 2 confirmed absent from baseline) → hard fail,
+  //   overriding a standard "pass" it wouldn't otherwise have caught (this
+  //   is exactly the gap that motivated building this check).
+  // - "baseline_extraction_miss" (call 2 found it present in baseline too)
+  //   → the standard check's own confusion about this same missing/
+  //   misplaced baseline entry is presumed connected; if the standard
+  //   check hard-failed, override it to pass rather than block a job over
+  //   an extraction gap this check has independently confirmed is benign.
+  let opening = standardOpening;
+  if (fabricatedOpeningCheck.verdict === "fabricated") {
+    opening = fabricatedOpeningCheck.outcome;
+  } else if (fabricatedOpeningCheck.verdict === "baseline_extraction_miss" && standardOpening.status === "fail") {
+    opening = {
+      ...standardOpening,
+      status: "pass",
+      hardFail: false,
+      issueType: ISSUE_TYPES.NONE,
+      issueTier: "none",
+      reason: `${standardOpening.reason} | OVERRIDDEN by fabricated_opening_check (baseline_extraction_miss): ${fabricatedOpeningCheck.outcome.reason}`,
+    };
+  }
+
+  return { opening, envelope: envelopeResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedOpeningCheck };
 }

@@ -1451,11 +1451,33 @@ Beyond the anchor items above and the structural constraints above, use your own
   };
 }
 
+// Per-job wall-visibility cache. extractWallVisibility (below) has no other
+// caller and no other cache anywhere in the codebase — unlike
+// extractStructuralBaseline, which already had worker.ts's proper
+// structuralBaseline/structuralBaselinePromise cache that this function was
+// simply bypassing. Same underlying waste (a fresh Gemini call on the same
+// unchanged baseline image, once per Stage 2 generation attempt), but
+// there's no pre-existing cross-call-site cache to plug into here, so a
+// small, self-contained, jobId-keyed cache is added directly in this
+// module instead — same in-memory-Map, no-explicit-eviction pattern
+// already used by worker.ts's own stage2LayoutPlanCache.
+const wallVisibilityCache = new Map<string, WallVisibilityWall[] | null>();
+
 export async function buildAnchorLockedStage2Prompt(opts: {
   imagePath: string;
   roomType: string;
   jobId: string;
   imageId: string;
+  /**
+   * Pre-resolved structural baseline, if the caller already has one
+   * (worker.ts caches this per-job and reuses it across every Stage 2
+   * generation attempt and every validator). When provided, this function
+   * skips its own extractStructuralBaseline call entirely. When omitted
+   * (e.g. a caller outside worker.ts's cached flow), falls back to
+   * extracting it itself — preserves prior behavior as a safety net,
+   * never a hard requirement.
+   */
+  structuralBaseline?: StructuralBaseline | null;
 }): Promise<AnchorLockedPromptResult> {
   const baseDiagnostics: AnchorLockedPromptResult["diagnostics"] = {
     roomType: opts.roomType,
@@ -1480,14 +1502,24 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   }
 
   let baseline: StructuralBaseline;
-  try {
-    baseline = await extractStructuralBaseline(opts.imagePath, { jobId: opts.jobId, imageId: opts.imageId });
-  } catch (e) {
-    return fallback(`baseline_extraction_failed:${String(e)}`);
+  if (opts.structuralBaseline) {
+    baseline = opts.structuralBaseline;
+  } else {
+    try {
+      baseline = await extractStructuralBaseline(opts.imagePath, { jobId: opts.jobId, imageId: opts.imageId });
+    } catch (e) {
+      return fallback(`baseline_extraction_failed:${String(e)}`);
+    }
   }
   baseDiagnostics.baselineExtracted = true;
 
-  const walls = await extractWallVisibility(opts.imagePath, baseline, { jobId: opts.jobId, imageId: opts.imageId });
+  let walls: WallVisibilityWall[] | null;
+  if (wallVisibilityCache.has(opts.jobId)) {
+    walls = wallVisibilityCache.get(opts.jobId)!;
+  } else {
+    walls = await extractWallVisibility(opts.imagePath, baseline, { jobId: opts.jobId, imageId: opts.imageId });
+    wallVisibilityCache.set(opts.jobId, walls);
+  }
   if (!walls) {
     return fallback("wall_visibility_extraction_failed", baseDiagnostics);
   }
