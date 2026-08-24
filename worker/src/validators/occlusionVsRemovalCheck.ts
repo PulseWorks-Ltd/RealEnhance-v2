@@ -613,6 +613,26 @@ const RESIZED_PATTERNS: RegExp[] = [
   /\bsubstantially (smaller|larger)\b/,
 ];
 
+// Real production false positives (2026-08-24 batch, job_bb5814f4 attempt 1
+// opening A1, job_f61d8dc1 attempt 2 opening D1): RESIZED_PATTERNS' half/
+// double/twice check matched "half-wall height" (an architectural
+// half-height wall — a compound noun, not a size claim about the item) and
+// "roughly half the room width" (the item's own spatial extent relative to
+// the ROOM, not a claim its own width is half of what it used to be).
+// BOTH real captured sentences explicitly asserted NO change elsewhere in
+// the same text ("no visible enlargement, shrinkage, or shift", "matches
+// closely...in size, shape, and wall position"), yet still hard-failed the
+// job as resized. Checked before RESIZED_PATTERNS, same precedence as
+// OPENING_JAMB_CONTEXT_PATTERNS/WALL_ADJACENT_TO_ITEM_PATTERNS above: a
+// narrow, specific context exclusion wins over the generic half/double/
+// twice check, rather than trying to make that check itself precise enough
+// to tell "half of the item's own former size" apart from "half of some
+// unrelated reference" in the general case.
+const RESIZE_FALSE_POSITIVE_CONTEXT_PATTERNS: RegExp[] = [
+  /\bhalf[- ]wall\b/,
+  /\bhalf (the|this) room\b/,
+];
+
 // Real production bug found (Bedroom 14, "job_b29d5e7d"): the model wrote
 // "...same general height and width, not visibly shortened, narrowed, or
 // shifted along the wall" — a plain assertion of NO change — but the old
@@ -684,6 +704,12 @@ const RESIZE_REPOSITION_NEGATION_CUE_PATTERN = /\b(not|never|no longer|without|n
 
 export function classifyResized(text: string): ClassifiedSignal {
   const t = ` ${String(text || "").toLowerCase()} `;
+  for (const p of RESIZE_FALSE_POSITIVE_CONTEXT_PATTERNS) {
+    const m = t.match(p);
+    if (m && m.index !== undefined) {
+      return { value: false, confidence: "high", matchedPattern: `excluded_context:${p.source}` };
+    }
+  }
   for (const p of SAME_SIZE_PATTERNS) {
     const m = t.match(p);
     if (m && m.index !== undefined && !isLikelyNegated(t, m.index, 50, RESIZE_REPOSITION_NEGATION_CUE_PATTERN)) {

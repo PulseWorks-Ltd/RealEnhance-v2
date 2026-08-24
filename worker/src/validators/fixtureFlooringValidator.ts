@@ -53,6 +53,18 @@ export type FixtureFlooringValidatorResult = {
   vanishedLandmarkCheck: VanishedLandmarkItemResult[];
 };
 
+// Confirmed real production false positives (2026-08-24 batch): every
+// standalone hard-fail traced back to a small ceiling downlight being read
+// as "replaced"/"removed" — plausibly camera-angle/lighting sensitivity on
+// a small recessed fixture, not a genuine staging violation. Downlight
+// changes still get reported (status/reason/advisorySignals cover every
+// altered item, same as before) — they just can't hard-fail a job on their
+// own. A downlight alongside a genuine non-downlight alteration (e.g. a
+// fireplace change) still hard-fails, driven by the real issue.
+function isDownlightItem(item: { type: string; description: string }): boolean {
+  return item.type === "light_fixture" && /\b(downlight|recessed)\b/i.test(item.description || "");
+}
+
 function toPickedItems(fixtures: AnchorFixture[]): PickedItem[] {
   return (fixtures || []).map((f) => ({
     id: f.id,
@@ -138,6 +150,7 @@ export async function runFixtureFlooringValidator(
 
   const materialAlteredItems = itemResults.filter((r) => r.materiality === "material" && r.altered);
   const lowMaterialityItems = itemResults.filter((r) => r.materiality === "low_materiality");
+  const nonDownlightAlteredItems = materialAlteredItems.filter((r) => !isDownlightItem(r));
 
   let fixture: ValidatorOutcome =
     materialAlteredItems.length === 0
@@ -146,7 +159,10 @@ export async function runFixtureFlooringValidator(
           status: "fail",
           reason: `fixture_flooring_validator: ${materialAlteredItems.map((a) => `${a.id} (${a.description}): verdict=${a.verdict} — ${a.verdict === "resized" ? a.rawObservation.extentComparisonDescription : a.rawObservation.currentStateDescription}`).join(" | ")}`,
           confidence: Math.min(...materialAlteredItems.map((a) => a.confidence ?? 0.8)),
-          hardFail: true,
+          // Downlight-only alterations are reported (status/reason/advisorySignals
+          // above still cover them) but cannot hard-fail on their own — see
+          // isDownlightItem's header comment.
+          hardFail: nonDownlightAlteredItems.length > 0,
           issueType: ISSUE_TYPES.FIXTURE_CHANGED,
           issueTier: classifyIssueTier(ISSUE_TYPES.FIXTURE_CHANGED),
           advisorySignals: materialAlteredItems.map((a) => `${a.id}:${a.verdict}`),
