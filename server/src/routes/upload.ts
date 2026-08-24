@@ -70,6 +70,16 @@ interface DirectUploadedImage {
   key: string;
 }
 
+// Direct-upload S3 keys are always createPresignedUploadUrl's
+// `${prefix}/${Date.now()}-${randomUUID()}-${safeName}` — recover the
+// original (sanitized) filename from the key for jobs that never carry a
+// multipart `f` (the direct-upload-to-S3 flow bypasses req.files entirely).
+function extractOriginalFilenameFromKey(key: string): string | undefined {
+  const base = key.split("/").pop() || "";
+  const match = base.match(/^\d+-[0-9a-fA-F-]{36}-(.+)$/);
+  return (match ? match[1] : base) || undefined;
+}
+
 function safeParseUploadedKeys(raw: unknown): DirectUploadedImage[] {
   const parsed = typeof raw === "string"
     ? (() => {
@@ -945,7 +955,7 @@ export function uploadRouter() {
         userId: sessUser.id,
         imageId,
         clientBatchId,
-        originalFilename: f.originalname || undefined,
+        originalFilename: f?.originalname || (directUpload ? extractOriginalFilenameFromKey(directUpload.key) : undefined),
         batchTotalJobs: uploadCount,
         remoteOriginalUrl,
         remoteOriginalKey,
