@@ -146,6 +146,7 @@ const STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS = Math.max(
   Number(process.env.STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS || 86400)
 );
 const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
+const PRODUCTION_LOG_MODE = process.env.PRODUCTION_LOG_MODE === "true";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 const STAGE2_ANCHOR_PLANNER_ENABLED = String(process.env.STAGE2_ANCHOR_PLANNER_ENABLED || "1") !== "0";
 const STAGE2_ANCHOR_MIN_CONFIDENCE = Number(process.env.STAGE2_ANCHOR_MIN_CONFIDENCE || 0.7);
@@ -213,7 +214,7 @@ import type { StructuralSignal } from "./validators/structuralSignal";
 import { deduplicateSignals } from "./validators/structuralSignal";
 import { canStage, logStagingBlocked, type SceneType } from "../../shared/staging-guard";
 import type { StructuralInvariantViolationType } from "./validators/structuralInvariantDecision";
-import { vLog, nLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
+import { vLog, nLog, vDetailLog, isValidationFocusMode, logIfNotFocusMode } from "./logger";
 import {
   VALIDATOR_FOCUS,
   STRUCTURAL_SIGNALS_MODE,
@@ -471,7 +472,7 @@ async function applyFinalPresentationPolish(buffer: Buffer, analysis: Stage1AAna
 
   const saturationBoost = isExterior ? 0.08 : 0.04;
 
-  console.log("[Stage2 Polish]", {
+  nLog("[Stage2 Polish]", {
     luminanceMean,
     luminanceStdev,
     brightnessLift,
@@ -531,13 +532,19 @@ function logJobErrorAndThrow(job: any, reason: string, extra: Record<string, any
 }
 
 function shouldLog(eventType?: string): boolean {
-  if (!VALIDATOR_LOGS_FOCUS) return true;
+  // This allowlist is the "key information and summaries" tier — enforced
+  // only under PRODUCTION_LOG_MODE=true (the top verbosity tier).
+  // VALIDATOR_LOGS_FOCUS (the middle tier) suppresses specialist-validator
+  // detail elsewhere (nLog/vDetailLog) but leaves these lifecycle/summary
+  // events alone.
+  if (!PRODUCTION_LOG_MODE) return true;
 
   const allowedEvents = new Set([
     "SYSTEM_START",
     "SYSTEM_ERROR",
     "UNHANDLED_EXCEPTION",
     "PIPELINE_START",
+    "SOURCE_RESOLVED",
     "AWS_S3_FAILURE",
     "MODEL_FAILURE",
     "FATAL_RETRY_EXHAUSTION",
@@ -559,7 +566,7 @@ function logStructured(event: string, payload: Record<string, any>) {
   try {
     logEvent(event, payload);
   } catch (err) {
-    if (!VALIDATOR_LOGS_FOCUS) {
+    if (!PRODUCTION_LOG_MODE) {
       nLog("[STRUCTURED_LOG_ERROR]", {
         event,
         error: (err as any)?.message || String(err),
@@ -603,7 +610,28 @@ type ForensicBatchState = {
   batchId: string;
   jobs: Map<string, ForensicJobEntry>;
   activeJobIds: Set<string>;
+  // Total jobs expected in this batch, known upfront from the upload
+  // request (payload.batchTotalJobs — stamped server-side, since the
+  // upload handler knows exactly how many files were submitted together).
+  // Real production incident (2026-08-24): without this, activeJobIds
+  // grows lazily as each job happens to START processing rather than all
+  // at once when the batch is known, so a fast job could drop the active
+  // count to zero and fire the summary before slower jobs in the SAME
+  // batch had even registered — one real 6-job batch produced 4 separate,
+  // partial summaries instead of one complete one. null when unknown
+  // (e.g. legacy/manual-retry jobs with no batch context) — falls back to
+  // the original activeJobIds-only completion check in that case.
+  expectedTotal: number | null;
+  // Grace-window timer used when expectedTotal is known but not yet fully
+  // registered (batch.jobs.size < expectedTotal) at the moment
+  // activeJobIds drains to zero — e.g. under WORKER_CONCURRENCY < batch
+  // size, later jobs haven't started yet, or (rarer) a job never reached
+  // the worker at all. Cleared/reset on every finalize; null when no
+  // timer is pending.
+  finalizeGraceTimer: NodeJS.Timeout | null;
 };
+
+const FORENSIC_BATCH_FINALIZE_GRACE_MS = 60_000;
 
 const batchForensicCollectors = new Map<string, ForensicBatchState>();
 const forensicJobBatchIndex = new Map<string, string>();
@@ -975,8 +1003,22 @@ function beginBatchForensicForJob(payload: any) {
       batchId,
       jobs: new Map<string, ForensicJobEntry>(),
       activeJobIds: new Set<string>(),
+      expectedTotal: null,
+      finalizeGraceTimer: null,
     };
     batchForensicCollectors.set(batchId, batch);
+  }
+
+  // Every job in the same real upload batch carries the same
+  // batchTotalJobs value (stamped once, server-side, at upload time) — set
+  // it from whichever job happens to register first; a defensive re-check
+  // in case an earlier-registering job's payload didn't carry it for some
+  // reason (e.g. a mixed batch with one legacy client).
+  if (batch.expectedTotal === null) {
+    const total = Number(payload?.batchTotalJobs);
+    if (Number.isFinite(total) && total > 0) {
+      batch.expectedTotal = total;
+    }
   }
 
   if (!batch.jobs.has(jobId)) {
@@ -1041,54 +1083,69 @@ function emitBatchForensicSummary(batch: ForensicBatchState) {
       ? jobs.reduce((sum, job) => sum + (job.attempts?.length || 0), 0) / jobsTotal
       : 0;
 
-  nLog("[BATCH_FORENSIC_SUMMARY]");
-  nLog(`batch=${batch.batchId}`);
-  nLog(`jobs=${jobsTotal}`);
-  nLog(`completed=${jobsCompleted}`);
-  nLog(`failed=${jobsFailed}`);
-  nLog(`avg_attempts=${avgStage2Attempts.toFixed(2)}`);
-
   const styleDistribution = jobs.reduce<Record<string, number>>((acc, job) => {
     const style = safeStyle(job.stagingStyle);
     acc[style] = (acc[style] || 0) + 1;
     return acc;
   }, {});
-  nLog("STAGING STYLE DISTRIBUTION");
+
+  // Built as one string and emitted via a single write below — the
+  // previous version made dozens of separate nLog() calls (one per field
+  // per attempt per job), and under real concurrency other jobs' unrelated
+  // log output interleaved between them, corrupting the summary in exactly
+  // the way this session's manual log analysis fought all night. A single
+  // atomic write is immune to that.
+  const lines: string[] = [];
+  lines.push("[BATCH_FORENSIC_SUMMARY]");
+  lines.push(`batch=${batch.batchId}`);
+  lines.push(`jobs=${jobsTotal}`);
+  lines.push(`expected_total=${batch.expectedTotal ?? "unknown"}`);
+  lines.push(`completed=${jobsCompleted}`);
+  lines.push(`failed=${jobsFailed}`);
+  lines.push(`avg_attempts=${avgStage2Attempts.toFixed(2)}`);
+
+  lines.push("STAGING STYLE DISTRIBUTION");
   for (const [style, count] of Object.entries(styleDistribution).sort((a, b) => a[0].localeCompare(b[0]))) {
-    nLog(`${style}: ${count}`);
+    lines.push(`${style}: ${count}`);
   }
 
   for (const job of jobs) {
-    nLog(`JOB ${job.jobId}`);
-    nLog(`image=${job.imageName || "unknown"}`);
-    nLog(`stagingStyle=${safeStyle(job.stagingStyle)}`);
-    nLog(`upload=${job.uploadUrl || ""}`);
-    nLog(`stage1A=${job.stage1AUrl || ""}`);
+    lines.push(`JOB ${job.jobId}`);
+    lines.push(`image=${job.imageName || "unknown"}`);
+    lines.push(`stagingStyle=${safeStyle(job.stagingStyle)}`);
+    lines.push(`upload=${job.uploadUrl || ""}`);
+    lines.push(`stage1A=${job.stage1AUrl || ""}`);
 
     const attempts = [...(job.attempts || [])].sort((a, b) => a.attemptNumber - b.attemptNumber);
     for (const attempt of attempts) {
-      nLog(`ATTEMPT ${attempt.attemptNumber}`);
-      nLog(`stagingStyle=${safeStyle(job.stagingStyle)}`);
-      nLog(`stage=${attempt.pipelineStage}`);
-      nLog(`model=${attempt.model}`);
-      nLog(`retry_reason=${attempt.retryReason}`);
-      nLog(`retry_trigger=${attempt.retryTrigger}`);
-      nLog(`validator_warnings=${attempt.validatorWarnings.join("|")}`);
-      nLog(`decision_source=${attempt.decisionSource}`);
-      nLog(`composite=${attempt.compositeDecision}`);
-      nLog(`gemini_confirmation=${attempt.geminiConfirmation}`);
-      nLog(`gemini_result=${attempt.geminiResult}`);
-      nLog(`candidate=${attempt.candidateUrl || ""}`);
-      nLog(`output=${attempt.outputUrl || ""}`);
-      nLog(`artifact_urls=${(attempt.artifactUrls || []).join(",")}`);
+      lines.push(`ATTEMPT ${attempt.attemptNumber}`);
+      lines.push(`stagingStyle=${safeStyle(job.stagingStyle)}`);
+      lines.push(`stage=${attempt.pipelineStage}`);
+      lines.push(`model=${attempt.model}`);
+      lines.push(`retry_reason=${attempt.retryReason}`);
+      lines.push(`retry_trigger=${attempt.retryTrigger}`);
+      lines.push(`validator_warnings=${attempt.validatorWarnings.join("|")}`);
+      lines.push(`decision_source=${attempt.decisionSource}`);
+      lines.push(`composite=${attempt.compositeDecision}`);
+      lines.push(`gemini_confirmation=${attempt.geminiConfirmation}`);
+      lines.push(`gemini_result=${attempt.geminiResult}`);
+      lines.push(`candidate=${attempt.candidateUrl || ""}`);
+      lines.push(`output=${attempt.outputUrl || ""}`);
+      lines.push(`artifact_urls=${(attempt.artifactUrls || []).join(",")}`);
     }
 
-    nLog("FINAL");
-    nLog(`status=${job.finalStatus}`);
-    nLog(`warnings=${job.warningsCount}`);
-    nLog(`completion_guard=${job.completionGuard}`);
-    nLog(`output=${job.finalOutputUrl || ""}`);
+    lines.push("FINAL");
+    lines.push(`status=${job.finalStatus}`);
+    lines.push(`warnings=${job.warningsCount}`);
+    lines.push(`completion_guard=${job.completionGuard}`);
+    lines.push(`output=${job.finalOutputUrl || ""}`);
   }
+
+  // Deliberately bypasses nLog: this summary must survive every log
+  // verbosity tier (VALIDATOR_LOGS_FOCUS, PRODUCTION_LOG_MODE) — it's the
+  // one thing meant to be kept regardless of how quiet the rest of the
+  // logs are.
+  console.log(lines.join("\n"));
 }
 
 async function finalizeBatchForensicForJob(jobId: string, payload: any) {
@@ -1123,7 +1180,13 @@ async function finalizeBatchForensicForJob(jobId: string, payload: any) {
   }
 
   batch.activeJobIds.delete(jobId);
-  if (batch.activeJobIds.size === 0) {
+
+  if (batch.finalizeGraceTimer) {
+    clearTimeout(batch.finalizeGraceTimer);
+    batch.finalizeGraceTimer = null;
+  }
+
+  const finalizeNow = () => {
     try {
       emitBatchForensicSummary(batch);
     } catch (err) {
@@ -1133,7 +1196,27 @@ async function finalizeBatchForensicForJob(jobId: string, payload: any) {
     for (const key of batch.jobs.keys()) {
       forensicJobBatchIndex.delete(key);
     }
+  };
+
+  if (batch.activeJobIds.size !== 0) return;
+
+  const allJobsRegistered = batch.expectedTotal === null || batch.jobs.size >= batch.expectedTotal;
+  if (allJobsRegistered) {
+    finalizeNow();
+    return;
   }
+
+  // expectedTotal is known but not every job in the batch has registered
+  // yet (still queued behind WORKER_CONCURRENCY, or — rarer — one never
+  // reached the worker at all, e.g. a payment/upload failure). Wait a
+  // grace window rather than firing immediately (would reintroduce the
+  // premature-fragmentation bug this fix targets) or waiting forever
+  // (would silently lose the summary for an otherwise-complete batch).
+  batch.finalizeGraceTimer = setTimeout(() => {
+    const stillPending = batchForensicCollectors.get(batchId);
+    if (!stillPending || stillPending.activeJobIds.size !== 0) return;
+    finalizeNow();
+  }, FORENSIC_BATCH_FINALIZE_GRACE_MS);
 }
 
 async function signS3Object(params: { bucket: string; key: string; expiresIn: number }): Promise<string> {
@@ -3891,9 +3974,7 @@ async function checkStage2AlreadyFinal(jobId: string, attemptedBy: string): Prom
           : attemptedBy === "stage2_only"
             ? "stage1B"
             : "partial";
-      if (!VALIDATOR_LOGS_FOCUS) {
-        console.log(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
-      }
+      nLog(`[COMPLETION_GUARD_BLOCKED] job=${jobId} attemptId=${attemptedBy} incomingType=${incomingType} finalStatusAlreadySet=true`);
       return true;
     }
   } catch {}
@@ -4358,7 +4439,7 @@ function emitValidatorBlockEnd(
   extra: Record<string, unknown> = {}
 ): void {
   try {
-    console.log(JSON.stringify({
+    vDetailLog(JSON.stringify({
       event: "VALIDATOR_BLOCK_END",
       jobId,
       validator,
@@ -4964,9 +5045,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }));
 
   if (isValidationFocusMode()) {
-    if (!VALIDATOR_LOGS_FOCUS) {
-      console.log("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
-    }
+    nLog("[VALIDATION_FOCUS_MODE] enabled — suppressing non-validator logs");
   }
 
   nLog(`========== PROCESSING JOB ${payload.jobId} ==========`);
@@ -5548,7 +5627,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stageOutputSigningCache.has(localPath)) {
       const cached = stageOutputSigningCache.get(localPath)!;
       annotateAttemptSignedUrl(stage, attempt, cached);
-      console.log(
+      nLog(
         `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${cached.signedUrl || ""}`
       );
       logStructured("STAGE_OUTPUT_SIGNED", {
@@ -5570,7 +5649,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const imageKey = signed.key;
     const signedUrl = signed.signedUrl;
 
-    console.log(
+    nLog(
       `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
     );
 
@@ -6935,7 +7014,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       const stage2OnlySelectedValidationMode = stage2OnlyIsRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
         ? "FULL_STAGE_ONLY"
         : stage2OnlyValidationMode;
-      console.log("STAGE2_VALIDATION_ROUTE", {
+      nLog("STAGE2_VALIDATION_ROUTE", {
         jobId: payload.jobId,
         isRefreshMode: stage2OnlyIsRefreshMode,
         routedTo: stage2OnlyIsRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
@@ -7901,7 +7980,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
   // UNIFIED VALIDATION CONFIGURATION (env-driven)
   nLog(`[worker] Validator config: structureMode=${structureValidatorMode}, localBlocking=${VALIDATION_BLOCKING_ENABLED ? "ENABLED" : "DISABLED"}, geminiConfirmation=${GEMINI_CONFIRMATION_ENABLED ? "ENABLED" : "DISABLED"}, geminiMode=${geminiValidatorMode}, sharpSemantic=${sharpFinalValidatorMode || "disabled"}, geminiSemantic=${geminiSemanticValidatorMode || "disabled"}`);
-  console.log("LOCAL_VALIDATOR_TIER:", LOCAL_VALIDATOR_TIER);
   nLog(`[worker] Local validator tier: ${LOCAL_VALIDATOR_TIER}`);
 
   // VALIDATOR FOCUS MODE: Print session header
@@ -7996,17 +8074,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // ═══════════════════════════════════════════════════════════════════════════
       const clientPred = clientScenePrediction;
       const skyReplacementAllowed = finalSkyModeResult.mode === "strong";
-      if (!VALIDATOR_LOGS_FOCUS) {
-        console.log(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
-          `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
-          `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
-          `skyReplacementAllowed=${skyReplacementAllowed} ` +
-          `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
-          `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
-          `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
-          `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
-          `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
-      }
+      nLog(`[SCENE_SKY_DECISION] imageId=${payload.imageId} ` +
+        `scene=${effectiveScene} skyMode=${finalSkyModeResult.mode} confidence=${fmt(primary?.confidence)} ` +
+        `coveredExteriorSuspect=${baseSkyModeResult.coveredExteriorSuspect} ` +
+        `skyReplacementAllowed=${skyReplacementAllowed} ` +
+        `reason=${(finalSkyModeResult as any).forcedReason || (skyReplacementAllowed ? 'confident_open_sky' : 'features_below_threshold')} ` +
+        `envThresholds={skyTop40Min:${finalSkyModeResult.thresholds.skyTop40Min},blueOverallMin:${finalSkyModeResult.thresholds.blueOverallMin}} ` +
+        `features={skyTop10:${fmt(finalSkyModeResult.features.skyTop10)},skyTop40:${fmt(finalSkyModeResult.features.skyTop40)},blueOverall:${fmt(finalSkyModeResult.features.blueOverall)}} ` +
+        `clientPrediction=${clientPred?.scene ?? 'null'}/${fmt(clientPred?.confidence)}/${clientPred?.reason ?? 'n/a'} ` +
+        `manualOverride=${hasManualSceneOverride} requiresConfirm=${requiresSceneConfirm}`);
     }
     // Room type (ONNX + heuristic fallback; fallback again to legacy heuristic)
     let room = await detectRoomType(buf).catch(async () => null as any);
@@ -10743,7 +10819,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const isRefreshValidationBehavior = isRefreshValidationFlow && !(
     isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
   );
-  console.log("STAGE2_VALIDATION_ROUTE", {
+  nLog("STAGE2_VALIDATION_ROUTE", {
     jobId: payload.jobId,
     isRefreshMode,
     routedTo: isRefreshMode && USE_FROM_EMPTY_VALIDATION_FOR_REFRESH
@@ -10855,9 +10931,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // Surface incoming stagingStyle before calling Stage 2
       const stagingStyleRaw: any = (payload as any)?.options?.stagingStyle;
-      if (!VALIDATOR_LOGS_FOCUS) {
-        console.info("[stage2] incoming stagingStyle =", stagingStyleRaw);
-      }
+      nLog("[stage2] incoming stagingStyle =", stagingStyleRaw);
       stagingStyleNorm = stagingStyleRaw && typeof stagingStyleRaw === 'string' ? stagingStyleRaw.trim() : undefined;
 
       // FIX 4: Add Stage 2 timeout with Promise.race
@@ -11341,7 +11415,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     Number(process.env.STAGE2_RETRY_GRACE_MS || 180000)
   );
   const logPostCompliancePhaseEnd = (phase: string, durationMs: number, extra: Record<string, unknown> = {}) => {
-    console.log(JSON.stringify({
+    vDetailLog(JSON.stringify({
       event: "POST_COMPLIANCE_PHASE_END",
       jobId: payload.jobId,
       validator: "post_compliance",
@@ -11640,9 +11714,9 @@ All openings must remain identical in position and size to the original image.`;
           }
         }
         if (useReinforcedRetry) {
-          console.log("[STAGE2] Retry-1 using reinforced structural prompt");
+          nLog("[STAGE2] Retry-1 using reinforced structural prompt");
         } else {
-          console.log("[STAGE2] Retry using corrective structural prompt");
+          nLog("[STAGE2] Retry using corrective structural prompt");
         }
         if (await stopIfCancelled("stage2_pre_retry_generation")) return;
         const retryStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
@@ -13289,7 +13363,7 @@ All openings must remain identical in position and size to the original image.`;
 
           specialistAdvisoryObservationsBatch.push(observation);
 
-          console.log("[SPECIALIST_SIGNAL]", {
+          nLog("[SPECIALIST_SIGNAL]", {
             category: validatorDomain,
             location,
             question,
@@ -13500,7 +13574,7 @@ All openings must remain identical in position and size to the original image.`;
         issueType === ISSUE_TYPES.OPENING_SEALED;
 
       const logOpeningEnvelopeRelation = (issueType: ValidationIssueType, openingHardFail?: boolean) => {
-        console.log("[OPENING_ENVELOPE_RELATION]", {
+        vDetailLog("[OPENING_ENVELOPE_RELATION]", {
           jobId: payload.jobId,
           issueType,
           openingHardFail,
@@ -15242,7 +15316,7 @@ All openings must remain identical in position and size to the original image.`;
       throw new Error("Retry produced invalid stage mapping (stage collapse)");
     }
 
-    console.log("[RETRY_STAGE_URLS_FINAL]", {
+    nLog("[RETRY_STAGE_URLS_FINAL]", {
       stage1A: finalizedStageUrls.stage1A,
       stage2: finalizedStageUrls.stage2,
       same: finalizedStageUrls.stage1A === finalizedStageUrls.stage2,
@@ -15828,6 +15902,7 @@ logEvent("SYSTEM_START", {
   build: BUILD_VERSION,
   queue: JOB_QUEUE_NAME,
   validatorLogsFocus: VALIDATOR_LOGS_FOCUS ? "1" : "0",
+  productionLogMode: PRODUCTION_LOG_MODE ? "true" : "false",
   signAllStageOutputs: SIGN_ALL_STAGE_OUTPUTS_ENABLED ? "1" : "0",
   signedUrlTtlSeconds: STAGE_OUTPUT_SIGNED_URL_TTL_SECONDS,
 });
@@ -16607,7 +16682,7 @@ const worker = new Worker(
             ? existingEditOutputs
             : [...existingEditOutputs, pub.url];
 
-          console.log("STAGE WRITE CHECK", {
+          nLog("STAGE WRITE CHECK", {
             before: (reJob as any)?.stageUrls || null,
             after: {
               ...(((reJob as any)?.stageUrls || {}) as Record<string, string | null | undefined>),

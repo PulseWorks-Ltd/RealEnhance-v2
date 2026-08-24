@@ -50,6 +50,7 @@
 // openingPreservationValidator.ts) — always Gemini, independent of
 // STAGE2_VALIDATOR_MODEL, exactly like that existing baseline extraction is
 // always Gemini regardless of which model later validates the staged image.
+import { vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -150,7 +151,7 @@ export async function extractFlooringZones(
         .map((z: any) => ({ id: z.id, bbox: z.bbox as [number, number, number, number], materialDescription: z.materialDescription }))
     : [];
 
-  console.log("[FLOORING_ZONE_BASELINE]", JSON.stringify({
+  vDetailLog("[FLOORING_ZONE_BASELINE]", JSON.stringify({
     jobId: ctx.jobId,
     imageId: ctx.imageId,
     zoneCount: zones.length,
@@ -508,7 +509,7 @@ export async function runFlooringBoundaryCheck(
           structuredIssues,
         };
 
-  console.log("[FLOORING_BOUNDARY_CHECK_RESULT]", JSON.stringify({
+  vDetailLog("[FLOORING_BOUNDARY_CHECK_RESULT]", JSON.stringify({
     jobId: ctx.jobId,
     imageId: ctx.imageId,
     zoneCount: zones.length,

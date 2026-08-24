@@ -1,3 +1,4 @@
+import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -13,7 +14,7 @@ export type EnvelopeValidatorResult = ValidatorOutcome & {
 };
 
 function logEnvelopeEvent(event: string, payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ event, ...payload }));
+  vDetailLog(JSON.stringify({ event, ...payload }));
 }
 
 function logEnvelopePhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
@@ -143,7 +144,7 @@ export function parseEnvelopeResult(rawText: string): EnvelopeValidatorResult {
     visualAmbiguity: parsed?.visualAmbiguity === true,
   });
 
-  console.log("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
+  vDetailLog("[ENVELOPE_GEOMETRIC_CERTAINTY]", {
     envelopeDetectedChange,
     geometricCertainty,
     reason: reasonCode || "envelope_preserved",
@@ -421,7 +422,7 @@ Non-fail certainty guard:
     if (vedResult) {
       (geminiResult as EnvelopeValidatorResult).verticalEdgeDelta = vedResult;
 
-      console.log("[ENVELOPE_VERTICAL_EDGE_DELTA]", {
+      vDetailLog("[ENVELOPE_VERTICAL_EDGE_DELTA]", {
         verticalEdgeLoss: vedResult.verticalEdgeLossDetected,
         cornerPersistenceFailure: vedResult.cornerPersistenceFailure,
         worstRetention: vedResult.worstRetention.toFixed(3),
@@ -464,7 +465,7 @@ Non-fail certainty guard:
         }
         // Do NOT hard-fail autonomously — emit structural signal and let Gemini adjudicate via mandatory verification.
         // Hard-fail will come from Gemini confirming the structural claim in runValidation.
-        console.log("[SPECIALIST_REVIEW][ENVELOPE]", {
+        nLog("[SPECIALIST_REVIEW][ENVELOPE]", {
           event: "corner_persistence_failure",
           worstRetention: vedResult.worstRetention.toFixed(3),
           junctionCount: vedResult.junctions.length,

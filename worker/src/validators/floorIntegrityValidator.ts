@@ -1,3 +1,4 @@
+import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -9,7 +10,7 @@ import type { ValidatorOutcome } from "./validatorOutcome";
 export type FloorIntegrityValidatorResult = ValidatorOutcome;
 
 function logFloorEvent(event: string, payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ event, ...payload }));
+  vDetailLog(JSON.stringify({ event, ...payload }));
 }
 
 function logFloorPhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
@@ -219,7 +220,7 @@ export function parseFloorIntegrityResult(rawText: string): FloorIntegrityValida
     advisorySignals,
   });
 
-  console.log("[SPECIALIST_REVIEW][FLOOR]", {
+  nLog("[SPECIALIST_REVIEW][FLOOR]", {
     ok: finalOk,
     advisory,
     hardFail,

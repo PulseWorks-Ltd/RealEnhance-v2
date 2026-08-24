@@ -166,6 +166,8 @@ export interface EnhanceJobPayload {
   propertyId?: string | null;
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   manualSceneOverride?: boolean;
+  originalFilename?: string; // Human-readable uploaded filename, for forensic/summary logging
+  batchTotalJobs?: number; // Total number of jobs in this upload batch (clientBatchId), known upfront at upload time — lets the worker's batch forensic summary wait for the whole batch instead of firing as soon as any one job's activeJobIds count happens to hit zero
   options: {
     declutter: boolean;
     virtualStage: boolean;

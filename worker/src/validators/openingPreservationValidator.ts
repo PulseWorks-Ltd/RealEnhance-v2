@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
@@ -1349,7 +1350,7 @@ function reconcileOpeningMatches(
     if (!hasUniqueWinner || !top) continue;
 
     if (top.canonicalIdentityApplied) {
-      console.log("[CANONICALIZATION_APPLIED]", JSON.stringify({
+      vDetailLog("[CANONICALIZATION_APPLIED]", JSON.stringify({
         openingId: base.id,
         originalTypes: [base.type, top.candidate.type],
         canonicalIdentity: CANONICAL_APERTURE_IDENTITY,
@@ -1988,14 +1989,14 @@ async function extractStructuralBaselineOnce(
   if (options?.timing) {
     options.timing.normalizationMs += Date.now() - normalizationStartedAt;
   }
-  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+  vDetailLog("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
     stage: "gemini_structural_extraction",
     durationMs: Date.now() - stageStartedAt,
   }));
-  console.log("[OPENING_BASELINE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE]", JSON.stringify({
     openings: baseline.openings.map((opening) => ({
       id: opening.id,
       type: opening.type,
@@ -2092,7 +2093,7 @@ async function verifyStructuralBaselineOnce(
   if (options?.timing) {
     options.timing.normalizationMs += Date.now() - normalizationStartedAt;
   }
-  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+  vDetailLog("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
@@ -2144,7 +2145,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
         analysis: undefined,
       },
     };
-    console.log("[STRUCTURAL_BASELINE_CACHE_HIT]", JSON.stringify({
+    vDetailLog("[STRUCTURAL_BASELINE_CACHE_HIT]", JSON.stringify({
       imageHash,
       graphHash: cached.graphHash,
       extractionAgreement: cached.extractionAgreement,
@@ -2152,14 +2153,14 @@ async function stabilizeStructuralBaselineGraphConsensus(
       openingCountVariance: cached.openingCountVariance,
       baselineMethod: "graph_consensus",
     }));
-    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       extractionCalls: 0,
       cacheStatus: "hit",
     }));
-    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
@@ -2167,7 +2168,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
       totalGeminiCalls: 0,
     }));
     const totalMs = sumBaselineTimingBreakdown(timing);
-    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageDownloadMs: timing.imageDownloadMs,
@@ -2204,7 +2205,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
       timing.graphBuildMs += Date.now() - hashStartedAt;
       passResults.push(baseline);
       passHashes.push(graphHash);
-      console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
+      vDetailLog("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
         jobId: options?.jobId,
         imageId: options?.imageId,
         imageHash,
@@ -2286,7 +2287,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   );
   timing.graphBuildMs += Date.now() - graphBuildStartedAt;
 
-  console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
+  vDetailLog("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2299,7 +2300,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
     cacheStatus: graphMeta.cacheStatus,
     baselineMethod: "graph_consensus",
   }));
-  console.log("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
+  vDetailLog("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2315,14 +2316,14 @@ async function stabilizeStructuralBaselineGraphConsensus(
 
   const stabilizedGraph = { ...consensus.graph, graphMeta };
 
-  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
     extractionCalls: passResults.length,
     cacheStatus: graphMeta.cacheStatus,
   }));
-  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
@@ -2351,7 +2352,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   }
 
   const totalMs = sumBaselineTimingBreakdown(timing);
-  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageDownloadMs: timing.imageDownloadMs,
@@ -2382,14 +2383,14 @@ async function stabilizeStructuralBaselineWithVerification(
   const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
   if (cached?.graphStable && cached.graph) {
-    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       extractionCalls: 0,
       cacheStatus: "hit",
     }));
-    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
@@ -2397,7 +2398,7 @@ async function stabilizeStructuralBaselineWithVerification(
       totalGeminiCalls: 0,
     }));
     const totalMs = sumBaselineTimingBreakdown(timing);
-    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageDownloadMs: timing.imageDownloadMs,
@@ -2441,7 +2442,7 @@ async function stabilizeStructuralBaselineWithVerification(
   const primaryHashStartedAt = Date.now();
   const primaryHash = hashStructuralBaselineGraph(primaryBaseline);
   timing.graphBuildMs += Date.now() - primaryHashStartedAt;
-  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2469,7 +2470,7 @@ async function stabilizeStructuralBaselineWithVerification(
   const adjustedMinorDifferenceCount = minorDifferenceCount + wallAssignmentOnlyCount;
   const adjustedMateriallyDifferentCount = Math.max(0, materiallyDifferentCount - wallAssignmentOnlyCount);
 
-  console.log("[BASELINE_VERIFICATION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_VERIFICATION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2545,21 +2546,21 @@ async function stabilizeStructuralBaselineWithVerification(
       ...primaryBaseline,
       graphMeta,
     };
-    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       extractionCalls: 2,
       cacheStatus: graphMeta.cacheStatus,
     }));
-    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       baselineExtractionDurationMs: Date.now() - modeStartedAt,
       totalGeminiCalls: 2,
     }));
-    console.log("[BASELINE_VERIFICATION_ACCEPTED]", JSON.stringify({
+    vDetailLog("[BASELINE_VERIFICATION_ACCEPTED]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageHash,
@@ -2590,7 +2591,7 @@ async function stabilizeStructuralBaselineWithVerification(
     }
 
     const totalMs = sumBaselineTimingBreakdown(timing);
-    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageDownloadMs: timing.imageDownloadMs,
@@ -2609,7 +2610,7 @@ async function stabilizeStructuralBaselineWithVerification(
     return acceptedBaseline;
   }
 
-  console.log("[BASELINE_VERIFICATION_REJECTED]", JSON.stringify({
+  vDetailLog("[BASELINE_VERIFICATION_REJECTED]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2680,14 +2681,14 @@ async function stabilizeStructuralBaselineWithVerification(
     },
   };
 
-  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
     extractionCalls: 3,
     cacheStatus: result.graphMeta?.cacheStatus,
   }));
-  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
@@ -2695,7 +2696,7 @@ async function stabilizeStructuralBaselineWithVerification(
     totalGeminiCalls: 3,
   }));
   const totalMs = sumBaselineTimingBreakdown(timing);
-  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageDownloadMs: timing.imageDownloadMs,
@@ -2711,7 +2712,7 @@ async function stabilizeStructuralBaselineWithVerification(
     totalMs,
   }));
 
-  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2784,13 +2785,13 @@ async function stabilizeStructuralBaselineSinglePass(
     },
   };
 
-  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "single_pass",
     extractionCalls: 1,
   }));
-  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2799,7 +2800,7 @@ async function stabilizeStructuralBaselineSinglePass(
     graphHash,
     openingCount: baseline.openings.length,
   }));
-  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "single_pass",
@@ -2807,7 +2808,7 @@ async function stabilizeStructuralBaselineSinglePass(
     totalGeminiCalls: 1,
   }));
   const totalMs = sumBaselineTimingBreakdown(timing);
-  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageDownloadMs: timing.imageDownloadMs,
@@ -2836,7 +2837,7 @@ async function stabilizeStructuralBaseline(
     ...options,
     timing,
   });
-  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+  vDetailLog("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
@@ -2894,7 +2895,7 @@ export async function validateOpeningPreservation(
       )
     )
     .digest("hex");
-  console.log("[OPENING_RECONCILIATION_TRACE]", JSON.stringify({
+  vDetailLog("[OPENING_RECONCILIATION_TRACE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
@@ -2975,7 +2976,7 @@ export async function validateOpeningPreservation(
         wallIndex: baseOpening.wallIndex,
       });
 
-      console.log(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
+      vDetailLog(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
       analysisNotes.push(
         `Baseline opening ${baseOpening.id} (${baseOpening.type}) near wallIndex=${baseOpening.wallIndex}, band=${baseOpening.horizontalBand}/${baseOpening.verticalBand} is not detectable in AFTER; classified as ${status.toLowerCase()}.`
       );
@@ -3203,7 +3204,7 @@ export async function validateOpeningPreservation(
       return true;
     });
     const altered = effectiveInvariantReasons.some((reason) => !advisoryOnlyReasons.has(reason));
-    console.log(
+    vDetailLog(
       `[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${altered ? "ALTERED" : "PRESERVED"} reason=${
         effectiveInvariantReasons.length > 0 ? effectiveInvariantReasons.join("|") : "none"
       }`
@@ -3284,7 +3285,7 @@ export async function validateOpeningPreservation(
       analysisNotes.push(
         `Wall ${wallIndex} opening count dropped but edge-of-frame uncertainty applies (out_of_frame=${wallOutOfFrameCount}); treating as preserved.`
       );
-      console.log(
+      vDetailLog(
         `[OPENING_SIGNATURE_OUT_OF_FRAME] wall=${wallIndex} opening_drop=true out_of_frame=${wallOutOfFrameCount} anchor_reference=false`
       );
       continue;
@@ -3296,7 +3297,7 @@ export async function validateOpeningPreservation(
       analysisNotes.push(
         `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=absent.`
       );
-      console.log(
+      vDetailLog(
         `[OPENING_SIGNATURE_ADVISORY] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=false`
       );
       continue;
@@ -3306,7 +3307,7 @@ export async function validateOpeningPreservation(
       `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=${anchorReferenced ? "present" : "absent"}.`
     );
 
-    console.log(
+    vDetailLog(
       `[OPENING_SIGNATURE_ADVISORY] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=${anchorReferenced}`
     );
   }

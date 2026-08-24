@@ -945,6 +945,8 @@ export function uploadRouter() {
         userId: sessUser.id,
         imageId,
         clientBatchId,
+        originalFilename: f.originalname || undefined,
+        batchTotalJobs: uploadCount,
         remoteOriginalUrl,
         remoteOriginalKey,
         agencyId,

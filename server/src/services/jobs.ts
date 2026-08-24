@@ -305,6 +305,8 @@ async function buildEnhanceArtifacts(params: {
   agencyId?: string | null;
   propertyId?: string | null;
   clientBatchId?: string | null;
+  originalFilename?: string;
+  batchTotalJobs?: number;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   sourceStage?: "1A" | "1B" | "2";
@@ -448,6 +450,8 @@ async function buildEnhanceArtifacts(params: {
     agencyId: params.agencyId,
     propertyId: params.propertyId,
     clientBatchId: params.clientBatchId || undefined,
+    originalFilename: params.originalFilename || undefined,
+    batchTotalJobs: params.batchTotalJobs,
     sourceStage: isDerivedEnhanceJob
       ? (derivedLineage?.normalizedSourceStage as any)
       : "original",
@@ -502,6 +506,8 @@ export async function enqueueEnhanceJob(params: {
   agencyId?: string | null;
   propertyId?: string | null;
   clientBatchId?: string | null;
+  originalFilename?: string;
+  batchTotalJobs?: number;
   sourceStage?: "1A" | "1B" | "2";
   baselineStage?: "1A" | "1B" | "2";
   stageUrls?: {
@@ -609,6 +615,8 @@ export async function createAwaitingPaymentEnhanceJob(params: {
   agencyId?: string | null;
   propertyId?: string | null;
   clientBatchId?: string | null;
+  originalFilename?: string;
+  batchTotalJobs?: number;
   remoteOriginalUrl?: string;
   remoteOriginalKey?: string;
   retryInfo?: {

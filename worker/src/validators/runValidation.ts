@@ -1865,7 +1865,7 @@ export async function runUnifiedValidation(
       });
       warnings.push("stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated");
       evidence.localFlags.push("anchor:lighting_advisory_uncorroborated");
-      console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
+      nLog("[STAGE2_DIRECT_GATE_ADVISORY]", {
         source: "anchor",
         reasonCode: "anchor_fixed_lighting_changed",
         corroborated: false,
@@ -1878,7 +1878,7 @@ export async function runUnifiedValidation(
     if (directAdvisories.length > 0) {
       warnings.push(...directAdvisories);
       directEvents.forEach((event) => {
-        console.log("[STAGE2_DIRECT_GATE]", {
+        nLog("[STAGE2_DIRECT_GATE]", {
           source: event.source,
           confidence: event.confidence,
           reasonCode: event.reasonCode,

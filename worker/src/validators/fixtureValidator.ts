@@ -1,3 +1,4 @@
+import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
@@ -19,7 +20,7 @@ const LIGHTING_TARGET_REGEX = /\b(light|lights|lighting|light fixture|light fixt
 export type FixtureValidatorResult = ValidatorOutcome;
 
 function logFixtureEvent(event: string, payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ event, ...payload }));
+  vDetailLog(JSON.stringify({ event, ...payload }));
 }
 
 function logFixturePhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
@@ -247,7 +248,7 @@ export function parseFixtureResult(rawText: string): FixtureValidatorResult {
   });
   const fixtureRepair = inferFixtureRepairMetadata(reason, advisorySignals, structuredIssues);
 
-  console.log("[SPECIALIST_REVIEW][FIXTURE]", {
+  nLog("[SPECIALIST_REVIEW][FIXTURE]", {
     ok: parsed.ok,
     hardFail,
     confidence: confidence.toFixed(3),
