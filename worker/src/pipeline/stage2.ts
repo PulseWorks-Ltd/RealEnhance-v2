@@ -1,5 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
-import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
+import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
@@ -741,6 +741,11 @@ export async function runStage2GenerationAttempt(
   }
 
   const scene = opts.sceneType || "interior";
+  logImageContentHash({
+    point: "stage2_pre_generation_input",
+    filePath: inputForStage2,
+    ctx: { jobId: opts.jobId, imageId: opts.imageId, stage: "2", attempt: attemptNumber },
+  });
   const { data, mime } = toBase64(inputForStage2);
   const useTest = process.env.USE_TEST_PROMPTS === "1";
   const selectedStyleRaw = normalizeStagingStyle(opts.stagingStyle);
@@ -1178,6 +1183,11 @@ Do not add blinds, rods, tracks, or new window coverings.
   }
 
   writeImageDataUrl(opts.outputPath, `data:image/webp;base64,${img.inlineData.data}`);
+  logImageContentHash({
+    point: "stage2_post_generation_output",
+    filePath: opts.outputPath,
+    ctx: { jobId: opts.jobId, imageId: opts.imageId, stage: "2", attempt: attemptNumber },
+  });
   try {
     await fs.access(opts.outputPath);
   } catch {

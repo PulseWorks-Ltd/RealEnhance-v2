@@ -84,7 +84,7 @@ import type { JobOwnershipMetadata } from "@realenhance/shared";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageTelemetry";
-import { toBase64, siblingOutPath } from "./utils/images";
+import { toBase64, siblingOutPath, logImageContentHash } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage, publishThumbnailVariant, type PublishResult } from "./utils/publish";
@@ -5561,6 +5561,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       return cached;
     }
 
+    logImageContentHash({
+      point: "pre_debug_upload",
+      filePath: localPath,
+      ctx: { jobId: payload.jobId, imageId: payload.imageId, stage, attempt },
+    });
     const signed = await createDebugSignedUrl(localPath, payload.jobId);
     const imageKey = signed.key;
     const signedUrl = signed.signedUrl;
@@ -6113,6 +6118,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[WORKER] Remote original downloaded to: ${origPath}\n`);
       }
+      logImageContentHash({
+        point: "post_original_download",
+        filePath: origPath,
+        ctx: { jobId: payload.jobId, imageId: payload.imageId },
+      });
     } catch (e) {
       if (!VALIDATION_FOCUS_MODE) {
         nLog(`[WORKER] ERROR: Failed to download remote original: ${(e as any)?.message || e}\n`);
