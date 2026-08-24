@@ -458,6 +458,22 @@ const WALL_ADJACENT_TO_ITEM_PATTERNS: RegExp[] = [
   /\b(continues?|extends?)[^.]{0,15}\b(below|beside|above|beneath|under)\s+it\b/,
   /\b(surrounds?|wraps?( around)?)[^.]{0,10}\bit\b/,
   /\b(on|onto|against|into)\s+(the\s+)?(plain|continuous|unbroken|seamless|uninterrupted)\b[^.]{0,30}\b(wall|surface|drywall|plaster)\b/,
+  // FIFTH real captured variant (Bedroom 12-2, A1 doorway):
+  // currentSurfaceDescription = "Open air of a doorway with the carpeted
+  // floor and white walls of the next room visible through the gap; the
+  // surrounding wall surface is plain painted drywall." — the doorway is
+  // explicitly described as OPEN in the same sentence ("open air...visible
+  // through the gap"); "the surrounding wall" names the PERIMETER around
+  // the still-open opening, not the opening's own region. "surrounding" is
+  // a reliable, narrow signal for this: it explicitly marks the
+  // wall-adjective phrase that follows as describing context AROUND
+  // something else, not that something else's own state. Scoped to a
+  // moderate window (40 chars) so it doesn't suppress a genuine violation
+  // that also uses "surrounding" but for a different reason, e.g. "the
+  // surrounding wall has been extended to fully cover the opening" — there
+  // the wall-adjective phrase sits much further from "surrounding" than a
+  // real "the surrounding X is plain Y" context-description does.
+  /\bsurrounding\b[^.]{0,40}\b(plain|continuous|unbroken|seamless|uninterrupted)\b[^.]{0,30}\b(wall|surface|drywall|plaster)\b/,
 ];
 
 // AUDIT FIX: this classifier had zero negation guarding. Confirmed
@@ -694,7 +710,13 @@ const SAME_POSITION_PATTERNS: RegExp[] = [
 ];
 const REPOSITIONED_PATTERNS: RegExp[] = [
   /\b(left|right|up|down)[- ]?shifted\b/,
-  /\bshift(?:ed)?[^.]{0,20}\b(left|right|up|down|along)\b/,
+  // Widened from a 20-char window: the resize/reposition question now asks
+  // for a concrete Step-1 estimate (see extentComparisonDescription's new
+  // wording), which produces longer real phrasing than before — e.g.
+  // "shifted roughly a third of the wall's length to the left" puts 45+
+  // chars between "shift" and the direction word. Confirmed offline this
+  // fell through the old 20-char window before widening.
+  /\bshift(?:ed)?[^.]{0,60}\b(left|right|up|down|along)\b/,
   /\b(moved|relocated|repositioned)\b/,
   /\bdifferent position\b/,
   /\b(further|farther|closer)[^.]{0,15}\b(from|to|than)\b/,
@@ -822,7 +844,7 @@ export function buildObservationQuestionsInstruction(itemLabelPlural: string): s
 
 3. coverageExtentDescription — Compare the region's own boundary to whatever new furniture, decor, or object occupies it now. Does the new object's own visible edge stay entirely within the region, or does it extend past the region's boundary (name the direction — up/down/left/right — and roughly by how much)? If nothing new occupies the region at all, say so.
 
-4. extentComparisonDescription — Independent of coverage by furniture, look at the item's OWN edges (its own frame/boundary, not anything placed in front of it) in the CURRENT image and compare them to the region given for it above. Two photos of the exact same real object, taken from slightly different camera positions or with different lenses, will always show small apparent differences in size and position — that is normal and does NOT mean the item was resized or moved. Only describe it as a size or position change if it is large and obvious: roughly 25% or more different in apparent size relative to the wall or frame it occupies, or clearly shifted to a different part of the wall — the kind of difference an ordinary person glancing at both photos would immediately call "bigger," "smaller," or "moved," not a subtle or borderline difference you have to look closely to notice. If the difference is anything less than that, describe it as the same size and position. IMPORTANT: this camera-angle allowance only excuses SMALL, subtle differences — it is NOT a reason to dismiss a difference that is actually large and obvious. If the item's own edges clearly take up a noticeably bigger or smaller share of the wall or frame around it than the given region does, or it has clearly moved to a different spot on the wall, report that plainly as a real change even if the two photos were taken from somewhat different positions — a real 25%+ size or position difference does not become invisible just because the camera also moved. Describe concretely what you observe about its own size, shape, and position — do not just answer "changed" or "unchanged," and do not discuss furniture or obstruction here, only the item's own extent.
+4. extentComparisonDescription — Independent of coverage by furniture, look at the item's OWN edges (its own frame/boundary, not anything placed in front of it) in the CURRENT image, and compare them DIRECTLY against what you see at that same location in the BASELINE (original) image — look at both photos' actual pixels at this location; the coordinate numbers given for this region are only a starting pointer to where to look, not something to reason about in the abstract. Does the item occupy the same footprint and shape in both photos, or is it visibly larger, smaller, taller, wider, more/less square, or shifted to a different part of the wall between the two actual photographs? A real difference here is usually large and obvious once you look directly at both photos side by side — if you have to talk yourself into believing it's "probably just the camera angle," look again more carefully before concluding that. Describe concretely and specifically what you observe about its own size, shape, and position in each photo — do not just answer "changed" or "unchanged," and do not discuss furniture or obstruction here, only the item's own extent.
 
 5. structuralEvidenceDescription — Independent of all of the above, look specifically for any physical evidence that a door, doorway, or opening mechanism exists at this exact location — a track (overhead or floor-mounted), a frame, a jamb, a reveal, a pocket edge, hinges, a threshold, or a sill. This matters most for any region above flagged with a "SLIDING PANEL door" note: a CLOSED sliding or pocket door can look like a plain, uninterrupted section of wall at first glance (your answers to questions 1 and 2 above might genuinely and correctly say so), but the track/frame/jamb evidence is usually still there if you look for it specifically — a closed door is not the same as a missing opening, and this question exists to catch that difference. Describe concretely whatever such evidence you find, however subtle, and where; or state plainly that you looked carefully and found none.
 

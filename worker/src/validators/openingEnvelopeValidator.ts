@@ -50,6 +50,10 @@ import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline, StructuralOpening } from "./openingPreservationValidator";
 import { runEnvelopeValidator } from "./envelopeValidator";
 import { runFabricatedOpeningCheck, type FabricatedOpeningCheckResult } from "./fabricatedOpeningCheck";
+import { runWindowArtworkCheckForOpenings, type WindowArtworkItemResult } from "./windowArtworkCheck";
+import { runVanishedLandmarkCheckForItems, isVanishedLandmarkOverrideEligible, type VanishedLandmarkItemResult } from "./vanishedLandmarkCheck";
+import type { PickedItem } from "./semanticItemRef";
+import { newValidatorChecksBlocking } from "./validatorModelCall";
 import {
   HUMAN_EYE_FRAMING,
   buildObservationOnlyItemList,
@@ -88,7 +92,21 @@ export type OpeningEnvelopeValidatorResult = {
   materialAlteredItems: EnrichedOpeningResult[];
   lowMaterialityItems: EnrichedOpeningResult[];
   fabricatedOpeningCheck: FabricatedOpeningCheckResult;
+  windowArtworkCheck: WindowArtworkItemResult[];
+  vanishedLandmarkCheck: VanishedLandmarkItemResult[];
 };
+
+function toPickedItems(openings: StructuralOpening[]): PickedItem[] {
+  return (openings || []).map((o) => ({
+    id: o.id,
+    type: o.type,
+    description: o.description,
+    wallIndex: o.wallIndex,
+    horizontalBand: o.horizontalBand,
+    verticalBand: o.verticalBand,
+    bbox: o.bbox,
+  }));
+}
 
 const OPENING_SYSTEM_INSTRUCTION = `You are checking whether architectural openings (windows, doors, walkthroughs, closet doors) from a room's baseline photo are still genuinely present in a staged (furnished) version — as opposed to merely being partly hidden behind normal staging furniture, which is expected and acceptable.
 
@@ -126,7 +144,7 @@ export async function runOpeningEnvelopeValidator(
   baseline: StructuralBaseline,
   ctx: { jobId: string; imageId: string; attempt?: number }
 ): Promise<OpeningEnvelopeValidatorResult> {
-  const [raw, envelopeResult, fabricatedOpeningCheck] = await Promise.all([
+  const [raw, envelopeResult, fabricatedOpeningCheck, windowArtworkCheck, vanishedLandmarkCheck] = await Promise.all([
     runOcclusionObservationCall({
       systemInstruction: OPENING_SYSTEM_INSTRUCTION,
       userPrompt: `${buildOpeningPhaseAPrompt(baseline)}\n\n${buildOpeningPhaseBPrompt(baseline)}`,
@@ -147,6 +165,18 @@ export async function runOpeningEnvelopeValidator(
     // call 2 only fires when call 1 actually flags something, so the
     // common (clean-image) case costs one extra call, not two.
     runFabricatedOpeningCheck(baselineImagePath, stagedImagePath, baseline, ctx),
+    // Window-replaced-by-artwork: a direct, hard-coded implausibility
+    // override, deliberately independent of the standard occlusion
+    // question — see windowArtworkCheck.ts's header. One batched call
+    // covering every window in the room (skipped entirely if there are
+    // none); self-contained error handling degrades to a safe non-blocking
+    // result, never throws into this Promise.all.
+    runWindowArtworkCheckForOpenings(baseline.openings, stagedImagePath, ctx),
+    // Vanished-landmark: catches drift near an opening that the standard
+    // per-item check can't see (a nearby structural landmark vanishing,
+    // not the opening's own bbox changing) — see vanishedLandmarkCheck.ts's
+    // header. Same self-contained error handling as above.
+    runVanishedLandmarkCheckForItems(toPickedItems(baseline.openings), baselineImagePath, stagedImagePath, ctx, "openings"),
   ]);
 
   const observations: OcclusionObservationRaw[] = Array.isArray(raw?.observations) ? raw.observations : [];
@@ -204,5 +234,44 @@ export async function runOpeningEnvelopeValidator(
     };
   }
 
-  return { opening, envelope: envelopeResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedOpeningCheck };
+  // Window-artwork override — one-directional only (can only turn a pass
+  // into a fail, never rescue an existing fail; there is no rescue
+  // semantic defined for this check). newValidatorChecksBlocking() gates
+  // whether this can actually block/retry a job (advisory-only by default —
+  // see validatorModelCall.ts) — `opening.hardFail || blocking` so a
+  // disabled blocking switch can never downgrade an ALREADY-hard-failed
+  // result (e.g. from fabricatedOpeningCheck above) back to non-blocking.
+  const windowArtworkFailures = windowArtworkCheck.filter((w) => w.verdict === "fail_window_replaced_by_artwork");
+  if (windowArtworkFailures.length > 0) {
+    const blocking = newValidatorChecksBlocking();
+    opening = {
+      ...opening,
+      status: "fail",
+      hardFail: opening.hardFail || blocking,
+      confidence: Math.min(opening.confidence, 0.75),
+      issueType: ISSUE_TYPES.WINDOW_ARTWORK_REPLACEMENT,
+      issueTier: classifyIssueTier(ISSUE_TYPES.WINDOW_ARTWORK_REPLACEMENT),
+      reason: `${opening.reason} | window_artwork_replacement: ${windowArtworkFailures.map((w) => `${w.itemId} (${w.description}): ${w.reason}`).join(" | ")}`,
+      advisorySignals: [...opening.advisorySignals, ...windowArtworkFailures.map((w) => `window_artwork_replaced:${w.itemId}`)],
+    };
+  }
+
+  // Vanished-landmark override — same one-directional shape and blocking
+  // gate as above.
+  const vanishFailures = vanishedLandmarkCheck.filter((v) => isVanishedLandmarkOverrideEligible(v.verdict));
+  if (vanishFailures.length > 0) {
+    const blocking = newValidatorChecksBlocking();
+    opening = {
+      ...opening,
+      status: "fail",
+      hardFail: opening.hardFail || blocking,
+      confidence: Math.min(opening.confidence, 0.75),
+      issueType: ISSUE_TYPES.LANDMARK_VANISHED,
+      issueTier: classifyIssueTier(ISSUE_TYPES.LANDMARK_VANISHED),
+      reason: `${opening.reason} | vanished_landmark_check: ${vanishFailures.map((v) => `${v.itemId} (${v.description}): ${v.verdict} — ${v.reason}`).join(" | ")}`,
+      advisorySignals: [...opening.advisorySignals, ...vanishFailures.map((v) => `vanished_landmark:${v.itemId}:${v.verdict}`)],
+    };
+  }
+
+  return { opening, envelope: envelopeResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedOpeningCheck, windowArtworkCheck, vanishedLandmarkCheck };
 }

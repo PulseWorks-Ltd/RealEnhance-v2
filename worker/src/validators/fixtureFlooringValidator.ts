@@ -22,8 +22,11 @@
 // the original ("on") validator chain in runValidation.ts.
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
-import type { StructuralBaseline } from "./openingPreservationValidator";
+import type { StructuralBaseline, AnchorFixture } from "./openingPreservationValidator";
 import { runFlooringBoundaryCheck } from "./flooringBoundaryCheck";
+import { runVanishedLandmarkCheckForItems, isVanishedLandmarkOverrideEligible, type VanishedLandmarkItemResult } from "./vanishedLandmarkCheck";
+import type { PickedItem } from "./semanticItemRef";
+import { newValidatorChecksBlocking } from "./validatorModelCall";
 import {
   HUMAN_EYE_FRAMING,
   buildObservationOnlyItemList,
@@ -47,7 +50,19 @@ export type FixtureFlooringValidatorResult = {
   itemResults: EnrichedFixtureResult[];
   materialAlteredItems: EnrichedFixtureResult[];
   lowMaterialityItems: EnrichedFixtureResult[];
+  vanishedLandmarkCheck: VanishedLandmarkItemResult[];
 };
+
+function toPickedItems(fixtures: AnchorFixture[]): PickedItem[] {
+  return (fixtures || []).map((f) => ({
+    id: f.id,
+    type: f.type,
+    description: f.description,
+    wallIndex: f.wallIndex,
+    horizontalBand: f.horizontalBand,
+    bbox: f.bbox,
+  }));
+}
 
 const FIXTURE_SYSTEM_INSTRUCTION = `You are checking whether fixed anchor fixtures (fireplaces, built-in cabinetry, kitchen islands, staircases, plumbing fixtures, light fixtures, AC/HVAC units, and similar permanent installations) from a room's baseline photo are still genuinely present in a staged (furnished) version — as opposed to merely being partly hidden behind normal staging furniture or decor, which is expected and acceptable (a real example: a fireplace hearth with a plant placed in front of part of it is normal staging, not a violation, as long as the hearth/mantel structure itself remains identifiable).
 
@@ -87,7 +102,7 @@ export async function runFixtureFlooringValidator(
 ): Promise<FixtureFlooringValidatorResult> {
   const fixtures = baseline.anchorFixtures || [];
 
-  const [raw, floorCheckResult] = await Promise.all([
+  const [raw, floorCheckResult, vanishedLandmarkCheck] = await Promise.all([
     fixtures.length === 0
       ? Promise.resolve({ observations: [], materiality: [] })
       : runOcclusionObservationCall({
@@ -99,6 +114,11 @@ export async function runFixtureFlooringValidator(
           ctx: { ...ctx, callLabel: "fixture" },
         }),
     runFlooringBoundaryCheck(baselineImagePath, stagedImagePath, ctx),
+    // Vanished-landmark check, run for fixtures — see vanishedLandmarkCheck.ts's
+    // header and openingEnvelopeValidator.ts's identical wiring for openings.
+    // Self-contained error handling degrades to a safe non-blocking result,
+    // never throws into this Promise.all.
+    runVanishedLandmarkCheckForItems(toPickedItems(fixtures), baselineImagePath, stagedImagePath, ctx, "fixtures"),
   ]);
   const floorResult = floorCheckResult.floor;
 
@@ -119,7 +139,7 @@ export async function runFixtureFlooringValidator(
   const materialAlteredItems = itemResults.filter((r) => r.materiality === "material" && r.altered);
   const lowMaterialityItems = itemResults.filter((r) => r.materiality === "low_materiality");
 
-  const fixture: ValidatorOutcome =
+  let fixture: ValidatorOutcome =
     materialAlteredItems.length === 0
       ? { status: "pass", reason: "fixture_flooring_validator: no material alteration detected", confidence: 0.9, hardFail: false, issueType: ISSUE_TYPES.NONE, issueTier: "none", advisorySignals: [] }
       : {
@@ -132,5 +152,26 @@ export async function runFixtureFlooringValidator(
           advisorySignals: materialAlteredItems.map((a) => `${a.id}:${a.verdict}`),
         };
 
-  return { fixture, floor: floorResult, itemResults, materialAlteredItems, lowMaterialityItems };
+  // Vanished-landmark override — one-directional only (can only turn a pass
+  // into a fail, never rescue an existing fail). newValidatorChecksBlocking()
+  // gates whether this can actually block/retry a job (advisory-only by
+  // default — see validatorModelCall.ts); `fixture.hardFail || blocking` so
+  // a disabled blocking switch can never downgrade an already-hard-failed
+  // standard result back to non-blocking.
+  const vanishFailures = vanishedLandmarkCheck.filter((v) => isVanishedLandmarkOverrideEligible(v.verdict));
+  if (vanishFailures.length > 0) {
+    const blocking = newValidatorChecksBlocking();
+    fixture = {
+      ...fixture,
+      status: "fail",
+      hardFail: fixture.hardFail || blocking,
+      confidence: Math.min(fixture.confidence, 0.75),
+      issueType: ISSUE_TYPES.LANDMARK_VANISHED,
+      issueTier: classifyIssueTier(ISSUE_TYPES.LANDMARK_VANISHED),
+      reason: `${fixture.reason} | vanished_landmark_check: ${vanishFailures.map((v) => `${v.itemId} (${v.description}): ${v.verdict} — ${v.reason}`).join(" | ")}`,
+      advisorySignals: [...fixture.advisorySignals, ...vanishFailures.map((v) => `vanished_landmark:${v.itemId}:${v.verdict}`)],
+    };
+  }
+
+  return { fixture, floor: floorResult, itemResults, materialAlteredItems, lowMaterialityItems, vanishedLandmarkCheck };
 }
