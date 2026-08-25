@@ -2855,11 +2855,175 @@ async function stabilizeStructuralBaseline(
   return stabilizeStructuralBaselineGraphConsensus(image, imageHash, options, timing);
 }
 
+// Curtain-concealed-window check — real production incident (2 Valentine
+// Street, bedroom): a closed curtain hung above the bed headboard with no
+// window frame or glass visible on any side. BASELINE_SYSTEM_INSTRUCTION
+// above unconditionally tells the model to ignore curtains, so this
+// curtained wall area was never classified as any kind of opening — the
+// staged output then removed the curtain entirely and hung a framed print
+// in its place, permanently misrepresenting a real window as removable
+// wall space. This passed silently because every downstream consumer
+// (layoutPlanner's avoid-zones, anchorLockedStaging's per-item protection
+// sentences, windowArtworkCheck.ts) operates generically over
+// baseline.openings filtered by type==="window" — nothing was ever wrong
+// with those consumers, the item just never reached them.
+//
+// First attempt: adding an exception for closed curtains directly into
+// BASELINE_SYSTEM_INSTRUCTION. Live-tested against the real repro image —
+// did NOT work; the one long, multi-purpose extraction call still missed
+// the curtain (it only correctly extracts the one obviously-visible
+// window). Reverted that in favor of this: a second, narrowly-scoped
+// dedicated call whose ONLY job is finding curtain-like fabric and judging
+// whether a window is visible behind it — the "model observes narrowly,
+// code decides" pattern already used for windowArtworkCheck.ts and
+// vanishedLandmarkCheck.ts this session. Live-tested 3/3 runs against the
+// real repro image: correctly flagged the bed curtain (windowEvidenceVisible:
+// false) every time, while correctly leaving the two curtains flanking the
+// real window alone (windowEvidenceVisible: true) — no false positive.
+//
+// isFunctionalCurtain is intentionally NOT used to gate the decision below,
+// despite being in the schema — live testing showed it flip-flops
+// (false/true/false across three identical temperature-0 runs) on exactly
+// this borderline case (a short valance-style panel), while
+// windowEvidenceVisible stayed stable every time. Given the asymmetric
+// cost — a false positive just leaves a real curtain unchanged in the
+// output; a false negative risks a real window being misrepresented as
+// removable wall space — only windowEvidenceVisible gates protection here.
+const CURTAIN_WINDOW_CHECK_SYSTEM_INSTRUCTION = `You are inspecting a single interior room photo for curtain-like fabric window coverings that might be hiding a window.
+
+Look at every wall in the image. For each distinct piece of curtain-like fabric you see — this includes full-length drapery, short valances, roman blinds, or any rod/track-mounted fabric panel hanging flat against a wall — report it, REGARDLESS of whether you can see any window frame, glass, or light behind/around it. Size does not matter: a small curtain panel counts exactly the same as a large floor-length one.
+
+Do NOT include: framed pictures/art, mirrors, tapestries or quilts hung flat with no rod/track and no fabric drape, flags, or curtains that are clearly hanging across a doorway/walkthrough between rooms rather than against a wall.
+
+For each curtain-like item found, report:
+- location: which wall and roughly where on it
+- wallIndex: 0=front wall (camera facing), 1=right wall, 2=back wall, 3=left wall
+- bbox: [x1,y1,x2,y2] normalized 0-1 (0,0 = top-left), covering the curtain/rod's own visible extent
+- visualDescription: exactly what it looks like (pattern, color, how it hangs)
+- windowEvidenceVisible: true if you can see any window frame, glass pane, or daylight on any side of this curtain; false if the curtain fully covers the area with no such evidence visible
+- isFunctionalCurtain: true if this genuinely looks like a functional window curtain/blind (has a rod/track, drapes or hangs the way fabric does under gravity); false if it's more likely pure decor (e.g. a flat fabric wall-hanging with no rod)
+
+If no curtain-like fabric is visible anywhere, return an empty array.
+
+Respond with ONLY a single valid JSON object: {"curtains": [{"location": string, "wallIndex": number, "bbox": [number,number,number,number], "visualDescription": string, "windowEvidenceVisible": boolean, "isFunctionalCurtain": boolean}]}`;
+
+type CurtainObservation = {
+  location: string;
+  wallIndex: number;
+  bbox: [number, number, number, number];
+  visualDescription: string;
+  windowEvidenceVisible: boolean;
+  isFunctionalCurtain: boolean;
+};
+
+async function observeCurtainConcealedWindows(
+  image: { data: string; mime: string },
+  options?: { jobId?: string; imageId?: string; attempt?: number }
+): Promise<CurtainObservation[]> {
+  const ai = getGeminiClient();
+  const requestStartedAt = Date.now();
+  const response = await (ai as any).models.generateContent({
+    model: OPENING_VALIDATOR_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: CURTAIN_WINDOW_CHECK_SYSTEM_INSTRUCTION },
+          { text: "Analyze this room image." },
+          { inlineData: { mimeType: image.mime, data: image.data } },
+        ],
+      },
+    ],
+    generationConfig: { temperature: 0, topP: 0.1, topK: 1, maxOutputTokens: 1024, responseMimeType: "application/json" },
+  } as any);
+  logGeminiUsage({
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
+    model: OPENING_VALIDATOR_MODEL,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
+  const parsed = parseJsonResponse(response);
+  const raw = Array.isArray(parsed?.curtains) ? parsed.curtains : [];
+  return raw.filter((c: any): c is CurtainObservation =>
+    c && typeof c === "object" && Array.isArray(c.bbox) && c.bbox.length === 4
+  );
+}
+
+function bboxIoU(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (intersection <= 0) return 0;
+  const areaA = Math.max(0, a[2] - a[0]) * Math.max(0, a[3] - a[1]);
+  const areaB = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+  const union = areaA + areaB - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+async function augmentBaselineWithCurtainConcealedWindows(
+  baseline: StructuralBaseline,
+  image: { data: string; mime: string },
+  options?: BaselineExtractionOptions
+): Promise<StructuralBaseline> {
+  try {
+    const observed = await observeCurtainConcealedWindows(image, options);
+    const concealing = observed.filter((c) => c.windowEvidenceVisible === false);
+    if (concealing.length === 0) return baseline;
+
+    const existingWindows = baseline.openings.filter((o) => o.type === "window");
+    const newRaw = concealing.filter(
+      (c) => !existingWindows.some((w) => bboxIoU(w.bbox, c.bbox) > 0.2)
+    );
+    if (newRaw.length === 0) return baseline;
+
+    vDetailLog("[CURTAIN_CONCEALED_WINDOW_DETECTED]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      count: newRaw.length,
+      items: newRaw,
+    }));
+
+    const rawOpeningsForMerge = [
+      ...baseline.openings,
+      ...newRaw.map((c, idx) => ({
+        id: `W_curtain_${idx + 1}`,
+        type: "window",
+        wallIndex: isWallIndex(c.wallIndex) ? c.wallIndex : 0,
+        bbox: c.bbox,
+        confidence: 0.55,
+        description:
+          `Closed curtain fully covering wall, no glass visible — window inferred from curtain/rod presence, not directly confirmed. ${c.visualDescription || ""}`.trim(),
+      })),
+    ];
+
+    const merged = validateStructuralBaseline({ openings: rawOpeningsForMerge, anchorFixtures: baseline.anchorFixtures });
+    return { ...baseline, openings: merged.openings, anchorFixtures: merged.anchorFixtures };
+  } catch (err: any) {
+    // Enrichment layer only — never block baseline extraction on this.
+    vDetailLog("[CURTAIN_CONCEALED_WINDOW_CHECK_ERROR]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      error: err?.message || String(err),
+    }));
+    return baseline;
+  }
+}
+
 export async function extractStructuralBaseline(
   imageUrl: string,
   options?: BaselineExtractionOptions
 ): Promise<StructuralBaseline> {
-  return stabilizeStructuralBaseline(imageUrl, options);
+  const baseline = await stabilizeStructuralBaseline(imageUrl, options);
+  const image = await materializeOpeningExtractionImage(imageUrl, options);
+  return augmentBaselineWithCurtainConcealedWindows(baseline, image, options);
 }
 
 export async function validateOpeningPreservation(
