@@ -25,6 +25,7 @@ export type AnchorFixtureType =
   | "staircase"
   | "plumbing_fixture"
   | "light_fixture"
+  | "tv_mount"
   | "other";
 
 export type AnchorFixture = {
@@ -699,7 +700,7 @@ Return JSON in this exact schema:
   "anchorFixtures": [
     {
       "id": string,
-      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "plumbing_fixture" | "light_fixture" | "other",
+      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "plumbing_fixture" | "light_fixture" | "tv_mount" | "other",
       "wallIndex": 0 | 1 | 2 | 3,
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "bbox": [x1, y1, x2, y2],
@@ -725,9 +726,10 @@ Rules:
 
 Anchor fixture rules:
 - Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
-- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges, fixed plumbing fixtures (sinks, taps, built-in tubs, showers), ceiling-mounted light fixtures (flush-mount, pendant, chandelier).
+- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges, fixed plumbing fixtures (sinks, taps, built-in tubs, showers), ceiling-mounted light fixtures (flush-mount, pendant, chandelier), existing TV wall-mount brackets/plates.
 - Use type "plumbing_fixture" for fixed sinks, taps, tubs, and showers.
 - Use type "light_fixture" for ceiling-mounted light fixtures (flush-mount, semi-flush, pendant, chandelier) — not for movable lamps.
+- Use type "tv_mount" for any existing wall-mounted TV bracket, mounting plate, or arm visible on a wall — even with no TV currently attached to it. This is a strong, direct signal for where a TV belongs in this room; look carefully for it on every wall, since it is easy to miss against a plain wall.
 - Use type "other" for any stable, fixed architectural feature that doesn't genuinely match one of the named categories — e.g. a decorative corbel/bracket, a built-in shelf remnant, an unusual wall-mounted fixture. Guessing a close-but-wrong named category is WORSE than using "other" with an accurate description: the description (not the type label) is what downstream staging uses to protect the object, so a correct "other" with a precise description is strictly better than a confident-sounding but incorrect named type. Do not force an ambiguous object into "fireplace", "built_in_cabinet", or any other named type unless it genuinely, unambiguously matches — when in doubt, use "other" and describe exactly what you see.
 - Exclude movable furniture/decor.
 - If no stable fixture is visible, return an empty array.
@@ -956,6 +958,7 @@ function isAnchorFixtureType(value: string): value is AnchorFixtureType {
     value === "staircase" ||
     value === "plumbing_fixture" ||
     value === "light_fixture" ||
+    value === "tv_mount" ||
     value === "other"
   );
 }
@@ -969,6 +972,7 @@ function normalizeAnchorFixtureType(value: unknown): AnchorFixtureType {
   if (raw === "staircase" || raw === "stairs") return "staircase";
   if (raw === "plumbing_fixture" || raw === "plumbing" || raw === "sink" || raw === "faucet" || raw === "tap") return "plumbing_fixture";
   if (raw === "light_fixture" || raw === "ceiling_light" || raw === "pendant_light" || raw === "pendant" || raw === "chandelier" || raw === "ceiling_fixture") return "light_fixture";
+  if (raw === "tv_mount" || raw === "tv_bracket" || raw === "television_bracket" || raw === "tv_wall_mount" || raw === "television_mount" || raw === "tv_mounting_bracket") return "tv_mount";
   return "other";
 }
 

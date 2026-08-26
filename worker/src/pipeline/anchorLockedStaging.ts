@@ -863,7 +863,7 @@ const MIN_ZONE_DEPTH_FOR_TV_FACING = 0.25;
 // Kept for diagnostic reasoning only — see the removed-override note above.
 const WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO = 0.3;
 
-type DiningPlan = { center: Point; footprint: { halfWidth: number; halfHeight: number }; reasoning: string };
+type DiningPlan = { center: Point; footprint: { halfWidth: number; halfHeight: number }; reasoning: string; nearKitchen?: boolean };
 type TvPlan = { wallId: string; wallLabel: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string };
 type SofaPlan = { wallId: string | null; wallLabel?: string; floorCentered?: boolean; facingWallId: string | null; orientationInstruction?: string; reasoning: string };
 type MultiAnchorPlan = {
@@ -877,20 +877,69 @@ type MultiAnchorPlan = {
   depthCheckFlaggedSuspect: boolean;
 };
 
-function planMultiAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[], zones: LivingDiningZone[]): MultiAnchorPlan {
+function planMultiAnchor(
+  baseline: StructuralBaseline,
+  walls: WallVisibilityWall[],
+  zones: LivingDiningZone[],
+  kitchenSignal?: KitchenSignal | null
+): MultiAnchorPlan {
   const livingZone = zones.find((z) => z.purpose === "living");
   const diningZone = zones.find((z) => z.purpose === "dining");
   const reasoning: string[] = [];
   let depthCheckFlaggedSuspect = false;
+  const wallByIndex = (idx: number) => walls.find((w) => Number(String(w.id).replace("wall_", "")) === idx);
 
   let diningPlan: DiningPlan | null = null;
   if (diningZone && diningZone.floorRegion?.polygon && diningZone.floorRegion.polygon.length >= 3) {
     const centroid = polygonCentroid(diningZone.floorRegion.polygon);
     const bbox = polygonBBox(diningZone.floorRegion.polygon);
+
+    // Real-world request: the dining table should land near the kitchen,
+    // not just at the raw centroid of whatever floor area the zoning call
+    // drew for the dining zone. Two possible signals for "where the
+    // kitchen is," checked in order of directness: (1) a kitchen_island
+    // (or similar) anchor fixture actually bordering this dining zone —
+    // direct visual evidence; (2) extractZoning's own kitchenSignal, which
+    // names an opening believed to lead toward/give sightline into a
+    // kitchen — indirect, but still real evidence when no island fixture
+    // is in frame. Neither field was previously consulted anywhere; the
+    // centroid alone was standing in for "near the kitchen" purely by
+    // chance whenever the zoning call's own polygon happened to lean that
+    // way.
+    const diningBorderingWalls = new Set(diningZone.borderingWallIndices || []);
+    const kitchenIslandFixture = (baseline.anchorFixtures || []).find(
+      (f) => f.type === "kitchen_island" && diningBorderingWalls.has(f.wallIndex)
+    );
+    const kitchenOpeningWallIndex = !kitchenIslandFixture && kitchenSignal?.present && kitchenSignal.openingId
+      ? baseline.openings.find((o) => o.id === kitchenSignal.openingId)?.wallIndex
+      : undefined;
+    const kitchenWallIndex = kitchenIslandFixture?.wallIndex
+      ?? (kitchenOpeningWallIndex !== undefined && diningBorderingWalls.has(kitchenOpeningWallIndex) ? kitchenOpeningWallIndex : undefined);
+    const kitchenWall = kitchenWallIndex !== undefined ? wallByIndex(kitchenWallIndex) : undefined;
+
+    let center = centroid;
+    let nearKitchen = false;
+    let kitchenReasoning = "";
+    if (kitchenWall) {
+      const kitchenWallBBox = polygonBBox(kitchenWall.extent.polygon);
+      const kitchenWallMidX = (kitchenWallBBox.minX + kitchenWallBBox.maxX) / 2;
+      // Blend 45% of the way from the zone's own centroid toward the
+      // kitchen wall's midpoint — meaningfully pulls the table toward the
+      // kitchen side without abandoning the zoning call's own read of the
+      // dining zone's real floor extent.
+      const blended: Point = [centroid[0] * 0.55 + kitchenWallMidX * 0.45, centroid[1]];
+      center = blended;
+      nearKitchen = true;
+      kitchenReasoning = kitchenIslandFixture
+        ? ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — kitchen island/peninsula ${kitchenIslandFixture.id} detected on this wall.`
+        : ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — kitchenSignal indicates opening ${kitchenSignal?.openingId} on this wall leads toward the kitchen.`;
+    }
+
     diningPlan = {
-      center: centroid,
+      center,
       footprint: { halfWidth: Math.min(0.12, (bbox.maxX - bbox.minX) * 0.35), halfHeight: Math.min(0.08, (bbox.maxY - bbox.minY) * 0.3) },
-      reasoning: `Table centered within zone_dining (centroid [${centroid[0].toFixed(3)}, ${centroid[1].toFixed(3)}]).`,
+      reasoning: `Table centered within zone_dining (raw centroid [${centroid[0].toFixed(3)}, ${centroid[1].toFixed(3)}]).${kitchenReasoning}`,
+      nearKitchen,
     };
   }
 
@@ -902,12 +951,30 @@ function planMultiAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall
     const livingWallIndices: number[] = livingZone.borderingWallIndices || [];
     const otherZonesWallIndices = new Set<number>(zones.filter((z) => z.id !== livingZone.id).flatMap((z) => z.borderingWallIndices || []));
     const exclusiveLivingWallIndices = livingWallIndices.filter((idx) => !otherZonesWallIndices.has(idx));
-    const wallByIndex = (idx: number) => walls.find((w) => Number(String(w.id).replace("wall_", "")) === idx);
 
     const zoneBBox = livingZone.floorRegion?.polygon ? polygonBBox(livingZone.floorRegion.polygon) : null;
     const zoneDepthProxy = zoneBBox ? zoneBBox.maxY - zoneBBox.minY : 0;
     const depthOk = zoneDepthProxy >= MIN_ZONE_DEPTH_FOR_TV_FACING;
     reasoning.push(`Living zone floor-region depth proxy: ${zoneDepthProxy.toFixed(3)} (threshold ${MIN_ZONE_DEPTH_FOR_TV_FACING}) — ${depthOk ? "sufficient" : "insufficient"}.`);
+
+    // Real-world incident: a room had an actual TV wall-mount bracket
+    // (baseline.anchorFixtures, type tv_mount) on one wall, but the
+    // geometric candidate search below picked a DIFFERENT wall (the window
+    // wall) purely on usable-width/depth scoring, ignoring the bracket
+    // entirely. An existing bracket is direct physical evidence of where
+    // the room's own TV goes — it takes priority over geometric scoring
+    // whenever one is detected on any wall bordering the living zone,
+    // without needing to also clear the width/depth thresholds below
+    // (those exist to guess a plausible wall in the ABSENCE of direct
+    // evidence; they're moot once a real mount is found). Prefer a
+    // zone-exclusive bracket wall if one exists, otherwise accept a
+    // bracket on a wall shared with another zone.
+    const bracketFixtures = (baseline.anchorFixtures || []).filter(
+      (f) => f.type === "tv_mount" && livingWallIndices.includes(f.wallIndex)
+    );
+    const bracketFixture =
+      bracketFixtures.find((f) => exclusiveLivingWallIndices.includes(f.wallIndex)) || bracketFixtures[0];
+    const bracketWall = bracketFixture ? wallByIndex(bracketFixture.wallIndex) : undefined;
 
     const tvCandidatesRaw = exclusiveLivingWallIndices
       .map((idx) => wallByIndex(idx))
@@ -922,7 +989,7 @@ function planMultiAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall
     // frame-height — but this NO LONGER overrides the placement decision
     // (see the module-level comment on why the earlier override was
     // removed). depthOk stays whatever the primary check computed.
-    if (!depthOk && tvCandidatesRaw[0]) {
+    if (!bracketWall && !depthOk && tvCandidatesRaw[0]) {
       const wallBBoxTop = polygonBBox(tvCandidatesRaw[0].wall.extent.polygon);
       const wallHeightInFrame = wallBBoxTop.maxY - wallBBoxTop.minY;
       const implausible = zoneDepthProxy < WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO * wallHeightInFrame;
@@ -934,17 +1001,23 @@ function planMultiAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall
       }
     }
 
-    const tvCandidate = depthOk ? tvCandidatesRaw[0] : undefined;
+    const tvCandidate = bracketWall
+      ? { wall: bracketWall, largestSegment: (bracketWall.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0) }
+      : (depthOk ? tvCandidatesRaw[0] : undefined);
 
     if (tvCandidate) {
       const seg = [...(tvCandidate.wall.usableSegments || [])].sort((a, b) => b.widthFraction - a.widthFraction)[0];
       tvPlan = {
         wallId: tvCandidate.wall.id,
         wallLabel: tvCandidate.wall.wallLabel,
-        segmentDescription: seg?.description || "",
+        segmentDescription: bracketFixture
+          ? (bracketFixture.description || seg?.description || "at the existing TV mount bracket's location")
+          : (seg?.description || ""),
         largestSegment: tvCandidate.largestSegment,
         depthCheckFlaggedSuspect,
-        reasoning: `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) is zone-exclusive, clears TV width threshold (${tvCandidate.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), zone depth sufficient.`,
+        reasoning: bracketWall
+          ? `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) has an existing TV wall-mount bracket detected (${bracketFixture!.id}) — used directly, ahead of geometric wall scoring.`
+          : `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) is zone-exclusive, clears TV width threshold (${tvCandidate.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), zone depth sufficient.`,
       };
       reasoning.push(tvPlan.reasoning);
 
@@ -1056,6 +1129,11 @@ function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstructionOv
     diningLines.push(
       `* Place a dining table with seating for 4-6 chairs, freestanding within the dining zone, centered roughly at normalized position [${plan.diningPlan.center[0].toFixed(3)}, ${plan.diningPlan.center[1].toFixed(3)}] of the full photo. The table must be freestanding — not against a wall — with clearance on all sides for chairs to be pulled out.`
     );
+    if (plan.diningPlan.nearKitchen) {
+      diningLines.push(
+        `* This room's kitchen is on the same side of the room as this position — keep the dining table on this side, near the kitchen, rather than centering it purely within the dining zone's own floor area.`
+      );
+    }
   }
   return `ANCHOR ITEMS — LIVING ZONE (must be followed exactly)\n\n${livingLines.join("\n")}\n\nANCHOR ITEM — DINING ZONE (must be followed exactly)\n\n${diningLines.join("\n")}\n\nZONING CONTEXT: this is a single open-plan room combining two functional zones — a living/seating zone and a dining zone. Stage each zone according to its function as instructed above, so the two areas read as distinct, intentional zones within the same open room, not one undifferentiated furniture arrangement.`;
 }
@@ -1455,14 +1533,14 @@ async function buildLivingDiningPrompt(
   if (!zoningResult) {
     return { prompt: null, fallbackReason: "zoning_extraction_failed", extra: {} };
   }
-  const { zones } = zoningResult;
+  const { zones, kitchenSignal } = zoningResult;
   const livingZone = zones.find((z) => z.purpose === "living");
   const diningZone = zones.find((z) => z.purpose === "dining");
   if (!livingZone || !diningZone || !livingZone.floorRegion?.polygon || !diningZone.floorRegion?.polygon) {
     return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
   }
 
-  const plan = planMultiAnchor(baseline, walls, zones);
+  const plan = planMultiAnchor(baseline, walls, zones, kitchenSignal);
   if (!plan.diningPlan) {
     return { prompt: null, fallbackReason: "no_valid_dining_anchor", extra: { zoningExtracted: true } };
   }

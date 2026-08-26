@@ -25,7 +25,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
-import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS } from "./anchorLockedStaging";
+import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS, buildUniversalFeatureProtectionSection } from "./anchorLockedStaging";
 import type { StructuralBaseline } from "../validators/openingPreservationValidator";
 import { grokImageEdit, grokImageModel } from "../ai/grok";
 
@@ -777,6 +777,29 @@ export async function runStage2GenerationAttempt(
     ? "nz_standard"
     : selectedStyleRaw;
 
+  // Real production incident: an already-furnished room (refresh mode —
+  // the path every furnished room actually takes; see resolvedPromptMode
+  // above) had a closed curtain concealing a window directly above the
+  // bed. Baseline extraction correctly infers a window from a closed
+  // curtain even with no glass visible (openingPreservationValidator.ts's
+  // curtain-concealed-window check) and buildUniversalFeatureProtectionSection
+  // already turns that into a specific, position-bound "do not place
+  // artwork over this" sentence — but until now that sentence only ever
+  // reached nano/anchor_locked/combined (full mode only). The legacy
+  // prompt builder below (buildStage2PromptNZStyle, used for BOTH full and
+  // refresh legacy prompts, and unconditionally for every refresh-mode
+  // job regardless of STAGE2_PROMPT_VARIANT) has no baseline awareness at
+  // all — it only ever received roomType/scene/style/layoutContext, a pure
+  // room-type template with zero per-image structural data. The curtain
+  // got silently swapped for hung artwork in production because the fix
+  // that correctly detects it never had anywhere to reach in this path.
+  // buildUniversalFeatureProtectionSection doesn't require wall-visibility
+  // data (a null walls arg just falls back to a plain "wall_N" label
+  // instead of a human-readable one) — no extra Gemini call needed here.
+  const legacyProtectedFeatureSection = opts.structuralBaseline
+    ? buildUniversalFeatureProtectionSection(opts.structuralBaseline, null).section
+    : "";
+
   const STAGE2_PROMPT_LEGACY = `${useTest
     ? require("../ai/prompts-test").buildTestStage2Prompt(scene, normalizedRoomType)
     : buildStage2PromptNZStyle(normalizedRoomType, scene, {
@@ -784,7 +807,7 @@ export async function runStage2GenerationAttempt(
         sourceStage: opts.sourceStage,
         mode: resolvedPromptMode,
         layoutContext: opts.layoutContext || undefined,
-      })}`;
+      })}${legacyProtectedFeatureSection}`;
 
   const STAGE2_PROMPT_NANO_BANANA = `Virtual Staging Instructions for nano banana (or Pro)
 
