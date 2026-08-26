@@ -5627,7 +5627,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (stageOutputSigningCache.has(localPath)) {
       const cached = stageOutputSigningCache.get(localPath)!;
       annotateAttemptSignedUrl(stage, attempt, cached);
-      nLog(
+      // Deliberately bypasses nLog, like [BATCH_FORENSIC_SUMMARY] below: this
+      // is the one per-attempt line meant to survive every log tier
+      // (PRODUCTION_LOG_MODE, VALIDATOR_LOGS_FOCUS) — every attempt, pass or
+      // fail, on every stage, is exactly what it's for. It was silently
+      // caught in the PRODUCTION_LOG_MODE=true blanket mute when that
+      // tiering was introduced; this restores it specifically.
+      console.log(
         `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${cached.signedUrl || ""}`
       );
       logStructured("STAGE_OUTPUT_SIGNED", {
@@ -5649,7 +5655,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     const imageKey = signed.key;
     const signedUrl = signed.signedUrl;
 
-    nLog(
+    // Deliberately bypasses nLog — see comment on the cached branch above.
+    console.log(
       `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
     );
 
@@ -7736,6 +7743,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
 
       await clearStage2RetryPending("stage2_only_complete_clear_pending");
       if (!(await canCompleteStage2(stage2ValidationPassed, "stage2_only_complete"))) {
+        // Same forensic-visibility gap as the main-flow completion guard
+        // (see comment there): without this, a manually-retried job
+        // blocked here writes status "failed" with no surviving log
+        // channel carrying that attempt's signed URL.
+        emitJobAttemptSummary("BLOCKED");
+        flushEnhanceForensicSnapshot({
+          uploadUrl: (payload as any).remoteOriginalUrl || null,
+          finalStatus: "blocked",
+          warningsCount: 0,
+          hardFail: true,
+          completionGuard: "block",
+          finalOutputUrl: pub2Url || null,
+        });
         await safeWriteJobStatus(
           payload.jobId,
           { status: "failed", errorMessage: "stage2_retry_failed: completion_guard_blocked_or_validation_failed" },
@@ -7754,6 +7774,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       });
       logCompletionGuard(payload.jobId, s2onlyGuard);
       if (!s2onlyGuard.ok) {
+        emitJobAttemptSummary("BLOCKED");
+        flushEnhanceForensicSnapshot({
+          uploadUrl: (payload as any).remoteOriginalUrl || null,
+          finalStatus: "blocked",
+          warningsCount: 0,
+          hardFail: true,
+          completionGuard: "block",
+          finalOutputUrl: pub2Url || null,
+        });
         await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${s2onlyGuard.reason}` }, "completion_guard_block");
         return;
       }
@@ -11656,6 +11685,20 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2_validation_loop", kind: "timeout", elapsedMs: stage2ElapsedMs });
           stage2Blocked = true;
           stage2BlockedReason = "stage2_runtime_exceeded";
+          // Same forensic-visibility gap as the completion guards above:
+          // this can fire after one or more real Stage 2 attempts already
+          // ran and got signed (attempt > 1 is exactly the case this grace
+          // window exists for) — without this, that data never reaches any
+          // log channel that survives PRODUCTION_LOG_MODE=true.
+          emitJobAttemptSummary("BLOCKED");
+          flushEnhanceForensicSnapshot({
+            uploadUrl: (payload as any).remoteOriginalUrl || null,
+            finalStatus: "blocked",
+            warningsCount: 0,
+            hardFail: true,
+            completionGuard: "runtime_exceeded",
+            finalOutputUrl: null,
+          });
           await safeWriteJobStatus(
             payload.jobId,
             {
@@ -15266,6 +15309,24 @@ All openings must remain identical in position and size to the original image.`;
   logPostCompliancePhaseEnd("completion_guard", Date.now() - postComplianceCompletionGuardStartedAt, { ok: mainGuard.ok });
   logCompletionGuard(payload.jobId, mainGuard);
   if (!mainGuard.ok) {
+    // This guard can reject a job whose Stage 2 attempts otherwise passed
+    // validation — a real, distinct failure mode from the
+    // stage2_validation_exhausted path above, which already emits both
+    // forensic channels via completePartialJobWithSummary. Without this,
+    // a job blocked here writes status "failed" but never surfaces its
+    // attempts' signed URLs through any log channel that survives
+    // PRODUCTION_LOG_MODE=true — the only record left is the raw DB
+    // status write, with no image to actually go look at.
+    emitJobAttemptSummary("BLOCKED");
+    flushEnhanceForensicSnapshot({
+      uploadUrl: (payload as any).remoteOriginalUrl || null,
+      stage1AUrl: pub1AUrl || null,
+      finalStatus: "blocked",
+      warningsCount: 0,
+      hardFail: true,
+      completionGuard: "block",
+      finalOutputUrl: committedResultUrl || pubFinalUrl || null,
+    });
     await safeWriteJobStatus(payload.jobId, { status: "failed", errorMessage: `completion_guard_block: ${mainGuard.reason}` }, "completion_guard_block");
     return;
   }
