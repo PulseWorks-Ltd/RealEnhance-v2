@@ -99,6 +99,65 @@ The photo of the room must remain an exact structural and architectural copy of 
 Camera & Perspective Constraint:
 The camera viewpoint, lens perspective, and framing must remain exactly as in the original photo — do not zoom, crop, rotate, widen, narrow, or otherwise shift camera position or perspective. The final image must look like the same photo with furniture simply placed into the scene.`;
 
+// ── Experimental alternate structural-lock text, for the
+// STAGE2_PROMPT_VARIANT=grok_skill test branch only (feature/grok-skill-
+// prompt-test). Derived from a user-authored Grok skill (nz-property-
+// image-staging/SKILL.md) that reportedly produced strong structural-
+// preservation results in Grok from a bare "stage this room" request,
+// using much terser, legally-grounded phrasing than CATEGORY_A_LOCKS's
+// exhaustive bulleted enumeration. This is NOT a replacement for
+// CATEGORY_A_LOCKS — it's a like-for-like swap-in used ONLY by
+// buildGrokSkillStage2Prompt below, so the existing anchor_locked/grok
+// variants are completely unaffected.
+//
+// Kept from the skill: the concise "never alter" list style and the
+// explicit NZ legal grounding (Fair Trading Act / REA Act) — the skill's
+// own author's hypothesis is that grounding rules in real misrepresentation
+// consequences, not just technical authority language, improves adherence.
+// Dropped from the skill: the disclosure/watermark and "refuse if uncertain"
+// workflow steps — those are conversational-agent behaviors with no
+// analog in a one-shot image-generation prompt; "if uncertain, treat as
+// permanent" below is the generation-prompt equivalent of the same
+// principle. Kept from CATEGORY_A_LOCKS despite not being in the skill at
+// all: the flooring multi-material-boundary/seam clause, and the
+// GEOMETRIC ENVELOPE LOCK + camera-perspective constraint blocks — both
+// are fixes for real, previously-confirmed production incidents (a lost
+// carpet/tile seam; a room's depth silently redrawn without registering as
+// camera movement) that the skill's text has no coverage for at all;
+// dropping them here would just reintroduce already-fixed bugs for the
+// sake of purity to the source text.
+// Shared, deliberately compact structural-lock text — reused verbatim by
+// both STAGE2_PROMPT_VARIANT=grok_skill (see buildGrokSkillStage2Prompt)
+// and STAGE2_PROMPT_VARIANT=combined (see stage2.ts). Named generically
+// (not "skill") because it's no longer tied to the Grok-skill experiment
+// specifically — it's the one shared "locks" section either variant grafts
+// its own layout/staging text around.
+export const COMPACT_STRUCTURAL_LOCKS = `STRUCTURAL PRESERVATION — NON-NEGOTIABLE, ZERO TOLERANCE
+
+Strictly preserve every structural and permanent feature of this photograph exactly as it is. You are explicitly and completely prohibited from making ANY change — moving, removing, resizing, reshaping, recoloring, or hiding — to any of the following. Under NZ law (Fair Trading Act 1986, Real Estate Agents Act 2008), a listing photo that misrepresents the property is illegal — every rule below is a legal requirement, not a style preference, and breaking any of them is exactly as serious as fabricating a room that does not exist.
+
+Do not alter, in any way:
+- Walls, windows, doors, doorways, archways, and skylights, including their frames, glass, hardware, and the view through them. Keep the floor area in front of and within the swing-path of any door completely clear (minimum 80cm). If a bed or other large item must sit near a window due to room size, keep the full window frame, sill height, and visible glass unchanged behind and around it — never raise the sill or shorten the window to fit furniture.
+- Floor material (e.g. hardwood, carpet, tile) and ceiling finish. If two or more distinct flooring materials are visible, each must stay exactly in its original location and boundary — do not blend, unify, or extend one material over another, or smooth over a visible seam. Only place rugs and furniture on top of the existing floor.
+- Fireplaces, built-in joinery/cabinetry, stairs, beams, columns, HVAC vents, thermostats, switches, outlets, wall-mounted AC units, baseboards, crown molding, railings, and any other fixed fitting or built-in feature — even if not individually named here.
+- Existing ceiling- or wall-mounted light fixtures — these must be preserved exactly as-is.
+
+Do not add any new ceiling-mounted or wall-mounted light fixture as staging decor (no chandeliers, pendant lights, hanging fixtures, or wall sconces). Free-standing or table/floor lamps are permitted as movable decor.
+
+GEOMETRIC ENVELOPE LOCK — NON-NEGOTIABLE, ZERO TOLERANCE, same weight as the list above:
+The architectural envelope — every wall's position, length, and angle; every corner; the room's overall shape — must stay geometrically IDENTICAL to the original, independent of camera movement. A redrawn room is just as much a misrepresentation as a removed wall or window, even if nothing was technically deleted. Explicitly and completely prohibited:
+* changing wall positions, lengths, angles, or corner locations
+* modifying ceiling height or plane geometry, or changing window/door-to-wall ratio
+* adjusting depth perspective, compression, or vanishing point alignment
+* moving any window, door, or fixture to a different wall than it appears on originally
+* mirroring, rotating, or reorganizing the room's layout, even if every object is still present somewhere
+Perspective lines, wall intersections, and opening proportions must align exactly with the original. Do NOT "improve" proportions or reinterpret spatial depth, even subtly — the camera may stay still while the geometry is redrawn, and that is equally prohibited.
+
+Camera & Perspective Constraint — NON-NEGOTIABLE:
+Camera viewpoint, lens perspective, and framing stay exactly as in the original — no zoom, crop, rotate, or shift. The result must be immediately recognizable as the same room from the same vantage point, not a reconstruction or mirrored/rotated version of it.
+
+Only place wall art, mirrors, or shelving on uninterrupted wall segments with no opening behind or directly adjacent — if wall availability for an item is uncertain, omit that item rather than risk covering a protected feature. If uncertain whether something is permanent, or whether a change alters the room's geometry, treat it as unchanged.`;
+
 // ── Universal position-bound feature protection (replaces the old fixed
 // per-type CATEGORY_B_RULES lookup for this layer). Every real compliance
 // failure found this session traced to the same root cause: a real,
@@ -1562,4 +1621,90 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   });
 
   return { prompt: roomResult.prompt, fallbackReason: null, diagnostics };
+}
+
+// Experimental, test-branch-only variant (see COMPACT_STRUCTURAL_LOCKS
+// above): runs the exact same planning pipeline as
+// buildAnchorLockedStage2Prompt — same baseline extraction, same
+// wall-visibility extraction, same real per-image anchor-wall selection,
+// same buildUniversalFeatureProtectionSection output — then swaps only the
+// CATEGORY_A_LOCKS text block for a staging-goal sentence plus
+// COMPACT_STRUCTURAL_LOCKS in the finished prompt string. Every room
+// builder interpolates CATEGORY_A_LOCKS verbatim and unmodified (confirmed
+// by inspection of all eight builders above), so this substitution is
+// exact and doesn't touch any planning logic or risk regressing the
+// anchor_locked/grok variants, which call buildAnchorLockedStage2Prompt
+// directly and never go through this function.
+const GROK_SKILL_STAGING_GOAL = "As a virtual staging assistant, add only realistic, correctly-scaled furniture and decor to this room photo for New Zealand real-estate marketing. Produce a high-quality, fully staged, listing-ready result — do not default to sparse or minimal staging.\n\n";
+export async function buildGrokSkillStage2Prompt(
+  opts: Parameters<typeof buildAnchorLockedStage2Prompt>[0]
+): Promise<AnchorLockedPromptResult> {
+  const result = await buildAnchorLockedStage2Prompt(opts);
+  if (!result.prompt) return result;
+  if (!result.prompt.includes(CATEGORY_A_LOCKS)) {
+    // Defensive: if this ever fires, some builder's template changed and
+    // no longer interpolates CATEGORY_A_LOCKS verbatim — fall back to the
+    // unmodified anchor-locked prompt rather than silently shipping a
+    // prompt with no structural-lock section at all.
+    nLog("[STAGE2_GROK_SKILL_SUBSTITUTION_MISS]", { jobId: opts.jobId, imageId: opts.imageId, roomType: opts.roomType });
+    return result;
+  }
+  return { ...result, prompt: result.prompt.replace(CATEGORY_A_LOCKS, GROK_SKILL_STAGING_GOAL + COMPACT_STRUCTURAL_LOCKS) };
+}
+
+// Extracts the real per-photo planning output — universal feature
+// protection sentences plus the room-specific anchor-placement or
+// light-staging section — from a fully-assembled anchor_locked prompt,
+// without either of its own bracketing text (the "Virtual Staging
+// Instructions..." header, CATEGORY_A_LOCKS itself, and the trailing
+// "EVERYTHING ELSE" epilogue). Used by STAGE2_PROMPT_VARIANT=combined
+// (stage2.ts) to graft anchor_locked's real per-image data onto nano's
+// prompt instead of anchor_locked's own structural-lock text — nano
+// already has its own structural-lock section and its own room-program
+// epilogue-equivalent (buildNanoRoomProgramGuidance), so only this middle
+// chunk is actually new information nano doesn't already have.
+//
+// Deliberately implemented as string extraction on the assembled prompt
+// rather than a refactor of the eight room builders above to also return
+// this chunk as a separate field: every builder's template was directly
+// inspected and confirmed to interpolate CATEGORY_A_LOCKS and
+// "EVERYTHING ELSE" verbatim and unmodified, so this is exact — and it
+// keeps zero risk to the already-shipped anchor_locked/grok/grok_skill
+// variants, which never call this function.
+export function extractAnchorLockedPlanningSection(fullPrompt: string): string | null {
+  const startIdx = fullPrompt.indexOf(CATEGORY_A_LOCKS);
+  if (startIdx === -1) return null;
+  const afterLocks = fullPrompt.slice(startIdx + CATEGORY_A_LOCKS.length);
+  const endMarker = "\n\nEVERYTHING ELSE";
+  const endIdx = afterLocks.indexOf(endMarker);
+  if (endIdx === -1) return null;
+  const section = afterLocks.slice(0, endIdx).trim();
+  return section.length > 0 ? section : null;
+}
+
+// Splits extractAnchorLockedPlanningSection's combined chunk into its two
+// real components — the per-item protected-feature sentences (from
+// buildUniversalFeatureProtectionSection) and the room-specific anchor-
+// placement or light-staging text — using the feature section's own
+// unique, stable header text as the split point (defined right there in
+// buildUniversalFeatureProtectionSection above; if that header text is
+// ever changed, update PROTECTED_FEATURES_MARKER to match). Used by
+// STAGE2_PROMPT_VARIANT=combined (stage2.ts), which places these two
+// pieces in different parts of a restructured prompt rather than adjacent
+// to each other the way anchor_locked/grok_skill do.
+const PROTECTED_FEATURES_MARKER = "ROOM-SPECIFIC PROTECTED FEATURES";
+export function splitAnchorLockedPlanningSection(
+  fullPrompt: string
+): { protectedFeatureSection: string | null; roomSpecificSection: string | null } {
+  const chunk = extractAnchorLockedPlanningSection(fullPrompt);
+  if (!chunk) return { protectedFeatureSection: null, roomSpecificSection: null };
+  const markerIdx = chunk.indexOf(PROTECTED_FEATURES_MARKER);
+  if (markerIdx === -1) return { protectedFeatureSection: null, roomSpecificSection: chunk };
+  const fromMarker = chunk.slice(markerIdx);
+  const gapIdx = fromMarker.indexOf("\n\n");
+  if (gapIdx === -1) return { protectedFeatureSection: fromMarker.trim(), roomSpecificSection: null };
+  return {
+    protectedFeatureSection: fromMarker.slice(0, gapIdx).trim(),
+    roomSpecificSection: fromMarker.slice(gapIdx).trim() || null,
+  };
 }

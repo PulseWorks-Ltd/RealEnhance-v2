@@ -25,7 +25,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
-import { buildAnchorLockedStage2Prompt } from "./anchorLockedStaging";
+import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS } from "./anchorLockedStaging";
 import type { StructuralBaseline } from "../validators/openingPreservationValidator";
 import { grokImageEdit, grokImageModel } from "../ai/grok";
 
@@ -362,10 +362,19 @@ function deriveRetryReasonFromSignals(signals: string[]): Stage2RetryReason {
   return "unknown";
 }
 
+type NanoRoomProgramGuidance = {
+  fullText: string;
+  room: string;
+  style: string;
+  anchorGuidance: string;
+  roomRules: string[];
+  itemBudget: string;
+};
+
 function buildNanoRoomProgramGuidance(opts: {
   roomType: string;
   stagingStyle: string;
-}): string {
+}): NanoRoomProgramGuidance {
   const room = String(opts.roomType || "").toLowerCase().trim();
   const style = String(opts.stagingStyle || "standard_listing").toLowerCase().trim();
 
@@ -463,7 +472,7 @@ function buildNanoRoomProgramGuidance(opts: {
       break;
   }
 
-  return `CRITICAL PRIORITY 1: ARCHITECTURAL LOCK
+  const fullText = `CRITICAL PRIORITY 1: ARCHITECTURAL LOCK
 The input image is an immutable architectural blueprint.
 You are strictly forbidden from modifying any permanent structure or built-in elements.
 Do not modify walls, ceilings, floors, windows, doors, openings, trims, fixed lighting, built-ins, or permanent fixtures.
@@ -525,6 +534,8 @@ NEGATIVE CONSTRAINTS
 - Apply all strict prohibitions in this prompt exactly.
 - If any style request conflicts with architecture lock rules, architecture lock rules always win.
 `;
+
+  return { fullText, room, style, anchorGuidance, roomRules, itemBudget };
 }
 
 // Stage 2: virtual staging (add furnitur)
@@ -838,24 +849,42 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
   // single generation-call site further down. Nothing about prompt construction differs
   // between "anchor_locked" and "grok" — only which model receives the same prompt.
   const USE_ANCHOR_LOCKED_PROMPT =
-    (process.env.STAGE2_PROMPT_VARIANT === "anchor_locked" || process.env.STAGE2_PROMPT_VARIANT === "grok") &&
+    (process.env.STAGE2_PROMPT_VARIANT === "anchor_locked" || process.env.STAGE2_PROMPT_VARIANT === "grok" || process.env.STAGE2_PROMPT_VARIANT === "grok_skill") &&
     resolvedPromptMode === "full";
   const USE_GROK_GENERATION =
-    process.env.STAGE2_PROMPT_VARIANT === "grok" && resolvedPromptMode === "full";
+    (process.env.STAGE2_PROMPT_VARIANT === "grok" || process.env.STAGE2_PROMPT_VARIANT === "grok_skill") &&
+    resolvedPromptMode === "full";
+  // Test-branch-only (feature/grok-skill-prompt-test): identical planning
+  // pipeline to anchor_locked/grok, but the finished prompt has its
+  // CATEGORY_A_LOCKS section swapped for the skill.md-derived
+  // COMPACT_STRUCTURAL_LOCKS text — see anchorLockedStaging.ts.
+  const USE_SKILL_LOCKS =
+    process.env.STAGE2_PROMPT_VARIANT === "grok_skill" && resolvedPromptMode === "full";
+  // Nano's own prompt text (structural locks + room-program guidance) with
+  // anchor_locked's real per-image planning grafted on top, staying on
+  // Gemini (no Grok routing) — see the design discussion in this branch's
+  // history. Nano's room guidance only ever states WHAT the anchor item
+  // should be ("bed placement as the dominant focal object") and never
+  // WHERE on the actual photographed wall, so anchor_locked's real
+  // wall-selection data is additive, not competing, with nano's existing
+  // rules. Independent of USE_ANCHOR_LOCKED_PROMPT/USE_GROK_GENERATION —
+  // this variant never touches CATEGORY_A_LOCKS or COMPACT_STRUCTURAL_LOCKS
+  // at all, and always generates on Gemini.
+  const USE_COMBINED_PROMPT =
+    process.env.STAGE2_PROMPT_VARIANT === "combined" && resolvedPromptMode === "full";
 
   const nanoRoomProgramGuidance = buildNanoRoomProgramGuidance({
     roomType: canonicalRoomType,
     stagingStyle: selectedStyleRaw,
   });
+  const nanoBasePrompt = `${STAGE2_PROMPT_NANO_BANANA}\n\n${nanoRoomProgramGuidance.fullText}`;
 
-  const defaultStage2Prompt = USE_NANO_BANANA_PROMPT
-    ? `${STAGE2_PROMPT_NANO_BANANA}\n\n${nanoRoomProgramGuidance}`
-    : STAGE2_PROMPT_LEGACY;
+  const defaultStage2Prompt = USE_NANO_BANANA_PROMPT ? nanoBasePrompt : STAGE2_PROMPT_LEGACY;
 
   let stage2Prompt = defaultStage2Prompt;
   let anchorLockedFallbackReason: string | null = null;
   if (USE_ANCHOR_LOCKED_PROMPT) {
-    const anchorLockedResult = await buildAnchorLockedStage2Prompt({
+    const anchorLockedResult = await (USE_SKILL_LOCKS ? buildGrokSkillStage2Prompt : buildAnchorLockedStage2Prompt)({
       imagePath: basePath,
       roomType: canonicalRoomType,
       jobId: opts.jobId,
@@ -870,14 +899,71 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
       anchorLockedFallbackReason = anchorLockedResult.fallbackReason;
       stage2Prompt = defaultStage2Prompt;
     }
+  } else if (USE_COMBINED_PROMPT) {
+    // Rebuilt per user feedback (real-world test on Bedroom 14 read as "not
+    // a win" — hypothesis: a long, repetitive prompt dilutes Gemini's focus
+    // on the rules that matter most). Restructured into three ordered
+    // parts instead of "nano's full text plus anchor_locked's planning
+    // appended": (1) STAGING LAYOUT EXPECTATION — what to build, condensed
+    // from nano's per-room-type guidance plus the real per-image anchor
+    // placement; (2) the shared COMPACT_STRUCTURAL_LOCKS section, unchanged
+    // from grok_skill's; (3) protected-feature sentences LAST, since
+    // that's the exact rule category most likely to conflict with a
+    // staging choice ("don't hang art here, a window/vent is right there")
+    // and — per user direction — gets the most emphasis by coming right
+    // before generation. Everything nano previously restated a second time
+    // (its own "CRITICAL PRIORITY 1: ARCHITECTURAL LOCK", STRUCTURAL
+    // CONFLICT RESOLUTION, NEGATIVE CONSTRAINTS) is dropped entirely — that
+    // content duplicated COMPACT_STRUCTURAL_LOCKS almost verbatim in the
+    // old assembly, which is exactly the kind of dilution being addressed.
+    const anchorLockedResult = await buildAnchorLockedStage2Prompt({
+      imagePath: basePath,
+      roomType: canonicalRoomType,
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      structuralBaseline: opts.structuralBaseline,
+    });
+    const { protectedFeatureSection, roomSpecificSection } = anchorLockedResult.prompt
+      ? splitAnchorLockedPlanningSection(anchorLockedResult.prompt)
+      : { protectedFeatureSection: null, roomSpecificSection: null };
+
+    const roomRulesText = nanoRoomProgramGuidance.roomRules.length > 0
+      ? `\n${nanoRoomProgramGuidance.roomRules.map((r) => `- ${r}`).join("\n")}`
+      : "";
+    const layoutExpectation = `As a virtual staging assistant, add only realistic, correctly-scaled furniture and decor to this room photo, producing a high-quality, fully staged, listing-ready result — do not default to sparse or minimal staging.
+
+STAGING LAYOUT EXPECTATION
+
+Room type: ${nanoRoomProgramGuidance.room || canonicalRoomType}. ${nanoRoomProgramGuidance.anchorGuidance}${roomRulesText}
+${roomSpecificSection ? `\n${roomSpecificSection}\n` : ""}
+${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.style}. Prefer fewer, correctly-scaled items over crowding; keep at least one clear walking path through the room.`;
+
+    const finalProtectionSection = protectedFeatureSection
+      ? `FINAL CHECK — PROTECTED FEATURES (must be followed exactly)\n\nBefore finalizing, check every wall against this room's own real detected features below. Never place new furniture, decor, or artwork over or directly in front of any of them — a spot is not automatically free for wall art just because it looks like a natural place to decorate (for example, above a bed is not free if a window, vent, or other fixture is there).\n\n${protectedFeatureSection}`
+      : "";
+
+    stage2Prompt = [layoutExpectation, COMPACT_STRUCTURAL_LOCKS, finalProtectionSection].filter(Boolean).join("\n\n");
+
+    if (!anchorLockedResult.prompt) {
+      // No real per-image plan available (unsupported room type or
+      // extraction failure) — the assembly above still degrades gracefully
+      // using nano's generic per-room-type guidance plus the full locks
+      // section, just without real anchor placement or a protected-feature
+      // list. Logged, never fails the job.
+      anchorLockedFallbackReason = anchorLockedResult.fallbackReason || "no_plan_available";
+    }
   }
 
   nLog("[STAGE2_PROMPT_VARIANT]", {
     requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
     mode: resolvedPromptMode,
     variant: USE_ANCHOR_LOCKED_PROMPT
-      ? (anchorLockedFallbackReason ? (USE_GROK_GENERATION ? "grok_anchor_locked_fallback" : "anchor_locked_fallback") : (USE_GROK_GENERATION ? "grok_anchor_locked" : "anchor_locked"))
-      : (USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"),
+      ? (anchorLockedFallbackReason
+          ? (USE_SKILL_LOCKS ? "grok_skill_fallback" : USE_GROK_GENERATION ? "grok_anchor_locked_fallback" : "anchor_locked_fallback")
+          : (USE_SKILL_LOCKS ? "grok_skill" : USE_GROK_GENERATION ? "grok_anchor_locked" : "anchor_locked"))
+      : USE_COMBINED_PROMPT
+        ? (anchorLockedFallbackReason ? "combined_fallback" : "combined")
+        : (USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"),
     generationModel: USE_GROK_GENERATION ? "grok" : "gemini",
     ...(anchorLockedFallbackReason ? { anchorLockedFallbackReason } : {}),
   });
@@ -1044,6 +1130,17 @@ WINDOW COVERING PRESERVATION:
 If curtain rails/tracks and curtains are present, keep them unchanged.
 Do not add blinds, rods, tracks, or new window coverings.
 `;
+  }
+
+  nLog("[STAGE2_FINAL_PROMPT_LENGTH]", {
+    jobId: opts.jobId,
+    imageId: opts.imageId,
+    attempt: attemptNumber,
+    variant: process.env.STAGE2_PROMPT_VARIANT || "legacy",
+    chars: textPrompt.length,
+  });
+  if (process.env.STAGE2_DEBUG_DUMP_PROMPT === "1") {
+    require("fs").writeFileSync("/tmp/stage2_debug_prompt.txt", textPrompt);
   }
 
   const requestParts: any[] = [];
