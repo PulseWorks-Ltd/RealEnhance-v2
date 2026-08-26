@@ -204,9 +204,25 @@ export function buildUniversalFeatureProtectionSection(
   for (const opening of baseline.openings || []) {
     const description = opening.description || fallbackItemDescription(opening.type);
     const position = describeItemPosition(walls, opening.wallIndex, opening.horizontalBand, opening.verticalBand);
-    sentences.push(
-      `This room has ${description}, located at/on ${position}. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.`
-    );
+    if (opening.id.startsWith("W_curtain_")) {
+      // Curtain-concealed windows (augmentBaselineWithCurtainConcealedWindows)
+      // are, by construction, fabric that shows no glass/frame/sill — visually
+      // indistinguishable from a hung textile or wall art. Real production
+      // failures (2 Valentine St, Kitchen 01) confirmed the generic sentence
+      // below isn't enough: generation-time Gemini doesn't self-classify this
+      // ambiguous fabric as "a curtain" in the first place, so an instruction
+      // phrased as "protect this window/curtain" never gets applied to it —
+      // it just sees replaceable decor. Naming the exact failure mode here
+      // (it may look like decor; it isn't) is the fix, not a stronger version
+      // of the same generic wording.
+      sentences.push(
+        `This room has a window that is completely concealed by existing curtain/fabric — ${description}, located at/on ${position}. Even though this fabric may look like a piece of hanging wall art, a valance, or a decorative textile rather than an obvious window curtain, it is concealing a real window and must remain completely unchanged: identical fabric, pattern, shape, and position as shown in the original photo. Do NOT reinterpret, restyle, or replace it as wall art or decor, and do NOT place new artwork over it — misreading this exact kind of fabric as replaceable decor is the single most common real mistake on this feature.`
+      );
+    } else {
+      sentences.push(
+        `This room has ${description}, located at/on ${position}. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.`
+      );
+    }
   }
   for (const fixture of baseline.anchorFixtures || []) {
     const description = fixture.description || fallbackItemDescription(fixture.type);

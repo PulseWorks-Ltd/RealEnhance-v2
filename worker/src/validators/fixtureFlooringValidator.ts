@@ -76,7 +76,7 @@ function toPickedItems(fixtures: AnchorFixture[]): PickedItem[] {
   }));
 }
 
-const FIXTURE_SYSTEM_INSTRUCTION = `You are checking whether fixed anchor fixtures (fireplaces, built-in cabinetry, kitchen islands, staircases, plumbing fixtures, light fixtures, AC/HVAC units, and similar permanent installations) from a room's baseline photo are still genuinely present in a staged (furnished) version — as opposed to merely being partly hidden behind normal staging furniture or decor, which is expected and acceptable (a real example: a fireplace hearth with a plant placed in front of part of it is normal staging, not a violation, as long as the hearth/mantel structure itself remains identifiable).
+const FIXTURE_SYSTEM_INSTRUCTION = `You are checking whether fixed anchor fixtures (fireplaces, built-in cabinetry, kitchen islands, staircases, plumbing fixtures, light fixtures, AC/HVAC units, and similar permanent installations) from a room's baseline photo are still genuinely present in a staged (furnished) version — as opposed to merely being partly hidden behind normal staging furniture or decor, which is expected and acceptable (a real example: a fireplace hearth with a plant placed in front of part of it is normal staging, not a violation, as long as the hearth/mantel structure itself remains identifiable). A TV wall-mount bracket having a television mounted on or in front of it — fully or mostly hiding the bracket hardware from view — is the correct, expected outcome of staging a room with an existing TV bracket, not a removal; treat it the same as the fireplace/plant example as long as the bracket's wall location is otherwise unchanged.
 
 You are given two photos: the ORIGINAL (baseline) and the STAGED (furnished) version.
 
