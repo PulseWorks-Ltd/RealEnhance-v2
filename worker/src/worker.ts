@@ -11535,6 +11535,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: string | null = null;
     let pendingStage2RetryReason: string | null = null;
+    // Human-readable, specific descriptions of what a validator actually
+    // found wrong on the failed attempt (e.g. "the curtain-concealed window
+    // above the bed was replaced with wall art") — captured at the retry
+    // decision point below and injected near the top of the very next
+    // attempt's prompt, so a retry gets told what specifically went wrong
+    // instead of just re-rolling the same generation blind.
+    let pendingStage2RetryCorrectionHints: string[] | null = null;
     let stage2ReinforcedRetryUsed = false;
     const stage2DecisionImageUrl = (payload as any).imageUrl ?? (payload as any).baseImageUrl ?? null;
 
@@ -11794,6 +11801,7 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             retryType: "validator_forced_retry",
             retryInstructions: undefined,
+            retryCorrectionHints: pendingStage2RetryCorrectionHints || undefined,
             structuralRetryContext: {
                 compositeFail: useReinforcedRetry,
                 failureType: retryFailureType,
@@ -11843,6 +11851,7 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2StructuralFailureType = null;
         pendingStage2RetryStrategy = null;
         pendingStage2RetryReason = null;
+        pendingStage2RetryCorrectionHints = null;
         recordStage2AttemptOutput(attempt - 1, retryStage2Path);
         stage2CandidatePath = retryStage2Path;
         path2 = retryStage2Path;
@@ -12068,6 +12077,33 @@ All openings must remain identical in position and size to the original image.`;
         primaryStructuredIssue?: StructuredIssue;
         structuredIssues?: StructuredIssue[];
         severity?: "low" | "medium" | "high";
+        // Human-readable description of what this specialist found wrong,
+        // for retry-feedback prompt injection — see
+        // pendingStage2RetryCorrectionHints. Only set when !pass.
+        retryCorrectionHint?: string;
+      };
+
+      // Validator "reason" strings are internal/compound (pipe-delimited
+      // fragments, e.g. "pass | window_artwork_replacement: W_curtain_1
+      // (Closed curtain fully covering wall-mounted window above bed):
+      // artwork confirmed occupying the window's own expected footprint:
+      // ..."), not written as clean prose — but they already carry the one
+      // thing a retry needs: which specific item, and what happened to it.
+      // Deliberately no parsing/reformatting here (fragile against format
+      // drift across validators); wrapped in a plain framing sentence and
+      // handed to Gemini as-is, which reads real meaning out of it fine.
+      const buildRetryCorrectionHint = (
+        validator: "opening" | "fixture" | "envelope" | "floor",
+        reason: string | undefined
+      ): string | undefined => {
+        const trimmed = String(reason || "").trim();
+        if (!trimmed || trimmed === "specialist_unavailable") return undefined;
+        const label =
+          validator === "opening" ? "a window, door, or other opening"
+          : validator === "fixture" ? "a fixed fixture"
+          : validator === "envelope" ? "the room's structural envelope"
+          : "the flooring";
+        return `The previous attempt on this image failed validation involving ${label}: ${trimmed}. Do not repeat this in this attempt — keep the original photo's real features exactly as shown, unaltered and unobstructed.`;
       };
 
       const HIGH_CONFIDENCE_THRESHOLD = 0.9;
@@ -12130,6 +12166,7 @@ All openings must remain identical in position and size to the original image.`;
             ? params.structuredIssues
             : undefined,
           severity,
+          retryCorrectionHint: pass ? undefined : buildRetryCorrectionHint(params.validator, params.reason),
         };
       };
 
@@ -14126,6 +14163,15 @@ All openings must remain identical in position and size to the original image.`;
       const unifiedPass = unifiedValidation.passed === true && unifiedValidation.hardFail !== true;
 
       if (!unifiedPass) {
+        const specialistRetryCorrectionHints = [
+          specialistResults.opening.retryCorrectionHint,
+          specialistResults.envelope.retryCorrectionHint,
+          specialistResults.fixture.retryCorrectionHint,
+          specialistResults.floor.retryCorrectionHint,
+        ].filter((h): h is string => typeof h === "string" && h.length > 0);
+        if (specialistRetryCorrectionHints.length > 0) {
+          pendingStage2RetryCorrectionHints = specialistRetryCorrectionHints;
+        }
         const unifiedReason = unifiedValidation.reasons[0] || "unified_failure";
         const unifiedIssueType = unifiedValidation.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
         const unifiedIssueTier = unifiedValidation.issueTier || classifyIssueTier(unifiedIssueType);
@@ -14489,6 +14535,11 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2StructuralFailureType = "STRUCTURAL_INVARIANT";
         pendingStage2RetryStrategy = "NORMAL";
         pendingStage2RetryReason = retryReason;
+        if (finalFailReason) {
+          pendingStage2RetryCorrectionHints = [
+            `The previous attempt on this image failed final structural review: ${finalFailReason}. Do not repeat this in this attempt — keep the original photo's real structure exactly as shown, unaltered.`,
+          ];
+        }
 
         mergeAttemptValidation("2", attempt, {
           final: {

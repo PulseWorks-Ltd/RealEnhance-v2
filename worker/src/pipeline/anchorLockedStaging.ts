@@ -211,9 +211,22 @@ export function buildUniversalFeatureProtectionSection(
   for (const fixture of baseline.anchorFixtures || []) {
     const description = fixture.description || fallbackItemDescription(fixture.type);
     const position = describeItemPosition(walls, fixture.wallIndex, fixture.horizontalBand);
-    sentences.push(
-      `This room has ${description}, located at/on ${position}. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.`
-    );
+    if (fixture.type === "tv_mount") {
+      // A TV bracket's purpose is to have a TV mounted on it — the blanket
+      // "keep unobstructed, nothing placed over it" wording below directly
+      // contradicts planMultiAnchor's bracket-priority TV placement (which
+      // reuses this same fixture's description as the TV's target segment),
+      // making the model treat "mount a TV here" as violating "protect this
+      // fixture" and leave the bracket empty. Carve out the exception at the
+      // source so every caller of this shared section gets consistent text.
+      sentences.push(
+        `This room has ${description}, located at/on ${position}. This is an existing TV wall-mount bracket. Do not remove, relocate, or alter the physical bracket hardware itself — but mounting a TV and a low TV console/unit at this location is expected and correct, not a violation of this rule. Only removing, relocating, or covering the bracket hardware itself is prohibited.`
+      );
+    } else {
+      sentences.push(
+        `This room has ${description}, located at/on ${position}. Do not remove, relocate, obstruct, or place new furniture, decor, or artwork over or directly in front of this feature. It must remain exactly as shown in the original photo.`
+      );
+    }
   }
 
   const section =
@@ -864,7 +877,7 @@ const MIN_ZONE_DEPTH_FOR_TV_FACING = 0.25;
 const WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO = 0.3;
 
 type DiningPlan = { center: Point; footprint: { halfWidth: number; halfHeight: number }; reasoning: string; nearKitchen?: boolean };
-type TvPlan = { wallId: string; wallLabel: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string };
+type TvPlan = { wallId: string; wallLabel: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean };
 type SofaPlan = { wallId: string | null; wallLabel?: string; floorCentered?: boolean; facingWallId: string | null; orientationInstruction?: string; reasoning: string };
 type MultiAnchorPlan = {
   diningPlan: DiningPlan | null;
@@ -1015,6 +1028,7 @@ function planMultiAnchor(
           : (seg?.description || ""),
         largestSegment: tvCandidate.largestSegment,
         depthCheckFlaggedSuspect,
+        usedBracket: !!bracketWall,
         reasoning: bracketWall
           ? `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) has an existing TV wall-mount bracket detected (${bracketFixture!.id}) — used directly, ahead of geometric wall scoring.`
           : `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) is zone-exclusive, clears TV width threshold (${tvCandidate.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), zone depth sufficient.`,
@@ -1231,6 +1245,7 @@ Beyond the anchor items above and the structural constraints above, use your own
     fallbackReason: null,
     extra: {
       tvPlaced: !!plan.tvPlan,
+      tvUsedBracket: !!plan.tvPlan?.usedBracket,
       sofaFloating: !!sofaInstructionOverride,
       anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
     },
@@ -1336,6 +1351,7 @@ export type AnchorLockedPromptResult = {
     wallPartiallyVisible: boolean;
     zoningExtracted?: boolean;
     tvPlaced?: boolean;
+    tvUsedBracket?: boolean;
     sofaFloating?: boolean;
     // Full tier audit trail from planSingleAnchorWall's four-tier decision
     // (bedroom/study only) — which tier fired, the winning wall's stats,
@@ -1582,6 +1598,7 @@ Beyond the anchor items above and the structural constraints above, use your own
     extra: {
       zoningExtracted: true,
       tvPlaced: !!plan.tvPlan,
+      tvUsedBracket: !!plan.tvPlan?.usedBracket,
       sofaFloating: !!sofaInstructionOverride,
       anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
     },
@@ -1691,7 +1708,13 @@ export async function buildAnchorLockedStage2Prompt(opts: {
     return fallback(roomResult.fallbackReason || "unknown_planning_failure", diagnostics);
   }
 
-  nLog("[STAGE2_ANCHOR_LOCKED_PLAN]", {
+  // Deliberately bypasses nLog — see the matching comment on
+  // [STAGE2_PROMPT_VARIANT] in stage2.ts. Carries tvUsedBracket, the exact
+  // fact needed to tell "bracket detected and used" apart from "bracket
+  // missed, fell back to geometric wall scoring" from production logs
+  // alone, without which this class of question can't be answered without
+  // re-running the job outside production.
+  console.log("[STAGE2_ANCHOR_LOCKED_PLAN]", {
     jobId: opts.jobId,
     imageId: opts.imageId,
     ...diagnostics,

@@ -635,6 +635,11 @@ export async function runStage2GenerationAttempt(
     structuralConstraintBlock?: string;
     retryType?: string;
     retryInstructions?: string | null;
+    /** Human-readable descriptions of what a validator found wrong on the
+     * previous attempt (see worker.ts's pendingStage2RetryCorrectionHints) —
+     * injected near the top of the prompt so a retry knows what specifically
+     * went wrong instead of re-rolling the same generation blind. */
+    retryCorrectionHints?: string[] | null;
     /** Pre-resolved structural baseline — see buildAnchorLockedStage2Prompt's own doc comment. */
     structuralBaseline?: StructuralBaseline | null;
   }
@@ -990,7 +995,14 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
     }
   }
 
-  nLog("[STAGE2_PROMPT_VARIANT]", {
+  // Deliberately bypasses nLog — see [IMAGE_ATTEMPT_URL]/[BATCH_FORENSIC_SUMMARY]
+  // for the same reasoning. Real incident: this line's suppression under
+  // PRODUCTION_LOG_MODE=true made it impossible to tell, from production
+  // logs alone, whether a job actually reached the full-mode combined/
+  // anchor_locked path or silently fell through to the shared legacy/
+  // refresh prompt — exactly the ambiguity that blocked diagnosing why a
+  // Stage2 fix wasn't taking effect in production.
+  console.log("[STAGE2_PROMPT_VARIANT]", {
     requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
     mode: resolvedPromptMode,
     variant: USE_ANCHOR_LOCKED_PROMPT
@@ -1023,6 +1035,20 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
   }
 
   const promptPrefixBlocks: string[] = [];
+
+  const validRetryCorrectionHints = (opts.retryCorrectionHints || []).filter(
+    (h): h is string => typeof h === "string" && h.trim().length > 0
+  );
+  if (validRetryCorrectionHints.length > 0) {
+    const retryCorrectionBlock = `PREVIOUS ATTEMPT CORRECTION — DO NOT REPEAT\n\n${validRetryCorrectionHints.join("\n\n")}`;
+    promptPrefixBlocks.push(retryCorrectionBlock);
+    nLog("[STAGE2_RETRY_CORRECTION_INJECTED]", {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      attempt: attemptNumber,
+      hintCount: validRetryCorrectionHints.length,
+    });
+  }
 
   if (shouldInjectManualRetryInstructions) {
     const manualRetryBlock = `MANUAL RETRY USER REQUIREMENTS\n\nThe user has requested the following changes to the room layout and staging.\n\nFollow these requirements whenever possible while preserving:\n- room structure\n- architectural continuity\n- fixed openings\n- fixed fixtures\n- room usability\n\nPRIORITY HIERARCHY (STRICT):\nP0 Structural Constraints and Architectural Continuity\nP0 Fixed Openings and Fixtures\nP1 Manual Retry User Requirements\nP2 Room Type Requirements\nP3 Staging Style Requirements\nP4 Default Stage 2 Design Heuristics\n\nUser Requirements:\n${normalizedRetryInstructions}`;
