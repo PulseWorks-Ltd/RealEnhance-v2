@@ -681,13 +681,26 @@ export async function runStage2GenerationAttempt(
     ? "multiple_living"
     : normalizedRoomType;
 
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
+  // Whether a room goes through the "from empty" (full) or "refresh"
+  // staging path is decided entirely by whether the room is actually
+  // furnished — never by room type. A previous version of this function
+  // hardcoded four room types (multiple_living, kitchen_dining,
+  // kitchen_living, living_dining) to always resolve to refresh mode
+  // regardless of the room's real content, which meant a genuinely empty
+  // living_dining or kitchen_dining room could never reach the
+  // nano/anchor_locked/combined prompt variants or the deterministic
+  // layout planner (both full-mode-only) at all. Furnished-state is
+  // determined upstream (worker.ts's furnished-gate detection,
+  // resolveFurnishedGateDecision) and reaches this function via
+  // opts.stage2Mode/opts.promptMode; when neither is provided, sourceStage
+  // alone (was this generation triggered directly from Stage 1A, or from
+  // Stage 1B's decluttered output) is the correct fallback signal — room
+  // type plays no part in either case.
   const resolvedPromptMode: "full" | "refresh" = opts.stage2Mode
     ? (opts.stage2Mode === "REFRESH" ? "refresh" : "full")
     : (opts.promptMode
       ? opts.promptMode
-      : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh"));
+      : (opts.sourceStage === "1A" ? "full" : "refresh"));
 
   let inputForStage2 = basePath;
   let stagingMaskBuffer: Buffer | null = null;
@@ -1357,13 +1370,26 @@ export async function runStage2(
     ? "multiple_living"
     : normalizedRoomType;
 
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
-  const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
+  // Whether a room goes through the "from empty" (full) or "refresh"
+  // staging path is decided entirely by whether the room is actually
+  // furnished — never by room type. A previous version of this function
+  // hardcoded four room types (multiple_living, kitchen_dining,
+  // kitchen_living, living_dining) to always resolve to refresh mode
+  // regardless of the room's real content, which meant a genuinely empty
+  // living_dining or kitchen_dining room could never reach the
+  // nano/anchor_locked/combined prompt variants or the deterministic
+  // layout planner (both full-mode-only) at all. Furnished-state is
+  // determined upstream (worker.ts's furnished-gate detection,
+  // resolveFurnishedGateDecision) and reaches this function via
+  // opts.stage2Mode/opts.promptMode; when neither is provided, sourceStage
+  // alone (was this generation triggered directly from Stage 1A, or from
+  // Stage 1B's decluttered output) is the correct fallback signal — room
+  // type plays no part in either case.
   const resolvedPromptMode: "full" | "refresh" = opts.stage2Mode
     ? (opts.stage2Mode === "REFRESH" ? "refresh" : "full")
     : (opts.promptMode
       ? opts.promptMode
-      : (opts.sourceStage === "1A" && !forceRefreshMode ? "full" : "refresh"));
+      : (opts.sourceStage === "1A" ? "full" : "refresh"));
 
   let layoutContext: LayoutContextResult | null = null;
   const layoutPlannerEnabled = process.env.USE_GEMINI_LAYOUT_PLANNER === "1";

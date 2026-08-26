@@ -1,0 +1,65 @@
+ANCHOR DIRECTIVE (MANDATORY):
+- Primary focal element: sofa_group
+- Anchor wall: back_wall
+- Anchor orientation: facing_anchor_wall
+- Placement mode: freestanding
+- Anchor furniture may be partially cropped by frame edges when composition is natural.
+
+PLAN_JSON:
+{
+  "room_type": "living_dining",
+  "layout": [
+    {
+      "item": "sofa",
+      "placement": "Anchor main sofa to selected wall while keeping structural openings accessible."
+    },
+    {
+      "item": "coffee_table",
+      "placement": "Center compact coffee table within seating area and clear circulation."
+    }
+  ],
+  "avoid_zones": [
+    "window:W1:bbox(0.224,0.385,0.653,0.701)",
+    "walkthrough:A1:bbox(0.655,0.283,0.892,1.000)",
+    "door:D2:bbox(0.895,0.445,0.939,0.885)",
+    "window:W2:bbox(0.732,0.457,0.783,0.552)",
+    "door:D1:bbox(0.000,0.000,0.145,0.940)"
+  ],
+  "anchor": {
+    "item": "sofa_group",
+    "wall": "back_wall",
+    "orientation": "facing_anchor_wall",
+    "constraints": {
+      "mountMode": "freestanding",
+      "allowWallMount": true,
+      "avoidCoveringWindows": false,
+      "avoidAboveWindow": false,
+      "rules": []
+    },
+    "region": {
+      "x": 0.2,
+      "y": 0.5,
+      "width": 0.6,
+      "height": 0.38
+    },
+    "confidence": 0.98
+  },
+  "decorRestrictions": [
+    {
+      "target": "door_zone",
+      "rule": "Do not place furniture or decor that blocks any door/walkthrough opening."
+    },
+    {
+      "target": "closet_zone",
+      "rule": "Do not block closet doors and do not place wall art/decor above closet-door regions."
+    }
+  ],
+  "furnitureVisibilityRules": {
+    "allow_crop": true,
+    "assume_wall_continuation": false,
+    "rules": [
+      "Furniture may extend beyond frame boundaries when composition is natural.",
+      "Do not force the full anchor furniture item to be visible."
+    ]
+  }
+}
