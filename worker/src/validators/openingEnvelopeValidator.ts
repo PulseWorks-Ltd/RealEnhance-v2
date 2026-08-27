@@ -171,7 +171,7 @@ export async function runOpeningEnvelopeValidator(
     // covering every window in the room (skipped entirely if there are
     // none); self-contained error handling degrades to a safe non-blocking
     // result, never throws into this Promise.all.
-    runWindowArtworkCheckForOpenings(baseline.openings, baselineImagePath, stagedImagePath, ctx),
+    runWindowArtworkCheckForOpenings(baseline.openings, stagedImagePath, ctx),
     // Vanished-landmark: catches drift near an opening that the standard
     // per-item check can't see (a nearby structural landmark vanishing,
     // not the opening's own bbox changing) — see vanishedLandmarkCheck.ts's
