@@ -109,6 +109,15 @@ export interface FurnishedGateDecision {
   directRefreshEligible: boolean;
   requiresStage1B: boolean;
   stage2ModeCandidate: "FROM_EMPTY" | "REFRESH" | null;
+  /** Was a room-type-correct PRIMARY anchor detected (bed for bedroom,
+   * sofa/tv for living, dining_table for dining, desk for office) — NOT
+   * just any anchor-class item. Refresh mode should only ever run when
+   * this is true; a room with only secondary furniture (chair, coffee
+   * table, wardrobe, cabinet, etc.) still routes through Stage 1B like
+   * real clutter would, but is unconditionally directed to Stage 2 from
+   * empty afterward regardless of what Stage 1B's output shows — Stage 1B
+   * can only remove things, never invent a primary anchor from nothing. */
+  hasPrimaryAnchor: boolean;
 }
 
 /** Canonical room state output from the furniture detector. Routing decisions are made in worker.ts. */
@@ -180,6 +189,15 @@ function normalizeToken(value: unknown): string {
 function isBuiltInFixtureText(value: unknown): boolean {
   const token = normalizeToken(value);
   if (!token) return false;
+  // "freestanding"/"armoire" are definitionally incompatible with
+  // built-in — a model-labeled item explicitly calling itself freestanding
+  // (e.g. "large_freestanding_cabinet") must never be caught by this
+  // check's broad substring matching. Real bug found 2026-08-28: "cabinet"
+  // alone is a BUILT_IN_INDICATOR_TOKENS entry (for built-in cabinetry),
+  // but it also appears inside "large_freestanding_cabinet" itself, so the
+  // substring match was flagging a freestanding item as built-in from its
+  // own canonical anchor label.
+  if (token.includes("freestanding") || token.includes("armoire")) return false;
   if (BUILT_IN_FIXTURE_TOKEN_SET.has(token)) return true;
   return BUILT_IN_INDICATOR_TOKENS.some((indicator) => token.includes(indicator));
 }
@@ -417,6 +435,37 @@ function toRoomType(rawRoomType: unknown): string {
 
 function isLivingRoomType(normalizedRoomType: string): boolean {
   return normalizedRoomType === "living_room" || normalizedRoomType === "living" || normalizedRoomType === "lounge";
+}
+
+// Real production gap (2026-08-28): a room with ONLY a secondary/incidental
+// furniture item — a freestanding wardrobe, a chair, a coffee table, a side
+// table, a cabinet, etc., with no bed/sofa/dining table/desk in sight — was
+// being classified FURNISHED_TIDY (skip Stage 1B entirely) purely because
+// SOME item from CORE_ANCHOR_CLASSES or isMovableFurnitureItem's broader
+// list was detected, regardless of whether it was actually this room
+// type's own defining piece. Stage 1B's own generation prompt already
+// encodes a much narrower "what's actually the anchor for this room type"
+// concept (buildStage1BPromptNZStyle's "Dominant functional anchors by
+// room type" section) — this mirrors that same concept at the detection/
+// routing layer, so a room with only secondary furniture gets routed
+// through Stage 1B (which removes it, per that same prompt's own rules)
+// instead of skipping straight to Refresh mode with the secondary item
+// preserved as if it were the room's anchor.
+type PrimaryAnchorRoomCategory = "bedroom" | "living" | "dining" | "office";
+const PRIMARY_ANCHOR_TYPES_BY_CATEGORY: Record<PrimaryAnchorRoomCategory, ReadonlySet<string>> = {
+  bedroom: new Set(["bed"]),
+  living: new Set(["sofa", "tv"]),
+  dining: new Set(["dining_table"]),
+  office: new Set(["desk"]),
+};
+
+function classifyRoomTypeForPrimaryAnchor(normalizedRoomType: string): PrimaryAnchorRoomCategory[] {
+  const categories: PrimaryAnchorRoomCategory[] = [];
+  if (normalizedRoomType.includes("bed")) categories.push("bedroom");
+  if (normalizedRoomType.includes("living") || normalizedRoomType.includes("lounge")) categories.push("living");
+  if (normalizedRoomType.includes("dining")) categories.push("dining");
+  if (normalizedRoomType.includes("office") || normalizedRoomType.includes("study")) categories.push("office");
+  return categories;
 }
 
 function parseErrorStatusCode(err: any): number | null {
@@ -878,6 +927,7 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible: false,
       requiresStage1B: false,
       stage2ModeCandidate: "FROM_EMPTY",
+      hasPrimaryAnchor: false,
     });
   }
 
@@ -892,6 +942,7 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible: false,
       requiresStage1B: true,
       stage2ModeCandidate: "REFRESH",
+      hasPrimaryAnchor: true,
     });
   }
 
@@ -910,6 +961,25 @@ export function resolveFurnishedGateDecision(params: {
     (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some(isMovableFurnitureItem))
     || toBool(analysis.hasMovableSeating);
   const hasEligibleFurnitureSignal = movableFurnitureDetected && (!tvOnlyAnchor || livingRoomLike);
+
+  // Room-type-aware "is there actually a primary anchor here" — see
+  // classifyRoomTypeForPrimaryAnchor's header comment. For a room type this
+  // isn't mapped for (kitchen, bathroom, other, unrecognized), there's no
+  // confident room-type-specific rule to apply, so this intentionally falls
+  // back to the broader hasEligibleAnchor/hasEligibleFurnitureSignal
+  // behavior unchanged, rather than guessing.
+  const primaryAnchorCategories = classifyRoomTypeForPrimaryAnchor(normalizedRoomType);
+  const primaryAnchorTypes = primaryAnchorCategories.length > 0
+    ? new Set(primaryAnchorCategories.flatMap((c) => Array.from(PRIMARY_ANCHOR_TYPES_BY_CATEGORY[c])))
+    : null;
+  const hasPrimaryRoomAnchor = primaryAnchorTypes === null
+    ? (hasEligibleAnchor || hasEligibleFurnitureSignal)
+    : anchors.some((a) => primaryAnchorTypes.has(a))
+      || (Array.isArray(analysis.furnitureItems) && analysis.furnitureItems.some((item) => {
+        if (!isMovableFurnitureItem(item)) return false;
+        const t = normalizeToken(item?.legacyType || item?.type);
+        return primaryAnchorTypes.has(t);
+      }));
 
   const confidence = typeof analysis.confidence === "number"
     ? Math.max(0, Math.min(1, analysis.confidence))
@@ -976,6 +1046,49 @@ export function resolveFurnishedGateDecision(params: {
     builtInFixtureTypes,
   };
 
+  // Overrides everything below for a MAPPED room type (bedroom/living/
+  // dining/office) with no primary anchor BUT something else genuinely
+  // detected (secondary furniture, clutter, or both): Refresh mode has
+  // nothing to anchor itself to without the room's own defining piece (a
+  // chair/coffee table/wardrobe/cabinet/etc. isn't it), so Stage 2 is
+  // unconditionally directed to run from empty — but Stage 1B still runs
+  // first, same as it would for real clutter, to attempt to strip the room
+  // back. The from-empty destination doesn't depend on whether Stage 1B
+  // actually succeeds at that: Stage 1B can only remove things, never
+  // invent a primary anchor from nothing, so there's no ambiguity to
+  // re-check afterward.
+  //
+  // Requires hasEligibleAnchor||hasEligibleFurnitureSignal||hasClutterSignals
+  // so this doesn't also swallow the pre-existing, unrelated "genuinely
+  // nothing detected at all" case (e.g. a lone TV outside a living room,
+  // which already reads as no signal via tvOnlyAnchor) — that stays on its
+  // existing "skip Stage 1B, already empty" path below, not forced through
+  // an unnecessary Stage 1B call.
+  //
+  // Unmapped room types (kitchen/bathroom/other/unrecognized) are
+  // untouched by this — primaryAnchorTypes is null there, so this never
+  // fires and the original logic below runs exactly as before.
+  if (
+    primaryAnchorTypes !== null
+    && !hasPrimaryRoomAnchor
+    && (hasEligibleAnchor || hasEligibleFurnitureSignal || hasClutterSignals)
+  ) {
+    return buildDecision({
+      decision: "needs_declutter_light",
+      reason: "no_primary_anchor_for_room_type",
+      confidence,
+      anchors,
+      ...routingFurnitureSignals,
+      roomState: "FURNISHED_CLUTTERED",
+      hasClutter: hasClutterSignals,
+      minorPortableClutterOnly,
+      directRefreshEligible: false,
+      requiresStage1B: true,
+      stage2ModeCandidate: "FROM_EMPTY",
+      hasPrimaryAnchor: false,
+    });
+  }
+
   if (minorPortableClutterOnly) {
     const nuisanceRoomState: RoutingRoomState =
       hasEligibleAnchor || hasEligibleFurnitureSignal
@@ -998,6 +1111,7 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible: nuisanceRoomState === "FURNISHED_TIDY",
       requiresStage1B: false,
       stage2ModeCandidate: nuisanceStage2ModeCandidate,
+      hasPrimaryAnchor: nuisanceRoomState === "FURNISHED_TIDY",
     });
   }
 
@@ -1010,7 +1124,14 @@ export function resolveFurnishedGateDecision(params: {
       return "FURNISHED_CLUTTERED";
     }
 
-    if (hasEligibleAnchor || hasEligibleFurnitureSignal) {
+    // Reachable here only when hasEligibleAnchor||hasEligibleFurnitureSignal
+    // is true (the first branch above already excluded "neither, no
+    // clutter") and hasClutterSignals is false. For a mapped room type,
+    // hasPrimaryRoomAnchor is guaranteed true by this point (the early
+    // return above already handled the no-primary case); for an unmapped
+    // room type it's just hasEligibleAnchor||hasEligibleFurnitureSignal
+    // again — unchanged from the original behavior.
+    if (hasPrimaryRoomAnchor) {
       return "FURNISHED_TIDY";
     }
 
@@ -1034,13 +1155,14 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible: false,
       requiresStage1B: true,
       stage2ModeCandidate: "REFRESH",
+      hasPrimaryAnchor: true,
     });
   }
 
   if (roomState === "FURNISHED_TIDY") {
     return buildDecision({
       decision: "furnished_refresh",
-      reason: hasEligibleAnchor || hasEligibleFurnitureSignal ? "anchor_or_furniture_detected" : "stage_ready_no_signals",
+      reason: hasPrimaryRoomAnchor ? "primary_anchor_detected" : "stage_ready_no_signals",
       confidence,
       anchors,
       ...routingFurnitureSignals,
@@ -1050,6 +1172,7 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible,
       requiresStage1B: false,
       stage2ModeCandidate: "REFRESH",
+      hasPrimaryAnchor: true,
     });
   }
 
@@ -1066,6 +1189,7 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible: false,
       requiresStage1B: true,
       stage2ModeCandidate: "REFRESH",
+      hasPrimaryAnchor: hasPrimaryRoomAnchor,
     });
   }
 
@@ -1082,6 +1206,7 @@ export function resolveFurnishedGateDecision(params: {
       directRefreshEligible: false,
       requiresStage1B: false,
       stage2ModeCandidate: "FROM_EMPTY",
+      hasPrimaryAnchor: false,
     });
   }
 
@@ -1097,6 +1222,7 @@ export function resolveFurnishedGateDecision(params: {
     directRefreshEligible,
     requiresStage1B,
     stage2ModeCandidate,
+    hasPrimaryAnchor: hasPrimaryRoomAnchor,
   });
 }
 
