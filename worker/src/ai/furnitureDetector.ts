@@ -317,6 +317,19 @@ const MINOR_PORTABLE_NUISANCE_TOKEN_SET = new Set<string>([
   "minor_wall_protrusion",
   "small_item",
   "tiny_item",
+  // Single small decor/incidental items — real production complaint: these
+  // were forcing Stage 1B (and its downstream refresh-mode instability) for
+  // rooms that had nothing else wrong with them. A lone item like this is
+  // trivially handled by Stage 2's own generation when staging from empty;
+  // it doesn't need a dedicated declutter pass.
+  "plant",
+  "pot_plant",
+  "potted_plant",
+  "vase",
+  "paper",
+  "papers",
+  "trash",
+  "rubbish",
 ]);
 
 function isMinorPortableNuisanceItem(item: DetectedItem): boolean {
@@ -888,24 +901,35 @@ export function resolveFurnishedGateDecision(params: {
     && detectedItems.length <= 2
     && nuisancePortableItems.length === detectedItems.length;
 
+  // Widened from hasLoosePortableItems-only: hasSurfaceClutter and
+  // hasLoosePortableItems are both model-set booleans with no reliable
+  // count backing of their own (a single pot plant/vase on a table can set
+  // either one) — the real signal for "how much clutter, actually" is
+  // detectedItems itself. hasCounterClutter stays excluded and always
+  // forces a real declutter pass — kitchen counters are higher-stakes for
+  // a listing than a single stray item elsewhere in a room.
   const minorPortableClutterOnly =
     !hasCounterClutter
-    && !hasSurfaceClutter
-    && hasLoosePortableItems
+    && (hasSurfaceClutter || hasLoosePortableItems)
     && (detectedItems.length === 0 || hasNuisanceOnlyPortableItems);
 
   const nonNuisancePortableItemsWithConfidence = nonNuisancePortableItems.filter(
     (item) => Number(item?.confidence) >= 0.55
   );
   const materialPortableClutter =
-    hasLoosePortableItems
+    (hasSurfaceClutter || hasLoosePortableItems)
     && !minorPortableClutterOnly
     && (
       nonNuisancePortableItemsWithConfidence.length >= 1
       || nonNuisancePortableItems.length >= 2
       || detectedItems.length >= 3
     );
-  const hasClutterSignals = hasCounterClutter || hasSurfaceClutter || materialPortableClutter;
+  // hasSurfaceClutter deliberately routed only through materialPortableClutter
+  // (not as its own unconditional OR-term) — same reasoning as
+  // minorPortableClutterOnly above: it's a location flag, not a count, so it
+  // must go through the itemized-evidence gate rather than force-triggering
+  // on its own. hasCounterClutter stays unconditional (kitchen counters).
+  const hasClutterSignals = hasCounterClutter || materialPortableClutter;
   const routingFurnitureSignals = {
     movableAnchors,
     movableFurnitureDetected,

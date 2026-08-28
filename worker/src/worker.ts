@@ -4964,6 +4964,20 @@ function summarizeExteriorDeclutterStats(imageStats: ExteriorDeclutterImageStats
   };
 }
 
+// Return value drives real Stage 2 routing (see call site in
+// handleEnhanceJob): "present" -> anchor survived 1B, safe to run Refresh
+// mode as originally intended; "absent" -> the anchor that justified
+// Refresh mode is gone from the actual image Stage 2 will process, so the
+// caller should fall back to FROM_EMPTY/full mode instead, which carries
+// the much more robust structural-protection machinery (buildUniversal-
+// FeatureProtectionSection, wall-visibility, anchor-locked planning) that
+// Refresh mode's generic "keep the anchor exactly where it is" instruction
+// depends on an anchor actually existing to apply to. "inconclusive" ->
+// detector failed or gave no usable result; caller should fail back to
+// today's existing behavior (REFRESH), matching this codebase's established
+// precedent elsewhere of treating detector failure as "assume furnished."
+export type PostStage1BAnchorResult = "present" | "absent" | "inconclusive";
+
 async function runPostStage1BAnchorValidator(params: {
   payload: EnhanceJobPayload;
   imagePath: string;
@@ -4971,15 +4985,25 @@ async function runPostStage1BAnchorValidator(params: {
   detectorCacheStats: { requests: number; hits: number };
   intent: "stage" | "non_stage";
   stage1BRan: boolean;
+  // Whether an anchor furniture piece was detected BEFORE Stage 1B ran
+  // (frozenRoutingSnapshot.geminiHasFurniture at the call site) — this is
+  // what actually distinguishes the two real cases: a room that had no
+  // anchor to begin with (nothing can survive 1B that wasn't there), vs a
+  // room that had one and may or may not have kept it through 1B. Only the
+  // second case is worth a real re-check.
+  hadAnchorPreStage1B: boolean;
+  roomType?: string;
+  // Retained for existing POST_1B_DETECTOR_RESULT telemetry only — no
+  // longer used to gate whether this runs.
   initialState: "EMPTY" | "ANCHOR_CLEAN" | "CLUTTERED" | null;
-}): Promise<void> {
-  const { payload, imagePath, detectorCache, detectorCacheStats, intent, stage1BRan, initialState } = params;
+}): Promise<PostStage1BAnchorResult> {
+  const { payload, imagePath, detectorCache, detectorCacheStats, intent, stage1BRan, hadAnchorPreStage1B, roomType, initialState } = params;
   if (
     intent !== "stage"
     || stage1BRan !== true
-    || initialState !== "CLUTTERED"
+    || hadAnchorPreStage1B !== true
   ) {
-    return;
+    return "inconclusive";
   }
 
   try {
@@ -5004,17 +5028,32 @@ async function runPostStage1BAnchorValidator(params: {
         imageId: payload.imageId,
         error: "DETECTION_FAILED_AFTER_RETRIES",
       }));
-      return;
+      return "inconclusive";
     }
 
     const post1BState = deriveRoomState(post1BAnalysis);
+    const post1BGateDecision = resolveFurnishedGateDecision({
+      analysis: post1BAnalysis,
+      localEmpty: false,
+      roomType,
+    });
+    // Matches the ORIGINAL pre-1B anchorDetected formula exactly (see
+    // frozenRoutingSnapshot.geminiHasFurniture's own computation) —
+    // deliberately NOT "roomState !== EMPTY", since FURNISHED_CLUTTERED can
+    // fire on clutter signals alone with no real anchor at all, which would
+    // incorrectly read as "anchor survived."
+    const anchorStillPresent =
+      (post1BGateDecision.movableAnchors?.length ?? 0) > 0
+      || post1BGateDecision.movableFurnitureDetected === true;
     logger.info("POST_1B_DETECTOR_RESULT", jobLogContext(payload, {
       event: "POST_1B_DETECTOR_RESULT",
       jobId: payload.jobId,
       imageId: payload.imageId,
       initialState,
       post1BState,
+      anchorStillPresent,
     }));
+    return anchorStillPresent ? "present" : "absent";
   } catch (error) {
     logger.warn("POST_1B_DETECTOR_FAILED", jobLogContext(payload, {
       event: "POST_1B_DETECTOR_FAILED",
@@ -5022,6 +5061,7 @@ async function runPostStage1BAnchorValidator(params: {
       imageId: payload.imageId,
       error: error instanceof Error ? error.message : String(error),
     }));
+    return "inconclusive";
   }
 }
 
@@ -10478,6 +10518,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     return;
   }
 
+  // Populated below (if 1B ran and there was an anchor to re-check) and
+  // consumed at the Stage 2 mode decision further down — see that block's
+  // comment for why this replaces the old stale-pre-1B-only decision.
+  let post1BAnchorResult: PostStage1BAnchorResult | null = null;
+
   if (payload.options.virtualStage && payload.options.declutter && path1B && sceneLabel === "interior") {
     nLog("[STAGE1B_FURNITURE_HEURISTIC]", {
       jobId: payload.jobId,
@@ -10497,13 +10542,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         : frozenRoutingSnapshot?.roomState === "EMPTY"
           ? "EMPTY"
           : (frozenRoutingSnapshot?.hasClutter === true ? "CLUTTERED" : null);
-    await runPostStage1BAnchorValidator({
+    post1BAnchorResult = await runPostStage1BAnchorValidator({
       payload,
       imagePath: path1B,
       detectorCache: jobContext.furnitureDetectionCache,
       detectorCacheStats: jobContext.detectorCacheStats,
       intent: hasVirtualStage && stage2Requested ? "stage" : "non_stage",
       stage1BRan: true,
+      hadAnchorPreStage1B: frozenRoutingSnapshot?.geminiHasFurniture === true,
+      roomType: canonicalRoomType,
       initialState,
     });
   }
@@ -10782,11 +10829,33 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         anchorDetectionUsed: false,
       });
     } else if (frozenRoutingSnapshot?.geminiHasFurniture === true) {
-      (payload.options as any).stage2Mode = "REFRESH";
-      nLog("[ANCHOR_DETECTION_BYPASS]", {
-        reason: "reuse_post_1a_detector",
-        anchorDetectionUsed: false,
-      });
+      // An anchor was detected BEFORE Stage 1B ran — but 1B only removes
+      // furniture, it can also (via generation error, or a legitimately
+      // ambiguous "which item is dominant" call) strip the very anchor that
+      // justified Refresh mode in the first place. Refresh mode's own
+      // "keep the anchor exactly where it is" instruction has nothing to
+      // apply to if that happened, which is a real, confirmed source of
+      // instability (curtain/opening drift) on rooms that reach Stage 2
+      // effectively empty despite being routed as furnished. post1BAnchorResult
+      // (see runPostStage1BAnchorValidator) re-checks the ACTUAL post-1B
+      // image when one was produced; only a positive "absent" confirmation
+      // flips the route — a null (1B didn't run/wasn't applicable) or
+      // "inconclusive" (detector failed) result preserves today's existing
+      // behavior exactly, so this can only make routing safer, never flakier.
+      if (post1BAnchorResult === "absent") {
+        (payload.options as any).stage2Mode = "FROM_EMPTY";
+        nLog("[ANCHOR_DETECTION_BYPASS]", {
+          reason: "anchor_lost_during_stage1b",
+          anchorDetectionUsed: true,
+        });
+      } else {
+        (payload.options as any).stage2Mode = "REFRESH";
+        nLog("[ANCHOR_DETECTION_BYPASS]", {
+          reason: "reuse_post_1a_detector",
+          anchorDetectionUsed: false,
+          post1BAnchorResult,
+        });
+      }
     }
   }
   

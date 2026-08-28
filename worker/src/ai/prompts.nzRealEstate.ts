@@ -1045,7 +1045,7 @@ ${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 Preserve surface textures and shadows exactly as they are. Do not beautify materials.`.trim();
     }
 
-      return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
+      return `STAGE 1B — STRUCTURED-RETAIN DECLUTTER (INTERIOR)
 
     ────────────────────────────────
     RULE PRIORITY ORDER (HIGHEST → LOWEST)
@@ -1428,7 +1428,7 @@ If constraints conflict, prioritize preserving the original image geometry exact
 Never reinterpret, simplify, or regenerate the room layout to resolve ambiguity.
 
 OUTPUT:
-Return only the empty room image.`.trim();
+Return the room with all rules above applied: the primary anchor furniture piece retained exactly as specified (if one was appropriate to keep per the rules above), and every other movable furniture item, clutter, and decor piece removed. Only return a fully empty room if no appropriate anchor was visible to begin with — do not remove an anchor that the rules above required you to keep.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture
