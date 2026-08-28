@@ -138,6 +138,37 @@ For EACH item, judge MATERIALITY: is this a genuine, load-bearing architectural 
 [{"id": string, "materiality": "material" | "low_materiality", "materialityReason": string}]`;
 }
 
+// Real production miss (2026-08-28): a doorway (D1) was replaced by a
+// fabricated window wider than D1's own baseline bbox. The standard
+// occlusion-vs-removal check correctly caught it (D1 verdict=removed,
+// detailed description of the doorway being gone and a window in its
+// place) — but fabricatedOpeningCheck's call 1 also separately noticed the
+// new window's extra width wasn't covered by D1's own (narrower) bbox,
+// flagged it as "unlisted," and call 2 correctly confirmed D1 itself
+// already existed in the baseline at roughly that spot. The overall
+// verdict, "baseline_extraction_miss," is true only in the narrow sense
+// that SOMETHING was already there — it says nothing about whether that
+// something is still the SAME thing. The override this function used to
+// apply on that verdict blindly rescued the ENTIRE opening result back to
+// pass whenever ANY standard failure existed, not just one actually caused
+// by the flagged location — silently discarding D1's own, already-correct
+// "removed" finding. Scoped here to only rescue when the flagged location
+// does NOT significantly overlap any of the items that are actually
+// failing; if it does, that item's own genuine alteration is presumed to
+// be the real cause, and the standard fail stands.
+function bboxOverlapFraction(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (intersection <= 0) return 0;
+  const areaA = Math.max(0, a[2] - a[0]) * Math.max(0, a[3] - a[1]);
+  const areaB = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+  const smaller = Math.min(areaA, areaB);
+  return smaller > 0 ? intersection / smaller : 0;
+}
+
 export async function runOpeningEnvelopeValidator(
   baselineImagePath: string,
   stagedImagePath: string,
@@ -216,22 +247,37 @@ export async function runOpeningEnvelopeValidator(
   //   overriding a standard "pass" it wouldn't otherwise have caught (this
   //   is exactly the gap that motivated building this check).
   // - "baseline_extraction_miss" (call 2 found it present in baseline too)
-  //   → the standard check's own confusion about this same missing/
-  //   misplaced baseline entry is presumed connected; if the standard
-  //   check hard-failed, override it to pass rather than block a job over
-  //   an extraction gap this check has independently confirmed is benign.
+  //   → rescue the standard check's hard-fail to pass ONLY when the
+  //   flagged location doesn't significantly overlap any of the items
+  //   actually causing that fail (see bboxOverlapFraction's header comment
+  //   — a real production case confirmed this override was blindly
+  //   rescuing a genuine, already-correctly-detected "doorway replaced by
+  //   window" violation just because the fabricated-check's separate,
+  //   narrower question — "was SOMETHING already here in the baseline" —
+  //   happened to also be true for the very item that had actually
+  //   changed). If it does overlap, that item's own alteration is presumed
+  //   the real, unrelated cause, and the standard fail stands untouched.
   let opening = standardOpening;
   if (fabricatedOpeningCheck.verdict === "fabricated") {
     opening = fabricatedOpeningCheck.outcome;
   } else if (fabricatedOpeningCheck.verdict === "baseline_extraction_miss" && standardOpening.status === "fail") {
-    opening = {
-      ...standardOpening,
-      status: "pass",
-      hardFail: false,
-      issueType: ISSUE_TYPES.NONE,
-      issueTier: "none",
-      reason: `${standardOpening.reason} | OVERRIDDEN by fabricated_opening_check (baseline_extraction_miss): ${fabricatedOpeningCheck.outcome.reason}`,
-    };
+    const flaggedBbox = fabricatedOpeningCheck.locationBbox;
+    const overlapsFailingItem = !flaggedBbox
+      ? false
+      : materialAlteredItems.some((item) => {
+          const itemBbox = baseline.openings.find((o) => o.id === item.id)?.bbox;
+          return !!itemBbox && bboxOverlapFraction(flaggedBbox, itemBbox) >= 0.3;
+        });
+    if (!overlapsFailingItem) {
+      opening = {
+        ...standardOpening,
+        status: "pass",
+        hardFail: false,
+        issueType: ISSUE_TYPES.NONE,
+        issueTier: "none",
+        reason: `${standardOpening.reason} | OVERRIDDEN by fabricated_opening_check (baseline_extraction_miss): ${fabricatedOpeningCheck.outcome.reason}`,
+      };
+    }
   }
 
   // Window-artwork override — one-directional only (can only turn a pass
