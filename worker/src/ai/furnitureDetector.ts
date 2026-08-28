@@ -225,6 +225,26 @@ function collectBuiltInFixtureTypes(analysis: FurnitureDetectionSuccess): string
   return Array.from(fixtureTypes);
 }
 
+// Real production miss (2026-08-28): the model's own top-level
+// detectedAnchors correctly said "freestanding_wardrobe" (the prompt
+// explicitly instructs it to use that value "ONLY when clearly movable and
+// not built-in"), with hasBuiltInFixtures=false and builtInFixtureTypes=[]
+// — no contradicting signal anywhere. This function nonetheless required
+// the SEPARATE furnitureItems list to also independently repeat the word
+// "freestanding"/"armoire" for the same item, which the model didn't do
+// here (it just called it "wardrobe" there), so a genuinely freestanding
+// wardrobe got dropped and the room routed straight to FROM_EMPTY,
+// skipping Stage 1B entirely — the wardrobe then survived into the final
+// staged output untouched.
+//
+// Fixed by flipping the polarity: trust detectedAnchors' own claim by
+// default (the prompt already gates it on "not built-in" once), and only
+// distrust it when there's an actual contradicting built-in signal
+// somewhere in the response (collectBuiltInFixtureTypes scans
+// detectedItems, furnitureItems, and the model's own builtInFixtureTypes
+// field). furnitureItems corroboration is still checked first and, when
+// present, is trusted immediately — it just no longer gates the decision
+// when absent.
 function hasFreestandingEvidence(
   analysis: FurnitureDetectionSuccess,
   anchor: "freestanding_wardrobe" | "large_freestanding_cabinet"
@@ -250,7 +270,12 @@ function hasFreestandingEvidence(
     }
   }
 
-  return false;
+  const builtInTypes = collectBuiltInFixtureTypes(analysis);
+  const contradictedByBuiltIn = anchor === "freestanding_wardrobe"
+    ? builtInTypes.some((t) => t.includes("wardrobe") || t.includes("closet"))
+    : builtInTypes.some((t) => t.includes("cabinet") || t.includes("cabinetry"));
+
+  return !contradictedByBuiltIn;
 }
 
 function resolveMovableAnchors(analysis: FurnitureDetectionSuccess): string[] {
@@ -901,35 +926,49 @@ export function resolveFurnishedGateDecision(params: {
     && detectedItems.length <= 2
     && nuisancePortableItems.length === detectedItems.length;
 
-  // Widened from hasLoosePortableItems-only: hasSurfaceClutter and
-  // hasLoosePortableItems are both model-set booleans with no reliable
-  // count backing of their own (a single pot plant/vase on a table can set
-  // either one) — the real signal for "how much clutter, actually" is
-  // detectedItems itself. hasCounterClutter stays excluded and always
-  // forces a real declutter pass — kitchen counters are higher-stakes for
-  // a listing than a single stray item elsewhere in a room.
+  // Widened from hasLoosePortableItems-only, then widened again to include
+  // hasCounterClutter (real production miss, 2026-08-28: a single vase
+  // sitting on a kitchen counter/island set hasCounterClutter=true, which
+  // this exclusion previously treated as always-material regardless of how
+  // little was actually there — forcing a full Stage 1B round-trip that
+  // then visibly changed almost nothing). All three clutter flags are
+  // model-set booleans with no reliable count backing of their own — the
+  // real signal for "how much clutter, actually" is detectedItems itself,
+  // so all three now go through the same itemized-evidence gate rather
+  // than any one of them force-triggering on its own.
+  //
+  // hasLoosePortableItems keeps its original, pre-existing treatment: an
+  // EMPTY detectedItems list next to it alone was already treated as
+  // non-blocking before this change. hasCounterClutter/hasSurfaceClutter
+  // are new to this leniency and get a stricter bar — real, itemized
+  // clutter (several items, or a real item with the model listing nothing
+  // else) still correctly forces Stage 1B; only an empty list next to ONE
+  // of these two specifically defaults to requiring 1B rather than being
+  // assumed minor, since an unitemized flag gives no positive evidence
+  // it's actually trivial.
+  const emptyListCountsAsMinor = hasLoosePortableItems && !hasCounterClutter && !hasSurfaceClutter && detectedItems.length === 0;
   const minorPortableClutterOnly =
-    !hasCounterClutter
-    && (hasSurfaceClutter || hasLoosePortableItems)
-    && (detectedItems.length === 0 || hasNuisanceOnlyPortableItems);
+    (hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems)
+    && (emptyListCountsAsMinor || hasNuisanceOnlyPortableItems);
 
   const nonNuisancePortableItemsWithConfidence = nonNuisancePortableItems.filter(
     (item) => Number(item?.confidence) >= 0.55
   );
   const materialPortableClutter =
-    (hasSurfaceClutter || hasLoosePortableItems)
+    (hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems)
     && !minorPortableClutterOnly
     && (
       nonNuisancePortableItemsWithConfidence.length >= 1
       || nonNuisancePortableItems.length >= 2
       || detectedItems.length >= 3
+      || ((hasCounterClutter || hasSurfaceClutter) && detectedItems.length === 0)
     );
-  // hasSurfaceClutter deliberately routed only through materialPortableClutter
-  // (not as its own unconditional OR-term) — same reasoning as
-  // minorPortableClutterOnly above: it's a location flag, not a count, so it
-  // must go through the itemized-evidence gate rather than force-triggering
-  // on its own. hasCounterClutter stays unconditional (kitchen counters).
-  const hasClutterSignals = hasCounterClutter || materialPortableClutter;
+  // All three clutter flags deliberately routed only through
+  // materialPortableClutter (not as unconditional OR-terms) — same
+  // reasoning as minorPortableClutterOnly above: each is a location flag,
+  // not a count, so all must go through the itemized-evidence gate rather
+  // than force-triggering on their own.
+  const hasClutterSignals = materialPortableClutter;
   const routingFurnitureSignals = {
     movableAnchors,
     movableFurnitureDetected,

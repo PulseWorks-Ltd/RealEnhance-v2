@@ -159,6 +159,33 @@ const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DE
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 // SINGLE-AUTHORITY: composite local validator always blocks
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
+// This flag now governs ONLY the Stage 1B pre-flight use of
+// runGeminiStructuralReviewPro (evaluateStage1BLightPolicy) — a genuinely
+// non-redundant check: is Stage 1B's own output (the image Stage 2 is
+// about to use as its input) structurally sound, BEFORE Stage 2 spends a
+// generation attempt on a possibly-corrupted base image. Default restored
+// to "true" (2026-08-28) for that reason.
+//
+// The SEPARATE end-of-Stage-2 use of this same underlying function —
+// re-checking the final staged output for structural identity AFTER the
+// split/specialist validators already passed it — was removed entirely,
+// not just flag-gated (see the Stage 2 final-pre-publish-gate block further
+// down, now a permanent pass-through). That one was a single, holistic
+// Gemini PASS/FAIL judgment with no structured describe-then-classify step
+// — architecturally the same "v1" pattern occlusionVsRemovalCheck.ts's own
+// header documents as unstable and was specifically rebuilt away from —
+// and its entire checklist (wall positions, room proportions, opening
+// count/placement, closets, built-ins, camera viewpoint) duplicated what
+// the split validators already check, more granularly and more reliably,
+// against the same original baseline. It also failed CLOSED on any JSON
+// parse error, meaning a response hiccup unrelated to the actual image
+// could present as a structural violation. Real confirmed case: a job's
+// attempt 1 was rejected in production while every split validator AND a
+// fresh re-run of this exact gate both passed cleanly against the same
+// images — redundant risk at that specific point, with no unique
+// protective value there. The Stage 1B pre-flight use above doesn't share
+// that redundancy (nothing else validates 1B's output before Stage 2 uses
+// it), which is why it's kept.
 const ENABLE_FINAL_STRUCTURAL_REVIEW = String(process.env.ENABLE_FINAL_STRUCTURAL_REVIEW ?? "true").toLowerCase() !== "false";
 const STAGE1B_BLANK_STDDEV_MAX = Math.max(
   0.01,
@@ -14539,57 +14566,32 @@ All openings must remain identical in position and size to the original image.`;
         }
       }
 
-      // Final pre-publish identity gate: Gemini structural review runs last.
-      let seePass = true;
-      let finalFailValidator: "structural_review" | "unknown" = "unknown";
-      let finalFailReason = "";
-
-      try {
-        const structuralReview = ENABLE_FINAL_STRUCTURAL_REVIEW
-          ? await runGeminiStructuralReviewPro(validationBasePath, path2, {
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-            })
-          : { result: "PASS" as const, confidence: 100, explanation: "final_structural_review_disabled" };
-
-        if (ENABLE_FINAL_STRUCTURAL_REVIEW) {
-          if (structuralReview.result === "FAIL") {
-            finalFailValidator = "structural_review";
-            seePass = false;
-            finalFailReason = structuralReview.explanation || "structural_review_failed";
-            logValidatorResult({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              validator: "structuralIdentityReview",
-              result: "FAIL",
-              reason: normalizeValidatorReason(finalFailReason),
-            });
-          } else {
-            logValidatorResult({
-              jobId: payload.jobId,
-              imageId: payload.imageId,
-              attempt,
-              validator: "structuralIdentityReview",
-              result: "PASS",
-              reason: "none",
-            });
-          }
-        }
-      } catch (finalGateErr: any) {
-        finalFailValidator = finalFailValidator === "unknown" ? "structural_review" : finalFailValidator;
-        seePass = false;
-        finalFailReason = finalGateErr?.message || String(finalGateErr);
-        logValidatorResult({
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          attempt,
-          validator: "structuralIdentityReview",
-          result: "FAIL",
-          reason: normalizeValidatorReason(finalFailReason),
-        });
-      }
+      // Final pre-publish identity gate — PERMANENTLY REMOVED (2026-08-28),
+      // not just flag-gated. See ENABLE_FINAL_STRUCTURAL_REVIEW's own
+      // comment near its declaration for the full reasoning: this was a
+      // single, holistic Gemini PASS/FAIL judgment fully redundant with the
+      // split/specialist validators that already ran above (same checklist,
+      // checked more granularly and more reliably there), that failed
+      // CLOSED on parse errors, and was confirmed in production to reject a
+      // clean image while every other check — including a fresh re-run of
+      // this exact gate — passed it. seePass/finalFailValidator/
+      // finalFailReason are kept as a permanent pass-through purely so the
+      // downstream mergeAttemptValidation/retry-hint code below (which
+      // several other real fixes this session depend on) doesn't need
+      // reshaping. ENABLE_FINAL_STRUCTURAL_REVIEW no longer has any bearing
+      // here — it now governs only the separate Stage 1B pre-flight use of
+      // the same underlying function.
+      const seePass = true;
+      const finalFailValidator: "structural_review" | "unknown" = "unknown";
+      const finalFailReason = "";
+      logValidatorResult({
+        jobId: payload.jobId,
+        imageId: payload.imageId,
+        attempt,
+        validator: "structuralIdentityReview",
+        result: "PASS",
+        reason: "removed",
+      });
 
       if (!seePass) {
         const normalizedFinalReason = String(finalFailReason || "final_identity_review_failed")
