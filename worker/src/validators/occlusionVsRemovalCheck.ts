@@ -69,6 +69,7 @@
 // list, so there is no premise sitting next to the question for the model
 // to agree with. See the validator files for how the two phases are laid
 // out in the actual prompt text.
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getGeminiClient } from "../ai/gemini";
 import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 
@@ -79,7 +80,26 @@ import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 // STAGE2_PROMPT_VARIANT anywhere. Default "gemini" preserves existing
 // behavior exactly.
 export type ValidatorModel = "gemini" | "grok";
+
+// Per-call-tree override for resolveValidatorModel() below — e.g. worker.ts's
+// specialist-validation retry loop forcing Gemini for one final attempt
+// after Grok has already failed to run twice (a 500, an empty response, a
+// timeout). Deliberately AsyncLocalStorage-based rather than a mutable
+// module/env variable: this whole validator subsystem runs several jobs
+// concurrently (confirmed in production logs — WORKER_CONCURRENCY>1), and a
+// shared mutable "current override" would leak one job's forced model
+// choice into another job's concurrent validation calls. AsyncLocalStorage
+// scopes the override to only the async call tree started inside
+// runWithForcedValidatorModel, with no cross-job interference.
+const validatorModelOverride = new AsyncLocalStorage<ValidatorModel>();
+
+export function runWithForcedValidatorModel<T>(model: ValidatorModel, fn: () => Promise<T>): Promise<T> {
+  return validatorModelOverride.run(model, fn);
+}
+
 export function resolveValidatorModel(): ValidatorModel {
+  const forced = validatorModelOverride.getStore();
+  if (forced) return forced;
   return String(process.env.STAGE2_VALIDATOR_MODEL || "gemini").trim().toLowerCase() === "grok" ? "grok" : "gemini";
 }
 import { toBase64 } from "../utils/images";

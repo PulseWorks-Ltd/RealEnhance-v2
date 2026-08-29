@@ -13717,13 +13717,31 @@ All openings must remain identical in position and size to the original image.`;
       // true-by-default initial values (a fabricated wall the validators
       // never actually got to examine), while its own first attempt
       // (validated normally, no error) had been correctly rejected.
-      const MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS = 2;
+      // Tier 3 (the last attempt) forces Gemini regardless of
+      // STAGE2_VALIDATOR_MODEL — real production incident: three Grok
+      // failures in one job (a 500, an empty response, a timeout) burned
+      // both attempts without ever producing a real verdict on a visually
+      // correct image, which then had to fall back for lack of any
+      // validation result at all. A same-provider retry doesn't help when
+      // the provider itself is having a bad stretch; switching models for
+      // the final try gives a real chance at an actual verdict instead of
+      // exhausting straight through to fallback. Scoped via
+      // runWithForcedValidatorModel (AsyncLocalStorage), not an env/module
+      // mutation, so it can never leak into another job's concurrent
+      // validation calls.
+      const MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS = 3;
       let specialistValidationSucceeded = false;
       let specialistValidationFailClosed = false;
       let specialistValidationLastError: any = null;
       for (let revalidateAttempt = 1; revalidateAttempt <= MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS; revalidateAttempt++) {
+        const isFinalAttempt = revalidateAttempt === MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS;
         try {
-          const outcome = await runSpecialistValidationBlock();
+          const outcome = isFinalAttempt
+            ? await (async () => {
+                const { runWithForcedValidatorModel } = await import("./validators/occlusionVsRemovalCheck.js");
+                return runWithForcedValidatorModel("gemini", () => runSpecialistValidationBlock());
+              })()
+            : await runSpecialistValidationBlock();
           if (outcome === "fail_closed") {
             // Genuine quorum failure, not a thrown error — this hard-stops
             // immediately with no retry at all, same as the original
@@ -13743,9 +13761,12 @@ All openings must remain identical in position and size to the original image.`;
             attempt,
             revalidateAttempt,
             maxRevalidateAttempts: MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS,
+            forcedGeminiThisAttempt: isFinalAttempt,
             reason: gateErrorMessage,
-            action: revalidateAttempt < MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS
-              ? "revalidating_same_image"
+            action: !isFinalAttempt
+              ? (revalidateAttempt === MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS - 1
+                  ? "revalidating_same_image_forcing_gemini_next"
+                  : "revalidating_same_image")
               : "revalidation_exhausted_treating_as_failed_attempt",
           });
         }

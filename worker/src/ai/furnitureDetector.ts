@@ -392,6 +392,16 @@ function isMinorPortableNuisanceItem(item: DetectedItem): boolean {
     || normalizedType.includes("protrusion")
     || normalizedType.includes("tiny")
     || normalizedType.includes("small")
+    // Real production miss (2026-08-29): the model returned "plant_pot"
+    // (pot-then-plant) for a single decorative counter plant — the exact
+    // set above only has "pot_plant"/"potted_plant" (plant-then-pot), so
+    // this word-order variant fell through as a "real" item and forced
+    // Stage 1B for a room whose only issue was one plant and one cord,
+    // exactly the case this leniency exists for. A substring check covers
+    // every "plant"/"pot" ordering the same way "cable"/"cord"/"wire"
+    // above already do for their own variants.
+    || normalizedType.includes("plant")
+    || normalizedType.includes("vase")
   );
 }
 

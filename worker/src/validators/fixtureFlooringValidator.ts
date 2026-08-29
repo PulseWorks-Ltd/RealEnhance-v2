@@ -65,6 +65,24 @@ function isDownlightItem(item: { type: string; description: string }): boolean {
   return item.type === "light_fixture" && /\b(downlight|recessed)\b/i.test(item.description || "");
 }
 
+// A TV wall-mount bracket having a television mounted on/over it — fully
+// or mostly hiding the bracket hardware — is the correct, expected outcome
+// of staging a room with an existing bracket (see FIXTURE_SYSTEM_INSTRUCTION's
+// own explicit note on this above), not a fixture removal. Confirmed real
+// production false positive (2026-08-29): the model's own
+// currentStateDescription plainly said a TV is now mounted at the
+// bracket's location and called this "the expected staging/staged
+// outcome" in its own words — yet still returned verdict=replaced/removed,
+// which without this check hard-fails a job for staging done correctly.
+// Scoped narrowly (type === "tv_mount" AND a TV/screen is described as now
+// present at the location) so a genuine bracket removal — the wall going
+// blank, no TV, no bracket, nothing at that location — is unaffected and
+// still hard-fails normally.
+function isExpectedTvMountCoverage(item: EnrichedFixtureResult): boolean {
+  if (item.type !== "tv_mount") return false;
+  return /\b(tv|television|screen|monitor|display)\b/i.test(item.rawObservation?.currentStateDescription || "");
+}
+
 function toPickedItems(fixtures: AnchorFixture[]): PickedItem[] {
   return (fixtures || []).map((f) => ({
     id: f.id,
@@ -150,7 +168,7 @@ export async function runFixtureFlooringValidator(
 
   const materialAlteredItems = itemResults.filter((r) => r.materiality === "material" && r.altered);
   const lowMaterialityItems = itemResults.filter((r) => r.materiality === "low_materiality");
-  const nonDownlightAlteredItems = materialAlteredItems.filter((r) => !isDownlightItem(r));
+  const nonDownlightAlteredItems = materialAlteredItems.filter((r) => !isDownlightItem(r) && !isExpectedTvMountCoverage(r));
 
   let fixture: ValidatorOutcome =
     materialAlteredItems.length === 0
@@ -159,9 +177,11 @@ export async function runFixtureFlooringValidator(
           status: "fail",
           reason: `fixture_flooring_validator: ${materialAlteredItems.map((a) => `${a.id} (${a.description}): verdict=${a.verdict} — ${a.verdict === "resized" ? a.rawObservation.extentComparisonDescription : a.rawObservation.currentStateDescription}`).join(" | ")}`,
           confidence: Math.min(...materialAlteredItems.map((a) => a.confidence ?? 0.8)),
-          // Downlight-only alterations are reported (status/reason/advisorySignals
-          // above still cover them) but cannot hard-fail on their own — see
-          // isDownlightItem's header comment.
+          // Downlight-only alterations, and a TV bracket now correctly
+          // covered by a mounted TV, are both reported (status/reason/
+          // advisorySignals above still cover them) but cannot hard-fail
+          // on their own — see isDownlightItem's and
+          // isExpectedTvMountCoverage's header comments.
           hardFail: nonDownlightAlteredItems.length > 0,
           issueType: ISSUE_TYPES.FIXTURE_CHANGED,
           issueTier: classifyIssueTier(ISSUE_TYPES.FIXTURE_CHANGED),
