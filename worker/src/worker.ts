@@ -12636,7 +12636,46 @@ All openings must remain identical in position and size to the original image.`;
         });
       };
 
-      try {
+      // Extracted to a callable block (not just inline try body) so it can
+      // be re-invoked against the SAME already-generated image when it
+      // throws, before ever falling back to a full regenerate/fallback
+      // decision — see the retry loop right after this block's closing
+      // brace for why. Returns "fail_closed" (instead of directly
+      // `break`-ing the outer Stage 2 attempt loop, which a nested
+      // function can no longer reach) for the one internal case that must
+      // hard-stop immediately with no retry at all — a genuine specialist
+      // execution quorum failure, as opposed to this whole block throwing,
+      // which the caller retries.
+      const runSpecialistValidationBlock = async (): Promise<"success" | "fail_closed"> => {
+        // Reset every accumulator this block writes to back to its initial
+        // state on entry. Needed because this function can now run twice
+        // for the same attempt (see the revalidate loop below) — without
+        // this, a call that threw partway through (e.g. after processing
+        // openings but before fixtures) would leave its partial results in
+        // these outer-scope arrays/objects, and a retry would then push a
+        // second, duplicate round on top rather than starting clean.
+        envelopePass = true;
+        openingPass = true;
+        fixturePass = true;
+        floorPass = true;
+        specialistAdvisorySignals.length = 0;
+        collectedStructuralSignals.length = 0;
+        specialistAdvisoryObservations.length = 0;
+        specialistStructuredIssues.length = 0;
+        openingAdvisoryObservations = [];
+        openingSignatureSignalDetected = false;
+        openingStructuralSignal = undefined;
+        openingStructuralSignalDetected = false;
+        specialistSignals.openings = { pass: true, reason: "none" };
+        specialistSignals.fixtures = { pass: true, reason: "none" };
+        specialistSignals.floor = { pass: true, reason: "none" };
+        specialistSignals.envelope = { pass: true, reason: "none" };
+        specialistResults.opening = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistResults.fixture = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistResults.envelope = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistResults.floor = { pass: true, hardFail: false, confidence: 0, issueType: ISSUE_TYPES.NONE, issueTier: "none" };
+        specialistIssueSignals.length = 0;
+
         const { runEnvelopeValidator } = await import("./validators/envelopeValidator.js");
         const { runOpeningValidator } = await import("./validators/openingValidator.js");
         const { runFixtureValidator } = await import("./validators/fixtureValidator.js");
@@ -13435,7 +13474,7 @@ All openings must remain identical in position and size to the original image.`;
               reason: failClosedReason,
             });
             logValidateFinal(attempt, "reject", attempt - 1);
-            break;
+            return "fail_closed";
           }
         }
 
@@ -13661,14 +13700,110 @@ All openings must remain identical in position and size to the original image.`;
             })),
           });
         }
-      } catch (err: any) {
-        const gateErrorMessage = err?.message || String(err);
-        nLog("[STAGE2_VALIDATION_SIGNAL_ERROR] domain validators unavailable (non-blocking)", {
+        return "success";
+      };
+
+      // An error here means the validators never actually examined this
+      // image — it is NOT evidence the image itself is bad, so the first
+      // response is to re-run validation on the SAME already-generated
+      // image (no new generation call), same as re-submitting a request
+      // that hit a transient infra error. Only if that also fails to
+      // produce a real result do we treat this as a failed Stage 2 attempt
+      // and fall into the existing regenerate-or-fallback decision below —
+      // exactly like any other validator hard fail. Real incident this
+      // guards against: a job's second attempt hit a validator execution
+      // error, and — before this fix — published immediately with
+      // openingPass/fixturePass/floorPass/envelopePass still at their
+      // true-by-default initial values (a fabricated wall the validators
+      // never actually got to examine), while its own first attempt
+      // (validated normally, no error) had been correctly rejected.
+      const MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS = 2;
+      let specialistValidationSucceeded = false;
+      let specialistValidationFailClosed = false;
+      let specialistValidationLastError: any = null;
+      for (let revalidateAttempt = 1; revalidateAttempt <= MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS; revalidateAttempt++) {
+        try {
+          const outcome = await runSpecialistValidationBlock();
+          if (outcome === "fail_closed") {
+            // Genuine quorum failure, not a thrown error — this hard-stops
+            // immediately with no retry at all, same as the original
+            // unconditional break this replaces (see runSpecialistValidationBlock's
+            // own comment on why it can't just `break` directly anymore).
+            specialistValidationFailClosed = true;
+            break;
+          }
+          specialistValidationSucceeded = true;
+          break;
+        } catch (err: any) {
+          specialistValidationLastError = err;
+          const gateErrorMessage = err?.message || String(err);
+          nLog("[STAGE2_VALIDATION_SIGNAL_ERROR] domain validators failed to run", {
+            jobId: payload.jobId,
+            imageId: payload.imageId,
+            attempt,
+            revalidateAttempt,
+            maxRevalidateAttempts: MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS,
+            reason: gateErrorMessage,
+            action: revalidateAttempt < MAX_SPECIALIST_VALIDATION_REVALIDATE_ATTEMPTS
+              ? "revalidating_same_image"
+              : "revalidation_exhausted_treating_as_failed_attempt",
+          });
+        }
+      }
+
+      if (specialistValidationFailClosed) {
+        break;
+      }
+
+      if (!specialistValidationSucceeded) {
+        // IMPORTANT: this used to be logged as "non-blocking" and execution
+        // fell through with openingPass/fixturePass/floorPass/envelopePass
+        // still at their true-by-default initial values — i.e. any error
+        // here silently produced an implicit PASS on every check for this
+        // attempt, with the failure itself suppressed under
+        // PRODUCTION_LOG_MODE=true. An attempt whose validators never
+        // produced a real result (even after re-validating the same image
+        // above) is not a passed attempt — treat it as a failed one, same
+        // as any other validator hard fail, so it retries with a fresh
+        // generation (or exhausts to fallback) instead of silently
+        // publishing unvalidated.
+        const gateErrorMessage = specialistValidationLastError?.message || String(specialistValidationLastError);
+        logValidatorResult({
           jobId: payload.jobId,
           imageId: payload.imageId,
           attempt,
-          reason: gateErrorMessage,
+          validator: "specialistOrchestration",
+          result: "FAIL",
+          reason: normalizeValidatorReason(`specialist_validation_error:${gateErrorMessage}`),
         });
+        if (attempt < MAX_STAGE2_RETRIES) {
+          logEvent("STAGE_RETRY", {
+            jobId: payload.jobId,
+            stage: "2",
+            retry: attempt + 1,
+            retriesRemaining: Math.max(0, MAX_STAGE2_RETRIES - attempt),
+            reason: "specialist_validation_error",
+          });
+          continue;
+        } else {
+          const fallback1B = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1B;
+          const fallbackStage = fallback1B ? "1B" : "1A";
+          stage2Blocked = true;
+          stage2FallbackStage = fallbackStage;
+          stage2BlockedReason = `stage2_specialist_validation_exhausted after ${MAX_STAGE2_RETRIES} attempts: ${gateErrorMessage}`;
+          fallbackUsed = fallbackStage === "1B" ? "stage2_specialist_error_fallback_1b" : "stage2_specialist_error_fallback_1a";
+          path2 = fallback1B || path1A;
+          stage2CandidatePath = path2;
+          logEvent("FATAL_RETRY_EXHAUSTION", {
+            jobId: payload.jobId,
+            stage: "2",
+            attempt,
+            reason: "specialist_validation_error",
+            error: gateErrorMessage,
+          });
+          logValidateFinal(attempt, "reject", attempt - 1);
+          break;
+        }
       }
 
       if (!isRefreshValidationBehavior) {

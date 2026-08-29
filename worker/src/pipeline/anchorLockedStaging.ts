@@ -394,6 +394,20 @@ type AnchorPlan = {
   anchorWallId: string;
   anchorWallLabel: string;
   anchorWallIndex: number;
+  // Purely descriptive, model-facing reference to the anchor wall (e.g.
+  // "the blank wall on the right side of the image") — built from this
+  // same wall's own verified tier data (isBlank/hasAnyWindow/etc, computed
+  // from baseline.openings), never from anchorWallLabel or the numeric
+  // wall_X id. See the comment on describeWallForPrompt for why: the
+  // "wall_0"/"wall_3" index is meaningless to the generation model, and
+  // wallLabel comes from a SEPARATE extraction call (extractWallVisibility)
+  // that isn't guaranteed to number/describe walls consistently with the
+  // structural baseline call that isBlank/openings are computed from — a
+  // real production case had wall_0 correctly identified as blank (zero
+  // openings on it) but its own wallLabel text still said "Left wall with
+  // window", which misled the generation model onto the wrong wall. This
+  // field is what the actual prompt text uses instead.
+  anchorWallDescription: string;
   anchorSegmentDescription: string;
   anchorOrientationInstruction: string;
   anchorFramingNote: string | null;
@@ -401,7 +415,40 @@ type AnchorPlan = {
   noDecorAboveBedNote: string | null;
   confidence: number;
   selectionReason: string;
+  // True when tier 4 fired — the anchor wall itself has a door or
+  // walkthrough opening on it (used only because no blank/window/return
+  // wall qualified). Real production case (Bedroom 12): the anchor plan
+  // correctly picked the room's own genuine last-resort wall per this
+  // exact tier, but the generated image still placed the bed's footprint
+  // across the doorway — nothing in the prompt told the model a doorway
+  // needs a clear swing path independent of where the bed itself sits.
+  anchorWallHasDoorOrWalkthrough: boolean;
 };
+
+// Position phrase from the wall's own bounding box in frame — independent
+// of any other wall's index/label. Thresholds are deliberately wide
+// (roughly thirds of the frame) since this only needs to be unambiguous
+// enough for Gemini to pick out the right wall by eye, not pixel-precise.
+function describeWallFramePosition(wall: WallVisibilityWall): string {
+  const { minX, maxX } = wallBBox(wall);
+  const centerX = (minX + maxX) / 2;
+  if (centerX < 0.35) return "on the left side of the image";
+  if (centerX > 0.65) return "on the right side of the image";
+  return "directly ahead, facing the camera";
+}
+
+// Builds the model-facing wall reference from this wall's own verified
+// tier data — never from wallLabel (a separate, potentially inconsistent
+// extraction call's free-form text) or the numeric wall_X id (meaningless
+// to an image-generation model). Mirrors selectAnchorWallByTier's own tier
+// order so the description always matches the real reason this wall won.
+function describeWallForPrompt(tierInfo: WallTierInfo): string {
+  const position = describeWallFramePosition(tierInfo.wall);
+  if (tierInfo.isBlank) return `the blank wall ${position}`;
+  if (tierInfo.hasAnyWindow) return `the wall with the window ${position}`;
+  if (tierInfo.hasDoorOrWalkthrough) return `the wall with the door ${position}`;
+  return `the wall ${position}`;
+}
 
 // Bedroom 11 production incident (real job, anchor_locked path): the bed
 // was correctly placed against a wall that also had a small window on it
@@ -469,8 +516,8 @@ function wallBBox(wall: WallVisibilityWall) {
 // below is a thin wrapper that passes bed's exact original orientation/
 // no-decor text; this function owns wall SELECTION only.
 type SingleAnchorItemConfig = {
-  buildOrientationInstruction: (focalFeatureId: string | null, focalFeatureType: string | null, focalFeatureWallIndex: number | null) => string;
-  buildNoDecorNote?: (wallId: string) => string;
+  buildOrientationInstruction: (focalFeatureId: string | null, focalFeatureType: string | null, focalFeatureWallDescription: string | null) => string;
+  buildNoDecorNote?: (wallDescription: string) => string;
 };
 
 // ── Four-tier wall-selection decision tree (replaces the old single
@@ -700,14 +747,21 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
       break;
     }
   }
-  const anchorOrientationInstruction = config.buildOrientationInstruction(focalFeatureId, focalFeatureType, focalFeatureWallIndex);
+  // Same principle as anchorWallDescription below: describe the focal
+  // feature's wall by its own frame position, never by its numeric wall_X
+  // id, which is meaningless to the generation model.
+  const focalFeatureWall = focalFeatureWallIndex !== null ? walls.find((w) => w.id === `wall_${focalFeatureWallIndex}`) : undefined;
+  const focalFeatureWallDescription = focalFeatureWall ? describeWallFramePosition(focalFeatureWall) : null;
+  const anchorOrientationInstruction = config.buildOrientationInstruction(focalFeatureId, focalFeatureType, focalFeatureWallDescription);
+
+  const anchorWallDescription = describeWallForPrompt(selection.info);
 
   const { minX, maxX } = wallBBox(selectedWall);
   const touchesRight = maxX >= 1 - FRAME_EDGE_EPSILON;
   const touchesLeft = minX <= FRAME_EDGE_EPSILON;
   const wallPartiallyVisible = touchesLeft || touchesRight;
   const anchorFramingNote = wallPartiallyVisible
-    ? `${selectedWall.id} is only partially visible in the frame (truncated at the ${touchesRight ? "right" : "left"} edge). Edge-cropped placement is acceptable.`
+    ? `${anchorWallDescription} is only partially visible in the frame (truncated at the ${touchesRight ? "right" : "left"} edge). Edge-cropped placement is acceptable.`
     : null;
 
   // A wall that's cropped by the frame edge can't be fully verified —
@@ -719,12 +773,13 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
   // where that assumption is least trustworthy. Conservative backstop:
   // no wall-mounted decor above the anchor item at all on a wall we can't
   // fully see, where the caller opts into this note at all.
-  const noDecorAboveBedNote = wallPartiallyVisible && config.buildNoDecorNote ? config.buildNoDecorNote(selectedWall.id) : null;
+  const noDecorAboveBedNote = wallPartiallyVisible && config.buildNoDecorNote ? config.buildNoDecorNote(anchorWallDescription) : null;
 
   return {
     anchorWallId: selectedWall.id,
     anchorWallLabel: selectedWall.wallLabel,
     anchorWallIndex: selectedWallIndex,
+    anchorWallDescription,
     anchorSegmentDescription: bestSegment.description,
     anchorOrientationInstruction,
     anchorFramingNote,
@@ -732,17 +787,18 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
     noDecorAboveBedNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
     selectionReason: `${selection.reason} (clear segment: "${bestSegment.description}", ${selection.info.largestSegment.toFixed(3)} >= ${MIN_USABLE_FRACTION_FOR_ANCHOR} size floor.)`,
+    anchorWallHasDoorOrWalkthrough: selection.info.hasDoorOrWalkthrough,
   };
 }
 
 export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
   return planSingleAnchorWall(baseline, walls, {
-    buildOrientationInstruction: (focalFeatureId, focalFeatureType, focalFeatureWallIndex) =>
+    buildOrientationInstruction: (focalFeatureId, focalFeatureType, focalFeatureWallDescription) =>
       focalFeatureId
-        ? `Orient the bed so its foot end points toward ${focalFeatureId} (the ${focalFeatureType} on wall_${focalFeatureWallIndex}) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on.`
+        ? `Orient the bed so its foot end points toward ${focalFeatureId} (the ${focalFeatureType} ${focalFeatureWallDescription || "on the opposite wall"}) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on.`
         : `No focal opening identified; orient the bed facing into the open floor area of the room.`,
-    buildNoDecorNote: (wallId) =>
-      `${wallId} is only partially visible in this photo, so its full extent cannot be verified. Do NOT place any wall-mounted artwork, mirrors, shelving, or other decor above the bed on this wall, even if it looks like there is room for it — leave the wall above the headboard bare.`,
+    buildNoDecorNote: (wallDescription) =>
+      `${wallDescription} is only partially visible in this photo, so its full extent cannot be verified. Do NOT place any wall-mounted artwork, mirrors, shelving, or other decor above the bed on this wall, even if it looks like there is room for it — leave the wall above the headboard bare.`,
   });
 }
 
@@ -756,9 +812,9 @@ export function planBedroomAnchor(baseline: StructuralBaseline, walls: WallVisib
 // grounding.
 function planDeskAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[]): AnchorPlan | null {
   return planSingleAnchorWall(baseline, walls, {
-    buildOrientationInstruction: (focalFeatureId, focalFeatureType, focalFeatureWallIndex) =>
+    buildOrientationInstruction: (focalFeatureId, focalFeatureType, focalFeatureWallDescription) =>
       focalFeatureId
-        ? `Orient the desk so a person sitting at it would face toward ${focalFeatureId} (the ${focalFeatureType} on wall_${focalFeatureWallIndex}) for natural light and an outward view — do not place the desk facing directly into the wall with its back to the room.`
+        ? `Orient the desk so a person sitting at it would face toward ${focalFeatureId} (the ${focalFeatureType} ${focalFeatureWallDescription || "on the opposite wall"}) for natural light and an outward view — do not place the desk facing directly into the wall with its back to the room.`
         : `No focal opening identified; orient the desk facing into the open floor area of the room, not directly facing the wall.`,
   });
 }
@@ -893,8 +949,12 @@ const MIN_ZONE_DEPTH_FOR_TV_FACING = 0.25;
 const WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO = 0.3;
 
 type DiningPlan = { center: Point; footprint: { halfWidth: number; halfHeight: number }; reasoning: string; nearKitchen?: boolean };
-type TvPlan = { wallId: string; wallLabel: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean };
-type SofaPlan = { wallId: string | null; wallLabel?: string; floorCentered?: boolean; facingWallId: string | null; orientationInstruction?: string; reasoning: string };
+// wallDescription on both plans below is the same model-facing, position-
+// based reference used for the bedroom/study anchor (see
+// describeWallForPrompt's comment) — wallId/wallLabel are kept for
+// diagnostics/logging only and must not be placed in prompt text.
+type TvPlan = { wallId: string; wallLabel: string; wallDescription: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean };
+type SofaPlan = { wallId: string | null; wallLabel?: string; wallDescription?: string; floorCentered?: boolean; facingWallId: string | null; orientationInstruction?: string; facingDescription?: string; reasoning: string; hasDoorOrWalkthrough?: boolean };
 type MultiAnchorPlan = {
   diningPlan: DiningPlan | null;
   tvPlan: TvPlan | null;
@@ -905,6 +965,27 @@ type MultiAnchorPlan = {
   diningZone: LivingDiningZone | undefined;
   depthCheckFlaggedSuspect: boolean;
 };
+
+// Prefer a candidate wall with no door/walkthrough opening on it; only fall
+// back to a door/walkthrough wall when it's the only qualifying candidate.
+// Mirrors the bedroom/study anchor tier system's own "door wall is last
+// resort" principle (selectAnchorWallByTier's tier 4), applied here to the
+// living-zone sofa's wall-anchored placement, which previously had no such
+// preference at all and could freely land on a wall with an active door or
+// walkthrough on it, blocking circulation.
+function pickSofaWallCandidate(
+  candidates: { wall: WallVisibilityWall; largestSegment: number }[],
+  baseline: StructuralBaseline
+): { wall: WallVisibilityWall; largestSegment: number; hasDoorOrWalkthrough: boolean } | undefined {
+  const wallHasDoorOrWalkthrough = (wallIndex: number) =>
+    baseline.openings.some((o) => o.wallIndex === wallIndex && (o.type === "door" || o.type === "walkthrough"));
+  const withDoorFlag = candidates.map((c) => ({
+    ...c,
+    hasDoorOrWalkthrough: wallHasDoorOrWalkthrough(Number(String(c.wall.id).replace("wall_", ""))),
+  }));
+  const nonDoorCandidates = withDoorFlag.filter((c) => !c.hasDoorOrWalkthrough);
+  return nonDoorCandidates[0] || withDoorFlag[0];
+}
 
 function planMultiAnchor(
   baseline: StructuralBaseline,
@@ -1039,6 +1120,7 @@ function planMultiAnchor(
       tvPlan = {
         wallId: tvCandidate.wall.id,
         wallLabel: tvCandidate.wall.wallLabel,
+        wallDescription: `the wall ${describeWallFramePosition(tvCandidate.wall)}`,
         segmentDescription: bracketFixture
           ? (bracketFixture.description || seg?.description || "at the existing TV mount bracket's location")
           : (seg?.description || ""),
@@ -1058,8 +1140,9 @@ function planMultiAnchor(
         .map((w) => ({ wall: w, largestSegment: (w.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0) }))
         .filter((c) => c.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR)
         .sort((a, b) => b.largestSegment - a.largestSegment);
-      sofaPlan = sofaCandidates[0]
-        ? { wallId: sofaCandidates[0].wall.id, wallLabel: sofaCandidates[0].wall.wallLabel, facingWallId: tvCandidate.wall.id, reasoning: `Sofa placed against ${sofaCandidates[0].wall.id}, facing ${tvCandidate.wall.id}.` }
+      const sofaPick = pickSofaWallCandidate(sofaCandidates, baseline);
+      sofaPlan = sofaPick
+        ? { wallId: sofaPick.wall.id, wallLabel: sofaPick.wall.wallLabel, wallDescription: `the wall ${describeWallFramePosition(sofaPick.wall)}`, facingWallId: tvCandidate.wall.id, hasDoorOrWalkthrough: sofaPick.hasDoorOrWalkthrough, reasoning: `Sofa placed against ${sofaPick.wall.id}, facing ${tvCandidate.wall.id}.${sofaPick.hasDoorOrWalkthrough ? " This wall has a door/walkthrough — used only because no other living-zone wall qualified." : ""}` }
         : { wallId: null, floorCentered: true, facingWallId: tvCandidate.wall.id, reasoning: `No other living-zone wall qualified; sofa floor-centered, facing ${tvCandidate.wall.id}.` };
       reasoning.push(sofaPlan.reasoning);
     } else {
@@ -1076,7 +1159,8 @@ function planMultiAnchor(
         .map((w) => ({ wall: w, largestSegment: (w.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0) }))
         .filter((c) => c.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR)
         .sort((a, b) => b.largestSegment - a.largestSegment);
-      const sofaWall = sofaCandidates[0]?.wall || null;
+      const sofaPick = pickSofaWallCandidate(sofaCandidates, baseline);
+      const sofaWall = sofaPick?.wall || null;
       const sofaWallIndex = sofaWall ? Number(String(sofaWall.id).replace("wall_", "")) : null;
       let focalFeatureId: string | null = null;
       let focalFeatureType: string | null = null;
@@ -1092,12 +1176,17 @@ function planMultiAnchor(
           break;
         }
       }
+      const focalFeatureWall = focalFeatureWallIndex !== null ? livingWallIndices.map((idx) => wallByIndex(idx)).find((w) => w?.id === `wall_${focalFeatureWallIndex}`) : undefined;
+      const focalFeatureWallDescription = focalFeatureWall ? describeWallFramePosition(focalFeatureWall) : null;
+      const facingDescription = focalFeatureId
+        ? `toward ${focalFeatureId} (the ${focalFeatureType} ${focalFeatureWallDescription || "on the opposite wall"})`
+        : `into the open floor area of the room`;
       const orientationInstruction = focalFeatureId
-        ? `Orient the sofa to face toward ${focalFeatureId} (the ${focalFeatureType} on wall_${focalFeatureWallIndex}).`
+        ? `Orient the sofa to face toward ${focalFeatureId} (the ${focalFeatureType} ${focalFeatureWallDescription || "on the opposite wall"}).`
         : `No focal opening identified; orient the sofa facing into the open floor area of the room.`;
       sofaPlan = sofaWall
-        ? { wallId: sofaWall.id, wallLabel: sofaWall.wallLabel, facingWallId: null, orientationInstruction, reasoning: `Sofa placed against ${sofaWall.id} — no TV to face. ${orientationInstruction}` }
-        : { wallId: null, floorCentered: true, facingWallId: null, orientationInstruction, reasoning: `No living-zone wall qualified; floor-centered. ${orientationInstruction}` };
+        ? { wallId: sofaWall.id, wallLabel: sofaWall.wallLabel, wallDescription: `the wall ${describeWallFramePosition(sofaWall)}`, facingWallId: null, orientationInstruction, facingDescription, hasDoorOrWalkthrough: sofaPick?.hasDoorOrWalkthrough, reasoning: `Sofa placed against ${sofaWall.id} — no TV to face. ${orientationInstruction}${sofaPick?.hasDoorOrWalkthrough ? " This wall has a door/walkthrough — used only because no other living-zone wall qualified." : ""}` }
+        : { wallId: null, floorCentered: true, facingWallId: null, orientationInstruction, facingDescription, reasoning: `No living-zone wall qualified; floor-centered. ${orientationInstruction}` };
       reasoning.push(sofaPlan.reasoning);
     }
   }
@@ -1145,14 +1234,61 @@ function checkClearance(sofaPos: { x: number; y: number }, entryOpenings: Struct
   return { clear: true, reason: entryOpenings.length > 0 ? `Sofa clears all entry openings by >= ${CLEARANCE_RADIUS}.` : "No entry openings on the living zone's bordering walls." };
 }
 
-function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstructionOverride?: string): string {
+// Floating vs. wall-anchored is decided on its own merits — clear floor
+// depth and circulation clearance — never on whether a TV happens to be
+// present. A floating sofa facing the TV is one possible OUTCOME when a TV
+// exists and floating is practical; it is not, and never was, a rule that
+// floating only applies because of a TV. This always evaluates floating
+// first and falls back to the (door-avoiding) wall-anchored plan already
+// computed on plan.sofaPlan when floating isn't practical here.
+function resolveSofaPlacement(
+  baseline: StructuralBaseline,
+  zone: LivingDiningZone,
+  plan: MultiAnchorPlan
+): { instruction: string; floating: boolean } | null {
+  if (!plan.sofaPlan) return null;
+
+  const livingWallIndices: number[] = zone.borderingWallIndices || [];
+  const zoneBBox = polygonBBox(zone.floorRegion.polygon);
+  const zoneDepth = zoneBBox.maxY - zoneBBox.minY;
+  const depthOk = zoneDepth >= MIN_ZONE_DEPTH_FOR_TV_FACING;
+  const entryOpenings = findLivingZoneEntryOpenings(baseline, livingWallIndices);
+  const sofaPos = computeFloatingSofaPosition(zone, entryOpenings);
+  const clearance = checkClearance(sofaPos, entryOpenings);
+
+  if (depthOk && clearance.clear) {
+    const facingClause = plan.tvPlan
+      ? `facing directly toward ${plan.tvPlan.wallDescription} (the TV wall)`
+      : `facing ${plan.sofaPlan.facingDescription || "into the open floor area of the room"}`;
+    const clearanceClause =
+      entryOpenings.length > 0
+        ? ` This position is deliberately clear of the direct path from ${entryOpenings.map((o) => o.id).join("/")} into the room — do not place the sofa against a side or adjacent wall, and do not place it so it blocks the walking path from that opening into the rest of the room.`
+        : ` Do not place the sofa against a side or adjacent wall.`;
+    return {
+      floating: true,
+      instruction: `Place the sofa floating in the room (not against any wall), ${facingClause}, positioned at approximately normalized coordinates [${sofaPos.x.toFixed(3)}, ${sofaPos.y.toFixed(3)}] of the full photo.${clearanceClause}`,
+    };
+  }
+
+  const doorGuidance = plan.sofaPlan.hasDoorOrWalkthrough
+    ? " This wall has a door or walkthrough opening on it — arrange the sofa and any other furniture so the doorway's full swing path and a clear walking route through it remain completely unobstructed; do not let the sofa or its footprint block the doorway."
+    : "";
+  const where = plan.sofaPlan.wallId
+    ? `against ${plan.sofaPlan.wallDescription || "the wall selected by the room's own layout analysis"}`
+    : `floor-centered within the zone (no wall is suitable for large furniture)`;
+  return {
+    floating: false,
+    instruction: `Place a sofa ${where}. ${plan.sofaPlan.orientationInstruction || ""}${doorGuidance}`.trim(),
+  };
+}
+
+function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstruction?: string): string {
   const livingLines: string[] = [];
-  if (plan.tvPlan && sofaInstructionOverride) {
-    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallId} (${plan.tvPlan.wallLabel}), within the segment described as "${plan.tvPlan.segmentDescription}".`);
-    livingLines.push(`* ${sofaInstructionOverride}`);
-  } else if (plan.sofaPlan) {
-    const where = plan.sofaPlan.wallId ? `against ${plan.sofaPlan.wallId} (${plan.sofaPlan.wallLabel})` : `floor-centered within the living zone (no wall in this zone is suitable for large furniture)`;
-    livingLines.push(`* Place a sofa ${where}. ${plan.sofaPlan.orientationInstruction || ""}`.trim());
+  if (plan.tvPlan) {
+    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallDescription}, within the segment described as "${plan.tvPlan.segmentDescription}".`);
+  }
+  if (sofaInstruction) {
+    livingLines.push(`* ${sofaInstruction}`);
   }
   const diningLines: string[] = [];
   if (plan.diningPlan) {
@@ -1205,14 +1341,13 @@ function buildSyntheticWholeRoomLivingZone(walls: WallVisibilityWall[]): LivingD
   };
 }
 
-function buildLivingRoomOnlyAnchorSection(plan: MultiAnchorPlan, sofaInstructionOverride?: string): string {
+function buildLivingRoomOnlyAnchorSection(plan: MultiAnchorPlan, sofaInstruction?: string): string {
   const livingLines: string[] = [];
-  if (plan.tvPlan && sofaInstructionOverride) {
-    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallId} (${plan.tvPlan.wallLabel}), within the segment described as "${plan.tvPlan.segmentDescription}".`);
-    livingLines.push(`* ${sofaInstructionOverride}`);
-  } else if (plan.sofaPlan) {
-    const where = plan.sofaPlan.wallId ? `against ${plan.sofaPlan.wallId} (${plan.sofaPlan.wallLabel})` : `floor-centered within the room (no wall is suitable for large furniture)`;
-    livingLines.push(`* Place a sofa ${where}. ${plan.sofaPlan.orientationInstruction || ""}`.trim());
+  if (plan.tvPlan) {
+    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallDescription}, within the segment described as "${plan.tvPlan.segmentDescription}".`);
+  }
+  if (sofaInstruction) {
+    livingLines.push(`* ${sofaInstruction}`);
   }
   return `ANCHOR ITEMS — LIVING ROOM (must be followed exactly)\n\n${livingLines.join("\n")}`;
 }
@@ -1228,23 +1363,8 @@ function buildLivingRoomPrompt(
     return { prompt: null, fallbackReason: "no_valid_living_anchor", extra: {} };
   }
 
-  let sofaInstructionOverride: string | undefined;
-  if (plan.tvPlan) {
-    const livingWallIndices: number[] = wholeRoomZone.borderingWallIndices || [];
-    const entryOpenings = findLivingZoneEntryOpenings(baseline, livingWallIndices);
-    const sofaPos = computeFloatingSofaPosition(wholeRoomZone, entryOpenings);
-    const clearance = checkClearance(sofaPos, entryOpenings);
-    if (!clearance.clear) {
-      return { prompt: null, fallbackReason: `sofa_clearance_check_failed:${clearance.reason}`, extra: { tvPlaced: true } };
-    }
-    const clearanceClause =
-      entryOpenings.length > 0
-        ? ` This position is deliberately clear of the direct path from ${entryOpenings.map((o) => o.id).join("/")} into the room — do not place the sofa against a side or adjacent wall, and do not place it so it blocks the walking path from that opening into the rest of the room.`
-        : ` Do not place the sofa against a side or adjacent wall.`;
-    sofaInstructionOverride = `Place the sofa floating in the room (not against any wall), facing directly toward ${plan.tvPlan.wallId} (the TV wall), positioned at approximately normalized coordinates [${sofaPos.x.toFixed(3)}, ${sofaPos.y.toFixed(3)}] of the full photo.${clearanceClause}`;
-  }
-
-  const anchorSection = buildLivingRoomOnlyAnchorSection(plan, sofaInstructionOverride);
+  const sofaPlacement = resolveSofaPlacement(baseline, wholeRoomZone, plan);
+  const anchorSection = buildLivingRoomOnlyAnchorSection(plan, sofaPlacement?.instruction);
 
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
@@ -1262,7 +1382,7 @@ Beyond the anchor items above and the structural constraints above, use your own
     extra: {
       tvPlaced: !!plan.tvPlan,
       tvUsedBracket: !!plan.tvPlan?.usedBracket,
-      sofaFloating: !!sofaInstructionOverride,
+      sofaFloating: !!sofaPlacement?.floating,
       anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
     },
   };
@@ -1475,6 +1595,9 @@ function buildBedroomPrompt(
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
   const noDecorLine = plan.noDecorAboveBedNote ? `\n* ${plan.noDecorAboveBedNote}` : "";
+  const doorWallLine = plan.anchorWallHasDoorOrWalkthrough
+    ? `\n* This wall has a door or walkthrough opening on it — it was used only because no blank, window, or return wall in the room qualified. Position the bed and its footprint so the doorway's full swing path and a clear walking route through it remain completely unobstructed; do not let the bed block the doorway.`
+    : "";
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   const anchorWallFeaturesSection =
@@ -1488,8 +1611,8 @@ ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
 ANCHOR ITEM — BED (must be followed exactly)
 
-* Place the bed against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${anchorWallFeaturesSection}
+* Place the bed against ${plan.anchorWallDescription}, within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
+* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${doorWallLine}${anchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
@@ -1521,6 +1644,9 @@ function buildStudyPrompt(
   }
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
+  const doorWallLine = plan.anchorWallHasDoorOrWalkthrough
+    ? `\n* This wall has a door or walkthrough opening on it — it was used only because no blank, window, or return wall in the room qualified. Position the desk and its footprint so the doorway's full swing path and a clear walking route through it remain completely unobstructed; do not let the desk block the doorway.`
+    : "";
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   const anchorWallFeaturesSection =
@@ -1534,8 +1660,8 @@ ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
 ANCHOR ITEM — DESK (must be followed exactly)
 
-* Place a desk against ${plan.anchorWallId} in the room analysis, referred to as "${plan.anchorWallLabel}", within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${anchorWallFeaturesSection}
+* Place a desk against ${plan.anchorWallDescription}, within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
+* ${plan.anchorOrientationInstruction}${framingLine}${doorWallLine}${anchorWallFeaturesSection}
 * Include a desk chair at the desk, and keep the desk surface realistically tidy (e.g. a laptop or monitor, a small lamp, a few books or folders) — not empty, and not cluttered.
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
@@ -1580,23 +1706,8 @@ async function buildLivingDiningPrompt(
     return { prompt: null, fallbackReason: "no_valid_living_anchor", extra: { zoningExtracted: true } };
   }
 
-  let sofaInstructionOverride: string | undefined;
-  if (plan.tvPlan) {
-    const livingWallIndices: number[] = livingZone.borderingWallIndices || [];
-    const entryOpenings = findLivingZoneEntryOpenings(baseline, livingWallIndices);
-    const sofaPos = computeFloatingSofaPosition(livingZone, entryOpenings);
-    const clearance = checkClearance(sofaPos, entryOpenings);
-    if (!clearance.clear) {
-      return { prompt: null, fallbackReason: `sofa_clearance_check_failed:${clearance.reason}`, extra: { zoningExtracted: true, tvPlaced: true } };
-    }
-    const clearanceClause =
-      entryOpenings.length > 0
-        ? ` This position is deliberately clear of the direct path from ${entryOpenings.map((o) => o.id).join("/")} into the room — do not place the sofa against a side or adjacent wall, and do not place it so it blocks the walking path from that opening into the rest of the room.`
-        : ` Do not place the sofa against a side or adjacent wall.`;
-    sofaInstructionOverride = `Place the sofa floating in the room (not against any wall), facing directly toward ${plan.tvPlan.wallId} (the TV wall), positioned at approximately normalized coordinates [${sofaPos.x.toFixed(3)}, ${sofaPos.y.toFixed(3)}] of the full photo.${clearanceClause}`;
-  }
-
-  const anchorSection = buildLivingDiningAnchorSection(plan, sofaInstructionOverride);
+  const sofaPlacement = resolveSofaPlacement(baseline, livingZone, plan);
+  const anchorSection = buildLivingDiningAnchorSection(plan, sofaPlacement?.instruction);
 
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
@@ -1615,7 +1726,7 @@ Beyond the anchor items above and the structural constraints above, use your own
       zoningExtracted: true,
       tvPlaced: !!plan.tvPlan,
       tvUsedBracket: !!plan.tvPlan?.usedBracket,
-      sofaFloating: !!sofaInstructionOverride,
+      sofaFloating: !!sofaPlacement?.floating,
       anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
     },
   };
