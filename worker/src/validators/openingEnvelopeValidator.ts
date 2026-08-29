@@ -53,9 +53,10 @@ import { runFabricatedOpeningCheck, type FabricatedOpeningCheckResult } from "./
 import { runWindowArtworkCheckForOpenings, type WindowArtworkItemResult } from "./windowArtworkCheck";
 import { runVanishedLandmarkCheckForItems, isVanishedLandmarkOverrideEligible, type VanishedLandmarkItemResult } from "./vanishedLandmarkCheck";
 import type { PickedItem } from "./semanticItemRef";
-import { newValidatorChecksBlocking } from "./validatorModelCall";
+import { newValidatorChecksBlocking, doorAccessClearanceCheckBlocking } from "./validatorModelCall";
 import {
   HUMAN_EYE_FRAMING,
+  shouldRescueBaselineExtractionMiss,
   buildObservationOnlyItemList,
   buildObservationQuestionsInstruction,
   buildObservationSchemaText,
@@ -65,6 +66,8 @@ import {
   type OcclusionCombinedResult,
   type OcclusionObservationRaw,
 } from "./occlusionVsRemovalCheck";
+import { runDoorArtworkCheckForOpenings, type DoorArtworkItemResult } from "./doorArtworkCheck";
+import { runDoorAccessClearanceCheckForOpenings, type DoorAccessClearanceItemResult } from "./doorAccessClearanceCheck";
 
 function buildStructuralHint(o: StructuralOpening): string | undefined {
   const isDoorLike = o.type === "door" || o.type === "closet_door" || o.type === "walkthrough";
@@ -93,6 +96,8 @@ export type OpeningEnvelopeValidatorResult = {
   lowMaterialityItems: EnrichedOpeningResult[];
   fabricatedOpeningCheck: FabricatedOpeningCheckResult;
   windowArtworkCheck: WindowArtworkItemResult[];
+  doorArtworkCheck: DoorArtworkItemResult[];
+  doorAccessClearanceCheck: DoorAccessClearanceItemResult[];
   vanishedLandmarkCheck: VanishedLandmarkItemResult[];
 };
 
@@ -155,19 +160,9 @@ For EACH item, judge MATERIALITY: is this a genuine, load-bearing architectural 
 // "removed" finding. Scoped here to only rescue when the flagged location
 // does NOT significantly overlap any of the items that are actually
 // failing; if it does, that item's own genuine alteration is presumed to
-// be the real cause, and the standard fail stands.
-function bboxOverlapFraction(a: [number, number, number, number], b: [number, number, number, number]): number {
-  const x1 = Math.max(a[0], b[0]);
-  const y1 = Math.max(a[1], b[1]);
-  const x2 = Math.min(a[2], b[2]);
-  const y2 = Math.min(a[3], b[3]);
-  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-  if (intersection <= 0) return 0;
-  const areaA = Math.max(0, a[2] - a[0]) * Math.max(0, a[3] - a[1]);
-  const areaB = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
-  const smaller = Math.min(areaA, areaB);
-  return smaller > 0 ? intersection / smaller : 0;
-}
+// be the real cause, and the standard fail stands. bboxOverlapFraction
+// itself now lives in occlusionVsRemovalCheck.ts (shared with
+// fixtureFlooringValidator.ts's identical fabricated-fixture rescue).
 
 export async function runOpeningEnvelopeValidator(
   baselineImagePath: string,
@@ -175,7 +170,7 @@ export async function runOpeningEnvelopeValidator(
   baseline: StructuralBaseline,
   ctx: { jobId: string; imageId: string; attempt?: number }
 ): Promise<OpeningEnvelopeValidatorResult> {
-  const [raw, envelopeResult, fabricatedOpeningCheck, windowArtworkCheck, vanishedLandmarkCheck] = await Promise.all([
+  const [raw, envelopeResult, fabricatedOpeningCheck, windowArtworkCheck, doorArtworkCheck, doorAccessClearanceCheck, vanishedLandmarkCheck] = await Promise.all([
     runOcclusionObservationCall({
       systemInstruction: OPENING_SYSTEM_INSTRUCTION,
       userPrompt: `${buildOpeningPhaseAPrompt(baseline)}\n\n${buildOpeningPhaseBPrompt(baseline)}`,
@@ -203,6 +198,25 @@ export async function runOpeningEnvelopeValidator(
     // none); self-contained error handling degrades to a safe non-blocking
     // result, never throws into this Promise.all.
     runWindowArtworkCheckForOpenings(baseline.openings, stagedImagePath, ctx),
+    // Artwork-on-door-surface: the door-side sibling of the window-artwork
+    // check above — a glass/mirror/sliding door's own operable surface
+    // covered by mounted artwork is the same occlusion-logic blind spot,
+    // door-shaped instead of window-shaped. See doorArtworkCheck.ts's
+    // header (RealEnhance audit finding C3 — ported from
+    // tmp/implausibleStagingCheck.ts's Part C, previously left
+    // unintegrated). Same self-contained error handling as the window
+    // check; a plain flush solid door is not_applicable and never fires.
+    runDoorArtworkCheckForOpenings(baseline.openings, stagedImagePath, ctx),
+    // Door/walkthrough access clearance: catches furniture blocking a
+    // doorway's own threshold/swing path — a functional-usability failure
+    // distinct from anything the presence-based checks above can express.
+    // See doorAccessClearanceCheck.ts's header (RealEnhance audit finding
+    // H1) for the real production case (Bedroom 12) this targets, and for
+    // why this specific check ships gated behind its OWN, independently
+    // defaulted flag (doorAccessClearanceCheckBlocking) rather than the
+    // now-proven newValidatorChecksBlocking flag — it has no comparable
+    // production track record yet.
+    runDoorAccessClearanceCheckForOpenings(baseline.openings, stagedImagePath, ctx),
     // Vanished-landmark: catches drift near an opening that the standard
     // per-item check can't see (a nearby structural landmark vanishing,
     // not the opening's own bbox changing) — see vanishedLandmarkCheck.ts's
@@ -249,9 +263,10 @@ export async function runOpeningEnvelopeValidator(
   // - "baseline_extraction_miss" (call 2 found it present in baseline too)
   //   → rescue the standard check's hard-fail to pass ONLY when the
   //   flagged location doesn't significantly overlap any of the items
-  //   actually causing that fail (see bboxOverlapFraction's header comment
-  //   — a real production case confirmed this override was blindly
-  //   rescuing a genuine, already-correctly-detected "doorway replaced by
+  //   actually causing that fail (see shouldRescueBaselineExtractionMiss's
+  //   header comment in occlusionVsRemovalCheck.ts — a real production
+  //   case confirmed this override was blindly rescuing a genuine,
+  //   already-correctly-detected "doorway replaced by
   //   window" violation just because the fabricated-check's separate,
   //   narrower question — "was SOMETHING already here in the baseline" —
   //   happened to also be true for the very item that had actually
@@ -261,14 +276,11 @@ export async function runOpeningEnvelopeValidator(
   if (fabricatedOpeningCheck.verdict === "fabricated") {
     opening = fabricatedOpeningCheck.outcome;
   } else if (fabricatedOpeningCheck.verdict === "baseline_extraction_miss" && standardOpening.status === "fail") {
-    const flaggedBbox = fabricatedOpeningCheck.locationBbox;
-    const overlapsFailingItem = !flaggedBbox
-      ? false
-      : materialAlteredItems.some((item) => {
-          const itemBbox = baseline.openings.find((o) => o.id === item.id)?.bbox;
-          return !!itemBbox && bboxOverlapFraction(flaggedBbox, itemBbox) >= 0.3;
-        });
-    if (!overlapsFailingItem) {
+    const shouldRescue = shouldRescueBaselineExtractionMiss(
+      fabricatedOpeningCheck.locationBbox,
+      materialAlteredItems.map((item) => baseline.openings.find((o) => o.id === item.id)?.bbox)
+    );
+    if (shouldRescue) {
       opening = {
         ...standardOpening,
         status: "pass",
@@ -302,6 +314,47 @@ export async function runOpeningEnvelopeValidator(
     };
   }
 
+  // Artwork-on-door-surface override — same one-directional shape and
+  // blocking gate as the window-artwork override above (RealEnhance audit
+  // finding C3). Uses newValidatorChecksBlocking() since this check is a
+  // direct structural sibling of the window-artwork check that already
+  // earned that flag's "true" state.
+  const doorArtworkFailures = doorArtworkCheck.filter((d) => d.verdict === "fail_artwork_on_door_surface");
+  if (doorArtworkFailures.length > 0) {
+    const blocking = newValidatorChecksBlocking();
+    opening = {
+      ...opening,
+      status: "fail",
+      hardFail: opening.hardFail || blocking,
+      confidence: Math.min(opening.confidence, 0.75),
+      issueType: ISSUE_TYPES.ARTWORK_ON_DOOR_SURFACE,
+      issueTier: classifyIssueTier(ISSUE_TYPES.ARTWORK_ON_DOOR_SURFACE),
+      reason: `${opening.reason} | artwork_on_door_surface: ${doorArtworkFailures.map((d) => `${d.itemId} (${d.description}): ${d.reason}`).join(" | ")}`,
+      advisorySignals: [...opening.advisorySignals, ...doorArtworkFailures.map((d) => `artwork_on_door_surface:${d.itemId}`)],
+    };
+  }
+
+  // Door/walkthrough access-clearance override — same one-directional
+  // shape, but gated by its OWN independently-defaulted flag
+  // (doorAccessClearanceCheckBlocking, default false) rather than
+  // newValidatorChecksBlocking — see doorAccessClearanceCheck.ts's header
+  // for why this brand-new check must earn its own blocking status
+  // separately (RealEnhance audit finding H1).
+  const doorAccessBlockedFailures = doorAccessClearanceCheck.filter((d) => d.verdict === "fail_access_blocked");
+  if (doorAccessBlockedFailures.length > 0) {
+    const blocking = doorAccessClearanceCheckBlocking();
+    opening = {
+      ...opening,
+      status: "fail",
+      hardFail: opening.hardFail || blocking,
+      confidence: Math.min(opening.confidence, 0.75),
+      issueType: ISSUE_TYPES.DOOR_ACCESS_BLOCKED,
+      issueTier: classifyIssueTier(ISSUE_TYPES.DOOR_ACCESS_BLOCKED),
+      reason: `${opening.reason} | door_access_blocked: ${doorAccessBlockedFailures.map((d) => `${d.itemId} (${d.description}): ${d.reason}`).join(" | ")}`,
+      advisorySignals: [...opening.advisorySignals, ...doorAccessBlockedFailures.map((d) => `door_access_blocked:${d.itemId}`)],
+    };
+  }
+
   // Vanished-landmark override — same one-directional shape and blocking
   // gate as above.
   const vanishFailures = vanishedLandmarkCheck.filter((v) => isVanishedLandmarkOverrideEligible(v.verdict));
@@ -319,5 +372,5 @@ export async function runOpeningEnvelopeValidator(
     };
   }
 
-  return { opening, envelope: envelopeResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedOpeningCheck, windowArtworkCheck, vanishedLandmarkCheck };
+  return { opening, envelope: envelopeResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedOpeningCheck, windowArtworkCheck, doorArtworkCheck, doorAccessClearanceCheck, vanishedLandmarkCheck };
 }

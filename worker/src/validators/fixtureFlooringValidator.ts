@@ -25,10 +25,12 @@ import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline, AnchorFixture } from "./openingPreservationValidator";
 import { runFlooringBoundaryCheck } from "./flooringBoundaryCheck";
 import { runVanishedLandmarkCheckForItems, isVanishedLandmarkOverrideEligible, type VanishedLandmarkItemResult } from "./vanishedLandmarkCheck";
+import { runFabricatedFixtureCheck, type FabricatedFixtureCheckResult } from "./fabricatedFixtureCheck";
 import type { PickedItem } from "./semanticItemRef";
 import { newValidatorChecksBlocking } from "./validatorModelCall";
 import {
   HUMAN_EYE_FRAMING,
+  shouldRescueBaselineExtractionMiss,
   buildObservationOnlyItemList,
   buildObservationQuestionsInstruction,
   buildObservationSchemaText,
@@ -50,6 +52,7 @@ export type FixtureFlooringValidatorResult = {
   itemResults: EnrichedFixtureResult[];
   materialAlteredItems: EnrichedFixtureResult[];
   lowMaterialityItems: EnrichedFixtureResult[];
+  fabricatedFixtureCheck: FabricatedFixtureCheckResult;
   vanishedLandmarkCheck: VanishedLandmarkItemResult[];
 };
 
@@ -132,7 +135,7 @@ export async function runFixtureFlooringValidator(
 ): Promise<FixtureFlooringValidatorResult> {
   const fixtures = baseline.anchorFixtures || [];
 
-  const [raw, floorCheckResult, vanishedLandmarkCheck] = await Promise.all([
+  const [raw, floorCheckResult, fabricatedFixtureCheck, vanishedLandmarkCheck] = await Promise.all([
     fixtures.length === 0
       ? Promise.resolve({ observations: [], materiality: [] })
       : runOcclusionObservationCall({
@@ -144,6 +147,15 @@ export async function runFixtureFlooringValidator(
           ctx: { ...ctx, callLabel: "fixture" },
         }),
     runFlooringBoundaryCheck(baselineImagePath, stagedImagePath, ctx),
+    // Fabricated-fixture check: the fixture-side sibling of
+    // fabricatedOpeningCheck.ts — catches a hallucinated new anchor
+    // fixture (fireplace/built-in/island/staircase/plumbing/light/AC/TV
+    // mount) with no baseline counterpart, the exact same failure class
+    // fabricatedOpeningCheck.ts already closes for openings. See
+    // fabricatedFixtureCheck.ts's header (RealEnhance audit finding C2).
+    // Always runs call 1 (cheap, single call); call 2 only fires when
+    // call 1 actually flags something.
+    runFabricatedFixtureCheck(baselineImagePath, stagedImagePath, baseline, ctx),
     // Vanished-landmark check, run for fixtures — see vanishedLandmarkCheck.ts's
     // header and openingEnvelopeValidator.ts's identical wiring for openings.
     // Self-contained error handling degrades to a safe non-blocking result,
@@ -188,6 +200,39 @@ export async function runFixtureFlooringValidator(
           advisorySignals: materialAlteredItems.map((a) => `${a.id}:${a.verdict}`),
         };
 
+  // Combine with the fabricated-fixture check's verdict — mirrors
+  // openingEnvelopeValidator.ts's identical fabricatedOpeningCheck
+  // integration exactly (RealEnhance audit finding C2):
+  // - "clean" (call 1 found nothing unlisted) → standard result stands.
+  // - "fabricated" (call 2 confirmed absent from baseline) → hard fail,
+  //   overriding a standard "pass" it wouldn't otherwise have caught.
+  // - "baseline_extraction_miss" (call 2 found it present in baseline too)
+  //   → rescue the standard check's fail to pass ONLY when the flagged
+  //   location doesn't significantly overlap any of the items actually
+  //   failing — via shouldRescueBaselineExtractionMiss (occlusionVsRemovalCheck.ts),
+  //   the same shared logic and 0.3 overlap threshold the opening
+  //   validator's identical rescue uses — if it does overlap, that item's
+  //   own genuine alteration is presumed the real cause, and the standard
+  //   fail stands untouched.
+  if (fabricatedFixtureCheck.verdict === "fabricated") {
+    fixture = fabricatedFixtureCheck.outcome;
+  } else if (fabricatedFixtureCheck.verdict === "baseline_extraction_miss" && fixture.status === "fail") {
+    const shouldRescue = shouldRescueBaselineExtractionMiss(
+      fabricatedFixtureCheck.locationBbox,
+      materialAlteredItems.map((item) => fixtures.find((f) => f.id === item.id)?.bbox)
+    );
+    if (shouldRescue) {
+      fixture = {
+        ...fixture,
+        status: "pass",
+        hardFail: false,
+        issueType: ISSUE_TYPES.NONE,
+        issueTier: "none",
+        reason: `${fixture.reason} | OVERRIDDEN by fabricated_fixture_check (baseline_extraction_miss): ${fabricatedFixtureCheck.outcome.reason}`,
+      };
+    }
+  }
+
   // Vanished-landmark override — one-directional only (can only turn a pass
   // into a fail, never rescue an existing fail). newValidatorChecksBlocking()
   // gates whether this can actually block/retry a job (advisory-only by
@@ -209,5 +254,5 @@ export async function runFixtureFlooringValidator(
     };
   }
 
-  return { fixture, floor: floorResult, itemResults, materialAlteredItems, lowMaterialityItems, vanishedLandmarkCheck };
+  return { fixture, floor: floorResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedFixtureCheck, vanishedLandmarkCheck };
 }

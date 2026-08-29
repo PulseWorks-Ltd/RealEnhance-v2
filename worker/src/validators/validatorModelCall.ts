@@ -114,6 +114,25 @@ export async function callValidatorModel(params: {
 // full verdict and get logged via the existing [VALIDATOR_ADVISORY_NON_BLOCKING]
 // path (status:"fail", hardFail:false), but cannot affect job outcome until
 // this is flipped to "true" after a production observation period.
+// Confirmed by the user (Railway env vars, 2026-08-29) to now be "true" in
+// production, following that observation period — see doorArtworkCheck.ts
+// and fabricatedFixtureCheck.ts, which reuse this same flag since they are
+// direct structural siblings of the two checks that already earned it
+// (see RealEnhance validator-scope audit findings C2/C3).
 export function newValidatorChecksBlocking(): boolean {
   return String(process.env.NEW_VALIDATOR_CHECKS_BLOCKING || "false").trim().toLowerCase() === "true";
+}
+
+// Separate, independently-defaulted switch for doorAccessClearanceCheck.ts
+// (audit finding H1) specifically. Deliberately NOT folded into
+// newValidatorChecksBlocking(): that flag's "true" default justification is
+// an observation period specific to window-artwork/vanished-landmark/
+// fabricated-fixture/door-artwork, all of which are presence/materiality
+// checks in the same proven family as occlusionVsRemovalCheck.ts. This
+// check is a different, unproven kind of judgment (a spatial-relationship/
+// obstruction call, not a presence call) with no real-production-case
+// track record yet — it must earn its own "true" the same deliberate way,
+// not inherit one earned by a structurally different class of check.
+export function doorAccessClearanceCheckBlocking(): boolean {
+  return String(process.env.DOOR_ACCESS_CLEARANCE_CHECK_BLOCKING || "false").trim().toLowerCase() === "true";
 }

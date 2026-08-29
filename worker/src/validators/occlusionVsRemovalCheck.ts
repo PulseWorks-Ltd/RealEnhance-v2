@@ -835,6 +835,59 @@ export function classifyStructuralEvidence(text: string): ClassifiedSignal {
   return { value: false, confidence: "low", matchedPattern: "no_pattern_matched:defaulted_no_structural_evidence" };
 }
 
+// Shared geometry utility — originally lived only in openingEnvelopeValidator.ts
+// (used to scope the fabricated-opening "baseline_extraction_miss" rescue
+// to locations that don't overlap an already-failing item; see that file's
+// own comment on bboxOverlapFraction's call site for the real production
+// case that motivated it). Relocated here, the one module both
+// openingEnvelopeValidator.ts and fixtureFlooringValidator.ts already
+// depend on, so fixtureFlooringValidator.ts's fabricated-fixture check can
+// reuse the identical rescue-scoping logic without a new cross-import
+// between the two sibling split-validator files.
+export function bboxOverlapFraction(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (intersection <= 0) return 0;
+  const areaA = Math.max(0, a[2] - a[0]) * Math.max(0, a[3] - a[1]);
+  const areaB = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+  const smaller = Math.min(areaA, areaB);
+  return smaller > 0 ? intersection / smaller : 0;
+}
+
+/**
+ * Decides whether a fabricated-opening/fixture check's "baseline_extraction_
+ * miss" verdict should rescue an already-failing standard result back to
+ * pass. Extracted (RealEnhance audit fixes C2/C3 implementation, 2026-08-29)
+ * so both openingEnvelopeValidator.ts's fabricatedOpeningCheck integration
+ * and fixtureFlooringValidator.ts's fabricatedFixtureCheck integration share
+ * one tested implementation instead of two independently-maintained copies
+ * of the same logic. See openingEnvelopeValidator.ts's own comment above its
+ * fabricatedOpeningCheck combination for the real production case
+ * (job_b29d5e7d-adjacent doorway/window swap) that motivated this scoping:
+ * the rescue must never blindly discard an already-correct standard-check
+ * failure just because the flagged "something was already here" location
+ * happens to coincide with the very item that actually changed.
+ *
+ * Only rescues (returns true) when the flagged location does NOT
+ * significantly overlap any of the bboxes of items actually causing the
+ * standard check to fail. No flagged bbox at all means there is nothing to
+ * conflict with, so the rescue proceeds.
+ */
+export function shouldRescueBaselineExtractionMiss(
+  flaggedBbox: [number, number, number, number] | null | undefined,
+  failingItemBboxes: Array<[number, number, number, number] | undefined>,
+  overlapThreshold = 0.3
+): boolean {
+  if (!flaggedBbox) return true;
+  const overlapsFailingItem = failingItemBboxes.some(
+    (itemBbox) => !!itemBbox && bboxOverlapFraction(flaggedBbox, itemBbox) >= overlapThreshold
+  );
+  return !overlapsFailingItem;
+}
+
 export function classifyObservation(raw: OcclusionObservationRaw): Omit<OcclusionCheckAnswer, "rawObservation"> {
   const trace = classifyPresence(raw.currentStateDescription);
   const replacement = classifyReplacement(raw.currentSurfaceDescription);
