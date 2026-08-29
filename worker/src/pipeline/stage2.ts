@@ -25,7 +25,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
-import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS, buildUniversalFeatureProtectionSection } from "./anchorLockedStaging";
+import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS, buildUniversalFeatureProtectionSection, shouldUseAnchorLockedLayoutPlanning } from "./anchorLockedStaging";
 import type { StructuralBaseline } from "../validators/openingPreservationValidator";
 import { grokImageEdit, grokImageModel } from "../ai/grok";
 
@@ -1110,7 +1110,19 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
     textPrompt = `${textPrompt}\n\n${opts.structuralConstraintBlock}`;
   }
 
-  if (opts.layoutPlan) {
+  // Defensive second check (routing fix, see shouldUseAnchorLockedLayoutPlanning's
+  // doc comment in anchorLockedStaging.ts): worker.ts already skips calling
+  // planStage2Layout entirely when anchorLockedStaging is eligible to
+  // handle this room, so opts.layoutPlan should already be null here in
+  // that case. This re-checks the identical eligibility condition
+  // independently — same inputs, same function, not a separately
+  // maintained copy — so the two call sites can never silently disagree
+  // (e.g. a stale cached plan from before this fix, or a future edit to
+  // one site without the other): layoutPlanner.ts's separately-computed
+  // plan is never appended on top of anchorLockedStaging's own prompt for
+  // a room this routing decision says anchorLockedStaging owns.
+  const anchorLockedOwnsThisRoom = shouldUseAnchorLockedLayoutPlanning(canonicalRoomType, resolvedPromptMode);
+  if (opts.layoutPlan && !anchorLockedOwnsThisRoom) {
     const plannerInstructionMode: "exact" | "guided" = attemptNumber > 1 ? "guided" : "exact";
     const plannerInstructionLine = plannerInstructionMode === "guided"
       ? "Base the staging composition on the following layout plan while preserving architectural continuity and adhering to all staging prompt restrictions."

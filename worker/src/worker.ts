@@ -26,7 +26,7 @@ import { runStage1A } from "./pipeline/stage1A";
 import type { Stage1AAnalysis } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
-import { clearWallVisibilityCacheForJob } from "./pipeline/anchorLockedStaging";
+import { clearWallVisibilityCacheForJob, shouldUseAnchorLockedLayoutPlanning } from "./pipeline/anchorLockedStaging";
 import { evaluateStage1BSourceStageInvariant } from "./pipeline/routingInvariants";
 import {
   isStage2RetryableGenerationError,
@@ -6414,6 +6414,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!plannerEnabled) return null;
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
+
+    // Routing fix: anchorLockedStaging.ts and layoutPlanner.ts used to both
+    // always run, with layoutPlanner.ts's independently-computed plan
+    // unconditionally appended after whatever anchorLockedStaging already
+    // produced — two separate plans concatenated into one prompt, capable
+    // of real contradiction (see shouldUseAnchorLockedLayoutPlanning's own
+    // doc comment for the confirmed sofa_group case). Decided once, here,
+    // before layoutPlanner.ts is ever invoked: when anchorLockedStaging is
+    // going to handle this room, skip calling the layout planner entirely
+    // rather than computing a plan that would either be discarded or
+    // (the actual prior bug) wrongly appended anyway.
+    if (shouldUseAnchorLockedLayoutPlanning(canonicalizeStage2RoomType(payload.options.roomType), ctx.promptMode)) {
+      nLog("[STAGE2_LAYOUT_PLANNER_SKIPPED]", {
+        jobId: payload.jobId,
+        path: ctx.path,
+        promptMode: ctx.promptMode,
+        roomType: canonicalizeStage2RoomType(payload.options.roomType),
+        reason: "anchor_locked_staging_will_handle_this_room",
+      });
+      return null;
+    }
 
     const manualRetryPlannerMode = isManualRetryPayload ? "manual_retry_replan" : "standard";
     const layoutPlanCacheKey = `${ctx.path}|${ctx.promptMode}|${ctx.sourceStage}|${ctx.basePath}|${manualRetryPlannerMode}|${retryInstructionHash}`;

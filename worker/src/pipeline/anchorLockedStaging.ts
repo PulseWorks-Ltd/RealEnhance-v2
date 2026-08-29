@@ -1125,9 +1125,24 @@ function planDeskAnchor(baseline: StructuralBaseline, walls: WallVisibilityWall[
 // its original location, boundary, and type" lock still applies via
 // CATEGORY_A_LOCKS above — this section adds nothing further on top of it. ──
 
+// "kitchen" and "secondary" added (multi-zone room-type expansion,
+// 2026-08-29) alongside the original "living"/"dining" — see
+// buildMultiZonePrompt's header comment for the full rationale. planMultiAnchor
+// itself needed NO changes to support these: it only ever looks for
+// zones.find(z => z.purpose === "living"/"dining") — a "kitchen" or
+// "secondary" zone is simply invisible to its anchor logic, while still
+// correctly contributing its own borderingWallIndices to
+// otherZonesWallIndices, so a living/dining anchor wall is still correctly
+// excluded from candidacy if it's shared with the kitchen or secondary
+// zone. "label" is used only by "secondary" zones, to carry the model's
+// own description of what the zone actually is (a study nook, reading
+// area, etc.) through to the prompt — "dining"/"living"/"kitchen" zones
+// don't need it, their purpose already says what they are.
+export type ZonePurpose = "living" | "dining" | "kitchen" | "secondary";
 export type LivingDiningZone = {
   id: string;
-  purpose: "living" | "dining";
+  purpose: ZonePurpose;
+  label?: string;
   floorRegion: { polygon: Point[] };
   borderingWallIndices: number[];
   reasoning: string;
@@ -1136,19 +1151,96 @@ type KitchenSignal = { present: boolean; openingId: string | null; confidence: n
 
 const ZONING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
 
-const ZONING_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine, extending an existing analysis to identify functional zones within an open-plan living/dining room.
+// Multi-zone room-type expansion (2026-08-29): the zoning extraction was
+// hardcoded to a single room combination (living + dining). Generalized
+// here to cover kitchen_dining, kitchen_living, and multiple_living too,
+// while keeping "living_dining" itself byte-identical to its original
+// prompt text (see the roomKind-keyed branches below and
+// zoningPromptTextForLivingDining's own regression test) — the
+// already-proven living_dining path is not meant to change behavior at
+// all as a result of this generalization.
+export type MultiZoneRoomKind = "living_dining" | "kitchen_dining" | "kitchen_living" | "multiple_living";
+
+const ZONE_PAIR_BY_ROOM_KIND: Record<MultiZoneRoomKind, { primary: ZonePurpose; secondary: ZonePurpose[] }> = {
+  living_dining: { primary: "living", secondary: ["dining"] },
+  kitchen_dining: { primary: "kitchen", secondary: ["dining"] },
+  kitchen_living: { primary: "kitchen", secondary: ["living"] },
+  // multiple_living's second zone is deliberately flexible — the model may
+  // report it as "dining" (reusing planMultiAnchor's existing dining-anchor
+  // logic verbatim when the second zone genuinely is a dining area) or
+  // "secondary" with its own descriptive label (a study nook, reading
+  // area, etc. — no forced anchor item, staged via professional judgment
+  // at a real, zoning-derived position instead of the vague, position-free
+  // text kitchen_dining/kitchen_living used before this same expansion).
+  multiple_living: { primary: "living", secondary: ["dining", "secondary"] },
+};
+
+function zonePurposeLabel(purpose: ZonePurpose): string {
+  switch (purpose) {
+    case "living": return "a LIVING zone (seating area)";
+    case "dining": return "a DINING zone (table + chairs area)";
+    case "kitchen": return "a KITCHEN zone (cabinetry, countertops, appliances, island — the existing kitchen work area itself)";
+    case "secondary": return "a SECONDARY zone (whatever specific function it visibly serves that isn't dining — e.g. a study nook, reading area, or similar — describe concretely what it is in \"label\")";
+  }
+}
+
+// Shared, unchanged verbatim across every room kind — the FLOOR-REGION
+// EXTENT instruction is the single most load-bearing paragraph in this
+// prompt (see its own original comment history) and must not drift between
+// room kinds.
+const ZONING_FLOOR_REGION_EXTENT_INSTRUCTION = `FLOOR-REGION EXTENT — CRITICAL: each zone's floorRegion polygon must extend all the way to the actual visible baseboard / wall-to-floor junction line for every wall that borders it, not stop short of it. Locate the baseboard line at the base of each bordering wall — usually a thin, fairly straight line where the wall surface meets the floor — and trace the polygon out to that line, not to some more conservative point partway there. This is easy to get wrong in rooms with plain, evenly-lit, low-texture-contrast flooring (e.g. bare carpet with no rug or furniture to judge distance against) — in those cases it is especially important to look carefully for the actual baseboard line rather than guessing a shorter distance. A floor region that stops well short of the real baseboard line anywhere along a bordering wall is wrong, even if the general shape/cues used to divide the two zones are otherwise correct.`;
+
+const ZONING_KITCHEN_SIGNAL_INSTRUCTION = `Additionally, determine whether any of the given openings appears to lead toward or provide a sightline into a KITCHEN — look for cues such as visible countertops, cabinetry, appliances, a kitchen island, pendant/track lighting typical of kitchens, or distinct kitchen-style flooring/splashback visible through or beyond the opening. This is inference from visible cues, not a labeled fact in the baseline — report your confidence honestly, and report present:false if no such cue exists anywhere in the photo.`;
+
+// Matches the original hardcoded living_dining wording exactly; other room
+// kinds get their own natural equivalent rather than reusing this literal
+// phrase.
+const ROOM_KIND_DESCRIPTION: Record<MultiZoneRoomKind, string> = {
+  living_dining: "open-plan living/dining room",
+  kitchen_dining: "open-plan kitchen/dining room",
+  kitchen_living: "open-plan kitchen/living room",
+  multiple_living: "open-plan room combining multiple living-style areas",
+};
+
+function buildZoningSystemInstruction(roomKind: MultiZoneRoomKind): string {
+  const { primary, secondary } = ZONE_PAIR_BY_ROOM_KIND[roomKind];
+  const secondaryLabel = secondary.length > 1
+    ? `either ${secondary.map(zonePurposeLabel).join(" or ")}, whichever it genuinely is`
+    : zonePurposeLabel(secondary[0]);
+
+  return `You are a structural feature extraction engine, extending an existing analysis to identify functional zones within an ${ROOM_KIND_DESCRIPTION[roomKind]}.
 
 You are given a room photograph AND an existing structural baseline (openings and fixtures already detected, with stable IDs).
 
-This room combines two functions: a LIVING zone (seating area) and a DINING zone (table + chairs area). Identify how the visible floor space divides into these two zones, based on genuine visual cues — a change in flooring material, a change in ceiling treatment, existing furniture grouping if the room happens to be furnished (use furniture position only as a cue for how the space is naturally used, not as a placement instruction to preserve), sightlines, and traffic flow. If the room is empty, rely on architectural geometry alone (room shape, alcoves, ceiling breaks, wall offsets) — do not assume an even 50/50 split, and do not invent a furniture-based cue that isn't visible. The two zones' floor regions should not overlap.
+This room combines two functions: ${zonePurposeLabel(primary)} and ${secondaryLabel}. Identify how the visible floor space divides into these two zones, based on genuine visual cues — a change in flooring material, a change in ceiling treatment, existing furniture grouping if the room happens to be furnished (use furniture position only as a cue for how the space is naturally used, not as a placement instruction to preserve), sightlines, and traffic flow. If the room is empty, rely on architectural geometry alone (room shape, alcoves, ceiling breaks, wall offsets) — do not assume an even 50/50 split, and do not invent a furniture-based cue that isn't visible. The two zones' floor regions should not overlap.
 
-FLOOR-REGION EXTENT — CRITICAL: each zone's floorRegion polygon must extend all the way to the actual visible baseboard / wall-to-floor junction line for every wall that borders it, not stop short of it. Locate the baseboard line at the base of each bordering wall — usually a thin, fairly straight line where the wall surface meets the floor — and trace the polygon out to that line, not to some more conservative point partway there. This is easy to get wrong in rooms with plain, evenly-lit, low-texture-contrast flooring (e.g. bare carpet with no rug or furniture to judge distance against) — in those cases it is especially important to look carefully for the actual baseboard line rather than guessing a shorter distance. A floor region that stops well short of the real baseboard line anywhere along a bordering wall is wrong, even if the general shape/cues used to divide the two zones are otherwise correct.
+${ZONING_FLOOR_REGION_EXTENT_INSTRUCTION}
 
-Additionally, determine whether any of the given openings appears to lead toward or provide a sightline into a KITCHEN — look for cues such as visible countertops, cabinetry, appliances, a kitchen island, pendant/track lighting typical of kitchens, or distinct kitchen-style flooring/splashback visible through or beyond the opening. This is inference from visible cues, not a labeled fact in the baseline — report your confidence honestly, and report present:false if no such cue exists anywhere in the photo.
+${ZONING_KITCHEN_SIGNAL_INSTRUCTION}
 
 You must output strict JSON only. No explanations. No markdown. No comments. No extra text.`;
+}
 
-function buildZoningUserPrompt(baseline: StructuralBaseline): string {
+// Preserved verbatim as the original hardcoded constant, used only by the
+// living_dining branch of extractZoning to guarantee byte-identical output
+// to the pre-expansion prompt — see zoningPromptTextForLivingDining's own
+// regression test.
+const ZONING_SYSTEM_INSTRUCTION = buildZoningSystemInstruction("living_dining");
+
+function zoneIdsForRoomKind(roomKind: MultiZoneRoomKind): string {
+  const { primary, secondary } = ZONE_PAIR_BY_ROOM_KIND[roomKind];
+  const primaryId = `"zone_${primary}"`;
+  const secondaryIds = secondary.map((p) => `"zone_${p}"`).join(" | ");
+  return `${primaryId} | ${secondaryIds}`;
+}
+
+function zonePurposesForRoomKind(roomKind: MultiZoneRoomKind): string {
+  const { primary, secondary } = ZONE_PAIR_BY_ROOM_KIND[roomKind];
+  return [`"${primary}"`, ...secondary.map((p) => `"${p}"`)].join(" | ");
+}
+
+function buildZoningUserPrompt(baseline: StructuralBaseline, roomKind: MultiZoneRoomKind = "living_dining"): string {
+  const includesSecondaryLabel = ZONE_PAIR_BY_ROOM_KIND[roomKind].secondary.includes("secondary");
   return `Existing baseline (already detected, DO NOT re-detect — reference these IDs):
 ${JSON.stringify(baseline, null, 2)}
 
@@ -1156,11 +1248,12 @@ Analyze this room photograph and return JSON in this exact schema (all coordinat
 {
   "zones": [
     {
-      "id": "zone_living" | "zone_dining",
-      "purpose": "living" | "dining",
+      "id": ${zoneIdsForRoomKind(roomKind)},
+      "purpose": ${zonePurposesForRoomKind(roomKind)},
       "floorRegion": { "polygon": [[x,y], [x,y], ...] },
       "borderingWallIndices": number[],
-      "reasoning": string
+      "reasoning": string${includesSecondaryLabel ? `,
+      "label": string // required when purpose is "secondary" — a short, concrete description of the zone's actual function (e.g. "study nook", "reading area"); omit or leave empty for any other purpose` : ""}
     }
   ],
   "kitchenSignal": {
@@ -1175,7 +1268,8 @@ Analyze this room photograph and return JSON in this exact schema (all coordinat
 async function extractZoning(
   imagePath: string,
   baseline: StructuralBaseline,
-  ctx: { jobId: string; imageId: string }
+  ctx: { jobId: string; imageId: string },
+  roomKind: MultiZoneRoomKind = "living_dining"
 ): Promise<{ zones: LivingDiningZone[]; kitchenSignal: KitchenSignal | null } | null> {
   try {
     const image = toBase64(imagePath);
@@ -1186,8 +1280,8 @@ async function extractZoning(
         {
           role: "user",
           parts: [
-            { text: ZONING_SYSTEM_INSTRUCTION },
-            { text: buildZoningUserPrompt(baseline) },
+            { text: roomKind === "living_dining" ? ZONING_SYSTEM_INSTRUCTION : buildZoningSystemInstruction(roomKind) },
+            { text: buildZoningUserPrompt(baseline, roomKind) },
             { inlineData: { mimeType: image.mime, data: image.data } },
           ],
         },
@@ -1232,9 +1326,14 @@ type DiningPlan = { center: Point; footprint: { halfWidth: number; halfHeight: n
 // based reference used for the bedroom/study anchor (see
 // describeWallForPrompt's comment) — wallId/wallLabel are kept for
 // diagnostics/logging only and must not be placed in prompt text.
-type TvPlan = { wallId: string; wallLabel: string; wallDescription: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean };
+// skippedLiteralTv: true means this is really a "livingFocalWall" result —
+// the wall seating orients toward — where the zone's depth ruled out
+// drawing a literal TV/console there (see planMultiAnchor's anchor-wall
+// reframing). Prompt text and downstream consumers must not call this
+// "the TV wall" when skippedLiteralTv is true.
+type TvPlan = { wallId: string; wallLabel: string; wallDescription: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean; partiallyVisible?: boolean; skippedLiteralTv?: boolean };
 type SofaPlan = { wallId: string | null; wallLabel?: string; wallDescription?: string; floorCentered?: boolean; facingWallId: string | null; orientationInstruction?: string; facingDescription?: string; reasoning: string; hasDoorOrWalkthrough?: boolean };
-type MultiAnchorPlan = {
+export type MultiAnchorPlan = {
   diningPlan: DiningPlan | null;
   tvPlan: TvPlan | null;
   noTvReason: string | null;
@@ -1266,7 +1365,7 @@ function pickSofaWallCandidate(
   return nonDoorCandidates[0] || withDoorFlag[0];
 }
 
-function planMultiAnchor(
+export function planMultiAnchor(
   baseline: StructuralBaseline,
   walls: WallVisibilityWall[],
   zones: LivingDiningZone[],
@@ -1285,24 +1384,34 @@ function planMultiAnchor(
 
     // Real-world request: the dining table should land near the kitchen,
     // not just at the raw centroid of whatever floor area the zoning call
-    // drew for the dining zone. Two possible signals for "where the
-    // kitchen is," checked in order of directness: (1) a kitchen_island
-    // (or similar) anchor fixture actually bordering this dining zone —
-    // direct visual evidence; (2) extractZoning's own kitchenSignal, which
-    // names an opening believed to lead toward/give sightline into a
-    // kitchen — indirect, but still real evidence when no island fixture
-    // is in frame. Neither field was previously consulted anywhere; the
+    // drew for the dining zone. Three possible signals for "where the
+    // kitchen is," checked in order of directness: (0) a real "kitchen"-
+    // purpose zone (multi-zone room-type expansion, 2026-08-29 —
+    // kitchen_dining rooms now extract an actual kitchen zone, not just an
+    // inferred fixture/opening) that shares a bordering wall with this
+    // dining zone — the most direct possible evidence, a real zoned area,
+    // not an inference; (1) a kitchen_island (or similar) anchor fixture
+    // actually bordering this dining zone — direct visual evidence; (2)
+    // extractZoning's own kitchenSignal, which names an opening believed
+    // to lead toward/give sightline into a kitchen — indirect, but still
+    // real evidence when neither of the above is available. Before signal
+    // (0) existed, none of this was previously consulted anywhere; the
     // centroid alone was standing in for "near the kitchen" purely by
     // chance whenever the zoning call's own polygon happened to lean that
     // way.
     const diningBorderingWalls = new Set(diningZone.borderingWallIndices || []);
+    const kitchenZone = zones.find((z) => z.purpose === "kitchen");
+    const kitchenZoneSharedWallIndex = kitchenZone
+      ? (kitchenZone.borderingWallIndices || []).find((idx) => diningBorderingWalls.has(idx))
+      : undefined;
     const kitchenIslandFixture = (baseline.anchorFixtures || []).find(
       (f) => f.type === "kitchen_island" && diningBorderingWalls.has(f.wallIndex)
     );
-    const kitchenOpeningWallIndex = !kitchenIslandFixture && kitchenSignal?.present && kitchenSignal.openingId
+    const kitchenOpeningWallIndex = kitchenZoneSharedWallIndex === undefined && !kitchenIslandFixture && kitchenSignal?.present && kitchenSignal.openingId
       ? baseline.openings.find((o) => o.id === kitchenSignal.openingId)?.wallIndex
       : undefined;
-    const kitchenWallIndex = kitchenIslandFixture?.wallIndex
+    const kitchenWallIndex = kitchenZoneSharedWallIndex
+      ?? kitchenIslandFixture?.wallIndex
       ?? (kitchenOpeningWallIndex !== undefined && diningBorderingWalls.has(kitchenOpeningWallIndex) ? kitchenOpeningWallIndex : undefined);
     const kitchenWall = kitchenWallIndex !== undefined ? wallByIndex(kitchenWallIndex) : undefined;
 
@@ -1319,9 +1428,11 @@ function planMultiAnchor(
       const blended: Point = [centroid[0] * 0.55 + kitchenWallMidX * 0.45, centroid[1]];
       center = blended;
       nearKitchen = true;
-      kitchenReasoning = kitchenIslandFixture
-        ? ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — kitchen island/peninsula ${kitchenIslandFixture.id} detected on this wall.`
-        : ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — kitchenSignal indicates opening ${kitchenSignal?.openingId} on this wall leads toward the kitchen.`;
+      kitchenReasoning = kitchenZoneSharedWallIndex !== undefined
+        ? ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — this wall directly borders the room's own extracted kitchen zone (${kitchenZone!.id}).`
+        : kitchenIslandFixture
+          ? ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — kitchen island/peninsula ${kitchenIslandFixture.id} detected on this wall.`
+          : ` Biased toward ${kitchenWall.id} (${kitchenWall.wallLabel}) — kitchenSignal indicates opening ${kitchenSignal?.openingId} on this wall leads toward the kitchen.`;
     }
 
     diningPlan = {
@@ -1365,71 +1476,128 @@ function planMultiAnchor(
       bracketFixtures.find((f) => exclusiveLivingWallIndices.includes(f.wallIndex)) || bracketFixtures[0];
     const bracketWall = bracketFixture ? wallByIndex(bracketFixture.wallIndex) : undefined;
 
-    const tvCandidatesRaw = exclusiveLivingWallIndices
+    // ANCHOR WALL REFRAMING (RealEnhance review, 2026-08-29): livingFocalWall
+    // is the wall the room's seating should FACE — selected independently
+    // of whether a literal TV/console ends up being drawn there. This used
+    // to be one gate (the old tvCandidate): a wall only counted at all if
+    // it BOTH cleared the width threshold AND the whole zone cleared a
+    // separate depth-for-comfortable-viewing threshold. Depth answers "is
+    // a TV here actually watchable" — it says nothing about "is this the
+    // room's natural focal wall" — so conflating them meant a perfectly
+    // good, wide, uninterrupted wall in a shallow room got no focal-wall
+    // role at all, and the sofa fell back to facing a window/door/generic
+    // open area instead of the wall that visually reads as the front of
+    // the room. Also adds a door/walkthrough preference (mirrors
+    // pickSofaWallCandidate's own principle) that the old tvCandidate
+    // search never had.
+    const focalWallCandidatesRaw = exclusiveLivingWallIndices
       .map((idx) => wallByIndex(idx))
       .filter((w): w is WallVisibilityWall => !!w)
       .map((w) => ({ wall: w, largestSegment: (w.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0) }))
       .filter((c) => c.largestSegment >= TV_MIN_USABLE_FRACTION)
       .sort((a, b) => b.largestSegment - a.largestSegment);
+    const focalWallPick = pickSofaWallCandidate(focalWallCandidatesRaw, baseline);
 
     // Diagnostic-only sanity check: when the primary depth check fails but
-    // a zone-exclusive, width-qualified TV candidate exists, log whether
-    // the depth reading looks implausible relative to that wall's own
-    // frame-height — but this NO LONGER overrides the placement decision
-    // (see the module-level comment on why the earlier override was
-    // removed). depthOk stays whatever the primary check computed.
-    if (!bracketWall && !depthOk && tvCandidatesRaw[0]) {
-      const wallBBoxTop = polygonBBox(tvCandidatesRaw[0].wall.extent.polygon);
+    // a zone-exclusive, width-qualified focal-wall candidate exists, log
+    // whether the depth reading looks implausible relative to that wall's
+    // own frame-height — but this NO LONGER overrides the placement
+    // decision (see the module-level comment on why the earlier override
+    // was removed). depthOk stays whatever the primary check computed;
+    // this only affects the separate "place a literal TV" decision below,
+    // never whether the wall is selected as the focal wall.
+    if (!bracketWall && !depthOk && focalWallCandidatesRaw[0]) {
+      const wallBBoxTop = polygonBBox(focalWallCandidatesRaw[0].wall.extent.polygon);
       const wallHeightInFrame = wallBBoxTop.maxY - wallBBoxTop.minY;
       const implausible = zoneDepthProxy < WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO * wallHeightInFrame;
       reasoning.push(
-        `Depth-proxy sanity check (diagnostic only, does not override the decision): candidate wall ${tvCandidatesRaw[0].wall.id} frame-height ${wallHeightInFrame.toFixed(3)}; zone depth (${zoneDepthProxy.toFixed(3)}) is ${implausible ? "BELOW" : "at/above"} ${WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO} x wall-height (${(WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO * wallHeightInFrame).toFixed(3)}).`
+        `Depth-proxy sanity check (diagnostic only, does not override the decision): candidate wall ${focalWallCandidatesRaw[0].wall.id} frame-height ${wallHeightInFrame.toFixed(3)}; zone depth (${zoneDepthProxy.toFixed(3)}) is ${implausible ? "BELOW" : "at/above"} ${WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO} x wall-height (${(WALL_HEIGHT_TO_ZONE_DEPTH_MIN_RATIO * wallHeightInFrame).toFixed(3)}).`
       );
       if (implausible) {
         depthCheckFlaggedSuspect = true;
       }
     }
 
-    const tvCandidate = bracketWall
-      ? { wall: bracketWall, largestSegment: (bracketWall.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0) }
-      : (depthOk ? tvCandidatesRaw[0] : undefined);
+    const livingFocalWall = bracketWall
+      ? { wall: bracketWall, largestSegment: (bracketWall.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0), hasDoorOrWalkthrough: false }
+      : focalWallPick;
 
-    if (tvCandidate) {
-      const seg = [...(tvCandidate.wall.usableSegments || [])].sort((a, b) => b.widthFraction - a.widthFraction)[0];
-      tvPlan = {
-        wallId: tvCandidate.wall.id,
-        wallLabel: tvCandidate.wall.wallLabel,
-        wallDescription: `the wall ${describeWallFramePosition(tvCandidate.wall)}`,
-        segmentDescription: bracketFixture
-          ? (bracketFixture.description || seg?.description || "at the existing TV mount bracket's location")
-          : (seg?.description || ""),
-        largestSegment: tvCandidate.largestSegment,
-        depthCheckFlaggedSuspect,
-        usedBracket: !!bracketWall,
-        reasoning: bracketWall
-          ? `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) has an existing TV wall-mount bracket detected (${bracketFixture!.id}) — used directly, ahead of geometric wall scoring.`
-          : `TV wall selected: ${tvCandidate.wall.id} (${tvCandidate.wall.wallLabel}) is zone-exclusive, clears TV width threshold (${tvCandidate.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), zone depth sufficient.`,
-      };
+    // Whether to actually render a literal TV/console on the focal wall is
+    // a SEPARATE decision from which wall the room's seating orients
+    // around. A real physical bracket is direct evidence a TV belongs
+    // there regardless of depth (unchanged from before this reframing).
+    // Absent a bracket, only place a literal TV when the zone also clears
+    // the viewing-distance depth bar; a shallow room still gets its
+    // seating oriented toward livingFocalWall — it just doesn't get a
+    // literal TV drawn there.
+    const shouldPlaceLiteralTv = !!bracketWall || depthOk;
+
+    // Frame-edge crop awareness (RealEnhance review, 2026-08-29): ported
+    // from the bedroom/study anchor planner's wallPartiallyVisible/
+    // anchorFramingNote pattern (see planSingleAnchorWall), which this
+    // living/dining multi-anchor planner never had. When the room clearly
+    // extends beyond the frame edge, seating and the focal wall itself may
+    // be legitimately cropped rather than forced to look artificially
+    // complete.
+    const livingFocalWallBBox = livingFocalWall ? wallBBox(livingFocalWall.wall) : null;
+    const livingFocalWallPartiallyVisible = livingFocalWallBBox
+      ? livingFocalWallBBox.maxX >= 1 - FRAME_EDGE_EPSILON || livingFocalWallBBox.minX <= FRAME_EDGE_EPSILON
+      : false;
+    const livingFocalWallFramingNote = livingFocalWallPartiallyVisible
+      ? " This wall is only partially visible in the frame (truncated at the edge) — edge-cropped furniture placement is acceptable here."
+      : "";
+
+    if (livingFocalWall) {
+      if (shouldPlaceLiteralTv) {
+        const seg = [...(livingFocalWall.wall.usableSegments || [])].sort((a, b) => b.widthFraction - a.widthFraction)[0];
+        tvPlan = {
+          wallId: livingFocalWall.wall.id,
+          wallLabel: livingFocalWall.wall.wallLabel,
+          wallDescription: `the wall ${describeWallFramePosition(livingFocalWall.wall)}`,
+          segmentDescription: bracketFixture
+            ? (bracketFixture.description || seg?.description || "at the existing TV mount bracket's location")
+            : (seg?.description || ""),
+          largestSegment: livingFocalWall.largestSegment,
+          depthCheckFlaggedSuspect,
+          usedBracket: !!bracketWall,
+          partiallyVisible: livingFocalWallPartiallyVisible,
+          reasoning: bracketWall
+            ? `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) has an existing TV wall-mount bracket detected (${bracketFixture!.id}) — used directly, ahead of geometric wall scoring. A literal TV is placed here.`
+            : `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) is zone-exclusive, clears the usable-width threshold (${livingFocalWall.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), zone depth sufficient for a literal TV.`,
+        };
+      } else {
+        noTvReason = "living zone floor depth is insufficient for a sofa to face a TV at a plausible distance — seating is still oriented toward the room's focal wall, just without a literal TV placed there";
+        tvPlan = {
+          wallId: livingFocalWall.wall.id,
+          wallLabel: livingFocalWall.wall.wallLabel,
+          wallDescription: `the wall ${describeWallFramePosition(livingFocalWall.wall)}`,
+          segmentDescription: "",
+          largestSegment: livingFocalWall.largestSegment,
+          depthCheckFlaggedSuspect,
+          usedBracket: false,
+          partiallyVisible: livingFocalWallPartiallyVisible,
+          skippedLiteralTv: true,
+          reasoning: `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) is zone-exclusive and clears the usable-width threshold (${livingFocalWall.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), but ${noTvReason}.`,
+        };
+      }
       reasoning.push(tvPlan.reasoning);
 
       const sofaCandidates = livingWallIndices
         .map((idx) => wallByIndex(idx))
         .filter((w): w is WallVisibilityWall => !!w)
-        .filter((w) => w.id !== tvCandidate.wall.id)
+        .filter((w) => w.id !== livingFocalWall.wall.id)
         .map((w) => ({ wall: w, largestSegment: (w.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0) }))
         .filter((c) => c.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR)
         .sort((a, b) => b.largestSegment - a.largestSegment);
       const sofaPick = pickSofaWallCandidate(sofaCandidates, baseline);
       sofaPlan = sofaPick
-        ? { wallId: sofaPick.wall.id, wallLabel: sofaPick.wall.wallLabel, wallDescription: `the wall ${describeWallFramePosition(sofaPick.wall)}`, facingWallId: tvCandidate.wall.id, hasDoorOrWalkthrough: sofaPick.hasDoorOrWalkthrough, reasoning: `Sofa placed against ${sofaPick.wall.id}, facing ${tvCandidate.wall.id}.${sofaPick.hasDoorOrWalkthrough ? " This wall has a door/walkthrough — used only because no other living-zone wall qualified." : ""}` }
-        : { wallId: null, floorCentered: true, facingWallId: tvCandidate.wall.id, reasoning: `No other living-zone wall qualified; sofa floor-centered, facing ${tvCandidate.wall.id}.` };
+        ? { wallId: sofaPick.wall.id, wallLabel: sofaPick.wall.wallLabel, wallDescription: `the wall ${describeWallFramePosition(sofaPick.wall)}`, facingWallId: livingFocalWall.wall.id, hasDoorOrWalkthrough: sofaPick.hasDoorOrWalkthrough, reasoning: `Sofa placed against ${sofaPick.wall.id}, facing ${livingFocalWall.wall.id}.${sofaPick.hasDoorOrWalkthrough ? " This wall has a door/walkthrough — used only because no other living-zone wall qualified." : ""}` }
+        : { wallId: null, floorCentered: true, facingWallId: livingFocalWall.wall.id, reasoning: `No other living-zone wall qualified; sofa floor-centered, facing ${livingFocalWall.wall.id}.${livingFocalWallFramingNote}` };
       reasoning.push(sofaPlan.reasoning);
     } else {
       noTvReason = exclusiveLivingWallIndices.length === 0
-        ? "no TV placed — no wall is exclusive to the living zone (all bordering walls are shared with another zone)"
-        : tvCandidatesRaw.length === 0
-        ? "no TV placed — no zone-exclusive wall clears the minimum usable-width threshold for a TV"
-        : "no TV placed — living zone floor depth is insufficient for a sofa to face a TV at a plausible distance";
+        ? "no focal wall — no wall is exclusive to the living zone (all bordering walls are shared with another zone)"
+        : "no focal wall — no zone-exclusive wall clears the minimum usable-width threshold";
       reasoning.push(noTvReason);
 
       const sofaCandidates = livingWallIndices
@@ -1520,7 +1688,7 @@ function checkClearance(sofaPos: { x: number; y: number }, entryOpenings: Struct
 // floating only applies because of a TV. This always evaluates floating
 // first and falls back to the (door-avoiding) wall-anchored plan already
 // computed on plan.sofaPlan when floating isn't practical here.
-function resolveSofaPlacement(
+export function resolveSofaPlacement(
   baseline: StructuralBaseline,
   zone: LivingDiningZone,
   plan: MultiAnchorPlan
@@ -1537,7 +1705,7 @@ function resolveSofaPlacement(
 
   if (depthOk && clearance.clear) {
     const facingClause = plan.tvPlan
-      ? `facing directly toward ${plan.tvPlan.wallDescription} (the TV wall)`
+      ? `facing directly toward ${plan.tvPlan.wallDescription} (${plan.tvPlan.skippedLiteralTv ? "the room's focal wall" : "the TV wall"})`
       : `facing ${plan.sofaPlan.facingDescription || "into the open floor area of the room"}`;
     const clearanceClause =
       entryOpenings.length > 0
@@ -1561,14 +1729,41 @@ function resolveSofaPlacement(
   };
 }
 
-function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstruction?: string): string {
+// Shared by buildLivingDiningAnchorSection/buildLivingRoomOnlyAnchorSection.
+// plan.tvPlan now doubles as "the room's focal wall" (see planMultiAnchor's
+// anchor-wall reframing) — when skippedLiteralTv is true, this wall was
+// selected purely as the seating-orientation reference because the zone's
+// depth ruled out a comfortable literal TV placement; the instruction must
+// say so honestly rather than asking for a TV/console that shouldn't be
+// drawn there.
+export function buildLivingFocalWallInstruction(tvPlan: NonNullable<MultiAnchorPlan["tvPlan"]>): string {
+  const framingNote = tvPlan.partiallyVisible
+    ? " This wall is only partially visible in the frame (truncated at the edge) — edge-cropped furniture placement is acceptable here."
+    : "";
+  if (tvPlan.skippedLiteralTv) {
+    return `* This room's seating should face ${tvPlan.wallDescription} — this is the room's natural focal wall. The floor depth here is too shallow for a TV to be comfortably viewed from typical seating distance, so do NOT place a TV or TV console on this wall; treat it only as the direction seating orients toward.${framingNote}`;
+  }
+  return `* Place a TV and low TV console/unit against ${tvPlan.wallDescription}, within the segment described as "${tvPlan.segmentDescription}".${framingNote}`;
+}
+
+// Extracted (multi-zone room-type expansion, 2026-08-29) so
+// buildMultiZonePrompt (kitchen_dining/kitchen_living/multiple_living) can
+// reuse the exact same living/dining anchor-instruction text
+// buildLivingDiningAnchorSection already produces, rather than a second,
+// independently-maintained copy. Pure text builders, no behavior change to
+// the living_dining path below.
+function buildLivingZoneAnchorLines(plan: MultiAnchorPlan, sofaInstruction?: string): string[] {
   const livingLines: string[] = [];
   if (plan.tvPlan) {
-    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallDescription}, within the segment described as "${plan.tvPlan.segmentDescription}".`);
+    livingLines.push(buildLivingFocalWallInstruction(plan.tvPlan));
   }
   if (sofaInstruction) {
     livingLines.push(`* ${sofaInstruction}`);
   }
+  return livingLines;
+}
+
+function buildDiningZoneAnchorLines(plan: MultiAnchorPlan): string[] {
   const diningLines: string[] = [];
   if (plan.diningPlan) {
     diningLines.push(
@@ -1580,6 +1775,12 @@ function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstruction?:
       );
     }
   }
+  return diningLines;
+}
+
+function buildLivingDiningAnchorSection(plan: MultiAnchorPlan, sofaInstruction?: string): string {
+  const livingLines = buildLivingZoneAnchorLines(plan, sofaInstruction);
+  const diningLines = buildDiningZoneAnchorLines(plan);
   return `ANCHOR ITEMS — LIVING ZONE (must be followed exactly)\n\n${livingLines.join("\n")}\n\nANCHOR ITEM — DINING ZONE (must be followed exactly)\n\n${diningLines.join("\n")}\n\nZONING CONTEXT: this is a single open-plan room combining two functional zones — a living/seating zone and a dining zone. Stage each zone according to its function as instructed above, so the two areas read as distinct, intentional zones within the same open room, not one undifferentiated furniture arrangement.`;
 }
 
@@ -1623,7 +1824,7 @@ function buildSyntheticWholeRoomLivingZone(walls: WallVisibilityWall[]): LivingD
 function buildLivingRoomOnlyAnchorSection(plan: MultiAnchorPlan, sofaInstruction?: string): string {
   const livingLines: string[] = [];
   if (plan.tvPlan) {
-    livingLines.push(`* Place a TV and low TV console/unit against ${plan.tvPlan.wallDescription}, within the segment described as "${plan.tvPlan.segmentDescription}".`);
+    livingLines.push(buildLivingFocalWallInstruction(plan.tvPlan));
   }
   if (sofaInstruction) {
     livingLines.push(`* ${sofaInstruction}`);
@@ -1804,6 +2005,14 @@ const SUPPORTED_ROOM_TYPES = new Set([
   "kitchen",
   "kitchen_dining",
   "kitchen_living",
+  // "multiple_living" added (multi-zone room-type expansion, 2026-08-29) —
+  // a real, distinct, already-in-use identifier (shared/src/types.ts's
+  // RoomType union, worker/src/ai/roomTypeDetector.ts, the client-facing
+  // "Multiple Living" option) that previously fell through to the legacy/
+  // nano prompt path entirely, never reaching this function. Routed
+  // through buildMultiZonePrompt alongside kitchen_dining/kitchen_living —
+  // see that function's header comment.
+  "multiple_living",
   "living_room",
   "living",
   "study",
@@ -1813,12 +2022,72 @@ const SUPPORTED_ROOM_TYPES = new Set([
   "hallway",
   "garage",
 ]);
-const KITCHEN_ROOM_TYPES = new Set(["kitchen", "kitchen_dining", "kitchen_living"]);
+// "kitchen" (bare) stays on the simple, no-anchor light-staging path
+// (buildKitchenPrompt) — a plain kitchen has no second zone to plan an
+// anchor for. "kitchen_dining"/"kitchen_living" moved OUT of this set and
+// into MULTI_ZONE_ROOM_TYPES below (multi-zone room-type expansion,
+// 2026-08-29): they get the real zoning + anchor treatment now, same as
+// living_dining, instead of the old vague "professional judgment, no real
+// position" secondary-zone text.
+const KITCHEN_ROOM_TYPES = new Set(["kitchen"]);
+// Routed through buildMultiZonePrompt — see that function's header
+// comment. Deliberately excludes "living_dining", which keeps its own
+// separate, unmodified buildLivingDiningPrompt dispatch branch (zero
+// change to that already-proven path from this expansion).
+const MULTI_ZONE_ROOM_TYPES = new Set<MultiZoneRoomKind>(["kitchen_dining", "kitchen_living", "multiple_living"]);
 const LIVING_ROOM_ONLY_TYPES = new Set(["living_room", "living"]);
 const STUDY_ROOM_TYPES = new Set(["study"]);
 const BATHROOM_ROOM_TYPES = new Set(["bathroom", "bathroom_1", "bathroom_2"]);
 const HALLWAY_ROOM_TYPES = new Set(["hallway"]);
 const GARAGE_ROOM_TYPES = new Set(["garage"]);
+
+// Exported so worker.ts and stage2.ts can both consult the SAME room-type
+// support list, rather than each keeping their own copy that could drift.
+export function isRoomTypeSupportedByAnchorLockedStaging(roomType: string): boolean {
+  return SUPPORTED_ROOM_TYPES.has(String(roomType || ""));
+}
+
+// Layout-planning routing fix (2026-08-29): layoutPlanner.ts and
+// anchorLockedStaging.ts used to BOTH always run, with layoutPlanner.ts's
+// output unconditionally appended after whatever prompt anchorLockedStaging
+// (or its own generic nzRealEstate-based fallback) produced — two
+// independently-computed plans concatenated into one prompt, with no
+// mechanism to keep them from disagreeing. Confirmed structurally capable
+// of a real contradiction: for a living_dining room, anchorLockedStaging's
+// planMultiAnchor can correctly decide to float the sofa (sufficient zone
+// depth/clearance), while layoutPlanner.ts's deterministic planner
+// independently resolves the same room to a sofa_group anchor and always
+// wall-anchors it — appending an "ANCHOR DIRECTIVE (MANDATORY): ... Anchor
+// wall: [wall]" block after anchorLockedStaging's own, already-correct
+// "floating in the room" instruction. This is the identical failure shape
+// already documented and fixed for dining_table (see AnchorOrientation's
+// "floating_center" doc comment) — never extended to sofa_group.
+//
+// Fix: decide ONCE, before either system runs, which one is responsible
+// for this job's placement guidance — based on room type and which Stage 2
+// prompt variant is active — and only that one contributes to the prompt.
+// worker.ts calls this to decide whether to invoke planStage2Layout
+// (layoutPlanner.ts) AT ALL; stage2.ts calls it again as a defensive
+// second check before appending any layoutPlan content to the prompt, so
+// the two call sites can never disagree even if one is ever edited without
+// the other. Both read from this single function, not independent copies
+// of the underlying condition.
+//
+// Deliberately does NOT guarantee anchorLockedStaging will actually
+// succeed at runtime (a real extraction/API failure is still possible) —
+// when it fails despite being "eligible" here, the prompt falls back to
+// buildStage2PromptNZStyle's generic per-room-type template, exactly the
+// same graceful-degradation path anchorLockedStaging already used before
+// this fix (anchorLockedFallbackReason logged, job never fails). That is
+// an accepted, pre-existing trade-off, not a new regression: no room type
+// was ever guaranteed BOTH systems' output before this fix — that was an
+// accident of the previous architecture, not a deliberate safety net.
+export function shouldUseAnchorLockedLayoutPlanning(roomType: string, promptMode: "full" | "refresh"): boolean {
+  if (promptMode !== "full") return false;
+  if (!isRoomTypeSupportedByAnchorLockedStaging(roomType)) return false;
+  const variant = String(process.env.STAGE2_PROMPT_VARIANT || "").trim().toLowerCase();
+  return variant === "anchor_locked" || variant === "grok" || variant === "grok_skill" || variant === "combined";
+}
 
 // Kitchen path is deliberately the simple pattern, not the zoning/anchor
 // pattern living-dining uses: no extractZoning call, no planMultiAnchor —
@@ -2007,6 +2276,142 @@ Beyond the anchor items above and the structural constraints above, use your own
   };
 }
 
+// Multi-zone room-type expansion (2026-08-29): kitchen_dining, kitchen_living,
+// and multiple_living used to get materially weaker treatment than
+// living_dining despite combining the exact same kind of two-function
+// open-plan space —
+//   - kitchen_dining/kitchen_living: no zoning extraction, no geometric
+//     anchor selection at all; their second zone was staged via a vague
+//     "positioned using your own professional judgment" sentence with no
+//     real position (buildKitchenPrompt's secondaryZoneInstruction).
+//   - multiple_living: not in SUPPORTED_ROOM_TYPES at all — fell straight
+//     through to the legacy/nano prompt path, never reaching this
+//     function.
+// This function gives all three the same real zoning + planMultiAnchor
+// treatment living_dining already has, reusing planMultiAnchor UNCHANGED
+// (it only ever looks for zones.find(z => z.purpose === "living"/"dining")
+// — a "kitchen" or "secondary" purpose zone is simply invisible to its
+// anchor logic while still correctly excluding its own bordering walls
+// from living/dining anchor-wall candidacy) and reusing
+// buildLivingZoneAnchorLines/buildDiningZoneAnchorLines verbatim from the
+// living_dining path. buildLivingDiningPrompt itself is untouched — this
+// is a separate function specifically so the already-proven living_dining
+// path carries zero risk from this expansion.
+async function buildMultiZonePrompt(
+  roomKind: Exclude<MultiZoneRoomKind, "living_dining">,
+  imagePath: string,
+  baseline: StructuralBaseline,
+  walls: WallVisibilityWall[],
+  protectedFeatureSection: string,
+  ctx: { jobId: string; imageId: string }
+): Promise<{ prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> }> {
+  const zoningResult = await extractZoning(imagePath, baseline, ctx, roomKind);
+  if (!zoningResult) {
+    return { prompt: null, fallbackReason: "zoning_extraction_failed", extra: {} };
+  }
+  const { zones, kitchenSignal } = zoningResult;
+  const livingZone = zones.find((z) => z.purpose === "living");
+  const diningZone = zones.find((z) => z.purpose === "dining");
+  const kitchenZone = zones.find((z) => z.purpose === "kitchen");
+  const secondaryZone = zones.find((z) => z.purpose === "secondary");
+
+  const requiresKitchenZone = roomKind === "kitchen_dining" || roomKind === "kitchen_living";
+  const requiresLivingZone = roomKind === "kitchen_living" || roomKind === "multiple_living";
+  const requiresDiningOrSecondary = roomKind === "kitchen_dining" || roomKind === "multiple_living";
+
+  if (requiresKitchenZone && (!kitchenZone || !kitchenZone.floorRegion?.polygon)) {
+    return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
+  }
+  if (requiresLivingZone && (!livingZone || !livingZone.floorRegion?.polygon)) {
+    return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
+  }
+  if (requiresDiningOrSecondary) {
+    const diningOk = diningZone && diningZone.floorRegion?.polygon;
+    const secondaryOk = secondaryZone && secondaryZone.floorRegion?.polygon;
+    if (!diningOk && !secondaryOk) {
+      return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
+    }
+  }
+
+  const plan = planMultiAnchor(baseline, walls, zones, kitchenSignal);
+  if (livingZone && !plan.sofaPlan) {
+    return { prompt: null, fallbackReason: "no_valid_living_anchor", extra: { zoningExtracted: true } };
+  }
+  if (diningZone && !plan.diningPlan) {
+    return { prompt: null, fallbackReason: "no_valid_dining_anchor", extra: { zoningExtracted: true } };
+  }
+
+  const sections: string[] = [];
+  const zoneKindsPresent: string[] = [];
+  const sofaPlacement = livingZone ? resolveSofaPlacement(baseline, livingZone, plan) : null;
+
+  if (kitchenZone) {
+    zoneKindsPresent.push("a kitchen work-area zone");
+    sections.push(`ANCHOR ITEMS — KITCHEN ZONE (must be followed exactly)
+
+* The kitchen zone's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
+* Do NOT add any large furniture to the kitchen zone — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.
+* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.`);
+  }
+
+  if (livingZone) {
+    zoneKindsPresent.push("a living/seating zone");
+    const livingLines = buildLivingZoneAnchorLines(plan, sofaPlacement?.instruction);
+    sections.push(`ANCHOR ITEMS — LIVING ZONE (must be followed exactly)\n\n${livingLines.join("\n")}`);
+  }
+
+  if (diningZone) {
+    zoneKindsPresent.push("a dining zone");
+    const diningLines = buildDiningZoneAnchorLines(plan);
+    sections.push(`ANCHOR ITEM — DINING ZONE (must be followed exactly)\n\n${diningLines.join("\n")}`);
+  } else if (secondaryZone) {
+    const label = secondaryZone.label?.trim() || "secondary";
+    zoneKindsPresent.push(`a ${label} zone`);
+    const secondaryCentroid = secondaryZone.floorRegion?.polygon?.length
+      ? polygonCentroid(secondaryZone.floorRegion.polygon)
+      : null;
+    const positionClause = secondaryCentroid
+      ? ` centered roughly at normalized position [${secondaryCentroid[0].toFixed(3)}, ${secondaryCentroid[1].toFixed(3)}] of the full photo`
+      : "";
+    sections.push(`ZONE — ${label.toUpperCase()} (YOUR PROFESSIONAL JUDGMENT)
+
+* This room also includes a ${label} area, separate from the main living area. Stage it appropriately for its function using your own professional staging judgment, positioned within its own floor area${positionClause}. Do not place furniture belonging to this zone inside the living zone's own floor area, or vice versa.`);
+  }
+
+  const zoningContextLine = zoneKindsPresent.length > 1
+    ? `ZONING CONTEXT: this is a single open-plan room combining ${zoneKindsPresent.length} functional zones — ${zoneKindsPresent.join(", ")}. Stage each zone according to its function as instructed above, so the areas read as distinct, intentional zones within the same open room, not one undifferentiated furniture arrangement.`
+    : "";
+
+  const roomDescriptionForClosing =
+    roomKind === "kitchen_dining" ? "a combined kitchen/dining space"
+    : roomKind === "kitchen_living" ? "a combined kitchen/living space"
+    : "a room combining multiple living-style areas";
+
+  const prompt = `Virtual Staging Instructions for nano banana (or Pro)
+
+${CATEGORY_A_LOCKS}${protectedFeatureSection}
+
+${sections.join("\n\n")}
+
+${zoningContextLine}
+
+EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
+
+Beyond the anchor items above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for ${roomDescriptionForClosing}, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+
+  return {
+    prompt,
+    fallbackReason: null,
+    extra: {
+      zoningExtracted: true,
+      tvPlaced: !!plan.tvPlan,
+      tvUsedBracket: !!plan.tvPlan?.usedBracket,
+      sofaFloating: sofaPlacement ? !!sofaPlacement.floating : undefined,
+      anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan?.wallId ?? null,
+    },
+  };
+}
+
 // Per-job wall-visibility cache. extractWallVisibility (below) has no other
 // caller and no other cache anywhere in the codebase — unlike
 // extractStructuralBaseline, which already had worker.ts's proper
@@ -2167,6 +2572,19 @@ export async function buildAnchorLockedStage2Prompt(opts: {
     roomResult = buildGaragePrompt(protectedFeatureSection);
   } else if (LIVING_ROOM_ONLY_TYPES.has(opts.roomType)) {
     roomResult = buildLivingRoomPrompt(baseline, walls, protectedFeatureSection);
+  } else if (MULTI_ZONE_ROOM_TYPES.has(opts.roomType as MultiZoneRoomKind)) {
+    // kitchen_dining / kitchen_living / multiple_living — see
+    // buildMultiZonePrompt's header comment (multi-zone room-type
+    // expansion, 2026-08-29). Deliberately excludes "living_dining", which
+    // falls through to the unmodified buildLivingDiningPrompt branch below.
+    roomResult = await buildMultiZonePrompt(
+      opts.roomType as Exclude<MultiZoneRoomKind, "living_dining">,
+      opts.imagePath,
+      baseline,
+      walls,
+      protectedFeatureSection,
+      { jobId: opts.jobId, imageId: opts.imageId }
+    );
   } else {
     roomResult = await buildLivingDiningPrompt(opts.imagePath, baseline, walls, protectedFeatureSection, { jobId: opts.jobId, imageId: opts.imageId });
   }
