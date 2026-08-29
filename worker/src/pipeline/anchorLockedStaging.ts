@@ -269,6 +269,93 @@ export type WallVisibilityWall = {
   confidence: number;
 };
 
+export type WallIndexConsistencyMismatch = {
+  wallId: string;
+  wallIndex: number;
+  openingId: string;
+  /** The opening's own wallIndex per the baseline (extractStructuralBaseline). */
+  openingBaselineWallIndex: number;
+  kind:
+    // The wall-visibility model placed this opening on a wall whose numeric
+    // index disagrees with what the baseline call assigned that opening.
+    | "opening_claims_different_wall_index"
+    // The baseline says this opening's wallIndex belongs to this wall, but
+    // the wall's own self-reported openingIds list omits it.
+    | "wall_missing_opening_for_its_index";
+};
+
+export type WallIndexConsistencyReport = {
+  consistent: boolean;
+  mismatches: WallIndexConsistencyMismatch[];
+};
+
+// LD2 diagnostic (targeted-verification-pass finding — read-only, does NOT
+// change wall selection or any other behavior).
+//
+// extractStructuralBaseline and extractWallVisibility are two INDEPENDENT
+// model calls. The baseline call assigns each opening/fixture a wallIndex;
+// a wall with zero openings/fixtures has no representation in the baseline
+// at all (only baseline.wallCount, a bare number). The wall-visibility call
+// is instructed to "assign a wall id using the SAME 0-indexed wallIndex
+// convention already used in the baseline," but it has to re-derive that
+// numbering itself by re-segmenting the room — for a wall that carries
+// openings it can anchor its numbering via the opening's known ID, but nothing
+// in code ever verified it actually did so correctly. The wall-visibility
+// schema DOES ask the model to self-report which opening IDs it placed on
+// each wall (openingIds) — exactly the cross-checkable signal needed — but
+// that field was never read anywhere downstream before this function
+// (confirmed by a full-file audit: analyzeWallForTiers derives wall/opening
+// association purely by re-filtering baseline.openings by the numeric index
+// parsed out of the wall-visibility model's own wall.id string, with no
+// verification against the model's own openingIds).
+//
+// This function surfaces a numbering disagreement as a diagnostic log line
+// so real occurrences can be observed before any selection-logic change is
+// considered — see tests/wallIndexConsistency.test.ts for matching and
+// mismatching fixtures.
+export function diagnoseWallIndexConsistency(
+  baseline: StructuralBaseline,
+  walls: WallVisibilityWall[]
+): WallIndexConsistencyReport {
+  const mismatches: WallIndexConsistencyMismatch[] = [];
+
+  for (const wall of walls) {
+    const wallIndex = Number(String(wall.id).replace("wall_", ""));
+
+    // Direction 1: an opening the wall claims disagrees with the baseline's
+    // own wallIndex for that same opening id.
+    for (const openingId of wall.openingIds || []) {
+      const opening = baseline.openings.find((o) => o.id === openingId);
+      if (opening && opening.wallIndex !== wallIndex) {
+        mismatches.push({
+          wallId: wall.id,
+          wallIndex,
+          openingId,
+          openingBaselineWallIndex: opening.wallIndex,
+          kind: "opening_claims_different_wall_index",
+        });
+      }
+    }
+
+    // Direction 2: the baseline places an opening on this wall's index, but
+    // the wall's own self-reported openingIds omits it.
+    const claimedIds = new Set(wall.openingIds || []);
+    for (const opening of baseline.openings.filter((o) => o.wallIndex === wallIndex)) {
+      if (!claimedIds.has(opening.id)) {
+        mismatches.push({
+          wallId: wall.id,
+          wallIndex,
+          openingId: opening.id,
+          openingBaselineWallIndex: opening.wallIndex,
+          kind: "wall_missing_opening_for_its_index",
+        });
+      }
+    }
+  }
+
+  return { consistent: mismatches.length === 0, mismatches };
+}
+
 const WALL_VISIBILITY_SYSTEM_INSTRUCTION = `You are a structural feature extraction engine, extending an existing analysis with wall-level visibility data.
 
 You are given a room photograph AND an existing structural baseline (openings and fixtures already
@@ -1928,9 +2015,65 @@ Beyond the anchor items above and the structural constraints above, use your own
 // unchanged baseline image, once per Stage 2 generation attempt), but
 // there's no pre-existing cross-call-site cache to plug into here, so a
 // small, self-contained, jobId-keyed cache is added directly in this
-// module instead — same in-memory-Map, no-explicit-eviction pattern
-// already used by worker.ts's own stage2LayoutPlanCache.
+// module instead.
+//
+// C2 fix: this used to be a plain Map with no eviction at all — every jobId
+// that ever passed through buildAnchorLockedStage2Prompt stayed resident
+// for the lifetime of the worker process (module-level state in a
+// long-running worker, confirmed unbounded growth). Two changes make this
+// genuinely job-scoped rather than merely job-keyed:
+//   1. clearWallVisibilityCacheForJob(jobId) — an explicit, best-effort
+//      eviction hook called from worker.ts's per-job `finally` block (the
+//      same place stage2LayoutPlanCache's job-processing-function scope and
+//      finalizeBatchForensicForJob's cleanup already run), so a job's entry
+//      is removed the moment that job finishes, success or failure.
+//   2. WALL_VISIBILITY_CACHE_MAX_ENTRIES — a hard cap with oldest-first
+//      eviction (Map preserves insertion order) as a safety net, so that
+//      even if step 1 is ever skipped on some exotic early-return/throw
+//      path, the cache still cannot grow without bound.
+export const WALL_VISIBILITY_CACHE_MAX_ENTRIES = 50;
 const wallVisibilityCache = new Map<string, WallVisibilityWall[] | null>();
+
+function setWallVisibilityCacheEntry(jobId: string, walls: WallVisibilityWall[] | null): void {
+  // Refresh-on-write: delete first so a re-set of an existing key moves it
+  // to the end of Map's insertion order, keeping genuinely-active jobs from
+  // being evicted ahead of stale ones.
+  wallVisibilityCache.delete(jobId);
+  wallVisibilityCache.set(jobId, walls);
+  while (wallVisibilityCache.size > WALL_VISIBILITY_CACHE_MAX_ENTRIES) {
+    const oldestKey = wallVisibilityCache.keys().next().value;
+    if (oldestKey === undefined) break;
+    wallVisibilityCache.delete(oldestKey);
+  }
+}
+
+/**
+ * Best-effort per-job cleanup. Call once a job has finished (success or
+ * failure) so its wall-visibility entry cannot outlive the job. Safe to
+ * call for a jobId that was never cached (no-op) or more than once
+ * (idempotent).
+ */
+export function clearWallVisibilityCacheForJob(jobId: string): void {
+  wallVisibilityCache.delete(jobId);
+}
+
+// Test-only visibility into cache size/membership — not used by production
+// logic. Kept intentionally minimal (no value inspection) so tests can
+// verify eviction/isolation without coupling to WallVisibilityWall's shape.
+export function __getWallVisibilityCacheStateForTest(): { size: number; hasJob: (jobId: string) => boolean } {
+  return {
+    size: wallVisibilityCache.size,
+    hasJob: (jobId: string) => wallVisibilityCache.has(jobId),
+  };
+}
+
+// Test-only entry point into the same set path buildAnchorLockedStage2Prompt
+// uses internally (including the size-cap eviction), without needing to
+// exercise the full Gemini-calling extraction flow. Not used by production
+// logic.
+export function __setWallVisibilityCacheEntryForTest(jobId: string, walls: WallVisibilityWall[] | null): void {
+  setWallVisibilityCacheEntry(jobId, walls);
+}
 
 export async function buildAnchorLockedStage2Prompt(opts: {
   imagePath: string;
@@ -1987,12 +2130,23 @@ export async function buildAnchorLockedStage2Prompt(opts: {
     walls = wallVisibilityCache.get(opts.jobId)!;
   } else {
     walls = await extractWallVisibility(opts.imagePath, baseline, { jobId: opts.jobId, imageId: opts.imageId });
-    wallVisibilityCache.set(opts.jobId, walls);
+    setWallVisibilityCacheEntry(opts.jobId, walls);
   }
   if (!walls) {
     return fallback("wall_visibility_extraction_failed", baseDiagnostics);
   }
   baseDiagnostics.wallVisibilityExtracted = true;
+
+  // LD2 diagnostic — log only, does not affect wall selection. See
+  // diagnoseWallIndexConsistency's doc comment.
+  const wallIndexConsistency = diagnoseWallIndexConsistency(baseline, walls);
+  if (!wallIndexConsistency.consistent) {
+    focusLog("STAGE2_ANCHOR_LOCKED", "[anchorLockedStaging] wall-index consistency mismatch detected (diagnostic only, selection unaffected)", {
+      jobId: opts.jobId,
+      imageId: opts.imageId,
+      mismatches: wallIndexConsistency.mismatches,
+    });
+  }
 
   const { section: protectedFeatureSection, itemCount, sentences } = buildUniversalFeatureProtectionSection(baseline, walls);
   baseDiagnostics.protectedFeatureCount = itemCount;

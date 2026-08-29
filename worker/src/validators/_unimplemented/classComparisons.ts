@@ -1,4 +1,9 @@
 // Per-class comparison helpers for structural validation
+//
+// QUARANTINED (H3, RealEnhance audit) — see README.md in this directory.
+// Every function below is a hardcoded stub (`return {pass: true}`)
+// regardless of input; none of this was ever implemented. Do not import
+// this into a live validator path.
 import { SemanticMask, SegmentationResult, SemanticClass } from "./semanticSegmenter";
 
 export function compareWalls(base: SegmentationResult, candidate: SegmentationResult): { pass: boolean; code?: string; details?: any } {

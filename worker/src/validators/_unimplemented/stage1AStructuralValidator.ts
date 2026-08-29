@@ -1,6 +1,10 @@
-import { StructuralValidationResult } from "./types";
-import { normaliseDimensionsForValidation } from "./dimensionUtils";
-import { validateWindows } from "./windowValidator";
+// QUARANTINED (H3, RealEnhance audit) — see README.md in this directory.
+// Had zero callers anywhere in the codebase even before this move. Every
+// return path also hardcoded {ok:true} regardless of findings, so even if
+// it had been wired up it could never have failed anything.
+import { StructuralValidationResult } from "../types";
+import { normaliseDimensionsForValidation } from "../dimensionUtils";
+import { validateWindows } from "../windowValidator";
 import { validateWallStructure } from "./wallValidator";
 
 export async function validateStage1AStructure(

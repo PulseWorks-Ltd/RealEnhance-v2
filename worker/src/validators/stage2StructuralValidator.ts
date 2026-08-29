@@ -1,31 +1,7 @@
 import sharp from "sharp";
 import { StructuralMask } from "./structuralMask";
-import { segmentImageClasses, SegmentationResult } from "./semanticSegmenter";
-import {
-  compareWalls,
-  compareWindows,
-  compareDoors,
-  compareFloorMaterial,
-  compareGrassConcrete,
-  compareDrivewayPresence,
-  compareVehicles,
-} from "./classComparisons";
 import { loadStageAwareConfig } from "./stageAwareConfig";
 import { normalizeImagePairForValidator } from "./dimensionUtils";
-
-interface Stage2StructParams {
-  canonicalPath: string;
-  stagedPath: string;
-  structuralMask: StructuralMask;
-  sceneType?: string;
-  roomType?: string;
-}
-
-interface Stage2StructVerdict {
-  ok: boolean;
-  structuralIoU: number;
-  reason?: string;
-}
 
 function sobelBinary(data: Uint8Array, width: number, height: number, threshold: number): Uint8Array {
   const edge = new Uint8Array(data.length);
@@ -111,6 +87,17 @@ export type Stage2ValidationResult = {
     candHeight?: number;
     dimensionMismatch?: boolean;
     dimensionNormalized?: boolean;
+    /**
+     * H3 (RealEnhance audit): always true. The per-class structural
+     * comparison this validator used to attempt (walls/windows/doors/
+     * floor/grass/driveway/vehicles) was never actually implemented — see
+     * the comment above the IoU computation below and
+     * validators/_unimplemented/README.md. This field exists so a caller
+     * or log reader can tell, from the result object itself, that no
+     * per-class check occurred — the ok:true / lack of a `reason` here
+     * does not mean per-class structural integrity was verified.
+     */
+    perClassStructuralComparisonUnimplemented?: boolean;
   };
 };
 
@@ -169,25 +156,21 @@ export async function validateStage2Structural(
     console.warn(`[stage2] Dimension mismatch (post-normalization attempt): base=${baseW}x${baseH}, candidate=${candW}x${candH}`);
   }
 
-  // Segment both images for semantic checks
-  const baseSeg = await segmentImageClasses(baselinePath);
-  const candSeg = await segmentImageClasses(candidatePath);
-
-  // Run per-class checks
-  const wallRes = compareWalls(baseSeg, candSeg);
-  if (!wallRes.pass) return { ok: false, reason: wallRes.code || "wall_layout_changed", debug };
-  const winRes = compareWindows(baseSeg, candSeg);
-  if (!winRes.pass) return { ok: false, reason: winRes.code || "windows_changed", debug };
-  const doorRes = compareDoors(baseSeg, candSeg);
-  if (!doorRes.pass) return { ok: false, reason: doorRes.code || "doors_changed", debug };
-  const floorRes = compareFloorMaterial(baseSeg, candSeg);
-  if (!floorRes.pass) return { ok: false, reason: floorRes.code || "floor_material_changed", debug };
-  const grassRes = compareGrassConcrete(baseSeg, candSeg);
-  if (!grassRes.pass) return { ok: false, reason: grassRes.code || "grass_to_concrete", debug };
-  const driveRes = compareDrivewayPresence(baseSeg, candSeg);
-  if (!driveRes.pass) return { ok: false, reason: driveRes.code || "driveway_changed", debug };
-  const carRes = compareVehicles(baseSeg, candSeg);
-  if (!carRes.pass) return { ok: false, reason: carRes.code || "vehicle_changed", debug };
+  // H3 (RealEnhance audit): per-class structural comparison (walls/windows/
+  // doors/floor/grass/driveway/vehicles) used to run here via
+  // segmentImageClasses + classComparisons. It was never actually
+  // implemented: segmentImageClasses (validators/_unimplemented/
+  // semanticSegmenter.ts) is a stub that always returns zero masks, and
+  // every comparator in classComparisons.ts was hardcoded
+  // `return {pass:true}` — so none of the `if (!xRes.pass) return
+  // {ok:false,...}` branches that used to sit here could ever fire,
+  // regardless of real image content. Removed rather than left calling
+  // code that could only ever report success (see
+  // validators/_unimplemented/README.md for the quarantined originals).
+  // The REAL structural protection this function provides — the edge/IoU
+  // computation immediately below — does not depend on segmentation and is
+  // unchanged by this removal.
+  debug.perClassStructuralComparisonUnimplemented = true;
 
   // ===== COMPUTE STRUCTURAL IoU (CRITICAL FIX) =====
   // This was missing before, causing structuralIoU to always be 0.000

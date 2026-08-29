@@ -1,5 +1,8 @@
 // Semantic segmentation stub for class-based structural validation
 // This should be replaced with a real ADE20K/DeepLab or similar model integration
+//
+// QUARANTINED (H3, RealEnhance audit) — see README.md in this directory.
+// This was never implemented; do not import it into a live validator path.
 
 export type SemanticClass =
   | "wall"

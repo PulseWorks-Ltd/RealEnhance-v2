@@ -26,6 +26,8 @@ import { runStage1A } from "./pipeline/stage1A";
 import type { Stage1AAnalysis } from "./pipeline/stage1A";
 import { runStage1B } from "./pipeline/stage1B";
 import { planStage2Layout, type Stage2LayoutPlan } from "./pipeline/layoutPlanner";
+import { clearWallVisibilityCacheForJob } from "./pipeline/anchorLockedStaging";
+import { evaluateStage1BSourceStageInvariant } from "./pipeline/routingInvariants";
 import {
   isStage2RetryableGenerationError,
   runGeminiStructuralReviewPro,
@@ -10945,13 +10947,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage2SourceStage = stage2Routing.sourceStage;
 
   // TODO(post-demo): restore hard-fail invariant enforcement after validation stabilization
-  if (stage1BRequired && stage2SourceStage === "1A") {
+  //
+  // C1 fix: this used to fire on stage1BRequired alone (the AI furniture
+  // gate's opinion), which is deliberately non-authoritative — see
+  // pipeline/routingInvariants.ts's doc comment for the full history
+  // (job_1a4c8532 and the 6 exterior-scene false positives that motivated
+  // this). The corrected check requires the user's own request to have
+  // asked for Stage 1B too, and exempts exterior scenes outright.
+  const stage1BSourceStageInvariant = evaluateStage1BSourceStageInvariant({
+    isExteriorScene,
+    stage1BRequired,
+    stage1BRequested,
+    stage2SourceStage,
+  });
+  if (stage1BSourceStageInvariant.violated) {
     logger.error("ROUTING_INVARIANT_VIOLATION", {
       jobId: payload.jobId,
       mode: "SOFT_FAIL_PREDEMO",
-      code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
+      code: stage1BSourceStageInvariant.code,
+      isExteriorScene,
       roomState: frozenRoutingSnapshot?.roomState ?? null,
       stage1BRequired,
+      stage1BRequested,
       skipStage1B,
       stage2SourceStage,
       stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
@@ -10960,9 +10977,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     console.error("[ROUTING_INVARIANT_VIOLATION]", {
       jobId: payload.jobId,
       mode: "SOFT_FAIL_PREDEMO",
-      code: "ROUTING_INVARIANT_STAGE1B_SOURCE_STAGE_CONFLICT",
+      code: stage1BSourceStageInvariant.code,
+      isExteriorScene,
       roomState: frozenRoutingSnapshot?.roomState ?? null,
       stage1BRequired,
+      stage1BRequested,
       skipStage1B,
       stage2SourceStage,
       stage2Mode: frozenRoutingSnapshot?.stage2Mode ?? null,
@@ -17265,6 +17284,14 @@ const worker = new Worker(
       // Best-effort temp file cleanup — prevents /tmp from filling up
       try {
         if (jobId) cleanupTempFiles(jobId);
+      } catch { /* ignore */ }
+
+      // C2: evict this job's wall-visibility cache entry now that the job
+      // has finished (success or failure) — see clearWallVisibilityCacheForJob's
+      // doc comment for why this is needed in addition to the module's own
+      // size-capped eviction.
+      try {
+        if (jobId) clearWallVisibilityCacheForJob(jobId);
       } catch { /* ignore */ }
     }
   },
