@@ -584,8 +584,24 @@ export async function enqueueEnhanceJob(params: {
 }, jobIdOverride?: JobId) {
   const { jobId, jobMeta, payload } = await buildEnhanceArtifacts(params, jobIdOverride);
 
+  // H2 fix (RealEnhance audit): these writes are not interchangeable.
+  // queue().add() is the one EXTERNALLY VISIBLE side effect here — the
+  // instant it succeeds, a worker can pick the job up and read its
+  // status/metadata record. Running it concurrently with the writes that
+  // establish that record (the original Promise.all) meant a worker could
+  // observe a job whose jobs:{jobId} record didn't exist yet, or a
+  // partially-written record if one of the other two writes failed while
+  // the BullMQ add still succeeded — the worst combination, since it
+  // leaves a job a worker WILL act on with no correct app-level record.
+  //
+  // Correct model: establish the full, durable app-level record first,
+  // and only then perform the one write that exposes the job to a worker.
+  // If the internal writes fail, nothing has been exposed yet, so there is
+  // nothing to unwind — a strictly cleaner failure than today's. If the
+  // BullMQ add fails after they succeed, the job would otherwise sit
+  // forever showing "queued" with no worker ever able to see it; that
+  // case is handled explicitly below rather than left silent.
   await Promise.all([
-    queue().add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId)),
     saveJobMetadata(jobMeta),
     updateJob(jobId, {
       id: jobId,
@@ -603,6 +619,23 @@ export async function enqueueEnhanceJob(params: {
       createdAt: payload.createdAt,
     }),
   ]);
+
+  try {
+    await queue().add(JOB_QUEUE_NAME, payload, buildQueueJobOptions(jobId));
+  } catch (enqueueErr) {
+    // The record above already says "queued" and is durable, but the job
+    // was never actually handed to BullMQ, so no worker will ever process
+    // it — left alone this would sit invisibly forever. Mark it failed so
+    // it surfaces like any other enqueue failure; any batch-level rollback
+    // the caller performs (see routes/upload.ts's cancelEnqueuedJob loop)
+    // still applies on top of this.
+    await updateJob(jobId, {
+      status: "failed",
+      errorMessage: `Failed to enqueue job: ${(enqueueErr as any)?.message || String(enqueueErr)}`,
+    }).catch(() => { /* best-effort — the original enqueueErr is what matters */ });
+    throw enqueueErr;
+  }
+
   if (params.clientBatchId) {
     await addJobToBatchIndex(params.clientBatchId, jobId);
   }

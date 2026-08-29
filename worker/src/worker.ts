@@ -83,6 +83,7 @@ import { resolveStageUrl, mergeStageUrls, normalizeStageUrls } from "@realenhanc
 import { getJobMetadata, saveJobMetadata, JOB_META_TTL_PROCESSING_SECONDS, JOB_META_TTL_HISTORY_SECONDS, computeFallbackVersionKey } from "@realenhance/shared/imageStore";
 import { getRedis } from "@realenhance/shared/redisClient.js";
 import type { JobOwnershipMetadata } from "@realenhance/shared";
+import { acquireJobProcessingLock, releaseJobProcessingLock } from "./utils/jobProcessingLock";
 import { getGeminiClient } from "./ai/gemini";
 import { checkCompliance } from "./ai/compliance";
 import { logEvent as logPipelineContextEvent, logGeminiUsage } from "./ai/usageTelemetry";
@@ -16441,6 +16442,7 @@ const worker = new Worker(
     const jobId = (payload as any).jobId;
     const userId = String((payload as any)?.userId || "").trim();
     let fairSlotAcquired = false;
+    let jobProcessingLockToken: string | null = null;
 
     logger.info("JOB_START", jobLogContext(job, {
       event: "JOB_START",
@@ -16462,6 +16464,40 @@ const worker = new Worker(
         status: existingStatus,
       });
       return;
+    }
+
+    // C3 fix (RealEnhance audit): BullMQ's own built-in stalled-job
+    // reassignment can hand this exact jobId to a second worker while the
+    // first is still genuinely alive (a missed lock renewal under load —
+    // this codebase has independently observed event-loop congestion via
+    // [MEMORY_PHASE_PEAK_WARNING]). The terminal-status guard above does
+    // nothing for a job whose status is still "processing", so without
+    // this, two workers could run the same job's real pipeline (API
+    // calls, S3 writes) concurrently. See utils/jobProcessingLock.ts.
+    //
+    // Fails OPEN (proceeds with processing) on any infrastructure error —
+    // e.g. no REDIS_URL configured, or a test/mock Redis client that
+    // doesn't implement NX/eval — so a problem with the lock mechanism
+    // itself can only ever fall back to today's existing behavior, never
+    // block a job that should legitimately run.
+    if (jobId) {
+      try {
+        const lockToken = `${jobId}:${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+        const acquired = await acquireJobProcessingLock(getRedis() as any, jobId, lockToken);
+        if (!acquired) {
+          nLog("[WORKER] Skipping duplicate-in-progress job execution", {
+            jobId,
+            reason: "job_processing_lock_held",
+          });
+          return;
+        }
+        jobProcessingLockToken = lockToken;
+      } catch (lockErr) {
+        nLog("[WORKER] job processing lock check failed (proceeding anyway — fail-open)", {
+          jobId,
+          error: (lockErr as any)?.message || String(lockErr),
+        });
+      }
     }
 
     try {
@@ -17293,6 +17329,22 @@ const worker = new Worker(
       try {
         if (jobId) clearWallVisibilityCacheForJob(jobId);
       } catch { /* ignore */ }
+
+      // C3: release the advisory processing lock now that this job has
+      // finished (success or failure), so a genuinely queued re-run of the
+      // same jobId isn't blocked waiting on this lock's TTL. Best-effort —
+      // a failure to release is not fatal; the lock's own TTL is the
+      // backstop (see utils/jobProcessingLock.ts).
+      if (jobProcessingLockToken) {
+        try {
+          await releaseJobProcessingLock(getRedis() as any, jobId, jobProcessingLockToken);
+        } catch (lockReleaseErr) {
+          nLog("[WORKER] job processing lock release failed (non-blocking)", {
+            jobId,
+            error: (lockReleaseErr as any)?.message || String(lockReleaseErr),
+          });
+        }
+      }
     }
   },
   {

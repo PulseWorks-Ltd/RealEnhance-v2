@@ -3,6 +3,7 @@ import {
   CopyObjectCommand,
   S3Client,
   HeadBucketCommand,
+  HeadObjectCommand,
   GetObjectCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
@@ -75,6 +76,33 @@ export function getS3PublicUrl(key: string): string {
   const base = (process.env.S3_PUBLIC_BASEURL || '').replace(/\/+$/, '');
   const region = sanitizeRegion(process.env.AWS_REGION || process.env.AWS_DEFAULT_REGION || "us-east-1");
   return base ? `${base}/${key}` : `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+}
+
+// H4 fix (RealEnhance audit): direct-upload clients report a key back to
+// the server after PUTting to a presigned URL themselves — the server
+// never independently confirmed that PUT actually completed before this
+// (see routes/upload.ts's caller). A failed/aborted/incomplete client-side
+// upload previously sailed straight into a job; the worker's own download
+// step failed it cleanly later, but only after a credit had already been
+// reserved/spent and a job slot consumed. This lets the caller check
+// up front, before any of that happens.
+export async function s3ObjectExists(key: string): Promise<{ exists: boolean; size?: number }> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) throw new Error("S3_BUCKET not configured");
+  const client = getClient();
+  try {
+    const res = await client.send(new HeadObjectCommand({ Bucket: bucket, Key: key }));
+    return { exists: true, size: res.ContentLength };
+  } catch (err: any) {
+    const status = err?.$metadata?.httpStatusCode;
+    if (err?.name === "NotFound" || err?.name === "NoSuchKey" || status === 404) {
+      return { exists: false };
+    }
+    // Anything else (network blip, permissions, throttling) is not a
+    // confirmed "the upload never happened" — let the caller decide how
+    // to treat an inconclusive check rather than silently reporting false.
+    throw err;
+  }
 }
 
 export async function createPresignedUploadUrl(params: {

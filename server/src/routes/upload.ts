@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, updateUser } from "../services/users.js";
 import { cancelEnqueuedJob, createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
-import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3 } from "../utils/s3.js";
+import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3, s3ObjectExists } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
@@ -886,6 +886,36 @@ export function uploadRouter() {
         remoteOriginalKey = directUpload.key;
         remoteOriginalUrl = getS3PublicUrl(directUpload.key);
         recordOriginalPath = directUpload.key;
+
+        // H4 fix (RealEnhance audit): the client asserts it already PUT
+        // this file straight to S3 via a presigned URL — until now that
+        // assertion was trusted with no confirmation. A failed/aborted
+        // client-side upload would previously sail through into a queued
+        // job, consuming a reservation/credit and a job slot before
+        // failing later, opaquely, when the worker tried to download it.
+        // Mirrors the strict/non-strict duality already used for the
+        // server-side multipart upload path just below, so both upload
+        // paths fail the same way on a genuine S3 problem.
+        try {
+          const headResult = await s3ObjectExists(directUpload.key);
+          if (!headResult.exists) {
+            console.warn(`[upload] direct-upload key not found in S3 for item ${i}: ${directUpload.key}`);
+            await releaseReservations();
+            return res.status(400).json({
+              ok: false,
+              error: "upload_incomplete",
+              message: `The uploaded file for item ${i} was not found in storage — the upload may not have completed. Please retry.`,
+            });
+          }
+        } catch (headErr: any) {
+          const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+          const msg = headErr?.message || String(headErr);
+          console.warn('[upload] direct-upload existence check failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without confirmation)');
+          if (strict) {
+            await releaseReservations();
+            return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
+          }
+        }
       } else {
         const localFinalPath = path.join(userDir, f.filename || f.originalname);
         finalPath = localFinalPath;
