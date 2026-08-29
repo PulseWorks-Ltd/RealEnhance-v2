@@ -423,6 +423,11 @@ type AnchorPlan = {
   // across the doorway — nothing in the prompt told the model a doorway
   // needs a clear swing path independent of where the bed itself sits.
   anchorWallHasDoorOrWalkthrough: boolean;
+  // The real door/walkthrough id(s) on the anchor wall, when
+  // anchorWallHasDoorOrWalkthrough is true — null otherwise. Used to
+  // generate the dynamic "ANCHOR WALL — DOOR ACCESS REQUIREMENT" prompt
+  // block with the actual detected door id rather than a generic warning.
+  doorAccessDoorIds: string[] | null;
 };
 
 // Position phrase from the wall's own bounding box in frame — independent
@@ -536,16 +541,28 @@ type SingleAnchorItemConfig = {
 // a candidate at any tier, not just excluded from being "the biggest." ──
 
 const WINDOW_COVERAGE_TIER2_THRESHOLD = 0.5;
-// Return-wall visibility gate for tier 3: the wall's OWN bounding-box
-// span as a fraction of the total frame width (wallBBox(wall).maxX -
-// minX) — a different quantity from usableWidthFraction (which is a
-// fraction of the WALL's own width, not the frame's). A wall that only
-// occupies a thin sliver of the frame can't be reasoned about with any
-// confidence, and furniture placed against it would barely read as
-// staged in the final image — 0.15 (15% of frame width) is the cutoff
-// chosen for that reason: enough of the wall must actually be on-camera
-// for both the model and a viewer to make sense of what's placed there.
-const RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH = 0.15;
+// Universal frame-visibility eligibility floor, applied to every tier via
+// the shared sizeQualifying pre-filter — the wall's OWN bounding-box span
+// as a fraction of the total frame width (wallBBox(wall).maxX - minX), a
+// different quantity from usableWidthFraction (a fraction of the WALL's
+// own width, not the frame's). A wall that only occupies a thin sliver of
+// the frame can't be reasoned about with any confidence, and a bed placed
+// against it wouldn't realistically fit or read as staged in the final
+// image, regardless of whether that sliver happens to be blank.
+//
+// Originally 0.15 and scoped to tier 3 ("return wall") only. Raised to
+// 0.25 and promoted to a universal floor after a real regression: a
+// genuinely blank return-wall sliver at 9.1% of frame width — and,
+// separately, another wall at exactly 15% — both cleared the old
+// tier-3-only 0.15 bar (one narrowly, one exactly), and because they were
+// also blank, tier 1's total absence of any width check let them win
+// outright over a substantially visible (36% of frame) wall with only a
+// small, high-set window that was clearly the better real bed wall. 0.25
+// is a deliberate, documented judgment call — "at least a quarter of the
+// frame" — not derived from a larger calibration set; revisit if it proves
+// too strict or too lenient against more real cases. See
+// tests/bedAnchorWallSelection.test.ts for the preserved regression case.
+const MIN_WALL_FRAME_VISIBLE_WIDTH = 0.25;
 
 // Upper-bound numeric estimate for a WallCoverageBand ("5-10" | "10-20" |
 // "20-40" | "40-60" | "60+"), used for the tier-2 <50% gate and for
@@ -617,8 +634,29 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
   const analyzed = walls.map((w) => analyzeWallForTiers(baseline, w));
 
   // Floor requirement, applied before any tier is evaluated: no wall is a
-  // candidate anywhere below unless it clears this bar first.
-  const sizeQualifying = analyzed.filter((w) => w.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR);
+  // candidate anywhere below unless it clears BOTH of these bars first.
+  //
+  // largestSegment is WALL-RELATIVE (what fraction of THIS wall's own
+  // visible span is clear) — it says nothing about how large the wall
+  // actually is in the photo. frameVisibleWidth is the missing FRAME-
+  // RELATIVE half of that picture. Real production regression: a tiny
+  // return-wall sliver occupying just 9% of the frame width, where that
+  // entire 9% happened to be unobstructed, scored a perfect 1.000 on
+  // largestSegment alone and — being also genuinely blank — won tier 1
+  // outright, ahead of a substantially visible (36% of frame) wall with
+  // only a small, high-set window that was clearly the better real bed
+  // wall. frameVisibleWidth was already being computed and already used
+  // to gate tier 3 specifically (MIN_WALL_FRAME_VISIBLE_WIDTH) —
+  // this wall's own 9% didn't even clear THAT bar, which would have
+  // rejected it outright had it not been blank. The fix is to apply the
+  // same visibility floor uniformly to every tier via this shared
+  // pre-filter, not just tier 3: a wall has to actually be a credible,
+  // substantially-visible staging surface before "blank" or "narrowest
+  // window" gets to decide anything. See tests/bedAnchorWallSelection.test.ts
+  // for this exact case preserved as a regression test.
+  const sizeQualifying = analyzed.filter(
+    (w) => w.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR && w.frameVisibleWidth >= MIN_WALL_FRAME_VISIBLE_WIDTH
+  );
   if (sizeQualifying.length === 0) return null;
 
   // Tier 1 — genuinely blank wall wins outright, regardless of any other
@@ -644,7 +682,15 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
   // into one mechanism — they read different raw data for different
   // purposes, and combining them keeps the size floor's meaning
   // unchanged for every existing caller.
-  const windowWalls = sizeQualifying.filter((w) => w.hasAnyWindow && w.windowCoverage < WINDOW_COVERAGE_TIER2_THRESHOLD);
+  // hasDoorOrWalkthrough excluded here too, not just at tier 3: a wall
+  // with both a window and a door is still a door wall for circulation
+  // purposes — the window doesn't cancel the "foot traffic through this
+  // wall" reasoning tier 4 exists for. Reserving every door-having wall
+  // for tier 4 (and its dedicated clear-segment calculation below) means
+  // hasDoorOrWalkthrough on the wall selectAnchorWallByTier ultimately
+  // returns is now a reliable signal that tier 4 fired, not something a
+  // caller has to infer from the reason string.
+  const windowWalls = sizeQualifying.filter((w) => w.hasAnyWindow && !w.hasDoorOrWalkthrough && w.windowCoverage < WINDOW_COVERAGE_TIER2_THRESHOLD);
   if (windowWalls.length > 0) {
     const picked = [...windowWalls].sort((a, b) => {
       if (a.windowCoverage !== b.windowCoverage) return a.windowCoverage - b.windowCoverage;
@@ -662,12 +708,12 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
   // here (reserved for tier 4) so a door-wall can never sneak into tier 3
   // on visibility alone. Ties broken by the most substantially visible.
   const nonDoorWalls = sizeQualifying.filter((w) => !w.hasDoorOrWalkthrough);
-  const returnWalls = nonDoorWalls.filter((w) => w.frameVisibleWidth >= RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH);
+  const returnWalls = nonDoorWalls.filter((w) => w.frameVisibleWidth >= MIN_WALL_FRAME_VISIBLE_WIDTH);
   if (returnWalls.length > 0) {
     const picked = [...returnWalls].sort((a, b) => b.frameVisibleWidth - a.frameVisibleWidth)[0];
     return {
       info: picked,
-      reason: `tier 3: ${picked.wall.id} (${picked.wall.wallLabel}) — return wall, frame-visible width ${picked.frameVisibleWidth.toFixed(3)} >= ${RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH} threshold.`,
+      reason: `tier 3: ${picked.wall.id} (${picked.wall.wallLabel}) — return wall, frame-visible width ${picked.frameVisibleWidth.toFixed(3)} >= ${MIN_WALL_FRAME_VISIBLE_WIDTH} threshold.`,
     };
   }
 
@@ -689,11 +735,11 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
     const failedReturnWalls = nonDoorWalls.filter((w) => w.wall.id !== picked.wall.id);
     const failedReturnWallsNote =
       failedReturnWalls.length > 0
-        ? failedReturnWalls.map((w) => `${w.wall.id} visible width ${w.frameVisibleWidth.toFixed(3)} below ${RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH} threshold`).join(", ")
+        ? failedReturnWalls.map((w) => `${w.wall.id} visible width ${w.frameVisibleWidth.toFixed(3)} below ${MIN_WALL_FRAME_VISIBLE_WIDTH} threshold`).join(", ")
         : "no other non-door wall was size-qualifying";
     return {
       info: picked,
-      reason: `tier 4: ${picked.wall.id} (${picked.wall.wallLabel}) — ${picked.hasSlidingDoor ? "sliding/glass door" : "hinged/walkthrough interior door"}. No blank wall, no qualifying sub-50% window wall, no return wall met the ${RETURN_WALL_MIN_FRAME_VISIBLE_WIDTH} visibility threshold (${failedReturnWallsNote}).`,
+      reason: `tier 4: ${picked.wall.id} (${picked.wall.wallLabel}) — ${picked.hasSlidingDoor ? "sliding/glass door" : "hinged/walkthrough interior door"}. No blank wall, no qualifying sub-50% window wall, no return wall met the ${MIN_WALL_FRAME_VISIBLE_WIDTH} visibility threshold (${failedReturnWallsNote}).`,
     };
   }
 
@@ -714,6 +760,140 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
   };
 }
 
+// Extends the door's own bbox by this fraction of its own width on each
+// side as a swing/circulation allowance — the floor area a person actually
+// needs to pass through a doorway is wider than the bare opening itself.
+// No real-world measurement backs the exact 0.5 — it's a documented,
+// conservative default (half the door's own width added on each side)
+// pending real feedback on whether it's too generous or too tight.
+const DOOR_CLEARANCE_BUFFER_FRACTION = 0.5;
+// Reuses the same wall-relative "big enough for a bed" bar as every other
+// tier (MIN_USABLE_FRACTION_FOR_ANCHOR) — a clear segment on a door wall
+// isn't held to a different standard than a clear segment anywhere else.
+const MIN_DOOR_WALL_CLEAR_SEGMENT = MIN_USABLE_FRACTION_FOR_ANCHOR;
+
+type DoorClearSegment = { doorIds: string[]; segmentDescription: string; clearFraction: number };
+
+// Real requirement, not a detect-and-hope: when a door wall is the anchor
+// (tier 4 — reached only when nothing else qualified), the bed must be
+// placed in a segment of that wall that deterministically excludes the
+// doorway and its circulation allowance, not just "somewhere on this wall,
+// please don't touch the door." Computed entirely from this wall's own
+// bbox and the door's own bbox (both already-detected baseline data) — no
+// new extraction call. Returns null (caller falls back to the wall's own
+// reported usableSegments) when no door is on this wall, or when neither
+// side of the door leaves enough clear width for a bed.
+function computeDoorClearSegment(
+  baseline: StructuralBaseline,
+  wall: WallVisibilityWall,
+  wallIndex: number
+): DoorClearSegment | null {
+  const doorsOnWall = baseline.openings.filter(
+    (o) => o.wallIndex === wallIndex && (o.type === "door" || o.type === "walkthrough")
+  );
+  if (doorsOnWall.length === 0) return null;
+
+  const { minX, maxX } = wallBBox(wall);
+  const wallWidth = maxX - minX;
+  if (wallWidth <= 0) return null;
+
+  // Each door's own bbox, converted from frame-relative to wall-relative
+  // [0,1], then padded by DOOR_CLEARANCE_BUFFER_FRACTION of its own width
+  // on both sides.
+  const exclusions = doorsOnWall
+    .map((o) => {
+      const rawStart = (o.bbox[0] - minX) / wallWidth;
+      const rawEnd = (o.bbox[2] - minX) / wallWidth;
+      const doorWidth = Math.max(0, rawEnd - rawStart);
+      const buffer = doorWidth * DOOR_CLEARANCE_BUFFER_FRACTION;
+      return { start: Math.max(0, rawStart - buffer), end: Math.min(1, rawEnd + buffer) };
+    })
+    .sort((a, b) => a.start - b.start);
+
+  // Merge overlapping/adjacent exclusion ranges (more than one door on the
+  // same wall) into one continuous list before finding the gaps between
+  // them.
+  const merged: { start: number; end: number }[] = [];
+  for (const r of exclusions) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) {
+      last.end = Math.max(last.end, r.end);
+    } else {
+      merged.push({ ...r });
+    }
+  }
+
+  const gaps: { start: number; end: number }[] = [{ start: 0, end: merged[0].start }];
+  for (let i = 0; i < merged.length - 1; i++) {
+    gaps.push({ start: merged[i].end, end: merged[i + 1].start });
+  }
+  gaps.push({ start: merged[merged.length - 1].end, end: 1 });
+
+  let bestIdx = 0;
+  let bestWidth = -1;
+  gaps.forEach((g, i) => {
+    const width = Math.max(0, g.end - g.start);
+    if (width > bestWidth) {
+      bestWidth = width;
+      bestIdx = i;
+    }
+  });
+  if (bestWidth < MIN_DOOR_WALL_CLEAR_SEGMENT) return null;
+
+  const best = gaps[bestIdx];
+  const doorIds = doorsOnWall.map((o) => o.id);
+  const doorList = doorIds.length === 1 ? doorIds[0] : doorIds.join(" and ");
+  const positionPhrase =
+    bestIdx === 0
+      ? `the portion of this wall to the left of ${doorList}`
+      : bestIdx === gaps.length - 1
+        ? `the portion of this wall to the right of ${doorList}`
+        : `the clear portion of this wall between ${doorList}`;
+
+  return {
+    doorIds,
+    clearFraction: bestWidth,
+    segmentDescription: `${positionPhrase} (roughly ${(best.start * 100).toFixed(0)}%–${(best.end * 100).toFixed(0)}% along the wall)`,
+  };
+}
+
+// Dynamic, door-id-specific instruction block appended when the anchor
+// wall itself contains a door/walkthrough (tier 4 — last resort). This is
+// deliberately more than the protected-feature section's generic "don't
+// remove this opening" line: it explicitly frames the doorway as an
+// active circulation route that staged furniture must not block, since a
+// bed or desk placed carelessly on a door wall is a materially worse
+// failure (blocked access, obstructed swing, an unusable room) than the
+// same misjudgment on a blank wall. Real production case: Bedroom 12's
+// bed ended up placed across the doorway despite the door being correctly
+// listed as a protected opening — that section protects the opening
+// itself from being altered, it never told the model the floor space in
+// front of it has to stay clear too.
+function buildDoorAccessRequirementSection(plan: AnchorPlan, itemLabel: string, companionItems: string[] = []): string {
+  if (!plan.anchorWallHasDoorOrWalkthrough || !plan.doorAccessDoorIds || plan.doorAccessDoorIds.length === 0) {
+    return "";
+  }
+  const doorIds = plan.doorAccessDoorIds;
+  const doorList = doorIds.length === 1 ? doorIds[0] : doorIds.join(" and ");
+  const isPlural = doorIds.length > 1;
+  const otherItemsPhrase = companionItems.length > 0 ? `${companionItems.join(", ")}, or any other staged furniture` : "any other staged furniture";
+  return `
+
+ANCHOR WALL — DOOR ACCESS REQUIREMENT (must be followed exactly)
+
+The selected ${itemLabel} wall contains existing doorway ${doorList}.
+
+${doorList} ${isPlural ? "are protected circulation routes" : "is a protected circulation route"} and MUST remain completely open and usable.
+
+Do NOT place the ${itemLabel}, ${otherItemsPhrase}, across, in front of, or immediately obstructing the doorway.
+
+Maintain clear, unobstructed movement through the doorway into and out of the room.
+
+Place the ${itemLabel} only within the calculated clear wall segment described above, which already excludes ${doorList} and its required access/circulation space.
+
+Preserve the existing doorway position, opening, width, swing, and surrounding wall geometry.`;
+}
+
 function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilityWall[], config: SingleAnchorItemConfig): AnchorPlan | null {
   const selection = selectAnchorWallByTier(baseline, walls);
 
@@ -730,6 +910,17 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
   const selectedWall = selection.info.wall;
   const bestSegment = [...selectedWall.usableSegments].sort((a, b) => b.widthFraction - a.widthFraction)[0];
   const selectedWallIndex = selection.info.wallIndex;
+
+  // hasDoorOrWalkthrough is now reliable as "tier 4 fired" (tiers 1-3 all
+  // exclude door-having walls — see their own comments) — when true,
+  // prefer a deterministically-computed, door-clearance-aware segment over
+  // the wall-visibility extraction's own generic usableSegments guess.
+  // Falls back to bestSegment when no viable segment exists on either side
+  // of the door (rather than blocking the whole plan over it).
+  const doorClearSegment = selection.info.hasDoorOrWalkthrough
+    ? computeDoorClearSegment(baseline, selectedWall, selectedWallIndex)
+    : null;
+  const anchorSegmentDescription = doorClearSegment?.segmentDescription ?? bestSegment.description;
 
   // Orientation: prefer a focal opening (window > door) not on the anchor's
   // own wall; fall back to whatever's available.
@@ -780,14 +971,15 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
     anchorWallLabel: selectedWall.wallLabel,
     anchorWallIndex: selectedWallIndex,
     anchorWallDescription,
-    anchorSegmentDescription: bestSegment.description,
+    anchorSegmentDescription,
     anchorOrientationInstruction,
     anchorFramingNote,
     wallPartiallyVisible,
     noDecorAboveBedNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
-    selectionReason: `${selection.reason} (clear segment: "${bestSegment.description}", ${selection.info.largestSegment.toFixed(3)} >= ${MIN_USABLE_FRACTION_FOR_ANCHOR} size floor.)`,
+    selectionReason: `${selection.reason} (clear segment: "${anchorSegmentDescription}", ${selection.info.largestSegment.toFixed(3)} >= ${MIN_USABLE_FRACTION_FOR_ANCHOR} size floor.)${doorClearSegment ? ` [door-clearance-computed segment, excludes ${doorClearSegment.doorIds.join("/")} plus circulation buffer]` : ""}`,
     anchorWallHasDoorOrWalkthrough: selection.info.hasDoorOrWalkthrough,
+    doorAccessDoorIds: doorClearSegment?.doorIds ?? (selection.info.hasDoorOrWalkthrough ? baseline.openings.filter((o) => o.wallIndex === selectedWallIndex && (o.type === "door" || o.type === "walkthrough")).map((o) => o.id) : null),
   };
 }
 
@@ -1595,9 +1787,7 @@ function buildBedroomPrompt(
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
   const noDecorLine = plan.noDecorAboveBedNote ? `\n* ${plan.noDecorAboveBedNote}` : "";
-  const doorWallLine = plan.anchorWallHasDoorOrWalkthrough
-    ? `\n* This wall has a door or walkthrough opening on it — it was used only because no blank, window, or return wall in the room qualified. Position the bed and its footprint so the doorway's full swing path and a clear walking route through it remain completely unobstructed; do not let the bed block the doorway.`
-    : "";
+  const doorAccessSection = buildDoorAccessRequirementSection(plan, "bed", ["bedside tables"]);
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   const anchorWallFeaturesSection =
@@ -1612,7 +1802,7 @@ ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 ANCHOR ITEM — BED (must be followed exactly)
 
 * Place the bed against ${plan.anchorWallDescription}, within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${doorWallLine}${anchorWallFeaturesSection}
+* ${plan.anchorOrientationInstruction}${framingLine}${noDecorLine}${doorAccessSection}${anchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
@@ -1644,9 +1834,7 @@ function buildStudyPrompt(
   }
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
-  const doorWallLine = plan.anchorWallHasDoorOrWalkthrough
-    ? `\n* This wall has a door or walkthrough opening on it — it was used only because no blank, window, or return wall in the room qualified. Position the desk and its footprint so the doorway's full swing path and a clear walking route through it remain completely unobstructed; do not let the desk block the doorway.`
-    : "";
+  const doorAccessSection = buildDoorAccessRequirementSection(plan, "desk", ["the desk chair"]);
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   const anchorWallFeaturesSection =
@@ -1661,7 +1849,7 @@ ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 ANCHOR ITEM — DESK (must be followed exactly)
 
 * Place a desk against ${plan.anchorWallDescription}, within the clear segment described as "${plan.anchorSegmentDescription}" — this is the wall and clear zone selected as the anchor by the room's own layout analysis.
-* ${plan.anchorOrientationInstruction}${framingLine}${doorWallLine}${anchorWallFeaturesSection}
+* ${plan.anchorOrientationInstruction}${framingLine}${doorAccessSection}${anchorWallFeaturesSection}
 * Include a desk chair at the desk, and keep the desk surface realistically tidy (e.g. a laptop or monitor, a small lamp, a few books or folders) — not empty, and not cluttered.
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
