@@ -1,0 +1,346 @@
+[
+  {
+    "label": "100pct",
+    "sentDimensions": {
+      "width": 1440,
+      "height": 1080
+    },
+    "durationMs": 23700,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-resvariant-100pct-overlay.png",
+    "regions": [
+      {
+        "id": "1",
+        "type": "door",
+        "confidence": 0.98,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 287330,
+        "normalizedPolygon": [
+          [
+            0.26,
+            0.382
+          ],
+          [
+            0.234,
+            0.893
+          ],
+          [
+            0.613,
+            0.869
+          ],
+          [
+            0.618,
+            0.376
+          ]
+        ]
+      },
+      {
+        "id": "2",
+        "type": "walkthrough",
+        "confidence": 0.97,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 60524,
+        "normalizedPolygon": [
+          [
+            0.864,
+            0.462
+          ],
+          [
+            0.862,
+            0.796
+          ],
+          [
+            0.981,
+            0.784
+          ],
+          [
+            0.982,
+            0.461
+          ]
+        ]
+      },
+      {
+        "id": "3",
+        "type": "ac_unit",
+        "confidence": 0.99,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 13188,
+        "normalizedPolygon": [
+          [
+            0.459,
+            0.329
+          ],
+          [
+            0.46,
+            0.381
+          ],
+          [
+            0.623,
+            0.377
+          ],
+          [
+            0.622,
+            0.325
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "label": "50pct",
+    "sentDimensions": {
+      "width": 720,
+      "height": 540
+    },
+    "durationMs": 23737,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-resvariant-50pct-overlay.png",
+    "regions": [
+      {
+        "id": "1",
+        "type": "door",
+        "confidence": 0.97,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 273311,
+        "normalizedPolygon": [
+          [
+            0.252,
+            0.56
+          ],
+          [
+            0.687,
+            0.546
+          ],
+          [
+            0.687,
+            0.947
+          ],
+          [
+            0.252,
+            0.967
+          ]
+        ]
+      },
+      {
+        "id": "2",
+        "type": "walkthrough",
+        "confidence": 0.98,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 41591,
+        "normalizedPolygon": [
+          [
+            0.874,
+            0.678
+          ],
+          [
+            0.968,
+            0.674
+          ],
+          [
+            0.968,
+            0.958
+          ],
+          [
+            0.874,
+            0.963
+          ]
+        ]
+      },
+      {
+        "id": "3",
+        "type": "ac_unit",
+        "confidence": 0.99,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 20785,
+        "normalizedPolygon": [
+          [
+            0.635,
+            0.582
+          ],
+          [
+            0.8,
+            0.575
+          ],
+          [
+            0.8,
+            0.656
+          ],
+          [
+            0.635,
+            0.663
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "label": "25pct",
+    "sentDimensions": {
+      "width": 360,
+      "height": 270
+    },
+    "durationMs": 16884,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-resvariant-25pct-overlay.png",
+    "regions": [
+      {
+        "id": "1",
+        "type": "door",
+        "confidence": 0.95,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 262034,
+        "normalizedPolygon": [
+          [
+            0.264,
+            0.114
+          ],
+          [
+            0.262,
+            0.834
+          ],
+          [
+            0.498,
+            0.825
+          ],
+          [
+            0.498,
+            0.111
+          ]
+        ]
+      },
+      {
+        "id": "2",
+        "type": "walkthrough",
+        "confidence": 0.92,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 53191,
+        "normalizedPolygon": [
+          [
+            0.758,
+            0.331
+          ],
+          [
+            0.76,
+            0.808
+          ],
+          [
+            0.831,
+            0.804
+          ],
+          [
+            0.831,
+            0.331
+          ]
+        ]
+      },
+      {
+        "id": "3",
+        "type": "ac_unit",
+        "confidence": 0.98,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 22340,
+        "normalizedPolygon": [
+          [
+            0.532,
+            0.191
+          ],
+          [
+            0.532,
+            0.278
+          ],
+          [
+            0.701,
+            0.27
+          ],
+          [
+            0.701,
+            0.187
+          ]
+        ]
+      }
+    ]
+  },
+  {
+    "label": "150pct-upscale",
+    "sentDimensions": {
+      "width": 2160,
+      "height": 1620
+    },
+    "durationMs": 18396,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-resvariant-150pct-upscale-overlay.png",
+    "regions": [
+      {
+        "id": "1",
+        "type": "door",
+        "confidence": 0.97,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 292274,
+        "normalizedPolygon": [
+          [
+            0.1587,
+            0.3262
+          ],
+          [
+            0.4423,
+            0.3113
+          ],
+          [
+            0.463,
+            0.9413
+          ],
+          [
+            0.1528,
+            0.9613
+          ]
+        ]
+      },
+      {
+        "id": "2",
+        "type": "walkthrough",
+        "confidence": 0.98,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 72801,
+        "normalizedPolygon": [
+          [
+            0.6506,
+            0.4071
+          ],
+          [
+            0.7584,
+            0.4054
+          ],
+          [
+            0.7584,
+            0.8413
+          ],
+          [
+            0.6512,
+            0.8421
+          ]
+        ]
+      },
+      {
+        "id": "3",
+        "type": "ac_unit",
+        "confidence": 0.99,
+        "vertexCount": 4,
+        "pixelAreaOnOriginal": 11743,
+        "normalizedPolygon": [
+          [
+            0.4491,
+            0.3546
+          ],
+          [
+            0.5523,
+            0.3429
+          ],
+          [
+            0.5523,
+            0.4179
+          ],
+          [
+            0.4497,
+            0.4263
+          ]
+        ]
+      }
+    ]
+  }
+]

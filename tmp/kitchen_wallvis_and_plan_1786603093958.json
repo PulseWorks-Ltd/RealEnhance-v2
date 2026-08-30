@@ -1,0 +1,173 @@
+{
+  "walls": {
+    "walls": [
+      {
+        "id": "wall_0",
+        "wallLabel": "Back kitchen wall",
+        "extent": {
+          "polygon": [
+            [
+              0.201,
+              0.131
+            ],
+            [
+              0.822,
+              0.124
+            ],
+            [
+              0.822,
+              0.945
+            ],
+            [
+              0.201,
+              0.945
+            ]
+          ]
+        },
+        "openingIds": [
+          "F2"
+        ],
+        "usableWidthFraction": 0,
+        "usableSegments": [],
+        "confidence": 0.98
+      },
+      {
+        "id": "wall_1",
+        "wallLabel": "Right wall with window",
+        "extent": {
+          "polygon": [
+            [
+              0.822,
+              0.124
+            ],
+            [
+              1,
+              0.141
+            ],
+            [
+              1,
+              0.95
+            ],
+            [
+              0.822,
+              0.945
+            ]
+          ]
+        },
+        "openingIds": [
+          "W1"
+        ],
+        "usableWidthFraction": 0.79,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.79
+            ],
+            "widthFraction": 0.79,
+            "description": "Clear space to the left of the window"
+          }
+        ],
+        "confidence": 0.95
+      },
+      {
+        "id": "wall_3",
+        "wallLabel": "Left wall with entryways",
+        "extent": {
+          "polygon": [
+            [
+              0,
+              0.052
+            ],
+            [
+              0.201,
+              0.131
+            ],
+            [
+              0.201,
+              0.945
+            ],
+            [
+              0,
+              0.944
+            ]
+          ]
+        },
+        "openingIds": [
+          "D1",
+          "A1"
+        ],
+        "usableWidthFraction": 0.05,
+        "usableSegments": [
+          {
+            "range": [
+              0.55,
+              0.6
+            ],
+            "widthFraction": 0.05,
+            "description": "Narrow strip between door and walkthrough"
+          }
+        ],
+        "confidence": 0.97
+      }
+    ]
+  },
+  "plan": {
+    "room_type": "kitchen_living",
+    "anchorItem": "sofa_group",
+    "anchorWall": "Right wall with window",
+    "anchorWallId": "wall_1",
+    "anchorOrientation": "foot_toward_focal_feature",
+    "anchorOrientationInstruction": "Orient the sofa so it faces toward W1 (the window on wall_1) — NOT facing the camera directly.",
+    "anchorFramingInstruction": "wall_1 is only partially visible in the frame (truncated at the right edge). Edge-cropped placement is acceptable.",
+    "anchorConfidence": 0.9,
+    "reasoning": {
+      "wallCandidates": [
+        {
+          "wallId": "wall_0",
+          "wallLabel": "Back kitchen wall",
+          "usableWidthFraction": 0,
+          "largestContiguousSegmentFraction": 0,
+          "openingIds": [
+            "F2"
+          ],
+          "meetsMinThreshold": false
+        },
+        {
+          "wallId": "wall_1",
+          "wallLabel": "Right wall with window",
+          "usableWidthFraction": 0.79,
+          "largestContiguousSegmentFraction": 0.79,
+          "openingIds": [
+            "W1"
+          ],
+          "meetsMinThreshold": true
+        },
+        {
+          "wallId": "wall_3",
+          "wallLabel": "Left wall with entryways",
+          "usableWidthFraction": 0.05,
+          "largestContiguousSegmentFraction": 0.05,
+          "openingIds": [
+            "D1",
+            "A1"
+          ],
+          "meetsMinThreshold": false
+        }
+      ],
+      "selectedWallId": "wall_1",
+      "selectionReason": "wall_1 (Right wall with window) selected: largest contiguous usable segment 0.790 (\"Clear space to the left of the window\"), exceeds all others (wall_3=0.050, wall_0=0.000).",
+      "orientation": {
+        "focalFeatureId": "W1",
+        "focalFeatureType": "window",
+        "focalFeatureWallIndex": 1,
+        "rule": "Selected W1 (type=\"window\") as the orientation focal feature: highest-priority focal type (window > door) (only available on the anchor's own wall — lower-confidence fallback)."
+      },
+      "framing": {
+        "wallTouchesFrameEdge": true,
+        "edgeSide": "right",
+        "rule": "wall_1 touches the right image boundary — edge-cropped placement permitted."
+      }
+    }
+  }
+}

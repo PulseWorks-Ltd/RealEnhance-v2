@@ -1,0 +1,838 @@
+[
+  {
+    "name": "Rental 03.jpg",
+    "oldZoning": {
+      "zones": [
+        {
+          "id": "zone_living",
+          "purpose": "living",
+          "floorRegion": {
+            "polygon": [
+              [
+                0,
+                1
+              ],
+              [
+                0.8,
+                1
+              ],
+              [
+                0.6,
+                0.6
+              ],
+              [
+                0,
+                0.65
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            3,
+            0
+          ],
+          "reasoning": "Defined by the cohesive grouping of seating furniture (armchairs, sofa) and an area rug, occupying the foreground and left side of the room."
+        },
+        {
+          "id": "zone_dining",
+          "purpose": "dining",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.8,
+                1
+              ],
+              [
+                1,
+                0.9
+              ],
+              [
+                1,
+                0.55
+              ],
+              [
+                0.58,
+                0.55
+              ],
+              [
+                0.6,
+                0.6
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            1
+          ],
+          "reasoning": "Defined by the placement of the dining table and chairs in the recessed area adjacent to the kitchen opening, distinct from the main seating group."
+        }
+      ],
+      "kitchenSignal": {
+        "present": true,
+        "openingId": "A1",
+        "confidence": 0.98,
+        "evidence": "The walkthrough opening A1 provides a clear and direct view into an area with a kitchen counter, white cabinetry, a stainless steel range hood, a sink, and track lighting, all characteristic features of a kitchen."
+      }
+    },
+    "newZoning": {
+      "zones": [
+        {
+          "id": "zone_living",
+          "purpose": "living",
+          "floorRegion": {
+            "polygon": [
+              [
+                0,
+                1
+              ],
+              [
+                0.05,
+                0.71
+              ],
+              [
+                0.12,
+                0.62
+              ],
+              [
+                0.55,
+                0.68
+              ],
+              [
+                0.72,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            3,
+            0
+          ],
+          "reasoning": "The living zone is defined by the grouping of seating furniture (sofa, armchairs) and an area rug in the main, larger portion of the room, distinct from the dining alcove."
+        },
+        {
+          "id": "zone_dining",
+          "purpose": "dining",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.55,
+                0.68
+              ],
+              [
+                0.73,
+                0.73
+              ],
+              [
+                0.86,
+                0.78
+              ],
+              [
+                0.99,
+                0.87
+              ],
+              [
+                0.99,
+                1
+              ],
+              [
+                0.72,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            1
+          ],
+          "reasoning": "The dining zone is located in an architectural nook/alcove, visually separated from the main living area. This location is reinforced by the placement of the dining table and chairs."
+        }
+      ],
+      "kitchenSignal": {
+        "present": true,
+        "openingId": "A1",
+        "confidence": 0.98,
+        "evidence": "A kitchen is clearly visible through opening A1, evidenced by a countertop, cabinetry, sink, range hood, and tiled splashback."
+      }
+    },
+    "oldDepth": 0.4,
+    "newDepth": 0.38,
+    "newPlan": {
+      "diningPlan": {
+        "center": [
+          0.8066666666666666,
+          0.8433333333333334
+        ],
+        "footprint": {
+          "halfWidth": 0.12,
+          "halfHeight": 0.08
+        },
+        "reasoning": "Table centered within zone_dining (centroid [0.807, 0.843])."
+      },
+      "tvPlan": {
+        "wallId": "wall_3",
+        "wallLabel": "Main living room wall",
+        "segmentDescription": "Wall space to the left of the window",
+        "largestSegment": 0.28,
+        "depthCheckFlaggedSuspect": false,
+        "reasoning": "TV wall selected: wall_3 (Main living room wall) is zone-exclusive, clears TV width threshold (0.280 >= 0.2), zone depth sufficient."
+      },
+      "noTvReason": null,
+      "sofaPlan": {
+        "wallId": "wall_0",
+        "wallLabel": "Dining area wall with walkthrough",
+        "facingWallId": "wall_3",
+        "reasoning": "Sofa placed against wall_0, facing wall_3."
+      },
+      "reasoning": [
+        "Living zone floor-region depth proxy: 0.380 (threshold 0.25) — sufficient.",
+        "TV wall selected: wall_3 (Main living room wall) is zone-exclusive, clears TV width threshold (0.280 >= 0.2), zone depth sufficient.",
+        "Sofa placed against wall_0, facing wall_3."
+      ],
+      "livingZone": {
+        "id": "zone_living",
+        "purpose": "living",
+        "floorRegion": {
+          "polygon": [
+            [
+              0,
+              1
+            ],
+            [
+              0.05,
+              0.71
+            ],
+            [
+              0.12,
+              0.62
+            ],
+            [
+              0.55,
+              0.68
+            ],
+            [
+              0.72,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          3,
+          0
+        ],
+        "reasoning": "The living zone is defined by the grouping of seating furniture (sofa, armchairs) and an area rug in the main, larger portion of the room, distinct from the dining alcove."
+      },
+      "diningZone": {
+        "id": "zone_dining",
+        "purpose": "dining",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.55,
+              0.68
+            ],
+            [
+              0.73,
+              0.73
+            ],
+            [
+              0.86,
+              0.78
+            ],
+            [
+              0.99,
+              0.87
+            ],
+            [
+              0.99,
+              1
+            ],
+            [
+              0.72,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          0,
+          1
+        ],
+        "reasoning": "The dining zone is located in an architectural nook/alcove, visually separated from the main living area. This location is reinforced by the placement of the dining table and chairs."
+      },
+      "depthCheckFlaggedSuspect": false
+    },
+    "compOverlayPath": "/workspaces/RealEnhance-v2/Test Images/Living (Baseline)/Rental 03-zoning-before-after.png"
+  },
+  {
+    "name": "Living 07.jpg",
+    "oldZoning": {
+      "zones": [
+        {
+          "id": "zone_living",
+          "purpose": "living",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.47,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0.77
+              ],
+              [
+                0.82,
+                0.64
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            3
+          ],
+          "reasoning": "Zone defined by the carpeted floor area. The presence of a fireplace (F1) and a large sliding door to a deck (D1) strongly indicate this is the primary living space. The boundary is formed by a clear change in flooring material."
+        },
+        {
+          "id": "zone_dining",
+          "purpose": "dining",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.47,
+                1
+              ],
+              [
+                0.82,
+                0.64
+              ],
+              [
+                1,
+                0.64
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            1
+          ],
+          "reasoning": "Zone defined by the hard flooring area, distinct from the carpeted living zone. This clear change in flooring material creates a natural division for a secondary function like dining or major circulation."
+        }
+      ],
+      "kitchenSignal": {
+        "present": false,
+        "openingId": null,
+        "confidence": 0.95,
+        "evidence": "No visual cues of a kitchen (e.g., appliances, countertops, cabinetry, kitchen-specific lighting) are visible through any of the openings or in any adjacent visible space."
+      }
+    },
+    "newZoning": {
+      "zones": [
+        {
+          "id": "zone_living",
+          "purpose": "living",
+          "floorRegion": {
+            "polygon": [
+              [
+                0,
+                0.769
+              ],
+              [
+                0.478,
+                0.693
+              ],
+              [
+                0.644,
+                1
+              ],
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            3,
+            0,
+            2
+          ],
+          "reasoning": "The zone is defined by the dark carpeted floor area, a common material choice for a living/seating space. The presence of a fireplace (F1) and a large sliding glass door (D1) leading to a deck further reinforces its function as the primary living area."
+        },
+        {
+          "id": "zone_dining",
+          "purpose": "dining",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.478,
+                0.693
+              ],
+              [
+                0.86,
+                0.65
+              ],
+              [
+                1,
+                0.89
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0.644,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            1,
+            2
+          ],
+          "reasoning": "The zone is clearly demarcated by a change in flooring to a hard surface, which is practical for a dining area and creates a strong visual separation from the carpeted living zone within the open-plan layout."
+        }
+      ],
+      "kitchenSignal": {
+        "present": false,
+        "openingId": null,
+        "confidence": 1,
+        "evidence": "No visible cues such as cabinetry, countertops, appliances, or typical kitchen fixtures are present in the photograph or visible through any of the detected openings."
+      }
+    },
+    "oldDepth": 0.36,
+    "newDepth": 0.30700000000000005,
+    "newPlan": {
+      "diningPlan": {
+        "center": [
+          0.7964,
+          0.8466000000000001
+        ],
+        "footprint": {
+          "halfWidth": 0.12,
+          "halfHeight": 0.08
+        },
+        "reasoning": "Table centered within zone_dining (centroid [0.796, 0.847])."
+      },
+      "tvPlan": null,
+      "noTvReason": "no TV placed — no zone-exclusive wall clears the minimum usable-width threshold for a TV",
+      "sofaPlan": {
+        "wallId": null,
+        "floorCentered": true,
+        "facingWallId": null,
+        "orientationInstruction": "Orient the sofa to face toward W1 (the window on wall_0).",
+        "reasoning": "No living-zone wall qualified; floor-centered. Orient the sofa to face toward W1 (the window on wall_0)."
+      },
+      "reasoning": [
+        "Living zone floor-region depth proxy: 0.307 (threshold 0.25) — sufficient.",
+        "no TV placed — no zone-exclusive wall clears the minimum usable-width threshold for a TV",
+        "No living-zone wall qualified; floor-centered. Orient the sofa to face toward W1 (the window on wall_0)."
+      ],
+      "livingZone": {
+        "id": "zone_living",
+        "purpose": "living",
+        "floorRegion": {
+          "polygon": [
+            [
+              0,
+              0.769
+            ],
+            [
+              0.478,
+              0.693
+            ],
+            [
+              0.644,
+              1
+            ],
+            [
+              0,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          3,
+          0,
+          2
+        ],
+        "reasoning": "The zone is defined by the dark carpeted floor area, a common material choice for a living/seating space. The presence of a fireplace (F1) and a large sliding glass door (D1) leading to a deck further reinforces its function as the primary living area."
+      },
+      "diningZone": {
+        "id": "zone_dining",
+        "purpose": "dining",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.478,
+              0.693
+            ],
+            [
+              0.86,
+              0.65
+            ],
+            [
+              1,
+              0.89
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              0.644,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          0,
+          1,
+          2
+        ],
+        "reasoning": "The zone is clearly demarcated by a change in flooring to a hard surface, which is practical for a dining area and creates a strong visual separation from the carpeted living zone within the open-plan layout."
+      },
+      "depthCheckFlaggedSuspect": false
+    },
+    "compOverlayPath": "/workspaces/RealEnhance-v2/Test Images/Living (Baseline)/Living 07-zoning-before-after.png"
+  },
+  {
+    "name": "Living 10.jpg",
+    "oldZoning": {
+      "zones": [
+        {
+          "id": "zone_living",
+          "purpose": "living",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.508,
+                1
+              ],
+              [
+                0.508,
+                0.924
+              ],
+              [
+                0.407,
+                0.918
+              ],
+              [
+                0.35,
+                0.918
+              ],
+              [
+                0,
+                0.85
+              ],
+              [
+                0,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            3
+          ],
+          "reasoning": "This zone occupies the larger, primary area of the room, defined by the main traffic path from the door (D1). It is separated from the dining/kitchen area by a structural half-wall, suggesting its function as the main living/seating space."
+        },
+        {
+          "id": "zone_dining",
+          "purpose": "dining",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.508,
+                1
+              ],
+              [
+                0.508,
+                0.924
+              ],
+              [
+                0.637,
+                0.78
+              ],
+              [
+                0.99,
+                0.81
+              ],
+              [
+                1,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            1
+          ],
+          "reasoning": "The zone is defined by the architectural projection of a half-wall and countertop, which separates this area from the main living space and aligns it with the kitchen pass-through (A1). The presence of a dedicated window (W2) and overhead lighting (L3) further suggests its use as a dining area."
+        }
+      ],
+      "kitchenSignal": {
+        "present": true,
+        "openingId": "A1",
+        "confidence": 0.98,
+        "evidence": "A kitchen is clearly visible through the opening, evidenced by a countertop, cabinetry, a sink/faucet, a dishwasher appliance, and a tiled splashback. Pendant lighting (L4) is positioned directly above the countertop, which is typical for a kitchen breakfast bar."
+      }
+    },
+    "newZoning": {
+      "zones": [
+        {
+          "id": "zone_living",
+          "purpose": "living",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.508,
+                1
+              ],
+              [
+                0,
+                1
+              ],
+              [
+                0,
+                0.73
+              ],
+              [
+                0.34,
+                0.595
+              ],
+              [
+                0.35,
+                0.588
+              ],
+              [
+                0.35,
+                0.918
+              ],
+              [
+                0.407,
+                0.918
+              ],
+              [
+                0.407,
+                0.585
+              ],
+              [
+                0.506,
+                0.572
+              ],
+              [
+                0.508,
+                0.925
+              ],
+              [
+                0.508,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            3,
+            0
+          ],
+          "reasoning": "Defined as the larger, primary area of the unfurnished open-plan space, separated from the dining zone by a partial wall/peninsula. The division line is a logical extension of this prominent architectural feature."
+        },
+        {
+          "id": "zone_dining",
+          "purpose": "dining",
+          "floorRegion": {
+            "polygon": [
+              [
+                0.508,
+                1
+              ],
+              [
+                0.508,
+                0.925
+              ],
+              [
+                0.637,
+                0.924
+              ],
+              [
+                0.637,
+                0.575
+              ],
+              [
+                0.655,
+                0.58
+              ],
+              [
+                1,
+                0.82
+              ],
+              [
+                1,
+                1
+              ],
+              [
+                0.508,
+                1
+              ]
+            ]
+          },
+          "borderingWallIndices": [
+            0,
+            1
+          ],
+          "reasoning": "Defined as the smaller, distinct area adjacent to the kitchen pass-through, demarcated by the architectural peninsula and the presence of pendant lighting (L4) which typically hangs over a dining table or breakfast bar."
+        }
+      ],
+      "kitchenSignal": {
+        "present": true,
+        "openingId": "A1",
+        "confidence": 0.98,
+        "evidence": "Kitchen is clearly visible through the opening, with a visible countertop, sink, cabinetry, and an under-counter appliance (likely a dishwasher)."
+      }
+    },
+    "oldDepth": 0.15000000000000002,
+    "newDepth": 0.42800000000000005,
+    "newPlan": {
+      "diningPlan": {
+        "center": [
+          0.681625,
+          0.8530000000000001
+        ],
+        "footprint": {
+          "halfWidth": 0.12,
+          "halfHeight": 0.08
+        },
+        "reasoning": "Table centered within zone_dining (centroid [0.682, 0.853])."
+      },
+      "tvPlan": {
+        "wallId": "wall_3",
+        "wallLabel": "Left wall with door",
+        "segmentDescription": "From left edge of frame to door",
+        "largestSegment": 0.845,
+        "depthCheckFlaggedSuspect": false,
+        "reasoning": "TV wall selected: wall_3 (Left wall with door) is zone-exclusive, clears TV width threshold (0.845 >= 0.2), zone depth sufficient."
+      },
+      "noTvReason": null,
+      "sofaPlan": {
+        "wallId": "wall_0",
+        "wallLabel": "Central dividing wall",
+        "facingWallId": "wall_3",
+        "reasoning": "Sofa placed against wall_0, facing wall_3."
+      },
+      "reasoning": [
+        "Living zone floor-region depth proxy: 0.428 (threshold 0.25) — sufficient.",
+        "TV wall selected: wall_3 (Left wall with door) is zone-exclusive, clears TV width threshold (0.845 >= 0.2), zone depth sufficient.",
+        "Sofa placed against wall_0, facing wall_3."
+      ],
+      "livingZone": {
+        "id": "zone_living",
+        "purpose": "living",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.508,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              0.73
+            ],
+            [
+              0.34,
+              0.595
+            ],
+            [
+              0.35,
+              0.588
+            ],
+            [
+              0.35,
+              0.918
+            ],
+            [
+              0.407,
+              0.918
+            ],
+            [
+              0.407,
+              0.585
+            ],
+            [
+              0.506,
+              0.572
+            ],
+            [
+              0.508,
+              0.925
+            ],
+            [
+              0.508,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          3,
+          0
+        ],
+        "reasoning": "Defined as the larger, primary area of the unfurnished open-plan space, separated from the dining zone by a partial wall/peninsula. The division line is a logical extension of this prominent architectural feature."
+      },
+      "diningZone": {
+        "id": "zone_dining",
+        "purpose": "dining",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.508,
+              1
+            ],
+            [
+              0.508,
+              0.925
+            ],
+            [
+              0.637,
+              0.924
+            ],
+            [
+              0.637,
+              0.575
+            ],
+            [
+              0.655,
+              0.58
+            ],
+            [
+              1,
+              0.82
+            ],
+            [
+              1,
+              1
+            ],
+            [
+              0.508,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          0,
+          1
+        ],
+        "reasoning": "Defined as the smaller, distinct area adjacent to the kitchen pass-through, demarcated by the architectural peninsula and the presence of pendant lighting (L4) which typically hangs over a dining table or breakfast bar."
+      },
+      "depthCheckFlaggedSuspect": false
+    },
+    "compOverlayPath": "/workspaces/RealEnhance-v2/Test Images/Living (Baseline)/Living 10-zoning-before-after.png"
+  }
+]

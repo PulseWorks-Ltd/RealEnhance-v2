@@ -1,13 +1,16 @@
+import { nLog, vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
+import { grokAnalyzeImages, grokVisionModel } from "../ai/grok";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
 import { classifyIssueTier, createStructuredIssue, ISSUE_TYPES, mapIssueTierToSeverity, splitIssueTokens, type StructuredIssue } from "./issueTypes";
+import { resolveValidatorModel } from "./occlusionVsRemovalCheck";
 import type { ValidatorOutcome } from "./validatorOutcome";
 
 export type FloorIntegrityValidatorResult = ValidatorOutcome;
 
 function logFloorEvent(event: string, payload: Record<string, unknown>): void {
-  console.log(JSON.stringify({ event, ...payload }));
+  vDetailLog(JSON.stringify({ event, ...payload }));
 }
 
 function logFloorPhaseEnd(jobId: string | undefined, phase: string, durationMs: number, extra: Record<string, unknown> = {}): void {
@@ -217,7 +220,7 @@ export function parseFloorIntegrityResult(rawText: string): FloorIntegrityValida
     advisorySignals,
   });
 
-  console.log("[SPECIALIST_REVIEW][FLOOR]", {
+  nLog("[SPECIALIST_REVIEW][FLOOR]", {
     ok: finalOk,
     advisory,
     hardFail,
@@ -299,43 +302,62 @@ Return JSON only:
   const model = process.env.FLOOR_VALIDATOR_MODEL || "gemini-2.5-pro";
 
   try {
-    const requestStartedAt = Date.now();
-    const response = await (ai as any).models.generateContent({
-      model,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { text: prompt },
-            { text: "IMAGE_BEFORE:" },
-            { inlineData: { mimeType: "image/webp", data: before } },
-            { text: "IMAGE_AFTER:" },
-            { inlineData: { mimeType: "image/webp", data: after } },
-          ],
+    let text: string;
+    if (resolveValidatorModel() === "grok") {
+      // STAGE2_VALIDATOR_MODEL=grok routing. Same prompt, same
+      // parseFloorIntegrityResult — only the call mechanics differ.
+      const requestStartedAt = Date.now();
+      text = await grokAnalyzeImages({
+        images: [
+          { buffer: Buffer.from(before, "base64"), mimeType: "image/webp", label: "IMAGE_BEFORE:" },
+          { buffer: Buffer.from(after, "base64"), mimeType: "image/webp", label: "IMAGE_AFTER:" },
+        ],
+        prompt,
+        jobId: options?.jobId,
+        imageId: options?.imageId,
+        reason: "floor_integrity_check",
+        expectJson: true,
+      });
+      logFloorPhaseEnd(options?.jobId, "grok_request", Date.now() - requestStartedAt, { model: grokVisionModel() });
+    } else {
+      const requestStartedAt = Date.now();
+      const response = await (ai as any).models.generateContent({
+        model,
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { text: prompt },
+              { text: "IMAGE_BEFORE:" },
+              { inlineData: { mimeType: "image/webp", data: before } },
+              { text: "IMAGE_AFTER:" },
+              { inlineData: { mimeType: "image/webp", data: after } },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0,
+          responseMimeType: "application/json",
         },
-      ],
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: "application/json",
-      },
-    });
-    logFloorPhaseEnd(options?.jobId, "gemini_request", Date.now() - requestStartedAt, {
-      model,
-    });
-    logGeminiUsage({
-      ctx: {
-        jobId: options?.jobId || "",
-        imageId: options?.imageId || "",
-        stage: "validator",
-        attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
-      },
-      model,
-      callType: "validator",
-      response,
-      latencyMs: Date.now() - requestStartedAt,
-    });
+      });
+      logFloorPhaseEnd(options?.jobId, "gemini_request", Date.now() - requestStartedAt, {
+        model,
+      });
+      logGeminiUsage({
+        ctx: {
+          jobId: options?.jobId || "",
+          imageId: options?.imageId || "",
+          stage: "validator",
+          attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+        },
+        model,
+        callType: "validator",
+        response,
+        latencyMs: Date.now() - requestStartedAt,
+      });
+      text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+    }
 
-    const text = response?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     const parseStartedAt = Date.now();
     const parsed = parseFloorIntegrityResult(text);
     logFloorPhaseEnd(options?.jobId, "response_parse", Date.now() - parseStartedAt);

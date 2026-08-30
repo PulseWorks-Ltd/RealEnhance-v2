@@ -1045,7 +1045,7 @@ ${STAGE1B_ARCHITECTURAL_IMMUTABILITY_CONSTRAINT}
 Preserve surface textures and shadows exactly as they are. Do not beautify materials.`.trim();
     }
 
-      return `STAGE 1B — FULL FURNITURE REMOVAL (INTERIOR)
+      return `STAGE 1B — STRUCTURED-RETAIN DECLUTTER (INTERIOR)
 
     ────────────────────────────────
     RULE PRIORITY ORDER (HIGHEST → LOWEST)
@@ -1325,26 +1325,42 @@ Anchor removal for aesthetic improvement is prohibited.
 If multiple anchor pieces are visible, retain the primary room-type anchor first
 (Bed/Sofa/Dining Table/Desk where applicable).
 Secondary items, regardless of size or visual mass, must be removed if a room-type primary anchor is present.
-If no room-type primary anchor is visible, retain the most visually dominant anchor
-based on size, floor contact area, and visual weight.
 
-Structured-retain declutter removes clutter — not anchor furniture.
+NO ROOM-TYPE ANCHOR VISIBLE — MANDATORY FULL REMOVAL
 
-ANCHOR SELECTION PRIORITY — STRICT HIERARCHY
+If no room-type primary anchor (Bed/Sofa/Dining Table/Desk, as applicable to this
+room type) is visible in the input image, there is NO anchor to retain. Do NOT
+substitute any other item — a wardrobe, dresser, chest of drawers, cabinet,
+chair, coffee table, side table, or any other freestanding furniture piece —
+as a stand-in anchor no matter how large, dominant, or central it is. Remove
+ALL such items along with every other piece of movable furniture and clutter,
+and produce a fully empty room. Size, floor contact area, and visual weight
+are never grounds for retaining a non-primary item.
 
-Anchor selection must follow this strict order:
+Structured-retain declutter removes clutter — not the room-type primary anchor.
+It never retains a substitute anchor in the primary anchor's place.
+
+ANCHOR SELECTION PRIORITY — STRICT HIERARCHY (candidate anchors only)
+
+This hierarchy applies ONLY when choosing among multiple candidates for the
+room's own type-correct anchor (e.g., deciding which of several visible
+beds/sofas/desks is the primary one, or how to treat a partially visible
+instance of that same room-type-correct piece). It must NEVER be used to
+justify retaining a non-primary item as a substitute anchor when no
+room-type-correct piece is present — that case is covered by the mandatory
+full-removal rule above, with no exception.
 
 1. Determine dominance primarily by physical scale, floor contact area, visual mass, and functional importance within the room.
 
-2. If a clearly dominant large-scale anchor exists, it must be retained — even if partially cropped or positioned at the image edge.
+2. If a clearly dominant large-scale instance of the room-type-correct anchor exists among the candidates, it must be retained — even if partially cropped or positioned at the image edge.
 
-3. A smaller fully visible item must NOT outrank a larger partially visible dominant anchor.
+3. A smaller fully visible candidate must NOT outrank a larger partially visible dominant candidate.
 
 4. Visibility clarity alone does NOT override dominance.
 
 5. Central positioning is a last-resort tie-breaker only when scale and dominance are genuinely equal.
 
-Dominance takes precedence over visibility.
+Dominance takes precedence over visibility — among room-type-correct candidates only.
 
 ARCHITECTURAL BOUNDARY PROTECTION — STRUCTURAL SAFETY RULE
 
@@ -1401,9 +1417,14 @@ Office:
 Kitchen:
 → Built-ins remain as already specified. Remove all loose movable items.
 
-If uncertain which item is dominant:
-→ Keep the item most central to the room’s primary function.
+If uncertain which VISIBLE INSTANCE of the room type's own correct anchor
+(per the room type rules directly above — Bed/Sofa/Dining Table/Desk, as
+applicable) is the primary one:
+→ Keep the instance most central to the room's primary function.
 → Remove all other movable items.
+This does not apply when no instance of the room-type-correct anchor is
+visible at all — in that case, per the mandatory full-removal rule above,
+there is nothing to keep; remove every movable item and leave the room empty.
 
 PRIMARY ANCHOR FOCUS
 
@@ -1428,7 +1449,7 @@ If constraints conflict, prioritize preserving the original image geometry exact
 Never reinterpret, simplify, or regenerate the room layout to resolve ambiguity.
 
 OUTPUT:
-Return only the empty room image.`.trim();
+Return the room with all rules above applied: the primary anchor furniture piece retained exactly as specified (if one was appropriate to keep per the rules above), and every other movable furniture item, clutter, and decor piece removed. Only return a fully empty room if no appropriate anchor was visible to begin with — do not remove an anchor that the rules above required you to keep.`.trim();
   }
 
   // Stage 1B Light Mode: Remove clutter/mess only, keep all main furniture

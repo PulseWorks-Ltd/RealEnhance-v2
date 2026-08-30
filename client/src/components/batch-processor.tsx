@@ -778,6 +778,7 @@ interface PersistedBatchJob {
     outdoorStaging: string;
     furnitureReplacement: boolean;
     declutter: boolean;
+    enhanceExteriorSky?: boolean;
     stagingStyle: string;
     propertyAddress?: string;
   };
@@ -1508,6 +1509,9 @@ export default function BatchProcessor({
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
+  // "Enhance Exterior Outlook" checkbox — global Stage 1A toggle that
+  // brightens the exterior visible through windows/doors on interior shots.
+  const [enhanceExteriorSky, setEnhanceExteriorSky] = useState<boolean>(false);
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
 
   const clientBatchIdRef = useRef<string | null>(null);
@@ -2606,6 +2610,10 @@ export default function BatchProcessor({
       if (sceneType === "exterior" && imageSkyReplacementById[imageId] !== undefined) {
         metaItem.replaceSky = imageSkyReplacementById[imageId];
       }
+      // Global Stage 1A "Enhance Exterior Outlook" toggle — brightens the
+      // exterior visible through windows/doors on interior shots (gated to
+      // interior scenes worker-side).
+      metaItem.enhanceExteriorSky = enhanceExteriorSky;
       // Tuning controls
       if (samplingUiEnabled) {
         const tNum = temperatureInput.trim() ? Number(temperatureInput) : undefined;
@@ -2618,7 +2626,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -2883,6 +2891,7 @@ export default function BatchProcessor({
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
+      setEnhanceExteriorSky(savedState.settings.enhanceExteriorSky ?? false);
       setPropertyAddress(savedState.settings.propertyAddress ?? "");
       // DO NOT restore stagingStyle - always default to Standard Listing
       // User must explicitly select a different style for each new session
@@ -3040,6 +3049,7 @@ export default function BatchProcessor({
           outdoorStaging,
           furnitureReplacement,
           declutter,
+          enhanceExteriorSky,
           stagingStyle,
           propertyAddress,
         },
@@ -3054,7 +3064,7 @@ export default function BatchProcessor({
       };
       saveBatchJobState(state, currentUserId);
     }
-  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, propertyAddress, currentUserId]);
+  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, enhanceExteriorSky, stagingStyle, propertyAddress, currentUserId]);
 
   const startPollingExistingBatch = async (ids: string[]) => {
     if (!ids.length) return;
@@ -5187,6 +5197,7 @@ export default function BatchProcessor({
       allowRetouch: true,
       furnitureReplacement,
       declutter,
+      enhanceExteriorSky,
       stage2Only,
       outdoorStaging,
       metaJson,
@@ -7828,6 +7839,32 @@ export default function BatchProcessor({
                           : "Adds staging to supported interior scenes."}
                       </p>
                     </button>
+
+                    <label
+                      htmlFor="enhance-exterior-outlook-global"
+                      className="block cursor-pointer py-2"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="enhance-exterior-outlook-global"
+                          type="checkbox"
+                          checked={enhanceExteriorSky}
+                          onChange={(e) => setEnhanceExteriorSky(e.target.checked)}
+                          className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-action-600 focus:ring-action-500"
+                          data-testid="checkbox-enhance-exterior-outlook"
+                        />
+
+                        <div className="leading-tight">
+                          <p className="text-xs font-medium text-slate-700">
+                            Enhance Exterior Outlook
+                          </p>
+
+                          <p className="text-[11px] text-slate-500 whitespace-nowrap">
+                            Brighten exterior outlook visible from interior shots.
+                          </p>
+                        </div>
+                      </div>
+                    </label>
 
                     <div className="space-y-3 text-sm">
                       <div>

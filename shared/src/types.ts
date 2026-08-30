@@ -166,6 +166,8 @@ export interface EnhanceJobPayload {
   propertyId?: string | null;
   listingId?: string; // Optional: group multiple images under one listing for usage tracking
   manualSceneOverride?: boolean;
+  originalFilename?: string; // Human-readable uploaded filename, for forensic/summary logging
+  batchTotalJobs?: number; // Total number of jobs in this upload batch (clientBatchId), known upfront at upload time — lets the worker's batch forensic summary wait for the whole batch instead of firing as soon as any one job's activeJobIds count happens to hit zero
   options: {
     declutter: boolean;
     virtualStage: boolean;
@@ -173,6 +175,7 @@ export interface EnhanceJobPayload {
     roomType: RoomType | string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
+    enhanceExteriorSky?: boolean;  // "Enhance Exterior Outlook" checkbox — brightens the exterior visible through windows/doors on interior shots (see stage1A.ts)
     stagingStyle?: string;  // Staging style (defaults to standard_listing)
     declutterMode?: DeclutterMode;  // Light declutter or structured-retain declutter
     // Optional tuning controls

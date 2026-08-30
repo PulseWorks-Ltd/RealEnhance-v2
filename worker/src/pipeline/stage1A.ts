@@ -513,12 +513,56 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
 }
 
 /**
+ * "Enhance Exterior Outlook" checkbox (reintroduced 2026-08-30 — ported from
+ * opening-validator-and-stage-2-prompt-amendments, deliberately excluding
+ * that lineage's later, separate Grok-as-Stage1A-generator experiment,
+ * which is unrelated and was confirmed to overreach). Appended to whichever
+ * interior Stage 1A prompt was already selected, ONLY for interior scenes —
+ * see the sceneType gate at its call site below. Exterior-scene photos
+ * already get their own dedicated sky/lighting treatment via
+ * selectStage1APrompt's exterior prompt variants; this block exists
+ * specifically for the outlook seen THROUGH a window/door in an interior
+ * shot, per this feature's own UI copy ("Brighten exterior outlook visible
+ * from interior shots").
+ *
+ * Rewritten from the target branch's final (fifth-revision) text to restore
+ * four things real product review found missing from that revision (each
+ * present in that branch's very first draft, then trimmed away by later
+ * simplification passes): (1) explicit permission to improve vegetation
+ * colour/vibrancy, not just a blanket "don't touch it"; (2) protection for
+ * roads/driveways/paths/fences/civil elements, not just buildings; (3)
+ * atmospheric fog/mist/haze clearing, not just glass-surface artifacts; (4)
+ * an explicit anti-hallucination + window-covering safeguard.
+ */
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `Primary objective: Deliver a premium real estate exterior outlook through existing windows and doors so the property appears professionally photographed on an ideal bright, clear day, while maintaining a realistic, natural photographic appearance.
+
+When exterior views are visible through existing windows or doors:
+
+- Make the sky look clear and bright, as if photographed on a sunny day — replace flat, grey, or overcast skies with clear blue sky, natural sunlight, and matching shadows.
+- Where fog, mist, haze, or general poor-weather atmosphere reduces visibility of the exterior view, clear it so the existing exterior is genuinely visible — without inventing any new scenery beyond what is already present in the original image.
+- Adjust interior illumination naturally so sunlight and daylight entering through existing windows and doors appear consistent with the improved outdoor lighting conditions.
+- Vegetation, lawns, trees, shrubs, and gardens may have their colour and vibrancy improved (greener, healthier, more lush) — but their size, shape, position, and species must remain exactly as shown. Do not add, remove, resize, or relocate any vegetation or landscaping.
+
+Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, water spotting, smudges, dirt, haze, residue, and similar temporary visibility obstructions from the glass surface only.
+
+Keep the final result realistic, natural, and high-end. The image should resemble a professionally edited real estate photograph, never an AI-generated or heavily processed image.
+
+Do not add, remove, resize, reshape, or relocate any architectural elements, buildings, or structures.
+Do not alter roads, driveways, paths, fences, retaining walls, power lines, or any other civil or structural elements — keep them exactly as shown.
+Do not change the physical structure, layout, or architectural features of any property in the image.
+Do not invent exterior content, scenery, or detail that is not genuinely visible in the original image.
+Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors, and do not reveal anything hidden behind them.
+
+Architectural accuracy always takes priority over visual enhancement. Improve only weather, lighting, atmosphere, colour, and environmental appearance — never the physical structure, layout, or content of the property.`;
+
+/**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
  */
 async function enhanceWithGeminiStage1A(
   sharpPath: string,
   sceneType: string | undefined,
   replaceSky: boolean,
+  enhanceExteriorSky: boolean,
   applyInteriorProfile: boolean,
   interiorProfileKey: EnhancementProfile,
   skyMode: "safe" | "strong" = "safe",
@@ -556,6 +600,27 @@ async function enhanceWithGeminiStage1A(
     nzTopP = 0.9;
     nzTopK = 40;
   }
+
+  // Gated to interior scenes only (see this block's own header comment) —
+  // exterior-scene photos already get their own dedicated sky/lighting
+  // prompt via selectStage1APrompt above; this is specifically about the
+  // outlook seen through a window/door in an interior shot.
+  const stage1ASunnyExteriorPromptInjected =
+    enhanceExteriorSky === true
+    && sceneType === "interior"
+    && typeof enhancementPrompt === "string"
+    && enhancementPrompt.trim().length > 0;
+
+  if (stage1ASunnyExteriorPromptInjected) {
+    enhancementPrompt = `${enhancementPrompt}\n\n${STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK}`;
+  }
+
+  console.log("[STAGE1A_SUNNY_EXTERIOR_PROMPT]", {
+    jobId,
+    sceneType,
+    enabled: enhanceExteriorSky === true,
+    promptInjected: stage1ASunnyExteriorPromptInjected,
+  });
 
   const geminiPath = await enhanceWithGemini(sharpPath, {
     replaceSky: replaceSky,
@@ -966,8 +1031,9 @@ function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: nu
 
 export async function runStage1A(
   inputPath: string,
-  options: { 
+  options: {
     replaceSky?: boolean;
+    enhanceExteriorSky?: boolean;
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
@@ -980,7 +1046,7 @@ export async function runStage1A(
     jobSampling?: { temperature?: number; topP?: number; topK?: number };
   }
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
+  const { replaceSky = false, enhanceExteriorSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
   const baseArtifacts = options.baseArtifacts ?? undefined;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
@@ -1064,6 +1130,7 @@ export async function runStage1A(
       sharpOutputPath,
       effectiveSceneType,
       replaceSky,
+      enhanceExteriorSky,
       applyInteriorProfile,
       interiorProfileKey,
       skyMode,

@@ -1,0 +1,850 @@
+[
+  {
+    "baseline": {
+      "openings": [
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.6094,
+            0.25,
+            0.8125,
+            0.4917
+          ],
+          "area_pct": 4.9,
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "wallCoverageBand": "10-20",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "doorLeafState": "unknown",
+          "confidence": 1,
+          "description": "A window on the front wall, covered by white vertical blinds and framed by black curtains.",
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.9381,
+            0.4375,
+            1,
+            0.985
+          ],
+          "area_pct": 3.39,
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "full_height",
+          "wallCoverageBand": "10-20",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "doorLeafState": "ajar",
+          "confidence": 0.95,
+          "description": "A white bifold closet door, partially visible and slightly ajar on the far right wall.",
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.0406,
+            0.15,
+            0.4813,
+            0.55
+          ],
+          "area_pct": 17.63,
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "mid_zone",
+          "wallCoverageBand": "20-40",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "doorLeafState": "unknown",
+          "confidence": 1,
+          "description": "A wide landscape window on the left wall, covered by white vertical blinds and flanked by black curtains.",
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "anchorFixtures": [
+        {
+          "id": "LF1",
+          "type": "light_fixture",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "bbox": [
+            0.4594,
+            0,
+            0.5406,
+            0.0583
+          ],
+          "confidence": 1,
+          "description": "A circular flush-mount ceiling light with a frosted glass bowl-shaped cover, centered on the ceiling."
+        }
+      ],
+      "graphMeta": {
+        "graphStable": false,
+        "graphConfidence": 0.5,
+        "extractionAgreement": 0.5,
+        "passCount": 1,
+        "openingCountVariance": 0,
+        "imageHash": "dc91075f75f35e8287dcaadc04454d3bf696195c6fc206862fd73e8399a12d18",
+        "graphHash": "788c478e06106bfcff9407ae5dad8018ad8483af82136483650cdd8ef848e755",
+        "cacheStatus": "unstable",
+        "candidateGraphHashes": [
+          "788c478e06106bfcff9407ae5dad8018ad8483af82136483650cdd8ef848e755"
+        ],
+        "openingCountRange": {
+          "min": 3,
+          "max": 3
+        },
+        "confirmedAt": "2026-08-14T04:50:13.595Z",
+        "baselineMethod": "graph_consensus",
+        "geminiCalls": 1,
+        "verification": {
+          "attempted": false,
+          "accepted": true,
+          "modelAccepted": true,
+          "additionalOpeningCount": 0,
+          "missingOpeningCount": 0,
+          "materiallyDifferentCount": 0,
+          "notPresentCount": 0,
+          "minorDifferenceCount": 0,
+          "rejectedReasonCodes": [],
+          "openingStatuses": [],
+          "additionalOpenings": [],
+          "missingOpenings": []
+        }
+      }
+    },
+    "walls": [
+      {
+        "id": "wall_3",
+        "wallLabel": "Left wall",
+        "extent": {
+          "polygon": [
+            [
+              0,
+              0.1222
+            ],
+            [
+              0.5312,
+              0.0888
+            ],
+            [
+              0.5312,
+              0.8516
+            ],
+            [
+              0,
+              0.9333
+            ]
+          ]
+        },
+        "openingIds": [
+          "W1"
+        ],
+        "usableWidthFraction": 1,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              1
+            ],
+            "widthFraction": 1,
+            "description": "Full wall width, including space below window"
+          }
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "wall_0",
+        "wallLabel": "Back wall",
+        "extent": {
+          "polygon": [
+            [
+              0.5312,
+              0.0888
+            ],
+            [
+              0.8906,
+              0.15
+            ],
+            [
+              0.8906,
+              0.95
+            ],
+            [
+              0.5312,
+              0.8516
+            ]
+          ]
+        },
+        "openingIds": [
+          "W2",
+          "LF1"
+        ],
+        "usableWidthFraction": 1,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              1
+            ],
+            "widthFraction": 1,
+            "description": "Full wall width, including space below window"
+          }
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "wall_1",
+        "wallLabel": "Right wall",
+        "extent": {
+          "polygon": [
+            [
+              0.8906,
+              0.15
+            ],
+            [
+              1,
+              0.2
+            ],
+            [
+              1,
+              0.985
+            ],
+            [
+              0.8906,
+              0.95
+            ]
+          ]
+        },
+        "openingIds": [
+          "C1"
+        ],
+        "usableWidthFraction": 0.44,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.44
+            ],
+            "widthFraction": 0.44,
+            "description": "Clear wall space from left corner to closet door"
+          }
+        ],
+        "confidence": 1
+      }
+    ],
+    "scored": [
+      {
+        "id": "wall_3",
+        "label": "Left wall",
+        "usableWidthFraction": 1,
+        "largestSegment": 1,
+        "openingIds": [
+          "W1"
+        ]
+      },
+      {
+        "id": "wall_0",
+        "label": "Back wall",
+        "usableWidthFraction": 1,
+        "largestSegment": 1,
+        "openingIds": [
+          "W2",
+          "LF1"
+        ]
+      },
+      {
+        "id": "wall_1",
+        "label": "Right wall",
+        "usableWidthFraction": 0.44,
+        "largestSegment": 0.44,
+        "openingIds": [
+          "C1"
+        ]
+      }
+    ]
+  },
+  {
+    "baseline": {
+      "openings": [
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.563,
+            0.294,
+            0.806,
+            0.485
+          ],
+          "area_pct": 4.64,
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "wallCoverageBand": "10-20",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "doorLeafState": "unknown",
+          "confidence": 0.95,
+          "description": "A landscape-oriented window with a white frame on the front wall, partially covered by black curtains.",
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.915,
+            0.474,
+            0.999,
+            0.97
+          ],
+          "area_pct": 4.17,
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "full_height",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "doorLeafState": "closed",
+          "confidence": 0.9,
+          "description": "The right edge of a white, vertically-paneled bi-fold closet door on the right wall.",
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.122,
+            0.263,
+            0.418,
+            0.485
+          ],
+          "area_pct": 6.54,
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "mid_zone",
+          "wallCoverageBand": "20-40",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "doorLeafState": "unknown",
+          "confidence": 0.95,
+          "description": "A wide landscape-oriented window with white vertical blinds on the left wall, partially covered by black curtains.",
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "anchorFixtures": [
+        {
+          "id": "LF1",
+          "type": "light_fixture",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "bbox": [
+            0.465,
+            0,
+            0.536,
+            0.06
+          ],
+          "confidence": 1,
+          "description": "A circular flush-mount ceiling light with a frosted glass bowl shade, located in the center of the ceiling."
+        }
+      ],
+      "graphMeta": {
+        "graphStable": false,
+        "graphConfidence": 0.5,
+        "extractionAgreement": 0.5,
+        "passCount": 1,
+        "openingCountVariance": 0,
+        "imageHash": "dc91075f75f35e8287dcaadc04454d3bf696195c6fc206862fd73e8399a12d18",
+        "graphHash": "2719660baf0e0862897f4d4d6df89aeb4ed1975db9e2179cde60c9bde64c48bf",
+        "cacheStatus": "unstable",
+        "candidateGraphHashes": [
+          "2719660baf0e0862897f4d4d6df89aeb4ed1975db9e2179cde60c9bde64c48bf"
+        ],
+        "openingCountRange": {
+          "min": 3,
+          "max": 3
+        },
+        "confirmedAt": "2026-08-14T04:51:14.561Z",
+        "baselineMethod": "graph_consensus",
+        "geminiCalls": 1,
+        "verification": {
+          "attempted": false,
+          "accepted": true,
+          "modelAccepted": true,
+          "additionalOpeningCount": 0,
+          "missingOpeningCount": 0,
+          "materiallyDifferentCount": 0,
+          "notPresentCount": 0,
+          "minorDifferenceCount": 0,
+          "rejectedReasonCodes": [],
+          "openingStatuses": [],
+          "additionalOpenings": [],
+          "missingOpenings": []
+        }
+      }
+    },
+    "walls": [
+      {
+        "id": "wall_0",
+        "wallLabel": "front_wall",
+        "extent": {
+          "polygon": [
+            [
+              0.445,
+              0.141
+            ],
+            [
+              0.852,
+              0.152
+            ],
+            [
+              0.866,
+              0.985
+            ],
+            [
+              0.457,
+              0.996
+            ]
+          ]
+        },
+        "openingIds": [
+          "W2"
+        ],
+        "usableWidthFraction": 1,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              1
+            ],
+            "widthFraction": 1,
+            "description": "Full wall width"
+          }
+        ],
+        "confidence": 0.99
+      },
+      {
+        "id": "wall_1",
+        "wallLabel": "right_wall",
+        "extent": {
+          "polygon": [
+            [
+              0.852,
+              0.152
+            ],
+            [
+              1,
+              0.179
+            ],
+            [
+              1,
+              0.97
+            ],
+            [
+              0.866,
+              0.985
+            ]
+          ]
+        },
+        "openingIds": [
+          "C1"
+        ],
+        "usableWidthFraction": 0.37,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.37
+            ],
+            "widthFraction": 0.37,
+            "description": "Clear space between the corner and the closet door"
+          }
+        ],
+        "confidence": 0.98
+      },
+      {
+        "id": "wall_3",
+        "wallLabel": "left_wall",
+        "extent": {
+          "polygon": [
+            [
+              0,
+              0.176
+            ],
+            [
+              0.445,
+              0.141
+            ],
+            [
+              0.457,
+              0.996
+            ],
+            [
+              0,
+              0.952
+            ]
+          ]
+        },
+        "openingIds": [
+          "W1"
+        ],
+        "usableWidthFraction": 1,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              1
+            ],
+            "widthFraction": 1,
+            "description": "Full wall width"
+          }
+        ],
+        "confidence": 0.98
+      }
+    ],
+    "scored": [
+      {
+        "id": "wall_0",
+        "label": "front_wall",
+        "usableWidthFraction": 1,
+        "largestSegment": 1,
+        "openingIds": [
+          "W2"
+        ]
+      },
+      {
+        "id": "wall_1",
+        "label": "right_wall",
+        "usableWidthFraction": 0.37,
+        "largestSegment": 0.37,
+        "openingIds": [
+          "C1"
+        ]
+      },
+      {
+        "id": "wall_3",
+        "label": "left_wall",
+        "usableWidthFraction": 1,
+        "largestSegment": 1,
+        "openingIds": [
+          "W1"
+        ]
+      }
+    ]
+  },
+  {
+    "baseline": {
+      "openings": [
+        {
+          "id": "W2",
+          "type": "window",
+          "bbox": [
+            0.6194,
+            0.2017,
+            0.87,
+            0.4158
+          ],
+          "area_pct": 5.38,
+          "wallIndex": 0,
+          "horizontalBand": "right_third",
+          "verticalBand": "mid_zone",
+          "wallCoverageBand": "20-40",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "doorLeafState": "unknown",
+          "confidence": 0.95,
+          "description": "A landscape-oriented window on the front wall, covered by white vertical blinds.",
+          "wallPosition": "near_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "C1",
+          "type": "closet_door",
+          "bbox": [
+            0.9575,
+            0.24,
+            1,
+            0.8933
+          ],
+          "area_pct": 2.78,
+          "wallIndex": 1,
+          "horizontalBand": "right_third",
+          "verticalBand": "full_height",
+          "wallCoverageBand": "20-40",
+          "orientation": "portrait",
+          "paneStructure": "unknown",
+          "doorLeafState": "closed",
+          "confidence": 0.9,
+          "description": "A partially visible white bi-fold closet door with a thin black vertical line, located on the far right wall.",
+          "wallPosition": "right_wall",
+          "relativeHorizontalPosition": "right_third",
+          "shape": "closet_door",
+          "touchesFloor": true,
+          "touchesCeiling": false,
+          "approxCount": 1
+        },
+        {
+          "id": "W1",
+          "type": "window",
+          "bbox": [
+            0.018,
+            0.1783,
+            0.5106,
+            0.5067
+          ],
+          "area_pct": 16.22,
+          "wallIndex": 3,
+          "horizontalBand": "left_third",
+          "verticalBand": "mid_zone",
+          "wallCoverageBand": "40-60",
+          "orientation": "landscape",
+          "paneStructure": "unknown",
+          "doorLeafState": "unknown",
+          "confidence": 0.95,
+          "description": "A wide, landscape-oriented window on the left wall, covered by white vertical blinds.",
+          "wallPosition": "left_wall",
+          "relativeHorizontalPosition": "left_third",
+          "shape": "window",
+          "touchesFloor": false,
+          "touchesCeiling": false,
+          "approxCount": 1
+        }
+      ],
+      "anchorFixtures": [
+        {
+          "id": "F1",
+          "type": "light_fixture",
+          "wallIndex": 0,
+          "horizontalBand": "center_third",
+          "bbox": [
+            0.4494,
+            0,
+            0.5369,
+            0.0508
+          ],
+          "confidence": 0.98,
+          "description": "A circular flush-mount ceiling light with a frosted glass dome cover, located in the center of the ceiling."
+        }
+      ],
+      "graphMeta": {
+        "graphStable": false,
+        "graphConfidence": 0.5,
+        "extractionAgreement": 0.5,
+        "passCount": 1,
+        "openingCountVariance": 0,
+        "imageHash": "dc91075f75f35e8287dcaadc04454d3bf696195c6fc206862fd73e8399a12d18",
+        "graphHash": "280534e52fd30459d877bf881a5b775048334fad6cb0da5d5f78473dfbf4ca1e",
+        "cacheStatus": "unstable",
+        "candidateGraphHashes": [
+          "280534e52fd30459d877bf881a5b775048334fad6cb0da5d5f78473dfbf4ca1e"
+        ],
+        "openingCountRange": {
+          "min": 3,
+          "max": 3
+        },
+        "confirmedAt": "2026-08-14T04:52:00.063Z",
+        "baselineMethod": "graph_consensus",
+        "geminiCalls": 1,
+        "verification": {
+          "attempted": false,
+          "accepted": true,
+          "modelAccepted": true,
+          "additionalOpeningCount": 0,
+          "missingOpeningCount": 0,
+          "materiallyDifferentCount": 0,
+          "notPresentCount": 0,
+          "minorDifferenceCount": 0,
+          "rejectedReasonCodes": [],
+          "openingStatuses": [],
+          "additionalOpenings": [],
+          "missingOpenings": []
+        }
+      }
+    },
+    "walls": [
+      {
+        "id": "wall_0",
+        "wallLabel": "Center wall",
+        "extent": {
+          "polygon": [
+            [
+              0.521,
+              0.091
+            ],
+            [
+              0.879,
+              0.141
+            ],
+            [
+              0.879,
+              0.884
+            ],
+            [
+              0.528,
+              0.824
+            ]
+          ]
+        },
+        "openingIds": [
+          "W2"
+        ],
+        "usableWidthFraction": 1,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              1
+            ],
+            "widthFraction": 1,
+            "description": "Full wall width"
+          }
+        ],
+        "confidence": 0.99
+      },
+      {
+        "id": "wall_1",
+        "wallLabel": "Right wall",
+        "extent": {
+          "polygon": [
+            [
+              0.879,
+              0.141
+            ],
+            [
+              1,
+              0.186
+            ],
+            [
+              1,
+              0.914
+            ],
+            [
+              0.879,
+              0.884
+            ]
+          ]
+        },
+        "openingIds": [
+          "C1"
+        ],
+        "usableWidthFraction": 0.65,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.65
+            ],
+            "widthFraction": 0.65,
+            "description": "Clear wall space from the corner to the closet door"
+          }
+        ],
+        "confidence": 0.98
+      },
+      {
+        "id": "wall_3",
+        "wallLabel": "Left wall",
+        "extent": {
+          "polygon": [
+            [
+              0,
+              0.13
+            ],
+            [
+              0.521,
+              0.091
+            ],
+            [
+              0.528,
+              0.824
+            ],
+            [
+              0,
+              0.923
+            ]
+          ]
+        },
+        "openingIds": [
+          "W1"
+        ],
+        "usableWidthFraction": 1,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              1
+            ],
+            "widthFraction": 1,
+            "description": "Full wall width"
+          }
+        ],
+        "confidence": 0.99
+      }
+    ],
+    "scored": [
+      {
+        "id": "wall_0",
+        "label": "Center wall",
+        "usableWidthFraction": 1,
+        "largestSegment": 1,
+        "openingIds": [
+          "W2"
+        ]
+      },
+      {
+        "id": "wall_1",
+        "label": "Right wall",
+        "usableWidthFraction": 0.65,
+        "largestSegment": 0.65,
+        "openingIds": [
+          "C1"
+        ]
+      },
+      {
+        "id": "wall_3",
+        "label": "Left wall",
+        "usableWidthFraction": 1,
+        "largestSegment": 1,
+        "openingIds": [
+          "W1"
+        ]
+      }
+    ]
+  }
+]

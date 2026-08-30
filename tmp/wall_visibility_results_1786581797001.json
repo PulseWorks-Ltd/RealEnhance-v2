@@ -1,0 +1,218 @@
+{
+  "run1": {
+    "runLabel": "run1",
+    "durationMs": 50406,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-wallvis-run1-overlay.png",
+    "parsed": {
+      "walls": [
+        {
+          "id": "wall_3",
+          "wallLabel": "left_wall",
+          "extent": {
+            "polygon": [
+              [
+                0.178,
+                0.243
+              ],
+              [
+                0.628,
+                0.32
+              ],
+              [
+                0.613,
+                0.817
+              ],
+              [
+                0.155,
+                0.866
+              ]
+            ]
+          },
+          "openingIds": [
+            "D1",
+            "AC1"
+          ],
+          "usableWidthFraction": 0.121,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.078
+              ],
+              "widthFraction": 0.078,
+              "description": "narrow strip to the left of the sliding door"
+            },
+            {
+              "range": [
+                0.716,
+                0.733
+              ],
+              "widthFraction": 0.017,
+              "description": "narrow strip between the sliding door and the AC unit"
+            },
+            {
+              "range": [
+                0.974,
+                1
+              ],
+              "widthFraction": 0.026,
+              "description": "narrow strip to the right of the AC unit"
+            }
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "wall_0",
+          "wallLabel": "right_wall",
+          "extent": {
+            "polygon": [
+              [
+                0.628,
+                0.32
+              ],
+              [
+                1,
+                0.235
+              ],
+              [
+                1,
+                0.84
+              ],
+              [
+                0.613,
+                0.817
+              ]
+            ]
+          },
+          "openingIds": [
+            "A1"
+          ],
+          "usableWidthFraction": 0.717,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.047
+              ],
+              "widthFraction": 0.047,
+              "description": "narrow strip between corner and walkthrough"
+            },
+            {
+              "range": [
+                0.33,
+                1
+              ],
+              "widthFraction": 0.67,
+              "description": "main portion of the wall, to the right of the walkthrough"
+            }
+          ],
+          "confidence": 0.97
+        }
+      ]
+    }
+  },
+  "run2": {
+    "runLabel": "run2",
+    "durationMs": 34969,
+    "overlayPath": "/workspaces/RealEnhance-v2/Test Images/Bedroom (Baseline)/Bedroom 12-wallvis-run2-overlay.png",
+    "parsed": {
+      "walls": [
+        {
+          "id": "wall_3",
+          "wallLabel": "left_wall",
+          "extent": {
+            "polygon": [
+              [
+                0,
+                0.235
+              ],
+              [
+                0.619,
+                0.334
+              ],
+              [
+                0.611,
+                0.865
+              ],
+              [
+                0,
+                0.867
+              ]
+            ]
+          },
+          "openingIds": [
+            "D1",
+            "AC1"
+          ],
+          "usableWidthFraction": 0.333,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.31
+              ],
+              "widthFraction": 0.31,
+              "description": "left portion, next to sliding door"
+            },
+            {
+              "range": [
+                0.977,
+                1
+              ],
+              "widthFraction": 0.023,
+              "description": "small sliver in the corner"
+            }
+          ],
+          "confidence": 0.98
+        },
+        {
+          "id": "wall_0",
+          "wallLabel": "right_wall",
+          "extent": {
+            "polygon": [
+              [
+                0.619,
+                0.334
+              ],
+              [
+                1,
+                0.313
+              ],
+              [
+                1,
+                0.86
+              ],
+              [
+                0.611,
+                0.865
+              ]
+            ]
+          },
+          "openingIds": [
+            "A1"
+          ],
+          "usableWidthFraction": 0.715,
+          "usableSegments": [
+            {
+              "range": [
+                0,
+                0.042
+              ],
+              "widthFraction": 0.042,
+              "description": "small sliver in the corner"
+            },
+            {
+              "range": [
+                0.327,
+                1
+              ],
+              "widthFraction": 0.673,
+              "description": "right portion, next to walkthrough"
+            }
+          ],
+          "confidence": 0.97
+        }
+      ]
+    }
+  }
+}

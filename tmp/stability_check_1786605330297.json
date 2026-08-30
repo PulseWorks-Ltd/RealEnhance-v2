@@ -1,0 +1,388 @@
+{
+  "run1": {
+    "openings": [
+      {
+        "id": "W1",
+        "type": "window",
+        "bbox": [
+          0.952,
+          0.272,
+          1,
+          0.999
+        ],
+        "area_pct": 3.49,
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "5-10",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "unknown",
+        "confidence": 0.85,
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "right_third",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0,
+          0.297,
+          0.123,
+          0.999
+        ],
+        "area_pct": 8.63,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "10-20",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "closed",
+        "confidence": 0.95,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "A1",
+        "type": "walkthrough",
+        "bbox": [
+          0.124,
+          0.147,
+          0.224,
+          0.999
+        ],
+        "area_pct": 8.52,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "10-20",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "open",
+        "confidence": 0.9,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "walkthrough",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "B1",
+        "type": "built_in_cabinet",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.183,
+          0.13,
+          0.819,
+          0.545
+        ],
+        "confidence": 0.95
+      },
+      {
+        "id": "L2",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.466,
+          0,
+          0.537,
+          0.294
+        ],
+        "confidence": 0.98
+      },
+      {
+        "id": "K1",
+        "type": "kitchen_island",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.067,
+          0.545,
+          0.941,
+          0.74
+        ],
+        "confidence": 0.98
+      },
+      {
+        "id": "P1",
+        "type": "plumbing_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.49,
+          0.45,
+          0.54,
+          0.59
+        ],
+        "confidence": 0.95
+      },
+      {
+        "id": "L1",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "left_third",
+        "bbox": [
+          0.254,
+          0,
+          0.324,
+          0.29
+        ],
+        "confidence": 0.98
+      },
+      {
+        "id": "L3",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "right_third",
+        "bbox": [
+          0.675,
+          0,
+          0.749,
+          0.29
+        ],
+        "confidence": 0.98
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 1,
+      "openingCountVariance": 0,
+      "imageHash": "8b99648035d228508ae6e30ad1170f19b508357cee93005e6e7ccb29c6785443",
+      "graphHash": "9f1d00a2e2cab5d874f98a680cb6b1311a9d731970eb2599e22f17fee172116e",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "9f1d00a2e2cab5d874f98a680cb6b1311a9d731970eb2599e22f17fee172116e"
+      ],
+      "openingCountRange": {
+        "min": 3,
+        "max": 3
+      },
+      "confirmedAt": "2026-08-13T07:14:50.410Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 1,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "run2": {
+    "openings": [
+      {
+        "id": "W1",
+        "type": "window",
+        "bbox": [
+          0.952,
+          0.22,
+          1,
+          0.75
+        ],
+        "area_pct": 2.54,
+        "wallIndex": 1,
+        "horizontalBand": "right_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "10-20",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "unknown",
+        "confidence": 0.85,
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "right_third",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0,
+          0.269,
+          0.091,
+          0.999
+        ],
+        "area_pct": 6.65,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "closed",
+        "confidence": 0.98,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "A1",
+        "type": "walkthrough",
+        "bbox": [
+          0.116,
+          0.186,
+          0.189,
+          1
+        ],
+        "area_pct": 5.94,
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "unknown",
+        "confidence": 0.95,
+        "wallPosition": "left_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "walkthrough",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "AF5",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.46,
+          0,
+          0.528,
+          0.31
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "AF3",
+        "type": "plumbing_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.458,
+          0.42,
+          0.583,
+          0.56
+        ],
+        "confidence": 0.97
+      },
+      {
+        "id": "AF2",
+        "type": "kitchen_island",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.104,
+          0.5,
+          0.951,
+          0.84
+        ],
+        "confidence": 0.98
+      },
+      {
+        "id": "AF1",
+        "type": "built_in_cabinet",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.12,
+          0.12,
+          0.94,
+          0.781
+        ],
+        "confidence": 0.99
+      },
+      {
+        "id": "AF4",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "left_third",
+        "bbox": [
+          0.203,
+          0,
+          0.283,
+          0.31
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "AF6",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "right_third",
+        "bbox": [
+          0.697,
+          0,
+          0.774,
+          0.31
+        ],
+        "confidence": 1
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 1,
+      "openingCountVariance": 0,
+      "imageHash": "8b99648035d228508ae6e30ad1170f19b508357cee93005e6e7ccb29c6785443",
+      "graphHash": "e803736e00d0a821dcc5534ea97f8bee48ff1ec5cc2cf48464f029341cce282f",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "e803736e00d0a821dcc5534ea97f8bee48ff1ec5cc2cf48464f029341cce282f"
+      ],
+      "openingCountRange": {
+        "min": 3,
+        "max": 3
+      },
+      "confirmedAt": "2026-08-13T07:15:30.297Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 1,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  }
+}

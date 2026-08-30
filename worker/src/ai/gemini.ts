@@ -278,7 +278,7 @@ import path from "path";
 import { createHash } from "crypto";
 import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
-import { siblingOutPath, toBase64, writeImageDataUrl } from "../utils/images";
+import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
 import { normalizeEditMode } from "../pipeline/prompts";
@@ -297,22 +297,31 @@ export const STAGE1B_FULL_RETRY_SAMPLING = Object.freeze({
   topK: 10,
 });
 
-let singleton: GoogleGenAI | null = null;
-
 function resolveGeminiApiKey(): string | undefined {
   return process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY;
 }
 
+// Deliberately NOT cached as a module-level singleton. Investigating a real
+// production incident (2026-08-24 batch, 3 of 6 concurrent jobs each
+// received a DIFFERENT job's actual generated image — text/metadata like
+// jobId and room type stayed correctly attached to each job throughout, only
+// the image bytes crossed over) traced every layer of this codebase's own
+// job-scoping (closures, caches, file paths) as correctly per-job, with the
+// one exception being this shared GoogleGenAI client instance, reused
+// concurrently across every in-flight job in the same worker process. No
+// bug was confirmed inside the SDK's own call path, but a shared client is
+// the one piece of state in the whole chain that wasn't job-scoped, so it's
+// removed here as the direct, low-risk fix — each call now gets its own
+// client instance, at the cost of trivial extra construction overhead (no
+// network connection is opened until a request is actually made).
 export function getGeminiClient(): GoogleGenAI {
-  if (singleton) return singleton as any;
   const apiKey = resolveGeminiApiKey();
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY missing: set it in the worker service env to enable Gemini image generation");
   }
   // The SDK exports types; instantiate via any to avoid type ctor mismatches
   const Ctor: any = require("@google/genai").GoogleGenAI;
-  singleton = new Ctor({ apiKey });
-  return singleton as any;
+  return new Ctor({ apiKey }) as any;
 }
 
 function buildGeminiPrompt(options: PromptOptions & { stage?: "1A"|"1B"|"2"; strictMode?: boolean }): string {
@@ -455,6 +464,11 @@ export async function enhanceWithGemini(
         });
     focusLog("GEMINI_PROMPT", `[Gemini] 📝 Prompt length: ${prompt.length} chars`);
 
+    logImageContentHash({
+      point: `gemini_${stage || (declutter ? "1B" : "1A")}_pre_generation_input`,
+      filePath: inputPath,
+      ctx: { jobId, imageId, stage: stage || (declutter ? "1B" : "1A") },
+    });
     const { data, mime } = toBase64(inputPath);
     const requestParts: any[] = [
       { inlineData: { mimeType: mime, data } },
@@ -697,6 +711,11 @@ export async function enhanceWithGemini(
       }
     }
     writeImageDataUrl(out, `data:image/webp;base64,${img.inlineData.data}`);
+    logImageContentHash({
+      point: `gemini_${stage || (declutter ? "1B" : "1A")}_post_generation_output`,
+      filePath: out,
+      ctx: { jobId, imageId, stage: stage || (declutter ? "1B" : "1A") },
+    });
     focusLog("GEMINI_SAVE", `[Gemini] 💾 Saved enhanced image to: ${out}`);
     return out;
   } catch (error) {

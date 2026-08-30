@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { vDetailLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { logGeminiUsage } from "../ai/usageTelemetry";
 import { toBase64 } from "../utils/images";
@@ -22,6 +23,9 @@ export type AnchorFixtureType =
   | "built_in_cabinet"
   | "kitchen_island"
   | "staircase"
+  | "plumbing_fixture"
+  | "light_fixture"
+  | "tv_mount"
   | "other";
 
 export type AnchorFixture = {
@@ -31,6 +35,12 @@ export type AnchorFixture = {
   horizontalBand: HorizontalBand;
   bbox: [number, number, number, number];
   confidence: number;
+  // Short, concrete, plain-language description of what the object actually
+  // looks like and where it is — required for `other`, encouraged for every
+  // type, since a category label alone (e.g. "fireplace") isn't specific
+  // enough for a downstream instruction to bind protection to the right
+  // object when the label itself may be an approximate/best-guess category.
+  description?: string;
 };
 
 export type StructuralOpening = {
@@ -46,6 +56,7 @@ export type StructuralOpening = {
   paneStructure: PaneStructure;
   doorLeafState: DoorLeafState;
   confidence: number;
+  description?: string;
 
   // Legacy compatibility fields used by existing downstream systems
   wallPosition: WallPosition;
@@ -636,7 +647,7 @@ Permanent openings include:
 Ignore:
 - Furniture
 - Decor
-- Lighting
+- Decorative or movable lighting (table lamps, floor lamps) — but DO capture permanent ceiling-mounted light fixtures as anchorFixtures (type: light_fixture), see anchor fixture rules below
 - Reflections
 - Curtains
 - Temporary objects
@@ -682,17 +693,19 @@ Return JSON in this exact schema:
       "orientation": "portrait" | "landscape" | "square",
       "paneStructure": "single_fixed" | "double_fixed" | "fixed_plus_opening" | "sliding_panel" | "multi_pane_grid" | "unknown",
       "doorLeafState": "closed" | "open" | "ajar" | "unknown",
-      "confidence": number
+      "confidence": number,
+      "description": string
     }
   ],
   "anchorFixtures": [
     {
       "id": string,
-      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "other",
+      "type": "ac_unit" | "fireplace" | "built_in_cabinet" | "kitchen_island" | "staircase" | "plumbing_fixture" | "light_fixture" | "tv_mount" | "other",
       "wallIndex": 0 | 1 | 2 | 3,
       "horizontalBand": "left_third" | "center_third" | "right_third",
       "bbox": [x1, y1, x2, y2],
-      "confidence": number
+      "confidence": number,
+      "description": string
     }
   ]
 }
@@ -709,10 +722,15 @@ Rules:
 - doorLeafState is required for door-like openings; use "unknown" when not clearly visible.
 - Estimate wall coverage in rough bands: 5-10, 10-20, 20-40, 40-60, 60+.
 - confidence is 0..1.
+- description (required for every opening and every anchor fixture): a short, concrete, plain-language description of what the object actually looks like and roughly where it is — e.g. "timber-framed sliding glass door with frosted glass panels" or "decorative white wall-mounted corbel/bracket, roughly waist-height". Describe what you actually see, not just a restatement of the type label. This is used downstream to generate a specific protection instruction for this exact object, so it must be accurate and specific, not generic filler like "a fixture" or "a window".
 
 Anchor fixture rules:
 - Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
-- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges.
+- Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges, fixed plumbing fixtures (sinks, taps, built-in tubs, showers), ceiling-mounted light fixtures (flush-mount, pendant, chandelier), existing TV wall-mount brackets/plates.
+- Use type "plumbing_fixture" for fixed sinks, taps, tubs, and showers.
+- Use type "light_fixture" for ceiling-mounted light fixtures (flush-mount, semi-flush, pendant, chandelier) — not for movable lamps.
+- Use type "tv_mount" for any existing wall-mounted TV bracket, mounting plate, or arm visible on a wall — even with no TV currently attached to it. This is a strong, direct signal for where a TV belongs in this room; look carefully for it on every wall, since it is easy to miss against a plain wall.
+- Use type "other" for any stable, fixed architectural feature that doesn't genuinely match one of the named categories — e.g. a decorative corbel/bracket, a built-in shelf remnant, an unusual wall-mounted fixture. Guessing a close-but-wrong named category is WORSE than using "other" with an accurate description: the description (not the type label) is what downstream staging uses to protect the object, so a correct "other" with a precise description is strictly better than a confident-sounding but incorrect named type. Do not force an ambiguous object into "fireplace", "built_in_cabinet", or any other named type unless it genuinely, unambiguously matches — when in doubt, use "other" and describe exactly what you see.
 - Exclude movable furniture/decor.
 - If no stable fixture is visible, return an empty array.
 
@@ -938,6 +956,9 @@ function isAnchorFixtureType(value: string): value is AnchorFixtureType {
     value === "built_in_cabinet" ||
     value === "kitchen_island" ||
     value === "staircase" ||
+    value === "plumbing_fixture" ||
+    value === "light_fixture" ||
+    value === "tv_mount" ||
     value === "other"
   );
 }
@@ -949,6 +970,9 @@ function normalizeAnchorFixtureType(value: unknown): AnchorFixtureType {
   if (raw === "built_in_cabinet" || raw === "built_in" || raw === "cabinetry") return "built_in_cabinet";
   if (raw === "kitchen_island" || raw === "island") return "kitchen_island";
   if (raw === "staircase" || raw === "stairs") return "staircase";
+  if (raw === "plumbing_fixture" || raw === "plumbing" || raw === "sink" || raw === "faucet" || raw === "tap") return "plumbing_fixture";
+  if (raw === "light_fixture" || raw === "ceiling_light" || raw === "pendant_light" || raw === "pendant" || raw === "chandelier" || raw === "ceiling_fixture") return "light_fixture";
+  if (raw === "tv_mount" || raw === "tv_bracket" || raw === "television_bracket" || raw === "tv_wall_mount" || raw === "television_mount" || raw === "tv_mounting_bracket") return "tv_mount";
   return "other";
 }
 
@@ -1330,7 +1354,7 @@ function reconcileOpeningMatches(
     if (!hasUniqueWinner || !top) continue;
 
     if (top.canonicalIdentityApplied) {
-      console.log("[CANONICALIZATION_APPLIED]", JSON.stringify({
+      vDetailLog("[CANONICALIZATION_APPLIED]", JSON.stringify({
         openingId: base.id,
         originalTypes: [base.type, top.candidate.type],
         canonicalIdentity: CANONICAL_APERTURE_IDENTITY,
@@ -1607,6 +1631,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
         ? opening.doorLeafState
         : normalizeDoorLeafState(opening.doorLeafState, normalizedType);
 
+    const descriptionCandidate =
+      typeof opening.description === "string" && opening.description.trim().length > 0
+        ? opening.description.trim()
+        : undefined;
+
     return {
       id: opening.id,
       type: normalizedType,
@@ -1620,6 +1649,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
       paneStructure: paneStructureCandidate,
       doorLeafState: doorLeafStateCandidate,
       confidence: confidenceCandidate,
+      description: descriptionCandidate,
 
       wallPosition: wallPositionCandidate,
       relativeHorizontalPosition: relativeHorizontalCandidate,
@@ -1652,6 +1682,11 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
               ? Math.max(0, Math.min(1, fixture.confidence))
               : 0.75;
 
+          const descriptionCandidate =
+            typeof fixture.description === "string" && fixture.description.trim().length > 0
+              ? fixture.description.trim()
+              : undefined;
+
           return {
             id: typeof fixture.id === "string" && fixture.id.trim().length > 0
               ? fixture.id.trim()
@@ -1661,6 +1696,7 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
             horizontalBand: horizontalBandCandidate,
             bbox: bboxCandidate,
             confidence: confidenceCandidate,
+            description: descriptionCandidate,
           } as AnchorFixture;
         })
         .filter((item: AnchorFixture | null): item is AnchorFixture => item !== null)
@@ -1957,14 +1993,14 @@ async function extractStructuralBaselineOnce(
   if (options?.timing) {
     options.timing.normalizationMs += Date.now() - normalizationStartedAt;
   }
-  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+  vDetailLog("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
     stage: "gemini_structural_extraction",
     durationMs: Date.now() - stageStartedAt,
   }));
-  console.log("[OPENING_BASELINE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE]", JSON.stringify({
     openings: baseline.openings.map((opening) => ({
       id: opening.id,
       type: opening.type,
@@ -2061,7 +2097,7 @@ async function verifyStructuralBaselineOnce(
   if (options?.timing) {
     options.timing.normalizationMs += Date.now() - normalizationStartedAt;
   }
-  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+  vDetailLog("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
@@ -2113,7 +2149,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
         analysis: undefined,
       },
     };
-    console.log("[STRUCTURAL_BASELINE_CACHE_HIT]", JSON.stringify({
+    vDetailLog("[STRUCTURAL_BASELINE_CACHE_HIT]", JSON.stringify({
       imageHash,
       graphHash: cached.graphHash,
       extractionAgreement: cached.extractionAgreement,
@@ -2121,14 +2157,14 @@ async function stabilizeStructuralBaselineGraphConsensus(
       openingCountVariance: cached.openingCountVariance,
       baselineMethod: "graph_consensus",
     }));
-    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       extractionCalls: 0,
       cacheStatus: "hit",
     }));
-    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
@@ -2136,7 +2172,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
       totalGeminiCalls: 0,
     }));
     const totalMs = sumBaselineTimingBreakdown(timing);
-    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageDownloadMs: timing.imageDownloadMs,
@@ -2173,7 +2209,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
       timing.graphBuildMs += Date.now() - hashStartedAt;
       passResults.push(baseline);
       passHashes.push(graphHash);
-      console.log("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
+      vDetailLog("[STRUCTURAL_BASELINE_PASS_DETAIL]", JSON.stringify({
         jobId: options?.jobId,
         imageId: options?.imageId,
         imageHash,
@@ -2255,7 +2291,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   );
   timing.graphBuildMs += Date.now() - graphBuildStartedAt;
 
-  console.log("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
+  vDetailLog("[STRUCTURAL_BASELINE_GRAPH_CONFIDENCE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2268,7 +2304,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
     cacheStatus: graphMeta.cacheStatus,
     baselineMethod: "graph_consensus",
   }));
-  console.log("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
+  vDetailLog("[STRUCTURAL_BASELINE_VARIANCE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2284,14 +2320,14 @@ async function stabilizeStructuralBaselineGraphConsensus(
 
   const stabilizedGraph = { ...consensus.graph, graphMeta };
 
-  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
     extractionCalls: passResults.length,
     cacheStatus: graphMeta.cacheStatus,
   }));
-  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
@@ -2320,7 +2356,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
   }
 
   const totalMs = sumBaselineTimingBreakdown(timing);
-  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageDownloadMs: timing.imageDownloadMs,
@@ -2351,14 +2387,14 @@ async function stabilizeStructuralBaselineWithVerification(
   const cached = options?.disableCache ? null : await getRedisJson<StructuralBaselineCacheRecord>(cacheKey);
 
   if (cached?.graphStable && cached.graph) {
-    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       extractionCalls: 0,
       cacheStatus: "hit",
     }));
-    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
@@ -2366,7 +2402,7 @@ async function stabilizeStructuralBaselineWithVerification(
       totalGeminiCalls: 0,
     }));
     const totalMs = sumBaselineTimingBreakdown(timing);
-    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageDownloadMs: timing.imageDownloadMs,
@@ -2410,7 +2446,7 @@ async function stabilizeStructuralBaselineWithVerification(
   const primaryHashStartedAt = Date.now();
   const primaryHash = hashStructuralBaselineGraph(primaryBaseline);
   timing.graphBuildMs += Date.now() - primaryHashStartedAt;
-  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2438,7 +2474,7 @@ async function stabilizeStructuralBaselineWithVerification(
   const adjustedMinorDifferenceCount = minorDifferenceCount + wallAssignmentOnlyCount;
   const adjustedMateriallyDifferentCount = Math.max(0, materiallyDifferentCount - wallAssignmentOnlyCount);
 
-  console.log("[BASELINE_VERIFICATION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_VERIFICATION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2514,21 +2550,21 @@ async function stabilizeStructuralBaselineWithVerification(
       ...primaryBaseline,
       graphMeta,
     };
-    console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       extractionCalls: 2,
       cacheStatus: graphMeta.cacheStatus,
     }));
-    console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       mode: "consensus",
       baselineExtractionDurationMs: Date.now() - modeStartedAt,
       totalGeminiCalls: 2,
     }));
-    console.log("[BASELINE_VERIFICATION_ACCEPTED]", JSON.stringify({
+    vDetailLog("[BASELINE_VERIFICATION_ACCEPTED]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageHash,
@@ -2559,7 +2595,7 @@ async function stabilizeStructuralBaselineWithVerification(
     }
 
     const totalMs = sumBaselineTimingBreakdown(timing);
-    console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+    vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
       jobId: options?.jobId,
       imageId: options?.imageId,
       imageDownloadMs: timing.imageDownloadMs,
@@ -2578,7 +2614,7 @@ async function stabilizeStructuralBaselineWithVerification(
     return acceptedBaseline;
   }
 
-  console.log("[BASELINE_VERIFICATION_REJECTED]", JSON.stringify({
+  vDetailLog("[BASELINE_VERIFICATION_REJECTED]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2649,14 +2685,14 @@ async function stabilizeStructuralBaselineWithVerification(
     },
   };
 
-  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
     extractionCalls: 3,
     cacheStatus: result.graphMeta?.cacheStatus,
   }));
-  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "consensus",
@@ -2664,7 +2700,7 @@ async function stabilizeStructuralBaselineWithVerification(
     totalGeminiCalls: 3,
   }));
   const totalMs = sumBaselineTimingBreakdown(timing);
-  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageDownloadMs: timing.imageDownloadMs,
@@ -2680,7 +2716,7 @@ async function stabilizeStructuralBaselineWithVerification(
     totalMs,
   }));
 
-  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2753,13 +2789,13 @@ async function stabilizeStructuralBaselineSinglePass(
     },
   };
 
-  console.log("[OPENING_BASELINE_MODE]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "single_pass",
     extractionCalls: 1,
   }));
-  console.log("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
+  vDetailLog("[BASELINE_EXTRACTION_RESULT]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageHash,
@@ -2768,7 +2804,7 @@ async function stabilizeStructuralBaselineSinglePass(
     graphHash,
     openingCount: baseline.openings.length,
   }));
-  console.log("[OPENING_BASELINE_METRICS]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_METRICS]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     mode: "single_pass",
@@ -2776,7 +2812,7 @@ async function stabilizeStructuralBaselineSinglePass(
     totalGeminiCalls: 1,
   }));
   const totalMs = sumBaselineTimingBreakdown(timing);
-  console.log("[OPENING_BASELINE_TIMING]", JSON.stringify({
+  vDetailLog("[OPENING_BASELINE_TIMING]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     imageDownloadMs: timing.imageDownloadMs,
@@ -2805,7 +2841,7 @@ async function stabilizeStructuralBaseline(
     ...options,
     timing,
   });
-  console.log("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
+  vDetailLog("[OPENING_EXTRACTION_STAGE_DURATION]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : undefined,
@@ -2823,11 +2859,175 @@ async function stabilizeStructuralBaseline(
   return stabilizeStructuralBaselineGraphConsensus(image, imageHash, options, timing);
 }
 
+// Curtain-concealed-window check — real production incident (2 Valentine
+// Street, bedroom): a closed curtain hung above the bed headboard with no
+// window frame or glass visible on any side. BASELINE_SYSTEM_INSTRUCTION
+// above unconditionally tells the model to ignore curtains, so this
+// curtained wall area was never classified as any kind of opening — the
+// staged output then removed the curtain entirely and hung a framed print
+// in its place, permanently misrepresenting a real window as removable
+// wall space. This passed silently because every downstream consumer
+// (layoutPlanner's avoid-zones, anchorLockedStaging's per-item protection
+// sentences, windowArtworkCheck.ts) operates generically over
+// baseline.openings filtered by type==="window" — nothing was ever wrong
+// with those consumers, the item just never reached them.
+//
+// First attempt: adding an exception for closed curtains directly into
+// BASELINE_SYSTEM_INSTRUCTION. Live-tested against the real repro image —
+// did NOT work; the one long, multi-purpose extraction call still missed
+// the curtain (it only correctly extracts the one obviously-visible
+// window). Reverted that in favor of this: a second, narrowly-scoped
+// dedicated call whose ONLY job is finding curtain-like fabric and judging
+// whether a window is visible behind it — the "model observes narrowly,
+// code decides" pattern already used for windowArtworkCheck.ts and
+// vanishedLandmarkCheck.ts this session. Live-tested 3/3 runs against the
+// real repro image: correctly flagged the bed curtain (windowEvidenceVisible:
+// false) every time, while correctly leaving the two curtains flanking the
+// real window alone (windowEvidenceVisible: true) — no false positive.
+//
+// isFunctionalCurtain is intentionally NOT used to gate the decision below,
+// despite being in the schema — live testing showed it flip-flops
+// (false/true/false across three identical temperature-0 runs) on exactly
+// this borderline case (a short valance-style panel), while
+// windowEvidenceVisible stayed stable every time. Given the asymmetric
+// cost — a false positive just leaves a real curtain unchanged in the
+// output; a false negative risks a real window being misrepresented as
+// removable wall space — only windowEvidenceVisible gates protection here.
+const CURTAIN_WINDOW_CHECK_SYSTEM_INSTRUCTION = `You are inspecting a single interior room photo for curtain-like fabric window coverings that might be hiding a window.
+
+Look at every wall in the image. For each distinct piece of curtain-like fabric you see — this includes full-length drapery, short valances, roman blinds, or any rod/track-mounted fabric panel hanging flat against a wall — report it, REGARDLESS of whether you can see any window frame, glass, or light behind/around it. Size does not matter: a small curtain panel counts exactly the same as a large floor-length one.
+
+Do NOT include: framed pictures/art, mirrors, tapestries or quilts hung flat with no rod/track and no fabric drape, flags, or curtains that are clearly hanging across a doorway/walkthrough between rooms rather than against a wall.
+
+For each curtain-like item found, report:
+- location: which wall and roughly where on it
+- wallIndex: 0=front wall (camera facing), 1=right wall, 2=back wall, 3=left wall
+- bbox: [x1,y1,x2,y2] normalized 0-1 (0,0 = top-left), covering the curtain/rod's own visible extent
+- visualDescription: exactly what it looks like (pattern, color, how it hangs)
+- windowEvidenceVisible: true if you can see any window frame, glass pane, or daylight on any side of this curtain; false if the curtain fully covers the area with no such evidence visible
+- isFunctionalCurtain: true if this genuinely looks like a functional window curtain/blind (has a rod/track, drapes or hangs the way fabric does under gravity); false if it's more likely pure decor (e.g. a flat fabric wall-hanging with no rod)
+
+If no curtain-like fabric is visible anywhere, return an empty array.
+
+Respond with ONLY a single valid JSON object: {"curtains": [{"location": string, "wallIndex": number, "bbox": [number,number,number,number], "visualDescription": string, "windowEvidenceVisible": boolean, "isFunctionalCurtain": boolean}]}`;
+
+type CurtainObservation = {
+  location: string;
+  wallIndex: number;
+  bbox: [number, number, number, number];
+  visualDescription: string;
+  windowEvidenceVisible: boolean;
+  isFunctionalCurtain: boolean;
+};
+
+async function observeCurtainConcealedWindows(
+  image: { data: string; mime: string },
+  options?: { jobId?: string; imageId?: string; attempt?: number }
+): Promise<CurtainObservation[]> {
+  const ai = getGeminiClient();
+  const requestStartedAt = Date.now();
+  const response = await (ai as any).models.generateContent({
+    model: OPENING_VALIDATOR_MODEL,
+    contents: [
+      {
+        role: "user",
+        parts: [
+          { text: CURTAIN_WINDOW_CHECK_SYSTEM_INSTRUCTION },
+          { text: "Analyze this room image." },
+          { inlineData: { mimeType: image.mime, data: image.data } },
+        ],
+      },
+    ],
+    generationConfig: { temperature: 0, topP: 0.1, topK: 1, maxOutputTokens: 1024, responseMimeType: "application/json" },
+  } as any);
+  logGeminiUsage({
+    ctx: {
+      jobId: options?.jobId || "",
+      imageId: options?.imageId || "",
+      stage: "validator",
+      attempt: Number.isFinite(options?.attempt) ? Number(options?.attempt) : 1,
+    },
+    model: OPENING_VALIDATOR_MODEL,
+    callType: "validator",
+    response,
+    latencyMs: Date.now() - requestStartedAt,
+  });
+  const parsed = parseJsonResponse(response);
+  const raw = Array.isArray(parsed?.curtains) ? parsed.curtains : [];
+  return raw.filter((c: any): c is CurtainObservation =>
+    c && typeof c === "object" && Array.isArray(c.bbox) && c.bbox.length === 4
+  );
+}
+
+function bboxIoU(a: [number, number, number, number], b: [number, number, number, number]): number {
+  const x1 = Math.max(a[0], b[0]);
+  const y1 = Math.max(a[1], b[1]);
+  const x2 = Math.min(a[2], b[2]);
+  const y2 = Math.min(a[3], b[3]);
+  const intersection = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  if (intersection <= 0) return 0;
+  const areaA = Math.max(0, a[2] - a[0]) * Math.max(0, a[3] - a[1]);
+  const areaB = Math.max(0, b[2] - b[0]) * Math.max(0, b[3] - b[1]);
+  const union = areaA + areaB - intersection;
+  return union > 0 ? intersection / union : 0;
+}
+
+async function augmentBaselineWithCurtainConcealedWindows(
+  baseline: StructuralBaseline,
+  image: { data: string; mime: string },
+  options?: BaselineExtractionOptions
+): Promise<StructuralBaseline> {
+  try {
+    const observed = await observeCurtainConcealedWindows(image, options);
+    const concealing = observed.filter((c) => c.windowEvidenceVisible === false);
+    if (concealing.length === 0) return baseline;
+
+    const existingWindows = baseline.openings.filter((o) => o.type === "window");
+    const newRaw = concealing.filter(
+      (c) => !existingWindows.some((w) => bboxIoU(w.bbox, c.bbox) > 0.2)
+    );
+    if (newRaw.length === 0) return baseline;
+
+    vDetailLog("[CURTAIN_CONCEALED_WINDOW_DETECTED]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      count: newRaw.length,
+      items: newRaw,
+    }));
+
+    const rawOpeningsForMerge = [
+      ...baseline.openings,
+      ...newRaw.map((c, idx) => ({
+        id: `W_curtain_${idx + 1}`,
+        type: "window",
+        wallIndex: isWallIndex(c.wallIndex) ? c.wallIndex : 0,
+        bbox: c.bbox,
+        confidence: 0.55,
+        description:
+          `Closed curtain fully covering wall, no glass visible — window inferred from curtain/rod presence, not directly confirmed. ${c.visualDescription || ""}`.trim(),
+      })),
+    ];
+
+    const merged = validateStructuralBaseline({ openings: rawOpeningsForMerge, anchorFixtures: baseline.anchorFixtures });
+    return { ...baseline, openings: merged.openings, anchorFixtures: merged.anchorFixtures };
+  } catch (err: any) {
+    // Enrichment layer only — never block baseline extraction on this.
+    vDetailLog("[CURTAIN_CONCEALED_WINDOW_CHECK_ERROR]", JSON.stringify({
+      jobId: options?.jobId,
+      imageId: options?.imageId,
+      error: err?.message || String(err),
+    }));
+    return baseline;
+  }
+}
+
 export async function extractStructuralBaseline(
   imageUrl: string,
   options?: BaselineExtractionOptions
 ): Promise<StructuralBaseline> {
-  return stabilizeStructuralBaseline(imageUrl, options);
+  const baseline = await stabilizeStructuralBaseline(imageUrl, options);
+  const image = await materializeOpeningExtractionImage(imageUrl, options);
+  return augmentBaselineWithCurtainConcealedWindows(baseline, image, options);
 }
 
 export async function validateOpeningPreservation(
@@ -2863,7 +3063,7 @@ export async function validateOpeningPreservation(
       )
     )
     .digest("hex");
-  console.log("[OPENING_RECONCILIATION_TRACE]", JSON.stringify({
+  vDetailLog("[OPENING_RECONCILIATION_TRACE]", JSON.stringify({
     jobId: options?.jobId,
     imageId: options?.imageId,
     attempt: options?.attempt,
@@ -2944,7 +3144,7 @@ export async function validateOpeningPreservation(
         wallIndex: baseOpening.wallIndex,
       });
 
-      console.log(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
+      vDetailLog(`[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${status} reason=${reason}`);
       analysisNotes.push(
         `Baseline opening ${baseOpening.id} (${baseOpening.type}) near wallIndex=${baseOpening.wallIndex}, band=${baseOpening.horizontalBand}/${baseOpening.verticalBand} is not detectable in AFTER; classified as ${status.toLowerCase()}.`
       );
@@ -3172,7 +3372,7 @@ export async function validateOpeningPreservation(
       return true;
     });
     const altered = effectiveInvariantReasons.some((reason) => !advisoryOnlyReasons.has(reason));
-    console.log(
+    vDetailLog(
       `[OPENING_VALIDATION] baseline_id=${baseOpening.id} status=${altered ? "ALTERED" : "PRESERVED"} reason=${
         effectiveInvariantReasons.length > 0 ? effectiveInvariantReasons.join("|") : "none"
       }`
@@ -3253,7 +3453,7 @@ export async function validateOpeningPreservation(
       analysisNotes.push(
         `Wall ${wallIndex} opening count dropped but edge-of-frame uncertainty applies (out_of_frame=${wallOutOfFrameCount}); treating as preserved.`
       );
-      console.log(
+      vDetailLog(
         `[OPENING_SIGNATURE_OUT_OF_FRAME] wall=${wallIndex} opening_drop=true out_of_frame=${wallOutOfFrameCount} anchor_reference=false`
       );
       continue;
@@ -3265,7 +3465,7 @@ export async function validateOpeningPreservation(
       analysisNotes.push(
         `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=absent.`
       );
-      console.log(
+      vDetailLog(
         `[OPENING_SIGNATURE_ADVISORY] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=false`
       );
       continue;
@@ -3275,7 +3475,7 @@ export async function validateOpeningPreservation(
       `Wall ${wallIndex} opening signature advisory (L->R). BEFORE openings=${baselineSeq.openingTokens.join("->") || "none"}; AFTER openings=${detectedSeq.openingTokens.join("->") || "none"}; anchor_reference=${anchorReferenced ? "present" : "absent"}.`
     );
 
-    console.log(
+    vDetailLog(
       `[OPENING_SIGNATURE_ADVISORY] wall=${wallIndex} before=${baselineSeq.allTokens.join("->") || "none"} after=${detectedSeq.allTokens.join("->") || "none"} anchor_reference=${anchorReferenced}`
     );
   }

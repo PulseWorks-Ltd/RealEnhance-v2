@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { createImageRecord } from "../services/images.js";
 import { addImageToUser, updateUser } from "../services/users.js";
 import { cancelEnqueuedJob, createAwaitingPaymentEnhanceJob, enqueueEnhanceJob, listAwaitingPaymentEnhanceJobs } from "../services/jobs.js";
-import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3 } from "../utils/s3.js";
+import { createPresignedUploadUrl, getS3PublicUrl, uploadOriginalToS3, s3ObjectExists } from "../utils/s3.js";
 import { recordUsageEvent } from "@realenhance/shared/usageTracker";
 import { getAgency, updateAgency } from "@realenhance/shared/agencies.js";
 import { getUserByEmail, getUserById } from "../services/users.js";
@@ -68,6 +68,16 @@ function safeParseOptions(raw: unknown): any[] {
 
 interface DirectUploadedImage {
   key: string;
+}
+
+// Direct-upload S3 keys are always createPresignedUploadUrl's
+// `${prefix}/${Date.now()}-${randomUUID()}-${safeName}` — recover the
+// original (sanitized) filename from the key for jobs that never carry a
+// multipart `f` (the direct-upload-to-S3 flow bypasses req.files entirely).
+function extractOriginalFilenameFromKey(key: string): string | undefined {
+  const base = key.split("/").pop() || "";
+  const match = base.match(/^\d+-[0-9a-fA-F-]{36}-(.+)$/);
+  return (match ? match[1] : base) || undefined;
 }
 
 function safeParseUploadedKeys(raw: unknown): DirectUploadedImage[] {
@@ -294,6 +304,7 @@ export function uploadRouter() {
     const stagingStyleForm = normalizeStagingStyle((req.body as any)?.stagingStyle);
     const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
     const stage2OnlyForm = String((req.body as any)?.stage2Only ?? "").toLowerCase() === "true";
+    const enhanceExteriorSkyForm = String((req.body as any)?.enhanceExteriorSky ?? "").toLowerCase() === "true";
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
@@ -623,6 +634,7 @@ export function uploadRouter() {
       if (meta.roomType) opts.roomType = normalizeRoomType(meta.roomType);
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
+      if (meta.enhanceExteriorSky !== undefined) opts.enhanceExteriorSky = !!meta.enhanceExteriorSky;
       if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
       // Pass scenePrediction to worker for SKY_SAFE forcing logic
       if (meta.scenePrediction) opts.scenePrediction = meta.scenePrediction;
@@ -663,6 +675,9 @@ export function uploadRouter() {
         opts.stage2Only = !!meta.stage2Only;
       } else if (stage2OnlyForm) {
         opts.stage2Only = true;
+      }
+      if (opts.enhanceExteriorSky === undefined && enhanceExteriorSkyForm) {
+        opts.enhanceExteriorSky = true;
       }
             if (typeof opts.roomType === "string") {
               opts.roomType = normalizeRoomType(opts.roomType);
@@ -876,6 +891,36 @@ export function uploadRouter() {
         remoteOriginalKey = directUpload.key;
         remoteOriginalUrl = getS3PublicUrl(directUpload.key);
         recordOriginalPath = directUpload.key;
+
+        // H4 fix (RealEnhance audit): the client asserts it already PUT
+        // this file straight to S3 via a presigned URL — until now that
+        // assertion was trusted with no confirmation. A failed/aborted
+        // client-side upload would previously sail through into a queued
+        // job, consuming a reservation/credit and a job slot before
+        // failing later, opaquely, when the worker tried to download it.
+        // Mirrors the strict/non-strict duality already used for the
+        // server-side multipart upload path just below, so both upload
+        // paths fail the same way on a genuine S3 problem.
+        try {
+          const headResult = await s3ObjectExists(directUpload.key);
+          if (!headResult.exists) {
+            console.warn(`[upload] direct-upload key not found in S3 for item ${i}: ${directUpload.key}`);
+            await releaseReservations();
+            return res.status(400).json({
+              ok: false,
+              error: "upload_incomplete",
+              message: `The uploaded file for item ${i} was not found in storage — the upload may not have completed. Please retry.`,
+            });
+          }
+        } catch (headErr: any) {
+          const strict = process.env.REQUIRE_S3 === '1' || process.env.S3_STRICT === '1' || process.env.NODE_ENV === 'production';
+          const msg = headErr?.message || String(headErr);
+          console.warn('[upload] direct-upload existence check failed', msg, strict ? '(strict mode: aborting)' : '(non-strict: continuing without confirmation)');
+          if (strict) {
+            await releaseReservations();
+            return res.status(503).json({ ok: false, error: 's3_unavailable', message: msg });
+          }
+        }
       } else {
         const localFinalPath = path.join(userDir, f.filename || f.originalname);
         finalPath = localFinalPath;
@@ -945,6 +990,8 @@ export function uploadRouter() {
         userId: sessUser.id,
         imageId,
         clientBatchId,
+        originalFilename: f?.originalname || (directUpload ? extractOriginalFilenameFromKey(directUpload.key) : undefined),
+        batchTotalJobs: uploadCount,
         remoteOriginalUrl,
         remoteOriginalKey,
         agencyId,
@@ -957,6 +1004,7 @@ export function uploadRouter() {
           roomType: opts.roomType,
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky,
+          enhanceExteriorSky: !!opts.enhanceExteriorSky,
           manualSceneOverride: opts.manualSceneOverride,
           scenePrediction: opts.scenePrediction,
           sampling: opts.sampling,
