@@ -37,6 +37,11 @@ import {
   runStage2GenerationAttempt,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
+import {
+  isOpeningEscalationCandidate as isOpeningEscalationCandidateShared,
+  shouldApplyOpeningOcclusionGuard as shouldApplyOpeningOcclusionGuardShared,
+  isEligibleForOpeningOcclusionDowngrade,
+} from "./validators/openingOcclusionGuard";
 import { classifyStructuralConsensusCase } from "./pipeline/stage2StructuralConsensusBackstop";
 import { computeStructuralEdgeMask } from "./validators/structuralMask";
 import { applyEdit } from "./pipeline/editApply";
@@ -14097,108 +14102,20 @@ All openings must remain identical in position and size to the original image.`;
         return true;
       };
 
-      const OPENING_OCCLUSION_GUARD_KEYWORDS = [
-        "curtain",
-        "curtains",
-        "blind",
-        "blinds",
-        "drape",
-        "drapes",
-        "window covering",
-        "window coverings",
-        "window_covering",
-        "window_coverings",
-        "soft furnishing",
-        "soft furnishings",
-        "bed",
-        "headboard",
-        "sofa",
-        "couch",
-        "chair",
-        "plant",
-        "leaf",
-        "lamp",
-        "shelf",
-        "shelving",
-        "decor",
-        "furniture",
-        "foreground",
-        "staging",
-      ];
-
-      const normalizeOcclusionGuardText = (value: string): string =>
-        String(value || "")
-          .trim()
-          .toLowerCase()
-          .replace(/[|:,;]+/g, " ")
-          .replace(/\s+/g, " ");
-
-      const hasOpeningOcclusionKeyword = (value: string): boolean => {
-        const normalized = normalizeOcclusionGuardText(value);
-        if (!normalized) return false;
-        return OPENING_OCCLUSION_GUARD_KEYWORDS.some((keyword) => normalized.includes(keyword));
-      };
-
-      const isOpeningEscalationCandidate = (signal: SpecialistIssueSignal): boolean => {
-        const issueType = signal.issueType as ValidationIssueType | undefined;
-        if (
-          issueType === ISSUE_TYPES.OPENING_REMOVED ||
-          issueType === ISSUE_TYPES.OPENING_RESIZED_MAJOR ||
-          issueType === ISSUE_TYPES.OPENING_RESIZED_MINOR
-        ) {
-          return true;
-        }
-
-        const detail = [signal.reason || "", signal.subtype || "", ...(signal.advisorySignals || [])]
-          .map((part) => normalizeOcclusionGuardText(part))
-          .join(" ");
-        return detail.includes("opening_removed") || detail.includes("opening_resized") || detail.includes("opening_resize");
-      };
+      // Extracted to validators/openingOcclusionGuard.ts (2026-08-30) so
+      // this decision logic is directly unit-testable with literal fixture
+      // data, per this repo's established testing philosophy — see that
+      // file's header for the full rationale and the two confirmed
+      // production incidents (job_9afb6878, job_c4a18bc3) this closes.
+      const isOpeningEscalationCandidate = (signal: SpecialistIssueSignal): boolean =>
+        isOpeningEscalationCandidateShared(signal);
 
       const shouldApplyOpeningOcclusionGuard = (
         signal: SpecialistIssueSignal,
         allSignals: SpecialistIssueSignal[],
         allAdvisories: string[]
-      ): { apply: boolean; occlusionHints: string[] } => {
-        if (!isOpeningEscalationCandidate(signal)) {
-          return { apply: false, occlusionHints: [] };
-        }
-
-        const occlusionHints = new Set<string>();
-
-        const collectIfOcclusionHint = (source: string, value: string) => {
-          const normalized = normalizeOcclusionGuardText(value);
-          if (!normalized) return;
-          if (hasOpeningOcclusionKeyword(normalized)) {
-            occlusionHints.add(`${source}:${normalized.slice(0, 120)}`);
-          }
-        };
-
-        collectIfOcclusionHint("opening.reason", signal.reason || "");
-        collectIfOcclusionHint("opening.subtype", signal.subtype || "");
-        (signal.advisorySignals || []).forEach((entry) => collectIfOcclusionHint("opening.advisory", String(entry || "")));
-
-        allAdvisories.forEach((entry) => collectIfOcclusionHint("specialist.advisory", String(entry || "")));
-
-        allSignals
-          .filter((entry) => entry.validator === "fixtures" || entry.validator === "openings")
-          .forEach((entry) => {
-            collectIfOcclusionHint(`${entry.validator}.reason`, entry.reason || "");
-            collectIfOcclusionHint(`${entry.validator}.subtype`, entry.subtype || "");
-            (entry.advisorySignals || []).forEach((advisory) =>
-              collectIfOcclusionHint(`${entry.validator}.advisory`, String(advisory || ""))
-            );
-          });
-
-        if (jobContext.curtainRailLikely === true) {
-          occlusionHints.add("scene:curtain_rail_likely");
-        }
-
-        return {
-          apply: occlusionHints.size > 0,
-          occlusionHints: Array.from(occlusionHints),
-        };
-      };
+      ): { apply: boolean; occlusionHints: string[] } =>
+        shouldApplyOpeningOcclusionGuardShared(signal, allSignals, allAdvisories, jobContext.curtainRailLikely === true);
 
       const isEnvelopeIssue = (issueType?: string): boolean =>
         issueType === ISSUE_TYPES.ENVELOPE_VERTICAL_EDGE_LOSS ||
@@ -14264,8 +14181,24 @@ All openings must remain identical in position and size to the original image.`;
           specialistAdvisorySignals
         );
 
-        // SINGLE-AUTHORITY: Only downgrade if explicit occlusion evidence is STRONG (multiple hints)
-        if (categoricalBlockClass === "OCCLUSION" && openingOcclusionGuard.apply && openingOcclusionGuard.occlusionHints.length >= 2) {
+        // SINGLE-AUTHORITY: Only downgrade if explicit occlusion evidence is STRONG (multiple hints).
+        // "UNKNOWN" is included alongside "OCCLUSION" here for one narrow,
+        // confirmed reason: OPENING_INFILLED/OPENING_REMOVED/OPENING_SEALED
+        // classify as "UNKNOWN" (not "OCCLUSION") whenever there is no
+        // corroborating envelope signal — see classifyStructuralSignal —
+        // which is exactly the un-corroborated, decor-driven false-positive
+        // case this guard exists to catch (job_9afb6878, job_c4a18bc3).
+        // openingOcclusionGuard.apply already restricts this to signals
+        // isOpeningEscalationCandidate recognizes (the opening issue types
+        // only), so this cannot reach unrelated issue types like
+        // FIXTURE_CHANGED/FLOOR_CHANGED that also default to "UNKNOWN". A
+        // signal that DOES have corroborating envelope evidence classifies
+        // as "REMOVAL", not "UNKNOWN", and is deliberately left out of this
+        // condition — that case is a real, corroborated structural change.
+        if (
+          openingOcclusionGuard.apply &&
+          isEligibleForOpeningOcclusionDowngrade(categoricalBlockClass, openingOcclusionGuard.occlusionHints.length)
+        ) {
           const originalIssueType = categoricalBlock.issueType || ISSUE_TYPES.UNIFIED_FAILURE;
           categoricalBlock.issueType = ISSUE_TYPES.OPENING_OCCLUSION;
           specialistAdvisorySignals.push("openings:opening_occlusion_guard_applied");
@@ -14327,6 +14260,32 @@ All openings must remain identical in position and size to the original image.`;
           setStage2AttemptValidation(path2, "gemini", [decisionReason]);
 
           if (attempt < MAX_STAGE2_RETRIES) {
+            // Confirmed gap (job_9afb6878): buildStructuralRetryInjection
+            // already has a dedicated "do not touch this opening" correction
+            // block for exactly these issueTypes, but nothing on this retry
+            // path ever set pendingStage2StructuralFailureType to reach it —
+            // the value stayed whatever an earlier, unrelated check last set
+            // (usually null), so the retry got only the generic corrective
+            // prompt with no opening-specific guidance carried forward.
+            // REINFORCED is also required (not just the failure type) since
+            // buildStructuralRetryInjection is only invoked when
+            // compositeFail is true, which is derived from
+            // pendingStage2RetryStrategy === "REINFORCED" — see worker.ts's
+            // useReinforcedRetry. stage2ReinforcedRetryUsed makes this a
+            // one-shot escalation per job, same as the (previously unused)
+            // mechanism was already designed for.
+            const openingRetryFailureType: Partial<Record<ValidationIssueType, StructuralFailureType>> = {
+              [ISSUE_TYPES.OPENING_INFILLED]: "opening_infilled",
+              [ISSUE_TYPES.OPENING_SEALED]: "opening_infilled",
+              [ISSUE_TYPES.OPENING_REMOVED]: "opening_removed",
+              [ISSUE_TYPES.OPENING_RELOCATED]: "opening_relocated",
+            };
+            const mappedOpeningFailureType = openingRetryFailureType[blockedIssueType];
+            if (mappedOpeningFailureType) {
+              pendingStage2StructuralFailureType = mappedOpeningFailureType;
+              pendingStage2RetryStrategy = "REINFORCED";
+            }
+
             logRefreshValidationTrace({
               specialistHardFail: true,
               geminiDecision: "FAIL",

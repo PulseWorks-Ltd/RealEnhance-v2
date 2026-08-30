@@ -45,6 +45,7 @@
 // bbox reveal and the flooring check's baseline material description
 // reveal don't: it's a targeted structural FACT to look for, not a content
 // description sitting next to a yes/no question for the model to echo.
+import { nLog } from "../logger";
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline, StructuralOpening } from "./openingPreservationValidator";
@@ -240,6 +241,34 @@ export async function runOpeningEnvelopeValidator(
 
   const materialAlteredItems = itemResults.filter((r) => r.materiality === "material" && r.altered);
   const lowMaterialityItems = itemResults.filter((r) => r.materiality === "low_materiality");
+
+  // Diagnostic-only, additive: production logs of a hard opening fail have
+  // historically shown only the flattened human-readable reason string
+  // (currentStateDescription for "replaced"/"removed" verdicts), never the
+  // per-question classification audit trail (matchedPattern, which raw
+  // answer field actually drove the verdict) that combineOcclusionAnswer
+  // already computes. That gap made two real production false positives
+  // (job_9afb6878, job_c4a18bc3 — both "replaced" verdicts on an opening
+  // whose own currentStateDescription said it was plainly present) take
+  // hours of log archaeology to root-cause instead of minutes. This does
+  // not change any verdict or gating decision — it only makes the existing
+  // computation visible.
+  for (const item of materialAlteredItems) {
+    nLog("[OPENING_OCCLUSION_CLASSIFICATION_TRACE]", {
+      jobId: ctx.jobId,
+      imageId: ctx.imageId,
+      itemId: item.id,
+      verdict: item.verdict,
+      traceVisible: item.traceVisible,
+      replacedByContinuousSurface: item.replacedByContinuousSurface,
+      itemExtendsBeyondCoveringObject: item.itemExtendsBeyondCoveringObject,
+      extentChanged: item.extentChanged,
+      structuralEvidenceFound: item.structuralEvidenceFound,
+      classification: item.classification,
+      currentStateDescription: item.rawObservation?.currentStateDescription,
+      currentSurfaceDescription: item.rawObservation?.currentSurfaceDescription,
+    });
+  }
 
   const standardOpening: ValidatorOutcome =
     materialAlteredItems.length === 0
