@@ -515,6 +515,19 @@ type AnchorPlan = {
   // generate the dynamic "ANCHOR WALL — DOOR ACCESS REQUIREMENT" prompt
   // block with the actual detected door id rather than a generic warning.
   doorAccessDoorIds: string[] | null;
+  // True when the tier-4 door-avoidance crop rescue fired (2026-08-30,
+  // real production feedback, job_15b17d81): tier 4 would otherwise have
+  // anchored the item directly to a door/walkthrough wall, but a different,
+  // frame-edge wall existed instead — its own footprint can be partially
+  // cropped out of frame (the same tolerance wallPartiallyVisible already
+  // grants elsewhere), so the item is anchored there instead and only
+  // ORIENTED to face the door wall, never placed against it. When true,
+  // anchorWallHasDoorOrWalkthrough is false (the physical anchor wall
+  // itself has no door) — the door instead sits on the wall being faced.
+  faceDoorWallCropMode: boolean;
+  // The door/walkthrough id(s) on the wall being faced (not anchored to)
+  // when faceDoorWallCropMode is true — null otherwise.
+  facingDoorWallDoorIds: string[] | null;
 };
 
 // Position phrase from the wall's own bounding box in frame — independent
@@ -644,12 +657,34 @@ const WINDOW_COVERAGE_TIER2_THRESHOLD = 0.5;
 // tier-3-only 0.15 bar (one narrowly, one exactly), and because they were
 // also blank, tier 1's total absence of any width check let them win
 // outright over a substantially visible (36% of frame) wall with only a
-// small, high-set window that was clearly the better real bed wall. 0.25
-// is a deliberate, documented judgment call — "at least a quarter of the
-// frame" — not derived from a larger calibration set; revisit if it proves
-// too strict or too lenient against more real cases. See
-// tests/bedAnchorWallSelection.test.ts for the preserved regression case.
-const MIN_WALL_FRAME_VISIBLE_WIDTH = 0.25;
+// small, high-set window that was clearly the better real bed wall.
+//
+// LOWERED to 0.20 (2026-08-30, real production feedback, job_15b17d81):
+// still comfortably clears both of the original regression's slivers
+// (9.1% and 15% each stay excluded), so that specific failure mode cannot
+// recur — but 0.25 was excluding real, usable return walls in the
+// 20-25% band, forcing rooms with no better option down to tier 4 (a door
+// wall) more often than necessary. See MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH
+// below for the separate, lower, door-avoidance-only carve-out the same
+// feedback asked for.
+const MIN_WALL_FRAME_VISIBLE_WIDTH = 0.2;
+
+// Door-avoidance carve-out (2026-08-30, real production feedback,
+// job_15b17d81): staging directly on a wall that itself carries a door or
+// walkthrough reliably produces one of two hard-fail outcomes downstream —
+// the generation model either covers the door with furniture or paints
+// over/infills it into a flat wall entirely (both confirmed real cases).
+// Explicit product direction: a door/walkthrough wall must be treated as
+// close to a last resort as this system can manage — prefer ANY other
+// real, usable wall, even a fairly marginal one, before ever reaching for
+// it. This floor exists ONLY to let tier 3.5 (below) rescue a non-door
+// wall that fails the main MIN_WALL_FRAME_VISIBLE_WIDTH floor above, one
+// last time, still ahead of a door wall — it never admits a wall into
+// tiers 1-3 themselves, so the regression MIN_WALL_FRAME_VISIBLE_WIDTH was
+// raised to fix (a thin blank/window sliver winning tier 1/2 outright over
+// a genuinely better wall) cannot recur: tiers 1-3's own priority order
+// and floor are untouched, this only ever competes against tier 4.
+const MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH = 0.15;
 
 // Upper-bound numeric estimate for a WallCoverageBand ("5-10" | "10-20" |
 // "20-40" | "40-60" | "60+"), used for the tier-2 <50% gate and for
@@ -804,6 +839,43 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
     };
   }
 
+  // Tier 3.5 — door-avoidance rescue (2026-08-30, real production
+  // feedback, job_15b17d81): before ever reaching for a door wall, retry
+  // the SAME non-door candidate pool one more time against the lower
+  // MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH floor instead of the main
+  // MIN_WALL_FRAME_VISIBLE_WIDTH floor, still gated by the same
+  // largestSegment usability bar every tier requires. This only ever
+  // triggers when tiers 1-3 found nothing at the standard floor — at this
+  // point every remaining sizeQualifying wall is a door wall (tiers 1-3
+  // together already claim every non-door sizeQualifying wall) — so this
+  // can only ever compete against tier 4, never against tiers 1-3's own
+  // priority order or floor. Preserves the same blank > window > "any
+  // other non-door wall" priority tiers 1-3 use, just re-run at the lower
+  // floor, so a marginal blank/window wall still beats a marginal plain
+  // return wall here too.
+  const marginalNonDoorWalls = analyzed.filter(
+    (w) =>
+      !w.hasDoorOrWalkthrough &&
+      w.largestSegment >= MIN_USABLE_FRACTION_FOR_ANCHOR &&
+      w.frameVisibleWidth >= MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH
+  );
+  if (marginalNonDoorWalls.length > 0) {
+    const blankMarginal = marginalNonDoorWalls.filter((w) => w.isBlank);
+    const windowMarginal = marginalNonDoorWalls.filter(
+      (w) => w.hasAnyWindow && w.windowCoverage < WINDOW_COVERAGE_TIER2_THRESHOLD
+    );
+    const picked =
+      blankMarginal.length > 0
+        ? [...blankMarginal].sort((a, b) => b.largestSegment - a.largestSegment)[0]
+        : windowMarginal.length > 0
+          ? [...windowMarginal].sort((a, b) => a.windowCoverage - b.windowCoverage)[0]
+          : [...marginalNonDoorWalls].sort((a, b) => b.frameVisibleWidth - a.frameVisibleWidth)[0];
+    return {
+      info: picked,
+      reason: `tier 3.5 (door-avoidance rescue): ${picked.wall.id} (${picked.wall.wallLabel}) — frame-visible width ${picked.frameVisibleWidth.toFixed(3)} (below the standard ${MIN_WALL_FRAME_VISIBLE_WIDTH} floor but >= ${MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH}), preferred over staging on a door/walkthrough wall.`,
+    };
+  }
+
   // Tier 4 — wall containing a door, lowest priority, reached only when
   // nothing above qualified at all: a door implies an active circulation
   // path through that wall, so placing a large anchor item there is more
@@ -819,14 +891,19 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
       if (a.hasSlidingDoor !== b.hasSlidingDoor) return a.hasSlidingDoor ? -1 : 1;
       return b.largestSegment - a.largestSegment;
     })[0];
-    const failedReturnWalls = nonDoorWalls.filter((w) => w.wall.id !== picked.wall.id);
+    // At this point tiers 1-3 AND the tier-3.5 door-avoidance rescue have
+    // all already failed to find any qualifying non-door wall — reported
+    // from `analyzed` (every wall in the room), not `nonDoorWalls`/
+    // `marginalNonDoorWalls` (both necessarily empty here), so this note
+    // states what actually failed rather than an always-empty list.
+    const failedReturnWalls = analyzed.filter((w) => !w.hasDoorOrWalkthrough && w.wall.id !== picked.wall.id);
     const failedReturnWallsNote =
       failedReturnWalls.length > 0
-        ? failedReturnWalls.map((w) => `${w.wall.id} visible width ${w.frameVisibleWidth.toFixed(3)} below ${MIN_WALL_FRAME_VISIBLE_WIDTH} threshold`).join(", ")
-        : "no other non-door wall was size-qualifying";
+        ? failedReturnWalls.map((w) => `${w.wall.id} visible width ${w.frameVisibleWidth.toFixed(3)} below ${MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH} threshold`).join(", ")
+        : "no other non-door wall existed in this room at all";
     return {
       info: picked,
-      reason: `tier 4: ${picked.wall.id} (${picked.wall.wallLabel}) — ${picked.hasSlidingDoor ? "sliding/glass door" : "hinged/walkthrough interior door"}. No blank wall, no qualifying sub-50% window wall, no return wall met the ${MIN_WALL_FRAME_VISIBLE_WIDTH} visibility threshold (${failedReturnWallsNote}).`,
+      reason: `tier 4 (last resort): ${picked.wall.id} (${picked.wall.wallLabel}) — ${picked.hasSlidingDoor ? "sliding/glass door" : "hinged/walkthrough interior door"}. No blank wall, no qualifying sub-50% window wall, and no return wall met even the door-avoidance ${MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH} visibility floor (${failedReturnWallsNote}).`,
     };
   }
 
@@ -981,6 +1058,32 @@ Place the ${itemLabel} only within the calculated clear wall segment described a
 Preserve the existing doorway position, opening, width, swing, and surrounding wall geometry.`;
 }
 
+// Companion to buildDoorAccessRequirementSection above, for the OTHER half
+// of the door-avoidance crop rescue (2026-08-30, real production feedback,
+// job_15b17d81): here the item is NOT anchored to the door wall at all —
+// it's anchored elsewhere and merely faces this direction — so the
+// instruction is the inverse of the usual one: don't let orientation read
+// as an invitation to drift toward or lean on the doorway.
+function buildFaceAwayFromDoorInstructionSection(plan: AnchorPlan, itemLabel: string): string {
+  if (!plan.faceDoorWallCropMode || !plan.facingDoorWallDoorIds || plan.facingDoorWallDoorIds.length === 0) {
+    return "";
+  }
+  const doorIds = plan.facingDoorWallDoorIds;
+  const doorList = doorIds.length === 1 ? doorIds[0] : doorIds.join(" and ");
+  const isPlural = doorIds.length > 1;
+  return `
+
+FACING WALL — DO NOT ANCHOR TO IT (must be followed exactly)
+
+The ${itemLabel} is deliberately oriented to face toward the wall containing existing doorway ${doorList} — this is an ORIENTATION instruction only.
+
+The ${itemLabel} must NOT be physically placed against, touching, or positioned near that wall. It is anchored to the different wall described above; facing that direction is the only thing this wall is used for.
+
+${doorList} ${isPlural ? "are protected circulation routes" : "is a protected circulation route"} and MUST remain completely open, unobstructed, and untouched by the ${itemLabel} or any other staged furniture.
+
+Preserve the existing doorway position, opening, width, swing, and surrounding wall geometry exactly as shown in the original photo.`;
+}
+
 function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilityWall[], config: SingleAnchorItemConfig): AnchorPlan | null {
   const selection = selectAnchorWallByTier(baseline, walls);
 
@@ -994,27 +1097,88 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
     return null;
   }
 
-  const selectedWall = selection.info.wall;
-  const bestSegment = [...selectedWall.usableSegments].sort((a, b) => b.widthFraction - a.widthFraction)[0];
-  const selectedWallIndex = selection.info.wallIndex;
+  let selectedWallInfo = selection.info;
+  let selectedWall = selectedWallInfo.wall;
+  let selectedWallIndex = selectedWallInfo.wallIndex;
+  let anchorWallHasDoorOrWalkthrough = selectedWallInfo.hasDoorOrWalkthrough;
+  let selectionReason = selection.reason;
 
-  // hasDoorOrWalkthrough is now reliable as "tier 4 fired" (tiers 1-3 all
-  // exclude door-having walls — see their own comments) — when true,
-  // prefer a deterministically-computed, door-clearance-aware segment over
-  // the wall-visibility extraction's own generic usableSegments guess.
-  // Falls back to bestSegment when no viable segment exists on either side
-  // of the door (rather than blocking the whole plan over it).
-  const doorClearSegment = selection.info.hasDoorOrWalkthrough
+  // Door-avoidance crop rescue (2026-08-30, real production feedback,
+  // job_15b17d81): tier 4 just picked a door/walkthrough wall as the
+  // physical anchor — the true last resort, reached only when nothing (not
+  // even a marginal 15% return wall) qualified. Before committing to that,
+  // look for ANY other wall that reaches the frame edge: its own footprint
+  // can be partially cropped out of frame, the same tolerance
+  // wallPartiallyVisible/FRAME_EDGE_EPSILON already grants elsewhere in
+  // this file. If one exists, anchor there instead and only ORIENT the
+  // item to face the door wall — never place it against the door wall
+  // itself. Deliberately NOT gated by MIN_WALL_FRAME_VISIBLE_WIDTH or
+  // MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH: a wall this rescue
+  // considers is EXPECTED to occupy little of the frame (that's exactly
+  // why it's croppable), so that floor would defeat the purpose here.
+  let faceDoorWallCropMode = false;
+  let facingDoorWallDoorIds: string[] | null = null;
+  const originalDoorWallIndex = selectedWallIndex;
+  if (anchorWallHasDoorOrWalkthrough) {
+    const cropRescueCandidates = walls
+      .map((w) => analyzeWallForTiers(baseline, w))
+      .filter((w) => {
+        if (w.wallIndex === originalDoorWallIndex) return false;
+        if (w.hasDoorOrWalkthrough) return false;
+        if (w.largestSegment < MIN_USABLE_FRACTION_FOR_ANCHOR) return false;
+        const { minX, maxX } = wallBBox(w.wall);
+        return maxX >= 1 - FRAME_EDGE_EPSILON || minX <= FRAME_EDGE_EPSILON;
+      });
+    if (cropRescueCandidates.length > 0) {
+      const picked = [...cropRescueCandidates].sort((a, b) => b.largestSegment - a.largestSegment)[0];
+      const doorIdsOnOriginalWall = baseline.openings
+        .filter((o) => o.wallIndex === originalDoorWallIndex && (o.type === "door" || o.type === "walkthrough"))
+        .map((o) => o.id);
+      faceDoorWallCropMode = true;
+      facingDoorWallDoorIds = doorIdsOnOriginalWall.length > 0 ? doorIdsOnOriginalWall : null;
+      selectionReason = `${selection.reason} — door-wall touch avoided: anchored instead to ${picked.wall.id} (${picked.wall.wallLabel}), a frame-edge wall that can be partially cropped, facing the item toward the door wall (wall_${originalDoorWallIndex}) rather than placing it against it.`;
+      selectedWallInfo = picked;
+      selectedWall = picked.wall;
+      selectedWallIndex = picked.wallIndex;
+      anchorWallHasDoorOrWalkthrough = false;
+    }
+  }
+
+  const bestSegment = [...selectedWall.usableSegments].sort((a, b) => b.widthFraction - a.widthFraction)[0];
+
+  // hasDoorOrWalkthrough is now reliable as "tier 4 fired, crop rescue did
+  // NOT find an alternative" (tiers 1-3.5 all exclude door-having walls,
+  // and the crop rescue above already re-pointed selectedWall away from
+  // the door wall whenever it found one) — when true, prefer a
+  // deterministically-computed, door-clearance-aware segment over the
+  // wall-visibility extraction's own generic usableSegments guess. Falls
+  // back to bestSegment when no viable segment exists on either side of
+  // the door (rather than blocking the whole plan over it).
+  const doorClearSegment = anchorWallHasDoorOrWalkthrough
     ? computeDoorClearSegment(baseline, selectedWall, selectedWallIndex)
     : null;
   const anchorSegmentDescription = doorClearSegment?.segmentDescription ?? bestSegment.description;
 
-  // Orientation: prefer a focal opening (window > door) not on the anchor's
+  // Orientation: when the crop rescue fired, force the facing target to be
+  // the door/walkthrough on the wall being avoided — that's the entire
+  // point of this mode, not the usual window > door priority search.
+  // Otherwise, prefer a focal opening (window > door) not on the anchor's
   // own wall; fall back to whatever's available.
   let focalFeatureId: string | null = null;
   let focalFeatureType: string | null = null;
   let focalFeatureWallIndex: number | null = null;
+  if (faceDoorWallCropMode) {
+    const doorOnFacedWall = baseline.openings.find(
+      (o) => o.wallIndex === originalDoorWallIndex && (o.type === "door" || o.type === "walkthrough")
+    );
+    if (doorOnFacedWall) {
+      focalFeatureId = doorOnFacedWall.id;
+      focalFeatureType = doorOnFacedWall.type;
+      focalFeatureWallIndex = doorOnFacedWall.wallIndex;
+    }
+  }
   for (const focalType of FOCAL_OPENING_TYPE_PRIORITY) {
+    if (focalFeatureId) break;
     const candidates = baseline.openings.filter((o) => o.type === focalType);
     const offAnchorWall = candidates.filter((o) => o.wallIndex !== selectedWallIndex);
     const pick = offAnchorWall[0] || candidates[0];
@@ -1032,7 +1196,7 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
   const focalFeatureWallDescription = focalFeatureWall ? describeWallFramePosition(focalFeatureWall) : null;
   const anchorOrientationInstruction = config.buildOrientationInstruction(focalFeatureId, focalFeatureType, focalFeatureWallDescription);
 
-  const anchorWallDescription = describeWallForPrompt(selection.info);
+  const anchorWallDescription = describeWallForPrompt(selectedWallInfo);
 
   const { minX, maxX } = wallBBox(selectedWall);
   const touchesRight = maxX >= 1 - FRAME_EDGE_EPSILON;
@@ -1064,9 +1228,11 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
     wallPartiallyVisible,
     noDecorAboveBedNote,
     confidence: Math.min(selectedWall.confidence, 0.9),
-    selectionReason: `${selection.reason} (clear segment: "${anchorSegmentDescription}", ${selection.info.largestSegment.toFixed(3)} >= ${MIN_USABLE_FRACTION_FOR_ANCHOR} size floor.)${doorClearSegment ? ` [door-clearance-computed segment, excludes ${doorClearSegment.doorIds.join("/")} plus circulation buffer]` : ""}`,
-    anchorWallHasDoorOrWalkthrough: selection.info.hasDoorOrWalkthrough,
-    doorAccessDoorIds: doorClearSegment?.doorIds ?? (selection.info.hasDoorOrWalkthrough ? baseline.openings.filter((o) => o.wallIndex === selectedWallIndex && (o.type === "door" || o.type === "walkthrough")).map((o) => o.id) : null),
+    selectionReason: `${selectionReason} (clear segment: "${anchorSegmentDescription}", ${selectedWallInfo.largestSegment.toFixed(3)} >= ${MIN_USABLE_FRACTION_FOR_ANCHOR} size floor.)${doorClearSegment ? ` [door-clearance-computed segment, excludes ${doorClearSegment.doorIds.join("/")} plus circulation buffer]` : ""}`,
+    anchorWallHasDoorOrWalkthrough,
+    doorAccessDoorIds: doorClearSegment?.doorIds ?? (anchorWallHasDoorOrWalkthrough ? baseline.openings.filter((o) => o.wallIndex === selectedWallIndex && (o.type === "door" || o.type === "walkthrough")).map((o) => o.id) : null),
+    faceDoorWallCropMode,
+    facingDoorWallDoorIds,
   };
 }
 
@@ -2143,7 +2309,7 @@ function buildBedroomPrompt(
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
   const noDecorLine = plan.noDecorAboveBedNote ? `\n* ${plan.noDecorAboveBedNote}` : "";
-  const doorAccessSection = buildDoorAccessRequirementSection(plan, "bed", ["bedside tables"]);
+  const doorAccessSection = buildDoorAccessRequirementSection(plan, "bed", ["bedside tables"]) || buildFaceAwayFromDoorInstructionSection(plan, "bed");
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   const anchorWallFeaturesSection =
@@ -2190,7 +2356,7 @@ function buildStudyPrompt(
   }
 
   const framingLine = plan.anchorFramingNote ? ` ${plan.anchorFramingNote}` : "";
-  const doorAccessSection = buildDoorAccessRequirementSection(plan, "desk", ["the desk chair"]);
+  const doorAccessSection = buildDoorAccessRequirementSection(plan, "desk", ["the desk chair"]) || buildFaceAwayFromDoorInstructionSection(plan, "desk");
 
   const coLocatedFeatures = describeCoLocatedFeatures(baseline, plan.anchorWallIndex);
   const anchorWallFeaturesSection =

@@ -50,7 +50,7 @@
 // openingPreservationValidator.ts) — always Gemini, independent of
 // STAGE2_VALIDATOR_MODEL, exactly like that existing baseline extraction is
 // always Gemini regardless of which model later validates the staged image.
-import { vDetailLog } from "../logger";
+import { vDetailLog, nLog } from "../logger";
 import { getGeminiClient } from "../ai/gemini";
 import { toBase64 } from "../utils/images";
 import { logGeminiUsage } from "../ai/usageTelemetry";
@@ -379,6 +379,58 @@ export function classifySeamVisible(text: string): ClassifiedSignal {
 
 export type FlooringVerdict = "preserved" | "material_changed" | "boundary_lost";
 
+// ── Staging-occlusion rescue (2026-08-30, real production feedback:
+// job_71d4afb2 / Living_07.jpg — the exact image this file's own header
+// above cites as the case that motivated building this check at all) ──
+// This check's zone bboxes are extracted once from the BASELINE image and
+// re-applied to the same screen-space region in the STAGED image. Real
+// staging routinely places a rug/runner or furniture (a dining table and
+// its chairs) directly over or in front of a flooring zone or its boundary
+// as completely normal, correct staging — that is the floor being covered
+// by a legitimately staged item, not a floor material change, the same
+// class of false positive openingOcclusionGuard.ts's curtain/plant/
+// furniture keyword guard exists to catch on the openings side (different
+// domain, same underlying bug: a locate-and-describe check has no way to
+// tell "the material really changed" apart from "a staged item now sits on
+// top of it" unless something explicitly looks for the second case).
+//
+// Two real, confirmed production cases, both from the SAME job's two
+// attempts, both boundary_lost verdicts: attempt 1's own boundaryDescription
+// text — "...one continuous dark speckled carpet surface (plus the dining
+// RUG on top)..." — and attempt 2's own text — "...the speckled carpet now
+// appears to run continuously under the dining TABLE and CHAIRS..." — both
+// explicitly name the very staged item sitting over the zone, in the same
+// sentence reporting the "loss." Confirmed by direct visual inspection (not
+// just the log text) that attempt 2's linoleum remains genuinely visible in
+// the same zone just beyond the table — only the occluded sub-area reads as
+// changed.
+//
+// Scoped to "boundary_lost" only, not "material_changed": both real cases
+// were boundary_lost, and a materialDescription answer that itself insists
+// the material AT THIS LOCATION now looks different is a more direct claim
+// than "the seam isn't visible" — one this rescue should not blanket-
+// suppress on a keyword match alone without a second confirming case.
+// Word-boundary matched, not substring — "mat" as a bare .includes() check
+// would false-positive on "material", which appears constantly in this
+// file's own vocabulary (confirmed while writing this fix's own tests).
+// Each entry allows an optional plural "s"/"es" — real captured text uses
+// plurals ("placed area rugs", "the dining table and chairs").
+const FLOORING_OCCLUSION_KEYWORDS: { label: string; pattern: RegExp }[] = [
+  { label: "rug", pattern: /\brugs?\b/ },
+  { label: "runner", pattern: /\brunners?\b/ },
+  { label: "mat", pattern: /\bmats?\b/ },
+  { label: "table", pattern: /\btables?\b/ },
+  { label: "chair", pattern: /\bchairs?\b/ },
+  { label: "sofa", pattern: /\bsofas?\b/ },
+  { label: "couch", pattern: /\bcouch(es)?\b/ },
+  { label: "ottoman", pattern: /\bottomans?\b/ },
+];
+
+function mentionsFlooringOcclusionCause(text: string): string[] {
+  const normalized = String(text || "").toLowerCase();
+  return FLOORING_OCCLUSION_KEYWORDS.filter((k) => k.pattern.test(normalized)).map((k) => k.label);
+}
+
 export type FlooringZoneCombinedResult = {
   id: string;
   materialDescription: string;
@@ -393,6 +445,14 @@ export type FlooringZoneCombinedResult = {
     material: ClassifiedSignal;
     boundary: ClassifiedSignal | null;
   };
+  // Non-empty only when the staging-occlusion rescue above fired — a
+  // boundary_lost verdict that would otherwise hard-fail was downgraded to
+  // "preserved" because the model's own boundaryDescription named a staged
+  // item (rug/table/chairs/etc.) sitting over the zone. Kept on the result
+  // (rather than silently vanishing) so this stays inspectable/loggable,
+  // matching this codebase's established never-discard-the-audit-trail
+  // discipline.
+  occlusionRescueKeywords: string[];
 };
 
 export function combineFlooringObservation(
@@ -408,12 +468,18 @@ export function combineFlooringObservation(
 
   let altered = false;
   let verdict: FlooringVerdict = "preserved";
+  let occlusionRescueKeywords: string[] = [];
   if (!materialMatchesOriginalZone) {
     altered = true;
     verdict = "material_changed";
   } else if (multiZone && seamStillVisibleAnywhere === false) {
-    altered = true;
-    verdict = "boundary_lost";
+    const occlusionHints = mentionsFlooringOcclusionCause(raw.boundaryDescription || "");
+    if (occlusionHints.length > 0) {
+      occlusionRescueKeywords = occlusionHints;
+    } else {
+      altered = true;
+      verdict = "boundary_lost";
+    }
   }
 
   const lowConfidence = material.confidence === "low" || (boundary ? boundary.confidence === "low" : false);
@@ -429,6 +495,7 @@ export function combineFlooringObservation(
     verdict,
     rawObservation: raw,
     classification: { material, boundary },
+    occlusionRescueKeywords,
   };
 }
 
@@ -481,6 +548,18 @@ export async function runFlooringBoundaryCheck(
   });
 
   const alteredZones = itemResults.filter((r) => r.altered);
+
+  const rescuedZones = itemResults.filter((r) => r.occlusionRescueKeywords.length > 0);
+  for (const z of rescuedZones) {
+    nLog("[FLOORING_OCCLUSION_RESCUE_APPLIED]", {
+      jobId: ctx.jobId,
+      imageId: ctx.imageId,
+      zoneId: z.id,
+      matchedKeywords: z.occlusionRescueKeywords,
+      boundaryDescription: z.rawObservation.boundaryDescription,
+      action: "downgraded_boundary_lost_to_preserved",
+    });
+  }
 
   const structuredIssues: StructuredIssue[] = alteredZones.length === 0
     ? []

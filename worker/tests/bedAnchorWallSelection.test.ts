@@ -262,14 +262,67 @@ describe("planBedroomAnchor — wall selection scenario matrix", () => {
     const plan = planBedroomAnchor(baseline, walls);
     // Sliding door preferred over hinged within tier 4.
     expect(plan!.anchorWallId).toBe("wall_1");
-    expect(plan!.selectionReason).toMatch(/^tier 4:/);
+    expect(plan!.selectionReason).toMatch(/^tier 4 \(last resort\):/);
     expect(plan!.doorAccessDoorIds).toEqual(["D2"]);
-    // Mandatory clearance: D2 sits wall-relative [0.1, 0.4] on wall_1
-    // (bbox [0.55,0.7] minus wall_1's own [0.5,1] origin), so the
-    // computed segment must exclude it, not just report the wall's own
-    // generic "Clear wall space" default.
-    expect(plan!.anchorSegmentDescription).not.toBe("Clear wall space.");
-    expect(plan!.anchorSegmentDescription).toMatch(/right of D2/);
+  });
+
+  // Real production feedback (job_15b17d81, 2026-08-30): a return wall
+  // that failed the old 0.25/new 0.20 floor was discarded outright, forcing
+  // the plan onto a door wall — which reliably produced a hard validator
+  // fail downstream (Gemini covering or infilling the door). Explicit
+  // product direction: prefer even a fairly marginal (>= 0.15) non-door
+  // wall over ANY door wall.
+  it("door-avoidance rescue (tier 3.5): a marginal 18%-of-frame return wall beats an available door wall", () => {
+    const baseline: StructuralBaseline = {
+      openings: [makeDoor({ id: "D1", wallIndex: 1, bbox: [0.2, 0, 0.35, 1] })],
+      anchorFixtures: [makeFixture({ id: "AC1", wallIndex: 0, bbox: [0.4, 0.05, 0.6, 0.15] })],
+    };
+    const walls: WallVisibilityWall[] = [
+      makeWall("wall_0", "Marginal return wall", [0, 0.18], ["AC1"]), // 18% of frame — below the 0.20 main floor, above the 0.15 rescue floor
+      makeWall("wall_1", "Door wall", [0.18, 1], ["D1"]),
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan!.anchorWallId).toBe("wall_0");
+    expect(plan!.selectionReason).toMatch(/^tier 3\.5 \(door-avoidance rescue\):/);
+  });
+
+  it("door-avoidance rescue (tier 3.5): a marginal blank wall still beats a marginal plain return wall, same priority order as tiers 1-3", () => {
+    const baseline: StructuralBaseline = {
+      openings: [makeDoor({ id: "D1", wallIndex: 2, bbox: [0.7, 0, 0.85, 1] })],
+      anchorFixtures: [makeFixture({ id: "AC1", wallIndex: 1, bbox: [0.4, 0.05, 0.5, 0.15] })],
+    };
+    const walls: WallVisibilityWall[] = [
+      makeWall("wall_0", "Marginal blank wall", [0, 0.17], []), // blank, 17% of frame
+      makeWall("wall_1", "Marginal return wall", [0.17, 0.35], ["AC1"]), // plain, 18% of frame
+      makeWall("wall_2", "Door wall", [0.35, 1], ["D1"]),
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan!.anchorWallId).toBe("wall_0");
+    expect(plan!.selectionReason).toMatch(/^tier 3\.5 \(door-avoidance rescue\):/);
+  });
+
+  it("below even the door-avoidance floor (< 15%) AND not touching a frame edge, a door wall is still selected as genuine last resort", () => {
+    // wall_1 (the marginal return wall) deliberately sits in the MIDDLE of
+    // the frame, touching neither edge — it must fail both the door-
+    // avoidance floor (12% < 15%) AND the crop-rescue's frame-edge test,
+    // unlike the crop-rescue tests below where the marginal wall starts at
+    // the frame's own edge (x=0) and is croppable regardless of width.
+    const baseline: StructuralBaseline = {
+      openings: [
+        makeDoor({ id: "D1", wallIndex: 0, bbox: [0.05, 0, 0.2, 1] }),
+        makeDoor({ id: "D2", wallIndex: 2, bbox: [0.7, 0, 0.85, 1] }),
+      ],
+      anchorFixtures: [makeFixture({ id: "AC1", wallIndex: 1, bbox: [0.46, 0.05, 0.5, 0.15] })],
+    };
+    const walls: WallVisibilityWall[] = [
+      makeWall("wall_0", "Door wall (left)", [0, 0.44], ["D1"]),
+      makeWall("wall_1", "Too-thin, non-edge return wall", [0.44, 0.56], ["AC1"]), // 12% of frame, touches neither edge
+      makeWall("wall_2", "Door wall (right)", [0.56, 1], ["D2"]),
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan!.anchorWallHasDoorOrWalkthrough).toBe(true);
+    expect(plan!.faceDoorWallCropMode).toBe(false);
+    expect(plan!.selectionReason).toMatch(/^tier 4 \(last resort\):/);
   });
 
   it("door+window wall vs window-only wall -> the window-only wall wins", () => {
@@ -290,11 +343,11 @@ describe("planBedroomAnchor — wall selection scenario matrix", () => {
     expect(plan!.selectionReason).toMatch(/^tier 2:/);
   });
 
-  it("a wall at exactly the 25% frame-visibility boundary is accepted, not incorrectly rejected", () => {
+  it("a wall at exactly the 20% frame-visibility boundary is accepted, not incorrectly rejected", () => {
     const baseline: StructuralBaseline = { openings: [], anchorFixtures: [] };
     const walls: WallVisibilityWall[] = [
-      makeWall("wall_0", "Just-too-narrow blank wall", [0, 0.2], []), // 20% — below floor
-      makeWall("wall_1", "Exactly-at-floor blank wall", [0.2, 0.45], []), // exactly 25%
+      makeWall("wall_0", "Just-too-narrow blank wall", [0, 0.19], []), // 19% — below floor
+      makeWall("wall_1", "Exactly-at-floor blank wall", [0.2, 0.4], []), // exactly 20%
     ];
     const plan = planBedroomAnchor(baseline, walls);
     expect(plan).not.toBeNull();
@@ -317,5 +370,68 @@ describe("planBedroomAnchor — wall selection scenario matrix", () => {
     const plan = planBedroomAnchor(baseline, walls);
     expect(plan!.anchorWallId).toBe("wall_1");
     expect(plan!.selectionReason).toMatch(/^tier 1:/);
+  });
+});
+
+// Real production feedback (job_15b17d81, 2026-08-30, follow-up): staging
+// directly against a door wall reliably produces a hard validator fail
+// (Gemini covers or infills the door). When even the door-avoidance rescue
+// (tier 3.5) finds nothing, prefer anchoring to a frame-edge wall (croppable,
+// regardless of how little of the frame it occupies) and only ORIENT the
+// item to face the door wall, rather than ever placing it against one.
+describe("planBedroomAnchor — door-avoidance crop rescue (face the door wall, don't anchor to it)", () => {
+  it("anchors to a frame-edge wall and orients the bed to face the door wall, instead of anchoring to the door wall itself", () => {
+    const baseline: StructuralBaseline = {
+      openings: [makeDoor({ id: "D1", wallIndex: 1, bbox: [0.3, 0, 0.45, 1] })],
+      anchorFixtures: [],
+    };
+    const walls: WallVisibilityWall[] = [
+      // Touches the left frame edge (minX = 0) — croppable regardless of
+      // its own frame-visible width, which fails both the 0.20 and 0.15
+      // floors here (10%).
+      makeWall("wall_0", "Sliver wall at frame edge", [0, 0.1], []),
+      makeWall("wall_1", "Door wall", [0.1, 1], ["D1"]),
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan).not.toBeNull();
+    expect(plan!.anchorWallId).toBe("wall_0");
+    expect(plan!.anchorWallHasDoorOrWalkthrough).toBe(false);
+    expect(plan!.faceDoorWallCropMode).toBe(true);
+    expect(plan!.facingDoorWallDoorIds).toEqual(["D1"]);
+    expect(plan!.selectionReason).toMatch(/door-wall touch avoided/);
+    // The orientation instruction must point at the door being faced, not
+    // a generic "no focal opening" fallback or an unrelated window.
+    expect(plan!.anchorOrientationInstruction).toContain("D1");
+  });
+
+  it("does not fire when the anchor wall has no door at all (tiers 1-3.5 already succeeded)", () => {
+    const baseline: StructuralBaseline = { openings: [], anchorFixtures: [] };
+    const walls: WallVisibilityWall[] = [makeWall("wall_0", "Blank wall", [0, 0.5], [])];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan!.faceDoorWallCropMode).toBe(false);
+    expect(plan!.facingDoorWallDoorIds).toBeNull();
+  });
+
+  it("falls back to genuine tier 4 (anchored to the door wall) when no other wall touches a frame edge either", () => {
+    // Both non-door walls sit in the middle of the frame, touching
+    // neither edge — nothing is croppable, so the crop rescue must not
+    // apply and the door wall itself must be selected as last resort.
+    const baseline: StructuralBaseline = {
+      openings: [
+        makeDoor({ id: "D1", wallIndex: 0, bbox: [0.02, 0, 0.15, 1] }),
+        makeDoor({ id: "D2", wallIndex: 2, bbox: [0.85, 0, 0.98, 1] }),
+      ],
+      anchorFixtures: [],
+    };
+    const walls: WallVisibilityWall[] = [
+      makeWall("wall_0", "Door wall (left, touches left edge)", [0, 0.45], ["D1"]),
+      // 10% of frame, touching neither edge — must fail the crop rescue's
+      // edge test (and, incidentally, both frame-visibility floors too).
+      makeWall("wall_1", "Middle wall (touches neither edge)", [0.45, 0.55], []),
+      makeWall("wall_2", "Door wall (right, touches right edge)", [0.55, 1], ["D2"]),
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan!.anchorWallHasDoorOrWalkthrough).toBe(true);
+    expect(plan!.faceDoorWallCropMode).toBe(false);
   });
 });
