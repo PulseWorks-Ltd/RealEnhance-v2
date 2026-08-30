@@ -528,6 +528,15 @@ type AnchorPlan = {
   // The door/walkthrough id(s) on the wall being faced (not anchored to)
   // when faceDoorWallCropMode is true — null otherwise.
   facingDoorWallDoorIds: string[] | null;
+  // Which frame edge the crop-rescue anchor wall touches, when
+  // faceDoorWallCropMode is true — null otherwise. Tells the prompt which
+  // direction is safe for any part of the item that doesn't fit within
+  // this wall's own (deliberately narrow) visible width to extend toward:
+  // further off-camera past this edge, never back into the room toward
+  // the door wall being faced. Real regression this closes (job_9f092878):
+  // without this, the model drew a normal-width bed that bled the WRONG
+  // way, back across the room into the protected walkthrough.
+  cropDirection: "left" | "right" | null;
 };
 
 // Position phrase from the wall's own bounding box in frame — independent
@@ -1071,6 +1080,21 @@ function buildFaceAwayFromDoorInstructionSection(plan: AnchorPlan, itemLabel: st
   const doorIds = plan.facingDoorWallDoorIds;
   const doorList = doorIds.length === 1 ? doorIds[0] : doorIds.join(" and ");
   const isPlural = doorIds.length > 1;
+  // Real regression this closes (job_9f092878, 2026-08-30): the anchor
+  // wall here is often a deliberately narrow, frame-edge sliver — by
+  // design (see MIN_CROP_RESCUE_FRAME_VISIBLE_WIDTH's own comment), this
+  // mode is meant to be tried even when most of a full-size item cannot
+  // fit within the wall's own visible width. Without an explicit
+  // direction, the generated image drew a normal-width bed that
+  // overflowed the WRONG way, back across the room and across the corner
+  // into the walkthrough this whole mode exists to protect. This section
+  // states plainly that most of the item being off-frame is EXPECTED and
+  // correct here, not a failure to fix by making the item smaller or
+  // moving it — the only wrong outcome is crossing the corner into the
+  // door wall.
+  const overflowLine = plan.cropDirection
+    ? `\n\nThis anchor wall is only narrowly visible in the frame — most of the ${itemLabel}'s width is expected to fall outside the visible frame here, and that is CORRECT, not an error to fix. Any part of the ${itemLabel} that does not fit within this wall's own visible width must extend further toward the ${plan.cropDirection} edge of the frame (off-camera, cropped, unverifiable — this is fine). It must NOT extend back into the room, and it must NOT cross the corner where this wall meets ${doorList}'s wall — do not let the ${itemLabel} appear on the other side of that corner at all.`
+    : "";
   return `
 
 FACING WALL — DO NOT ANCHOR TO IT (must be followed exactly)
@@ -1081,7 +1105,7 @@ The ${itemLabel} must NOT be physically placed against, touching, or positioned 
 
 ${doorList} ${isPlural ? "are protected circulation routes" : "is a protected circulation route"} and MUST remain completely open, unobstructed, and untouched by the ${itemLabel} or any other staged furniture.
 
-Preserve the existing doorway position, opening, width, swing, and surrounding wall geometry exactly as shown in the original photo.`;
+Preserve the existing doorway position, opening, width, swing, and surrounding wall geometry exactly as shown in the original photo.${overflowLine}`;
 }
 
 function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilityWall[], config: SingleAnchorItemConfig): AnchorPlan | null {
@@ -1112,10 +1136,35 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
   // wallPartiallyVisible/FRAME_EDGE_EPSILON already grants elsewhere in
   // this file. If one exists, anchor there instead and only ORIENT the
   // item to face the door wall — never place it against the door wall
-  // itself. Deliberately NOT gated by MIN_WALL_FRAME_VISIBLE_WIDTH or
-  // MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH: a wall this rescue
-  // considers is EXPECTED to occupy little of the frame (that's exactly
-  // why it's croppable), so that floor would defeat the purpose here.
+  // itself.
+  //
+  // REGRESSION FIX (2026-08-30, follow-up, job_9f092878 — same room as
+  // job_15b17d81 above, re-tested after this rescue shipped): the first
+  // version of this rescue had NO minimum width at all — it accepted
+  // wall_2 at 0.090 frame-visible width purely because it touched the
+  // frame edge. Confirmed by direct visual inspection of both attempts'
+  // outputs: Gemini did not actually confine the bed to that 9% sliver —
+  // it drew a normal, plausible-width bed spanning across into wall_1's
+  // territory instead, which is exactly the walkthrough opening this
+  // whole mechanism exists to protect (openingValidator confirmed:
+  // "No doorway or opening is visible in this region... occupied by the
+  // right portion of a grey upholstered bed headboard").
+  //
+  // PRODUCT DECISION (2026-08-30, explicit direction, same day): the fix
+  // is NOT a conservative width floor — a photo framed from a corner that
+  // leaves only a sliver of non-door wall visible is a photographer/
+  // framing limitation, not a case this system should respond to by
+  // falling back to touching a door wall. The floor below exists only to
+  // reject a near-zero/likely-noise measurement (a wall reported at, say,
+  // 1-2% is more plausibly an extraction artifact than a real usable
+  // sliver) — it is NOT tuned to "wide enough for a bed to definitely
+  // fit," which the frame-edge crop allowance explicitly does not
+  // guarantee anyway. The real fix for the observed failure is the
+  // explicit overflow-direction instruction in
+  // buildFaceAwayFromDoorInstructionSection below (which did not exist
+  // yet when the 0.090 case failed) — this floor is deliberately
+  // permissive, not the safeguard.
+  const MIN_CROP_RESCUE_FRAME_VISIBLE_WIDTH = 0.05;
   let faceDoorWallCropMode = false;
   let facingDoorWallDoorIds: string[] | null = null;
   const originalDoorWallIndex = selectedWallIndex;
@@ -1126,6 +1175,7 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
         if (w.wallIndex === originalDoorWallIndex) return false;
         if (w.hasDoorOrWalkthrough) return false;
         if (w.largestSegment < MIN_USABLE_FRACTION_FOR_ANCHOR) return false;
+        if (w.frameVisibleWidth < MIN_CROP_RESCUE_FRAME_VISIBLE_WIDTH) return false;
         const { minX, maxX } = wallBBox(w.wall);
         return maxX >= 1 - FRAME_EDGE_EPSILON || minX <= FRAME_EDGE_EPSILON;
       });
@@ -1205,6 +1255,7 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
   const anchorFramingNote = wallPartiallyVisible
     ? `${anchorWallDescription} is only partially visible in the frame (truncated at the ${touchesRight ? "right" : "left"} edge). Edge-cropped placement is acceptable.`
     : null;
+  const cropDirection: "left" | "right" | null = faceDoorWallCropMode && wallPartiallyVisible ? (touchesRight ? "right" : "left") : null;
 
   // A wall that's cropped by the frame edge can't be fully verified —
   // whatever's just off-frame (another opening, a fixture) isn't visible
@@ -1233,6 +1284,7 @@ function planSingleAnchorWall(baseline: StructuralBaseline, walls: WallVisibilit
     doorAccessDoorIds: doorClearSegment?.doorIds ?? (anchorWallHasDoorOrWalkthrough ? baseline.openings.filter((o) => o.wallIndex === selectedWallIndex && (o.type === "door" || o.type === "walkthrough")).map((o) => o.id) : null),
     faceDoorWallCropMode,
     facingDoorWallDoorIds,
+    cropDirection,
   };
 }
 

@@ -376,9 +376,16 @@ describe("planBedroomAnchor — wall selection scenario matrix", () => {
 // Real production feedback (job_15b17d81, 2026-08-30, follow-up): staging
 // directly against a door wall reliably produces a hard validator fail
 // (Gemini covers or infills the door). When even the door-avoidance rescue
-// (tier 3.5) finds nothing, prefer anchoring to a frame-edge wall (croppable,
-// regardless of how little of the frame it occupies) and only ORIENT the
-// item to face the door wall, rather than ever placing it against one.
+// (tier 3.5) finds nothing, prefer anchoring to a frame-edge wall — gated
+// by only a permissive MIN_CROP_RESCUE_FRAME_VISIBLE_WIDTH (0.05), per
+// explicit product direction: a photo framed to leave only a sliver of
+// non-door wall visible is a framing limitation, not a reason to fall back
+// to a door wall. A follow-up regression (job_9f092878, real 9%-of-frame
+// wall) confirmed the actual failure mode isn't "the wall was too narrow"
+// but "the model wasn't told which direction the overflow must go" — fixed
+// in buildFaceAwayFromDoorInstructionSection, not by rejecting narrow
+// walls. The floor only exists to reject near-zero/likely-noise
+// measurements (covered separately further down).
 describe("planBedroomAnchor — door-avoidance crop rescue (face the door wall, don't anchor to it)", () => {
   it("anchors to a frame-edge wall and orients the bed to face the door wall, instead of anchoring to the door wall itself", () => {
     const baseline: StructuralBaseline = {
@@ -386,22 +393,67 @@ describe("planBedroomAnchor — door-avoidance crop rescue (face the door wall, 
       anchorFixtures: [],
     };
     const walls: WallVisibilityWall[] = [
-      // Touches the left frame edge (minX = 0) — croppable regardless of
-      // its own frame-visible width, which fails both the 0.20 and 0.15
-      // floors here (10%).
-      makeWall("wall_0", "Sliver wall at frame edge", [0, 0.1], []),
-      makeWall("wall_1", "Door wall", [0.1, 1], ["D1"]),
+      // Touches the left frame edge (minX = 0) — croppable, and clears the
+      // 0.05 crop-rescue floor (13%) while still failing both the 0.20 and
+      // 0.15 floors above it.
+      makeWall("wall_0", "Sliver wall at frame edge", [0, 0.13], []),
+      makeWall("wall_1", "Door wall", [0.13, 1], ["D1"]),
     ];
     const plan = planBedroomAnchor(baseline, walls);
     expect(plan).not.toBeNull();
     expect(plan!.anchorWallId).toBe("wall_0");
     expect(plan!.anchorWallHasDoorOrWalkthrough).toBe(false);
     expect(plan!.faceDoorWallCropMode).toBe(true);
+    expect(plan!.cropDirection).toBe("left");
     expect(plan!.facingDoorWallDoorIds).toEqual(["D1"]);
     expect(plan!.selectionReason).toMatch(/door-wall touch avoided/);
     // The orientation instruction must point at the door being faced, not
     // a generic "no focal opening" fallback or an unrelated window.
     expect(plan!.anchorOrientationInstruction).toContain("D1");
+  });
+
+  it("job_9f092878's real geometry (9%-of-frame sliver wall): the crop rescue now DOES use it — a real, non-noise sliver beats touching a door wall, per explicit product direction", () => {
+    // Real captured geometry: wall_2 ("Far-right wall") measured 0.090
+    // frame-visible width, touching the right frame edge, with wall_1 (a
+    // frameless walkthrough) immediately to its left. The 0.090 case
+    // originally hard-failed because the generated bed bled the wrong way
+    // (left, into the walkthrough) — fixed not by rejecting this wall
+    // (MIN_CROP_RESCUE_FRAME_VISIBLE_WIDTH is deliberately permissive, see
+    // its own comment) but by buildFaceAwayFromDoorInstructionSection's
+    // explicit overflow-direction and corner-crossing instructions below.
+    const baseline: StructuralBaseline = {
+      openings: [
+        makeDoor({ id: "SD1", wallIndex: 0, bbox: [0.02, 0, 0.35, 1], paneStructure: "sliding_panel" }),
+        makeDoor({ id: "A1", wallIndex: 1, bbox: [0.55, 0, 0.91, 1] }),
+      ],
+      anchorFixtures: [],
+    };
+    const walls: WallVisibilityWall[] = [
+      makeWall("wall_0", "Front wall (sliding door)", [0, 0.55], ["SD1"]),
+      makeWall("wall_1", "Right wall (walkthrough)", [0.55, 0.91], ["A1"]),
+      makeWall("wall_2", "Far-right wall", [0.91, 1], []), // 9% of frame, touches right edge
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan).not.toBeNull();
+    expect(plan!.faceDoorWallCropMode).toBe(true);
+    expect(plan!.anchorWallId).toBe("wall_2");
+    expect(plan!.anchorWallHasDoorOrWalkthrough).toBe(false);
+    expect(plan!.cropDirection).toBe("right");
+  });
+
+  it("a near-zero measurement (1%, plausibly an extraction artifact) still falls through to genuine tier 4", () => {
+    const baseline: StructuralBaseline = {
+      openings: [makeDoor({ id: "D1", wallIndex: 0, bbox: [0.02, 0, 0.35, 1] })],
+      anchorFixtures: [],
+    };
+    const walls: WallVisibilityWall[] = [
+      makeWall("wall_0", "Door wall", [0, 0.99], ["D1"]),
+      makeWall("wall_1", "Sliver wall", [0.99, 1], []), // 1% of frame — below even the 0.05 floor
+    ];
+    const plan = planBedroomAnchor(baseline, walls);
+    expect(plan!.faceDoorWallCropMode).toBe(false);
+    expect(plan!.anchorWallHasDoorOrWalkthrough).toBe(true);
+    expect(plan!.anchorWallId).toBe("wall_0");
   });
 
   it("does not fire when the anchor wall has no door at all (tiers 1-3.5 already succeeded)", () => {
