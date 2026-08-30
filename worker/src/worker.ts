@@ -8616,6 +8616,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
     }
   }
+  // "Enhance Exterior Outlook" checkbox (reintroduced 2026-08-30 — ported
+  // from opening-validator-and-stage-2-prompt-amendments, deliberately
+  // excluding that lineage's later Grok-Stage1A-generator experiment).
+  // Brightens the exterior visible through windows/doors on INTERIOR
+  // shots only — see stage1A.ts's own gating on effectiveSceneType.
+  const stage1ASunnyExteriorEnabled = strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
   await safeWriteJobStatus(
@@ -8637,6 +8643,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     },
     () => runStage1A(canonicalPath, {
       replaceSky: safeReplaceSky,
+      enhanceExteriorSky: stage1ASunnyExteriorEnabled,
       declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
       sceneType: stage1ASceneLabel,
       interiorProfile: ((): any => {

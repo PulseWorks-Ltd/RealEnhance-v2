@@ -175,6 +175,7 @@ export interface EnhanceJobPayload {
     roomType: RoomType | string;
     sceneType: string | "auto";
     replaceSky?: boolean;  // Sky replacement toggle (auto-enabled for exterior)
+    enhanceExteriorSky?: boolean;  // "Enhance Exterior Outlook" checkbox — brightens the exterior visible through windows/doors on interior shots (see stage1A.ts)
     stagingStyle?: string;  // Staging style (defaults to standard_listing)
     declutterMode?: DeclutterMode;  // Light declutter or structured-retain declutter
     // Optional tuning controls

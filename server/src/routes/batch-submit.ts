@@ -32,6 +32,7 @@ interface BatchUploadRequest {
       virtualStage?: boolean;
       stagingStyle?: string;
       replaceSky?: boolean;
+      enhanceExteriorSky?: boolean;
     };
   }>;
 }
@@ -120,7 +121,8 @@ router.post('/submit-disabled-ref', async (req, res) => {
           declutterMode,
           virtualStage,
           stagingStyle: image.options.stagingStyle,
-          replaceSky: image.options.replaceSky
+          replaceSky: image.options.replaceSky,
+          enhanceExteriorSky: !!image.options.enhanceExteriorSky
         }
       }, jobId);
 
