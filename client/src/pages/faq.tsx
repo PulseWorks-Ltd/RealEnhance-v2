@@ -1,43 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { ChevronDown, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const PAGE_TITLE = "FAQ – RealEnhance | AI Real Estate Photo Enhancement New Zealand";
 const PAGE_DESCRIPTION =
   "Everything New Zealand real estate agents need to know about RealEnhance — how it works, REA compliance, pricing, and more.";
-
-// No head-management library is used anywhere in this app (confirmed: no
-// react-helmet, no per-route <title> handling on any existing page) — this
-// is a small, dependency-free way to set this one page's title/meta
-// description and restore the previous values on unmount, rather than
-// pulling in a new library for a single page.
-function usePageMeta(title: string, description: string) {
-  useEffect(() => {
-    const previousTitle = document.title;
-    document.title = title;
-
-    let meta = document.querySelector('meta[name="description"]');
-    const previousContent = meta?.getAttribute("content") ?? null;
-    let createdMeta = false;
-    if (!meta) {
-      meta = document.createElement("meta");
-      meta.setAttribute("name", "description");
-      document.head.appendChild(meta);
-      createdMeta = true;
-    }
-    meta.setAttribute("content", description);
-
-    return () => {
-      document.title = previousTitle;
-      if (!meta) return;
-      if (createdMeta) {
-        meta.remove();
-      } else if (previousContent !== null) {
-        meta.setAttribute("content", previousContent);
-      }
-    };
-  }, [title, description]);
-}
 
 type FaqAnswer = {
   intro?: string;

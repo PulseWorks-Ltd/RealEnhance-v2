@@ -16,9 +16,11 @@ const MARKETING_NAV_LINKS = [
   { type: "route", href: "/", label: "Home" },
   { type: "anchor", href: "features", label: "Features" },
   { type: "anchor", href: "pricing", label: "Pricing" },
-  { type: "anchor", href: "examples", label: "Examples" },
+  { type: "route", href: "/examples", label: "Examples" },
   { type: "route", href: "/faq", label: "FAQ" },
 ] as const;
+
+const MARKETING_ROUTES = ["/", "/faq", "/examples"];
 
 export function Header() {
   const { user: authUser } = useAuth();
@@ -26,10 +28,10 @@ export function Header() {
   const location = useLocation();
   const isAuthed = !!authUser;
   const isLandingRoute = location.pathname === "/";
-  // The FAQ page shares the marketing header/nav treatment with the
-  // homepage rather than the narrower app-page header — it's part of the
-  // same public marketing site, not an in-app page.
-  const isMarketingRoute = isLandingRoute || location.pathname === "/faq";
+  // The FAQ and Examples pages share the marketing header/nav treatment
+  // with the homepage rather than the narrower app-page header — they're
+  // part of the same public marketing site, not in-app pages.
+  const isMarketingRoute = MARKETING_ROUTES.includes(location.pathname);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Show "Enhance Images" button when not on home page

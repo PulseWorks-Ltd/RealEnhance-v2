@@ -55,6 +55,7 @@ const AdminDashboard = lazyWithRetry(() => import("@/pages/admin"));
 const TermsPage      = lazyWithRetry(() => import("@/pages/terms"));
 const PrivacyPage    = lazyWithRetry(() => import("@/pages/privacy"));
 const FaqPage        = lazyWithRetry(() => import("@/pages/faq"));
+const ExamplesPage   = lazyWithRetry(() => import("@/pages/examples"));
 
 function PublicLayout() {
   return (
@@ -99,6 +100,7 @@ export default function App() {
             <Route path="/terms" element={<TermsPage />} />
             <Route path="/privacy" element={<PrivacyPage />} />
             <Route path="/faq" element={<FaqPage />} />
+            <Route path="/examples" element={<ExamplesPage />} />
             <Route path="/accept-invite" element={<AcceptInvite />} />
             <Route path="/auth/complete" element={<AuthComplete />} />
             <Route path="/start-trial" element={<StartTrial />} />

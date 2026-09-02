@@ -248,6 +248,13 @@ export default function Landing() {
             <p className="text-sm text-slate-500 mt-2">
               Click any example to try it with your own photos →
             </p>
+            <Link
+              to="/examples"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors"
+            >
+              See more before &amp; after examples
+              <ArrowRight className="w-4 h-4" />
+            </Link>
           </div>
 
           <div className="mt-10 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
