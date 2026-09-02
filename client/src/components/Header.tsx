@@ -5,15 +5,19 @@ import { useAuth } from "@/context/AuthContext";
 import { ProfileDropdown } from "@/components/profile-dropdown";
 import { withDevice } from "@/lib/withDevice";
 import { apiFetch } from "@/lib/api";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation, Link } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 
-const LANDING_NAV_LINKS = [
-  { href: "/", label: "Home" },
-  { href: "#features", label: "Features" },
-  { href: "#pricing", label: "Pricing" },
-  { href: "#examples", label: "Examples" },
-  { href: "#faq", label: "FAQ" },
+// "route" entries navigate to a real page (client-side, via react-router);
+// "anchor" entries jump to a section id on the landing page itself — when
+// not already on "/", they're prefixed with "/#" so they still resolve
+// (e.g. from /faq, "Pricing" correctly goes back to the homepage section).
+const MARKETING_NAV_LINKS = [
+  { type: "route", href: "/", label: "Home" },
+  { type: "anchor", href: "features", label: "Features" },
+  { type: "anchor", href: "pricing", label: "Pricing" },
+  { type: "anchor", href: "examples", label: "Examples" },
+  { type: "route", href: "/faq", label: "FAQ" },
 ] as const;
 
 export function Header() {
@@ -22,6 +26,10 @@ export function Header() {
   const location = useLocation();
   const isAuthed = !!authUser;
   const isLandingRoute = location.pathname === "/";
+  // The FAQ page shares the marketing header/nav treatment with the
+  // homepage rather than the narrower app-page header — it's part of the
+  // same public marketing site, not an in-app page.
+  const isMarketingRoute = isLandingRoute || location.pathname === "/faq";
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Show "Enhance Images" button when not on home page
@@ -31,17 +39,16 @@ export function Header() {
     navigate("/home");
   };
 
-  // Landing-page nav links + primary CTA are only shown on "/" for a
-  // logged-out visitor — the anchor links (#features etc.) only resolve on
-  // the landing page itself, and an authed user already has the app nav.
-  const showLandingNav = isLandingRoute && !isAuthed;
+  // Marketing nav links + primary CTA are only shown on marketing pages for
+  // a logged-out visitor — an authed user already has the app nav.
+  const showLandingNav = isMarketingRoute && !isAuthed;
 
   return (
     <header
       className="sticky top-0 z-50 border-b bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60"
       data-testid="header-main"
     >
-      <div className={isLandingRoute
+      <div className={isMarketingRoute
         ? "w-full flex items-center justify-between px-4 sm:px-6 lg:px-10 py-3"
         : "mx-auto max-w-7xl flex items-center justify-between px-4 py-3"}>
         {/* Brand */}
@@ -51,15 +58,25 @@ export function Header() {
 
         {showLandingNav && (
           <nav className="hidden md:flex items-center gap-7" aria-label="Main">
-            {LANDING_NAV_LINKS.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors"
-              >
-                {link.label}
-              </a>
-            ))}
+            {MARKETING_NAV_LINKS.map((link) =>
+              link.type === "route" ? (
+                <Link
+                  key={link.label}
+                  to={link.href}
+                  className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors"
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <a
+                  key={link.label}
+                  href={isLandingRoute ? `#${link.href}` : `/#${link.href}`}
+                  className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors"
+                >
+                  {link.label}
+                </a>
+              )
+            )}
           </nav>
         )}
 
@@ -126,16 +143,27 @@ export function Header() {
       {showLandingNav && mobileNavOpen && (
         <div className="md:hidden border-t bg-white px-4 py-4 space-y-3" data-testid="mobile-nav-panel">
           <nav className="flex flex-col gap-3" aria-label="Main (mobile)">
-            {LANDING_NAV_LINKS.map((link) => (
-              <a
-                key={link.label}
-                href={link.href}
-                onClick={() => setMobileNavOpen(false)}
-                className="text-sm font-medium text-slate-700 hover:text-emerald-700"
-              >
-                {link.label}
-              </a>
-            ))}
+            {MARKETING_NAV_LINKS.map((link) =>
+              link.type === "route" ? (
+                <Link
+                  key={link.label}
+                  to={link.href}
+                  onClick={() => setMobileNavOpen(false)}
+                  className="text-sm font-medium text-slate-700 hover:text-emerald-700"
+                >
+                  {link.label}
+                </Link>
+              ) : (
+                <a
+                  key={link.label}
+                  href={isLandingRoute ? `#${link.href}` : `/#${link.href}`}
+                  onClick={() => setMobileNavOpen(false)}
+                  className="text-sm font-medium text-slate-700 hover:text-emerald-700"
+                >
+                  {link.label}
+                </a>
+              )
+            )}
           </nav>
           <div className="flex flex-col gap-2 pt-2 border-t">
             <Button asChild variant="outline" className="border-brand-primary text-brand-primary w-full">

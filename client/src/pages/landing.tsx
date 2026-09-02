@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { ReactCompareSlider, ReactCompareSliderImage } from 'react-compare-slider';
 import {
   ShieldCheck,
@@ -162,33 +163,6 @@ export default function Landing() {
       icon: MapPin,
       title: 'NZ-focused',
       text: 'Pricing in NZD, support for local agents, and understanding of Trade Me / realestate.co.nz listing standards.',
-    },
-  ] as const;
-
-  const faqs = [
-    {
-      q: 'Is my original photo ever overwritten?',
-      a: 'No. Your original files are always preserved and can be downloaded or re-processed at any time — RealEnhance only ever works from a copy.',
-    },
-    {
-      q: 'Will RealEnhance change my listing’s structure?',
-      a: 'No. Every enhancement is checked by an automatic validator that blocks and flags any image where walls, windows, or the room’s true layout appear to have changed.',
-    },
-    {
-      q: 'Do I need a credit card to start?',
-      a: 'No credit card is required. You get 3 free images after sign-up and email confirmation.',
-    },
-    {
-      q: 'What happens if I run out of my monthly image allowance?',
-      a: 'You can purchase an additional image bundle at any time — bundle images are used automatically once your monthly allowance is exhausted.',
-    },
-    {
-      q: 'How many people from my agency can use one plan?',
-      a: 'Unlimited users are included on every monthly plan at no extra cost.',
-    },
-    {
-      q: 'Is payment secure?',
-      a: 'Yes. All payments are processed securely through Stripe — RealEnhance never stores your card details.',
     },
   ] as const;
 
@@ -527,28 +501,24 @@ export default function Landing() {
         </div>
       </section>
 
-      {/* 7. FAQ */}
-      <section id="faq" className="bg-white py-24 scroll-mt-20">
-        <div className="w-full px-4 sm:px-6 lg:px-10 max-w-3xl mx-auto">
-          <h2 className="text-2xl lg:text-3xl font-serif font-semibold text-slate-900 text-center mb-10">
-            Frequently asked questions
+      {/* 7. FAQ teaser — full FAQ now lives at its own page (/faq), linked
+          from the header nav and footer; this keeps a lightweight, non-
+          duplicated pointer to it here for scroll-through visitors. */}
+      <section className="bg-white py-16 text-center">
+        <div className="w-full px-4 sm:px-6 lg:px-10 max-w-2xl mx-auto">
+          <h2 className="text-xl lg:text-2xl font-serif font-semibold text-slate-900">
+            Got questions?
           </h2>
-          <div className="space-y-3">
-            {faqs.map((item) => (
-              <details
-                key={item.q}
-                className="group rounded-xl border border-slate-200 bg-white open:border-emerald-200 open:shadow-sm transition-colors"
-              >
-                <summary className="cursor-pointer list-none flex items-center justify-between gap-4 px-5 py-4 font-medium text-slate-900 text-sm sm:text-base">
-                  {item.q}
-                  <ArrowRight className="w-4 h-4 text-slate-400 shrink-0 transition-transform group-open:rotate-90" />
-                </summary>
-                <p className="px-5 pb-4 text-sm text-slate-600 leading-relaxed">
-                  {item.a}
-                </p>
-              </details>
-            ))}
-          </div>
+          <p className="mt-2 text-slate-600">
+            Read our full FAQ for details on compliance, pricing, and how RealEnhance works.
+          </p>
+          <Link
+            to="/faq"
+            className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-700 hover:text-emerald-800 transition-colors"
+          >
+            View the full FAQ
+            <ArrowRight className="w-4 h-4" />
+          </Link>
         </div>
       </section>
 

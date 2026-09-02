@@ -1,12 +1,6 @@
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 
 export function SiteFooter() {
-  const location = useLocation();
-  const isLandingRoute = location.pathname === "/";
-  // FAQ only has a real target on the landing page itself — elsewhere, send
-  // visitors to the landing page's FAQ section rather than a dead anchor.
-  const faqHref = isLandingRoute ? "#faq" : "/#faq";
-
   return (
     <footer className="border-t border-slate-200 bg-white">
       <div className="w-full px-4 sm:px-6 lg:px-10 py-8">
@@ -25,9 +19,9 @@ export function SiteFooter() {
             <a href="mailto:support@realenhance.co.nz" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">
               Contact
             </a>
-            <a href={faqHref} className="font-medium text-slate-600 transition-colors hover:text-emerald-700">
+            <Link to="/faq" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">
               FAQ
-            </a>
+            </Link>
           </nav>
         </div>
         <p className="mt-6 text-xs text-slate-400">
