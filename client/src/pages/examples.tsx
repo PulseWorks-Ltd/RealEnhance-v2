@@ -258,7 +258,10 @@ export default function ExamplesPage() {
               </p>
             </div>
 
-            <div className={`grid gap-8 ${cat.pairs.length > 1 ? "lg:grid-cols-2" : "grid-cols-1"}`}>
+            {/* Always stacked, one per row — a side-by-side grid squeezed
+                each comparison slider to half width, cutting off how much
+                of the actual photo was visible. */}
+            <div className="grid grid-cols-1 gap-8">
               {cat.pairs.map((pair, i) => (
                 <BeforeAfterPair key={pair.id} pair={pair} eager={catIndex === 0 && i === 0} />
               ))}
