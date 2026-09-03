@@ -161,7 +161,7 @@ const CATEGORIES: Category[] = [
 function BeforeAfterPair({ pair, eager }: { pair: ExamplePair; eager?: boolean }) {
   return (
     <figure className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-      <div className="h-80 sm:h-[26rem] bg-slate-100 p-3 sm:p-4">
+      <div className="h-[40rem] sm:h-[52rem] bg-slate-100 p-3 sm:p-4">
         <ReactCompareSlider
           className="h-full w-full rounded-lg overflow-hidden"
           itemOne={

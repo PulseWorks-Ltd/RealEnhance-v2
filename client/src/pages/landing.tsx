@@ -264,7 +264,7 @@ export default function Landing() {
                 href="/login"
                 className="group relative overflow-hidden rounded-xl border border-slate-200 bg-gradient-to-b from-white to-slate-50 shadow-sm hover:shadow-lg transition-all duration-200 hover:scale-[1.03]"
               >
-                <div className="relative h-72 bg-slate-100 p-4">
+                <div className="relative h-[36rem] bg-slate-100 p-4">
                   <ReactCompareSlider
                     className="h-full w-full"
                     itemOne={<ReactCompareSliderImage src={sample.beforeSrc} alt={`${sample.label} before`} className={landingSliderImageClassName} />}
