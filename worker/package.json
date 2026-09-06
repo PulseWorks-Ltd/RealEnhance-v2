@@ -19,7 +19,8 @@
     "test:opening-regression-fixtures:live:telemetry": "tsx src/scripts/run-opening-regression-fixtures.ts --mode live --report-divergence",
     "test:opening-regression-fixtures:live:enforce": "tsx src/scripts/run-opening-regression-fixtures.ts --mode live --report-divergence --enforce-live",
     "test:opening-regression-fixtures:live:update": "tsx src/scripts/run-opening-regression-fixtures.ts --mode live --update-snapshots",
-    "test:publish": "tsx src/scripts/test-publish.ts"
+    "test:publish": "tsx src/scripts/test-publish.ts",
+    "test:stage1a-pregen": "tsx src/scripts/measure-stage1a-pregen.ts"
   },
   "dependencies": {
     "@google/genai": "^0.7.0",

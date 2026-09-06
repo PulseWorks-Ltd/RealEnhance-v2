@@ -685,6 +685,17 @@ interface Stage1AFactors {
 const STAGE1A_BLUR_EDGE_THRESHOLD = 15;
 const STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD = 45;
 
+// Mean-luminance at which an interior stops being treated as under-exposed.
+// Previously hardcoded at 95 with a span of 50: at 95, every image in the very
+// common 95-135 "visibly dim but not dark" band received darkness = 0, which
+// zeroed gammaBoost/shadowLift/contrastBoost and skipped the entire pre-Gemini
+// tone stack (see computeStage1AFactors below). Raised to 135/90 so the dead
+// band gets a proportional ramp instead of a hard zero, while onset - span
+// still equals 45, keeping the existing full-darkness anchor unchanged.
+const STAGE1A_DARKNESS_ONSET = parseBoundedNumber(process.env.STAGE1A_DARKNESS_ONSET, 135, 60, 200);
+// Span over which darkness ramps 0 -> 1.
+const STAGE1A_DARKNESS_SPAN = parseBoundedNumber(process.env.STAGE1A_DARKNESS_SPAN, 90, 20, 160);
+
 const clampStage1AFactor = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 
 function normalizeRange(value: number, min: number, max: number) {
@@ -807,8 +818,8 @@ async function analyzeStage1AInput(
   };
 }
 
-function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
-  const darkness = clampStage1AFactor((95 - analysis.lumMean) / 50);
+export function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
+  const darkness = clampStage1AFactor((STAGE1A_DARKNESS_ONSET - analysis.lumMean) / STAGE1A_DARKNESS_SPAN);
   const brightness = clampStage1AFactor((analysis.lumMean - 180) / 40);
   const edgeDensity = normalizeRange(
     analysis.edgeDensity,
@@ -1012,7 +1023,7 @@ async function applyStage1ANeutralBalance(
   };
 }
 
-function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: number): number {
+export function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: number): number {
   if (typeof meanBrightness !== "number" || !Number.isFinite(meanBrightness)) {
     return baseBrightness;
   }

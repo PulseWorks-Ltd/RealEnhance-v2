@@ -583,6 +583,14 @@ export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior
   return buildStage1AInteriorPromptNZStyle(roomType);
 }
 
+// NOTE: This interior variant is unreachable for live Stage 1A interior calls.
+// stage1A.ts imports a same-named buildStage1AInteriorPromptNZStandard from
+// ../ai/prompts.nzInterior (which shadows this export) and only falls back to
+// buildStage1APromptNZStyle -> this function when applyInteriorProfile is
+// false, which requires declutter === true, which is hardcoded false for
+// every Stage 1A production call. The live interior prompt text lives in
+// prompts.nzInterior.ts. Kept here only because buildStage1APromptNZStyle
+// still routes exteriors through this module.
 export function buildStage1AInteriorPromptNZStandard(roomType: string): string {
   return `REALENHANCE — STAGE 1A INTERIOR ENHANCEMENT (NZ HIGH-END)
 

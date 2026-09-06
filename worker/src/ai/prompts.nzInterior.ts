@@ -93,8 +93,24 @@ IV. PHOTOMETRIC BALANCING & ADAPTIVE EXPOSURE (CORE LIGHTING)
 
 ADAPTIVE EXPOSURE PRINCIPLE (CONDITION-BASED)
 Before making any lighting adjustments, evaluate the baseline exposure of the input image. Your exposure response must be highly adaptive:
-- FOR UNDER-EXPOSED / DARK ROOMS: Actively and significantly lift the exposure and midtones to bring the room up to a bright, inviting, professionally lit standard. Reveal naturally recoverable detail present within darker regions while preserving realistic shadow structure and material integrity.
+- FOR UNDER-EXPOSED / DARK ROOMS: Actively and significantly lift the exposure and midtones to bring the room up to a bright, inviting, professionally lit standard. This lift is required, not optional. An output that is still visibly dim, grey, or heavy is a failed result even if it is otherwise faithful to the input. Place the overall tonal weight of the room in the upper-middle of the range, so that walls and ceilings read as cleanly lit rather than grey, and a viewer would describe the room as "bright" rather than merely "acceptable". Reveal naturally recoverable detail present within darker regions while preserving realistic shadow structure and material integrity.
 - FOR WELL-LIT / BRIGHT ROOMS: Maintain the baseline exposure. Do NOT apply a global brightness boost. Focus purely on normalization, color balance, and micro-contrast.
+
+TONAL EXPANSION IS NOT RECONSTRUCTION
+Section I forbids inventing information. It does not forbid re-exposing information that is already recorded in the input. These are different operations and must not be conflated.
+
+REQUIRED (this is exposure correction, permitted by Section I):
+- raising the luminance of pixels that already carry recoverable tonal information
+- expanding low-midtone separation that the camera captured but under-exposed
+- correcting a globally dark or shadow-compressed capture toward correct exposure
+
+FORBIDDEN (this is generation, and Section I applies in full):
+- creating detail in regions that contain no recoverable information
+- filling, inpainting, or imagining content behind shadow, glare, blowout, or occlusion
+- adding structure, objects, surfaces, or openings of any kind
+
+The test to apply, region by region: if the information is already present in the input and only needs to be exposed differently, brighten it. If it would have to be imagined, leave that region exactly as it is.
+Under-exposure of the capture is a photographic defect to correct. It is not a property of the room to be preserved.
 
 SPATIAL REALISM GUARD
 Avoid uniform global exposure equalization across the entire room. Brightness adjustments must remain spatially natural and consistent with realistic ambient light behavior. Maintain the natural interplay of light and dark rather than introducing a flat, artificial ambient glow.
@@ -122,7 +138,9 @@ DEPTH PRESERVATION
 Maintain natural light fall-off and directional shadow structure to preserve 3D depth. Even when significantly brightening a dark room, keep subtle graduation to ensure the space feels real and dimensional.
 
 BLACK POINT
-Maintain rich, natural blacks. Do not over-lift shadows to the point of creating a washed-out, muddy, or flat gray appearance.
+Keep a true black anchor: the darkest points of the image must still resolve to near-black, so the result reads as dimensional rather than washed out, muddy, or flat grey.
+This constrains the deepest shadow anchor only. It is NOT a reason to hold back the midtone and low-midtone lift described above. A correctly brightened room keeps a small proportion of genuinely dark pixels while the bulk of the room sits well above them.
+Where the two goals appear to conflict, prefer a bright room with a clean black anchor over a dim room with protected shadows.
 
 TEXTURE PRESERVATION
 Preserve all real material detail, including:
