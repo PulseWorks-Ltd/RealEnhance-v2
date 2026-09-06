@@ -79,6 +79,7 @@ interface TransformTraceEvent {
   gain?: number;
   offset?: number;
   gamma?: number;
+  gammaOut?: number;
   values?: { brightness?: number; saturation?: number; hue?: number; lightness?: number };
   meta: TransformDiagnosticMeta;
 }
@@ -334,13 +335,15 @@ function applyGuardedGamma(
   branch: string,
   gamma: number,
   reason: string,
-  context?: TransformTelemetryContext
+  context?: TransformTelemetryContext,
+  gammaOut?: number
 ): sharp.Sharp {
   if (!isToneTransformCompatible(meta)) {
     console.warn("[stage1A] Skipping unsupported gamma() transform", {
       reason,
       branch,
       gamma,
+      gammaOut,
       width: meta.width,
       height: meta.height,
       space: meta.space,
@@ -348,16 +351,24 @@ function applyGuardedGamma(
       depth: meta.depth,
       hasAlpha: meta.hasAlpha,
     });
-    logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma });
-    recordTrace(context, { operation: "gamma", phase: "skipped", reason, gamma, meta });
+    logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma, gammaOut });
+    recordTrace(context, { operation: "gamma", phase: "skipped", reason, gamma, gammaOut, meta });
     bumpSkipCounter("skippedGammaCount", context, "gamma", reason, meta);
     return image;
   }
-  logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma });
-  recordTrace(context, { operation: "gamma", phase: "before", reason, gamma, meta });
-  const next = image.gamma(gamma);
+  // sharp.gamma(decodeGamma, encodeGamma): decodes with decodeGamma then
+  // re-encodes with encodeGamma. Called with a single argument (decode ==
+  // encode), the two stages nearly cancel out — confirmed empirically, a
+  // flat pixel moves by ~1/255 regardless of the value passed, for any
+  // gamma between 1.0 and 3.0. To actually brighten, decode must stay at
+  // identity (1.0) and only the encode gamma (gammaOut) should be raised —
+  // that's the asymptotic power curve (fixed at 0 and 255, so it can never
+  // clip highlights) callers here intend when they pass a value > 1.
+  logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma, gammaOut });
+  recordTrace(context, { operation: "gamma", phase: "before", reason, gamma, gammaOut, meta });
+  const next = gammaOut !== undefined ? image.gamma(gamma, gammaOut) : image.gamma(gamma);
   logTransformDiagnostic("gamma", "after", meta, branch, { reason });
-  recordTrace(context, { operation: "gamma", phase: "after", reason, gamma, meta });
+  recordTrace(context, { operation: "gamma", phase: "after", reason, gamma, gammaOut, meta });
   return next;
 }
 
@@ -695,6 +706,11 @@ const STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD = 45;
 const STAGE1A_DARKNESS_ONSET = parseBoundedNumber(process.env.STAGE1A_DARKNESS_ONSET, 135, 60, 200);
 // Span over which darkness ramps 0 -> 1.
 const STAGE1A_DARKNESS_SPAN = parseBoundedNumber(process.env.STAGE1A_DARKNESS_SPAN, 90, 20, 160);
+// Coefficient for the tone-stack gamma encode curve (see applyGuardedGamma).
+// Kept small: the asymptotic gamma(1, gammaOut) curve is much more potent
+// per unit of coefficient than the previously-inert gamma(g) call it
+// replaced, so this is not a like-for-like replacement of the old 0.6.
+const STAGE1A_GAMMA_ENCODE_SCALE = parseBoundedNumber(process.env.STAGE1A_GAMMA_ENCODE_SCALE, 0.15, 0, 0.6);
 
 const clampStage1AFactor = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 
@@ -1280,13 +1296,23 @@ export async function runStage1A(
   
   // 5. Apply scaled corrections rather than hard switching.
   if (factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
+    // NOTE: sharp.gamma(decodeGamma, encodeGamma) only brightens when
+    // decodeGamma stays at identity (1.0) and encodeGamma is raised — see
+    // applyGuardedGamma. Calling gamma(g) with a single argument (as this
+    // did previously) decodes and re-encodes with the same value, which
+    // very nearly cancels out regardless of g. STAGE1A_GAMMA_ENCODE_SCALE
+    // (0.15) is deliberately conservative: because the encode-gamma curve
+    // is asymptotic at 0/255, it self-limits on both shadows and highlights,
+    // but its per-unit effect is much stronger than the old (inert) call,
+    // so this is intentionally a smaller coefficient than 0.6 was.
     img = applyGuardedGamma(
       img,
       stage1ATransformMeta,
       stage1ABranch,
-      1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale),
+      1,
       "tone_stack_gamma",
-      transformTelemetry
+      transformTelemetry,
+      1 + (factors.gammaBoost * STAGE1A_GAMMA_ENCODE_SCALE * preGenControls.toneStackScale)
     );
     if (!analysis.isExterior) {
       img = applyGuardedLinear(
