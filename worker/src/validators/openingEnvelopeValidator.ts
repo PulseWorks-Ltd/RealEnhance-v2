@@ -49,6 +49,7 @@ import { nLog } from "../logger";
 import { ISSUE_TYPES, classifyIssueTier } from "./issueTypes";
 import type { ValidatorOutcome } from "./validatorOutcome";
 import type { StructuralBaseline, StructuralOpening } from "./openingPreservationValidator";
+import { isEdgeSliverOpening, OPENING_EDGE_SLIVER_MIN_GRAPH_CONFIDENCE } from "./openingPreservationValidator";
 import { runEnvelopeValidator } from "./envelopeValidator";
 import { runFabricatedOpeningCheck, type FabricatedOpeningCheckResult } from "./fabricatedOpeningCheck";
 import { runWindowArtworkCheckForOpenings, type WindowArtworkItemResult } from "./windowArtworkCheck";
@@ -88,6 +89,48 @@ const OPENING_ENVELOPE_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || 
 
 type Materiality = "material" | "low_materiality";
 type EnrichedOpeningResult = OcclusionCombinedResult & { materiality: Materiality; materialityReason: string; type: string; description: string };
+
+// Naming/classification ambiguity on a barely-visible, unconfirmed opening
+// must not by itself block delivery — see job_e233cecb (C1: a tiny sliver
+// bbox hugging the image's right edge, from a single-pass/unconfirmed
+// baseline extraction, flip-flopped closet_door/door across identical
+// replay calls). This does NOT touch baseline.openings — the opening still
+// exists and is still avoided by layoutPlanner/anchorLockedStaging exactly
+// as before (see openingPreservationValidator.ts's isEdgeSliverOpening
+// header for the full reasoning). It only partitions which of this
+// validator's OWN materially-altered items can trigger a hard fail; a
+// genuinely material, non-sliver alteration elsewhere in the same image
+// still hard-fails normally, and when the baseline's graph confidence is
+// high enough to trust, nothing here changes at all.
+//
+// Extracted as a small, pure, exported function (rather than inlined) so
+// it can be unit-tested directly with literal fixtures, matching this
+// repo's stated testing philosophy of never mocking the Gemini/Grok layer
+// for pure decision logic (see openingOcclusionGuard.ts's file header).
+export function partitionHardFailEligibleAlteredItems(
+  materialAlteredItems: EnrichedOpeningResult[],
+  baseline: StructuralBaseline
+): { hardFailEligible: EnrichedOpeningResult[]; advisoryOnly: EnrichedOpeningResult[] } {
+  const graphConfidence = Number(baseline.graphMeta?.graphConfidence);
+  const isLowConfidenceGraph = Number.isFinite(graphConfidence) && graphConfidence < OPENING_EDGE_SLIVER_MIN_GRAPH_CONFIDENCE;
+  if (!isLowConfidenceGraph) {
+    return { hardFailEligible: materialAlteredItems, advisoryOnly: [] };
+  }
+  const hardFailEligible: EnrichedOpeningResult[] = [];
+  const advisoryOnly: EnrichedOpeningResult[] = [];
+  for (const item of materialAlteredItems) {
+    const bbox = baseline.openings.find((o) => o.id === item.id)?.bbox;
+    // No matching baseline opening found — can't verify geometry, fail
+    // open (treat as eligible) rather than silently downgrade something
+    // we can't actually confirm is a sliver.
+    if (bbox && isEdgeSliverOpening(bbox)) {
+      advisoryOnly.push(item);
+    } else {
+      hardFailEligible.push(item);
+    }
+  }
+  return { hardFailEligible, advisoryOnly };
+}
 
 export type OpeningEnvelopeValidatorResult = {
   opening: ValidatorOutcome;
@@ -270,17 +313,33 @@ export async function runOpeningEnvelopeValidator(
     });
   }
 
+  const { hardFailEligible: hardFailEligibleAlteredItems, advisoryOnly: advisoryOnlySliverItems } =
+    partitionHardFailEligibleAlteredItems(materialAlteredItems, baseline);
+
   const standardOpening: ValidatorOutcome =
-    materialAlteredItems.length === 0
-      ? { status: "pass", reason: "opening_envelope_validator: no material alteration detected", confidence: 0.9, hardFail: false, issueType: ISSUE_TYPES.NONE, issueTier: "none", advisorySignals: [] }
+    hardFailEligibleAlteredItems.length === 0
+      ? {
+          status: "pass",
+          reason: advisoryOnlySliverItems.length > 0
+            ? `opening_envelope_validator: no hard-fail-eligible alteration detected (${advisoryOnlySliverItems.length} low-confidence edge-sliver alteration(s) noted as advisory only, not blocking: ${advisoryOnlySliverItems.map((a) => `${a.id}:${a.verdict}`).join(", ")})`
+            : "opening_envelope_validator: no material alteration detected",
+          confidence: 0.9,
+          hardFail: false,
+          issueType: ISSUE_TYPES.NONE,
+          issueTier: "none",
+          advisorySignals: advisoryOnlySliverItems.map((a) => `${a.id}:${a.verdict}:edge_sliver_low_confidence`),
+        }
       : {
           status: "fail",
-          reason: `opening_envelope_validator: ${materialAlteredItems.map((a) => `${a.id} (${a.description}): verdict=${a.verdict} — ${a.verdict === "resized" ? a.rawObservation.extentComparisonDescription : a.rawObservation.currentStateDescription}`).join(" | ")}`,
-          confidence: Math.min(...materialAlteredItems.map((a) => a.confidence ?? 0.8)),
+          reason: `opening_envelope_validator: ${hardFailEligibleAlteredItems.map((a) => `${a.id} (${a.description}): verdict=${a.verdict} — ${a.verdict === "resized" ? a.rawObservation.extentComparisonDescription : a.rawObservation.currentStateDescription}`).join(" | ")}`,
+          confidence: Math.min(...hardFailEligibleAlteredItems.map((a) => a.confidence ?? 0.8)),
           hardFail: true,
           issueType: ISSUE_TYPES.OPENING_INFILLED,
           issueTier: classifyIssueTier(ISSUE_TYPES.OPENING_INFILLED),
-          advisorySignals: materialAlteredItems.map((a) => `${a.id}:${a.verdict}`),
+          advisorySignals: [
+            ...hardFailEligibleAlteredItems.map((a) => `${a.id}:${a.verdict}`),
+            ...advisoryOnlySliverItems.map((a) => `${a.id}:${a.verdict}:edge_sliver_low_confidence`),
+          ],
         };
 
   // Combine with the fabricated-opening check's verdict (deterministic,

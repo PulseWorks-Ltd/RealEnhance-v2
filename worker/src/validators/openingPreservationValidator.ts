@@ -300,6 +300,64 @@ const OPENING_BASELINE_SINGLE_PASS = ["1", "true", "on", "yes"].includes(
   String(process.env.OPENING_BASELINE_SINGLE_PASS || "").trim().toLowerCase()
 );
 
+// job_e233cecb: a tiny sliver bbox hugging the image's right edge (x-range
+// ~0.97-1.0, ~1-3% of image width) was hallucinated by single-pass baseline
+// extraction and hard-blocked Stage 2 on a "replaced" verdict, despite the
+// model not even agreeing with itself run-to-run (type flip-flopped
+// closet_door/door, bbox drifted across identical temperature-0 replays)
+// and despite misleadingly high per-item confidence (0.85-0.95) that didn't
+// track that instability at all. These three constants gate a narrower
+// fix in openingEnvelopeValidator.ts: they do NOT remove anything from
+// baseline.openings (the opening may genuinely exist and must still be
+// avoided by layoutPlanner/anchorLockedStaging) — they only identify when
+// an opening is geometrically a frame-edge sliver AND the whole extraction
+// was never confirmed, so that specific alteration verdict can be treated
+// as advisory rather than hard-failing the job.
+const OPENING_EDGE_SLIVER_MAX_SPAN = Math.max(
+  0,
+  Math.min(0.25, Number(process.env.OPENING_EDGE_SLIVER_MAX_SPAN || 0.05))
+);
+const OPENING_EDGE_SLIVER_EDGE_EPSILON = Math.max(
+  0,
+  Math.min(0.1, Number(process.env.OPENING_EDGE_SLIVER_EDGE_EPSILON || 0.02))
+);
+// Reuses STRUCTURAL_BASELINE_MIN_AGREEMENT's value as the default "is this
+// graph trustworthy" bar (the same threshold openingValidator.ts:1482 uses
+// for an analogous decision), but stays independently overridable. Single-
+// pass mode (above) always reports exactly graphConfidence: 0.5, so every
+// single-pass extraction is in-scope for this guard by construction.
+export const OPENING_EDGE_SLIVER_MIN_GRAPH_CONFIDENCE = Math.min(
+  1,
+  Math.max(0, Number(process.env.OPENING_EDGE_SLIVER_MIN_GRAPH_CONFIDENCE || STRUCTURAL_BASELINE_MIN_AGREEMENT))
+);
+
+// Pure geometric predicate: does this bbox hug an extreme edge of the frame
+// with only a tiny span perpendicular to that edge? OR (not AND) across the
+// two axes is deliberate — the real C1 fixture ([0.97, 0.511, 1.0, 1.0])
+// touches both the right edge (width 0.03, a match) and the bottom edge
+// (height 0.489, not a match alone); it must still classify as a sliver
+// because any one matching edge is enough. A real, wide opening that
+// happens to sit flush against an edge always fails the span half
+// regardless of how tight or loose edgeEpsilon is, so this can never
+// false-positive on a genuine opening — only on a barely-there fragment.
+export function isEdgeSliverOpening(
+  bbox: [number, number, number, number],
+  edgeEpsilon: number = OPENING_EDGE_SLIVER_EDGE_EPSILON,
+  maxSpan: number = OPENING_EDGE_SLIVER_MAX_SPAN
+): boolean {
+  if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every((v) => Number.isFinite(v))) {
+    return false;
+  }
+  const [x1, y1, x2, y2] = bbox;
+  const width = Math.max(0, x2 - x1);
+  const height = Math.max(0, y2 - y1);
+  const touchesLeftOrRight = x1 <= edgeEpsilon || x2 >= 1 - edgeEpsilon;
+  const touchesTopOrBottom = y1 <= edgeEpsilon || y2 >= 1 - edgeEpsilon;
+  if (touchesLeftOrRight && width < maxSpan) return true;
+  if (touchesTopOrBottom && height < maxSpan) return true;
+  return false;
+}
+
 function roundDeterministic(value: number, precision = OPENING_COORDINATE_PRECISION): number {
   if (!Number.isFinite(value)) return 0;
   const factor = 10 ** precision;
