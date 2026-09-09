@@ -1989,7 +1989,8 @@ function buildDiningZoneAnchorLines(plan: MultiAnchorPlan): string[] {
     );
     if (plan.diningPlan.nearKitchen) {
       diningLines.push(
-        `* This room's kitchen is on the same side of the room as this position — keep the dining table on this side, near the kitchen, rather than centering it purely within the dining zone's own floor area.`
+        `* This room's kitchen is on the same side of the room as this position — keep the dining table on this side, near the kitchen, rather than centering it purely within the dining zone's own floor area.`,
+        `* The table and chairs must stay within the dining zone's own floor area and must NOT overlap, extend into, or obstruct the kitchen zone's own floor footprint (the area in front of its cabinetry, island, or counters) — being near the kitchen means adjacent to it, not placed on top of or blocking any part of it.`
       );
     }
   }
@@ -2233,6 +2234,20 @@ const SUPPORTED_ROOM_TYPES = new Set([
   "multiple_living",
   "living_room",
   "living",
+  // "dining_room" (confirmed real, canonical value: shared/src/types.ts's
+  // RoomType union, client/src/components/smart-intake.tsx's dropdown,
+  // both server CANONICAL_ROOM_TYPES allowlists) previously had zero
+  // anchor-lock support at all — the only primary room-purpose value that
+  // didn't. Routed through the buildLivingDiningPrompt branch below (the
+  // trailing else) since a genuinely open-plan kitchen+living space is
+  // sometimes mis-tagged plain "dining_room" (job_6175d65a, real
+  // production case) rather than "living_dining"/"kitchen_dining". Safe by
+  // construction: buildLivingDiningPrompt already gracefully falls back
+  // (fallbackReason) to the exact same legacy prompt this used to always
+  // get, whenever zoning extraction doesn't find both a living and dining
+  // zone — so a genuinely simple, single-purpose dining room (no separate
+  // living zone) sees no behavior change at all.
+  "dining_room",
   "study",
   "bathroom",
   "bathroom_1",
@@ -2442,11 +2457,32 @@ Beyond the desk placement above and the structural constraints above, use your o
   };
 }
 
+// job_eb89ba07: neither buildLivingDiningPrompt nor buildMultiZonePrompt had
+// any restatement of "what must survive" after the furniture-placement
+// instructions — the protected-item list appeared once, near the top of
+// the prompt, then the closing "EVERYTHING ELSE" block actively pushed
+// toward MORE furniture ("do not leave the room sparse") with no reminder
+// of what must not be touched. Also confirmed: the corrective retry hint
+// mechanism (worker.ts) only ever describes the PREVIOUS attempt's own
+// failure, so a hint fixing one dropped zone carries no reminder that
+// every other already-fine zone must also keep surviving — attempt 2 for
+// this job preserved the kitchen (fixed) but then dropped the far wall's
+// sliding door/windows/AC instead. This closing block is a final,
+// recency-weighted reinforcement independent of any specific retry hint.
+function buildZoneIntegrityFinalCheck(protectedItemCount: number): string {
+  return `ZONE INTEGRITY — FINAL CHECK (read this last, it governs everything above)
+
+This room has ${protectedItemCount} protected structural element${protectedItemCount === 1 ? "" : "s"} listed above (openings, fixtures, and any zone-specific items). Before finalizing the image, verify every one of them is still present, unaltered, and unobstructed.
+
+Preserving structure takes priority over completeness of staging. If adding the requested furniture would require altering, removing, simplifying, or obstructing ANY protected element, add less furniture instead — do not sacrifice a protected element to make room for staging. A slightly under-furnished but structurally accurate result is correct; a fully furnished result that has removed, replaced, or "cleaned up" any protected element is not.`;
+}
+
 async function buildLivingDiningPrompt(
   imagePath: string,
   baseline: StructuralBaseline,
   walls: WallVisibilityWall[],
   protectedFeatureSection: string,
+  protectedItemCount: number,
   ctx: { jobId: string; imageId: string }
 ): Promise<{ prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> }> {
   const zoningResult = await extractZoning(imagePath, baseline, ctx);
@@ -2471,15 +2507,48 @@ async function buildLivingDiningPrompt(
   const sofaPlacement = resolveSofaPlacement(baseline, livingZone, plan);
   const anchorSection = buildLivingDiningAnchorSection(plan, sofaPlacement?.instruction);
 
+  // job_eb89ba07 (real production failure, NZ open-plan townhouse kitchen +
+  // living, no dividing wall): the zoning schema this function uses only
+  // ever recognizes "living"/"dining" purposes (see ZONE_PAIR_BY_ROOM_KIND
+  // above) — a real, visible kitchen has no zone-scoped protection here at
+  // all, unlike buildMultiZonePrompt's kitchen_dining/kitchen_living rooms.
+  // The kitchen's individual fixtures still get per-item "do not remove"
+  // sentences from protectedFeatureSection, but the zone as a WHOLE fell
+  // into the closing "use your own professional judgment... do not leave
+  // the room sparse" catch-all below — which is exactly what erased it on
+  // attempt 1 (validator: "plain continuous white wall and open dining
+  // space with table and chairs" where the L-shaped kitchen used to be).
+  // Reuses the same three-tier kitchen-wall detection planMultiAnchor's
+  // dining-bias logic already computed (kitchenZone / kitchen_island
+  // fixture / kitchenSignal) via plan.diningPlan.nearKitchen, rather than
+  // re-detecting a kitchen from scratch — if the system already decided
+  // the dining table should be biased toward a kitchen, that is exactly
+  // when this room also needs the kitchen treated as a protected zone.
+  const kitchenDetected = !!plan.diningPlan?.nearKitchen;
+  const kitchenGuardrailSection = kitchenDetected
+    ? `\n\nANCHOR ITEMS — KITCHEN ZONE (must be followed exactly)\n\n* The kitchen zone's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.\n* Do NOT add any large furniture to the kitchen zone — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.\n* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.`
+    : "";
+
+  const zoneKindsPresent = kitchenDetected
+    ? ["a kitchen work-area zone", "a living/seating zone", "a dining zone"]
+    : ["a living/seating zone", "a dining zone"];
+  const zoningContextLine = `ZONING CONTEXT: this is a single open-plan room combining ${zoneKindsPresent.length} functional zones — ${zoneKindsPresent.join(", ")}. Stage each zone according to its function as instructed above, so the areas read as distinct, intentional zones within the same open room, not one undifferentiated furniture arrangement.`;
+
+  const zoneIntegrityClosing = buildZoneIntegrityFinalCheck(protectedItemCount);
+
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
 ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
-${anchorSection}
+${anchorSection}${kitchenGuardrailSection}
+
+${zoningContextLine}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
-Beyond the anchor items above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a combined living/dining space, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+Beyond the anchor items above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for a combined living/dining space, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.
+
+${zoneIntegrityClosing}`;
 
   return {
     prompt,
@@ -2521,6 +2590,7 @@ async function buildMultiZonePrompt(
   baseline: StructuralBaseline,
   walls: WallVisibilityWall[],
   protectedFeatureSection: string,
+  protectedItemCount: number,
   ctx: { jobId: string; imageId: string }
 ): Promise<{ prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> }> {
   const zoningResult = await extractZoning(imagePath, baseline, ctx, roomKind);
@@ -2615,7 +2685,9 @@ ${zoningContextLine}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
-Beyond the anchor items above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for ${roomDescriptionForClosing}, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.`;
+Beyond the anchor items above and the structural constraints above, use your own professional staging judgment to furnish and decorate the rest of the room appropriately for ${roomDescriptionForClosing}, producing a realistic, market-ready real estate listing photo. Choose what additional furniture and decor to include, how much, and where — as long as nothing you add violates the structural constraints above. Do not leave the room sparse or under-furnished; stage it as a professional would for a real listing.
+
+${buildZoneIntegrityFinalCheck(protectedItemCount)}`;
 
   return {
     prompt,
@@ -2801,10 +2873,11 @@ export async function buildAnchorLockedStage2Prompt(opts: {
       baseline,
       walls,
       protectedFeatureSection,
+      itemCount,
       { jobId: opts.jobId, imageId: opts.imageId }
     );
   } else {
-    roomResult = await buildLivingDiningPrompt(opts.imagePath, baseline, walls, protectedFeatureSection, { jobId: opts.jobId, imageId: opts.imageId });
+    roomResult = await buildLivingDiningPrompt(opts.imagePath, baseline, walls, protectedFeatureSection, itemCount, { jobId: opts.jobId, imageId: opts.imageId });
   }
 
   const diagnostics: AnchorLockedPromptResult["diagnostics"] = { ...baseDiagnostics, ...roomResult.extra };

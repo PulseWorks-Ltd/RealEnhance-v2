@@ -12295,7 +12295,15 @@ All openings must remain identical in position and size to the original image.`;
           : validator === "fixture" ? "a fixed fixture"
           : validator === "envelope" ? "the room's structural envelope"
           : "the flooring";
-        return `The previous attempt on this image failed validation involving ${label}: ${trimmed}. Do not repeat this in this attempt — keep the original photo's real features exactly as shown, unaltered and unobstructed.`;
+        // job_eb89ba07: a corrective hint scoped only to the previous
+        // attempt's specific failure (kitchen zone vanished) fixed exactly
+        // that, but the retry then dropped a DIFFERENT zone (the far
+        // wall's sliding door/windows/AC) that had been fine before — the
+        // hint gave no reminder that everything else must also keep
+        // surviving. The trailing sentence below is deliberately generic
+        // (not itemized) so it applies regardless of which validator
+        // triggered this hint or what else is in the room.
+        return `The previous attempt on this image failed validation involving ${label}: ${trimmed}. Do not repeat this in this attempt — keep the original photo's real features exactly as shown, unaltered and unobstructed. This must not come at the cost of any other feature: every other structural element, opening, and fixture that was correctly preserved in the previous attempt must also remain exactly as shown in this attempt.`;
       };
 
       const HIGH_CONFIDENCE_THRESHOLD = 0.9;
@@ -14814,7 +14822,7 @@ All openings must remain identical in position and size to the original image.`;
         pendingStage2RetryReason = retryReason;
         if (finalFailReason) {
           pendingStage2RetryCorrectionHints = [
-            `The previous attempt on this image failed final structural review: ${finalFailReason}. Do not repeat this in this attempt — keep the original photo's real structure exactly as shown, unaltered.`,
+            `The previous attempt on this image failed final structural review: ${finalFailReason}. Do not repeat this in this attempt — keep the original photo's real structure exactly as shown, unaltered. This must not come at the cost of any other feature: every other structural element, opening, and fixture that was correctly preserved in the previous attempt must also remain exactly as shown in this attempt.`,
           ];
         }
 
