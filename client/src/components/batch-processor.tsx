@@ -102,7 +102,7 @@ const INTERIOR_ROOM_TYPES: Array<{ value: string; label: string }> = [
   { value: "kitchen_dining", label: "Kitchen & Dining" },
   { value: "kitchen_living", label: "Kitchen & Living" },
   { value: "living_dining", label: "Living & Dining" },
-  { value: "multiple_living", label: "Multiple Living" },
+  { value: "kitchen_living_dining", label: "Kitchen, Living & Dining" },
   { value: "study", label: "Study" },
   { value: "office", label: "Office" },
   { value: "bathroom-1", label: "Bathroom 1" },
@@ -1634,7 +1634,7 @@ export default function BatchProcessor({
   const [scenePredictionsById, setScenePredictionsById] = useState<Record<string, SceneDetectResult>>({});
   const [imageRoomTypesById, setImageRoomTypesById] = useState<Record<string, string>>({});
   const refreshModeOnlyRoomTypes = useMemo(() => new Set([
-    "multiple_living",
+    "kitchen_living_dining",
     "kitchen_dining",
     "kitchen_living",
     "living_dining",

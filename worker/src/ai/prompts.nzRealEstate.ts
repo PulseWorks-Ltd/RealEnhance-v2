@@ -68,7 +68,7 @@ Never exceed two staged zones.
 // 🔧 ZONE-SPECIFIC CONFIGS (inject into base block)
 // Refresh-mode configs may include conservative downgrade behavior when separation is weak.
 const ZONE_CONFIGS_REFRESH: Record<string, string> = {
-  multiple_living: `
+  kitchen_living_dining: `
 ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
 Examples: lounge + dining, dining + study nook, lounge + reading area.
 
@@ -127,7 +127,7 @@ If one zone is not clearly visible or definable:
 
 // Full-mode configs must not include soft downgrade instructions.
 const ZONE_CONFIGS_FULL: Record<string, string> = {
-  multiple_living: `
+  kitchen_living_dining: `
 ZONE EXPECTATIONS (MULTIPLE LIVING AREAS):
 Examples: lounge + dining, dining + study nook, lounge + reading area.
 
@@ -275,7 +275,7 @@ Do NOT eliminate a selected zone.
 `;
 
 const MULTI_ROOM_TYPES = new Set([
-  "multiple_living",
+  "kitchen_living_dining",
   "kitchen_dining",
   "kitchen_living",
   "living_dining",
@@ -1831,13 +1831,13 @@ export function buildStage2PromptNZStyle(
     .toLowerCase()
     .replace(/-/g, "_")
     .trim();
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
-    ? "multiple_living"
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+    ? "kitchen_living_dining"
     : normalizedRoomType;
 
   const sourceStage = opts?.sourceStage || "1A";
   const explicitMode = opts?.mode;
-  const refreshOnlyRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const refreshOnlyRoomTypes = new Set(["kitchen_living_dining", "kitchen_dining", "kitchen_living", "living_dining"]);
   const forceRefreshMode = refreshOnlyRoomTypes.has(canonicalRoomType);
   const resolvedMode: "full" | "refresh" = explicitMode
     ? explicitMode
@@ -1959,11 +1959,14 @@ export function buildDiningCeilingFixtureSuppressionInstruction(roomType?: strin
     return null;
   }
 
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
-    ? "multiple_living"
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+    ? "kitchen_living_dining"
     : normalizedRoomType;
 
-  if (!canonicalRoomType.includes("dining") && canonicalRoomType !== "multiple_living") {
+  // "kitchen_living_dining" already contains "dining" as a substring, so it
+  // naturally satisfies this check without needing its own explicit
+  // exception the way the old "multiple_living" value used to.
+  if (!canonicalRoomType.includes("dining")) {
     return null;
   }
 

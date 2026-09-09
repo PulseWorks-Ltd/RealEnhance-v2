@@ -1,12 +1,18 @@
 // Regression tests for the multi-zone room-type expansion (2026-08-29):
-// kitchen_dining, kitchen_living, and multiple_living now get the same
-// real zoning + planMultiAnchor treatment living_dining already had.
+// kitchen_dining, kitchen_living, and (originally) multiple_living got the
+// same real zoning + planMultiAnchor treatment living_dining already had.
 // planMultiAnchor itself needed no changes to support a third "kitchen" or
 // "secondary" purpose zone — these tests confirm that generalization holds:
 // a kitchen zone is invisible to anchor selection but still correctly
 // excludes its own bordering walls from living-zone anchor candidacy, and
 // the new kitchen-zone-based dining-bias signal works without requiring an
 // island fixture or an inferred opening signal.
+//
+// "multiple_living" was later replaced by "kitchen_living_dining" (real
+// production gap — see anchorLockedStaging.ts's MultiZoneRoomKind header
+// comment): unlike multiple_living's flexible "dining OR an ad-hoc
+// secondary zone" model, kitchen_living_dining requires kitchen AND living
+// AND dining, all three, every time.
 import { planMultiAnchor, isRoomTypeSupportedByAnchorLockedStaging } from "../src/pipeline/anchorLockedStaging";
 import type { StructuralBaseline, StructuralOpening } from "../src/validators/openingPreservationValidator";
 import type { WallVisibilityWall, LivingDiningZone } from "../src/pipeline/anchorLockedStaging";
@@ -33,10 +39,10 @@ function makeZone(id: string, purpose: LivingDiningZone["purpose"], polygon: [nu
 }
 
 describe("isRoomTypeSupportedByAnchorLockedStaging — multi-zone expansion", () => {
-  it("recognizes kitchen_dining, kitchen_living, and multiple_living", () => {
+  it("recognizes kitchen_dining, kitchen_living, and kitchen_living_dining", () => {
     expect(isRoomTypeSupportedByAnchorLockedStaging("kitchen_dining")).toBe(true);
     expect(isRoomTypeSupportedByAnchorLockedStaging("kitchen_living")).toBe(true);
-    expect(isRoomTypeSupportedByAnchorLockedStaging("multiple_living")).toBe(true);
+    expect(isRoomTypeSupportedByAnchorLockedStaging("kitchen_living_dining")).toBe(true);
   });
 });
 
@@ -90,7 +96,7 @@ describe("planMultiAnchor — kitchen zone as a direct dining-bias signal (kitch
   });
 });
 
-describe("planMultiAnchor — multiple_living's flexible second zone", () => {
+describe("planMultiAnchor — generic zone-purpose handling (secondary/dining, independent of room type)", () => {
   it("computes no dining anchor when the second zone is 'secondary' (e.g. a study nook)", () => {
     const walls = [
       makeWall("wall_0", "Front wall", [0, 1]),   // living-exclusive
@@ -116,5 +122,32 @@ describe("planMultiAnchor — multiple_living's flexible second zone", () => {
 
     expect(plan.diningPlan).not.toBeNull();
     expect(plan.tvPlan).not.toBeNull();
+  });
+});
+
+describe("planMultiAnchor — kitchen_living_dining's mandatory three zones", () => {
+  it("resolves living (tvPlan/sofaPlan) and dining anchors simultaneously when all three zones are present, with dining biased toward the real kitchen zone", () => {
+    const walls = [
+      makeWall("wall_0", "Kitchen wall", [0, 0.34]),   // shared with kitchen + dining
+      makeWall("wall_1", "Living focal wall", [0.34, 0.67]), // living-exclusive — should win the focal wall
+      makeWall("wall_2", "Side wall", [0.67, 1]),
+    ];
+    const kitchenZone = makeZone("zone_kitchen", "kitchen", [[0, 0], [0.34, 0], [0.34, 0.5], [0, 0.5]], [0]);
+    const livingZone = makeZone("zone_living", "living", [[0.34, 0], [1, 0], [1, 0.6], [0.34, 0.6]], [1, 2]);
+    const diningZone = makeZone("zone_dining", "dining", [[0, 0.5], [0.34, 0.5], [0.34, 1], [0, 1]], [0]);
+    const plan = planMultiAnchor(makeBaseline(), walls, [kitchenZone, livingZone, diningZone]);
+
+    // Living zone's own anchor logic runs normally, excluding the wall
+    // shared with the kitchen zone (wall_0) from focal-wall candidacy.
+    expect(plan.tvPlan).not.toBeNull();
+    expect(plan.tvPlan!.wallId).toBe("wall_1");
+
+    // Dining anchor is present and biased toward the kitchen, since a real
+    // "kitchen"-purpose zone shares a bordering wall with the dining zone —
+    // the same three-way interaction this room kind actually produces
+    // (unlike the 2-zone tests above, which never had all three at once).
+    expect(plan.diningPlan).not.toBeNull();
+    expect(plan.diningPlan!.nearKitchen).toBe(true);
+    expect(plan.diningPlan!.reasoning).toContain("directly borders the room's own extracted kitchen zone");
   });
 });

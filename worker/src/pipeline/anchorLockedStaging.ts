@@ -46,6 +46,7 @@ import {
   extractStructuralBaseline,
   type StructuralBaseline,
 } from "../validators/openingPreservationValidator";
+import { checkFridgeCavityEligibility, type FridgeCavityEligibility } from "../validators/fridgeCavityCheck";
 
 const WALL_VISIBILITY_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.5-pro");
 
@@ -1371,26 +1372,33 @@ const ZONING_MODEL = String(process.env.OPENING_PRESERVATION_MODEL || "gemini-2.
 
 // Multi-zone room-type expansion (2026-08-29): the zoning extraction was
 // hardcoded to a single room combination (living + dining). Generalized
-// here to cover kitchen_dining, kitchen_living, and multiple_living too,
-// while keeping "living_dining" itself byte-identical to its original
+// here to cover kitchen_dining, kitchen_living, and kitchen_living_dining
+// too, while keeping "living_dining" itself byte-identical to its original
 // prompt text (see the roomKind-keyed branches below and
 // zoningPromptTextForLivingDining's own regression test) — the
 // already-proven living_dining path is not meant to change behavior at
 // all as a result of this generalization.
-export type MultiZoneRoomKind = "living_dining" | "kitchen_dining" | "kitchen_living" | "multiple_living";
+//
+// "kitchen_living_dining" replaced "multiple_living" (real production
+// gap: a genuinely open-plan kitchen+living+dining townhouse room —
+// job_eb89ba07 — was being tagged "living_dining", whose zoning schema
+// can only ever request "living"/"dining" purposes, so its real kitchen
+// zone got no zone-scoped protection at all and was erased by Stage 2 on
+// two separate attempts). Unlike multiple_living's deliberately flexible
+// "dining OR an ad-hoc secondary zone" second slot, kitchen_living_dining
+// requires all three purposes — kitchen, living, and dining — every time;
+// there is no flexible/optional zone here.
+export type MultiZoneRoomKind = "living_dining" | "kitchen_dining" | "kitchen_living" | "kitchen_living_dining";
 
 const ZONE_PAIR_BY_ROOM_KIND: Record<MultiZoneRoomKind, { primary: ZonePurpose; secondary: ZonePurpose[] }> = {
   living_dining: { primary: "living", secondary: ["dining"] },
   kitchen_dining: { primary: "kitchen", secondary: ["dining"] },
   kitchen_living: { primary: "kitchen", secondary: ["living"] },
-  // multiple_living's second zone is deliberately flexible — the model may
-  // report it as "dining" (reusing planMultiAnchor's existing dining-anchor
-  // logic verbatim when the second zone genuinely is a dining area) or
-  // "secondary" with its own descriptive label (a study nook, reading
-  // area, etc. — no forced anchor item, staged via professional judgment
-  // at a real, zoning-derived position instead of the vague, position-free
-  // text kitchen_dining/kitchen_living used before this same expansion).
-  multiple_living: { primary: "living", secondary: ["dining", "secondary"] },
+  // Both secondary purposes are mandatory for this room kind (enforced in
+  // buildMultiZonePrompt's requiresLivingZone/requiresDiningZone gates,
+  // not by this record's shape alone) — this is NOT a flexible "either/or"
+  // slot the way multiple_living's used to be.
+  kitchen_living_dining: { primary: "kitchen", secondary: ["living", "dining"] },
 };
 
 function zonePurposeLabel(purpose: ZonePurpose): string {
@@ -1417,20 +1425,22 @@ const ROOM_KIND_DESCRIPTION: Record<MultiZoneRoomKind, string> = {
   living_dining: "open-plan living/dining room",
   kitchen_dining: "open-plan kitchen/dining room",
   kitchen_living: "open-plan kitchen/living room",
-  multiple_living: "open-plan room combining multiple living-style areas",
+  kitchen_living_dining: "open-plan kitchen/living/dining room",
 };
 
 function buildZoningSystemInstruction(roomKind: MultiZoneRoomKind): string {
   const { primary, secondary } = ZONE_PAIR_BY_ROOM_KIND[roomKind];
-  const secondaryLabel = secondary.length > 1
-    ? `either ${secondary.map(zonePurposeLabel).join(" or ")}, whichever it genuinely is`
-    : zonePurposeLabel(secondary[0]);
+  const allPurposes = [primary, ...secondary];
+  const zoneCountWord = allPurposes.length === 3 ? "three" : "two";
+  const functionsSentence = allPurposes.length === 3
+    ? `${zonePurposeLabel(allPurposes[0])}, ${zonePurposeLabel(allPurposes[1])}, and ${zonePurposeLabel(allPurposes[2])}`
+    : `${zonePurposeLabel(allPurposes[0])} and ${zonePurposeLabel(allPurposes[1])}`;
 
   return `You are a structural feature extraction engine, extending an existing analysis to identify functional zones within an ${ROOM_KIND_DESCRIPTION[roomKind]}.
 
 You are given a room photograph AND an existing structural baseline (openings and fixtures already detected, with stable IDs).
 
-This room combines two functions: ${zonePurposeLabel(primary)} and ${secondaryLabel}. Identify how the visible floor space divides into these two zones, based on genuine visual cues — a change in flooring material, a change in ceiling treatment, existing furniture grouping if the room happens to be furnished (use furniture position only as a cue for how the space is naturally used, not as a placement instruction to preserve), sightlines, and traffic flow. If the room is empty, rely on architectural geometry alone (room shape, alcoves, ceiling breaks, wall offsets) — do not assume an even 50/50 split, and do not invent a furniture-based cue that isn't visible. The two zones' floor regions should not overlap.
+This room combines ${zoneCountWord} functions: ${functionsSentence}. Identify how the visible floor space divides into these ${zoneCountWord} zones, based on genuine visual cues — a change in flooring material, a change in ceiling treatment, existing furniture grouping if the room happens to be furnished (use furniture position only as a cue for how the space is naturally used, not as a placement instruction to preserve), sightlines, and traffic flow. If the room is empty, rely on architectural geometry alone (room shape, alcoves, ceiling breaks, wall offsets) — do not assume an even split across zones, and do not invent a furniture-based cue that isn't visible. The zones' floor regions should not overlap.
 
 ${ZONING_FLOOR_REGION_EXTENT_INSTRUCTION}
 
@@ -1965,8 +1975,8 @@ export function buildLivingFocalWallInstruction(tvPlan: NonNullable<MultiAnchorP
 }
 
 // Extracted (multi-zone room-type expansion, 2026-08-29) so
-// buildMultiZonePrompt (kitchen_dining/kitchen_living/multiple_living) can
-// reuse the exact same living/dining anchor-instruction text
+// buildMultiZonePrompt (kitchen_dining/kitchen_living/kitchen_living_dining)
+// can reuse the exact same living/dining anchor-instruction text
 // buildLivingDiningAnchorSection already produces, rather than a second,
 // independently-maintained copy. Pure text builders, no behavior change to
 // the living_dining path below.
@@ -2195,6 +2205,13 @@ export type AnchorLockedPromptResult = {
     // other decision in this pipeline already does, rather than a
     // separate ad-hoc log call.
     anchorSelectionReason?: string;
+    // From fridgeCavityCheck.ts, set whenever a kitchen zone is present
+    // (buildKitchenPrompt / buildLivingDiningPrompt when a kitchen is
+    // detected / buildMultiZonePrompt) — true only when a genuinely empty
+    // fridge cavity was confirmed AND no fridge already exists elsewhere
+    // in the room, i.e. whether this prompt actually carries the narrow
+    // fridge-insertion exception.
+    fridgeInsertionEligible?: boolean;
   };
 };
 
@@ -2224,14 +2241,14 @@ const SUPPORTED_ROOM_TYPES = new Set([
   "kitchen",
   "kitchen_dining",
   "kitchen_living",
-  // "multiple_living" added (multi-zone room-type expansion, 2026-08-29) —
-  // a real, distinct, already-in-use identifier (shared/src/types.ts's
-  // RoomType union, worker/src/ai/roomTypeDetector.ts, the client-facing
-  // "Multiple Living" option) that previously fell through to the legacy/
-  // nano prompt path entirely, never reaching this function. Routed
-  // through buildMultiZonePrompt alongside kitchen_dining/kitchen_living —
-  // see that function's header comment.
-  "multiple_living",
+  // "kitchen_living_dining" (real, distinct, canonical identifier —
+  // shared/src/types.ts's RoomType union, worker/src/ai/roomTypeDetector.ts,
+  // the client-facing "Kitchen, Living & Dining" option) replaced
+  // "multiple_living" (kept only as a normalizeRoomType input alias at
+  // intake — see upload.ts/retrySingle.ts — so pre-existing jobs/records
+  // still resolve). Routed through buildMultiZonePrompt alongside
+  // kitchen_dining/kitchen_living — see that function's header comment.
+  "kitchen_living_dining",
   "living_room",
   "living",
   // "dining_room" (confirmed real, canonical value: shared/src/types.ts's
@@ -2267,7 +2284,7 @@ const KITCHEN_ROOM_TYPES = new Set(["kitchen"]);
 // comment. Deliberately excludes "living_dining", which keeps its own
 // separate, unmodified buildLivingDiningPrompt dispatch branch (zero
 // change to that already-proven path from this expansion).
-const MULTI_ZONE_ROOM_TYPES = new Set<MultiZoneRoomKind>(["kitchen_dining", "kitchen_living", "multiple_living"]);
+const MULTI_ZONE_ROOM_TYPES = new Set<MultiZoneRoomKind>(["kitchen_dining", "kitchen_living", "kitchen_living_dining"]);
 const LIVING_ROOM_ONLY_TYPES = new Set(["living_room", "living"]);
 const STUDY_ROOM_TYPES = new Set(["study"]);
 const BATHROOM_ROOM_TYPES = new Set(["bathroom", "bathroom_1", "bathroom_2"]);
@@ -2322,6 +2339,33 @@ export function shouldUseAnchorLockedLayoutPlanning(roomType: string, promptMode
   return variant === "anchor_locked" || variant === "grok" || variant === "grok_skill" || variant === "combined";
 }
 
+// Shared kitchen-zone guardrail text, reused by buildKitchenPrompt,
+// buildLivingDiningPrompt, and buildMultiZonePrompt — previously three
+// independently-maintained, byte-identical (or near-identical) copies of
+// this exact block. Factored into one function specifically so the new
+// fridge-cavity exception below only has one place to be correct.
+//
+// fridgeEligibility (from validators/fridgeCavityCheck.ts) carves out
+// exactly ONE narrow exception to the otherwise-absolute "no floor-
+// standing furniture of any kind" rule: inserting exactly one full-size
+// refrigerator into a confirmed-empty, purpose-built cavity, only when no
+// fridge already exists anywhere in the room. Every other appliance
+// (stove, oven, rangetop, cooktop, dishwasher, etc.) and every other
+// floor item remains completely locked in every case — passing `null` (no
+// kitchen-present signal at all) or an ineligible result produces byte-
+// identical text to before this exception existed.
+function buildKitchenZoneGuardrailText(headerLabel: string, fridgeEligibility: FridgeCavityEligibility | null): string {
+  const fridgeException = fridgeEligibility?.eligible && fridgeEligibility.cavityBbox
+    ? `\n* EXCEPTION — fridge insertion permitted, and ONLY this: a genuinely empty, purpose-built refrigerator cavity was confirmed at approximately normalized position [${fridgeEligibility.cavityBbox.map((v) => v.toFixed(3)).join(", ")}] (x1, y1, x2, y2 — 0,0 is the top-left of the photo), with no refrigerator already present anywhere else in this room. You may insert exactly ONE full-size refrigerator into that exact cavity, matching its size and position, and nowhere else. Do not insert a fridge anywhere else in the room, do not insert more than one, and do not alter, resize, or relocate the cavity itself. This is the ONLY floor-standing or large-appliance item you may add anywhere in the kitchen zone — every other appliance (stove, oven, rangetop, cooktop, dishwasher, range hood, microwave, etc.) must remain completely unchanged, exactly as shown in the original photo, with no additions, removals, or alterations of any kind.`
+    : "";
+
+  return `${headerLabel}
+
+* The kitchen zone's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
+* Do NOT add any large furniture to the kitchen zone — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.${fridgeException}
+* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.`;
+}
+
 // Kitchen path is deliberately the simple pattern, not the zoning/anchor
 // pattern living-dining uses: no extractZoning call, no planMultiAnchor —
 // a kitchen's cabinetry/counters/island are already-existing fixtures
@@ -2335,10 +2379,12 @@ export function shouldUseAnchorLockedLayoutPlanning(roomType: string, promptMode
 // (extractZoning + planMultiAnchor) isn't possible without also extending
 // it past its hardcoded living/dining pair, which is out of scope for a
 // same-day, minimal kitchen fix.
-function buildKitchenPrompt(
+async function buildKitchenPrompt(
   roomType: string,
-  protectedFeatureSection: string
-): { prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> } {
+  imagePath: string,
+  protectedFeatureSection: string,
+  ctx: { jobId: string; imageId: string }
+): Promise<{ prompt: string | null; fallbackReason: string | null; extra: Partial<AnchorLockedPromptResult["diagnostics"]> }> {
   const secondaryZoneInstruction =
     roomType === "kitchen_dining"
       ? `\n\nDINING ZONE — YOUR PROFESSIONAL JUDGMENT\n\nThis room also includes a dining area separate from the kitchen work area. Stage the dining area with a full, to-scale dining table and chairs appropriate for the space, positioned using your own professional judgment. Do not place dining furniture inside the kitchen work area — not on or against cabinetry or countertops, and not on the kitchen floor zone directly in front of them.`
@@ -2346,22 +2392,21 @@ function buildKitchenPrompt(
         ? `\n\nLIVING ZONE — YOUR PROFESSIONAL JUDGMENT\n\nThis room also includes a living/lounge area separate from the kitchen work area. Stage the living area with seating (sofa or armchairs) and supporting furniture appropriate for the space, positioned using your own professional judgment. Do not place living-room furniture inside the kitchen work area — not on or against cabinetry or countertops, and not on the kitchen floor zone directly in front of them.`
         : "";
 
+  const fridgeEligibility = await checkFridgeCavityEligibility(imagePath, ctx);
+  const kitchenSection = buildKitchenZoneGuardrailText("KITCHEN ZONE — LIGHT STAGING ONLY (must be followed exactly)", fridgeEligibility);
+
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
 ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
-KITCHEN ZONE — LIGHT STAGING ONLY (must be followed exactly)
-
-* The kitchen's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
-* Do NOT add any large furniture to the kitchen area — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.
-* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.
+${kitchenSection}
 * Do not obstruct, cover, or place any new item in front of any detected window, opening, or fixture named in the protected-features section above — including on a countertop or windowsill directly beneath a window.${secondaryZoneInstruction}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
 Beyond the kitchen rules above and the structural constraints above, use your own professional staging judgment to complete the space appropriately, producing a realistic, market-ready real estate listing photo. Do not leave the space sparse or under-furnished outside the kitchen zone; stage it as a professional would for a real listing.`;
 
-  return { prompt, fallbackReason: null, extra: {} };
+  return { prompt, fallbackReason: null, extra: { fridgeInsertionEligible: fridgeEligibility.eligible } };
 }
 
 function buildBedroomPrompt(
@@ -2525,8 +2570,9 @@ async function buildLivingDiningPrompt(
   // the dining table should be biased toward a kitchen, that is exactly
   // when this room also needs the kitchen treated as a protected zone.
   const kitchenDetected = !!plan.diningPlan?.nearKitchen;
+  const fridgeEligibility = kitchenDetected ? await checkFridgeCavityEligibility(imagePath, ctx) : null;
   const kitchenGuardrailSection = kitchenDetected
-    ? `\n\nANCHOR ITEMS — KITCHEN ZONE (must be followed exactly)\n\n* The kitchen zone's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.\n* Do NOT add any large furniture to the kitchen zone — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.\n* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.`
+    ? `\n\n${buildKitchenZoneGuardrailText("ANCHOR ITEMS — KITCHEN ZONE (must be followed exactly)", fridgeEligibility)}`
     : "";
 
   const zoneKindsPresent = kitchenDetected
@@ -2558,6 +2604,7 @@ ${zoneIntegrityClosing}`;
       tvPlaced: !!plan.tvPlan,
       tvUsedBracket: !!plan.tvPlan?.usedBracket,
       sofaFloating: !!sofaPlacement?.floating,
+      fridgeInsertionEligible: fridgeEligibility?.eligible,
       anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
     },
   };
@@ -2577,13 +2624,21 @@ ${zoneIntegrityClosing}`;
 // This function gives all three the same real zoning + planMultiAnchor
 // treatment living_dining already has, reusing planMultiAnchor UNCHANGED
 // (it only ever looks for zones.find(z => z.purpose === "living"/"dining")
-// — a "kitchen" or "secondary" purpose zone is simply invisible to its
-// anchor logic while still correctly excluding its own bordering walls
-// from living/dining anchor-wall candidacy) and reusing
-// buildLivingZoneAnchorLines/buildDiningZoneAnchorLines verbatim from the
-// living_dining path. buildLivingDiningPrompt itself is untouched — this
-// is a separate function specifically so the already-proven living_dining
-// path carries zero risk from this expansion.
+// — a "kitchen" purpose zone is simply invisible to its anchor logic while
+// still correctly excluding its own bordering walls from living/dining
+// anchor-wall candidacy) and reusing buildLivingZoneAnchorLines/
+// buildDiningZoneAnchorLines verbatim from the living_dining path.
+// buildLivingDiningPrompt itself is untouched — this is a separate
+// function specifically so the already-proven living_dining path carries
+// zero risk from this expansion.
+//
+// kitchen_living_dining replaced multiple_living (real production gap —
+// see MultiZoneRoomKind's own header comment): unlike multiple_living's
+// flexible "dining OR an ad-hoc secondary zone" model, this room kind
+// requires kitchen AND living AND dining, all three, every time — there
+// is no flexible/optional zone, and the "secondary" ZonePurpose value
+// (and its dedicated zone-building branch, formerly here) is unused as of
+// this replacement.
 async function buildMultiZonePrompt(
   roomKind: Exclude<MultiZoneRoomKind, "living_dining">,
   imagePath: string,
@@ -2601,11 +2656,10 @@ async function buildMultiZonePrompt(
   const livingZone = zones.find((z) => z.purpose === "living");
   const diningZone = zones.find((z) => z.purpose === "dining");
   const kitchenZone = zones.find((z) => z.purpose === "kitchen");
-  const secondaryZone = zones.find((z) => z.purpose === "secondary");
 
-  const requiresKitchenZone = roomKind === "kitchen_dining" || roomKind === "kitchen_living";
-  const requiresLivingZone = roomKind === "kitchen_living" || roomKind === "multiple_living";
-  const requiresDiningOrSecondary = roomKind === "kitchen_dining" || roomKind === "multiple_living";
+  const requiresKitchenZone = roomKind === "kitchen_dining" || roomKind === "kitchen_living" || roomKind === "kitchen_living_dining";
+  const requiresLivingZone = roomKind === "kitchen_living" || roomKind === "kitchen_living_dining";
+  const requiresDiningZone = roomKind === "kitchen_dining" || roomKind === "kitchen_living_dining";
 
   if (requiresKitchenZone && (!kitchenZone || !kitchenZone.floorRegion?.polygon)) {
     return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
@@ -2613,12 +2667,8 @@ async function buildMultiZonePrompt(
   if (requiresLivingZone && (!livingZone || !livingZone.floorRegion?.polygon)) {
     return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
   }
-  if (requiresDiningOrSecondary) {
-    const diningOk = diningZone && diningZone.floorRegion?.polygon;
-    const secondaryOk = secondaryZone && secondaryZone.floorRegion?.polygon;
-    if (!diningOk && !secondaryOk) {
-      return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
-    }
+  if (requiresDiningZone && (!diningZone || !diningZone.floorRegion?.polygon)) {
+    return { prompt: null, fallbackReason: "zoning_incomplete", extra: { zoningExtracted: true } };
   }
 
   const plan = planMultiAnchor(baseline, walls, zones, kitchenSignal);
@@ -2632,14 +2682,11 @@ async function buildMultiZonePrompt(
   const sections: string[] = [];
   const zoneKindsPresent: string[] = [];
   const sofaPlacement = livingZone ? resolveSofaPlacement(baseline, livingZone, plan) : null;
+  const fridgeEligibility = kitchenZone ? await checkFridgeCavityEligibility(imagePath, ctx) : null;
 
   if (kitchenZone) {
     zoneKindsPresent.push("a kitchen work-area zone");
-    sections.push(`ANCHOR ITEMS — KITCHEN ZONE (must be followed exactly)
-
-* The kitchen zone's existing cabinetry, countertops, island, and appliances are permanent fixtures, already protected above. Do not add, remove, resize, relocate, or otherwise alter any of them.
-* Do NOT add any large furniture to the kitchen zone — no dining table, no chairs, stools, or bar stools (including at a kitchen island), no other floor-standing furniture of any kind.
-* You may add ONLY small, countertop/surface-level items: up to 2 small appliances (e.g. kettle, toaster, coffee machine) and up to 3 small decor or accessory items (e.g. fruit bowl, cookbooks, a utensil holder, a knife block, a folded dish towel, a small plant). Place these only on existing countertops or open shelving — never on the floor, and never inside the sink.`);
+    sections.push(buildKitchenZoneGuardrailText("ANCHOR ITEMS — KITCHEN ZONE (must be followed exactly)", fridgeEligibility));
   }
 
   if (livingZone) {
@@ -2652,18 +2699,6 @@ async function buildMultiZonePrompt(
     zoneKindsPresent.push("a dining zone");
     const diningLines = buildDiningZoneAnchorLines(plan);
     sections.push(`ANCHOR ITEM — DINING ZONE (must be followed exactly)\n\n${diningLines.join("\n")}`);
-  } else if (secondaryZone) {
-    const label = secondaryZone.label?.trim() || "secondary";
-    zoneKindsPresent.push(`a ${label} zone`);
-    const secondaryCentroid = secondaryZone.floorRegion?.polygon?.length
-      ? polygonCentroid(secondaryZone.floorRegion.polygon)
-      : null;
-    const positionClause = secondaryCentroid
-      ? ` centered roughly at normalized position [${secondaryCentroid[0].toFixed(3)}, ${secondaryCentroid[1].toFixed(3)}] of the full photo`
-      : "";
-    sections.push(`ZONE — ${label.toUpperCase()} (YOUR PROFESSIONAL JUDGMENT)
-
-* This room also includes a ${label} area, separate from the main living area. Stage it appropriately for its function using your own professional staging judgment, positioned within its own floor area${positionClause}. Do not place furniture belonging to this zone inside the living zone's own floor area, or vice versa.`);
   }
 
   const zoningContextLine = zoneKindsPresent.length > 1
@@ -2673,7 +2708,7 @@ async function buildMultiZonePrompt(
   const roomDescriptionForClosing =
     roomKind === "kitchen_dining" ? "a combined kitchen/dining space"
     : roomKind === "kitchen_living" ? "a combined kitchen/living space"
-    : "a room combining multiple living-style areas";
+    : "a combined kitchen/living/dining space";
 
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
@@ -2697,6 +2732,7 @@ ${buildZoneIntegrityFinalCheck(protectedItemCount)}`;
       tvPlaced: !!plan.tvPlan,
       tvUsedBracket: !!plan.tvPlan?.usedBracket,
       sofaFloating: sofaPlacement ? !!sofaPlacement.floating : undefined,
+      fridgeInsertionEligible: fridgeEligibility?.eligible,
       anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan?.wallId ?? null,
     },
   };
@@ -2786,6 +2822,16 @@ export async function buildAnchorLockedStage2Prompt(opts: {
    */
   structuralBaseline?: StructuralBaseline | null;
 }): Promise<AnchorLockedPromptResult> {
+  // Defensive normalization: server-side intake (upload.ts/retrySingle.ts)
+  // already maps the retired "multiple_living" value forward to
+  // "kitchen_living_dining" on every new request, but a job created before
+  // this normalization existed (already queued/in-flight) could still
+  // carry the old string straight into the worker. Cheap, harmless no-op
+  // for every other room type.
+  if (opts.roomType === "multiple_living") {
+    opts = { ...opts, roomType: "kitchen_living_dining" };
+  }
+
   const baseDiagnostics: AnchorLockedPromptResult["diagnostics"] = {
     roomType: opts.roomType,
     baselineExtracted: false,
@@ -2853,7 +2899,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   } else if (STUDY_ROOM_TYPES.has(opts.roomType)) {
     roomResult = buildStudyPrompt(baseline, walls, protectedFeatureSection);
   } else if (KITCHEN_ROOM_TYPES.has(opts.roomType)) {
-    roomResult = buildKitchenPrompt(opts.roomType, protectedFeatureSection);
+    roomResult = await buildKitchenPrompt(opts.roomType, opts.imagePath, protectedFeatureSection, { jobId: opts.jobId, imageId: opts.imageId });
   } else if (BATHROOM_ROOM_TYPES.has(opts.roomType)) {
     roomResult = buildBathroomPrompt(protectedFeatureSection);
   } else if (HALLWAY_ROOM_TYPES.has(opts.roomType)) {
@@ -2863,7 +2909,7 @@ export async function buildAnchorLockedStage2Prompt(opts: {
   } else if (LIVING_ROOM_ONLY_TYPES.has(opts.roomType)) {
     roomResult = buildLivingRoomPrompt(baseline, walls, protectedFeatureSection);
   } else if (MULTI_ZONE_ROOM_TYPES.has(opts.roomType as MultiZoneRoomKind)) {
-    // kitchen_dining / kitchen_living / multiple_living — see
+    // kitchen_dining / kitchen_living / kitchen_living_dining — see
     // buildMultiZonePrompt's header comment (multi-zone room-type
     // expansion, 2026-08-29). Deliberately excludes "living_dining", which
     // falls through to the unmodified buildLivingDiningPrompt branch below.

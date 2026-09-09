@@ -112,7 +112,7 @@ export type RoomType =
   | "kitchen_dining"
   | "kitchen_living"
   | "living_dining"
-  | "multiple_living"
+  | "kitchen_living_dining"
   | "study"
   | "office"
   | "bathroom"

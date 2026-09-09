@@ -15,16 +15,17 @@ import {
 } from "../src/pipeline/anchorLockedStaging";
 
 describe("isRoomTypeSupportedByAnchorLockedStaging", () => {
-  it("recognizes all currently-supported room types, including multiple_living (multi-zone room-type expansion)", () => {
+  it("recognizes all currently-supported room types, including kitchen_living_dining (replaces multiple_living) and dining_room", () => {
     for (const roomType of [
       "bedroom",
       "living_dining",
       "kitchen",
       "kitchen_dining",
       "kitchen_living",
-      "multiple_living",
+      "kitchen_living_dining",
       "living_room",
       "living",
+      "dining_room",
       "study",
       "bathroom",
       "bathroom_1",
@@ -65,9 +66,9 @@ describe("shouldUseAnchorLockedLayoutPlanning (layout-planning routing fix)", ()
     expect(shouldUseAnchorLockedLayoutPlanning("living_dining", "refresh")).toBe(false);
   });
 
-  it("is true for multiple_living now that it is supported (multi-zone room-type expansion)", () => {
+  it("is true for kitchen_living_dining (replaces multiple_living)", () => {
     process.env.STAGE2_PROMPT_VARIANT = "anchor_locked";
-    expect(shouldUseAnchorLockedLayoutPlanning("multiple_living", "full")).toBe(true);
+    expect(shouldUseAnchorLockedLayoutPlanning("kitchen_living_dining", "full")).toBe(true);
   });
 
   it("is false for a genuinely unsupported room type even with an eligible variant and full mode", () => {

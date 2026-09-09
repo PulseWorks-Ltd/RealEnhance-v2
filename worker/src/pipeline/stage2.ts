@@ -465,6 +465,22 @@ function buildNanoRoomProgramGuidance(opts: {
       ];
       itemBudget = "Furniture budget: max 5 major furniture pieces total across both zones. Decor budget: max 3 small decor accents total.";
       break;
+    case "kitchen_living_dining":
+      // Replaces "multiple_living" (real production gap — see
+      // anchorLockedStaging.ts's MultiZoneRoomKind header comment). Unlike
+      // kitchen_living/kitchen_dining above, a third zone is REQUIRED here,
+      // not forbidden — this room combines all three functions at once.
+      anchorGuidance =
+        "Primary anchors (MANDATORY): preserve kitchen context, include a clear living-room seating anchor, AND include a clear dining-table anchor — all three zones must be staged.";
+      roomRules = [
+        "Do NOT add chairs, stools, or benches to kitchen islands.",
+        "Do NOT collapse the living and dining functions into a single furniture cluster.",
+        "Kitchen zone allows micro-staging only: countertop/window-sill/open-shelf items; no added floor furniture in kitchen area.",
+        "Kitchen micro-staging cap: up to 2 small appliances and up to 3 decor/accessory items total.",
+        "Keep the dining table and chairs within the dining zone's own floor area — do not let them overlap or extend into the kitchen zone's own floor footprint.",
+      ];
+      itemBudget = "Furniture budget: max 6 major furniture pieces total across the living and dining zones. Decor budget: max 3 small decor accents total.";
+      break;
     default:
       roomRules = [
         "Use room type as authoritative for furniture program and anchor choice.",
@@ -682,8 +698,8 @@ export async function runStage2GenerationAttempt(
     .toLowerCase()
     .replace(/-/g, "_")
     .trim();
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
-    ? "multiple_living"
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+    ? "kitchen_living_dining"
     : normalizedRoomType;
 
   // Whether a room goes through the "from empty" (full) or "refresh"
@@ -1427,8 +1443,8 @@ export async function runStage2(
     .toLowerCase()
     .replace(/-/g, "_")
     .trim();
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas"
-    ? "multiple_living"
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+    ? "kitchen_living_dining"
     : normalizedRoomType;
 
   // Whether a room goes through the "from empty" (full) or "refresh"

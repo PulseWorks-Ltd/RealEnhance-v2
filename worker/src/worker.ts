@@ -6327,15 +6327,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const enhanceOnlyRequested = !stage2Requested && !stage1BRequestedByUser;
   let stage2AttemptId: string | undefined;
   const stage2SupersededActions = new Set<string>();
-  const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const STAGE2_FORCE_REFRESH_ROOM_TYPES = new Set(["kitchen_living_dining", "kitchen_dining", "kitchen_living", "living_dining"]);
 
   const canonicalizeStage2RoomType = (rawRoomType: unknown) => {
     const normalizedRoomType = String(rawRoomType || "")
       .toLowerCase()
       .replace(/-/g, "_")
       .trim();
-    return normalizedRoomType === "multiple_living_areas"
-      ? "multiple_living"
+    return (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living")
+      ? "kitchen_living_dining"
       : normalizedRoomType;
   };
 
@@ -9002,8 +9002,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // ✅ PER-IMAGE ROUTING: Override for multi-room types (must have virtualStage enabled)
   const roomType = payload.options.roomType;
   const normalizedRoomType = String(roomType || "").toLowerCase().replace(/-/g, "_").trim();
-  const canonicalRoomType = normalizedRoomType === "multiple_living_areas" ? "multiple_living" : normalizedRoomType;
-  const forceLightRoomTypes = new Set(["multiple_living", "kitchen_dining", "kitchen_living", "living_dining"]);
+  const canonicalRoomType = (normalizedRoomType === "multiple_living_areas" || normalizedRoomType === "multiple_living") ? "kitchen_living_dining" : normalizedRoomType;
+  const forceLightRoomTypes = new Set(["kitchen_living_dining", "kitchen_dining", "kitchen_living", "living_dining"]);
 
   const snapshotImpliesResolvedFurnishedGate = (snapshot: any): boolean => {
     if (!snapshot || typeof snapshot !== "object") return false;

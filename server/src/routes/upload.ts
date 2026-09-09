@@ -118,7 +118,7 @@ const CANONICAL_ROOM_TYPES = new Set([
   "kitchen_dining",
   "kitchen_living",
   "living_dining",
-  "multiple_living",
+  "kitchen_living_dining",
   "study",
   "office",
   "bathroom",
@@ -151,11 +151,22 @@ function normalizeRoomType(raw: unknown): string {
     "living-room": "living_room",
     "dining": "dining_room",
     "dining-room": "dining_room",
-    "multiple-living-areas": "multiple_living",
-    "multiple_living_areas": "multiple_living",
-    "multiple-living": "multiple_living",
-    "multiple living": "multiple_living",
-    "multi-living": "multiple_living",
+    // "multiple_living" is retired (replaced by "kitchen_living_dining",
+    // which supports all three zones — kitchen, living, and dining —
+    // simultaneously, rather than "living + one of dining/other"). Kept as
+    // an input alias, not deleted outright: roomType is persisted
+    // long-term (server/src/services/images.ts writes it into
+    // server/data/images.json) and retrySingle.ts re-validates it against
+    // this same canonical set on every retry — a hard rename would 400 any
+    // pre-existing record or client still holding the old value.
+    "multiple-living-areas": "kitchen_living_dining",
+    "multiple_living_areas": "kitchen_living_dining",
+    "multiple-living": "kitchen_living_dining",
+    "multiple living": "kitchen_living_dining",
+    "multiple_living": "kitchen_living_dining",
+    "multi-living": "kitchen_living_dining",
+    "kitchen & living & dining": "kitchen_living_dining",
+    "kitchen-living-dining": "kitchen_living_dining",
     "kitchen & dining": "kitchen_dining",
     "kitchen-and-dining": "kitchen_dining",
     "kitchen & living": "kitchen_living",
