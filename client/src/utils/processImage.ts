@@ -46,12 +46,31 @@ export async function processImage(file: File): Promise<File> {
 
   const width = Math.max(1, Math.round(bitmap.width * scale));
   const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  // Real production incident (portrait room photo corrupted into a 2x2
+  // grid of mismatched sub-views before it ever reached the server):
+  // passing the ImageBitmap directly into pica.resize() is unsafe — some
+  // browsers back a large ImageBitmap with an internally-tiled bitmap
+  // representation that Pica's own resize kernel doesn't sample correctly,
+  // producing exactly this kind of rearranged/tiled output. Drawing the
+  // bitmap onto a concrete 2D canvas first and resizing FROM that canvas
+  // avoids the bug — a plain canvas has no such internal tiling.
+  const sourceCanvas = document.createElement("canvas");
+  sourceCanvas.width = bitmap.width;
+  sourceCanvas.height = bitmap.height;
+  const sourceCtx = sourceCanvas.getContext("2d", { alpha: false });
+  if (!sourceCtx) {
+    throw new Error("Failed to initialize source canvas");
+  }
+  sourceCtx.drawImage(bitmap, 0, 0);
+
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
 
   try {
-    await pica.resize(bitmap, canvas, {
+    // Resize from a concrete canvas source to avoid browser/ImageBitmap tiling artifacts.
+    await pica.resize(sourceCanvas, canvas, {
       alpha: false,
       unsharpAmount: 80,
       unsharpRadius: 0.6,
@@ -68,6 +87,8 @@ export async function processImage(file: File): Promise<File> {
     if (typeof bitmap.close === "function") {
       bitmap.close();
     }
+    sourceCanvas.width = 0;
+    sourceCanvas.height = 0;
     canvas.width = 0;
     canvas.height = 0;
   }

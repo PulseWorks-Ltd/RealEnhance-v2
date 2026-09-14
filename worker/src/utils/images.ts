@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { createHash } from "crypto";
+import sharp from "sharp";
 
 // Diagnostic instrumentation added while investigating a real production
 // incident (2026-08-24 batch): 3 of 6 concurrent jobs each received a
@@ -69,4 +70,85 @@ export function siblingOutPath(srcPath: string, suffix: string, ext: string = ".
   const dir = path.dirname(srcPath);
   const base = path.basename(srcPath, path.extname(srcPath));
   return path.join(dir, `${base}${suffix}${ext}`);
+}
+
+// Reinstated from commit 0245366b ("Portrait Image Tiling Fix 1", July 10
+// — never merged into main or this branch, confirmed via
+// `git merge-base --is-ancestor 0245366b HEAD` returning false), and
+// generalized to cover every whole-image Gemini call site (Stage 1A and
+// 1B via enhanceWithGemini, and Stage 2's own separate call path), not
+// just Stage 1A as originally written. Understood cause: sending an
+// oversized/tall portrait image directly to Gemini's image-generation API
+// can cause Gemini's own internal processing to misbehave. This is a
+// distinct, independent mechanism from the client-side pica/ImageBitmap
+// tiling bug (client/src/utils/processImage.ts) — both are worth guarding
+// against; this one doesn't overlap with or supersede that one.
+const GEMINI_MAX_PORTRAIT_HEIGHT = Math.max(1024, Number(process.env.GEMINI_MAX_PORTRAIT_HEIGHT || 2048));
+
+export async function normalizePortraitImageForGemini(
+  inputPath: string,
+  ctx: { jobId: string; imageId?: string; stage: "1A" | "1B" | "2"; roomType?: string }
+): Promise<string> {
+  const meta = await sharp(inputPath).metadata();
+  const width = meta.width || 0;
+  const height = meta.height || 0;
+  if (!width || !height) {
+    return inputPath;
+  }
+
+  const isPortrait = height > width;
+  if (!isPortrait || height <= GEMINI_MAX_PORTRAIT_HEIGHT) {
+    console.warn(
+      JSON.stringify({
+        event: "GEMINI_PORTRAIT_GUARD",
+        jobId: ctx.jobId,
+        imageId: ctx.imageId,
+        stage: ctx.stage,
+        roomType: ctx.roomType || null,
+        inputWidth: width,
+        inputHeight: height,
+        applied: false,
+        reason: !isPortrait ? "not_portrait" : "within_height_limit",
+        threshold: GEMINI_MAX_PORTRAIT_HEIGHT,
+      })
+    );
+    return inputPath;
+  }
+
+  let targetHeight = GEMINI_MAX_PORTRAIT_HEIGHT;
+  let targetWidth = Math.max(1, Math.round((width * targetHeight) / height));
+  // Keep dimensions even — some encoders/codecs misbehave on odd dimensions.
+  if (targetWidth % 2 !== 0) targetWidth -= 1;
+  if (targetHeight % 2 !== 0) targetHeight -= 1;
+
+  const normalizedPath = siblingOutPath(inputPath, "-portrait-normalized", ".webp");
+  await sharp(inputPath)
+    .resize({
+      width: targetWidth,
+      height: targetHeight,
+      fit: "inside",
+      kernel: sharp.kernel.lanczos3,
+      withoutEnlargement: true,
+    })
+    .webp({ quality: 97, effort: 6, smartSubsample: true, nearLossless: false })
+    .toFile(normalizedPath);
+
+  console.warn(
+    JSON.stringify({
+      event: "GEMINI_PORTRAIT_GUARD",
+      jobId: ctx.jobId,
+      imageId: ctx.imageId,
+      stage: ctx.stage,
+      roomType: ctx.roomType || null,
+      inputWidth: width,
+      inputHeight: height,
+      outputWidth: targetWidth,
+      outputHeight: targetHeight,
+      applied: true,
+      reason: "portrait_exceeds_max_height",
+      threshold: GEMINI_MAX_PORTRAIT_HEIGHT,
+    })
+  );
+
+  return normalizedPath;
 }

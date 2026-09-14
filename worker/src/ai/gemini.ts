@@ -278,7 +278,7 @@ import path from "path";
 import { createHash } from "crypto";
 import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
-import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash } from "../utils/images";
+import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash, normalizePortraitImageForGemini } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
 import { buildTestStage1APrompt, buildTestStage1BPrompt, buildTestStage2Prompt, tightenPromptAndLowerTemp } from "./prompts-test";
 import { normalizeEditMode } from "../pipeline/prompts";
@@ -469,7 +469,18 @@ export async function enhanceWithGemini(
       filePath: inputPath,
       ctx: { jobId, imageId, stage: stage || (declutter ? "1B" : "1A") },
     });
-    const { data, mime } = toBase64(inputPath);
+    // Real production incident: an oversized portrait image sent directly
+    // to Gemini can cause its own internal processing to misbehave. Only
+    // the bytes actually sent to Gemini are swapped — inputPath itself
+    // must stay untouched, since it's also used below (via siblingOutPath)
+    // to derive the output filename.
+    const geminiSourcePath = await normalizePortraitImageForGemini(inputPath, {
+      jobId,
+      imageId,
+      stage: stage || (declutter ? "1B" : "1A"),
+      roomType,
+    });
+    const { data, mime } = toBase64(geminiSourcePath);
     const requestParts: any[] = [
       { inlineData: { mimeType: mime, data } },
       { text: prompt },

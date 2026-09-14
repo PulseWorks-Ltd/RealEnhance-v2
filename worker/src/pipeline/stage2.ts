@@ -1,5 +1,5 @@
 import { getGeminiClient } from "../ai/gemini";
-import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash } from "../utils/images";
+import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash, normalizePortraitImageForGemini } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
 import { validateStage2Structural } from "../validators/stage2StructuralValidator";
@@ -791,7 +791,27 @@ export async function runStage2GenerationAttempt(
     filePath: inputForStage2,
     ctx: { jobId: opts.jobId, imageId: opts.imageId, stage: "2", attempt: attemptNumber },
   });
-  const { data, mime } = toBase64(inputForStage2);
+  // Stage 2 never went through enhanceWithGemini's own portrait guard (it
+  // has this separate, direct Gemini call path) — only the bytes actually
+  // sent to Gemini are swapped; inputForStage2/basePath themselves must
+  // stay untouched, since basePath also feeds the anchor-locked prompt's
+  // geometry/zoning extraction at native resolution elsewhere in this
+  // function.
+  const geminiBasePath = await normalizePortraitImageForGemini(inputForStage2, {
+    jobId: opts.jobId,
+    imageId: opts.imageId,
+    stage: "2",
+    roomType: canonicalRoomType,
+  });
+  const { data, mime } = toBase64(geminiBasePath);
+  const geminiReferencePath = opts.referenceImagePath
+    ? await normalizePortraitImageForGemini(opts.referenceImagePath, {
+        jobId: opts.jobId,
+        imageId: opts.imageId,
+        stage: "2",
+        roomType: canonicalRoomType,
+      })
+    : undefined;
   const useTest = process.env.USE_TEST_PROMPTS === "1";
   const selectedStyleRaw = normalizeStagingStyle(opts.stagingStyle);
   const selectedStyle = ["nz_standard", "standard_listing", "standard", "default"].includes(selectedStyleRaw)
@@ -1237,8 +1257,8 @@ Do not add blinds, rods, tracks, or new window coverings.
   // Preferred ordering: text prompt first, then base image(s), then explicit mask (if available)
   requestParts.push({ text: textPrompt });
   requestParts.push({ inlineData: { mimeType: mime, data } });
-  if (opts.referenceImagePath) {
-    const ref = toBase64(opts.referenceImagePath);
+  if (geminiReferencePath) {
+    const ref = toBase64(geminiReferencePath);
     requestParts.push({ inlineData: { mimeType: ref.mime, data: ref.data } });
   }
   if (stagingMaskBuffer) {
@@ -1288,8 +1308,8 @@ Do not add blinds, rods, tracks, or new window coverings.
       // shape Gemini returns, so everything below this block — which only
       // ever reads img.inlineData.data — is completely unaffected by which
       // model actually ran.
-      const referenceImages = opts.referenceImagePath
-        ? [Buffer.from(toBase64(opts.referenceImagePath).data, "base64")]
+      const referenceImages = geminiReferencePath
+        ? [Buffer.from(toBase64(geminiReferencePath).data, "base64")]
         : undefined;
       const grokResult = await grokImageEdit({
         imageBuffer: Buffer.from(data, "base64"),
