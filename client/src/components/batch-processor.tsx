@@ -779,6 +779,7 @@ interface PersistedBatchJob {
     furnitureReplacement: boolean;
     declutter: boolean;
     enhanceExteriorSky?: boolean;
+    enhanceExteriorDusk?: boolean;
     stagingStyle: string;
     propertyAddress?: string;
   };
@@ -1512,6 +1513,10 @@ export default function BatchProcessor({
   // "Enhance Exterior Outlook" checkbox — global Stage 1A toggle that
   // brightens the exterior visible through windows/doors on interior shots.
   const [enhanceExteriorSky, setEnhanceExteriorSky] = useState<boolean>(false);
+  // "Twilight / Dusk Photo" checkbox — global Stage 1A toggle that converts
+  // exterior daytime shots into a dusk/twilight marketing photo. Scene-
+  // disjoint from enhanceExteriorSky above (interior-only vs exterior-only).
+  const [enhanceExteriorDusk, setEnhanceExteriorDusk] = useState<boolean>(false);
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
 
   const clientBatchIdRef = useRef<string | null>(null);
@@ -2614,6 +2619,10 @@ export default function BatchProcessor({
       // exterior visible through windows/doors on interior shots (gated to
       // interior scenes worker-side).
       metaItem.enhanceExteriorSky = enhanceExteriorSky;
+      // Global Stage 1A "Twilight / Dusk Photo" toggle — converts exterior
+      // daytime shots into a dusk/twilight photo (gated to exterior scenes
+      // worker-side).
+      metaItem.enhanceExteriorDusk = enhanceExteriorDusk;
       // Tuning controls
       if (samplingUiEnabled) {
         const tNum = temperatureInput.trim() ? Number(temperatureInput) : undefined;
@@ -2626,7 +2635,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky, enhanceExteriorDusk]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -2892,6 +2901,7 @@ export default function BatchProcessor({
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
       setEnhanceExteriorSky(savedState.settings.enhanceExteriorSky ?? false);
+      setEnhanceExteriorDusk(savedState.settings.enhanceExteriorDusk ?? false);
       setPropertyAddress(savedState.settings.propertyAddress ?? "");
       // DO NOT restore stagingStyle - always default to Standard Listing
       // User must explicitly select a different style for each new session
@@ -3050,6 +3060,7 @@ export default function BatchProcessor({
           furnitureReplacement,
           declutter,
           enhanceExteriorSky,
+          enhanceExteriorDusk,
           stagingStyle,
           propertyAddress,
         },
@@ -3064,7 +3075,7 @@ export default function BatchProcessor({
       };
       saveBatchJobState(state, currentUserId);
     }
-  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, enhanceExteriorSky, stagingStyle, propertyAddress, currentUserId]);
+  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, enhanceExteriorSky, enhanceExteriorDusk, stagingStyle, propertyAddress, currentUserId]);
 
   const startPollingExistingBatch = async (ids: string[]) => {
     if (!ids.length) return;
@@ -5198,6 +5209,7 @@ export default function BatchProcessor({
       furnitureReplacement,
       declutter,
       enhanceExteriorSky,
+      enhanceExteriorDusk,
       stage2Only,
       outdoorStaging,
       metaJson,
@@ -7861,6 +7873,32 @@ export default function BatchProcessor({
 
                           <p className="text-[11px] text-slate-500 whitespace-nowrap">
                             Brighten exterior outlook visible from interior shots.
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+
+                    <label
+                      htmlFor="enhance-exterior-dusk-global"
+                      className="block cursor-pointer py-2"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="enhance-exterior-dusk-global"
+                          type="checkbox"
+                          checked={enhanceExteriorDusk}
+                          onChange={(e) => setEnhanceExteriorDusk(e.target.checked)}
+                          className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-action-600 focus:ring-action-500"
+                          data-testid="checkbox-enhance-exterior-dusk"
+                        />
+
+                        <div className="leading-tight">
+                          <p className="text-xs font-medium text-slate-700">
+                            Twilight / Dusk Photo
+                          </p>
+
+                          <p className="text-[11px] text-slate-500">
+                            Convert exterior daytime shots into a dusk/twilight marketing photo.
                           </p>
                         </div>
                       </div>

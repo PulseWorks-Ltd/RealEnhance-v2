@@ -196,6 +196,7 @@ export interface EnhanceJobPayload {
     stage2Only?: boolean;
     replaceSky?: boolean;            // Sky replacement toggle (auto-enable exteriors)
     enhanceExteriorSky?: boolean;    // "Enhance Exterior Outlook" checkbox — brightens the exterior visible through windows/doors on interior shots (see worker's stage1A.ts)
+    enhanceExteriorDusk?: boolean;   // "Twilight / Dusk Photo" checkbox — converts an exterior daytime shot into a dusk/twilight marketing photo (exterior scenes only, see worker's stage1A.ts)
     stagingStyle?: string;           // Staging style (defaults to standard_listing)
     declutterMode?: DeclutterMode;   // Stage 1B mode (light or structured-retain)
     declutterIntensity?: "light" | "standard" | "heavy";

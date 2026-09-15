@@ -6,7 +6,7 @@ import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 import { getAverageLuminance, selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
-import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { buildStage1APromptNZStyle, buildStage1ADuskExteriorPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
 import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import type { EnhancementProfile } from "../config/enhancementProfiles";
@@ -580,15 +580,26 @@ async function enhanceWithGeminiStage1A(
   jobId: string,
   imageId: string,
   roomType?: string,
-  jobSampling?: { temperature?: number; topP?: number; topK?: number }
+  jobSampling?: { temperature?: number; topP?: number; topK?: number },
+  duskMode: boolean = false
 ): Promise<string> {
   let enhancementPrompt: string | undefined = undefined;
   let nzTemp: number | undefined = undefined;
   let nzTopP: number | undefined = undefined;
   let nzTopK: number | undefined = undefined;
 
-  // Priority 1: NZ-style prompts if enabled (for NZ market)
-  if (isNZStyleEnabled()) {
+  // Dusk/twilight exterior transformation (Stage 1A Exterior Enhancement).
+  // Hoisted above the isNZStyleEnabled() check below: a user-ticked dusk
+  // checkbox must not be silently voided by an unrelated NZ-style flag
+  // being off, so this branch calls the dusk prompt builder directly
+  // rather than going through the isNZStyleEnabled()-gated dispatch.
+  if (duskMode === true && sceneType === "exterior") {
+    enhancementPrompt = buildStage1ADuskExteriorPromptNZStyle();
+    const duskPreset = NZ_REAL_ESTATE_PRESETS.stage1AExteriorDusk;
+    nzTemp = duskPreset.temperature;
+    nzTopP = duskPreset.topP;
+    nzTopK = duskPreset.topK;
+  } else if (isNZStyleEnabled()) {
     const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
     const interiorCfg = INTERIOR_PROFILE_CONFIG[interiorProfileKey];
 
@@ -631,6 +642,14 @@ async function enhanceWithGeminiStage1A(
     sceneType,
     enabled: enhanceExteriorSky === true,
     promptInjected: stage1ASunnyExteriorPromptInjected,
+  });
+
+  console.log("[STAGE1A_DUSK_PROMPT]", {
+    jobId,
+    sceneType,
+    requested: duskMode === true,
+    active: duskMode === true && sceneType === "exterior",
+    promptChars: typeof enhancementPrompt === "string" ? enhancementPrompt.length : 0,
   });
 
   const geminiPath = await enhanceWithGemini(sharpPath, {
@@ -1092,6 +1111,7 @@ export async function runStage1A(
   options: {
     replaceSky?: boolean;
     enhanceExteriorSky?: boolean;
+    duskMode?: boolean;
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
@@ -1104,7 +1124,7 @@ export async function runStage1A(
     jobSampling?: { temperature?: number; topP?: number; topK?: number };
   }
 ): Promise<string> {
-  const { replaceSky = false, enhanceExteriorSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
+  const { replaceSky = false, enhanceExteriorSky = false, duskMode = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
   const baseArtifacts = options.baseArtifacts ?? undefined;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
@@ -1145,6 +1165,13 @@ export async function runStage1A(
   console.log("[stage1A] preset_summary", JSON.stringify(presetSummary));
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const effectiveSceneType = analysis.sceneType;
+  // Dusk/twilight exterior transformation (Stage 1A Exterior Enhancement).
+  // Gated on the scene classification actually resolved by analyzeStage1AInput
+  // (which can differ from the caller-supplied sceneType), not just the raw
+  // options flag — a photo that misclassifies as interior must not run the
+  // dusk pipeline regardless of what the checkbox requested.
+  const duskModeActive = duskMode === true && effectiveSceneType === "exterior";
+  logIfNotFocusMode("[STAGE1A_DUSK_MODE]", { jobId: jobIdResolved, imageId, requested: duskMode, sceneType: effectiveSceneType, active: duskModeActive });
   const isInterior = effectiveSceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -1195,7 +1222,8 @@ export async function runStage1A(
       jobIdResolved,
       imageId,
       roomTypeResolved,
-      options.jobSampling
+      options.jobSampling,
+      duskModeActive
     );
 
     if (!ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH) {
@@ -1245,7 +1273,10 @@ export async function runStage1A(
     }
   };
 
-  if (analysis.isBlurry && shouldUseStabilityStage1A()) {
+  // Dusk mode is forced to the Gemini path (see the other shouldUseStabilityStage1A()
+  // check below) — Stability's conservative-upscale call accepts no prompt
+  // override, so it can never perform the dusk repaint.
+  if (analysis.isBlurry && shouldUseStabilityStage1A() && !duskModeActive) {
     await img
       .clone()
       .webp(preGenWebpOptions)
@@ -1302,8 +1333,11 @@ export async function runStage1A(
   }
   
   // 4. Exposure triage: normalize only when the image is dark or compressed.
+  // Skipped entirely in dusk mode — a full histogram stretch would flatten
+  // the deliberate dark twilight sky the dusk prompt is asking Gemini for.
   if (
-    preGenControls.normalizeEnabled
+    !duskModeActive
+    && preGenControls.normalizeEnabled
     && (factors.shadowLift > preGenControls.normalizeShadowLiftThreshold
       || factors.contrastBoost > preGenControls.normalizeContrastThreshold)
   ) {
@@ -1314,19 +1348,30 @@ export async function runStage1A(
 
   // 4b. Re-anchor white balance on bright low-chroma regions so neutral walls
   // and ceilings stay optically neutral without flattening genuine warm lights.
-  const neutralBalanceResult = await applyStage1ANeutralBalance(img);
-  img = neutralBalanceResult.image;
-  if (neutralBalanceResult.balance) {
-    console.log("[Stage1A] Neutral balance applied:", neutralBalanceResult.balance);
-    logIfNotFocusMode(
-      `[stage1A] Neutral balance applied (samples=${neutralBalanceResult.balance.sampleCount}, redGain=${neutralBalanceResult.balance.redGain.toFixed(3)}, greenGain=${neutralBalanceResult.balance.greenGain.toFixed(3)}, blueGain=${neutralBalanceResult.balance.blueGain.toFixed(3)})`
-    );
+  // Skipped in dusk mode: this step exists specifically to strip color casts,
+  // which is the opposite of what a deliberate warm/cool twilight grade needs
+  // — running it here would fight the dusk prompt before Gemini ever sees
+  // the image.
+  if (!duskModeActive) {
+    const neutralBalanceResult = await applyStage1ANeutralBalance(img);
+    img = neutralBalanceResult.image;
+    if (neutralBalanceResult.balance) {
+      console.log("[Stage1A] Neutral balance applied:", neutralBalanceResult.balance);
+      logIfNotFocusMode(
+        `[stage1A] Neutral balance applied (samples=${neutralBalanceResult.balance.sampleCount}, redGain=${neutralBalanceResult.balance.redGain.toFixed(3)}, greenGain=${neutralBalanceResult.balance.greenGain.toFixed(3)}, blueGain=${neutralBalanceResult.balance.blueGain.toFixed(3)})`
+      );
+    } else {
+      logIfNotFocusMode("[stage1A] Neutral balance skipped (insufficient neutral highlights)");
+    }
   } else {
-    logIfNotFocusMode("[stage1A] Neutral balance skipped (insufficient neutral highlights)");
+    logIfNotFocusMode("[stage1A] dusk_mode_pregen_skip { step: \"neutral_balance\" }");
   }
-  
+
   // 5. Apply scaled corrections rather than hard switching.
-  if (factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
+  // All skipped in dusk mode: these are monotonic "brighten/lift an
+  // underexposed daytime photo" operations that directly fight a deliberate
+  // dusk color grade.
+  if (!duskModeActive && factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
     // NOTE: sharp.gamma(decodeGamma, encodeGamma) only brightens when
     // decodeGamma stays at identity (1.0) and encodeGamma is raised — see
     // applyGuardedGamma. Calling gamma(g) with a single argument (as this
@@ -1358,7 +1403,7 @@ export async function runStage1A(
     }
   }
 
-  if (factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
+  if (!duskModeActive && factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
     img = applyGuardedLinear(
       img,
       stage1ATransformMeta,
@@ -1370,7 +1415,7 @@ export async function runStage1A(
     );
   }
 
-  if (factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
+  if (!duskModeActive && factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
     img = applyGuardedLinear(
       img,
       stage1ATransformMeta,
@@ -1382,7 +1427,7 @@ export async function runStage1A(
     );
   }
 
-  if ((factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
+  if (!duskModeActive && (factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
     const postToneNeutralBalance = await applyStage1ANeutralBalance(img, {
       strength: 0.4 * Math.min(1, preGenControls.toneStackScale),
       highlightBias: true,
@@ -1397,7 +1442,13 @@ export async function runStage1A(
   }
   
   // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
-  if (applyInteriorProfile) {
+  // Skipped entirely in dusk mode: applyInteriorProfile is always false when
+  // duskModeActive (exterior-only), and the exterior "else" branch below
+  // brightens and saturates almost every exterior image — directly backwards
+  // for a deliberate twilight grade.
+  if (duskModeActive) {
+    logIfNotFocusMode("[stage1A] dusk_mode_pregen_skip { step: \"brightness_saturation_modulate\" }");
+  } else if (applyInteriorProfile) {
     const baseBrightness = 1 + (interiorCfg.brightnessBoost * (0.14 + (factors.shadowLift * 0.42)));
     const guardedBrightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
     const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
@@ -1473,11 +1524,16 @@ export async function runStage1A(
   }
   
   // 8. Sky enhancement (explicit-only): avoid implicit sky edits that can introduce haze.
-  if (effectiveSceneType === "exterior" && skyMode === "strong") {
+  // Guarded against dusk mode independently of skyMode (which worker.ts also
+  // forces to "safe" for dusk jobs) so this stays inert even if that
+  // upstream safeguard ever changes — applySkyEnhancement is a whole-frame
+  // saturation boost tuned for punching up an existing blue sky, not for a
+  // twilight gradient.
+  if (!duskModeActive && effectiveSceneType === "exterior" && skyMode === "strong") {
     img = applySkyEnhancement(img);
     logIfNotFocusMode("[stage1A] Sky enhancement pre-pass enabled (scene=exterior, skyMode=strong)");
   } else {
-    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${effectiveSceneType}, skyMode=${skyMode})`);
+    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${effectiveSceneType}, skyMode=${skyMode}, duskModeActive=${duskModeActive})`);
   }
   
   // 9. Keep edge brightening narrow and only for darker interiors.
@@ -1632,7 +1688,11 @@ export async function runStage1A(
   };
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
-  if (shouldUseStabilityStage1A()) {
+  // Dusk mode always routes to Gemini below: Stability's conservative-upscale
+  // call accepts no prompt override at all, so without this, a ticked dusk
+  // checkbox would silently do nothing whenever Stability is the primary
+  // engine (the default — USE_STABILITY_STAGE1A defaults to true).
+  if (shouldUseStabilityStage1A() && !duskModeActive) {
     if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
       const quality = await runLowQualityDetector(sharpOutputPath);
       const forceGemini =
@@ -1684,7 +1744,12 @@ export async function runStage1A(
       baseArtifacts
     );
 
-    if (!diffResult.passed && STAGE1A_STRICT_DIFF) {
+    // Dusk mode is expected to fail this diff by design (a full sky/lighting
+    // repaint greatly exceeds the ~1.2% mean-pixel-diff threshold this check
+    // uses) — bypassed defensively so enabling STAGE1A_STRICT_DIFF elsewhere
+    // can't send every dusk job through a second Gemini call that would only
+    // fail the same check again.
+    if (!diffResult.passed && STAGE1A_STRICT_DIFF && !duskModeActive) {
       logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {

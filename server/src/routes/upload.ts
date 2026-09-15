@@ -316,6 +316,7 @@ export function uploadRouter() {
     const stagingPreferenceForm = String((req.body as any)?.stagingPreference || "").trim();
     const stage2OnlyForm = String((req.body as any)?.stage2Only ?? "").toLowerCase() === "true";
     const enhanceExteriorSkyForm = String((req.body as any)?.enhanceExteriorSky ?? "").toLowerCase() === "true";
+    const enhanceExteriorDuskForm = String((req.body as any)?.enhanceExteriorDusk ?? "").toLowerCase() === "true";
     const stage2VariantForm = String((req.body as any)?.stage2Variant || "").trim();
     const furnishedStateForm = String((req.body as any)?.furnishedState || "").trim();
     const manualSceneOverrideForm = String((req.body as any)?.manualSceneOverride ?? "").toLowerCase() === "true";
@@ -646,6 +647,7 @@ export function uploadRouter() {
       if (meta.declutter !== undefined) opts.declutter = !!meta.declutter;
       if (meta.replaceSky !== undefined) opts.replaceSky = meta.replaceSky;
       if (meta.enhanceExteriorSky !== undefined) opts.enhanceExteriorSky = !!meta.enhanceExteriorSky;
+      if (meta.enhanceExteriorDusk !== undefined) opts.enhanceExteriorDusk = !!meta.enhanceExteriorDusk;
       if (meta.manualSceneOverride !== undefined) opts.manualSceneOverride = !!meta.manualSceneOverride;
       // Pass scenePrediction to worker for SKY_SAFE forcing logic
       if (meta.scenePrediction) opts.scenePrediction = meta.scenePrediction;
@@ -689,6 +691,9 @@ export function uploadRouter() {
       }
       if (opts.enhanceExteriorSky === undefined && enhanceExteriorSkyForm) {
         opts.enhanceExteriorSky = true;
+      }
+      if (opts.enhanceExteriorDusk === undefined && enhanceExteriorDuskForm) {
+        opts.enhanceExteriorDusk = true;
       }
             if (typeof opts.roomType === "string") {
               opts.roomType = normalizeRoomType(opts.roomType);
@@ -1016,6 +1021,7 @@ export function uploadRouter() {
           sceneType: opts.sceneType,
           replaceSky: opts.replaceSky,
           enhanceExteriorSky: !!opts.enhanceExteriorSky,
+          enhanceExteriorDusk: !!opts.enhanceExteriorDusk,
           manualSceneOverride: opts.manualSceneOverride,
           scenePrediction: opts.scenePrediction,
           sampling: opts.sampling,

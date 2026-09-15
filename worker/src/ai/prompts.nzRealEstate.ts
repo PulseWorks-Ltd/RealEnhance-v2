@@ -578,8 +578,8 @@ function buildMultiZoneConstraintBlock(roomType: string, mode: "full" | "refresh
 
 
 
-export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior"): string {
-  if (sceneType === "exterior") return buildStage1AExteriorPromptNZStyle();
+export function buildStage1APromptNZStyle(roomType: string, sceneType: "interior" | "exterior", duskMode: boolean = false): string {
+  if (sceneType === "exterior") return duskMode ? buildStage1ADuskExteriorPromptNZStyle() : buildStage1AExteriorPromptNZStyle();
   return buildStage1AInteriorPromptNZStyle(roomType);
 }
 
@@ -767,28 +767,11 @@ function buildStage1AInteriorPromptNZStyle(roomType: string): string {
   return buildStage1AInteriorPromptNZHighEnd(roomType);
 }
 
-function buildStage1AExteriorPromptNZStyle(): string {
-  return `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ HERO SHOT)
-
-You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
-of exterior real estate imagery.
-
-You are NOT a renovator, cleaner, landscaper, or generator.
-
-TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Produce a 'Clear Day' professional real estate exterior.
-
-Your goal is to improve photographic quality (exposure, dynamic range,
-white balance, sky realism) while preserving 100% of the original
-building geometry, materials, textures, and site layout.
-
-This is PARAMETER ADJUSTMENT, not scene generation.
-
-Model: Gemini 2.5 Flash Image  
-Default Sampling: temp=0.60, topP=0.90, topK=50
-
-────────────────────────────────
+// ---- Shared exterior prompt sections (identical wording used by both the
+// daylight and dusk/twilight modes below) -- these protect structural
+// fidelity regardless of lighting condition, so they are extracted once
+// rather than duplicated between the two prompt builders. ----
+const STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK = `────────────────────────────────
 STRICT GEOMETRIC & SITE LOCK (NON-NEGOTIABLE)
 ────────────────────────────────
 
@@ -835,22 +818,97 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
     Preserve black window and door framing while allowing adjacent reflected and transmitted light to remain naturally visible and open.
 
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
-
+`;
+const STAGE1A_EXTERIOR_WET_SURFACE_BLOCK = `────────────────────────────────
+WET SURFACE HANDLING (CONDITIONAL)
 ────────────────────────────────
+
+If driveways, decks, or paths appear wet or highly reflective:
+• Reduce glare and specular highlights ONLY.
+• Preserve material texture, roughness, and colour.
+• Do NOT flatten surfaces or make them look matte or painted.
+
+Goal: Reduce distraction — NOT alter reality.
+`;
+const STAGE1A_EXTERIOR_FINAL_CONSTRAINT_BLOCK = `────────────────────────────────
+FINAL CONSTRAINT
+────────────────────────────────
+
+Do NOT interpret “Enhancement” as “Improvement of the property”.
+It is an improvement of the PHOTO ONLY.
+`;
+const STAGE1A_EXTERIOR_OUTPUT_BLOCK = `────────────────────────────────
+OUTPUT
+────────────────────────────────
+
+Return ONLY the enhanced image.
+`;
+
+// PROHIBITED ACTIONS bullet 3 differs by mode: daylight forbids any
+// opening-like bright region outright; dusk mode carves out an explicit
+// exception authorizing illumination of openings that already exist in the
+// input (see ARTIFICIAL LIGHT SYNTHESIS in the dusk builder below), while
+// still forbidding any *new* opening-like structure. Every other bullet is
+// shared verbatim.
+function buildExteriorProhibitedActionsBlock(mode: "daylight" | "dusk"): string {
+  const bullet3 = mode === "dusk"
+    ? `• Walls must remain walls. You are strictly forbidden from introducing any new opening, window, door, skylight, or opening-like structure anywhere it does not already exist in the input. Illuminating the interior of a window, glazed door, or opening that already exists in the input is explicitly authorized under ARTIFICIAL LIGHT SYNTHESIS below — but creating a glowing or window-like region where no opening exists in the input is a hard failure.`
+    : `• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.`;
+  return `────────────────────────────────
 PROHIBITED ACTIONS (ZERO TOLERANCE)
 ────────────────────────────────
 
 • NO decluttering or object removal
 • NO surface cleaning or “tidying”
-• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.
-• NO geometry warping or perspective correction
+` + bullet3 + `\n• NO geometry warping or perspective correction
 • NO inpainting or regeneration of building/site content
 • NO material substitution or texture resynthesis
 
 If something looks worn, stained, or weathered, it MUST remain so.
 Fix the light — NOT the property.
+`;
+}
 
+// LANDSCAPE VIBRANCY bullet 1 differs by mode: daylight increases lawn/hedge
+// saturation for a healthy daytime look; dusk mode preserves footprint and
+// species but renders vegetation under twilight ambient light instead. The
+// SHADED LANDSCAPING and HARDSCAPE PRESERVATION bullets are shared verbatim.
+function buildExteriorLandscapeVibrancyBlock(mode: "daylight" | "dusk"): string {
+  const bullet1 = mode === "dusk"
+    ? `• TWILIGHT GREENERY: Preserve the exact shape, species, and footprint of all vegetation. Render it under twilight ambient light — deeper, cooler greens away from light sources, with warm highlight falloff only where path or landscape lighting actually reaches it. Do not apply a daytime-style saturation increase across the whole lawn or hedge.`
+    : `• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.`;
+  return `────────────────────────────────
+LANDSCAPE VIBRANCY
 ────────────────────────────────
+
+` + bullet1 + `\n• SHADED LANDSCAPING: Preserve the exact original landscaping layout and ground-material boundaries within shaded regions. Improve tonal separation and visibility of EXISTING vegetation only, without introducing, extending, or inventing new grass, plants, or ground coverage.
+• HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint to "fix" worn or dirt patches.
+`;
+}
+
+// ---- Daylight-only sections (used by buildStage1AExteriorPromptNZStyle,
+// unchanged in content from before this refactor). ----
+const STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ HERO SHOT)
+
+You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
+of exterior real estate imagery.
+
+You are NOT a renovator, cleaner, landscaper, or generator.
+
+TASK:
+Treat the input image as a READ-ONLY GEOMETRIC MAP.
+Produce a 'Clear Day' professional real estate exterior.
+
+Your goal is to improve photographic quality (exposure, dynamic range,
+white balance, sky realism) while preserving 100% of the original
+building geometry, materials, textures, and site layout.
+
+This is PARAMETER ADJUSTMENT, not scene generation.
+
+Model: Gemini 2.5 Flash Image  
+Default Sampling: temp=0.60, topP=0.90, topK=50
+`;
+const STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
 PRIMARY OBJECTIVE
 ────────────────────────────────
 
@@ -864,8 +922,8 @@ The result must look:
 • Bright but not washed out
 • Neutral daylight balanced
 • Sharp and detailed WITHOUT texture loss
-
-────────────────────────────────
+`;
+const STAGE1A_EXTERIOR_DAYLIGHT_SKY_BLOCK = `────────────────────────────────
 SKY ENHANCEMENT (CONDITIONAL & GUARDED)
 ────────────────────────────────
 
@@ -882,27 +940,8 @@ CRITICAL SKY RULES:
 • LIGHT WRAP: The sky and exterior lighting must integrate naturally with the house. The house may carry a warm, sunny glow, but whites must stay neutral white, not nuclear bright.
 
 Sky enhancement must NEVER damage rooflines or structures.
-
-────────────────────────────────
-WET SURFACE HANDLING (CONDITIONAL)
-────────────────────────────────
-
-If driveways, decks, or paths appear wet or highly reflective:
-• Reduce glare and specular highlights ONLY.
-• Preserve material texture, roughness, and colour.
-• Do NOT flatten surfaces or make them look matte or painted.
-
-Goal: Reduce distraction — NOT alter reality.
-
-────────────────────────────────
-LANDSCAPE VIBRANCY
-────────────────────────────────
-
-• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.
-• SHADED LANDSCAPING: Preserve the exact original landscaping layout and ground-material boundaries within shaded regions. Improve tonal separation and visibility of EXISTING vegetation only, without introducing, extending, or inventing new grass, plants, or ground coverage.
-• HARDSCAPE PRESERVATION: Driveways, paths, and concrete must NEVER be covered by grass or landscaping. Enhance colour of existing grass only; do not expand its footprint to "fix" worn or dirt patches.
-
-────────────────────────────────
+`;
+const STAGE1A_EXTERIOR_DAYLIGHT_ALLOWED_ADJUSTMENTS_BLOCK = `────────────────────────────────
 ALLOWED ADJUSTMENTS (GLOBAL ONLY)
 ────────────────────────────────
 
@@ -918,19 +957,182 @@ NO object removal, generation, restructuring, or semantic scene alteration.
 Localized tonal balancing within naturally shaded regions is permitted ONLY for photometric recovery purposes and must never alter geometry, materials, object presence, or scene layout.
 
 Sky masking remains the only permitted explicit segmentation operation.
+`;
 
-────────────────────────────────
-FINAL CONSTRAINT
+function buildStage1AExteriorPromptNZStyle(): string {
+  return (
+    STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
+    buildExteriorProhibitedActionsBlock("daylight") + "\n" +
+    STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DAYLIGHT_SKY_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_WET_SURFACE_BLOCK + "\n" +
+    buildExteriorLandscapeVibrancyBlock("daylight") + "\n" +
+    STAGE1A_EXTERIOR_DAYLIGHT_ALLOWED_ADJUSTMENTS_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FINAL_CONSTRAINT_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_OUTPUT_BLOCK
+  ).trim();
+}
+
+// ---- Dusk/twilight-only sections (Stage 1A Exterior Enhancement: dusk
+// checkbox). See buildStage1ADuskExteriorPromptNZStyle below for assembly. ----
+const STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ DUSK/TWILIGHT HERO SHOT)
+
+You are RealEnhance, an AI engine authorized to perform a GLOBAL TIME-OF-DAY
+AND LIGHTING TRANSFORMATION of exterior real estate imagery.
+
+You are NOT a renovator, cleaner, landscaper, or generator.
+
+TASK:
+Treat the input image as a READ-ONLY GEOMETRIC MAP.
+Produce a premium New Zealand real estate DUSK / TWILIGHT marketing photograph
+of the exact same property, as if photographed again roughly 15-25 minutes
+after sunset, during civil twilight, with the property's own lights switched on.
+
+Geometry, materials, textures, and site layout are FROZEN. Only the time of
+day and lighting condition may change.
+
+The user explicitly and deliberately selected a dusk/twilight transformation
+for this photo. A dramatic twilight lighting result is the CORRECT and
+EXPECTED outcome — do not default back toward a daytime look.
+
+Model: Gemini 2.5 Flash Image
+Default Sampling: temp=0.35, topP=0.85, topK=40
+`;
+const STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
+PRIMARY OBJECTIVE
 ────────────────────────────────
 
-Do NOT interpret “Enhancement” as “Improvement of the property”.
-It is an improvement of the PHOTO ONLY.
+Produce a premium New Zealand real estate TWILIGHT HERO SHOT — the kind of
+paid dusk photograph real estate agents commission separately from their
+daytime listing photos.
 
-────────────────────────────────
-OUTPUT
+The result must look:
+• Realistic and geographically plausible
+• Photographed during civil twilight, roughly 15-25 minutes after sunset
+• FULL DRAMATIC TWILIGHT — not golden hour, not a daytime shot with a warm filter
+• The sun fully below the horizon: NO visible sun disc, NO low raking
+  sun-shaft across the facade, NO long hard sun-cast shadows
+• Sharp and detailed WITHOUT texture loss
+`;
+const STAGE1A_EXTERIOR_DUSK_SKY_BLOCK = `────────────────────────────────
+SKY ENHANCEMENT (TWILIGHT REPAINT)
 ────────────────────────────────
 
-Return ONLY the enhanced image.`.trim();
+Replace the sky with a dusk/twilight gradient:
+• Deep indigo/navy at the top of the frame
+• Grading through blue-violet through the middle of the sky
+• A warmer amber/magenta band low on the horizon
+
+Any existing cloud structure must keep its original shape and position, now
+lit from below/behind by residual horizon glow.
+
+CRITICAL SKY RULES (unchanged from daylight mode):
+• The sky mask MUST fully preserve antennas, chimneys,
+  gutters, roof edges, trees, and fine branches.
+• NO edge erosion, clipping, or haloing.
+• If masking confidence is low, KEEP THE ORIGINAL SKY SHAPE and only
+  recolor it — do not erode structure to extend the sky.
+
+Sky enhancement must NEVER damage rooflines or structures.
+`;
+const STAGE1A_EXTERIOR_DUSK_ARTIFICIAL_LIGHT_BLOCK = `────────────────────────────────
+ARTIFICIAL LIGHT SYNTHESIS (CONDITIONAL & BOUNDED)
+────────────────────────────────
+
+This is the one section where the transformation goes beyond global color
+grading. Every rule here is bounded to geometry that already exists in the
+input — see the PROHIBITED ACTIONS carve-out above.
+
+WINDOW & DOOR GLOW
+• Every window and glazed door that already exists in the input reads as
+  lit from within: warm tungsten (~2700-3000K), soft, and slightly uneven
+  pane-to-pane so it reads as a real interior light rather than a flat decal.
+• Frames, mullions, transoms, and glazing bars stay dark and in their exact
+  original position, shape, and size.
+• Do NOT invent room interiors, furniture, or figures behind the glass.
+• A window that appears occluded by a closed blind or curtain in the input
+  may receive a soft, even warm wash behind it only — nothing more specific.
+
+EXTERIOR / PATH / LANDSCAPE LIGHTING
+• Any exterior fixture already visible in the input (wall light, under-eave
+  downlight, bollard, step light, path light, porch lantern) is switched on,
+  with a small, realistic falloff pool of light on the surface beneath it.
+• You MAY synthesize a modest, plausible ground-level path or garden
+  lighting glow along existing paths and garden edges. What is synthesized
+  is the LIGHT AND ITS FALLOFF on existing surfaces — you may NOT invent new
+  visible fixture objects where none exist in the input.
+
+FACADE LIGHT SPILL
+• Warm color temperature and soft falloff on cladding immediately around lit
+  windows, doors, and under lit eaves.
+• Cooler ambient twilight tone elsewhere on the facade. This warm/cool
+  separation is what makes the shot read as a premium twilight photograph
+  rather than a flat orange color grade.
+
+AMBIENT EXPOSURE FLOOR
+• The whole frame must not go dark. The building must remain fully
+  readable: cladding texture, roofline, materials, and site layout must all
+  stay legible, per SHADOW DEPTH & MATERIAL RECOVERY above.
+• Windows and fixtures must not clip to pure white; the sky must not clip
+  to pure black.
+`;
+const STAGE1A_EXTERIOR_DUSK_ALLOWED_ADJUSTMENTS_BLOCK = `────────────────────────────────
+ALLOWED ADJUSTMENTS (GLOBAL + BOUNDED ILLUMINATION)
+────────────────────────────────
+
+• Global exposure correction for a twilight scene
+• A deliberate warm/cool split color grade
+• Sky repaint (see SKY ENHANCEMENT above)
+• Synthesis of illumination through existing window/door openings and from
+  existing or plausible ground-level fixtures (see ARTIFICIAL LIGHT
+  SYNTHESIS above)
+• Highlight rolloff on light sources
+
+NO object removal, generation, restructuring, or semantic scene alteration.
+
+Permitted segmentation is limited to: the sky, and existing window/door/
+fixture regions for illumination purposes only.
+`;
+const STAGE1A_EXTERIOR_DUSK_REALISM_CHECK_BLOCK = `────────────────────────────────
+REALISM CHECK (BEFORE OUTPUT)
+────────────────────────────────
+
+Before returning the result, confirm:
+• The sky gradient is smooth, with no banding.
+• Window glow does not bleed past its frame onto the cladding.
+• No glow appears behind a solid wall where no opening exists.
+• There is no second light source implying a remaining sun.
+• Reflections in glass and any wet surfaces are consistent with the new sky.
+• The result is defensible as a genuine dusk photograph of THIS property,
+  differing from the input only in time of day and lighting state.
+`;
+
+// Dusk/twilight exterior transformation (Stage 1A Exterior Enhancement).
+// Shares the structural-preservation guardrail sections with the daylight
+// builder above (geometric lock, wet surface handling, final constraint,
+// output) but replaces every daylight-specific section (header, primary
+// objective, sky enhancement, allowed adjustments) with twilight-specific
+// direction, and adds a new ARTIFICIAL LIGHT SYNTHESIS section with no
+// daylight counterpart. Exported so worker/src/pipeline/stage1A.ts can call
+// it directly, bypassing the isNZStyleEnabled() gate that the daylight path
+// runs through -- a user-ticked dusk checkbox must not be silently voided
+// by an unrelated NZ-style flag being off.
+export function buildStage1ADuskExteriorPromptNZStyle(): string {
+  return (
+    STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
+    buildExteriorProhibitedActionsBlock("dusk") + "\n" +
+    STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DUSK_SKY_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DUSK_ARTIFICIAL_LIGHT_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_WET_SURFACE_BLOCK + "\n" +
+    buildExteriorLandscapeVibrancyBlock("dusk") + "\n" +
+    STAGE1A_EXTERIOR_DUSK_ALLOWED_ADJUSTMENTS_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FINAL_CONSTRAINT_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_DUSK_REALISM_CHECK_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_OUTPUT_BLOCK
+  ).trim();
 }
 
   // Stage 1B: Aggressive furniture & clutter removal (NZ style)

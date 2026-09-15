@@ -8504,6 +8504,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     nLog(`[WORKER] Stage1A probable exterior fallback: resolvedScene=${sceneLabel} -> stage1AScene=exterior`);
   }
 
+  // "Twilight / Dusk Photo" checkbox (Stage 1A Exterior Enhancement). Scene-
+  // disjoint from "Enhance Exterior Outlook" (enhanceExteriorSky) by
+  // construction: that flag only ever fires for interior scenes, this one
+  // only for exterior — both derive from the same single scene resolution
+  // here, so there is no window where they could conflict. Must stay that
+  // way; do not add UI-level mutual exclusion (a batch can legitimately mix
+  // interior and exterior photos with different global toggles applying).
+  const stage1ADuskExteriorRequested = strictBool((payload.options as any)?.enhanceExteriorDusk);
+  const stage1ADuskExteriorEnabled = stage1ADuskExteriorRequested && stage1ASceneLabel === "exterior";
+  nLog(`[WORKER] Dusk exterior checkbox: requested=${stage1ADuskExteriorRequested} enabled=${stage1ADuskExteriorEnabled} stage1AScene=${stage1ASceneLabel}`);
+
   let hasRoofStructure = false;
   if (stage1ASceneLabel === "exterior") {
     try {
@@ -8531,13 +8542,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // determineLightingDecision independently re-checks scene.sceneType ===
   // "interior" and no-ops regardless of why it was called, so this cannot
   // cause relighting to run on an interior photo.
+  //
+  // Excluded when dusk mode is active: this whole engine exists to decide
+  // whether/how to brighten an existing daytime sky (analyzeExteriorEnvironment,
+  // determineLightingDecision, applyExteriorRelighting), which is the wrong
+  // tool for a full generative twilight repaint — dusk jobs are routed
+  // through their own dedicated prompt (stage1A.ts) instead, and skipping
+  // this also saves the extra Gemini classifier call.
   const shouldAnalyzeExteriorEnvironment = Boolean(
-    sceneDetectionForLighting.needsConfirm ||
-    sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
-    userSceneOverride?.sceneOverride === "exterior" ||
-    hasRoofStructure ||
-    sceneDetectionForLighting.sceneType === "exterior"
+    !stage1ADuskExteriorEnabled && (
+      sceneDetectionForLighting.needsConfirm ||
+      sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
+      userSceneOverride?.sceneOverride === "exterior" ||
+      hasRoofStructure ||
+      sceneDetectionForLighting.sceneType === "exterior"
+    )
   );
+
+  if (stage1ADuskExteriorEnabled) {
+    nLog(`[WORKER] Exterior environment analysis skipped — dusk mode active`);
+  }
 
   if (shouldAnalyzeExteriorEnvironment) {
     const exteriorEnvAnalysisStartedAt = Date.now();
@@ -8628,6 +8652,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       nLog(`[WORKER] Sky Safeguard: pergola detector error (fail-open):`, (e as any)?.message || e);
     }
   }
+
+  // Dusk mode wins over every safeguard above: a full generative twilight
+  // repaint doesn't use the daytime mask-based sky-replacement mechanism
+  // those safeguards protect, and leaving safeReplaceSky=true here would
+  // double-instruct the model (both the dusk prompt and a separate sky-mask
+  // replacement pass). Placed last so it overrides unconditionally.
+  if (stage1ADuskExteriorEnabled) {
+    safeReplaceSky = false;
+    skyModeForStage1A = "safe";
+    nLog(`[WORKER] Dusk mode active — forcing safeReplaceSky=false, skyMode=safe`);
+  }
+
   // "Enhance Exterior Outlook" checkbox (reintroduced 2026-08-30 — ported
   // from opening-validator-and-stage-2-prompt-amendments, deliberately
   // excluding that lineage's later Grok-Stage1A-generator experiment).
@@ -8656,6 +8692,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     () => runStage1A(canonicalPath, {
       replaceSky: safeReplaceSky,
       enhanceExteriorSky: stage1ASunnyExteriorEnabled,
+      duskMode: stage1ADuskExteriorEnabled,
       declutter: false, // Never declutter in Stage 1A - that's Stage 1B's job
       sceneType: stage1ASceneLabel,
       interiorProfile: ((): any => {

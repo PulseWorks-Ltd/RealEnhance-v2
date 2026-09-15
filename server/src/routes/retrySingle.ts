@@ -793,6 +793,9 @@ export function retrySingleRouter() {
 
       console.log(`[RETRY_SINGLE] imageId=${parentImageId || 'n/a'} sourceStage=${retrySourceStage || 'missing'} sourceUrl=${retrySourceUrl || 'missing'} sourceKey=${retrySourceKey || 'n/a'} userId=${sessUser.id}`);
 
+      // Deliberately does not forward enhanceExteriorSky or enhanceExteriorDusk —
+      // a retry of a job should not silently re-request either checkbox's
+      // one-off transformation. Do not "fix" this by adding them.
       const options: any = {
         declutter: effectiveDeclutterWithFallback,
         declutterMode: declutterMode ?? undefined,
