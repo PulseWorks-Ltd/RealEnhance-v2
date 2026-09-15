@@ -706,6 +706,18 @@ const STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD = 45;
 const STAGE1A_DARKNESS_ONSET = parseBoundedNumber(process.env.STAGE1A_DARKNESS_ONSET, 135, 60, 200);
 // Span over which darkness ramps 0 -> 1.
 const STAGE1A_DARKNESS_SPAN = parseBoundedNumber(process.env.STAGE1A_DARKNESS_SPAN, 90, 20, 160);
+// Exterior-only (Stage 1A Exterior Enhancement): high lumStdev relative to
+// what's typical for a bright, evenly-lit exterior indicates a hard local
+// shadow (driveway/facade shadow band) coexisting with sunlit areas, even
+// when overall mean luminance looks fine — the classic "bright day, hard
+// shadow" real estate exterior problem the mean-luminance darkness signal
+// above cannot see at all (a typical sunny exterior has lumMean well above
+// STAGE1A_DARKNESS_ONSET, so darknessFromMean is 0 regardless of how harsh
+// a local shadow is). Independently tunable so it can be dialled to zero
+// without touching interior or the existing mean-based signal.
+const STAGE1A_EXT_SHADOW_STDEV_ONSET = parseBoundedNumber(process.env.STAGE1A_EXT_SHADOW_STDEV_ONSET, 60, 30, 90);
+const STAGE1A_EXT_SHADOW_STDEV_SPAN = parseBoundedNumber(process.env.STAGE1A_EXT_SHADOW_STDEV_SPAN, 30, 10, 70);
+const STAGE1A_EXT_SHADOW_MAX_DARKNESS = parseBoundedNumber(process.env.STAGE1A_EXT_SHADOW_MAX_DARKNESS, 0.28, 0, 0.5);
 // Coefficient for the tone-stack gamma encode curve (see applyGuardedGamma).
 // Kept small: the asymptotic gamma(1, gammaOut) curve is much more potent
 // per unit of coefficient than the previously-inert gamma(g) call it
@@ -835,7 +847,26 @@ async function analyzeStage1AInput(
 }
 
 export function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
-  const darkness = clampStage1AFactor((STAGE1A_DARKNESS_ONSET - analysis.lumMean) / STAGE1A_DARKNESS_SPAN);
+  const darknessFromMean = clampStage1AFactor((STAGE1A_DARKNESS_ONSET - analysis.lumMean) / STAGE1A_DARKNESS_SPAN);
+
+  // Exterior-only local-shadow signal — see STAGE1A_EXT_SHADOW_* constants
+  // above. Adds to (never replaces) the mean-based signal, so a genuinely
+  // dark exterior's existing behavior is unaffected; this only lifts an
+  // otherwise-bright exterior that has a hard local shadow the mean alone
+  // can't see. Note: shadowLift/contrastBoost (derived from darkness below)
+  // also gate an img.normalize() pre-pass elsewhere in this file at
+  // thresholds 0.18/0.24 — currently inert for exterior in production
+  // (the live "exterior-nz-hero" ablation preset sets
+  // STAGE1A_PREGEN_NORMALIZE_ENABLED: false), but if that preset ever
+  // changes, this new signal feeds that same gate too.
+  let exteriorShadowSpread = 0;
+  if (analysis.isExterior) {
+    exteriorShadowSpread = clampStage1AFactor(
+      (analysis.lumStdev - STAGE1A_EXT_SHADOW_STDEV_ONSET) / STAGE1A_EXT_SHADOW_STDEV_SPAN
+    ) * STAGE1A_EXT_SHADOW_MAX_DARKNESS;
+  }
+
+  const darkness = clampStage1AFactor(darknessFromMean + exteriorShadowSpread);
   const brightness = clampStage1AFactor((analysis.lumMean - 180) / 40);
   const edgeDensity = normalizeRange(
     analysis.edgeDensity,

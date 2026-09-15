@@ -8522,15 +8522,27 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     confidence: typeof scenePrimary?.confidence === "number" ? scenePrimary.confidence : 0,
     needsConfirm: Boolean(scenePrimary?.needsConfirm || requiresSceneConfirm),
   } as const;
+  // Widened (Stage 1A Exterior Enhancement): previously only ambiguous/
+  // low-confidence/user-overridden/pergola-containing photos ever reached
+  // analyzeExteriorEnvironment/applyExteriorRelighting — an ordinary,
+  // confidently-classified exterior listing photo (the common case) skipped
+  // this whole block, so the relighting engine never ran on it at all. This
+  // is now unconditional for any exterior-classified photo. Verified safe:
+  // determineLightingDecision independently re-checks scene.sceneType ===
+  // "interior" and no-ops regardless of why it was called, so this cannot
+  // cause relighting to run on an interior photo.
   const shouldAnalyzeExteriorEnvironment = Boolean(
     sceneDetectionForLighting.needsConfirm ||
     sceneDetectionForLighting.confidence < SCENE_CONF_THRESHOLD ||
     userSceneOverride?.sceneOverride === "exterior" ||
-    hasRoofStructure
+    hasRoofStructure ||
+    sceneDetectionForLighting.sceneType === "exterior"
   );
 
   if (shouldAnalyzeExteriorEnvironment) {
+    const exteriorEnvAnalysisStartedAt = Date.now();
     exteriorEnvironment = await analyzeExteriorEnvironment(toBase64(canonicalPath).data);
+    nLog(`[EXTERIOR_ENV_TIMING] durationMs=${Date.now() - exteriorEnvAnalysisStartedAt}`);
     exteriorLightingDecision = determineLightingDecision({
       scene: sceneDetectionForLighting,
       userOverride: userSceneOverride,
