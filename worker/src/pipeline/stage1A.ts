@@ -633,6 +633,10 @@ async function enhanceWithGeminiStage1A(
     && typeof enhancementPrompt === "string"
     && enhancementPrompt.trim().length > 0;
 
+  // Kept only for the hallucination-check reroute below (blocking mode) —
+  // the prompt this job would have used had the checkbox been off.
+  const stage1APromptBeforeSunnyExterior = enhancementPrompt;
+
   if (stage1ASunnyExteriorPromptInjected) {
     enhancementPrompt = `${enhancementPrompt}\n\n${STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK}`;
   }
@@ -679,7 +683,84 @@ async function enhanceWithGeminiStage1A(
     localPath: geminiPath,
   });
 
-  return geminiPath;
+  let finalGeminiPath = geminiPath;
+
+  // "Enhance Exterior Outlook" hallucination check — only runs when the
+  // checkbox actually granted permission to touch exterior content for this
+  // job (see stage1AExteriorHallucinationCheck.ts's header comment for why
+  // this is the missing enforcement backstop for that feature).
+  if (stage1ASunnyExteriorPromptInjected) {
+    try {
+      const {
+        runStage1AExteriorHallucinationCheck,
+        stage1AExteriorHallucinationCheckBlocking,
+      } = await import("../validators/stage1AExteriorHallucinationCheck.js");
+
+      const verdict = await runStage1AExteriorHallucinationCheck({
+        beforePath: sharpPath,
+        afterPath: geminiPath,
+        jobId,
+        imageId,
+      });
+      const blocking = stage1AExteriorHallucinationCheckBlocking();
+      let action: "none" | "advisory_only" | "rerouted_without_exterior_prompt" | "reroute_failed_kept_original" = "none";
+
+      if (verdict.hallucinationDetected && blocking) {
+        try {
+          const retryOutputPath = sharpPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-gemini-1A-exterior-retry.webp");
+          finalGeminiPath = await enhanceWithGemini(sharpPath, {
+            replaceSky: replaceSky,
+            declutter: false,
+            sceneType: sceneType,
+            stage: "1A",
+            jobId,
+            imageId,
+            roomType,
+            modelReason: sceneType ? `${sceneType} enhance (exterior hallucination retry)` : "enhance (exterior hallucination retry)",
+            promptOverride: stage1APromptBeforeSunnyExterior,
+            temperature: jobSampling?.temperature ?? nzTemp,
+            topP: jobSampling?.topP ?? nzTopP,
+            topK: jobSampling?.topK ?? nzTopK,
+            floorClean: false,
+            // This retry only ever runs inside the interior-only gate above.
+            hardscapeClean: false,
+            outputPath: retryOutputPath,
+          });
+          await logImageAttemptUrl({
+            ctx: { jobId, imageId, stage: "1A", attempt: 2 },
+            localPath: finalGeminiPath,
+          });
+          action = "rerouted_without_exterior_prompt";
+        } catch (retryErr) {
+          finalGeminiPath = geminiPath;
+          action = "reroute_failed_kept_original";
+          logIfNotFocusMode("[stage1A] Exterior hallucination reroute failed — keeping original output", retryErr);
+        }
+      } else if (verdict.hallucinationDetected) {
+        action = "advisory_only";
+      }
+
+      console.log("[STAGE1A_EXTERIOR_HALLUCINATION_CHECK]", {
+        jobId,
+        imageId,
+        sceneType,
+        ran: verdict.ran,
+        error: verdict.error,
+        hallucinationDetected: verdict.hallucinationDetected,
+        reasons: verdict.reasons,
+        confidence: verdict.confidence,
+        blocking,
+        action,
+        model: verdict.model,
+      });
+    } catch (checkErr) {
+      // Fail-open at the outermost level too — this check must never cost a
+      // customer their enhancement.
+      logIfNotFocusMode("[stage1A] Exterior hallucination check failed to run — continuing without it", checkErr);
+    }
+  }
+
+  return finalGeminiPath;
 }
 
 /**
