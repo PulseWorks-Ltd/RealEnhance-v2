@@ -8741,11 +8741,28 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const extractedBaseline = await withMemoryPhase(
           "stage1a_structural_baseline",
           { attempt: 1, startedDuringStage1A: true },
-          () => extractStructuralBaseline(canonicalPath, {
-            jobId: payload.jobId,
-            imageId: payload.imageId,
-            attempt: 1,
-          })
+          async () => {
+            try {
+              return await extractStructuralBaseline(canonicalPath, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: 1,
+              });
+            } catch (firstAttemptErr: any) {
+              // One retry only, not a loop — this whole block already requires
+              // stage2Requested (see canRunParallelBaseline above), and runs in
+              // parallel with Stage 1A so the extra latency is largely hidden.
+              // A null baseline here silently degrades the combined-mode prompt
+              // assembly to generic text with no protected-feature list at all,
+              // so a transient failure is worth one retry before falling back.
+              nLog(`[STRUCTURAL_BASELINE_RETRY] jobId=${payload.jobId} reason=${firstAttemptErr?.message || firstAttemptErr}`);
+              return await extractStructuralBaseline(canonicalPath, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: 2,
+              });
+            }
+          }
         );
         structuralBaseline = extractedBaseline;
         jobContext.structuralBaseline = extractedBaseline;
@@ -8780,7 +8797,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           completedBeforeStage1AFinished,
           persistenceMs,
         });
-        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length}`);
+        const anchorFixtureSummary = (extractedBaseline.anchorFixtures || [])
+          .map((f) => `${f.type}:${f.wallIndex}`)
+          .join(",");
+        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length} anchorFixtures=${(extractedBaseline.anchorFixtures || []).length} anchorFixtureSummary=[${anchorFixtureSummary}]`);
         return extractedBaseline;
       } catch (baselineErr: any) {
         nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);

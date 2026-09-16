@@ -651,6 +651,63 @@ function structuralFixtureSignature(fixture: AnchorFixture): Record<string, unkn
   };
 }
 
+// Fireplace-loss investigation: anchorFixtures don't need graph-level
+// consensus the way openings do (openings have adjacency/count semantics
+// that genuinely require the graphs to agree). Fixtures are independent
+// per-item detections, so on disagreement between the default 2 extraction
+// passes, unioning what either pass saw is strictly safer than the graph
+// tie-break below (sorting SHA-256 hashes alphabetically, which has no
+// relationship to which pass actually saw the fixture correctly) — a
+// fixture seen by only one of two passes is far more likely a genuine
+// detection the other pass missed than a hallucination, and the downstream
+// cost is asymmetric: a spurious protection sentence costs a little prompt
+// length, a missed fireplace costs a real production incident.
+//
+// Deliberately excludes bbox/description/id from the identity token — all
+// three are confirmed (see the graph-consensus comments elsewhere in this
+// file) to drift run-to-run even at temperature 0, which is exactly the
+// instability being smoothed over here, not something to key identity on.
+export function anchorFixtureIdentityToken(fixture: AnchorFixture): string {
+  return `${fixture.type}|${fixture.wallIndex}|${fixture.horizontalBand}`;
+}
+
+export function reconcileAnchorFixturesAcrossPasses(passResults: StructuralBaseline[]): {
+  fixtures: AnchorFixture[];
+  fixtureAgreement: number;
+  fixturePassSeenCounts: Record<string, number>;
+} {
+  const byToken = new Map<string, { fixture: AnchorFixture; seenInPasses: number }>();
+  for (const pass of passResults) {
+    for (const fixture of pass.anchorFixtures || []) {
+      const token = anchorFixtureIdentityToken(fixture);
+      const existing = byToken.get(token);
+      if (!existing) {
+        byToken.set(token, { fixture, seenInPasses: 1 });
+      } else {
+        existing.seenInPasses += 1;
+        if (fixture.confidence > existing.fixture.confidence) {
+          existing.fixture = fixture;
+        }
+      }
+    }
+  }
+  // No .slice()/truncation — every distinct token survives, unlike the
+  // dormant extraction_verification mode's fixture merge (concatenate then
+  // slice(0, max(primaryLen, secondaryLen))), which can silently drop a
+  // genuinely distinct fixture purely because of sort order.
+  const fixtures = Array.from(byToken.values())
+    .map((entry) => entry.fixture)
+    .sort(compareAnchorFixtures);
+  const totalPasses = Math.max(1, passResults.length);
+  const fullyAgreedCount = Array.from(byToken.values()).filter((entry) => entry.seenInPasses === totalPasses).length;
+  const fixtureAgreement = byToken.size === 0 ? 1 : fullyAgreedCount / byToken.size;
+  const fixturePassSeenCounts: Record<string, number> = {};
+  for (const [token, entry] of byToken.entries()) {
+    fixturePassSeenCounts[token] = entry.seenInPasses;
+  }
+  return { fixtures, fixtureAgreement, fixturePassSeenCounts };
+}
+
 function hashStructuralBaselineGraph(baseline: StructuralBaseline): string {
   const canonical = stableSortObject({
     cameraOrientation: baseline.cameraOrientation ?? null,
@@ -783,11 +840,12 @@ Rules:
 - description (required for every opening and every anchor fixture): a short, concrete, plain-language description of what the object actually looks like and roughly where it is — e.g. "timber-framed sliding glass door with frosted glass panels" or "decorative white wall-mounted corbel/bracket, roughly waist-height". Describe what you actually see, not just a restatement of the type label. This is used downstream to generate a specific protection instruction for this exact object, so it must be accurate and specific, not generic filler like "a fixture" or "a window".
 
 Anchor fixture rules:
-- Include only stable architectural reference fixtures useful for left-to-right wall sequencing.
+- Include every stable architectural reference fixture that is useful for left-to-right wall sequencing AND every stable fixture that downstream furniture staging must not cover or remove — these are the same list, not two different ones. A wall that already has an unambiguous window or door for sequencing purposes must still have its OTHER fixtures (a fireplace, a TV bracket, etc.) reported too — do not omit a fixture just because the wall is already identifiable another way.
 - Example fixtures: wall-mounted AC units, fireplaces, fixed built-in cabinetry, staircase starts, fixed island edges, fixed plumbing fixtures (sinks, taps, built-in tubs, showers), ceiling-mounted light fixtures (flush-mount, pendant, chandelier), existing TV wall-mount brackets/plates.
 - Use type "plumbing_fixture" for fixed sinks, taps, tubs, and showers.
 - Use type "light_fixture" for ceiling-mounted light fixtures (flush-mount, semi-flush, pendant, chandelier) — not for movable lamps.
 - Use type "tv_mount" for any existing wall-mounted TV bracket, mounting plate, or arm visible on a wall — even with no TV currently attached to it. This is a strong, direct signal for where a TV belongs in this room; look carefully for it on every wall, since it is easy to miss against a plain wall.
+- Use type "fireplace" for any fireplace, hearth, mantel, firebox, or built-in wood/gas stove. This is a strong, direct signal that furniture staging must not cover or block; look carefully for it on every wall, since it is easy to miss. Report it even when a TV bracket, mirror, or artwork is mounted directly above it — a TV bracket mounted above a fireplace is TWO separate fixtures (one "tv_mount", one "fireplace"), and both must be listed, not merged into one.
 - Use type "other" for any stable, fixed architectural feature that doesn't genuinely match one of the named categories — e.g. a decorative corbel/bracket, a built-in shelf remnant, an unusual wall-mounted fixture. Guessing a close-but-wrong named category is WORSE than using "other" with an accurate description: the description (not the type label) is what downstream staging uses to protect the object, so a correct "other" with a precise description is strictly better than a confident-sounding but incorrect named type. Do not force an ambiguous object into "fireplace", "built_in_cabinet", or any other named type unless it genuinely, unambiguously matches — when in doubt, use "other" and describe exactly what you see.
 - Exclude movable furniture/decor.
 - If no stable fixture is visible, return an empty array.
@@ -1729,7 +1787,22 @@ function validateStructuralBaseline(input: any): StructuralBaseline {
           const wallIndexCandidate = typeof fixture.wallIndex === "number" && isWallIndex(fixture.wallIndex)
             ? fixture.wallIndex
             : null;
-          if (wallIndexCandidate === null) return null;
+          if (wallIndexCandidate === null) {
+            // Silent-drop diagnosability (Stage 1A Exterior Enhancement session,
+            // fireplace-loss investigation): this fixture record is discarded
+            // entirely below, with no fallback derivation — unlike
+            // StructuralOpening normalization above, which has two fallback
+            // paths before giving up. Log before dropping so a real detection
+            // (e.g. a fireplace missing wallIndex) is diagnosable rather than
+            // silently vanishing. Whether this warrants an actual rescue
+            // (keeping the fixture with an unresolved wall) depends on how
+            // often this fires in production — deferred pending that data,
+            // since rescuing would require widening AnchorFixture.wallIndex to
+            // nullable across every wall-indexed consumer in
+            // anchorLockedStaging.ts, a much larger change.
+            console.log(`[ANCHOR_FIXTURE_DROPPED] type=${fixtureType} description=${JSON.stringify(fixture.description || null)} rawWallIndex=${JSON.stringify(fixture.wallIndex)}`);
+            return null;
+          }
 
           const horizontalBandCandidate = typeof fixture.horizontalBand === "string" && isHorizontalBand(fixture.horizontalBand)
             ? fixture.horizontalBand
@@ -2314,10 +2387,16 @@ async function stabilizeStructuralBaselineGraphConsensus(
   const graphConfidence = extractionAgreement;
   const graphStable = consensus.count >= Math.ceil(passResults.length / 2) && extractionAgreement >= STRUCTURAL_BASELINE_MIN_AGREEMENT && variance === 0;
   const confirmedAt = new Date().toISOString();
+  // Anchor fixtures are reconciled independently of which graph "won" the
+  // opening-level tie-break above — see reconcileAnchorFixturesAcrossPasses's
+  // own comment for why fixtures don't need graph-level consensus.
+  const fixtureReconciliation = reconcileAnchorFixturesAcrossPasses(passResults);
   const graphMeta = {
     graphStable,
     graphConfidence,
     extractionAgreement,
+    fixtureAgreement: fixtureReconciliation.fixtureAgreement,
+    fixturePassSeenCounts: fixtureReconciliation.fixturePassSeenCounts,
     passCount: passResults.length,
     openingCountVariance: variance,
     imageHash,
@@ -2376,7 +2455,7 @@ async function stabilizeStructuralBaselineGraphConsensus(
     confidenceVariance: varianceSummary.confidenceVariance,
   }));
 
-  const stabilizedGraph = { ...consensus.graph, graphMeta };
+  const stabilizedGraph = { ...consensus.graph, anchorFixtures: fixtureReconciliation.fixtures, graphMeta };
 
   vDetailLog("[OPENING_BASELINE_MODE]", JSON.stringify({
     jobId: options?.jobId,

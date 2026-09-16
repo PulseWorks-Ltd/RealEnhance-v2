@@ -11,7 +11,7 @@
 // planMultiAnchor/resolveSofaPlacement/buildLivingFocalWallInstruction are
 // pure, synchronous functions over already-extracted baseline/wall/zone
 // data — no Gemini calls, no mocking needed.
-import { planMultiAnchor, resolveSofaPlacement, buildLivingFocalWallInstruction, type MultiAnchorPlan } from "../src/pipeline/anchorLockedStaging";
+import { planMultiAnchor, resolveSofaPlacement, buildLivingFocalWallInstruction, buildUniversalFeatureProtectionSection, pickSofaWallCandidate, type MultiAnchorPlan } from "../src/pipeline/anchorLockedStaging";
 import type { StructuralBaseline, StructuralOpening, AnchorFixture } from "../src/validators/openingPreservationValidator";
 import type { WallVisibilityWall } from "../src/pipeline/anchorLockedStaging";
 import type { LivingDiningZone } from "../src/pipeline/anchorLockedStaging";
@@ -252,5 +252,115 @@ describe("buildLivingFocalWallInstruction — prompt wording", () => {
     expect(cropped).toContain("edge-cropped furniture placement is acceptable");
     const notCropped = buildLivingFocalWallInstruction({ ...basePlan, partiallyVisible: false });
     expect(notCropped).not.toContain("edge-cropped");
+  });
+});
+
+// Fireplace-loss investigation (job_5671358c, a living room with a
+// fireplace and a TV bracket mounted directly above it): rooms with a
+// fireplace sometimes lost it entirely in staged output, or got furniture
+// placed directly in front of/over it. Root cause confirmed: the TV
+// bracket's own raw description (e.g. "TV wall-mount bracket above the
+// fireplace") was echoed verbatim into the console placement instruction,
+// literally pointing furniture at the hearth. These cases cover the fix.
+describe("planMultiAnchor — fireplace handling", () => {
+  it("a fireplace-only wall (no TV bracket) becomes the focal wall", () => {
+    const walls = [
+      makeWall("wall_0", "Front wall", [0, 0.3]), // narrow — would not qualify by width alone
+      makeWall("wall_1", "Right wall", [0.3, 1]),
+    ];
+    const zone = makeDeepLivingZone([0, 1]);
+    const baseline = makeBaseline([], [makeFixture({ id: "fp1", type: "fireplace", wallIndex: 0, bbox: [0.35, 0.5, 0.55, 0.9] })]);
+    const plan = planMultiAnchor(baseline, walls, [zone]);
+
+    expect(plan.tvPlan?.wallId).toBe("wall_0");
+    expect(plan.tvPlan?.fireplaceIds).toContain("fp1");
+  });
+
+  it("bracket directly above a fireplace on the same wall: segmentDescription is no longer the raw bracket description, and points to a computed clear segment instead", () => {
+    const walls = [
+      makeWall("wall_0", "Front wall", [0, 1]),
+    ];
+    const zone = makeDeepLivingZone([0]);
+    const baseline = makeBaseline([], [
+      // Narrow fireplace centered on the wall (bbox 45%-55%) — narrow
+      // enough that both sides comfortably clear MIN_FIREPLACE_WALL_CLEAR_SEGMENT
+      // (0.35) after the clearance buffer, so this tests the "clear segment
+      // found" branch specifically (see the separate "spans the full wall" test below).
+      makeFixture({ id: "fp1", type: "fireplace", wallIndex: 0, bbox: [0.45, 0.5, 0.55, 0.9], description: "white tiled fireplace" }),
+      // TV bracket mounted above it, same wall — this is the exact
+      // job_5671358c geometry. Raw description deliberately says "above
+      // the fireplace", matching what a real extraction would return.
+      makeFixture({ id: "tv1", type: "tv_mount", wallIndex: 0, bbox: [0.47, 0.1, 0.53, 0.3], description: "TV wall-mount bracket above the fireplace" }),
+    ]);
+    const plan = planMultiAnchor(baseline, walls, [zone]);
+
+    expect(plan.tvPlan?.wallId).toBe("wall_0");
+    expect(plan.tvPlan?.usedBracket).toBe(true);
+    // The bug: this used to literally be "TV wall-mount bracket above the
+    // fireplace" — the console placement instruction would then say
+    // '...within the segment described as "TV wall-mount bracket above the
+    // fireplace"', pointing furniture at the hearth.
+    expect(plan.tvPlan?.segmentDescription).not.toContain("above the fireplace");
+    expect(plan.tvPlan?.segmentDescription).toContain("clear of the fireplace");
+    expect(plan.tvPlan?.fireplaceIds).toContain("fp1");
+  });
+
+  it("buildUniversalFeatureProtectionSection reconciles the tv_mount/fireplace collision instead of emitting two contradicting sentences", () => {
+    const baseline = makeBaseline([], [
+      makeFixture({ id: "fp1", type: "fireplace", wallIndex: 2, bbox: [0.4, 0.5, 0.6, 0.9], description: "white tiled fireplace" }),
+      makeFixture({ id: "tv1", type: "tv_mount", wallIndex: 2, bbox: [0.42, 0.1, 0.58, 0.3], description: "TV wall-mount bracket" }),
+    ]);
+    const result = buildUniversalFeatureProtectionSection(baseline, null);
+    const tvSentence = result.sentences.find((s) => s.includes("TV wall-mount bracket"));
+    // Must NOT be the old unconditional permissive sentence (which would
+    // license a console "at this location" with no fireplace awareness).
+    expect(tvSentence).toBeDefined();
+    expect(tvSentence).toContain("do NOT place a TV console");
+    expect(tvSentence).toContain("fireplace");
+    expect(tvSentence).toContain("hearth and firebox opening must remain fully visible");
+  });
+
+  it("a fireplace spanning the full wall: no clear segment exists, so no console is placed — seating still orients toward the fireplace", () => {
+    const walls = [
+      makeWall("wall_0", "Front wall", [0, 1]),
+    ];
+    const zone = makeDeepLivingZone([0]);
+    // Fireplace spans nearly the entire wall (5%-95%) — neither side can
+    // leave a MIN_FIREPLACE_WALL_CLEAR_SEGMENT-wide clear segment.
+    const baseline = makeBaseline([], [makeFixture({ id: "fp1", type: "fireplace", wallIndex: 0, bbox: [0.05, 0.5, 0.95, 0.9] })]);
+    const plan = planMultiAnchor(baseline, walls, [zone]);
+
+    expect(plan.tvPlan?.wallId).toBe("wall_0");
+    expect(plan.tvPlan?.skippedLiteralTv).toBe(true);
+    expect(plan.tvPlan?.fireplaceIds).toContain("fp1");
+    expect(plan.noTvReason).toContain("too wide to leave a safely clear segment");
+  });
+
+  // Note: pickSofaWallCandidate's fireplace deprioritization is tested
+  // directly here rather than end-to-end through planMultiAnchor — the
+  // fireplace-focal-wall fast-path added above (2d) always wins focal-wall
+  // selection whenever any fireplace exists anywhere in the living zone,
+  // so the fallback branch that calls pickSofaWallCandidate can never
+  // actually encounter a fireplace-bearing candidate in practice. This unit
+  // test verifies the tiebreak logic itself in isolation, as defense in
+  // depth in case a future change to the fast-path's priority order ever
+  // makes this branch reachable with a fireplace present.
+  it("pickSofaWallCandidate prefers a non-fireplace wall over a fireplace-bearing one, but still returns a fireplace wall rather than nothing", () => {
+    const fireplaceWall = makeWall("wall_0", "Front wall", [0, 0.5]);
+    const cleanWall = makeWall("wall_1", "Right wall", [0.5, 1]);
+    const baseline = makeBaseline([], [makeFixture({ id: "fp1", type: "fireplace", wallIndex: 0 })]);
+
+    const preferred = pickSofaWallCandidate(
+      [{ wall: fireplaceWall, largestSegment: 0.9 }, { wall: cleanWall, largestSegment: 0.5 }],
+      baseline
+    );
+    // Even though the fireplace wall has the LARGER usable segment, the
+    // clean wall must still be preferred (soft deprioritization).
+    expect(preferred?.wall.id).toBe("wall_1");
+
+    const onlyFireplaceWall = pickSofaWallCandidate([{ wall: fireplaceWall, largestSegment: 0.9 }], baseline);
+    // But when it's the only candidate, it must still be returned — this
+    // is a soft preference, never a hard exclusion.
+    expect(onlyFireplaceWall?.wall.id).toBe("wall_0");
   });
 });

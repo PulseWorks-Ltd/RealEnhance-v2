@@ -202,6 +202,21 @@ export function buildUniversalFeatureProtectionSection(
 ): { section: string; itemCount: number; sentences: string[] } {
   const sentences: string[] = [];
 
+  // Fireplace-loss investigation (job_5671358c): a wall carrying both a
+  // fireplace and a tv_mount bracket (the common case — a TV bracket
+  // mounted directly above a fireplace) previously got two contradicting
+  // sentences: the fireplace's generic "do not place furniture in front of
+  // this feature" and the tv_mount carve-out's "mounting a TV and console
+  // at this location is expected and correct" — for the SAME wall. The
+  // permissive, more specific tv_mount sentence wins in practice, pointing
+  // furniture placement straight at the hearth. Precomputed here so the
+  // tv_mount branch below can detect the collision and reconcile it.
+  const wallIndicesWithFireplace = new Set(
+    (baseline.anchorFixtures || [])
+      .filter((f) => f.type === "fireplace")
+      .map((f) => f.wallIndex)
+  );
+
   for (const opening of baseline.openings || []) {
     const description = opening.description || fallbackItemDescription(opening.type);
     const position = describeItemPosition(walls, opening.wallIndex, opening.horizontalBand, opening.verticalBand);
@@ -228,7 +243,17 @@ export function buildUniversalFeatureProtectionSection(
   for (const fixture of baseline.anchorFixtures || []) {
     const description = fixture.description || fallbackItemDescription(fixture.type);
     const position = describeItemPosition(walls, fixture.wallIndex, fixture.horizontalBand);
-    if (fixture.type === "tv_mount") {
+    if (fixture.type === "tv_mount" && wallIndicesWithFireplace.has(fixture.wallIndex)) {
+      // Second-order fix to the collision described above the loop: keep the
+      // bracket carve-out (a TV on the bracket is still correct — that's a
+      // real, separate fix) but remove the console license for this wall,
+      // since a fireplace also lives here. Without this, the permissive
+      // tv_mount sentence directly contradicts the fireplace's own
+      // protection sentence for the exact same wall.
+      sentences.push(
+        `This room has ${description}, located at/on ${position}. This is an existing TV wall-mount bracket, and this same wall also has a fireplace directly below or near it. Mounting a TV on the existing bracket is expected and correct — do not remove, relocate, or alter the bracket hardware itself. However, do NOT place a TV console, media unit, or any other furniture on the floor in front of the fireplace beneath it. The fireplace's hearth and firebox opening must remain fully visible and unobstructed.`
+      );
+    } else if (fixture.type === "tv_mount") {
       // A TV bracket's purpose is to have a TV mounted on it — the blanket
       // "keep unobstructed, nothing placed over it" wording below directly
       // contradicts planMultiAnchor's bracket-priority TV placement (which
@@ -614,7 +639,13 @@ function describeCoLocatedFeatures(baseline: StructuralBaseline, anchorWallIndex
     .filter((f) => f.wallIndex === anchorWallIndex)
     .map(
       (f) =>
-        `* ${f.id} (${f.description || f.type}), in the ${describeHorizontalBand(f.horizontalBand)} of this wall: must remain fully visible and unobstructed. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it.`
+        // Fireplace-loss investigation: this line previously named only
+        // wall-mounted decor as prohibited (artwork/mirrors/shelving) —
+        // exactly the one category that does NOT describe a sofa, bed, or
+        // media console. The opening-line version two lines above already
+        // has the explicit furniture clause; this brings the fixture line
+        // to parity with it.
+        `* ${f.id} (${f.description || f.type}), in the ${describeHorizontalBand(f.horizontalBand)} of this wall: must remain fully visible and unobstructed. Do not place artwork, mirrors, shelving, or any wall-mounted decor over it, and do not obstruct it with furniture.`
     );
   return [...openingLines, ...fixtureLines];
 }
@@ -725,6 +756,7 @@ type WallTierInfo = {
   hasNonFloorWindow: boolean;
   hasDoorOrWalkthrough: boolean;
   hasSlidingDoor: boolean;
+  hasFireplace: boolean;
   frameVisibleWidth: number;
 };
 
@@ -733,6 +765,12 @@ function analyzeWallForTiers(baseline: StructuralBaseline, wall: WallVisibilityW
   const openingsOnWall = baseline.openings.filter((o) => o.wallIndex === wallIndex);
   const fixturesOnWall = (baseline.anchorFixtures || []).filter((f) => f.wallIndex === wallIndex);
   const isBlank = openingsOnWall.length === 0 && fixturesOnWall.length === 0;
+  // Fireplace-loss investigation: a bed/desk against a fireplace wall is
+  // the same class of problem the living-room path fixes for a sofa/TV
+  // console — used below as a soft tiebreaker within each tier (never as
+  // a tier disqualifier the way hasDoorOrWalkthrough is; a fireplace
+  // doesn't block circulation the way a door does).
+  const hasFireplace = fixturesOnWall.some((f) => f.type === "fireplace");
 
   const windowsOnWall = openingsOnWall.filter((o) => o.type === "window");
   const hasAnyWindow = windowsOnWall.length > 0;
@@ -759,7 +797,7 @@ function analyzeWallForTiers(baseline: StructuralBaseline, wall: WallVisibilityW
   const largestSegment = wall.usableSegments.reduce((max, s) => Math.max(max, s.widthFraction), 0);
   const { minX, maxX } = wallBBox(wall);
 
-  return { wall, wallIndex, largestSegment, isBlank, hasAnyWindow, windowCoverage, hasNonFloorWindow, hasDoorOrWalkthrough, hasSlidingDoor, frameVisibleWidth: maxX - minX };
+  return { wall, wallIndex, largestSegment, isBlank, hasAnyWindow, windowCoverage, hasNonFloorWindow, hasDoorOrWalkthrough, hasSlidingDoor, hasFireplace, frameVisibleWidth: maxX - minX };
 }
 
 function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibilityWall[]): { info: WallTierInfo; reason: string } | null {
@@ -827,6 +865,7 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
     const picked = [...windowWalls].sort((a, b) => {
       if (a.windowCoverage !== b.windowCoverage) return a.windowCoverage - b.windowCoverage;
       if (a.hasNonFloorWindow !== b.hasNonFloorWindow) return a.hasNonFloorWindow ? -1 : 1;
+      if (a.hasFireplace !== b.hasFireplace) return a.hasFireplace ? 1 : -1;
       return b.largestSegment - a.largestSegment;
     })[0];
     return {
@@ -842,7 +881,10 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
   const nonDoorWalls = sizeQualifying.filter((w) => !w.hasDoorOrWalkthrough);
   const returnWalls = nonDoorWalls.filter((w) => w.frameVisibleWidth >= MIN_WALL_FRAME_VISIBLE_WIDTH);
   if (returnWalls.length > 0) {
-    const picked = [...returnWalls].sort((a, b) => b.frameVisibleWidth - a.frameVisibleWidth)[0];
+    const picked = [...returnWalls].sort((a, b) => {
+      if (a.hasFireplace !== b.hasFireplace) return a.hasFireplace ? 1 : -1;
+      return b.frameVisibleWidth - a.frameVisibleWidth;
+    })[0];
     return {
       info: picked,
       reason: `tier 3: ${picked.wall.id} (${picked.wall.wallLabel}) — return wall, frame-visible width ${picked.frameVisibleWidth.toFixed(3)} >= ${MIN_WALL_FRAME_VISIBLE_WIDTH} threshold.`,
@@ -876,10 +918,10 @@ function selectAnchorWallByTier(baseline: StructuralBaseline, walls: WallVisibil
     );
     const picked =
       blankMarginal.length > 0
-        ? [...blankMarginal].sort((a, b) => b.largestSegment - a.largestSegment)[0]
+        ? [...blankMarginal].sort((a, b) => (a.hasFireplace !== b.hasFireplace ? (a.hasFireplace ? 1 : -1) : b.largestSegment - a.largestSegment))[0]
         : windowMarginal.length > 0
-          ? [...windowMarginal].sort((a, b) => a.windowCoverage - b.windowCoverage)[0]
-          : [...marginalNonDoorWalls].sort((a, b) => b.frameVisibleWidth - a.frameVisibleWidth)[0];
+          ? [...windowMarginal].sort((a, b) => (a.hasFireplace !== b.hasFireplace ? (a.hasFireplace ? 1 : -1) : a.windowCoverage - b.windowCoverage))[0]
+          : [...marginalNonDoorWalls].sort((a, b) => (a.hasFireplace !== b.hasFireplace ? (a.hasFireplace ? 1 : -1) : b.frameVisibleWidth - a.frameVisibleWidth))[0];
     return {
       info: picked,
       reason: `tier 3.5 (door-avoidance rescue): ${picked.wall.id} (${picked.wall.wallLabel}) — frame-visible width ${picked.frameVisibleWidth.toFixed(3)} (below the standard ${MIN_WALL_FRAME_VISIBLE_WIDTH} floor but >= ${MIN_RETURN_WALL_VS_DOOR_FRAME_VISIBLE_WIDTH}), preferred over staging on a door/walkthrough wall.`,
@@ -1028,6 +1070,106 @@ function computeDoorClearSegment(
     doorIds,
     clearFraction: bestWidth,
     segmentDescription: `${positionPhrase} (roughly ${(best.start * 100).toFixed(0)}%–${(best.end * 100).toFixed(0)}% along the wall)`,
+  };
+}
+
+// Fireplace-loss investigation (job_5671358c): lower than the door's 0.5 —
+// a fireplace needs hearth clearance for a console/media unit, not a
+// person-width circulation path, and over-buffering a centered fireplace
+// on a narrow wall would leave no qualifying segment at all (returning
+// null, which is the correct signal to drop the console rather than force
+// a bad placement — but a needlessly large buffer would trigger that too
+// often). No real-world measurement backs 0.35 either — same documented,
+// reasoned-not-measured status as the door constant, tunable via env
+// without a deploy.
+const FIREPLACE_CLEARANCE_BUFFER_FRACTION = Math.max(0, Math.min(2, Number(process.env.FIREPLACE_CLEARANCE_BUFFER_FRACTION ?? 0.35)));
+// Reuses the same wall-relative "big enough for a console" bar as doors —
+// a clear segment next to a fireplace isn't held to a different standard.
+const MIN_FIREPLACE_WALL_CLEAR_SEGMENT = MIN_USABLE_FRACTION_FOR_ANCHOR;
+
+type FireplaceClearSegment = { fireplaceIds: string[]; segmentDescription: string; clearFraction: number };
+
+// Mirrors computeDoorClearSegment's structure almost verbatim (bbox->wall-
+// relative conversion, buffer padding, merge overlapping exclusions, gap
+// scan, largest-gap pick) — see that function's own comment for the shared
+// reasoning. Source is baseline.anchorFixtures filtered to type
+// "fireplace" on this wall, rather than baseline.openings filtered to
+// door/walkthrough. Returns null when no fireplace is on this wall, or
+// when neither side leaves enough clear width for a console — the correct
+// signal for the caller to drop the console/media-unit instruction
+// entirely rather than force a placement that would still crowd the
+// hearth.
+//
+// Caveat (shared with the door path, not new here): normalizeBbox
+// synthesizes a band-derived bbox when the model omits one, so this
+// segment can be band-resolution rather than pixel-accurate. Not
+// special-cased further here — the door path ships with the identical
+// limitation.
+function computeFireplaceClearSegment(
+  baseline: StructuralBaseline,
+  wall: WallVisibilityWall,
+  wallIndex: number
+): FireplaceClearSegment | null {
+  const fireplacesOnWall = (baseline.anchorFixtures || []).filter(
+    (f) => f.wallIndex === wallIndex && f.type === "fireplace"
+  );
+  if (fireplacesOnWall.length === 0) return null;
+
+  const { minX, maxX } = wallBBox(wall);
+  const wallWidth = maxX - minX;
+  if (wallWidth <= 0) return null;
+
+  const exclusions = fireplacesOnWall
+    .map((f) => {
+      const rawStart = (f.bbox[0] - minX) / wallWidth;
+      const rawEnd = (f.bbox[2] - minX) / wallWidth;
+      const fireplaceWidth = Math.max(0, rawEnd - rawStart);
+      const buffer = fireplaceWidth * FIREPLACE_CLEARANCE_BUFFER_FRACTION;
+      return { start: Math.max(0, rawStart - buffer), end: Math.min(1, rawEnd + buffer) };
+    })
+    .sort((a, b) => a.start - b.start);
+
+  const merged: { start: number; end: number }[] = [];
+  for (const r of exclusions) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) {
+      last.end = Math.max(last.end, r.end);
+    } else {
+      merged.push({ ...r });
+    }
+  }
+
+  const gaps: { start: number; end: number }[] = [{ start: 0, end: merged[0].start }];
+  for (let i = 0; i < merged.length - 1; i++) {
+    gaps.push({ start: merged[i].end, end: merged[i + 1].start });
+  }
+  gaps.push({ start: merged[merged.length - 1].end, end: 1 });
+
+  let bestIdx = 0;
+  let bestWidth = -1;
+  gaps.forEach((g, i) => {
+    const width = Math.max(0, g.end - g.start);
+    if (width > bestWidth) {
+      bestWidth = width;
+      bestIdx = i;
+    }
+  });
+  if (bestWidth < MIN_FIREPLACE_WALL_CLEAR_SEGMENT) return null;
+
+  const best = gaps[bestIdx];
+  const fireplaceIds = fireplacesOnWall.map((f) => f.id);
+  const fireplaceList = fireplaceIds.length === 1 ? fireplaceIds[0] : fireplaceIds.join(" and ");
+  const positionPhrase =
+    bestIdx === 0
+      ? `the portion of this wall to the left of ${fireplaceList}`
+      : bestIdx === gaps.length - 1
+        ? `the portion of this wall to the right of ${fireplaceList}`
+        : `the clear portion of this wall between ${fireplaceList}`;
+
+  return {
+    fireplaceIds,
+    clearFraction: bestWidth,
+    segmentDescription: `${positionPhrase} (roughly ${(best.start * 100).toFixed(0)}%–${(best.end * 100).toFixed(0)}% along the wall), well clear of the fireplace`,
   };
 }
 
@@ -1559,7 +1701,7 @@ type DiningPlan = { center: Point; footprint: { halfWidth: number; halfHeight: n
 // drawing a literal TV/console there (see planMultiAnchor's anchor-wall
 // reframing). Prompt text and downstream consumers must not call this
 // "the TV wall" when skippedLiteralTv is true.
-type TvPlan = { wallId: string; wallLabel: string; wallDescription: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean; partiallyVisible?: boolean; skippedLiteralTv?: boolean };
+type TvPlan = { wallId: string; wallLabel: string; wallDescription: string; segmentDescription: string; largestSegment: number; depthCheckFlaggedSuspect: boolean; reasoning: string; usedBracket: boolean; partiallyVisible?: boolean; skippedLiteralTv?: boolean; fireplaceIds?: string[]; fireplaceClearFraction?: number };
 type SofaPlan = { wallId: string | null; wallLabel?: string; wallDescription?: string; floorCentered?: boolean; facingWallId: string | null; orientationInstruction?: string; facingDescription?: string; reasoning: string; hasDoorOrWalkthrough?: boolean };
 export type MultiAnchorPlan = {
   diningPlan: DiningPlan | null;
@@ -1579,18 +1721,31 @@ export type MultiAnchorPlan = {
 // living-zone sofa's wall-anchored placement, which previously had no such
 // preference at all and could freely land on a wall with an active door or
 // walkthrough on it, blocking circulation.
-function pickSofaWallCandidate(
+export function pickSofaWallCandidate(
   candidates: { wall: WallVisibilityWall; largestSegment: number }[],
   baseline: StructuralBaseline
 ): { wall: WallVisibilityWall; largestSegment: number; hasDoorOrWalkthrough: boolean } | undefined {
   const wallHasDoorOrWalkthrough = (wallIndex: number) =>
     baseline.openings.some((o) => o.wallIndex === wallIndex && (o.type === "door" || o.type === "walkthrough"));
-  const withDoorFlag = candidates.map((c) => ({
-    ...c,
-    hasDoorOrWalkthrough: wallHasDoorOrWalkthrough(Number(String(c.wall.id).replace("wall_", ""))),
-  }));
-  const nonDoorCandidates = withDoorFlag.filter((c) => !c.hasDoorOrWalkthrough);
-  return nonDoorCandidates[0] || withDoorFlag[0];
+  // Fireplace-loss investigation: soft (not hard) fireplace deprioritization
+  // for the sofa's own wall — mirrors the existing door/walkthrough
+  // preference immediately below, one tier softer. A sofa placed flush
+  // against a fireplace wall is the same class of problem as a TV console
+  // placed there; prefer any other qualifying wall, but a small room with
+  // a fireplace on every viable wall must still get a sofa somewhere.
+  const wallHasFireplace = (wallIndex: number) =>
+    (baseline.anchorFixtures || []).some((f) => f.type === "fireplace" && f.wallIndex === wallIndex);
+  const withFlags = candidates.map((c) => {
+    const wallIndex = Number(String(c.wall.id).replace("wall_", ""));
+    return {
+      ...c,
+      hasDoorOrWalkthrough: wallHasDoorOrWalkthrough(wallIndex),
+      hasFireplace: wallHasFireplace(wallIndex),
+    };
+  });
+  const noDoorNoFireplace = withFlags.filter((c) => !c.hasDoorOrWalkthrough && !c.hasFireplace);
+  const noDoor = withFlags.filter((c) => !c.hasDoorOrWalkthrough);
+  return noDoorNoFireplace[0] || noDoor[0] || withFlags[0];
 }
 
 export function planMultiAnchor(
@@ -1704,6 +1859,24 @@ export function planMultiAnchor(
       bracketFixtures.find((f) => exclusiveLivingWallIndices.includes(f.wallIndex)) || bracketFixtures[0];
     const bracketWall = bracketFixture ? wallByIndex(bracketFixture.wallIndex) : undefined;
 
+    // Fireplace-loss investigation: promote a fireplace-bearing wall to
+    // focal-wall candidacy, ranked just below an existing tv_mount bracket
+    // (they resolve to the same wall in the common bracket-above-fireplace
+    // case anyway, where bracketWall already wins and the console/hearth
+    // conflict is handled separately above). Unlike a door, a fireplace
+    // should make a wall the room's focal point, not disqualify it — three
+    // separate prompt files already tell Gemini a fireplace is a valid
+    // living-room focal point; this is what finally ties that guidance to
+    // the deterministic wall-selection code that actually decides where
+    // the sofa faces. Prefer a zone-exclusive fireplace wall, same
+    // precedence rule as the bracket search just above.
+    const fireplaceFixtures = (baseline.anchorFixtures || []).filter(
+      (f) => f.type === "fireplace" && livingWallIndices.includes(f.wallIndex)
+    );
+    const fireplaceFixture =
+      fireplaceFixtures.find((f) => exclusiveLivingWallIndices.includes(f.wallIndex)) || fireplaceFixtures[0];
+    const fireplaceFocalWall = (!bracketWall && fireplaceFixture) ? wallByIndex(fireplaceFixture.wallIndex) : undefined;
+
     // ANCHOR WALL REFRAMING (RealEnhance review, 2026-08-29): livingFocalWall
     // is the wall the room's seating should FACE — selected independently
     // of whether a literal TV/console ends up being drawn there. This used
@@ -1748,7 +1921,9 @@ export function planMultiAnchor(
 
     const livingFocalWall = bracketWall
       ? { wall: bracketWall, largestSegment: (bracketWall.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0), hasDoorOrWalkthrough: false }
-      : focalWallPick;
+      : fireplaceFocalWall
+        ? { wall: fireplaceFocalWall, largestSegment: (fireplaceFocalWall.usableSegments || []).reduce((m, s) => Math.max(m, s.widthFraction), 0), hasDoorOrWalkthrough: false }
+        : focalWallPick;
 
     // Whether to actually render a literal TV/console on the focal wall is
     // a SEPARATE decision from which wall the room's seating orients
@@ -1775,26 +1950,59 @@ export function planMultiAnchor(
       ? " This wall is only partially visible in the frame (truncated at the edge) — edge-cropped furniture placement is acceptable here."
       : "";
 
+    // Fireplace-loss investigation (job_5671358c): computed once, ahead of
+    // the branch below, so both the "place a console" and "fireplace
+    // occupies the whole wall" outcomes can be decided from the same data.
+    const livingFocalWallIndex = livingFocalWall ? Number(String(livingFocalWall.wall.id).replace("wall_", "")) : null;
+    const livingFocalWallHasFireplace = livingFocalWallIndex !== null
+      ? (baseline.anchorFixtures || []).some((f) => f.type === "fireplace" && f.wallIndex === livingFocalWallIndex)
+      : false;
+    const fireplaceClearSegment = (livingFocalWall && livingFocalWallIndex !== null)
+      ? computeFireplaceClearSegment(baseline, livingFocalWall.wall, livingFocalWallIndex)
+      : null;
+    // A fireplace was detected on this wall but NEITHER side leaves enough
+    // clear width for a console (a large/full-wall fireplace) — the
+    // correct signal is to drop the console entirely rather than fall back
+    // to a geometric usableSegments description that has no idea the
+    // fireplace is there and could still land a console on top of it.
+    const fireplaceOccupiesWholeWall = livingFocalWallHasFireplace && !fireplaceClearSegment;
+
     if (livingFocalWall) {
-      if (shouldPlaceLiteralTv) {
+      if (shouldPlaceLiteralTv && !fireplaceOccupiesWholeWall) {
         const seg = [...(livingFocalWall.wall.usableSegments || [])].sort((a, b) => b.widthFraction - a.widthFraction)[0];
+        // The root cause fix: this wall's segmentDescription previously
+        // fell back to the bracket fixture's own raw free-text description
+        // whenever a bracket was found — e.g. "TV wall-mount bracket above
+        // the fireplace" — which then got echoed verbatim into the
+        // placement instruction below ("place a TV console within the
+        // segment described as '...'"), literally pointing furniture at
+        // the hearth when the bracket sits above a fireplace (the common
+        // case). New precedence, mirroring the door-clearance precedent in
+        // the single-anchor path below (doorClearSegment?.segmentDescription
+        // ?? bestSegment.description): a computed fireplace-clear segment
+        // wins over the geometric usableSegments description, which in
+        // turn wins over the bracket's own raw description.
         tvPlan = {
           wallId: livingFocalWall.wall.id,
           wallLabel: livingFocalWall.wall.wallLabel,
           wallDescription: `the wall ${describeWallFramePosition(livingFocalWall.wall)}`,
-          segmentDescription: bracketFixture
-            ? (bracketFixture.description || seg?.description || "at the existing TV mount bracket's location")
-            : (seg?.description || ""),
+          segmentDescription: fireplaceClearSegment
+            ? fireplaceClearSegment.segmentDescription
+            : (seg?.description || (bracketFixture ? bracketFixture.description || "at the existing TV mount bracket's location" : "")),
           largestSegment: livingFocalWall.largestSegment,
           depthCheckFlaggedSuspect,
           usedBracket: !!bracketWall,
           partiallyVisible: livingFocalWallPartiallyVisible,
+          fireplaceIds: fireplaceClearSegment?.fireplaceIds,
+          fireplaceClearFraction: fireplaceClearSegment?.clearFraction,
           reasoning: bracketWall
-            ? `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) has an existing TV wall-mount bracket detected (${bracketFixture!.id}) — used directly, ahead of geometric wall scoring. A literal TV is placed here.`
+            ? `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) has an existing TV wall-mount bracket detected (${bracketFixture!.id}) — used directly, ahead of geometric wall scoring. A literal TV is placed here.${fireplaceClearSegment ? ` [fireplace-clearance-computed segment, excludes ${fireplaceClearSegment.fireplaceIds.join("/")} plus clearance buffer]` : ""}`
             : `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) is zone-exclusive, clears the usable-width threshold (${livingFocalWall.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), zone depth sufficient for a literal TV.`,
         };
       } else {
-        noTvReason = "living zone floor depth is insufficient for a sofa to face a TV at a plausible distance — seating is still oriented toward the room's focal wall, just without a literal TV placed there";
+        noTvReason = fireplaceOccupiesWholeWall
+          ? "this wall's fireplace is too wide to leave a safely clear segment for a TV console on either side — seating is still oriented toward the room's focal wall (the fireplace itself), just without a console placed there"
+          : "living zone floor depth is insufficient for a sofa to face a TV at a plausible distance — seating is still oriented toward the room's focal wall, just without a literal TV placed there";
         tvPlan = {
           wallId: livingFocalWall.wall.id,
           wallLabel: livingFocalWall.wall.wallLabel,
@@ -1805,6 +2013,9 @@ export function planMultiAnchor(
           usedBracket: false,
           partiallyVisible: livingFocalWallPartiallyVisible,
           skippedLiteralTv: true,
+          fireplaceIds: fireplaceOccupiesWholeWall
+            ? (baseline.anchorFixtures || []).filter((f) => f.type === "fireplace" && f.wallIndex === livingFocalWallIndex).map((f) => f.id)
+            : undefined,
           reasoning: `Living focal wall selected: ${livingFocalWall.wall.id} (${livingFocalWall.wall.wallLabel}) is zone-exclusive and clears the usable-width threshold (${livingFocalWall.largestSegment.toFixed(3)} >= ${TV_MIN_USABLE_FRACTION}), but ${noTvReason}.`,
         };
       }
@@ -1840,15 +2051,33 @@ export function planMultiAnchor(
       let focalFeatureId: string | null = null;
       let focalFeatureType: string | null = null;
       let focalFeatureWallIndex: number | null = null;
-      for (const focalType of FOCAL_OPENING_TYPE_PRIORITY) {
-        const candidates = baseline.openings.filter((o) => o.type === focalType && livingWallIndices.includes(o.wallIndex));
-        const offSofaWall = candidates.filter((o) => o.wallIndex !== sofaWallIndex);
-        const pick = offSofaWall[0] || candidates[0];
-        if (pick) {
-          focalFeatureId = pick.id;
-          focalFeatureType = pick.type;
-          focalFeatureWallIndex = pick.wallIndex;
-          break;
+      // Fireplace-loss investigation: a fireplace is the canonical
+      // living-room focal point — three separate prompt files already tell
+      // Gemini so (stage2.ts's nano room-program guidance, full.prompt.ts,
+      // prompts.nzRealEstate.ts) — but nothing tied that guidance to this
+      // deterministic wall-selection code before. Checked ahead of the
+      // window/door loop below: a fireplace is a stronger, more literal
+      // focal point than a generic window/door when both are available.
+      const fireplaceFocalCandidates = (baseline.anchorFixtures || []).filter(
+        (f) => f.type === "fireplace" && livingWallIndices.includes(f.wallIndex)
+      );
+      const fireplaceFocalOffSofaWall = fireplaceFocalCandidates.filter((f) => f.wallIndex !== sofaWallIndex);
+      const fireplaceFocalPick = fireplaceFocalOffSofaWall[0] || fireplaceFocalCandidates[0];
+      if (fireplaceFocalPick) {
+        focalFeatureId = fireplaceFocalPick.id;
+        focalFeatureType = "fireplace";
+        focalFeatureWallIndex = fireplaceFocalPick.wallIndex;
+      } else {
+        for (const focalType of FOCAL_OPENING_TYPE_PRIORITY) {
+          const candidates = baseline.openings.filter((o) => o.type === focalType && livingWallIndices.includes(o.wallIndex));
+          const offSofaWall = candidates.filter((o) => o.wallIndex !== sofaWallIndex);
+          const pick = offSofaWall[0] || candidates[0];
+          if (pick) {
+            focalFeatureId = pick.id;
+            focalFeatureType = pick.type;
+            focalFeatureWallIndex = pick.wallIndex;
+            break;
+          }
         }
       }
       const focalFeatureWall = focalFeatureWallIndex !== null ? livingWallIndices.map((idx) => wallByIndex(idx)).find((w) => w?.id === `wall_${focalFeatureWallIndex}`) : undefined;
@@ -1969,9 +2198,53 @@ export function buildLivingFocalWallInstruction(tvPlan: NonNullable<MultiAnchorP
     ? " This wall is only partially visible in the frame (truncated at the edge) — edge-cropped furniture placement is acceptable here."
     : "";
   if (tvPlan.skippedLiteralTv) {
+    // Fireplace-loss investigation: give the actual reason when a fireplace
+    // is why the console was skipped, rather than always citing depth —
+    // the depth-only wording would be misleading/confusing on this wall.
+    if (tvPlan.fireplaceIds && tvPlan.fireplaceIds.length > 0) {
+      return `* This room's seating should face ${tvPlan.wallDescription} — this is the room's natural focal wall, anchored by its fireplace. The fireplace occupies too much of this wall to leave a safely clear segment for a TV console on either side, so do NOT place a TV, TV console, or any other furniture on this wall; the fireplace's hearth and firebox opening must remain fully visible.${framingNote}`;
+    }
     return `* This room's seating should face ${tvPlan.wallDescription} — this is the room's natural focal wall. The floor depth here is too shallow for a TV to be comfortably viewed from typical seating distance, so do NOT place a TV or TV console on this wall; treat it only as the direction seating orients toward.${framingNote}`;
   }
   return `* Place a TV and low TV console/unit against ${tvPlan.wallDescription}, within the segment described as "${tvPlan.segmentDescription}".${framingNote}`;
+}
+
+// Mirrors buildDoorAccessRequirementSection's shape/header convention
+// exactly (see that function's own comment for why a dedicated,
+// "(must be followed exactly)" block earns its keep over the generic
+// protected-feature sentence alone: Bedroom 12's real production case
+// showed a generic protection sentence alone wasn't enough to stop
+// furniture placement in front of a protected feature). Only emitted when
+// planMultiAnchor actually found a fireplace on the focal wall.
+function buildFireplaceClearanceRequirementSection(tvPlan: NonNullable<MultiAnchorPlan["tvPlan"]>): string {
+  if (!tvPlan.fireplaceIds || tvPlan.fireplaceIds.length === 0) {
+    return "";
+  }
+  const fireplaceIds = tvPlan.fireplaceIds;
+  const fireplaceList = fireplaceIds.length === 1 ? fireplaceIds[0] : fireplaceIds.join(" and ");
+  const isPlural = fireplaceIds.length > 1;
+  if (tvPlan.skippedLiteralTv) {
+    return `
+
+ANCHOR WALL — FIREPLACE CLEARANCE REQUIREMENT (must be followed exactly)
+
+The selected focal wall contains existing fireplace ${fireplaceList}, which ${isPlural ? "span" : "spans"} too much of this wall for any console to be placed safely beside it.
+
+Do NOT place a TV, TV console, media unit, artwork, or any other furniture or decor anywhere on this wall.
+
+The fireplace's hearth and firebox opening must remain fully visible, exactly as shown in the original photo. Small decor directly on the mantel (a plant, a clock, a few frames) is fine; a seating item or media unit in front of it is not.`;
+  }
+  return `
+
+ANCHOR WALL — FIREPLACE CLEARANCE REQUIREMENT (must be followed exactly)
+
+The selected focal wall contains existing fireplace ${fireplaceList}.
+
+Place the TV console/media unit only within the calculated clear wall segment described above, which already excludes ${fireplaceList} and its required clearance space.
+
+The fireplace's hearth and firebox opening must remain fully visible and unobstructed — do NOT let the console, media unit, or any other furniture extend in front of or over it.
+
+Small decor directly on the mantel (a plant, a clock, a few frames) is fine; blocking the firebox opening itself is not.`;
 }
 
 // Extracted (multi-zone room-type expansion, 2026-08-29) so
@@ -1984,6 +2257,10 @@ function buildLivingZoneAnchorLines(plan: MultiAnchorPlan, sofaInstruction?: str
   const livingLines: string[] = [];
   if (plan.tvPlan) {
     livingLines.push(buildLivingFocalWallInstruction(plan.tvPlan));
+    const fireplaceClearanceSection = buildFireplaceClearanceRequirementSection(plan.tvPlan);
+    if (fireplaceClearanceSection) {
+      livingLines.push(fireplaceClearanceSection);
+    }
   }
   if (sofaInstruction) {
     livingLines.push(`* ${sofaInstruction}`);
@@ -2054,6 +2331,10 @@ function buildLivingRoomOnlyAnchorSection(plan: MultiAnchorPlan, sofaInstruction
   const livingLines: string[] = [];
   if (plan.tvPlan) {
     livingLines.push(buildLivingFocalWallInstruction(plan.tvPlan));
+    const fireplaceClearanceSection = buildFireplaceClearanceRequirementSection(plan.tvPlan);
+    if (fireplaceClearanceSection) {
+      livingLines.push(fireplaceClearanceSection);
+    }
   }
   if (sofaInstruction) {
     livingLines.push(`* ${sofaInstruction}`);
@@ -2075,11 +2356,28 @@ function buildLivingRoomPrompt(
   const sofaPlacement = resolveSofaPlacement(baseline, wholeRoomZone, plan);
   const anchorSection = buildLivingRoomOnlyAnchorSection(plan, sofaPlacement?.instruction);
 
+  // Fireplace-loss investigation: describeCoLocatedFeatures was previously
+  // bedroom/study only — a living room's sofa/TV wall never got this
+  // proximate, "the sofa/console must be positioned to avoid it, even if
+  // that means it does not span the entire wall" reinforcement, despite
+  // being the exact room type this incident hit. buildFireplaceClearance
+  // RequirementSection (in buildLivingZoneAnchorLines/buildLivingRoomOnly
+  // AnchorSection above) already covers the fireplace-specific case; this
+  // adds the same general co-located-feature treatment bedrooms get for
+  // any OTHER fixture/opening sharing the anchor wall too.
+  const livingAnchorWallId = plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null;
+  const livingAnchorWallIndex = livingAnchorWallId !== null ? Number(String(livingAnchorWallId).replace("wall_", "")) : null;
+  const livingCoLocatedFeatures = livingAnchorWallIndex !== null ? describeCoLocatedFeatures(baseline, livingAnchorWallIndex) : [];
+  const livingAnchorWallFeaturesSection =
+    livingCoLocatedFeatures.length > 0
+      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible; nothing may cover or obstruct them, including the sofa or TV console)\n\nThe wall selected for the sofa/TV also has the following existing feature(s) on it. Position the sofa and TV console to avoid overlapping or obstructing any of these — even if that means the furniture does not span the entire wall. No new item (artwork, mirrors, shelving, or any other wall-mounted decor) may be placed over them either, even though it may look conventional to decorate that spot:\n${livingCoLocatedFeatures.join("\n")}`
+      : "";
+
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
 ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
-${anchorSection}
+${anchorSection}${livingAnchorWallFeaturesSection}
 
 EVERYTHING ELSE — YOUR PROFESSIONAL JUDGMENT
 
@@ -2092,7 +2390,7 @@ Beyond the anchor items above and the structural constraints above, use your own
       tvPlaced: !!plan.tvPlan,
       tvUsedBracket: !!plan.tvPlan?.usedBracket,
       sofaFloating: !!sofaPlacement?.floating,
-      anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
+      anchorWallId: livingAnchorWallId,
     },
   };
 }
@@ -2582,11 +2880,21 @@ async function buildLivingDiningPrompt(
 
   const zoneIntegrityClosing = buildZoneIntegrityFinalCheck(protectedItemCount);
 
+  // Fireplace-loss investigation: same living-room-path extension as
+  // buildLivingRoomPrompt above — see that function's comment for why.
+  const livingDiningAnchorWallId = plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null;
+  const livingDiningAnchorWallIndex = livingDiningAnchorWallId !== null ? Number(String(livingDiningAnchorWallId).replace("wall_", "")) : null;
+  const livingDiningCoLocatedFeatures = livingDiningAnchorWallIndex !== null ? describeCoLocatedFeatures(baseline, livingDiningAnchorWallIndex) : [];
+  const livingDiningAnchorWallFeaturesSection =
+    livingDiningCoLocatedFeatures.length > 0
+      ? `\n\nANCHOR WALL — CO-LOCATED FEATURES (must stay fully visible; nothing may cover or obstruct them, including the sofa or TV console)\n\nThe wall selected for the sofa/TV also has the following existing feature(s) on it. Position the sofa and TV console to avoid overlapping or obstructing any of these — even if that means the furniture does not span the entire wall. No new item (artwork, mirrors, shelving, or any other wall-mounted decor) may be placed over them either, even though it may look conventional to decorate that spot:\n${livingDiningCoLocatedFeatures.join("\n")}`
+      : "";
+
   const prompt = `Virtual Staging Instructions for nano banana (or Pro)
 
 ${CATEGORY_A_LOCKS}${protectedFeatureSection}
 
-${anchorSection}${kitchenGuardrailSection}
+${anchorSection}${kitchenGuardrailSection}${livingDiningAnchorWallFeaturesSection}
 
 ${zoningContextLine}
 
@@ -2605,7 +2913,7 @@ ${zoneIntegrityClosing}`;
       tvUsedBracket: !!plan.tvPlan?.usedBracket,
       sofaFloating: !!sofaPlacement?.floating,
       fridgeInsertionEligible: fridgeEligibility?.eligible,
-      anchorWallId: plan.tvPlan?.wallId ?? plan.sofaPlan.wallId ?? null,
+      anchorWallId: livingDiningAnchorWallId,
     },
   };
 }

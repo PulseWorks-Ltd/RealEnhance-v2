@@ -26,6 +26,7 @@ import type { StructuralBaseline, AnchorFixture } from "./openingPreservationVal
 import { runFlooringBoundaryCheck } from "./flooringBoundaryCheck";
 import { runVanishedLandmarkCheckForItems, isVanishedLandmarkOverrideEligible, type VanishedLandmarkItemResult } from "./vanishedLandmarkCheck";
 import { runFabricatedFixtureCheck, type FabricatedFixtureCheckResult } from "./fabricatedFixtureCheck";
+import { runFireplaceOcclusionCheck, fireplaceOcclusionCheckBlocking, type FireplaceOcclusionItemResult } from "./fireplaceOcclusionCheck";
 import type { PickedItem } from "./semanticItemRef";
 import { newValidatorChecksBlocking } from "./validatorModelCall";
 import {
@@ -54,6 +55,7 @@ export type FixtureFlooringValidatorResult = {
   lowMaterialityItems: EnrichedFixtureResult[];
   fabricatedFixtureCheck: FabricatedFixtureCheckResult;
   vanishedLandmarkCheck: VanishedLandmarkItemResult[];
+  fireplaceOcclusionCheck: FireplaceOcclusionItemResult[];
 };
 
 // Confirmed real production false positives (2026-08-24 batch): every
@@ -135,7 +137,7 @@ export async function runFixtureFlooringValidator(
 ): Promise<FixtureFlooringValidatorResult> {
   const fixtures = baseline.anchorFixtures || [];
 
-  const [raw, floorCheckResult, fabricatedFixtureCheck, vanishedLandmarkCheck] = await Promise.all([
+  const [raw, floorCheckResult, fabricatedFixtureCheck, vanishedLandmarkCheck, fireplaceOcclusionCheck] = await Promise.all([
     fixtures.length === 0
       ? Promise.resolve({ observations: [], materiality: [] })
       : runOcclusionObservationCall({
@@ -161,6 +163,17 @@ export async function runFixtureFlooringValidator(
     // Self-contained error handling degrades to a safe non-blocking result,
     // never throws into this Promise.all.
     runVanishedLandmarkCheckForItems(toPickedItems(fixtures), baselineImagePath, stagedImagePath, ctx, "fixtures"),
+    // Fireplace-loss investigation: the standard fixture check above
+    // deliberately tolerates PARTIAL occlusion for all 9 fixture types
+    // (see FIXTURE_SYSTEM_INSTRUCTION's own fireplace/plant example) — this
+    // narrower, fireplace-specific check asks whether the firebox opening
+    // specifically is blocked by a FURNITURE-class object, which the
+    // standard check's tolerance would otherwise let through. Always
+    // computed (cheap: a no-op Promise.resolve when there's no fireplace in
+    // this baseline) so real-world verdicts accumulate in logs even while
+    // fireplaceOcclusionCheckBlocking() is off — see runFireplaceOcclusionCheck.ts's
+    // own header for the full rollout reasoning.
+    runFireplaceOcclusionCheck(fixtures, baselineImagePath, stagedImagePath, ctx),
   ]);
   const floorResult = floorCheckResult.floor;
 
@@ -254,5 +267,40 @@ export async function runFixtureFlooringValidator(
     };
   }
 
-  return { fixture, floor: floorResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedFixtureCheck, vanishedLandmarkCheck };
+  // Fireplace occlusion override — one-directional only (can only turn a
+  // pass into a fail, mirrors the vanished-landmark override immediately
+  // above), gated by its OWN independent fireplaceOcclusionCheckBlocking()
+  // flag rather than newValidatorChecksBlocking() — this is a different,
+  // unproven kind of judgment (furniture-vs-decor in front of a firebox,
+  // not a presence/removal call) with no production track record yet, so
+  // it must earn its own "true" the same deliberate way
+  // doorAccessClearanceCheckBlocking did (see that flag's own comment in
+  // validatorModelCall.ts). Always logged, even while off, so real verdicts
+  // accumulate for review before the flag is ever flipped.
+  const fireplaceFailures = fireplaceOcclusionCheck.filter((f) => f.verdict === "fail_furniture_blocking_firebox" || f.verdict === "fail_fully_hidden");
+  if (fireplaceOcclusionCheck.length > 0) {
+    console.log(JSON.stringify({
+      event: "FIREPLACE_OCCLUSION_CHECK",
+      jobId: ctx.jobId,
+      imageId: ctx.imageId,
+      attempt: ctx.attempt,
+      blocking: fireplaceOcclusionCheckBlocking(),
+      results: fireplaceOcclusionCheck,
+    }));
+  }
+  if (fireplaceFailures.length > 0) {
+    const blocking = fireplaceOcclusionCheckBlocking();
+    fixture = {
+      ...fixture,
+      status: "fail",
+      hardFail: fixture.hardFail || blocking,
+      confidence: Math.min(fixture.confidence, 0.75),
+      issueType: ISSUE_TYPES.FIXTURE_CHANGED,
+      issueTier: classifyIssueTier(ISSUE_TYPES.FIXTURE_CHANGED),
+      reason: `${fixture.reason} | fireplace_occlusion_check: ${fireplaceFailures.map((f) => `${f.fireplaceId} (${f.description}): ${f.verdict} — ${f.reason}`).join(" | ")}`,
+      advisorySignals: [...fixture.advisorySignals, ...fireplaceFailures.map((f) => `fireplace_occlusion:${f.fireplaceId}:${f.verdict}`)],
+    };
+  }
+
+  return { fixture, floor: floorResult, itemResults, materialAlteredItems, lowMaterialityItems, fabricatedFixtureCheck, vanishedLandmarkCheck, fireplaceOcclusionCheck };
 }
