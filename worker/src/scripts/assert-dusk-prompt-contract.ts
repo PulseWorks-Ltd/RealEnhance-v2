@@ -97,5 +97,34 @@ const interiorDefault = buildStage1APromptNZStyle("room", "interior");
 const interiorWithDusk = buildStage1APromptNZStyle("room", "interior", true);
 check("dusk_mode_has_no_effect_on_interior", interiorDefault === interiorWithDusk);
 
+// 8. Exterior-lighting tightening: only fixtures genuinely visible in the
+//    input may be turned on; no new fixture, glow, or path/garden lighting
+//    may be invented where none is visible.
+check(
+  "dusk_prompt_forbids_inventing_exterior_fixture",
+  /do not invent a new light fixture anywhere it is not visible in the input/i.test(duskPrompt)
+);
+check(
+  "dusk_prompt_forbids_glow_without_visible_fixture",
+  /unless a real fixture\s+for it is visible in the input/i.test(duskPrompt)
+);
+check(
+  "dusk_prompt_no_longer_permits_synthesizing_path_glow_without_fixture",
+  !/you may synthesize a modest, plausible ground-level path/i.test(duskPrompt)
+);
+check(
+  "dusk_prompt_prohibited_actions_extends_hard_failure_to_exterior_fixtures",
+  /the same rule applies to exterior light fixtures/i.test(duskPrompt)
+    && /introducing any new light source, glow, or illuminated fixture.*is a hard failure/i.test(duskPrompt)
+);
+check(
+  "dusk_prompt_realism_check_covers_exterior_fixtures",
+  /every lit exterior point must trace back to a real\s+fixture already in the photo/i.test(duskPrompt)
+);
+check(
+  "dusk_prompt_allowed_adjustments_excludes_plausible_fixtures",
+  !/existing or plausible ground-level fixtures/i.test(duskPrompt)
+);
+
 console.log(`\n${anyFailure ? "RESULT: one or more checks failed." : "RESULT: all checks passed."}`);
 process.exit(anyFailure ? 1 : 0);

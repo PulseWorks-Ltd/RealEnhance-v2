@@ -852,7 +852,7 @@ Return ONLY the enhanced image.
 // shared verbatim.
 function buildExteriorProhibitedActionsBlock(mode: "daylight" | "dusk"): string {
   const bullet3 = mode === "dusk"
-    ? `• Walls must remain walls. You are strictly forbidden from introducing any new opening, window, door, skylight, or opening-like structure anywhere it does not already exist in the input. Illuminating the interior of a window, glazed door, or opening that already exists in the input is explicitly authorized under ARTIFICIAL LIGHT SYNTHESIS below — but creating a glowing or window-like region where no opening exists in the input is a hard failure.`
+    ? `• Walls must remain walls. You are strictly forbidden from introducing any new opening, window, door, skylight, or opening-like structure anywhere it does not already exist in the input. Illuminating the interior of a window, glazed door, or opening that already exists in the input is explicitly authorized under ARTIFICIAL LIGHT SYNTHESIS below — but creating a glowing or window-like region where no opening exists in the input is a hard failure. The same rule applies to exterior light fixtures (wall lights, downlights, bollards, path lights, porch lanterns, and similar): turning on a fixture that already exists in the input is authorized, but introducing any new light source, glow, or illuminated fixture anywhere one is not genuinely visible in the input is a hard failure.`
     : `• Walls must remain walls. You are strictly forbidden from introducing any opening-like structure, including bright masked regions that resemble windows.`;
   return `────────────────────────────────
 PROHIBITED ACTIONS (ZERO TOLERANCE)
@@ -1055,13 +1055,16 @@ WINDOW & DOOR GLOW
   may receive a soft, even warm wash behind it only — nothing more specific.
 
 EXTERIOR / PATH / LANDSCAPE LIGHTING
-• Any exterior fixture already visible in the input (wall light, under-eave
-  downlight, bollard, step light, path light, porch lantern) is switched on,
-  with a small, realistic falloff pool of light on the surface beneath it.
-• You MAY synthesize a modest, plausible ground-level path or garden
-  lighting glow along existing paths and garden edges. What is synthesized
-  is the LIGHT AND ITS FALLOFF on existing surfaces — you may NOT invent new
-  visible fixture objects where none exist in the input.
+• Only a light fixture that is genuinely visible in the input (a wall light,
+  under-eave downlight, bollard, step light, path light, porch lantern, or
+  similar) may be shown switched on, with a small, realistic falloff pool of
+  light on the surface directly beneath that same fixture.
+• Do NOT invent a new light fixture anywhere it is not visible in the input.
+• Do NOT add light, glow, or falloff at any exterior location — along a
+  path, in the garden, on the lawn, or anywhere else — unless a real fixture
+  for it is visible in the input at that exact spot. An unlit path, garden,
+  or lawn with no visible fixture must remain unlit and dark at dusk,
+  exactly as in the input.
 
 FACADE LIGHT SPILL
 • Warm color temperature and soft falloff on cladding immediately around lit
@@ -1084,15 +1087,17 @@ ALLOWED ADJUSTMENTS (GLOBAL + BOUNDED ILLUMINATION)
 • Global exposure correction for a twilight scene
 • A deliberate warm/cool split color grade
 • Sky repaint (see SKY ENHANCEMENT above)
-• Synthesis of illumination through existing window/door openings and from
-  existing or plausible ground-level fixtures (see ARTIFICIAL LIGHT
-  SYNTHESIS above)
+• Synthesis of illumination through existing window/door openings and
+  through exterior light fixtures that are genuinely visible in the input —
+  never through an invented or merely plausible fixture (see ARTIFICIAL
+  LIGHT SYNTHESIS above)
 • Highlight rolloff on light sources
 
 NO object removal, generation, restructuring, or semantic scene alteration.
 
-Permitted segmentation is limited to: the sky, and existing window/door/
-fixture regions for illumination purposes only.
+Permitted segmentation is limited to: the sky, and window/door/fixture
+regions that are genuinely visible in the input, for illumination purposes
+only.
 `;
 const STAGE1A_EXTERIOR_DUSK_REALISM_CHECK_BLOCK = `────────────────────────────────
 REALISM CHECK (BEFORE OUTPUT)
@@ -1102,6 +1107,10 @@ Before returning the result, confirm:
 • The sky gradient is smooth, with no banding.
 • Window glow does not bleed past its frame onto the cladding.
 • No glow appears behind a solid wall where no opening exists.
+• No light, glow, or fixture appears at any exterior location — a path,
+  garden, lawn, wall, or eave — unless that exact fixture is genuinely
+  visible in the input. Every lit exterior point must trace back to a real
+  fixture already in the photo.
 • There is no second light source implying a remaining sun.
 • Reflections in glass and any wet surfaces are consistent with the new sky.
 • The result is defensible as a genuine dusk photograph of THIS property,
