@@ -15,6 +15,7 @@ import {
   buildStage1AExteriorHallucinationPrompt,
   decideStage1AExteriorHallucination,
   stage1AExteriorHallucinationCheckBlocking,
+  stage1AExteriorHallucinationCheckEnabled,
 } from "../validators/stage1AExteriorHallucinationCheck";
 
 let anyFailure = false;
@@ -25,18 +26,22 @@ function check(name: string, pass: boolean, detail?: string) {
 
 const prompt = buildStage1AExteriorHallucinationPrompt();
 
-// 1. Must explicitly permit the two behaviours the user confirmed should
-//    keep working: full sky replacement and vegetation colour boosting.
+// 1. Must permit sky/weather change, but vegetation is now zero-tolerance
+//    (the checkbox's own prompt no longer permits touching vegetation at
+//    all, including colour — this check must match that narrower scope).
 check("permits_sky_replacement", /overcast/i.test(prompt) && /blue/i.test(prompt) && /authorised/i.test(prompt));
-check("permits_vegetation_colour", /vibrant/i.test(prompt) && /colour.*alone is authorised/i.test(prompt));
 check("permits_visibility_recovery", /obscured by weather/i.test(prompt) || /recovering real detail/i.test(prompt));
+check("does_not_permit_vegetation_colour", !/colour.*alone is authorised/i.test(prompt) && !/vegetation colour changes.*authorised/i.test(prompt));
 
-// 2. Must still flag the actual risk categories named in the request.
+// 2. Must still flag the actual risk categories named in the request,
+//    including any vegetation colour/vibrancy change now that it's no
+//    longer a permitted behaviour.
 const mustFlag = [/building/i, /fence/i, /retaining wall/i, /hill|ridge|mountain/i, /vehicle/i, /boat/i, /person/i];
 for (const re of mustFlag) {
   check(`flags_category[${re}]`, re.test(prompt));
 }
-check("flags_vegetation_shape_change", /changed size, shape, position, or species/i.test(prompt));
+check("flags_vegetation_shape_change", /changed size, shape, position, species, colour, or vibrancy/i.test(prompt));
+check("flags_vegetation_colour_change_explicitly", /do not treat a greener or more vibrant appearance as an acceptable/i.test(prompt));
 
 // 3. JSON contract must be minimal and self-contained — no dependency on
 //    geminiSemanticValidator.ts's legacy 7-key contract (which is what
@@ -70,6 +75,20 @@ try {
 } finally {
   if (savedEnv === undefined) delete process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_BLOCKING;
   else process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_BLOCKING = savedEnv;
+}
+
+// 6. Enabled flag (the master disconnect switch): default off, matching the
+//    user's request to disconnect this check until they've tested the
+//    narrower prompt on its own.
+const savedEnabledEnv = process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED;
+try {
+  delete process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED;
+  check("enabled_default_off", stage1AExteriorHallucinationCheckEnabled() === false);
+  process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED = "true";
+  check("enabled_on_when_set_true", stage1AExteriorHallucinationCheckEnabled() === true);
+} finally {
+  if (savedEnabledEnv === undefined) delete process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED;
+  else process.env.STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED = savedEnabledEnv;
 }
 
 console.log(`\n${anyFailure ? "RESULT: one or more checks failed." : "RESULT: all checks passed."}`);

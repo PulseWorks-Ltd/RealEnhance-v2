@@ -536,14 +536,16 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
  * shot, per this feature's own UI copy ("Brighten exterior outlook visible
  * from interior shots").
  *
- * Rewritten from the target branch's final (fifth-revision) text to restore
- * four things real product review found missing from that revision (each
- * present in that branch's very first draft, then trimmed away by later
- * simplification passes): (1) explicit permission to improve vegetation
- * colour/vibrancy, not just a blanket "don't touch it"; (2) protection for
- * roads/driveways/paths/fences/civil elements, not just buildings; (3)
- * atmospheric fog/mist/haze clearing, not just glass-surface artifacts; (4)
- * an explicit anti-hallucination + window-covering safeguard.
+ * Narrowed (Stage 1A Exterior Enhancement safety pass): vegetation was
+ * previously allowed a colour/vibrancy boost (greener, healthier, more
+ * lush) while locking its size/shape/position/species. That permission is
+ * now removed entirely — vegetation must be left exactly as it appears in
+ * the original photo. Scope is now strictly: sky/weather condition,
+ * ambient brightness/sunlight, and removal of temporary glass artifacts
+ * (raindrops, fog, condensation) — nothing else about the exterior view may
+ * change. The closing summary line was tightened to match (it previously
+ * said "colour... may be improved" as a blanket allowance, which would have
+ * contradicted this narrower scope).
  */
 const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `Primary objective: Deliver a premium real estate exterior outlook through existing windows and doors so the property appears professionally photographed on an ideal bright, clear day, while maintaining a realistic, natural photographic appearance.
 
@@ -552,7 +554,6 @@ When exterior views are visible through existing windows or doors:
 - Make the sky look clear and bright, as if photographed on a sunny day — replace flat, grey, or overcast skies with clear blue sky, natural sunlight, and matching shadows.
 - Where fog, mist, haze, or general poor-weather atmosphere reduces visibility of the exterior view, clear it so the existing exterior is genuinely visible — without inventing any new scenery beyond what is already present in the original image.
 - Adjust interior illumination naturally so sunlight and daylight entering through existing windows and doors appear consistent with the improved outdoor lighting conditions.
-- Vegetation, lawns, trees, shrubs, and gardens may have their colour and vibrancy improved (greener, healthier, more lush) — but their size, shape, position, and species must remain exactly as shown. Do not add, remove, resize, or relocate any vegetation or landscaping.
 
 Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, water spotting, smudges, dirt, haze, residue, and similar temporary visibility obstructions from the glass surface only.
 
@@ -561,10 +562,11 @@ Keep the final result realistic, natural, and high-end. The image should resembl
 Do not add, remove, resize, reshape, or relocate any architectural elements, buildings, or structures.
 Do not alter roads, driveways, paths, fences, retaining walls, power lines, or any other civil or structural elements — keep them exactly as shown.
 Do not change the physical structure, layout, or architectural features of any property in the image.
+Do not alter vegetation, lawns, trees, shrubs, or gardens in any way — including colour, vibrancy, or saturation. Leave all vegetation exactly as it appears in the original image.
 Do not invent exterior content, scenery, or detail that is not genuinely visible in the original image.
 Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors, and do not reveal anything hidden behind them.
 
-Architectural accuracy always takes priority over visual enhancement. Improve only weather, lighting, atmosphere, colour, and environmental appearance — never the physical structure, layout, or content of the property.`;
+Architectural accuracy always takes priority over visual enhancement. Improve only the sky, weather condition, ambient brightness, and glass clarity visible through the opening — never the physical structure, layout, colour, or content of the property, its vegetation, or anything else in view.`;
 
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
@@ -689,12 +691,24 @@ async function enhanceWithGeminiStage1A(
   // checkbox actually granted permission to touch exterior content for this
   // job (see stage1AExteriorHallucinationCheck.ts's header comment for why
   // this is the missing enforcement backstop for that feature).
+  //
+  // DISCONNECTED (2026-09-16, user request): stage1AExteriorHallucinationCheckEnabled()
+  // defaults false, so this whole block is currently a no-op — the user
+  // wants to test the now vegetation-untouched prompt on its own against a
+  // set of real images first, then decide whether to reconnect this. Flip
+  // STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED=true to reconnect it.
   if (stage1ASunnyExteriorPromptInjected) {
     try {
       const {
         runStage1AExteriorHallucinationCheck,
         stage1AExteriorHallucinationCheckBlocking,
+        stage1AExteriorHallucinationCheckEnabled,
       } = await import("../validators/stage1AExteriorHallucinationCheck.js");
+
+      if (!stage1AExteriorHallucinationCheckEnabled()) {
+        logIfNotFocusMode("[stage1A] Exterior hallucination check disconnected (STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED is not true) — skipping");
+        return finalGeminiPath;
+      }
 
       const verdict = await runStage1AExteriorHallucinationCheck({
         beforePath: sharpPath,
