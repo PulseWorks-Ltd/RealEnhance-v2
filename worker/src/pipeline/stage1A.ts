@@ -546,20 +546,6 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
  * change. The closing summary line was tightened to match (it previously
  * said "colour... may be improved" as a blanket allowance, which would have
  * contradicted this narrower scope).
- *
- * Narrowed again (production incident job_5671358c, 2026-09-16): this block
- * used to also instruct "Adjust interior illumination naturally so sunlight
- * and daylight entering through existing windows and doors appear
- * consistent with the improved outdoor lighting conditions." With this
- * checkbox enabled, Gemini (Stage 1A runs at temperature 0 / topK 1, so this
- * was a reproducible response, not a rare glitch) rendered that instruction
- * as a hard-clipped pure-white band across the room's wall below roughly
- * the frame's midline, with a sharp seam rather than a gradient — visually
- * indistinguishable from a bad compositing bug even though no compositing
- * code was involved. That line has been removed, and an explicit
- * prohibition on altering the interior (wall colour, brightness, lighting)
- * added, since the feature's own scope is the outlook seen THROUGH the
- * opening, not the room itself.
  */
 const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `Primary objective: Deliver a premium real estate exterior outlook through existing windows and doors so the property appears professionally photographed on an ideal bright, clear day, while maintaining a realistic, natural photographic appearance.
 
@@ -567,6 +553,7 @@ When exterior views are visible through existing windows or doors:
 
 - Make the sky look clear and bright, as if photographed on a sunny day — replace flat, grey, or overcast skies with clear blue sky, natural sunlight, and matching shadows.
 - Where fog, mist, haze, or general poor-weather atmosphere reduces visibility of the exterior view, clear it so the existing exterior is genuinely visible — without inventing any new scenery beyond what is already present in the original image.
+- Adjust interior illumination naturally so sunlight and daylight entering through existing windows and doors appear consistent with the improved outdoor lighting conditions.
 
 Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, water spotting, smudges, dirt, haze, residue, and similar temporary visibility obstructions from the glass surface only.
 
@@ -578,7 +565,6 @@ Do not change the physical structure, layout, or architectural features of any p
 Do not alter vegetation, lawns, trees, shrubs, or gardens in any way — including colour, vibrancy, or saturation. Leave all vegetation exactly as it appears in the original image.
 Do not invent exterior content, scenery, or detail that is not genuinely visible in the original image.
 Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors, and do not reveal anything hidden behind them.
-Do not alter the interior of the room in any way — interior wall colour, wall brightness, interior lighting, and room illumination must remain exactly as they appear in the original image. Only the sky, weather, and glass clarity visible through the window or door opening itself may change.
 
 Architectural accuracy always takes priority over visual enhancement. Improve only the sky, weather condition, ambient brightness, and glass clarity visible through the opening — never the physical structure, layout, colour, or content of the property, its vegetation, or anything else in view.`;
 

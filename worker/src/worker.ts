@@ -8528,8 +8528,19 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const userSceneOverride = manualSceneOverride && (payload.options.sceneType === "interior" || payload.options.sceneType === "exterior")
     ? { sceneOverride: payload.options.sceneType as "interior" | "exterior" }
     : undefined;
+  // Production incident (job_5671358c, 2026-09-16): this used to read the
+  // raw, pre-correction `scenePrimary?.label` instead of the final resolved
+  // `sceneLabel` (which already incorporates the user's manual scene
+  // confirmation/override and is what the rest of the pipeline — Stage 1A's
+  // own prompt selection, staging gates, etc. — trusts). For an interior
+  // photo whose raw auto-detector guess was a confident-but-wrong
+  // "exterior" (e.g. a large, bright window/sliding-door view dominating
+  // the frame), that mismatch let determineLightingDecision's interior
+  // no-op guard get skipped, sending applyExteriorRelighting's maximum
+  // strength/profile at a genuinely interior room and clipping its walls to
+  // white. Must stay in sync with `sceneLabel`, not the raw detector field.
   const sceneDetectionForLighting = {
-    sceneType: scenePrimary?.label === "exterior" ? "exterior" : "interior",
+    sceneType: sceneLabel === "exterior" ? "exterior" : "interior",
     confidence: typeof scenePrimary?.confidence === "number" ? scenePrimary.confidence : 0,
     needsConfirm: Boolean(scenePrimary?.needsConfirm || requiresSceneConfirm),
   } as const;
