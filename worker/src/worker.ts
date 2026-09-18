@@ -164,6 +164,17 @@ const DELIVERY_EXPORT_MIN_LONG_SIDE = Math.max(1024, Number(process.env.DELIVERY
 const DELIVERY_EXPORT_JPEG_QUALITY = Math.max(85, Math.min(95, Number(process.env.DELIVERY_EXPORT_JPEG_QUALITY || 95)));
 const DELIVERY_EXPORT_SHARPEN_STRENGTH = Math.max(0.4, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_STRENGTH || 1.04)));
 const DELIVERY_EXPORT_GAMMA = Math.max(0.95, Math.min(1.1, Number(process.env.DELIVERY_EXPORT_GAMMA || 1.03)));
+// Image-quality fix (2026-09-18): read fresh per call (not module-level, unlike
+// the DELIVERY_EXPORT_* consts above) purely so a same-process verification
+// script can compare variants without respawning — production behavior is
+// identical either way since these env vars don't change at runtime.
+function getDeliveryExportSharpenTuning() {
+  return {
+    sharpenM2Upscaled: Math.max(0.2, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_M2_UPSCALED || 0.8))),
+    sharpenM2Native: Math.max(0.2, Math.min(2.0, Number(process.env.DELIVERY_EXPORT_SHARPEN_M2_NATIVE || 2.0))),
+    preResizeDenoiseEnabled: String(process.env.DELIVERY_EXPORT_PRE_RESIZE_DENOISE_ENABLED ?? "true").toLowerCase() !== "false",
+  };
+}
 const STRUCTURAL_INVARIANT_MODEL = String(process.env.STRUCTURAL_INVARIANT_MODEL || "gemini-2.5-flash");
 // SINGLE-AUTHORITY: composite local validator always blocks
 const COMPOSITE_LOCAL_VALIDATOR_FAIL_MODE: "log" | "block" = "block";
@@ -3872,9 +3883,19 @@ async function upscaleAndEnhanceForDelivery(
   const enhancementsApplied = DELIVERY_EXPORT_ENHANCE_ENABLED && !isStage2;
   const shouldApplyStage2Polish = isStage2;
 
+  const deliverySharpenTuning = getDeliveryExportSharpenTuning();
   let pipeline = baseImage.clone();
 
   if (shouldResize) {
+    // Image-quality fix (2026-09-18): denoise the small native source BEFORE
+    // the Lanczos upscale amplifies its JPEG/compression noise into grain
+    // that the sharpen below would then amplify a second time. Only runs
+    // when an actual interpolation upscale is happening (shouldResize) —
+    // once Stage 1A exterior lands natively at 2K via Gemini 3 Pro, this
+    // branch is skipped entirely and today's behavior is preserved exactly.
+    if (deliverySharpenTuning.preResizeDenoiseEnabled) {
+      pipeline = pipeline.median(3);
+    }
     pipeline = pipeline.resize({
       ...resizeOptions,
       fit: "inside",
@@ -3884,12 +3905,21 @@ async function upscaleAndEnhanceForDelivery(
   }
 
   if (enhancementsApplied) {
+    // Softened sharpen (was a flat m2:2.0) only when this image actually went
+    // through the interpolation upscale above — that's the case a strong
+    // unsharp mask amplifies noise/haloing instead of restoring real detail.
+    // An image already at/above the target resolution (native Gemini-3-Pro
+    // exterior output, or any already-large source) keeps the original,
+    // stronger m2:2.0 pass since there's no upscale softness to compensate for.
+    const deliverySharpenM2 = shouldResize
+      ? deliverySharpenTuning.sharpenM2Upscaled
+      : deliverySharpenTuning.sharpenM2Native;
     pipeline = pipeline
       .gamma(DELIVERY_EXPORT_GAMMA)
       .sharpen({
         sigma: DELIVERY_EXPORT_SHARPEN_STRENGTH,
         m1: 1.0,
-        m2: 2.0,
+        m2: deliverySharpenM2,
         x1: 2.0,
         y2: 10.0,
         y3: 20.0,

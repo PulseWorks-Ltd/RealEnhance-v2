@@ -2,6 +2,7 @@ import type { GoogleGenAI } from "@google/genai";
 import { logGeminiError } from "../utils/logGeminiError";
 import { logIfNotFocusMode } from "../logger";
 import { logGeminiUsage, type GeminiCallType } from "./usageTelemetry";
+import { generateContentViaRest, type GeminiRestGenerateContentBody } from "./geminiRestClient";
 
 function ensureImageCapableModel(model: string | undefined, fallback: string, envName: string): string {
   const candidate = String(model || "").trim();
@@ -29,6 +30,19 @@ export const MODEL_CONFIG = {
   stage1A: {
     primary: process.env.REALENHANCE_MODEL_STAGE1A_PRIMARY || "gemini-2.5-flash-image",
     fallback: null, // Stage 1A has no fallback
+  },
+  // Exterior-only Stage 1A path (image-quality fix, 2026-09-18): Gemini 2.5
+  // Flash Image has no reliable output-resolution control, producing ~1MP
+  // images that then need lossy interpolation upscaling for delivery.
+  // gemini-3-pro-image-preview supports an explicit generationConfig.imageConfig
+  // (imageSize "1K"/"2K"/"4K") and is already the proven, live primary model
+  // for Stage 1B in this codebase — reused here rather than introducing a new
+  // model. Interior Stage 1A is intentionally left on the cheaper 2.5 model
+  // (see the interior Sharp-pipeline retune in stage1A-post-finish.ts /
+  // worker.ts instead).
+  stage1AExterior: {
+    primary: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_PRIMARY || "gemini-3-pro-image-preview",
+    fallback: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_FALLBACK || "gemini-2.5-flash-image",
   },
   stage1B: {
     primary: process.env.REALENHANCE_MODEL_STAGE1B_PRIMARY || "gemini-3-pro-image-preview",
@@ -89,7 +103,7 @@ type ModelLogMeta = {
   attempt?: number;
 };
 
-function logNoImageResponse(meta: ModelLogMeta | undefined, stageLabel: "1B" | "2", model: string, parts: any[]) {
+function logNoImageResponse(meta: ModelLogMeta | undefined, stageLabel: "1A" | "1B" | "2", model: string, parts: any[]) {
   if (stageLabel !== "2") return;
   const partTypes = (parts || []).map((part: any) => {
     if (!part || typeof part !== "object") return "unknown";
@@ -151,7 +165,14 @@ function isTimeoutError(err: any): boolean {
 function isRetryableModelError(err: any): boolean {
   const status = parseErrorStatusCode(err);
   if (status === 429) return true;
+  // Payment/quota-required (e.g. a preview-tier model running out of quota)
+  // should fall back rather than hard-fail the job — added for the
+  // Stage 1A exterior Gemini-3-Pro path, but applies equally to Stage 1B's
+  // existing primary/fallback usage.
+  if (status === 402) return true;
   if (status !== null && status >= 500) return true;
+  const msg = String((err as any)?.message ?? "").toLowerCase();
+  if (msg.includes("payment_required") || msg.includes("lack sufficient credits") || msg.includes("quota")) return true;
   return isTimeoutError(err);
 }
 
@@ -286,7 +307,11 @@ export async function runWithSelectedImageModel({
 }
 
 /**
- * Safe image generation with primary/fallback strategy for Stage 1B and Stage 2
+ * Safe image generation with primary/fallback strategy for Stage 1B and
+ * Stage 2. (Stage 1A exterior has its own dedicated
+ * runStage1AExteriorPrimaryThenFallback below — its primary attempt needs a
+ * raw REST call, not the SDK, so it can't share this function's SDK-only
+ * call sites.)
  *
  * @param stageLabel "1B" or "2"
  * @param ai GoogleGenAI client
@@ -426,6 +451,153 @@ export async function runWithPrimaryThenFallback({
 
   // ✅ BOTH MODELS FAILED - CONTROLLED ERROR (DO NOT CRASH WORKER)
   console.error(`❌ FATAL: Both Gemini models failed for stage ${stageLabel}`);
+  console.error(`Primary (${primaryModel}) error:`, primaryError?.message || primaryError);
+  console.error(`Fallback (${fallbackModel}) error:`, fallbackError?.message || fallbackError);
+
+  const errorMsg = [
+    `[GEMINI][${context}] Both primary and fallback models failed`,
+    `Primary (${primaryModel}): ${primaryError?.message || primaryError}`,
+    `Fallback (${fallbackModel}): ${fallbackError?.message || fallbackError}`,
+  ].join(". ");
+
+  throw new Error(errorMsg);
+}
+
+/**
+ * Stage 1A exterior only (image-quality fix, 2026-09-18): identical
+ * primary/fallback shape to runWithPrimaryThenFallback above, but the
+ * PRIMARY attempt goes over a raw REST call (geminiRestClient.ts) instead of
+ * the @google/genai SDK, because the installed SDK version (0.7.0) silently
+ * drops generationConfig.imageConfig — see geminiRestClient.ts's header
+ * comment for the full explanation. The FALLBACK attempt uses the normal
+ * SDK client, since gemini-2.5-flash-image doesn't need imageConfig anyway.
+ */
+export async function runStage1AExteriorPrimaryThenFallback({
+  ai,
+  apiKey,
+  baseRequestBody,
+  context,
+  meta,
+}: {
+  ai: GoogleGenAI;
+  apiKey: string;
+  baseRequestBody: GeminiRestGenerateContentBody;
+  context: string;
+  meta: ModelLogMeta;
+}): Promise<{ resp: any; modelUsed: string }> {
+  const primaryModel = MODEL_CONFIG.stage1AExterior.primary;
+  const fallbackModel = MODEL_CONFIG.stage1AExterior.fallback!;
+  const stageLabel = "1A" as const;
+
+  logIfNotFocusMode(`[stage${stageLabel}] Primary model (REST): ${primaryModel}, fallback (SDK): ${fallbackModel}`);
+  logModelResolution({
+    stage: meta.stage,
+    jobId: meta.jobId,
+    imageId: meta.imageId,
+    filename: meta.filename,
+    roomType: meta.roomType,
+    reason: meta.reason || context,
+    selectedModel: primaryModel,
+    fallbackModel,
+  });
+
+  let primaryError: any = null;
+  let primaryMissingImage = false;
+  let shouldTryFallback = false;
+  try {
+    const requestStartedAt = Date.now();
+    const resp = await generateContentViaRest({ apiKey, model: primaryModel, body: baseRequestBody });
+    logGeminiUsage({
+      ctx: {
+        jobId: meta.jobId,
+        imageId: meta.imageId,
+        stage: meta.stage,
+        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
+      },
+      model: primaryModel,
+      callType: meta.callType || "image_generation",
+      response: resp,
+      latencyMs: Date.now() - requestStartedAt,
+    });
+
+    const validation = isValidImageResponse(resp);
+    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+    console.info(`[GEMINI][${context}] Primary attempt (REST) with ${primaryModel} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
+
+    if (!validation.valid) {
+      logNoImageResponse(meta, stageLabel, primaryModel, parts);
+      primaryMissingImage = true;
+      shouldTryFallback = true;
+      primaryError = new Error(`Primary model ${primaryModel} ${validation.reason}`);
+      console.warn(`[stage${stageLabel}] Gemini primary (REST) failed: ${validation.reason} → falling back to ${fallbackModel}`);
+    } else {
+      console.info(`[GEMINI][${context}] Success with primary model ${primaryModel} (REST)`);
+      console.log(`[stage${stageLabel}] Completed using model: ${primaryModel} (REST)`);
+      return { resp, modelUsed: primaryModel };
+    }
+  } catch (err) {
+    primaryError = err;
+    logGeminiError(`${context}:${primaryModel}`, err);
+    shouldTryFallback = isRetryableModelError(err);
+    if (shouldTryFallback) {
+      console.warn(`[stage${stageLabel}] Gemini primary (REST) failed with retryable error: ${(err as any)?.message || err} → falling back to ${fallbackModel}`);
+    } else {
+      console.error(`[stage${stageLabel}] Gemini primary (REST) failed with non-retryable error: ${(err as any)?.message || err} → not using fallback`);
+    }
+  }
+
+  if (!shouldTryFallback) {
+    const reason = primaryMissingImage ? "primary_missing_image" : "primary_non_retryable_failure";
+    throw new Error(
+      `[GEMINI][${context}] Primary model failed without fallback eligibility (${reason}). ` +
+      `Primary (${primaryModel}): ${primaryError?.message || primaryError}`
+    );
+  }
+
+  // Fallback: normal SDK call, no imageConfig needed for gemini-2.5-flash-image.
+  const { imageConfig: _dropForFallback, ...fallbackGenerationConfig } = baseRequestBody.generationConfig || {};
+  let fallbackError: any = null;
+  try {
+    console.log(`[stage${stageLabel}] Attempting fallback model: ${fallbackModel} (SDK)`);
+    const requestStartedAt = Date.now();
+    const resp = await ai.models.generateContent({
+      contents: baseRequestBody.contents,
+      generationConfig: fallbackGenerationConfig,
+      model: fallbackModel,
+    } as any);
+    logGeminiUsage({
+      ctx: {
+        jobId: meta.jobId,
+        imageId: meta.imageId,
+        stage: meta.stage,
+        attempt: Number.isFinite(meta.attempt) ? Number(meta.attempt) : 1,
+      },
+      model: fallbackModel,
+      callType: meta.callType || "image_generation",
+      response: resp,
+      latencyMs: Date.now() - requestStartedAt,
+    });
+
+    const validation = isValidImageResponse(resp);
+    const parts: any[] = (resp as any).candidates?.[0]?.content?.parts || [];
+    console.info(`[GEMINI][${context}] Fallback attempt with ${fallbackModel} parts=${parts.length} responseHasInlineImage=${validation.valid}`);
+
+    if (!validation.valid) {
+      logNoImageResponse(meta, stageLabel, fallbackModel, parts);
+      fallbackError = new Error(`Fallback model ${fallbackModel} ${validation.reason}`);
+      console.error(`[stage${stageLabel}] Fallback model failed: ${validation.reason}`);
+    } else {
+      console.info(`[GEMINI][${context}] Success with fallback model ${fallbackModel}`);
+      console.log(`[stage${stageLabel}] Completed using model: ${fallbackModel} (fallback)`);
+      return { resp, modelUsed: fallbackModel };
+    }
+  } catch (err) {
+    fallbackError = err;
+    logGeminiError(`${context}:${fallbackModel}`, err);
+    console.error(`[stage${stageLabel}] Fallback model failed: ${(err as any)?.message || err}`);
+  }
+
+  console.error(`❌ FATAL: Both Gemini models failed for stage ${stageLabel} (exterior)`);
   console.error(`Primary (${primaryModel}) error:`, primaryError?.message || primaryError);
   console.error(`Fallback (${fallbackModel}) error:`, fallbackError?.message || fallbackError);
 

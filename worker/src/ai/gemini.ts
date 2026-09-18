@@ -275,8 +275,9 @@ ${(userPrompt || prompt).trim()}`.trim()
 import type { GoogleGenAI } from "@google/genai";
 import fs from "fs/promises";
 import path from "path";
+import sharp from "sharp";
 import { createHash } from "crypto";
-import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback } from "./runWithImageModelFallback";
+import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback, runStage1AExteriorPrimaryThenFallback } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash, normalizePortraitImageForGemini } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
@@ -299,6 +300,39 @@ export const STAGE1B_FULL_RETRY_SAMPLING = Object.freeze({
 
 function resolveGeminiApiKey(): string | undefined {
   return process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY;
+}
+
+// Stage 1A exterior image-quality fix (2026-09-18): gemini-3-pro-image-preview
+// accepts an explicit generationConfig.imageConfig.aspectRatio, but only from
+// this fixed set — an arbitrary real-photo ratio must be bucketed to the
+// nearest one. Log-ratio distance keeps landscape/portrait comparisons
+// symmetric (e.g. 16:9 and 9:16 are equidistant from a square).
+const GEMINI_SUPPORTED_ASPECT_RATIOS: Array<{ label: string; ratio: number }> = [
+  { label: "21:9", ratio: 21 / 9 },
+  { label: "16:9", ratio: 16 / 9 },
+  { label: "4:3", ratio: 4 / 3 },
+  { label: "3:2", ratio: 3 / 2 },
+  { label: "1:1", ratio: 1 },
+  { label: "5:4", ratio: 5 / 4 },
+  { label: "4:5", ratio: 4 / 5 },
+  { label: "3:4", ratio: 3 / 4 },
+  { label: "2:3", ratio: 2 / 3 },
+  { label: "9:16", ratio: 9 / 16 },
+];
+
+function closestGeminiAspectRatio(width: number, height: number): string {
+  if (!width || !height) return "4:3";
+  const logRatio = Math.log(width / height);
+  let best = GEMINI_SUPPORTED_ASPECT_RATIOS[0];
+  let bestDelta = Infinity;
+  for (const candidate of GEMINI_SUPPORTED_ASPECT_RATIOS) {
+    const delta = Math.abs(logRatio - Math.log(candidate.ratio));
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = candidate;
+    }
+  }
+  return best.label;
 }
 
 // Deliberately NOT cached as a module-level singleton. Investigating a real
@@ -614,17 +648,65 @@ export async function enhanceWithGemini(
     let resp: any;
     let modelUsed: string;
 
+    // Stage 1A exterior image-quality fix (2026-09-18): exterior photos route
+    // to gemini-3-pro-image-preview with an explicit imageConfig so the model
+    // returns native 2K output instead of Gemini 2.5's ~1MP-and-uncontrolled
+    // resolution. Interior Stage 1A is untouched (stays on Gemini 2.5, no
+    // imageConfig) — see MODEL_CONFIG.stage1AExterior for the rationale.
+    const stage1AExteriorKillSwitch = process.env.STAGE1A_DISABLE_EXTERIOR_GEMINI3 === "1";
+    const isExteriorStage1A = stage === "1A" && sceneType === "exterior" && !stage1AExteriorKillSwitch;
+
+    let stage1AExteriorImageConfig: { imageSize: string; aspectRatio?: string } | undefined;
+    if (isExteriorStage1A) {
+      const imageSize = (process.env.REALENHANCE_STAGE1A_EXTERIOR_IMAGE_SIZE || "2K").toUpperCase();
+      let aspectRatio: string | undefined;
+      if (process.env.REALENHANCE_STAGE1A_EXTERIOR_ASPECT_RATIO_ENABLED !== "0") {
+        try {
+          const inputMeta = await sharp(inputPath).metadata();
+          aspectRatio = closestGeminiAspectRatio(inputMeta.width || 0, inputMeta.height || 0);
+        } catch {
+          // Leave aspectRatio undefined — model falls back to its own default framing.
+        }
+      }
+      focusLog("GEMINI_STAGE1A_EXTERIOR_IMAGE_CONFIG", `[Gemini] 🖼️ Stage 1A exterior imageConfig: size=${imageSize} aspectRatio=${aspectRatio || "unset"}`);
+      stage1AExteriorImageConfig = aspectRatio ? { imageSize, aspectRatio } : { imageSize };
+    }
+
     const baseRequest = {
       contents: requestParts,
       generationConfig: (usingTest && !stage1ATempLocked) ? undefined : {
         temperature: effectiveSampling.temperature,
         topP: effectiveSampling.topP,
         topK: effectiveSampling.topK,
+        ...(stage1AExteriorImageConfig ? { imageConfig: stage1AExteriorImageConfig } : {}),
       }
     } as any;
 
-    if (stage === "1A") {
-      // Stage 1A: Gemini 2.5 only (no fallback)
+    if (stage === "1A" && isExteriorStage1A) {
+      // Stage 1A exterior: Gemini 3 Pro Image via raw REST (native high-res,
+      // see geminiRestClient.ts for why this bypasses the SDK) → fallback to
+      // 2.5 via the normal SDK.
+      const result = await runStage1AExteriorPrimaryThenFallback({
+        ai: client as any,
+        apiKey,
+        baseRequestBody: baseRequest,
+        context: "enhance-1A-exterior",
+        meta: {
+          stage: "1A",
+          jobId,
+          imageId,
+          filename,
+          roomType,
+          callType: "image_generation",
+          reason: modelLogReason,
+          selectedModel: MODEL_CONFIG.stage1AExterior.primary,
+          fallbackModel: MODEL_CONFIG.stage1AExterior.fallback,
+        },
+      });
+      resp = result.resp;
+      modelUsed = result.modelUsed;
+    } else if (stage === "1A") {
+      // Stage 1A interior (and exterior kill-switch): Gemini 2.5 only (no fallback), unchanged.
       const result = await runWithImageModelFallback(client as any, baseRequest, "enhance-1A", {
         stage: "1A",
         jobId,
