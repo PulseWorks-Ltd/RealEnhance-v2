@@ -277,7 +277,7 @@ import fs from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { createHash } from "crypto";
-import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback, runStage1AExteriorPrimaryThenFallback } from "./runWithImageModelFallback";
+import { MODEL_CONFIG, runWithImageModelFallback, runWithPrimaryThenFallback, runImageGenerationPrimaryThenFallbackViaRest } from "./runWithImageModelFallback";
 import { getAdminConfig } from "../utils/adminConfig";
 import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash, normalizePortraitImageForGemini } from "../utils/images";
 import { buildPrompt, PromptOptions } from "./prompt";
@@ -333,6 +333,20 @@ function closestGeminiAspectRatio(width: number, height: number): string {
     }
   }
   return best.label;
+}
+
+// Image-quality fix, Stage 2 (2026-09-19): only models confirmed (via direct
+// live testing, not just documentation — see geminiRestClient.ts's header
+// comment for why documentation alone wasn't trustworthy here) to actually
+// respect generationConfig.imageConfig.imageSize. gemini-2.5-flash-image was
+// tested directly and silently ignores it (returns the same ~1MP output
+// regardless of imageSize) — a genuine model limitation, not an SDK gap, so
+// it is deliberately NOT in this list. Extend this list only after the same
+// kind of direct verification for any new model.
+const GEMINI_MODELS_SUPPORTING_IMAGE_CONFIG = new Set(["gemini-3-pro-image-preview"]);
+
+function modelSupportsImageConfig(model: string | undefined | null): boolean {
+  return GEMINI_MODELS_SUPPORTING_IMAGE_CONFIG.has(String(model || "").trim().toLowerCase());
 }
 
 // Deliberately NOT cached as a module-level singleton. Investigating a real
@@ -672,6 +686,33 @@ export async function enhanceWithGemini(
       stage1AExteriorImageConfig = aspectRatio ? { imageSize, aspectRatio } : { imageSize };
     }
 
+    // Stage 2 image-quality fix (2026-09-19): purely a function of which
+    // model REALENHANCE_MODEL_STAGE2_PRIMARY resolves to — no separate kill
+    // switch needed, since switching that env var back to
+    // gemini-2.5-flash-image already fully reverts Stage 2 to today's exact
+    // unchanged behavior (see the `else` branch below, byte-identical to
+    // before this change). Only fires when the configured model is one
+    // directly confirmed (not just documented) to respect imageConfig — see
+    // modelSupportsImageConfig's own comment for why gemini-2.5-flash-image
+    // is deliberately excluded.
+    const isStage2ImageConfigModel = stage === "2" && modelSupportsImageConfig(MODEL_CONFIG.stage2.primary);
+
+    let stage2ImageConfig: { imageSize: string; aspectRatio?: string } | undefined;
+    if (isStage2ImageConfigModel) {
+      const imageSize = (process.env.REALENHANCE_STAGE2_IMAGE_SIZE || "2K").toUpperCase();
+      let aspectRatio: string | undefined;
+      if (process.env.REALENHANCE_STAGE2_ASPECT_RATIO_ENABLED !== "0") {
+        try {
+          const inputMeta = await sharp(inputPath).metadata();
+          aspectRatio = closestGeminiAspectRatio(inputMeta.width || 0, inputMeta.height || 0);
+        } catch {
+          // Leave aspectRatio undefined — model falls back to its own default framing.
+        }
+      }
+      focusLog("GEMINI_STAGE2_IMAGE_CONFIG", `[Gemini] 🖼️ Stage 2 imageConfig (model=${MODEL_CONFIG.stage2.primary}): size=${imageSize} aspectRatio=${aspectRatio || "unset"}`);
+      stage2ImageConfig = aspectRatio ? { imageSize, aspectRatio } : { imageSize };
+    }
+
     const baseRequest = {
       contents: requestParts,
       generationConfig: (usingTest && !stage1ATempLocked) ? undefined : {
@@ -679,6 +720,7 @@ export async function enhanceWithGemini(
         topP: effectiveSampling.topP,
         topK: effectiveSampling.topK,
         ...(stage1AExteriorImageConfig ? { imageConfig: stage1AExteriorImageConfig } : {}),
+        ...(stage2ImageConfig ? { imageConfig: stage2ImageConfig } : {}),
       }
     } as any;
 
@@ -686,11 +728,14 @@ export async function enhanceWithGemini(
       // Stage 1A exterior: Gemini 3 Pro Image via raw REST (native high-res,
       // see geminiRestClient.ts for why this bypasses the SDK) → fallback to
       // 2.5 via the normal SDK.
-      const result = await runStage1AExteriorPrimaryThenFallback({
+      const result = await runImageGenerationPrimaryThenFallbackViaRest({
         ai: client as any,
         apiKey,
         baseRequestBody: baseRequest,
         context: "enhance-1A-exterior",
+        primaryModel: MODEL_CONFIG.stage1AExterior.primary,
+        fallbackModel: MODEL_CONFIG.stage1AExterior.fallback!,
+        stageLabel: "1A",
         meta: {
           stage: "1A",
           jobId,
@@ -741,9 +786,39 @@ export async function enhanceWithGemini(
       });
       resp = result.resp;
       modelUsed = result.modelUsed;
+    } else if (stage === "2" && isStage2ImageConfigModel) {
+      // Stage 2 with REALENHANCE_MODEL_STAGE2_PRIMARY set to a model that
+      // supports imageConfig (currently gemini-3-pro-image-preview): same
+      // REST-bypass mechanism as Stage 1A exterior, so imageConfig is
+      // actually honored → 2K native output. Fallback still goes through
+      // the normal SDK to MODEL_CONFIG.stage2.fallback.
+      const result = await runImageGenerationPrimaryThenFallbackViaRest({
+        ai: client as any,
+        apiKey,
+        baseRequestBody: baseRequest,
+        context: "stage2-image-config",
+        primaryModel: MODEL_CONFIG.stage2.primary,
+        fallbackModel: MODEL_CONFIG.stage2.fallback!,
+        stageLabel: "2",
+        meta: {
+          stage: "2",
+          jobId,
+          imageId,
+          filename,
+          roomType,
+          callType: "image_generation",
+          reason: modelLogReason,
+          selectedModel: MODEL_CONFIG.stage2.primary,
+          fallbackModel: MODEL_CONFIG.stage2.fallback,
+        },
+      });
+      resp = result.resp;
+      modelUsed = result.modelUsed;
     } else if (stage === "2") {
-      // Stage 2: Gemini 2.5 only (no fallback) - optimized for virtual staging
-      // Use the Stage 2 config which now points to Gemini 2.5
+      // Stage 2 default (REALENHANCE_MODEL_STAGE2_PRIMARY unset or set to a
+      // model not in GEMINI_MODELS_SUPPORTING_IMAGE_CONFIG, e.g.
+      // gemini-2.5-flash-image): completely unchanged from before the
+      // 2026-09-19 image-quality fix — normal SDK call, no imageConfig.
       const result = await runWithPrimaryThenFallback({
         stageLabel: "2",
         ai: client as any,

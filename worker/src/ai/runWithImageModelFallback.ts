@@ -103,7 +103,7 @@ type ModelLogMeta = {
   attempt?: number;
 };
 
-function logNoImageResponse(meta: ModelLogMeta | undefined, stageLabel: "1A" | "1B" | "2", model: string, parts: any[]) {
+function logNoImageResponse(meta: ModelLogMeta | undefined, stageLabel: string, model: string, parts: any[]) {
   if (stageLabel !== "2") return;
   const partTypes = (parts || []).map((part: any) => {
     if (!part || typeof part !== "object") return "unknown";
@@ -464,31 +464,39 @@ export async function runWithPrimaryThenFallback({
 }
 
 /**
- * Stage 1A exterior only (image-quality fix, 2026-09-18): identical
- * primary/fallback shape to runWithPrimaryThenFallback above, but the
- * PRIMARY attempt goes over a raw REST call (geminiRestClient.ts) instead of
- * the @google/genai SDK, because the installed SDK version (0.7.0) silently
- * drops generationConfig.imageConfig — see geminiRestClient.ts's header
- * comment for the full explanation. The FALLBACK attempt uses the normal
- * SDK client, since gemini-2.5-flash-image doesn't need imageConfig anyway.
+ * Image-quality fix (2026-09-18, generalized 2026-09-19 for Stage 2):
+ * identical primary/fallback shape to runWithPrimaryThenFallback above, but
+ * the PRIMARY attempt goes over a raw REST call (geminiRestClient.ts)
+ * instead of the @google/genai SDK, because the installed SDK version
+ * (0.7.0) silently drops generationConfig.imageConfig — see
+ * geminiRestClient.ts's header comment for the full explanation. The
+ * FALLBACK attempt uses the normal SDK client, since every current fallback
+ * model (gemini-2.5-flash-image) doesn't need imageConfig anyway.
+ *
+ * `primaryModel`/`fallbackModel`/`stageLabel` are caller-supplied rather
+ * than hardcoded so both Stage 1A exterior and Stage 2 (when its configured
+ * primary is a Gemini-3-image-family model) share this one implementation —
+ * see gemini.ts's call sites for the exact gating each stage uses.
  */
-export async function runStage1AExteriorPrimaryThenFallback({
+export async function runImageGenerationPrimaryThenFallbackViaRest({
   ai,
   apiKey,
   baseRequestBody,
   context,
   meta,
+  primaryModel,
+  fallbackModel,
+  stageLabel,
 }: {
   ai: GoogleGenAI;
   apiKey: string;
   baseRequestBody: GeminiRestGenerateContentBody;
   context: string;
   meta: ModelLogMeta;
+  primaryModel: string;
+  fallbackModel: string;
+  stageLabel: string;
 }): Promise<{ resp: any; modelUsed: string }> {
-  const primaryModel = MODEL_CONFIG.stage1AExterior.primary;
-  const fallbackModel = MODEL_CONFIG.stage1AExterior.fallback!;
-  const stageLabel = "1A" as const;
-
   logIfNotFocusMode(`[stage${stageLabel}] Primary model (REST): ${primaryModel}, fallback (SDK): ${fallbackModel}`);
   logModelResolution({
     stage: meta.stage,
@@ -597,7 +605,7 @@ export async function runStage1AExteriorPrimaryThenFallback({
     console.error(`[stage${stageLabel}] Fallback model failed: ${(err as any)?.message || err}`);
   }
 
-  console.error(`❌ FATAL: Both Gemini models failed for stage ${stageLabel} (exterior)`);
+  console.error(`❌ FATAL: Both Gemini models failed for stage ${stageLabel} (REST primary + SDK fallback)`);
   console.error(`Primary (${primaryModel}) error:`, primaryError?.message || primaryError);
   console.error(`Fallback (${fallbackModel}) error:`, fallbackError?.message || fallbackError);
 
