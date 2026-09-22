@@ -568,7 +568,7 @@ export default function EnhancedHistoryPage() {
           onClose={() => setPreviewImage(null)}
           title="Preview Image"
           maxWidth="full"
-          contentClassName="max-w-[90vw] max-h-[90vh] overflow-hidden p-8 flex flex-col"
+          contentClassName="max-w-[90vw] h-[90vh] max-h-[90vh] overflow-hidden p-8 flex flex-col"
           className="flex-1 min-h-0 flex flex-col space-y-0"
         >
           {/* Image area is the flexible region (min-h-0 lets it actually
