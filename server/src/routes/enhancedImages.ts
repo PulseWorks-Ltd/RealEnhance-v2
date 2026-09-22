@@ -6,8 +6,9 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { listEnhancedImages, getEnhancedImage, softDeleteEnhancedImage } from '../services/enhancedImages.js';
+import { listEnhancedImages, getEnhancedImage, getEnhancedImageDownloadTarget, softDeleteEnhancedImage } from '../services/enhancedImages.js';
 import { makeZip } from '../services/zipper.js';
+import { getS3ObjectBuffer } from '../utils/s3.js';
 
 const ENHANCED_IMAGES_DEFAULT_LIMIT = Math.max(1, Number(process.env.ENHANCED_IMAGES_DEFAULT_LIMIT || 200));
 const ENHANCED_IMAGES_MAX_LIMIT = Math.max(ENHANCED_IMAGES_DEFAULT_LIMIT, Number(process.env.ENHANCED_IMAGES_MAX_LIMIT || 5000));
@@ -17,12 +18,23 @@ type DownloadZipManifestItem = {
   filename?: unknown;
   url?: unknown;
   dataUrl?: unknown;
+  // Preferred identifier for images already saved to history: resolved
+  // fresh server-side at download time (see getEnhancedImageDownloadTarget)
+  // instead of trusting a client-held (and possibly TTL-expired) URL.
+  imageId?: unknown;
 };
 
 type NormalizedDownloadItem = {
   filename: string;
   url?: string;
   dataUrl?: string;
+  imageId?: string;
+};
+
+type DownloadUser = {
+  agencyId?: string;
+  id?: string;
+  role?: string;
 };
 
 type PreparedDownloadFile = {
@@ -125,7 +137,42 @@ async function maybeConvertForDownload(buffer: Buffer, contentType?: string | nu
   }
 }
 
-async function prepareDownloadFile(req: Request, item: NormalizedDownloadItem): Promise<PreparedDownloadFile | null> {
+async function prepareDownloadFile(req: Request, item: NormalizedDownloadItem, user?: DownloadUser | null): Promise<PreparedDownloadFile | null> {
+  // Preferred path: resolve the S3 key fresh from the DB (scoped to the
+  // requesting user/agency) and fetch it directly, instead of trusting a
+  // publicUrl the client has been holding — that's a presigned link with a
+  // 15-minute TTL (see safeSign in services/enhancedImages.ts) and can go
+  // stale while a user browses the history page before clicking Download.
+  if (item.imageId && user?.agencyId) {
+    try {
+      const isAdminOrOwner = user.role === 'owner' || user.role === 'admin';
+      const target = await getEnhancedImageDownloadTarget(
+        item.imageId,
+        user.agencyId,
+        isAdminOrOwner ? undefined : user.id
+      );
+      if (!target) {
+        return null;
+      }
+
+      const { buffer, contentType } = await getS3ObjectBuffer(target.key);
+      if (!buffer.length) {
+        return null;
+      }
+
+      const resolvedContentType = contentType || 'application/octet-stream';
+      const converted = await maybeConvertForDownload(buffer, resolvedContentType);
+      return {
+        filename: ensureAttachmentFilename(item.filename || target.filename, converted.contentType),
+        buffer: converted.buffer,
+        contentType: converted.contentType,
+      };
+    } catch (error) {
+      console.warn('[enhanced-images] Failed to prepare download file by imageId', { imageId: item.imageId, error });
+      return null;
+    }
+  }
+
   const directDataUrl = item.dataUrl || (String(item.url || '').startsWith('data:image/') ? String(item.url) : '');
 
   if (directDataUrl) {
@@ -187,6 +234,13 @@ function normalizeManifestItems(req: Request, input: unknown): NormalizedDownloa
       const filename = String(item.filename || '').trim();
       const rawUrl = typeof item.url === 'string' ? item.url.trim() : '';
       const dataUrl = typeof item.dataUrl === 'string' ? item.dataUrl.trim() : '';
+      const imageId = typeof item.imageId === 'string' ? item.imageId.trim() : '';
+
+      // filename is still required for the attachment name even on the
+      // imageId path (falls back to the resolved audit-ref name if blank).
+      if (imageId) {
+        return { filename, imageId };
+      }
 
       if (!filename) return null;
       if (!rawUrl && !dataUrl) return null;
@@ -338,7 +392,7 @@ export function enhancedImagesRouter() {
         return res.status(400).json({ error: 'No image provided for download' });
       }
 
-      const prepared = await prepareDownloadFile(req, manifest[0]);
+      const prepared = await prepareDownloadFile(req, manifest[0], user);
       if (!prepared) {
         return res.status(502).json({ error: 'Failed to prepare image download' });
       }
@@ -375,7 +429,7 @@ export function enhancedImagesRouter() {
       let failedCount = 0;
 
       for (const item of manifest) {
-        const prepared = await prepareDownloadFile(req, item);
+        const prepared = await prepareDownloadFile(req, item, user);
         if (!prepared) {
           failedCount += 1;
           continue;

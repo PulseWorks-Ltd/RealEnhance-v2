@@ -329,6 +329,44 @@ export async function getEnhancedImage(
 }
 
 /**
+ * Production incident (2026-09-22): the download routes used to trust a
+ * publicUrl the client had been holding in memory — but that URL is a
+ * presigned S3 link with a 15-minute TTL (see safeSign above), so a user
+ * who sat on the history page longer than that before clicking Download
+ * got a 502 (the server dutifully fetched their now-expired link). This
+ * resolves the S3 key fresh from the DB, scoped to the requesting user/
+ * agency exactly like getEnhancedImage, so the download route can fetch
+ * the object directly (getS3ObjectBuffer) with no signed-URL TTL involved
+ * at all. Deliberately skips enforceRetentionLimits — that's a list-time
+ * cleanup concern, not needed (and wasteful — an extra multi-query pass)
+ * on every single download, including each item in a ZIP batch.
+ */
+export async function getEnhancedImageDownloadTarget(
+  imageId: string,
+  agencyId: string,
+  userId?: string
+): Promise<{ key: string; filename: string } | null> {
+  const query = userId
+    ? `SELECT id, audit_ref, enhanced_s3_key, storage_key FROM enhanced_images
+       WHERE id = $1 AND agency_id = $2 AND user_id = $3 AND is_expired = FALSE AND deleted_at IS NULL`
+    : `SELECT id, audit_ref, enhanced_s3_key, storage_key FROM enhanced_images
+       WHERE id = $1 AND agency_id = $2 AND is_expired = FALSE AND deleted_at IS NULL`;
+
+  const params = userId ? [imageId, agencyId, userId] : [imageId, agencyId];
+  const result = await pool.query(query, params);
+  if (result.rows.length === 0) return null;
+
+  const row = result.rows[0];
+  const key = row.enhanced_s3_key || row.storage_key || null;
+  if (!key) return null;
+
+  return {
+    key,
+    filename: `enhanced-${row.audit_ref || row.id}.jpg`,
+  };
+}
+
+/**
  * Version history endpoint helper.
  */
 export async function getImageVersions(

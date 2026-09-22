@@ -195,16 +195,20 @@ export default function EnhancedHistoryPage() {
     }
 
     try {
-      if (!image.publicUrl) {
+      if (!image.id) {
         throw new Error('Image is not available for download');
       }
 
+      // Send imageId, not image.publicUrl: publicUrl is a presigned S3 link
+      // with a 15-minute TTL, and can go stale while this page has been
+      // open — the server now resolves a fresh one by id at download time
+      // instead of trusting whatever URL the client has been holding.
       const fallbackFilename = `enhanced_${String(image.auditRef || image.id || 'image').trim() || 'image'}`;
       const response = await apiFetch('/api/enhanced-images/download-file', {
         method: 'POST',
         body: JSON.stringify({
           filename: fallbackFilename,
-          url: image.publicUrl,
+          imageId: image.id,
         }),
       }, 120_000);
 
@@ -564,25 +568,31 @@ export default function EnhancedHistoryPage() {
           onClose={() => setPreviewImage(null)}
           title="Preview Image"
           maxWidth="full"
-          contentClassName="max-w-[90vw] max-h-[90vh] overflow-hidden p-8"
-          className="space-y-6"
+          contentClassName="max-w-[90vw] max-h-[90vh] overflow-hidden p-8 flex flex-col"
+          className="flex-1 min-h-0 flex flex-col space-y-0"
         >
-          <div className="space-y-6">
-            {previewImage.originalUrl ? (
-              <CompareSlider
-                originalImage={previewImage.originalUrl}
-                enhancedImage={previewImage.publicUrl}
-                height="min(78vh, 960px)"
-                className="w-full rounded-lg overflow-hidden"
-                data-testid="history-compare-slider"
-              />
-            ) : (
-              <div className="flex flex-col items-center justify-center gap-4 py-8 bg-muted rounded-lg min-h-[60vh]">
-                <img src={previewImage.publicUrl} alt="Enhanced" className="max-h-[78vh] w-full object-contain rounded-lg" />
-                <p className="text-sm text-muted-foreground">Original image not available for comparison</p>
-              </div>
-            )}
-            <div className="flex items-center justify-between">
+          {/* Image area is the flexible region (min-h-0 lets it actually
+              shrink instead of forcing the flex column past max-h-[90vh]);
+              the button row below is shrink-0 so it's always fully visible
+              instead of being clipped by the modal's overflow-hidden. */}
+          <div className="flex-1 min-h-0 flex flex-col gap-6">
+            <div className="flex-1 min-h-0">
+              {previewImage.originalUrl ? (
+                <CompareSlider
+                  originalImage={previewImage.originalUrl}
+                  enhancedImage={previewImage.publicUrl}
+                  height="100%"
+                  className="w-full h-full rounded-lg overflow-hidden"
+                  data-testid="history-compare-slider"
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center gap-4 py-8 bg-muted rounded-lg h-full overflow-y-auto">
+                  <img src={previewImage.publicUrl} alt="Enhanced" className="max-h-full w-full object-contain rounded-lg" />
+                  <p className="text-sm text-muted-foreground">Original image not available for comparison</p>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between shrink-0">
               <p className="text-xs text-muted-foreground">
                 Enhanced {new Date(previewImage.createdAt).toLocaleDateString()}
               </p>

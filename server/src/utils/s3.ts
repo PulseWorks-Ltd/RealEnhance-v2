@@ -293,6 +293,29 @@ export async function getS3SignedUrl(key: string, expiresIn: number = 86400): Pr
   return await getSignedUrl(client as any, command as any, { expiresIn });
 }
 
+/**
+ * Fetch an S3 object directly via the SDK and buffer it, rather than
+ * signing a URL and then fetching that URL over HTTP. Used by download
+ * routes that already know the object key server-side (e.g. resolved fresh
+ * from a DB row at request time) — skips the extra signed-URL round trip
+ * entirely, and has no TTL to go stale since it's an authenticated direct
+ * GetObject call, not a presigned link.
+ */
+export async function getS3ObjectBuffer(key: string): Promise<{ buffer: Buffer; contentType: string | null }> {
+  const bucket = process.env.S3_BUCKET;
+  if (!bucket) {
+    throw new Error("S3_BUCKET not configured");
+  }
+
+  const client = getClient();
+  const res = await client.send(new GetObjectCommand({ Bucket: bucket, Key: key }));
+  if (!res.Body) {
+    throw new Error(`Empty S3 object body for key ${key}`);
+  }
+  const bytes = await (res.Body as any).transformToByteArray();
+  return { buffer: Buffer.from(bytes), contentType: res.ContentType || null };
+}
+
 export async function deleteS3Object(key: string): Promise<void> {
   const bucket = process.env.S3_BUCKET;
   if (!bucket) return;
