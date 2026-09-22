@@ -23,10 +23,31 @@ function logMergedStageUrls(jobId: JobId, stageUrls: Record<string, string | nul
 }
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || "redis://localhost:6379";
+// Production incident (2026-09-21): reconnectStrategy: false meant that once
+// this client dropped (e.g. a transient Redis-side outage/restart), it
+// stayed permanently closed for the life of the process — every subsequent
+// updateJob/updateJobIf call then threw ClientClosedError immediately,
+// failing every job, with no recovery short of a manual worker restart.
+// Exponential backoff capped at 30s, retried indefinitely: a long-lived
+// worker process should keep trying to recover on its own rather than
+// requiring a human to notice and restart it.
+//
+// Tests keep the old `false` behavior deliberately (mirrors the same
+// NODE_ENV==="test" guard in shared/src/redisClient.ts): there's no real
+// Redis in the test environment, so infinite retries would leave dangling
+// reconnect timers that block Jest from exiting — confirmed directly, this
+// hung the full suite past its normal ~20s runtime before this guard was
+// added.
+const REDIS_RECONNECT_MAX_DELAY_MS = 30000;
+const isTestEnv = process.env.NODE_ENV === "test";
 const redisClient = createClient({
   url: REDIS_URL,
   socket: {
-    reconnectStrategy: false,
+    reconnectStrategy: isTestEnv ? false : (retries: number) => {
+      const delay = Math.min(1000 * (2 ** retries), REDIS_RECONNECT_MAX_DELAY_MS);
+      console.log(`[Redis] Reconnect attempt ${retries + 1}, retrying in ${delay}ms`);
+      return delay;
+    },
   },
 });
 const LOCAL_CACHE_DIR = process.env.REALENHANCE_CACHE_DIR || path.join(os.tmpdir(), "realenhance-worker-cache");
