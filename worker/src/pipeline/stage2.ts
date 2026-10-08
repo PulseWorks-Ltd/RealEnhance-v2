@@ -1,4 +1,5 @@
-import { getGeminiClient } from "../ai/gemini";
+import { getGeminiClient, modelSupportsImageConfig, closestGeminiAspectRatio } from "../ai/gemini";
+import { generateContentViaRest } from "../ai/geminiRestClient";
 import { siblingOutPath, toBase64, writeImageDataUrl, logImageContentHash, normalizePortraitImageForGemini } from "../utils/images";
 import type { StagingProfile } from "../utils/groups";
 import { validateStage } from "../ai/unified-validator";
@@ -285,7 +286,7 @@ function ensureImageCapableModel(model: string | undefined, fallback: string): s
   if (!candidate) {
     return fallback;
   }
-  if (candidate.toLowerCase().includes("-image")) {
+  if (/-image|banana/i.test(candidate)) {
     return candidate;
   }
   throw new Error(`[MODEL_CONFIG_INVALID] stage=stage2 value=${candidate} reason=non_image_model`);
@@ -1330,6 +1331,26 @@ Do not add blinds, rods, tracks, or new window coverings.
           },
         ],
       };
+    } else if (modelSupportsImageConfig(generationPlan.model)) {
+      // 2K path: SDK 0.7.0 drops imageConfig, so call REST directly (same approach as Stage 1A exterior).
+      const inputMeta = await sharp(basePath).metadata();
+      const imageConfig: any = { imageSize: (process.env.REALENHANCE_STAGE2_IMAGE_SIZE || "2K").trim() };
+      if (process.env.REALENHANCE_STAGE2_ASPECT_RATIO_ENABLED !== "0") {
+        imageConfig.aspectRatio = closestGeminiAspectRatio(inputMeta.width || 0, inputMeta.height || 0);
+      }
+      resp = await generateContentViaRest({
+        apiKey: String(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY),
+        model: generationPlan.model,
+        body: { contents: requestParts, generationConfig: { ...generationConfig, imageConfig } },
+        timeoutMs: 180000,
+      });
+      modelUsed = generationPlan.model;
+      logGeminiUsage({
+        ctx: { jobId: opts.jobId, imageId: opts.imageId, stage: "2", attempt: attemptNumber },
+        model: modelUsed,
+        callType: "generateContent" as any,
+        response: resp,
+      });
     } else {
       const run = await runWithSelectedImageModel({
         stageLabel: "2",

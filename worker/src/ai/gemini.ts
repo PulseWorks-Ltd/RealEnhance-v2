@@ -320,7 +320,7 @@ const GEMINI_SUPPORTED_ASPECT_RATIOS: Array<{ label: string; ratio: number }> = 
   { label: "9:16", ratio: 9 / 16 },
 ];
 
-function closestGeminiAspectRatio(width: number, height: number): string {
+export function closestGeminiAspectRatio(width: number, height: number): string {
   if (!width || !height) return "4:3";
   const logRatio = Math.log(width / height);
   let best = GEMINI_SUPPORTED_ASPECT_RATIOS[0];
@@ -343,9 +343,13 @@ function closestGeminiAspectRatio(width: number, height: number): string {
 // regardless of imageSize) — a genuine model limitation, not an SDK gap, so
 // it is deliberately NOT in this list. Extend this list only after the same
 // kind of direct verification for any new model.
-const GEMINI_MODELS_SUPPORTING_IMAGE_CONFIG = new Set(["gemini-3-pro-image-preview"]);
+const GEMINI_MODELS_SUPPORTING_IMAGE_CONFIG = new Set([
+  "gemini-3-pro-image-preview",
+  "gemini-3.1-flash-image",
+  "gemini-nano-banana-2.1",
+]);
 
-function modelSupportsImageConfig(model: string | undefined | null): boolean {
+export function modelSupportsImageConfig(model: string | undefined | null): boolean {
   return GEMINI_MODELS_SUPPORTING_IMAGE_CONFIG.has(String(model || "").trim().toLowerCase());
 }
 

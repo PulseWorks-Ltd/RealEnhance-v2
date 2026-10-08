@@ -1,0 +1,62 @@
+[
+  {
+    "image": "Living07",
+    "model": "gemini-nano-banana-2.1",
+    "ok": true,
+    "inW": 810,
+    "inH": 1080,
+    "outW": 1792,
+    "outH": 2400,
+    "sec": 133.51
+  },
+  {
+    "image": "Living10",
+    "model": "gemini-nano-banana-2.1",
+    "ok": true,
+    "inW": 1198,
+    "inH": 800,
+    "outW": 2528,
+    "outH": 1696,
+    "sec": 81.963
+  },
+  {
+    "image": "Diningroom01",
+    "model": "gemini-nano-banana-2.1",
+    "ok": true,
+    "inW": 1248,
+    "inH": 832,
+    "outW": 2528,
+    "outH": 1696,
+    "sec": 147.806
+  },
+  {
+    "image": "Validator_2327860184",
+    "model": "gemini-nano-banana-2.1",
+    "ok": true,
+    "inW": 1440,
+    "inH": 1080,
+    "outW": 2400,
+    "outH": 1792,
+    "sec": 125.749
+  },
+  {
+    "image": "Bedroom14",
+    "model": "gemini-nano-banana-2.1",
+    "ok": true,
+    "inW": 1600,
+    "inH": 1200,
+    "outW": 2400,
+    "outH": 1792,
+    "sec": 74.365
+  },
+  {
+    "image": "Bedroom12",
+    "model": "gemini-nano-banana-2.1",
+    "ok": true,
+    "inW": 1440,
+    "inH": 1080,
+    "outW": 2400,
+    "outH": 1792,
+    "sec": 80.984
+  }
+]
