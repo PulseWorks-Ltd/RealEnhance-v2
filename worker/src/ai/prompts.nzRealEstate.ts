@@ -819,6 +819,32 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
 
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
 `;
+// Gemini 3 Pro Image (Stage 1A exterior since 58754cfa) takes "hero shot" /
+// "marketing photograph" framing literally: when only part of a house is in
+// frame it redraws a similar, complete house from a new angle. This block
+// makes the partial composition explicit and fixed for both daylight and dusk.
+// Keep it free of daylight-only phrases (scripts/assert-dusk-prompt-contract.ts).
+const STAGE1A_EXTERIOR_FRAMING_LOCK_BLOCK = `────────────────────────────────
+FRAMING & VIEWPOINT LOCK (HIGHEST PRIORITY)
+────────────────────────────────
+
+You are editing THIS photograph, not creating a new photograph of the property.
+
+Many listing photos deliberately show only PART of a building — one side, a
+corner, a rear wall, a deck, a single wing, or a close-up of an entry. That
+partial view is the photographer's intended composition and is correct.
+
+• Keep the exact camera position, viewing angle, lens, perspective, framing,
+  crop, and horizon line of the input.
+• Do NOT complete the building, reveal parts of it that are outside the
+  frame, zoom out, rotate or move the camera, or re-photograph the property
+  from a "better" or more complete angle.
+• Anything outside the input frame does not exist for this task. Every
+  building, roof, fence, tree, and object cut off by the frame edge stays cut
+  off at exactly the same place.
+• The output must overlay the input: every roofline, wall edge, window,
+  door, fence, path, and plant sits in the same position, at the same size.
+`;
 const STAGE1A_EXTERIOR_WET_SURFACE_BLOCK = `────────────────────────────────
 WET SURFACE HANDLING (CONDITIONAL)
 ────────────────────────────────
@@ -888,7 +914,7 @@ LANDSCAPE VIBRANCY
 
 // ---- Daylight-only sections (used by buildStage1AExteriorPromptNZStyle,
 // unchanged in content from before this refactor). ----
-const STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ HERO SHOT)
+const STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ DAYLIGHT)
 
 You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
 of exterior real estate imagery.
@@ -896,26 +922,23 @@ of exterior real estate imagery.
 You are NOT a renovator, cleaner, landscaper, or generator.
 
 TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Produce a 'Clear Day' professional real estate exterior.
+The input photograph IS the output photograph — same viewpoint, same framing.
+Correct its light so it reads as a 'Clear Day' professional real estate photo.
 
 Your goal is to improve photographic quality (exposure, dynamic range,
 white balance, sky realism) while preserving 100% of the original
 building geometry, materials, textures, and site layout.
 
 This is PARAMETER ADJUSTMENT, not scene generation.
-
-Model: Gemini 2.5 Flash Image  
-Default Sampling: temp=0.60, topP=0.90, topK=50
 `;
 const STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
 PRIMARY OBJECTIVE
 ────────────────────────────────
 
-Produce a bright, welcoming exterior photograph with
+Make this photograph bright and welcoming, with
 natural New Zealand lighting characteristics.
 
-The enhanced result should resemble a professionally captured premium New Zealand real estate marketing photograph with open, inviting tonal balance and strong architectural readability while remaining fully realistic and geographically plausible.
+The enhanced result should have the lighting quality of professionally captured premium New Zealand real estate photography — open, inviting tonal balance and clear readability of whatever is already in the frame — while remaining fully realistic and geographically plausible.
 
 The result must look:
 • Realistic and geographically plausible
@@ -930,14 +953,14 @@ SKY ENHANCEMENT (CONDITIONAL & GUARDED)
 If the existing sky is flat grey or overcast:
 • You MAY replace it with a 'New Zealand Summer Blue' sky
   that is saturated but natural.
-• RELIGHTING AUTHORIZATION: If replacing an overcast sky, you MUST introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the house with the new weather. Do not leave the property with flat, overcast lighting.
+• RELIGHTING AUTHORIZATION: If replacing an overcast sky, you MUST introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the visible building with the new weather. Do not leave the property with flat, overcast lighting.
 
 CRITICAL SKY RULES:
 • The sky mask MUST fully preserve antennas, chimneys,
   gutters, roof edges, trees, and fine branches.
 • NO edge erosion, clipping, or haloing.
 • If masking confidence is low, KEEP THE ORIGINAL SKY.
-• LIGHT WRAP: The sky and exterior lighting must integrate naturally with the house. The house may carry a warm, sunny glow, but whites must stay neutral white, not nuclear bright.
+• LIGHT WRAP: The sky and exterior lighting must integrate naturally with the visible building. It may carry a warm, sunny glow, but whites must stay neutral white, not nuclear bright.
 
 Sky enhancement must NEVER damage rooflines or structures.
 `;
@@ -962,6 +985,7 @@ Sky masking remains the only permitted explicit segmentation operation.
 function buildStage1AExteriorPromptNZStyle(): string {
   return (
     STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FRAMING_LOCK_BLOCK + "\n" +
     STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
     buildExteriorProhibitedActionsBlock("daylight") + "\n" +
     STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK + "\n" +
@@ -976,7 +1000,7 @@ function buildStage1AExteriorPromptNZStyle(): string {
 
 // ---- Dusk/twilight-only sections (Stage 1A Exterior Enhancement: dusk
 // checkbox). See buildStage1ADuskExteriorPromptNZStyle below for assembly. ----
-const STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ DUSK/TWILIGHT HERO SHOT)
+const STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ DUSK/TWILIGHT)
 
 You are RealEnhance, an AI engine authorized to perform a GLOBAL TIME-OF-DAY
 AND LIGHTING TRANSFORMATION of exterior real estate imagery.
@@ -984,9 +1008,9 @@ AND LIGHTING TRANSFORMATION of exterior real estate imagery.
 You are NOT a renovator, cleaner, landscaper, or generator.
 
 TASK:
-Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Produce a premium New Zealand real estate DUSK / TWILIGHT marketing photograph
-of the exact same property, as if photographed again roughly 15-25 minutes
+The input photograph IS the output photograph — same viewpoint, same framing.
+Relight it as a premium New Zealand real estate DUSK / TWILIGHT photograph,
+as if the same camera, in the same position, fired again roughly 15-25 minutes
 after sunset, during civil twilight, with the property's own lights switched on.
 
 Geometry, materials, textures, and site layout are FROZEN. Only the time of
@@ -995,17 +1019,14 @@ day and lighting condition may change.
 The user explicitly and deliberately selected a dusk/twilight transformation
 for this photo. A dramatic twilight lighting result is the CORRECT and
 EXPECTED outcome — do not default back toward a daytime look.
-
-Model: Gemini 2.5 Flash Image
-Default Sampling: temp=0.35, topP=0.85, topK=40
 `;
 const STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
 PRIMARY OBJECTIVE
 ────────────────────────────────
 
-Produce a premium New Zealand real estate TWILIGHT HERO SHOT — the kind of
-paid dusk photograph real estate agents commission separately from their
-daytime listing photos.
+Give this exact photograph the lighting of a premium New Zealand real estate
+twilight photograph — the kind of paid dusk shoot real estate agents
+commission separately from their daytime listing photos.
 
 The result must look:
 • Realistic and geographically plausible
@@ -1130,6 +1151,7 @@ Before returning the result, confirm:
 export function buildStage1ADuskExteriorPromptNZStyle(): string {
   return (
     STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK + "\n" +
+    STAGE1A_EXTERIOR_FRAMING_LOCK_BLOCK + "\n" +
     STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
     buildExteriorProhibitedActionsBlock("dusk") + "\n" +
     STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK + "\n" +
