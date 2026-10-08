@@ -811,8 +811,6 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
 
     Maintain clear luminance separation between directly sunlit and shaded regions while ensuring shaded materials still appear premium, open, and commercially presentable.
 
-    Recovery is tonal only: every shadow keeps its original shape, position, and direction.
-
   • COVERED EXTERIOR RECOVERY:
     Recover natural visibility and tonal separation within covered exterior areas such as verandahs, recessed entries, shaded glazing, and sheltered outdoor transitions while preserving realistic architectural depth and shadow direction.
 
@@ -820,36 +818,6 @@ PRESERVE ALL PIXELS REPRESENTING PHYSICAL STRUCTURES AND LANDSCAPING.
     Preserve black window and door framing while allowing adjacent reflected and transmitted light to remain naturally visible and open.
 
 This is an enhancement task — NOT cleaning, renovation, or landscaping.
-`;
-// Stage 1A exterior routes to gemini-3-pro-image-preview (2K) since 58754cfa.
-// That model acts far more literally on relighting/re-rendering language than
-// Gemini 2.5 did, and occasionally returned a different-looking property. This
-// block states the "same photograph" contract up front for both daylight and
-// dusk modes. Keep it free of daylight-only phrases (see
-// scripts/assert-dusk-prompt-contract.ts).
-const STAGE1A_EXTERIOR_IMAGE_IDENTITY_LOCK_BLOCK = `────────────────────────────────
-IMAGE IDENTITY LOCK (HIGHEST PRIORITY)
-────────────────────────────────
-
-You are EDITING the supplied photograph — you are NOT drawing a new picture
-of a similar house. The output must be THE SAME PHOTOGRAPH:
-• Same camera position, lens, perspective, framing, crop, and horizon line.
-  If the output were overlaid on the input, every edge of the building,
-  roof, windows, doors, fences, paths, and vegetation would line up.
-• Every building, roof plane, window, door, fence, tree, shrub, vehicle, and
-  site object keeps its existence, count, position, size, shape, colour, and
-  material. Nothing is added, removed, moved, redrawn, idealised, tidied,
-  "completed", or re-rendered.
-• Do NOT extend, recompose, or invent content at the frame edges. Keep the
-  original composition even if the output canvas proportions differ slightly.
-
-This is a real property being marketed for sale. Any change to the property
-itself is misrepresentation to buyers and is a hard failure, regardless of
-how good the result looks.
-
-Before returning, compare your result against the input. If anything other
-than lighting, exposure, colour balance, and sky differs, return a more
-conservative edit. When in doubt, change less.
 `;
 const STAGE1A_EXTERIOR_WET_SURFACE_BLOCK = `────────────────────────────────
 WET SURFACE HANDLING (CONDITIONAL)
@@ -908,7 +876,7 @@ Fix the light — NOT the property.
 function buildExteriorLandscapeVibrancyBlock(mode: "daylight" | "dusk"): string {
   const bullet1 = mode === "dusk"
     ? `• TWILIGHT GREENERY: Preserve the exact shape, species, and footprint of all vegetation. Render it under twilight ambient light — deeper, cooler greens away from light sources, with warm highlight falloff only where path or landscape lighting actually reaches it. Do not apply a daytime-style saturation increase across the whole lawn or hedge.`
-    : `• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail. Same plants, same shape, same size, same footprint — adjust colour only.`;
+    : `• LUSH GREENERY: Increase saturation and warmth in lawns and hedges modestly so they look healthy and well-maintained, without losing individual blade or leaf detail.`;
   return `────────────────────────────────
 LANDSCAPE VIBRANCY
 ────────────────────────────────
@@ -919,7 +887,7 @@ LANDSCAPE VIBRANCY
 }
 
 // ---- Daylight-only sections (used by buildStage1AExteriorPromptNZStyle,
-// tightened 2026-10-08 for Gemini 3 Pro Image — see IMAGE IDENTITY LOCK). ----
+// unchanged in content from before this refactor). ----
 const STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK = `REALENHANCE — STAGE 1A EXTERIOR ENHANCEMENT (NZ HERO SHOT)
 
 You are RealEnhance, an AI engine strictly for GLOBAL PHOTOMETRIC ENHANCEMENT
@@ -929,14 +897,16 @@ You are NOT a renovator, cleaner, landscaper, or generator.
 
 TASK:
 Treat the input image as a READ-ONLY GEOMETRIC MAP.
-Edit this exact photograph so it reads as a 'Clear Day' professional real
-estate exterior.
+Produce a 'Clear Day' professional real estate exterior.
 
 Your goal is to improve photographic quality (exposure, dynamic range,
 white balance, sky realism) while preserving 100% of the original
 building geometry, materials, textures, and site layout.
 
 This is PARAMETER ADJUSTMENT, not scene generation.
+
+Model: Gemini 2.5 Flash Image  
+Default Sampling: temp=0.60, topP=0.90, topK=50
 `;
 const STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
 PRIMARY OBJECTIVE
@@ -960,7 +930,7 @@ SKY ENHANCEMENT (CONDITIONAL & GUARDED)
 If the existing sky is flat grey or overcast:
 • You MAY replace it with a 'New Zealand Summer Blue' sky
   that is saturated but natural.
-• LIGHTING INTEGRATION (GLOBAL GRADE ONLY): If replacing an overcast sky, you may warm the global colour balance and lift exposure so the house sits naturally under the clearer sky. Do NOT create new cast shadows, change the sun direction, add new specular highlights, or re-render any surface — existing shadows stay exactly where they are, with the same shape.
+• RELIGHTING AUTHORIZATION: If replacing an overcast sky, you MUST introduce realistic warm directional sunlight, subtle specular highlights, and matching soft shadows to integrate the house with the new weather. Do not leave the property with flat, overcast lighting.
 
 CRITICAL SKY RULES:
 • The sky mask MUST fully preserve antennas, chimneys,
@@ -992,7 +962,6 @@ Sky masking remains the only permitted explicit segmentation operation.
 function buildStage1AExteriorPromptNZStyle(): string {
   return (
     STAGE1A_EXTERIOR_DAYLIGHT_HEADER_BLOCK + "\n" +
-    STAGE1A_EXTERIOR_IMAGE_IDENTITY_LOCK_BLOCK + "\n" +
     STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
     buildExteriorProhibitedActionsBlock("daylight") + "\n" +
     STAGE1A_EXTERIOR_DAYLIGHT_PRIMARY_OBJECTIVE_BLOCK + "\n" +
@@ -1026,6 +995,9 @@ day and lighting condition may change.
 The user explicitly and deliberately selected a dusk/twilight transformation
 for this photo. A dramatic twilight lighting result is the CORRECT and
 EXPECTED outcome — do not default back toward a daytime look.
+
+Model: Gemini 2.5 Flash Image
+Default Sampling: temp=0.35, topP=0.85, topK=40
 `;
 const STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK = `────────────────────────────────
 PRIMARY OBJECTIVE
@@ -1158,7 +1130,6 @@ Before returning the result, confirm:
 export function buildStage1ADuskExteriorPromptNZStyle(): string {
   return (
     STAGE1A_EXTERIOR_DUSK_HEADER_BLOCK + "\n" +
-    STAGE1A_EXTERIOR_IMAGE_IDENTITY_LOCK_BLOCK + "\n" +
     STAGE1A_EXTERIOR_GEOMETRIC_SITE_LOCK_BLOCK + "\n" +
     buildExteriorProhibitedActionsBlock("dusk") + "\n" +
     STAGE1A_EXTERIOR_DUSK_PRIMARY_OBJECTIVE_BLOCK + "\n" +
