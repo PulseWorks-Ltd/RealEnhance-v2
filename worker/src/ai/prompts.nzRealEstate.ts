@@ -1200,6 +1200,30 @@ and must strictly match surrounding visible structure.
 If uncertain, preserve original geometry exactly.
 `;
 
+// Fixed exterior items that Stage 1B exterior declutter (light and full) must never
+// remove. A furniture/clutter detector can flag these (e.g. a satellite dish), which
+// routes the image to Stage 1B — this list is what stops the generator deleting them.
+const EXTERIOR_FIXED_ITEMS_PRESERVATION_BLOCK = `FIXED EXTERIOR ITEMS — NEVER REMOVE (ALLOWED-TO-REMAIN LIST)
+
+The following are permanently attached parts of the property or its services. They are NOT clutter,
+even when small, dark, cluttered-looking, or visually distracting. They must stay exactly as they
+appear in the input — same position, size, shape and colour:
+• Satellite dishes, TV antennas, aerials, and their mounting brackets and cables
+• Solar panels, solar hot water panels, and roof-mounted equipment
+• Heat pumps, air-conditioning units and condensers, hot water cylinders, flues, vents, and chimneys
+• Meter boxes, electrical boxes, switchboards, gas meters, and service pipes or conduit
+• Power lines, power poles, and overhead cables
+• Gutters, downpipes, fascias, and eave fixtures
+• Security cameras, sensors, intercoms, doorbells, and alarm boxes
+• Exterior lights, wall lights, and flood lights
+• Letterboxes, address numbers, and fixed signage
+• Fixed taps, hose reels or hose taps mounted to a wall, outdoor power sockets
+• Fixed clotheslines, rainwater tanks, and attached gas bottle enclosures
+• Fences, gates, retaining walls, and any other structure attached to the ground or the building
+
+If you are unsure whether an item is fixed or portable → it is fixed. KEEP IT.
+Only remove clearly loose, portable clutter that is not on this list.`;
+
   export function buildStage1BPromptNZStyle(roomType?: string, sceneType: "interior" | "exterior" = "interior"): string {
     if (sceneType === "exterior") {
       return `You are performing Stage 1B: FULL FURNITURE REMOVAL for EXTERNAL real estate imagery.
@@ -1227,6 +1251,8 @@ Only remove clearly separate portable man-made objects.
 Do NOT reinterpret, repair, smooth, beautify, repaint, or retexture any material or surface.
 If removal would require guessing what a surface should look like, KEEP the object.
 If an area is ambiguous, attached, blended into the surface, or could be structural/material wear, KEEP it.
+
+${EXTERIOR_FIXED_ITEMS_PRESERVATION_BLOCK}
 
 CAMERA / VIEWPOINT HARD LOCK — NON-NEGOTIABLE
 
@@ -1753,6 +1779,8 @@ Return the room with all rules above applied: the primary anchor furniture piece
 
     The building must remain functionally complete after decluttering.
 
+    ${EXTERIOR_FIXED_ITEMS_PRESERVATION_BLOCK}
+
     DECLUTTER OBJECT CLASS RULES — LIGHT MODE (EXTERIOR)
 
     Remove loose, portable, personal-use items that are not furniture and not built-in.
@@ -1783,6 +1811,7 @@ Return the room with all rules above applied: the primary anchor furniture piece
     - fixed benches and built-in seating
     - permanently installed BBQ/outdoor kitchen components
     - fixed planters or integrated landscaping elements
+    - anything on the FIXED EXTERIOR ITEMS list above (satellite dishes, antennas, meter boxes, heat pumps, solar panels, etc.)
 
     EXTERIOR WALL ITEM DECLUTTER — LIGHT MODE
 
