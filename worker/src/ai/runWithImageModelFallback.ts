@@ -34,14 +34,14 @@ export const MODEL_CONFIG = {
   // Exterior-only Stage 1A path (image-quality fix, 2026-09-18): Gemini 2.5
   // Flash Image has no reliable output-resolution control, producing ~1MP
   // images that then need lossy interpolation upscaling for delivery.
-  // gemini-3-pro-image-preview supports an explicit generationConfig.imageConfig
-  // (imageSize "1K"/"2K"/"4K") and is already the proven, live primary model
-  // for Stage 1B in this codebase — reused here rather than introducing a new
-  // model. Interior Stage 1A is intentionally left on the cheaper 2.5 model
+  // gemini-3.1-flash-image supports an explicit generationConfig.imageConfig
+  // (imageSize "1K"/"2K"/"4K"). It replaced gemini-3-pro-image-preview here
+  // (2026-10-09) after 2 of 8 sampled Stage 1A runs on the same exterior photo
+  // came back as a regenerated scene from a different angle (0 of 8 on 3.1 Flash). Interior Stage 1A is intentionally left on the cheaper 2.5 model
   // (see the interior Sharp-pipeline retune in stage1A-post-finish.ts /
   // worker.ts instead).
   stage1AExterior: {
-    primary: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_PRIMARY || "gemini-3-pro-image-preview",
+    primary: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_PRIMARY || "gemini-3.1-flash-image",
     fallback: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_FALLBACK || "gemini-2.5-flash-image",
   },
   stage1B: {
