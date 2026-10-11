@@ -30,6 +30,7 @@
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   PAIR_MODE=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts "baseline.jpg:bedroom|failed_staged.jpg"
 //     (no staging: traces the furniture in the failed image and pastes it onto the baseline)
+//   MERGE_MODE=all  compares original-first, staged-first and hybrid side by side (or: hybrid, staged_first, both)
 //   MERGE_MODE=both  (or staged_first) also builds the staged-first result: start from the staged image, revert room changes
 //   DEBUG_LAYERS_DIR=/some/folder  saves the merge's decision maps (solid, core, zone, take, factor) there
 //   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
@@ -129,7 +130,11 @@ const FEATHER_PX = Number(process.env.FEATHER_PX || 1.5); // at the 2K output si
 //     art and shadows from the staged image.
 //   staged_first — start from the staged image (natural shadows/lighting) and
 //     revert to the original anywhere the room itself changed.
-//   both — produce both, side by side in the comparison sheet.
+//   both — original-first and staged-first side by side.
+//   hybrid — original-first for the room, but Gemini's own pixels (natural
+//     shadows/contact shading) around the furniture wherever only shading
+//     differs there.
+//   all — original-first, staged-first and hybrid side by side.
 const MERGE_MODE = (process.env.MERGE_MODE || "original_first").toLowerCase();
 // Wall-art safety checks, calibrated on the failed-pair and fresh-staging test
 // images: bare wall scores 0 on the busiest patch, while windows, doors, a
@@ -554,7 +559,11 @@ async function compositeLayers(
   corePng: Buffer,
   zonePng: Buffer,
   srcW: number,
-  srcH: number
+  srcH: number,
+  // hybrid: around the furniture, use Gemini's actual pixels (its natural
+  // shadows and contact shading) wherever the neighbourhood is only shading on
+  // the same surface, instead of transferring darkening onto the original.
+  hybrid = false
 ) {
   const stagedMeta = await sharp(staged).metadata();
   const fw = stagedMeta.width || srcW;
@@ -616,6 +625,7 @@ async function compositeLayers(
   const factor = Buffer.alloc(N, 255); // darkening to apply to the original (255 = none)
   const known = Buffer.alloc(N, 0); // 255 where the pixel passed the shadow test
   const take = Buffer.alloc(N, 0); // 255 = use the staged pixel (edge band only)
+  const safe = Buffer.alloc(N, 0); // 255 = only shading/lighting differs here (hybrid)
   let zonePixels = 0, shadowPixels = 0, bandPixels = 0, bandStaged = 0;
   for (let i = 0; i < N; i++) {
     const inZone = zoneA[i] >= 8;
@@ -637,7 +647,11 @@ async function compositeLayers(
     const so = o0 + o1 + o2 || 1, st = t0 + t1 + t2 || 1;
     const chroma = Math.max(Math.abs(o0 / so - t0 / st), Math.abs(o1 / so - t1 / st), Math.abs(o2 / so - t2 / st));
     const ratio = ls / Math.max(1, lo);
-    if (lo >= 15 && ratio >= 0.15 && ratio <= 0.97 && chroma <= 0.05 && texDiff[i] <= 20) {
+    // Direct sunlight is warmer than shade, so where furniture blocks a sunlit
+    // patch (the original is much brighter) allow a bigger colour difference.
+    const chromaLimit = ratio < 0.65 ? 0.09 : 0.05;
+    if (diff <= 14 || (lo >= 15 && ratio >= 0.15 && ratio <= 1.12 && chroma <= chromaLimit && texDiff[i] <= 20)) safe[i] = 255;
+    if (lo >= 15 && ratio >= 0.15 && ratio <= 0.97 && chroma <= chromaLimit && texDiff[i] <= 20) {
       factor[i] = Math.round(ratio * 255);
       known[i] = 255;
       if (inZone) shadowPixels++;
@@ -662,6 +676,17 @@ async function compositeLayers(
     sharp(known, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 5 * scale)).grayscale().raw().toBuffer(),
   ]);
 
+  // Hybrid: how much of the neighbourhood is "same surface, only shading", and
+  // a wide soft fade of the zone so there's no visible seam where Gemini's
+  // pixels meet the original photo.
+  const [safeBlur, zoneWide] = hybrid
+    ? await Promise.all([
+        sharp(safe, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 5 * scale)).grayscale().raw().toBuffer(),
+        sharp(zonePng).resize(fw, fh, { fit: "fill" }).blur(Math.max(1, 10 * scale)).grayscale().raw().toBuffer(),
+      ])
+    : [null, null];
+  let hybridStagedPixels = 0;
+
   if (process.env.DEBUG_LAYERS_DIR) {
     const dbg = (name: string, buf: Buffer) =>
       sharp(buf, { raw: { width: fw, height: fh, channels: 1 } }).png().toFile(path.join(process.env.DEBUG_LAYERS_DIR!, name));
@@ -680,6 +705,18 @@ async function compositeLayers(
     const avgFactor = denBlur[i] > 4 ? Math.min(1, numBlur[i] / denBlur[i]) : 1;
     const agreement = Math.min(1, Math.max(0, (denBlur[i] / 255 - 0.35) / 0.3));
     const shadowAmount = (1 - avgFactor) * agreement;
+    if (hybrid && safeBlur && zoneWide) {
+      // Use Gemini's pixels around the furniture where the area agrees it is
+      // only shading on the same surface (ramps in between 60% and 85%).
+      const agreeSafe = Math.min(1, Math.max(0, (safeBlur[i] / 255 - 0.6) / 0.25));
+      const zs = agreeSafe * Math.max(zoneWide[i] / 255, sa * (1 - ca) * (1 - bandTake));
+      if (zs > 0.5) hybridStagedPixels++;
+      for (let c = 0; c < 3; c++) {
+        const base = orig[i * 3 + c] * (1 - zs) + stgAdj[i * 3 + c] * zs;
+        out[i * 3 + c] = Math.round(stgAdj[i * 3 + c] * a + base * (1 - a));
+      }
+      continue;
+    }
     const darkening = shadowAmount * Math.max(za, sa * (1 - ca) * (1 - bandTake));
     const f = 1 - darkening;
     for (let c = 0; c < 3; c++) {
@@ -693,6 +730,7 @@ async function compositeLayers(
     colourGains: gains.map((g2) => Number(g2.toFixed(3))),
     shadowPctOfZone: zonePixels ? Number(((shadowPixels / zonePixels) * 100).toFixed(1)) : 0,
     edgeBandStagedPct: bandPixels ? Number(((bandStaged / bandPixels) * 100).toFixed(1)) : 0,
+    hybridStagedPctOfImage: hybrid ? Number(((hybridStagedPixels / N) * 100).toFixed(1)) : undefined,
   };
 }
 
@@ -1020,7 +1058,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   fs.writeFileSync(path.join(dir, `1_original${path.extname(img.file)}`), original);
   const row: any = { image: img.name, roomType: img.roomType, input: `${w}x${h}`, aspectRatio };
   let staged: Buffer | null = null, traced: Buffer | null = null, undone: Buffer | null = null, final: Buffer | null = null;
-  let stagedFirstFinal: Buffer | null = null, stagedFirstReverted: Buffer | null = null;
+  let stagedFirstFinal: Buffer | null = null, stagedFirstReverted: Buffer | null = null, hybridFinal: Buffer | null = null;
 
   try {
     console.log(`[${img.name}] 1/3 stage`);
@@ -1136,7 +1174,13 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     row.colourGains = pasted.colourGains;
     row.shadowPctOfZone = pasted.shadowPctOfZone;
     row.edgeBandStagedPct = pasted.edgeBandStagedPct;
-    if (MERGE_MODE === "staged_first" || MERGE_MODE === "both") {
+    if (MERGE_MODE === "hybrid" || MERGE_MODE === "all") {
+      const hy = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h, true);
+      hybridFinal = hy.buffer;
+      fs.writeFileSync(path.join(dir, "7_final_hybrid.webp"), hy.buffer);
+      row.hybrid = { stagedAroundFurniturePctOfImage: hy.hybridStagedPctOfImage };
+    }
+    if (MERGE_MODE === "staged_first" || MERGE_MODE === "both" || MERGE_MODE === "all") {
       const sf = await compositeStagedFirst(original, staged, solidPng, w, h);
       stagedFirstFinal = sf.buffer;
       stagedFirstReverted = sf.revertedView;
@@ -1168,7 +1212,22 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   }
   const reshaped = row.framingCheck?.framingChanged ? " - RESHAPED, re-stage" : "";
   const panels =
-    MERGE_MODE === "both"
+    MERGE_MODE === "all"
+      ? [
+          { label: "1. Original", image: original },
+          { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
+          { label: "3. Original-first" + reshaped, image: final },
+          { label: "4. Staged-first" + reshaped, image: stagedFirstFinal },
+          { label: "5. Hybrid" + reshaped, image: hybridFinal },
+        ]
+      : MERGE_MODE === "hybrid"
+      ? [
+          { label: "1. Original", image: original },
+          { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
+          { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
+          { label: "4. Hybrid result" + reshaped, image: hybridFinal },
+        ]
+      : MERGE_MODE === "both"
       ? [
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
