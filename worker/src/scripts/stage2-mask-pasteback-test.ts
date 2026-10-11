@@ -10,10 +10,15 @@
 //      "original extractor" — the approach that produced clean bed/rug
 //      outlines there: two passes run side by side (primary furniture, then
 //      secondary pieces/decor), temperature 0, merged, tiny specks removed.
-//   3. Paste back: staged pixels inside the (grown, feathered) mask, original
-//      photo pixels everywhere else — so window removals, filled openings and
-//      added light fittings outside the furniture cannot survive. The staged
-//      image's overall brightness/colour is matched to the original first.
+//   3. Layered merge, starting from the original photo:
+//      - floor furniture (and anything sitting on it): staged pixels, thin edge;
+//      - wall art (own trace pass): kept only on plain wall with the wall
+//        around it unchanged, otherwise dropped;
+//      - shadows around/below furniture: only the staged DARKENING is applied
+//        to the original, and only where it looks like a real shadow;
+//      - everything else stays original, so window removals, filled openings
+//        and added light fittings cannot survive. The staged image's overall
+//        brightness/colour is matched to the original first.
 //   Framing check: paste-back only works if Gemini kept the room's shape. If
 //   it reframed or reshaped the room, the photo is flagged for re-staging.
 //
@@ -25,6 +30,7 @@
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   PAIR_MODE=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts "baseline.jpg:bedroom|failed_staged.jpg"
 //     (no staging: traces the furniture in the failed image and pastes it onto the baseline)
+//   DEBUG_LAYERS_DIR=/some/folder  saves the merge's decision maps (solid, core, zone, take, factor) there
 //   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "C:/photos/lounge.jpg:living_room"
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "photo.jpg:bedroom|old_failed_attempt.webp"
@@ -92,19 +98,39 @@ const REUSE_STAGED = process.env.REUSE_STAGED === "1";
 // image; only its furniture is traced and pasted onto the baseline. This shows
 // whether paste-back would have prevented that failure.
 const PAIR_MODE = process.env.PAIR_MODE === "1";
-// Wall art is left out of the trace by default: it is exactly where a removed
-// fireplace, opening or other wall change hides, and tracing it would paste
-// that change back in. TRACE_ARTWORK=1 includes it.
-const TRACE_ARTWORK = process.env.TRACE_ARTWORK === "1";
+// Wall art is traced in its own pass and kept only where it is safe (see
+// evaluateWallArt): on plain wall, with the wall around it unchanged. Art is
+// where a removed fireplace or a new opening hides, so it is never kept
+// blindly. TRACE_ARTWORK=0 leaves art out entirely.
+const TRACE_ARTWORK = process.env.TRACE_ARTWORK !== "0";
 // Rebuild from an earlier run's saved staged image and raw traces — no Gemini
 // calls, no cost. Folder name under Test Images/Stage2_MaskPasteback, or a full path.
 const FROM_RUN = process.env.FROM_RUN
   ? path.resolve(path.join(T, "Stage2_MaskPasteback"), process.env.FROM_RUN)
   : null;
-// Mask growth, as a percentage of image width/height.
-const GROW_PCT = Number(process.env.GROW_PCT || 1.0);
-const SHADOW_PCT = Number(process.env.SHADOW_PCT || 2.5);
-const FEATHER_PX = Number(process.env.FEATHER_PX || 4);
+// Layered merge settings.
+// - Solid layer (furniture + kept art): staged pixels, with only a thin margin.
+// - Shadow zone around floor furniture: only the DARKENING from the staged
+//   image is transferred onto the original photo, and only where it looks like
+//   a real shadow, so walls/doors/frames there always stay original.
+const SOLID_GROW_PCT = Number(process.env.SOLID_GROW_PCT || 0.25); // % of width
+// Only the CORE of each piece of furniture (the traced shape shrunk by this
+// much) is always taken from the staged image. In its thin outer band the
+// staged pixel is used unless it is essentially identical to the original
+// (trace overshoot onto unchanged wall/floor), in which case the original is
+// kept. Shadows are only judged OUTSIDE the traced shape.
+const CORE_ERODE_PCT = Number(process.env.CORE_ERODE_PCT || 0.6); // % of width
+const ZONE_GROW_PCT = Number(process.env.ZONE_GROW_PCT || 2); // % of width, all round
+const ZONE_DOWN_PCT = Number(process.env.ZONE_DOWN_PCT || 4); // % of height, extra downwards
+const FEATHER_PX = Number(process.env.FEATHER_PX || 1.5); // at the 2K output size
+// Wall-art safety checks, calibrated on the failed-pair and fresh-staging test
+// images: bare wall scores 0 on the busiest patch, while windows, doors, a
+// fireplace corbel, switches/power points and wall corners score 33-96; the
+// wall around good art differs by ~17, around art on a removed wall by ~78.
+const ART_MAX_BUSY_PATCH = 20; // % strong-edge pixels in the busiest small patch underneath
+const ART_MAX_EDGE_PCT = 5; // % strong-edge pixels under the whole artwork
+const ART_MAX_WALL_STD = 25; // brightness variation underneath (plain wall is low)
+const ART_MAX_RING_DIFF = 30; // how much the wall around the art changed in staging
 // Same "changed pixel" threshold as the outside-mask drift check on feature/vertex-mask-inpainting.
 const CHANGE_THRESHOLD = 18;
 // Framing check. A wall/ceiling patch counts as changed above CHANGED_TILE_DIFF
@@ -124,15 +150,15 @@ process.env.USE_GEMINI_STAGE2 = "1";
 process.env.REALENHANCE_MODEL_STAGE2_PRIMARY = STAGE_MODEL;
 process.env.REALENHANCE_STAGE2_IMAGE_SIZE = process.env.REALENHANCE_STAGE2_IMAGE_SIZE || "2K";
 
-// Target lists match the continuity branch's two extractor passes.
-const TRACE_PASSES = [
-  { label: "primary", targets: "beds, sofas, dining tables, major rugs, major seating" },
-  {
-    label: "secondary",
-    targets: TRACE_ARTWORK
-      ? "lamps, bedside tables, chairs, artwork, decor, plants, secondary furniture"
-      : "lamps, bedside tables, chairs, decor on furniture, plants, secondary furniture",
-  },
+// Floor-furniture targets match the continuity branch's two extractor passes;
+// wall art has its own pass so it can be checked separately.
+type TraceKind = "floor" | "wall_art";
+const TRACE_PASSES: Array<{ label: string; kind: TraceKind; targets: string }> = [
+  { label: "primary", kind: "floor", targets: "beds, sofas, dining tables, major rugs, major seating" },
+  { label: "secondary", kind: "floor", targets: "lamps, bedside tables, chairs, decor on furniture, plants, secondary furniture" },
+  ...(TRACE_ARTWORK
+    ? [{ label: "wall_art", kind: "wall_art" as TraceKind, targets: "framed artwork, prints, paintings, canvases and mirrors hung on walls" }]
+    : []),
 ];
 
 // ── Gemini tracing call ──────────────────────────────────────────────────────
@@ -182,7 +208,11 @@ async function callGeminiImage(params: {
 // Adapted from the continuity branch's buildOriginalExtractorPassPrompt: same
 // structure and rules, but both images share one camera position, and changes
 // to the room itself are explicitly excluded from the mask.
-function buildTracePrompt(roomType: string, targets: string): string {
+function buildTracePrompt(roomType: string, targets: string, kind: TraceKind = "floor"): string {
+  const kindRules =
+    kind === "wall_art"
+      ? ["- Mark ONLY items hung on walls. Do NOT mark furniture, lamps, plants, rugs, TVs, shelves, curtains, blinds or light fittings — they stay black"]
+      : ["- Do NOT mark anything hung on or attached to walls (artwork, mirrors, shelves, TVs) — it stays black"];
   return [
     "Generate a binary furniture mask IMAGE.",
     "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
@@ -201,9 +231,11 @@ function buildTracePrompt(roomType: string, targets: string): string {
     "",
     "Critical rules:",
     "- Output ONLY the binary mask — do NOT return the staged image or the empty image",
-    "- Mark the furniture silhouette and footprint regions as white, including rugs on the floor",
+    kind === "wall_art"
+      ? "- Mark the full outline of each hung item, including its frame, as white"
+      : "- Mark the furniture silhouette and footprint regions as white, including rugs on the floor",
     "- Do NOT mark changes to the room itself, even if the two images differ there: windows, doors, openings, walls, ceilings, light fittings, curtains, blinds and built-in fixtures stay black",
-    ...(TRACE_ARTWORK ? [] : ["- Do NOT mark anything hung on or attached to walls (artwork, mirrors, shelves, TVs) — it stays black"]),
+    ...kindRules,
     `Room type: ${roomType.replace(/_/g, " ")}`,
   ].join("\n");
 }
@@ -360,6 +392,318 @@ function maskToPng(mask: Uint8Array, w: number, h: number): Promise<Buffer> {
   return sharp(px, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
 
+// Splits a mask into separate pieces (4-connected). Returns each piece's pixel
+// indices and bounding box.
+function labelComponents(src: Uint8Array, w: number, h: number) {
+  const seen = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  const pieces: Array<{ pixels: number[]; x1: number; y1: number; x2: number; y2: number }> = [];
+  for (let start = 0; start < w * h; start++) {
+    if (!src[start] || seen[start]) continue;
+    let sp = 0;
+    stack[sp++] = start;
+    seen[start] = 1;
+    const piece = { pixels: [] as number[], x1: w, y1: h, x2: 0, y2: 0 };
+    while (sp > 0) {
+      const i = stack[--sp];
+      const x = i % w, y = (i - x) / w;
+      piece.pixels.push(i);
+      if (x < piece.x1) piece.x1 = x;
+      if (x > piece.x2) piece.x2 = x;
+      if (y < piece.y1) piece.y1 = y;
+      if (y > piece.y2) piece.y2 = y;
+      const neighbours = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+      for (const n of neighbours) {
+        if (n < 0 || n >= w * h || seen[n] || !src[n]) continue;
+        seen[n] = 1;
+        stack[sp++] = n;
+      }
+    }
+    pieces.push(piece);
+  }
+  return pieces;
+}
+
+// ── Wall art ─────────────────────────────────────────────────────────────────
+
+// Decides, piece by piece, whether traced wall art is safe to carry over:
+//  1. What the ORIGINAL photo shows underneath must be plain wall. Windows,
+//     doors, a fireplace, switches/power points and wall corners all have
+//     strong edges; plain wall has almost none.
+//  2. The wall AROUND the art must be unchanged in the staged image. If staging
+//     changed the wall there (e.g. removed a return wall), the art was drawn on
+//     a wall that doesn't exist.
+// Measured at a fixed 640px width so the thresholds don't depend on image size.
+async function evaluateWallArt(original: Buffer, staged: Buffer, artMask: Uint8Array, floorMask: Uint8Array, w: number, h: number) {
+  const A = 640;
+  const AH = Math.max(1, Math.round((A * h) / w));
+  const [g, oRgb, sRgb] = await Promise.all([
+    sharp(original).removeAlpha().resize(A, AH, { fit: "fill" }).grayscale().blur(1.2).raw().toBuffer(),
+    sharp(original).removeAlpha().resize(A, AH, { fit: "fill" }).blur(1.5).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(A, AH, { fit: "fill" }).blur(1.5).raw().toBuffer(),
+  ]);
+  const edgeAt = (x: number, y: number) => {
+    const i = y * A + x;
+    const gx = -g[i - A - 1] - 2 * g[i - 1] - g[i + A - 1] + g[i - A + 1] + 2 * g[i + 1] + g[i + A + 1];
+    const gy = -g[i - A - 1] - 2 * g[i - A] - g[i - A + 1] + g[i + A - 1] + 2 * g[i + A] + g[i + A + 1];
+    return Math.hypot(gx, gy) / 4 > 12;
+  };
+  const keep = new Uint8Array(w * h);
+  const dropped = new Uint8Array(w * h);
+  const minArea = Math.max(64, Math.round(w * h * 0.001));
+  const pieces = labelComponents(artMask, w, h).filter((p) => p.pixels.length >= minArea);
+  const report: any[] = [];
+  for (const piece of pieces) {
+    let onFurniture = 0;
+    for (const i of piece.pixels) onFurniture += floorMask[i];
+    const sx = A / w, sy = AH / h;
+    const x1 = Math.max(1, Math.floor(piece.x1 * sx)), x2 = Math.min(A - 2, Math.ceil(piece.x2 * sx));
+    const y1 = Math.max(1, Math.floor(piece.y1 * sy)), y2 = Math.min(AH - 2, Math.ceil(piece.y2 * sy));
+    let n = 0, edges = 0, sum = 0, sq = 0;
+    for (let y = y1; y <= y2; y++) for (let x = x1; x <= x2; x++) {
+      n++;
+      if (edgeAt(x, y)) edges++;
+      sum += g[y * A + x];
+      sq += g[y * A + x] ** 2;
+    }
+    const T = 12;
+    let busiest = 0;
+    for (let ty = y1; ty + T <= y2 + 1; ty += T / 2) for (let tx = x1; tx + T <= x2 + 1; tx += T / 2) {
+      let e = 0;
+      for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) if (edgeAt(x, y)) e++;
+      busiest = Math.max(busiest, e / (T * T));
+    }
+    const pad = Math.round(A * 0.03);
+    let rn = 0, rd = 0;
+    for (let y = Math.max(0, y1 - pad); y < Math.min(AH, y2 + pad); y++) for (let x = Math.max(0, x1 - pad); x < Math.min(A, x2 + pad); x++) {
+      if (x >= x1 && x <= x2 && y >= y1 && y <= y2) continue;
+      const i = (y * A + x) * 3;
+      rd += (Math.abs(oRgb[i] - sRgb[i]) + Math.abs(oRgb[i + 1] - sRgb[i + 1]) + Math.abs(oRgb[i + 2] - sRgb[i + 2])) / 3;
+      rn++;
+    }
+    const stats = {
+      areaPct: +((piece.pixels.length / (w * h)) * 100).toFixed(2),
+      busiestPatchPct: Math.round(busiest * 100),
+      edgePct: +((edges / Math.max(1, n)) * 100).toFixed(1),
+      wallStd: +Math.sqrt(Math.max(0, sq / Math.max(1, n) - (sum / Math.max(1, n)) ** 2)).toFixed(1),
+      ringDiff: +(rd / Math.max(1, rn)).toFixed(1),
+    };
+    let reason: string | null = null;
+    if (onFurniture / piece.pixels.length > 0.9) reason = "hidden behind furniture";
+    else if (stats.busiestPatchPct > ART_MAX_BUSY_PATCH || stats.edgePct > ART_MAX_EDGE_PCT || stats.wallStd > ART_MAX_WALL_STD)
+      reason = "not plain wall underneath (window, door, fireplace, fixture or wall corner)";
+    else if (stats.ringDiff > ART_MAX_RING_DIFF) reason = "wall around it was changed by staging";
+    const target = reason ? dropped : keep;
+    for (const i of piece.pixels) target[i] = 1;
+    report.push({ ...stats, kept: !reason, reason: reason || "plain wall, unchanged around it" });
+  }
+  return { keep, dropped, report };
+}
+
+// Gemini's art traces can overshoot onto the wall. The artwork's real extent is
+// where the staged image differs from the original wall, with everything
+// enclosed by the frame filled in (so a white mat that matches the wall is
+// kept), limited to near the traced piece.
+async function refineArtRegion(original: Buffer, staged: Buffer, artKeep: Uint8Array, w: number, h: number): Promise<Uint8Array> {
+  if (ratioOf(artKeep) === 0) return artKeep;
+  const [o, t] = await Promise.all([
+    sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).blur(1).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).blur(1).raw().toBuffer(),
+  ]);
+  const near = dilate(artKeep, w, h, Math.max(2, Math.round(w * 0.01)));
+  let differs = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    if (!near[i]) continue;
+    const d = Math.max(Math.abs(o[i * 3] - t[i * 3]), Math.abs(o[i * 3 + 1] - t[i * 3 + 1]), Math.abs(o[i * 3 + 2] - t[i * 3 + 2]));
+    differs[i] = d > 14 ? 1 : 0;
+  }
+  const r = Math.max(1, Math.round(w * 0.004));
+  differs = erode(dilate(differs, w, h, r), w, h, r);
+  differs = removeSmallComponents(differs, w, h, Math.max(24, Math.round(w * h * 0.0003)));
+  const filled = fillFurnitureColumns(differs, w, h);
+  for (let i = 0; i < w * h; i++) filled[i] &= near[i];
+  // If the difference test finds almost nothing (e.g. art very close to the
+  // wall colour), fall back to the traced piece itself.
+  return ratioOf(filled) < ratioOf(artKeep) * 0.3 ? artKeep : filled;
+}
+
+// ── Layered merge ────────────────────────────────────────────────────────────
+
+// Builds the final image at the staged (2K) resolution, starting from the
+// original photo (scaled to match):
+//  - CORE of the furniture: staged pixels;
+//  - EDGE BAND of the furniture: staged, unless the staged pixel is
+//    essentially the original (trace overshoot) -> original;
+//  - kept wall art (refined to the artwork's real extent): staged;
+//  - SHADOW ZONE around/below furniture: shadows only (original darkened).
+// A removed wall, a new doorway or a changed frame is neither "the same" nor
+// "the same but darker", so it can only come through inside the furniture
+// core itself.
+async function compositeLayers(
+  original: Buffer,
+  staged: Buffer,
+  solidPng: Buffer,
+  corePng: Buffer,
+  zonePng: Buffer,
+  srcW: number,
+  srcH: number
+) {
+  const stagedMeta = await sharp(staged).metadata();
+  const fw = stagedMeta.width || srcW;
+  const fh = Math.round((fw * srcH) / srcW);
+  const scale = fw / srcW;
+  const N = fw * fh;
+  const [orig, stg, solidA, coreA, zoneA] = await Promise.all([
+    sharp(original).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(solidPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
+    sharp(corePng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
+    sharp(zonePng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, 4 * scale)).grayscale().raw().toBuffer(),
+  ]);
+  // Overall brightness/colour shift between staged and original, measured where
+  // no layer applies, then removed from the staged pixels.
+  const sums = [0, 0, 0, 0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < N; i++) {
+    if (solidA[i] > 12 || zoneA[i] > 12) continue;
+    for (let c = 0; c < 3; c++) {
+      sums[c] += orig[i * 3 + c];
+      sums[c + 3] += stg[i * 3 + c];
+    }
+    count++;
+  }
+  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
+  const stgAdj = Buffer.alloc(N * 3);
+  for (let i = 0; i < N * 3; i++) stgAdj[i] = Math.min(255, Math.round(stg[i] * gains[i % 3]));
+
+  // Decisions are made on lightly smoothed images so carpet/tile texture and
+  // compression noise don't create speckle; the decision maps are smoothed again.
+  const [oBlur, sBlur] = await Promise.all([
+    sharp(orig, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(0.6, 1.5 * scale)).raw().toBuffer(),
+    sharp(stgAdj, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(0.6, 1.5 * scale)).raw().toBuffer(),
+  ]);
+  // Fine texture (luminance minus a blurred copy) of each image. A real shadow
+  // darkens the original but keeps its texture; a rug, mat or new object has
+  // different texture, so it is not treated as shadow.
+  const lum = (buf: Buffer) => {
+    const out = Buffer.alloc(N);
+    for (let i = 0; i < N; i++) out[i] = Math.round((buf[i * 3] + buf[i * 3 + 1] + buf[i * 3 + 2]) / 3);
+    return out;
+  };
+  const oLum = lum(orig), sLum = lum(stgAdj);
+  const [oLumBlur, sLumBlur] = await Promise.all([
+    sharp(oLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer(),
+    sharp(sLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer(),
+  ]);
+  const texDiffRaw = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) {
+    const ho = oLum[i] - oLumBlur[i];
+    const hs = sLum[i] - sLumBlur[i];
+    // Compare texture relative to brightness, since a shadow also scales texture down.
+    const scaleRatio = oLumBlur[i] > 0 ? sLumBlur[i] / oLumBlur[i] : 1;
+    texDiffRaw[i] = Math.min(255, Math.round(Math.abs(hs - ho * scaleRatio) * 4));
+  }
+  const texDiff = await sharp(texDiffRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer();
+
+  const factor = Buffer.alloc(N, 255); // darkening to apply to the original (255 = none)
+  const known = Buffer.alloc(N, 0); // 255 where the pixel passed the shadow test
+  const take = Buffer.alloc(N, 0); // 255 = use the staged pixel (edge band only)
+  let zonePixels = 0, shadowPixels = 0, bandPixels = 0, bandStaged = 0;
+  for (let i = 0; i < N; i++) {
+    const inZone = zoneA[i] >= 8;
+    const inBand = solidA[i] >= 8 && coreA[i] < 247;
+    if (!inZone && !inBand) continue;
+    const o0 = oBlur[i * 3], o1 = oBlur[i * 3 + 1], o2 = oBlur[i * 3 + 2];
+    const t0 = sBlur[i * 3], t1 = sBlur[i * 3 + 1], t2 = sBlur[i * 3 + 2];
+    const diff = Math.max(Math.abs(o0 - t0), Math.abs(o1 - t1), Math.abs(o2 - t2));
+    if (inBand) {
+      // Inside the traced shape the object wins, unless the staged pixel is
+      // essentially the original (trace overshoot onto unchanged wall/floor).
+      bandPixels++;
+      take[i] = Math.round(Math.min(1, Math.max(0, (diff - 6) / 10)) * 255);
+      if (take[i] > 127) bandStaged++;
+    }
+    // Shadow test (used outside the traced shape; computed in the band too so
+    // smoothing doesn't brighten the zone right at the furniture's edge).
+    const lo = (o0 + o1 + o2) / 3, ls = (t0 + t1 + t2) / 3;
+    const so = o0 + o1 + o2 || 1, st = t0 + t1 + t2 || 1;
+    const chroma = Math.max(Math.abs(o0 / so - t0 / st), Math.abs(o1 / so - t1 / st), Math.abs(o2 / so - t2 / st));
+    const ratio = ls / Math.max(1, lo);
+    if (lo >= 15 && ratio >= 0.15 && ratio <= 0.97 && chroma <= 0.05 && texDiff[i] <= 20) {
+      factor[i] = Math.round(ratio * 255);
+      known[i] = 255;
+      if (inZone) shadowPixels++;
+    }
+    if (inZone) zonePixels++;
+  }
+  const [factorSmooth, takeSmooth] = await Promise.all([
+    // .grayscale() keeps these one-channel: sharp's blur returns 3 channels otherwise.
+    sharp(factor, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(0.6, 1.5 * scale)).grayscale().raw().toBuffer(),
+    sharp(take, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(0.6, 1 * scale)).grayscale().raw().toBuffer(),
+  ]);
+
+  // Shadows are decided by neighbourhood, not pixel by pixel: where most nearby
+  // pixels pass the shadow test (e.g. carpet, even though Gemini redraws its
+  // texture slightly) a smooth average shadow is applied; where most fail (a
+  // patterned rug, a new object) none is. The same average fills the edge band
+  // right at the furniture so no pale ring is left.
+  const knownFactor = Buffer.alloc(N, 0);
+  for (let i = 0; i < N; i++) if (known[i]) knownFactor[i] = factor[i];
+  const [numBlur, denBlur] = await Promise.all([
+    sharp(knownFactor, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 5 * scale)).grayscale().raw().toBuffer(),
+    sharp(known, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 5 * scale)).grayscale().raw().toBuffer(),
+  ]);
+
+  if (process.env.DEBUG_LAYERS_DIR) {
+    const dbg = (name: string, buf: Buffer) =>
+      sharp(buf, { raw: { width: fw, height: fh, channels: 1 } }).png().toFile(path.join(process.env.DEBUG_LAYERS_DIR!, name));
+    await Promise.all([dbg("dbg_solid.png", solidA), dbg("dbg_core.png", coreA), dbg("dbg_zone.png", zoneA), dbg("dbg_take.png", takeSmooth), dbg("dbg_factor.png", factorSmooth)]);
+  }
+  const out = Buffer.alloc(N * 3);
+  for (let i = 0; i < N; i++) {
+    const sa = solidA[i] / 255, ca = coreA[i] / 255, za = zoneA[i] / 255;
+    // How strongly the staged pixel is used: always in the core, per-pixel in the band.
+    const bandTake = takeSmooth[i] / 255;
+    const a = Math.min(1, ca + sa * (1 - ca) * bandTake);
+    // Shadows darken the original in the zone, and in the edge band wherever the
+    // original is shown there (otherwise a pale ring appears around furniture).
+    // Average shadow strength nearby, weighted by how many nearby pixels are
+    // shadow-like (ramps in between 35% and 65% agreement).
+    const avgFactor = denBlur[i] > 4 ? Math.min(1, numBlur[i] / denBlur[i]) : 1;
+    const agreement = Math.min(1, Math.max(0, (denBlur[i] / 255 - 0.35) / 0.3));
+    const shadowAmount = (1 - avgFactor) * agreement;
+    const darkening = shadowAmount * Math.max(za, sa * (1 - ca) * (1 - bandTake));
+    const f = 1 - darkening;
+    for (let c = 0; c < 3; c++) {
+      out[i * 3 + c] = Math.round(stgAdj[i * 3 + c] * a + orig[i * 3 + c] * f * (1 - a));
+    }
+  }
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    width: fw,
+    height: fh,
+    colourGains: gains.map((g2) => Number(g2.toFixed(3))),
+    shadowPctOfZone: zonePixels ? Number(((shadowPixels / zonePixels) * 100).toFixed(1)) : 0,
+    edgeBandStagedPct: bandPixels ? Number(((bandStaged / bandPixels) * 100).toFixed(1)) : 0,
+  };
+}
+
+// Panel 3: furniture red, kept wall art blue, dropped wall art orange.
+async function layersOverlay(staged: Buffer, floor: Uint8Array, artKept: Uint8Array, artDropped: Uint8Array, w: number, h: number): Promise<Buffer> {
+  const raw = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
+  const tint = (i: number, r: number, g2: number, b: number) => {
+    raw[i * 3] = Math.round(raw[i * 3] * 0.45 + r * 0.55);
+    raw[i * 3 + 1] = Math.round(raw[i * 3 + 1] * 0.45 + g2 * 0.55);
+    raw[i * 3 + 2] = Math.round(raw[i * 3 + 2] * 0.45 + b * 0.55);
+  };
+  for (let i = 0; i < w * h; i++) {
+    if (artDropped[i]) tint(i, 255, 140, 0);
+    else if (artKept[i]) tint(i, 40, 110, 255);
+    else if (floor[i]) tint(i, 255, 0, 80);
+  }
+  return sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
+}
+
 // ── Measurements and output images ──────────────────────────────────────────
 
 // How much the raw Gemini output changed OUTSIDE the mask, compared with the
@@ -383,47 +727,6 @@ async function measureOutsideDrift(original: Buffer, staged: Buffer, mask: Uint8
   return {
     meanAbsoluteDelta: Number((deltaSum / Math.max(1, outside)).toFixed(2)),
     changedPixelPct: Number(((changed / Math.max(1, outside)) * 100).toFixed(2)),
-  };
-}
-
-// Final image is built at the staged (2K) resolution; the original is scaled
-// up to match so both line up pixel for pixel.
-async function pasteBack(original: Buffer, staged: Buffer, maskPng: Buffer, srcW: number, srcH: number) {
-  const stagedMeta = await sharp(staged).metadata();
-  const fw = stagedMeta.width || srcW;
-  const fh = Math.round((fw * srcH) / srcW);
-  const [orig, stg, alpha] = await Promise.all([
-    sharp(original).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
-    sharp(staged).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
-    sharp(maskPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
-  ]);
-  // Gemini often shifts the whole room's brightness/colour slightly while
-  // staging. Measure that on the untouched area and correct the staged pixels
-  // so pasted furniture matches the original lighting and edges don't show.
-  const sums = [0, 0, 0, 0, 0, 0];
-  let count = 0;
-  for (let i = 0; i < fw * fh; i++) {
-    if (alpha[i] > 12) continue;
-    for (let c = 0; c < 3; c++) {
-      sums[c] += orig[i * 3 + c];
-      sums[c + 3] += stg[i * 3 + c];
-    }
-    count++;
-  }
-  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
-  const out = Buffer.alloc(fw * fh * 3);
-  for (let i = 0; i < fw * fh; i++) {
-    const a = alpha[i] / 255;
-    for (let c = 0; c < 3; c++) {
-      const matched = Math.min(255, stg[i * 3 + c] * gains[c]);
-      out[i * 3 + c] = Math.round(matched * a + orig[i * 3 + c] * (1 - a));
-    }
-  }
-  return {
-    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
-    width: fw,
-    height: fh,
-    colourGains: gains.map((g) => Number(g.toFixed(3))),
   };
 }
 
@@ -610,14 +913,19 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     const passes = await Promise.all(
       TRACE_PASSES.map(async (pass) => {
         if (FROM_RUN) {
-          const saved = fs.readFileSync(path.join(FROM_RUN, img.name, `3_trace_${pass.label}_raw.png`));
+          const savedPath = path.join(FROM_RUN, img.name, `3_trace_${pass.label}_raw.png`);
+          if (!fs.existsSync(savedPath)) {
+            console.warn(`[${img.name}] FROM_RUN: no saved "${pass.label}" trace — treating it as empty`);
+            return { label: pass.label, kind: pass.kind, mask: new Uint8Array(w * h), inverted: false, cost: 0 };
+          }
+          const saved = fs.readFileSync(savedPath);
           fs.writeFileSync(path.join(dir, `3_trace_${pass.label}_raw.png`), saved);
-          return { label: pass.label, ...(await binarizeTraceResponse(saved, w, h)), cost: 0 };
+          return { label: pass.label, kind: pass.kind, ...(await binarizeTraceResponse(saved, w, h)), cost: 0 };
         }
         const res = await callGeminiImage({
           model: TRACE_MODEL,
           parts: [
-            { text: buildTracePrompt(img.roomType, pass.targets) },
+            { text: buildTracePrompt(img.roomType, pass.targets, pass.kind) },
             { text: "STAGED_IMAGE" }, imagePart(staged!, stagedMime),
             { text: "EMPTY_IMAGE" }, imagePart(original, mimeFor(img.file)),
           ],
@@ -626,46 +934,85 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
         });
         fs.writeFileSync(path.join(dir, `3_trace_${pass.label}_raw.png`), res.image);
         const bin = await binarizeTraceResponse(res.image, w, h);
-        return { label: pass.label, ...bin, cost: approxOutputCost(res.usage) };
+        return { label: pass.label, kind: pass.kind, ...bin, cost: approxOutputCost(res.usage) };
       })
     );
     row.traceCostUsd = Number(passes.reduce((sum, p) => sum + (p.cost || 0), 0).toFixed(4));
     row.tracePasses = passes.map((p) => ({ pass: p.label, coveragePct: +(ratioOf(p.mask) * 100).toFixed(1), coloursFlipped: p.inverted }));
 
-    // Merge (OR), then drop tiny specks only — thin parts like lamp stems and chair legs must survive.
-    let mask = new Uint8Array(w * h);
-    for (const p of passes) for (let i = 0; i < mask.length; i++) mask[i] |= p.mask[i];
-    mask = removeSmallComponents(mask, w, h, Math.max(24, Math.round(w * h * 0.0002)));
-    const tracedRatio = ratioOf(mask);
-    mask = fillFurnitureColumns(mask, w, h);
-    const furnitureRatio = ratioOf(mask);
-    fs.writeFileSync(path.join(dir, "3_mask_traced.png"), await maskToPng(mask, w, h));
+    // Floor furniture: merge the floor passes (OR), drop tiny specks only (thin
+    // parts like lamp stems and chair legs must survive), then fill holes.
+    const minSpeck = Math.max(24, Math.round(w * h * 0.0002));
+    // The wall-art pass is the authority on wall items: Gemini sometimes also
+    // marks art in the furniture passes, which would let it skip the wall-art
+    // safety checks, so anything the art pass marks is taken out of the floor
+    // layer first.
+    let artAll = new Uint8Array(w * h);
+    for (const p of passes) if (p.kind === "wall_art") for (let i = 0; i < artAll.length; i++) artAll[i] |= p.mask[i];
+    artAll = removeSmallComponents(artAll, w, h, minSpeck);
+    let floor = new Uint8Array(w * h);
+    for (const p of passes) if (p.kind === "floor") for (let i = 0; i < floor.length; i++) floor[i] |= p.mask[i] & (artAll[i] ^ 1);
+    floor = removeSmallComponents(floor, w, h, minSpeck);
+    const tracedRatio = ratioOf(floor);
+    floor = fillFurnitureColumns(floor, w, h);
+    const furnitureRatio = ratioOf(floor);
+    fs.writeFileSync(path.join(dir, "3_mask_traced.png"), await maskToPng(floor, w, h));
     if (furnitureRatio < 0.01) throw new Error(`tracing found almost no furniture (${(furnitureRatio * 100).toFixed(2)}% of image)`);
 
-    // Grow for soft edges, and further downwards for floor shadows.
-    mask = dilate(mask, w, h, Math.round((w * GROW_PCT) / 100));
-    mask = growDown(mask, w, h, Math.round((h * SHADOW_PCT) / 100));
-    row.maskPct = { traced: +(tracedRatio * 100).toFixed(1), furniture: +(furnitureRatio * 100).toFixed(1), afterGrow: +(ratioOf(mask) * 100).toFixed(1) };
-    if (ratioOf(mask) > 0.7) console.warn(`[${img.name}] warning: mask covers ${(ratioOf(mask) * 100).toFixed(0)}% of the image — protection will be weak`);
-    const maskPng = await maskToPng(mask, w, h);
-    fs.writeFileSync(path.join(dir, "3_mask_final.png"), maskPng);
-    traced = await maskOverlay(staged, mask, w, h);
+    // Wall art: its own layer, kept piece by piece only where it is safe.
+    const art = await evaluateWallArt(original, staged, artAll, floor, w, h);
+    row.wallArt = art.report;
+    for (const piece of art.report) {
+      console.log(`[${img.name}] wall art ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
+    }
+
+    // Solid layer = furniture + kept art, with a thin margin. Shadow zone =
+    // around and below floor furniture, outside the solid layer.
+    const artRegion = await refineArtRegion(original, staged, art.keep, w, h);
+    let solid = new Uint8Array(w * h);
+    for (let i = 0; i < solid.length; i++) solid[i] = floor[i] | artRegion[i];
+    solid = dilate(solid, w, h, Math.max(1, Math.round((w * SOLID_GROW_PCT) / 100)));
+    let zone = dilate(floor, w, h, Math.round((w * ZONE_GROW_PCT) / 100));
+    zone = growDown(zone, w, h, Math.round((h * ZONE_DOWN_PCT) / 100));
+    for (let i = 0; i < zone.length; i++) if (solid[i]) zone[i] = 0;
+    row.maskPct = {
+      traced: +(tracedRatio * 100).toFixed(1),
+      furniture: +(furnitureRatio * 100).toFixed(1),
+      wallArtKept: +(ratioOf(art.keep) * 100).toFixed(1),
+      wallArtDropped: +(ratioOf(art.dropped) * 100).toFixed(1),
+      solid: +(ratioOf(solid) * 100).toFixed(1),
+      shadowZone: +(ratioOf(zone) * 100).toFixed(1),
+    };
+    // Core = furniture shrunk inwards; wall art has no core (decided per pixel).
+    const core = erode(floor, w, h, Math.max(1, Math.round((w * CORE_ERODE_PCT) / 100)));
+    for (let i = 0; i < core.length; i++) core[i] |= artRegion[i];
+    const solidPng = await maskToPng(solid, w, h);
+    fs.writeFileSync(path.join(dir, "3_mask_final.png"), solidPng);
+    fs.writeFileSync(path.join(dir, "3_mask_shadow_zone.png"), await maskToPng(zone, w, h));
+    traced = await layersOverlay(staged, floor, artRegion, art.dropped, w, h);
     fs.writeFileSync(path.join(dir, "3_mask_overlay.jpg"), traced);
 
-    row.stagedChangesOutsideMask = await measureOutsideDrift(original, staged, mask, w, h);
-    row.framingCheck = await checkFraming(original, staged, mask, w, h);
+    // Room-change measurements ignore furniture and ALL traced art (kept or
+    // dropped), so they reflect the room itself.
+    const measureMask = new Uint8Array(w * h);
+    for (let i = 0; i < measureMask.length; i++) measureMask[i] = solid[i] | artAll[i];
+    row.stagedChangesOutsideMask = await measureOutsideDrift(original, staged, measureMask, w, h);
+    row.framingCheck = await checkFraming(original, staged, measureMask, w, h);
     if (row.framingCheck.framingChanged) {
       console.warn(`[${img.name}] Gemini reshaped/reframed the room (typical wall/ceiling patch differs by ${row.framingCheck.medianDiff}) — paste-back can't fix this; this photo would need re-staging`);
     }
-    undone = await undoneOverlay(original, staged, mask, w, h);
+    undone = await undoneOverlay(original, staged, solid, w, h);
     fs.writeFileSync(path.join(dir, "4_changes_removed_by_pasteback.jpg"), undone);
 
-    console.log(`[${img.name}] 3/3 paste back`);
-    const pasted = await pasteBack(original, staged, maskPng, w, h);
+    console.log(`[${img.name}] 3/3 layered merge`);
+    const zonePng = await maskToPng(zone, w, h);
+    const pasted = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h);
     final = pasted.buffer;
     fs.writeFileSync(path.join(dir, "5_final_pasteback.webp"), final);
     row.finalSize = `${pasted.width}x${pasted.height}`;
     row.colourGains = pasted.colourGains;
+    row.shadowPctOfZone = pasted.shadowPctOfZone;
+    row.edgeBandStagedPct = pasted.edgeBandStagedPct;
     // A big average change across the untouched room usually means Gemini
     // re-lit or slightly reframed the photo, which can leave visible seams.
     if (row.stagedChangesOutsideMask.meanAbsoluteDelta > 8) {
@@ -693,7 +1040,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       ...(previous ? [{ label: "0. Old failed attempt", image: previous }] : []),
       { label: "1. Original", image: original },
       { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
-      { label: "3. Traced furniture (red)", image: traced },
+      { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
       { label: "4. Room changes removed (red)", image: undone },
       { label: row.framingCheck?.framingChanged ? "5. Final - ROOM RESHAPED, re-stage" : "5. Final (pasted back)", image: final },
     ],
@@ -735,4 +1082,4 @@ if (require.main === module) {
     });
 }
 
-export { fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, pasteBack, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
