@@ -30,7 +30,7 @@
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   PAIR_MODE=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts "baseline.jpg:bedroom|failed_staged.jpg"
 //     (no staging: traces the furniture in the failed image and pastes it onto the baseline)
-//   MERGE_MODE=all  compares original-first, staged-first and hybrid side by side (or: hybrid, staged_first, both)
+//   MERGE_MODE=all  compares original-first, hybrid and surface side by side (or: surface, hybrid, staged_first, both)
 //   MERGE_MODE=both  (or staged_first) also builds the staged-first result: start from the staged image, revert room changes
 //   DEBUG_LAYERS_DIR=/some/folder  saves the merge's decision maps (solid, core, zone, take, factor) there
 //   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
@@ -134,7 +134,12 @@ const FEATHER_PX = Number(process.env.FEATHER_PX || 1.5); // at the 2K output si
 //   hybrid — original-first for the room, but Gemini's own pixels (natural
 //     shadows/contact shading) around the furniture wherever only shading
 //     differs there.
-//   all — original-first, staged-first and hybrid side by side.
+//   surface — decide by whole surfaces using a structure map (one extra
+//     Gemini call on the empty room): the whole FLOOR (with rugs, shadows,
+//     contact shading) plus furniture/kept art come from the staged image;
+//     walls, ceiling, openings and fixtures come entirely from the original.
+//     Cuts follow the room's own lines (snapped to the skirting edge).
+//   all — original-first, hybrid and surface side by side.
 const MERGE_MODE = (process.env.MERGE_MODE || "original_first").toLowerCase();
 // Wall-art safety checks, calibrated on the failed-pair and fresh-staging test
 // images: bare wall scores 0 on the busiest patch, while windows, doors, a
@@ -734,6 +739,187 @@ async function compositeLayers(
   };
 }
 
+// ── Structure map + surface merge ────────────────────────────────────────────
+
+const STRUCTURE_LABELS = { unknown: 0, floor: 1, wall: 2, ceiling: 3, opening: 4, fixture: 5 } as const;
+const STRUCTURE_PALETTE: Array<{ label: number; rgb: [number, number, number] }> = [
+  { label: STRUCTURE_LABELS.floor, rgb: [0, 255, 0] },
+  { label: STRUCTURE_LABELS.wall, rgb: [0, 0, 255] },
+  { label: STRUCTURE_LABELS.ceiling, rgb: [255, 255, 0] },
+  { label: STRUCTURE_LABELS.opening, rgb: [255, 0, 0] },
+  { label: STRUCTURE_LABELS.fixture, rgb: [255, 0, 255] },
+];
+
+function buildStructurePrompt(roomType: string): string {
+  return [
+    "Recolour this exact photograph as a flat colour-coded map of the room's structure.",
+    "Output the map as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Keep exactly the same framing, perspective and geometry as the photograph. Paint every pixel with ONE of these flat colours:",
+    "- FLOOR (carpet, tiles, timber, any floor surface) = pure green #00FF00",
+    "- WALLS (including skirting boards, wall corners, return walls, columns, beams) = pure blue #0000FF",
+    "- CEILING = pure yellow #FFFF00",
+    "- WINDOWS, DOORS, DOORWAYS, OPENINGS, PASS-THROUGHS and any glass, including their frames and anything visible through them = pure red #FF0000",
+    "- FIXTURES AND BUILT-INS (fireplaces and hearths, kitchen benches and cabinetry, wardrobes, light fittings, heat pumps, switches and power points, curtains, blinds and rails) = pure magenta #FF00FF",
+    "Rules:",
+    "- Use only these five flat colours. No shading, gradients, outlines or other colours.",
+    "- Follow the real edges precisely, especially where the floor meets the walls.",
+    "- Do not add or remove anything; this is the empty room before staging.",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
+// Gemini's colour map -> one label per pixel at the original photo size.
+async function classifyStructure(raw: Buffer, w: number, h: number): Promise<Uint8Array> {
+  const px = await sharp(raw).removeAlpha().resize(w, h, { fit: "fill", kernel: sharp.kernel.nearest }).raw().toBuffer();
+  const labels = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    let best = 0, bestD = 140 * 140;
+    for (const p of STRUCTURE_PALETTE) {
+      const d = (px[i * 3] - p.rgb[0]) ** 2 + (px[i * 3 + 1] - p.rgb[1]) ** 2 + (px[i * 3 + 2] - p.rgb[2]) ** 2;
+      if (d < bestD) { bestD = d; best = p.label; }
+    }
+    labels[i] = best;
+  }
+  return labels;
+}
+
+// Moves the top edge of the floor (where floor meets wall/skirting) onto the
+// strongest real edge in the photo near Gemini's boundary, column by column,
+// then smooths it so the cut is a clean line rather than a wobbly one.
+async function snapFloorTop(floor: Uint8Array, original: Buffer, w: number, h: number): Promise<{ floor: Uint8Array; snappedColumns: number }> {
+  const g = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).grayscale().blur(1).raw().toBuffer();
+  const R = Math.max(3, Math.round(h * 0.015));
+  const tops = new Int32Array(w).fill(-1);
+  for (let x = 0; x < w; x++) {
+    for (let y = 0; y < h - 6; y++) {
+      if (floor[y * w + x] && floor[(y + 3) * w + x] && floor[(y + 6) * w + x]) { tops[x] = y; break; }
+    }
+  }
+  const snapped = new Int32Array(w).fill(-1);
+  for (let x = 0; x < w; x++) {
+    const y0 = tops[x];
+    if (y0 < 0) continue;
+    let best = y0, bestE = -1;
+    for (let y = Math.max(1, y0 - R); y <= Math.min(h - 2, y0 + R); y++) {
+      const e = Math.abs(g[(y + 1) * w + x] - g[(y - 1) * w + x]);
+      if (e > bestE) { bestE = e; best = y; }
+    }
+    snapped[x] = bestE >= 6 ? best : y0;
+  }
+  // Median smoothing along the line (ignoring columns without floor).
+  const win = Math.max(3, Math.round(w * 0.006)) | 1;
+  const smooth = new Int32Array(w).fill(-1);
+  for (let x = 0; x < w; x++) {
+    if (snapped[x] < 0) continue;
+    const vals: number[] = [];
+    for (let k = -win; k <= win; k++) {
+      const xx = x + k;
+      if (xx >= 0 && xx < w && snapped[xx] >= 0) vals.push(snapped[xx]);
+    }
+    vals.sort((a, b) => a - b);
+    smooth[x] = vals[vals.length >> 1];
+  }
+  const out = floor.slice();
+  let changed = 0;
+  for (let x = 0; x < w; x++) {
+    const y0 = tops[x], y1 = smooth[x];
+    if (y0 < 0 || y1 < 0) continue;
+    if (y1 !== y0) changed++;
+    for (let y = Math.min(y0, y1); y < Math.max(y0, y1); y++) out[y * w + x] = y1 < y0 ? 1 : 0;
+  }
+  return { floor: out, snappedColumns: changed };
+}
+
+async function structureOverlay(original: Buffer, labels: Uint8Array, w: number, h: number): Promise<Buffer> {
+  const raw = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
+  const colours: Record<number, [number, number, number]> = { 1: [0, 200, 0], 2: [40, 80, 255], 3: [240, 220, 0], 4: [255, 0, 0], 5: [230, 0, 230] };
+  for (let i = 0; i < w * h; i++) {
+    const c = colours[labels[i]];
+    if (!c) continue;
+    for (let k = 0; k < 3; k++) raw[i * 3 + k] = Math.round(raw[i * 3 + k] * 0.5 + c[k] * 0.5);
+  }
+  return sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 88 }).toBuffer();
+}
+
+// Surface merge: the whole floor + furniture + kept art from the staged image
+// (colour-matched to the original), everything else from the original.
+// Also checks whether Gemini changed the floor itself.
+async function compositeSurface(original: Buffer, staged: Buffer, floorSurface: Uint8Array, solid: Uint8Array, w: number, h: number) {
+  const stagedMeta = await sharp(staged).metadata();
+  const fw = stagedMeta.width || w;
+  const fh = Math.round((fw * h) / w);
+  const scale = fw / w;
+  const N = fw * fh;
+  const [floorPng, solidPng] = await Promise.all([maskToPng(floorSurface, w, h), maskToPng(solid, w, h)]);
+  const [orig, stg, floorA, solidA] = await Promise.all([
+    sharp(original).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(floorPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.5, 0.8 * scale)).grayscale().raw().toBuffer(),
+    sharp(solidPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
+  ]);
+  // Colour-match the staged image to the original, measured on walls/ceiling
+  // that look unchanged (big differences are ignored so a removed window or
+  // new door doesn't skew it).
+  const sums = [0, 0, 0, 0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < N; i++) {
+    if (floorA[i] > 12 || solidA[i] > 12) continue;
+    const d = Math.max(Math.abs(orig[i * 3] - stg[i * 3]), Math.abs(orig[i * 3 + 1] - stg[i * 3 + 1]), Math.abs(orig[i * 3 + 2] - stg[i * 3 + 2]));
+    if (d > 40) continue;
+    for (let c = 0; c < 3; c++) {
+      sums[c] += orig[i * 3 + c];
+      sums[c + 3] += stg[i * 3 + c];
+    }
+    count++;
+  }
+  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
+
+  // Floor check, on floor well away from furniture and its shadows: did
+  // Gemini change the floor itself (material/colour), rather than just shade it?
+  const nearFurniture = dilate(solid, w, h, Math.round(w * 0.06));
+  const farFloor = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) farFloor[i] = floorSurface[i] && !nearFurniture[i] ? 1 : 0;
+  const farFloorPng = await maskToPng(farFloor, w, h);
+  const farA = await sharp(farFloorPng).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer();
+  const [oB, sB] = await Promise.all([
+    sharp(orig, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(1, 4 * scale)).raw().toBuffer(),
+    sharp(stg, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(1, 4 * scale)).raw().toBuffer(),
+  ]);
+  let fn = 0, fsumO = [0, 0, 0], fsumS = [0, 0, 0];
+  for (let i = 0; i < N; i++) {
+    if (farA[i] < 200) continue;
+    fn++;
+    for (let c = 0; c < 3; c++) { fsumO[c] += oB[i * 3 + c]; fsumS[c] += sB[i * 3 + c] * gains[c]; }
+  }
+  let floorColourDiff = 0, floorChromaDiff = 0;
+  if (fn > 0) {
+    const mo = fsumO.map((v) => v / fn), ms = fsumS.map((v) => v / fn);
+    floorColourDiff = Math.max(...[0, 1, 2].map((c) => Math.abs(mo[c] - ms[c])));
+    const so = mo[0] + mo[1] + mo[2] || 1, ss = ms[0] + ms[1] + ms[2] || 1;
+    floorChromaDiff = Math.max(...[0, 1, 2].map((c) => Math.abs(mo[c] / so - ms[c] / ss)));
+  }
+  const floorChanged = fn > N * 0.01 && (floorChromaDiff > 0.04 || floorColourDiff > 45);
+
+  const out = Buffer.alloc(N * 3);
+  for (let i = 0; i < N; i++) {
+    const a = Math.max(floorA[i], solidA[i]) / 255;
+    for (let c = 0; c < 3; c++) {
+      const st = Math.min(255, stg[i * 3 + c] * gains[c]);
+      out[i * 3 + c] = Math.round(st * a + orig[i * 3 + c] * (1 - a));
+    }
+  }
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    colourGains: gains.map((g2) => Number(g2.toFixed(3))),
+    floorCheck: {
+      floorChanged,
+      colourDiff: Number(floorColourDiff.toFixed(1)),
+      chromaDiff: Number(floorChromaDiff.toFixed(3)),
+      farFloorPctOfImage: Number(((fn / N) * 100).toFixed(1)),
+    },
+  };
+}
+
 // ── Staged-first merge ───────────────────────────────────────────────────────
 
 // Starts from the STAGED image, so Gemini's shadows, contact shading and room
@@ -1059,6 +1245,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   const row: any = { image: img.name, roomType: img.roomType, input: `${w}x${h}`, aspectRatio };
   let staged: Buffer | null = null, traced: Buffer | null = null, undone: Buffer | null = null, final: Buffer | null = null;
   let stagedFirstFinal: Buffer | null = null, stagedFirstReverted: Buffer | null = null, hybridFinal: Buffer | null = null;
+  let surfaceFinal: Buffer | null = null, structureView: Buffer | null = null;
 
   try {
     console.log(`[${img.name}] 1/3 stage`);
@@ -1071,6 +1258,29 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     row.stagedSize = `${stagedMeta.width}x${stagedMeta.height}`;
 
     console.log(`[${img.name}] 2/3 trace (${FROM_RUN ? "saved traces, no Gemini call" : `${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${TRACE_PASSES.length} passes`})`);
+    // Structure map of the EMPTY room (surface merge only), in parallel with tracing.
+    const wantSurface = MERGE_MODE === "surface" || MERGE_MODE === "all";
+    const structurePromise: Promise<Buffer | null> = !wantSurface
+      ? Promise.resolve(null)
+      : FROM_RUN
+      ? Promise.resolve(
+          fs.existsSync(path.join(FROM_RUN, img.name, "3_structure_raw.png")) ? fs.readFileSync(path.join(FROM_RUN, img.name, "3_structure_raw.png")) : null
+        )
+      : callGeminiImage({
+          model: TRACE_MODEL,
+          parts: [{ text: buildStructurePrompt(img.roomType) }, imagePart(original, mimeFor(img.file))],
+          imageSize: TRACE_IMAGE_SIZE,
+          aspectRatio,
+        })
+          .then((res) => {
+            row.structureCostUsd = approxOutputCost(res.usage);
+            return res.image;
+          })
+          .catch((e) => {
+            console.warn(`[${img.name}] structure map call failed: ${String(e?.message || e).slice(0, 200)}`);
+            row.structureError = String(e?.message || e).slice(0, 300);
+            return null;
+          });
     const passes = await Promise.all(
       TRACE_PASSES.map(async (pass) => {
         if (FROM_RUN) {
@@ -1174,13 +1384,50 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     row.colourGains = pasted.colourGains;
     row.shadowPctOfZone = pasted.shadowPctOfZone;
     row.edgeBandStagedPct = pasted.edgeBandStagedPct;
+    if (wantSurface) {
+      const structureRaw = await structurePromise;
+      if (!structureRaw) {
+        console.warn(`[${img.name}] no structure map available — skipping the surface merge`);
+      } else {
+        fs.writeFileSync(path.join(dir, "3_structure_raw.png"), structureRaw);
+        const labels = await classifyStructure(structureRaw, w, h);
+        let floorSurface = new Uint8Array(w * h);
+        for (let i = 0; i < labels.length; i++) floorSurface[i] = labels[i] === STRUCTURE_LABELS.floor ? 1 : 0;
+        const rClose = Math.max(1, Math.round(w * 0.003));
+        floorSurface = erode(dilate(floorSurface, w, h, rClose), w, h, rClose);
+        floorSurface = removeSmallComponents(floorSurface, w, h, Math.round(w * h * 0.002));
+        const snap = await snapFloorTop(floorSurface, original, w, h);
+        floorSurface = snap.floor;
+        for (let i = 0; i < labels.length; i++) {
+          if (labels[i] === STRUCTURE_LABELS.floor && !floorSurface[i]) labels[i] = STRUCTURE_LABELS.wall;
+          else if (floorSurface[i]) labels[i] = STRUCTURE_LABELS.floor;
+        }
+        structureView = await structureOverlay(original, labels, w, h);
+        fs.writeFileSync(path.join(dir, "3_structure_overlay.jpg"), structureView);
+        const counts = [0, 0, 0, 0, 0, 0];
+        for (let i = 0; i < labels.length; i++) counts[labels[i]]++;
+        const pct = (n: number) => Number(((n / labels.length) * 100).toFixed(1));
+        const sf = await compositeSurface(original, staged, floorSurface, solid, w, h);
+        surfaceFinal = sf.buffer;
+        fs.writeFileSync(path.join(dir, "8_final_surface.webp"), sf.buffer);
+        row.surface = {
+          structurePct: { floor: pct(counts[1]), wall: pct(counts[2]), ceiling: pct(counts[3]), opening: pct(counts[4]), fixture: pct(counts[5]), unknown: pct(counts[0]) },
+          floorEdgeSnappedColumnsPct: Number(((snap.snappedColumns / w) * 100).toFixed(1)),
+          colourGains: sf.colourGains,
+          floorCheck: sf.floorCheck,
+        };
+        if (sf.floorCheck.floorChanged) {
+          console.warn(`[${img.name}] Gemini changed the floor itself (colour diff ${sf.floorCheck.colourDiff}, chroma diff ${sf.floorCheck.chromaDiff}) — this photo would need re-staging`);
+        }
+      }
+    }
     if (MERGE_MODE === "hybrid" || MERGE_MODE === "all") {
       const hy = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h, true);
       hybridFinal = hy.buffer;
       fs.writeFileSync(path.join(dir, "7_final_hybrid.webp"), hy.buffer);
       row.hybrid = { stagedAroundFurniturePctOfImage: hy.hybridStagedPctOfImage };
     }
-    if (MERGE_MODE === "staged_first" || MERGE_MODE === "both" || MERGE_MODE === "all") {
+    if (MERGE_MODE === "staged_first" || MERGE_MODE === "both") {
       const sf = await compositeStagedFirst(original, staged, solidPng, w, h);
       stagedFirstFinal = sf.buffer;
       stagedFirstReverted = sf.revertedView;
@@ -1216,9 +1463,18 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       ? [
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
-          { label: "3. Original-first" + reshaped, image: final },
-          { label: "4. Staged-first" + reshaped, image: stagedFirstFinal },
+          { label: "3. Structure: floor/wall/ceiling/opening/fixture", image: structureView },
+          { label: "4. Original-first" + reshaped, image: final },
           { label: "5. Hybrid" + reshaped, image: hybridFinal },
+          { label: "6. Surface" + reshaped + (row.surface?.floorCheck?.floorChanged ? " - FLOOR CHANGED" : ""), image: surfaceFinal },
+        ]
+      : MERGE_MODE === "surface"
+      ? [
+          { label: "1. Original", image: original },
+          { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
+          { label: "3. Structure: floor/wall/ceiling/opening/fixture", image: structureView },
+          { label: "4. Furniture red / art kept blue / dropped orange", image: traced },
+          { label: "5. Surface result" + reshaped + (row.surface?.floorCheck?.floorChanged ? " - FLOOR CHANGED" : ""), image: surfaceFinal },
         ]
       : MERGE_MODE === "hybrid"
       ? [
@@ -1287,4 +1543,4 @@ if (require.main === module) {
     });
 }
 
-export { compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
