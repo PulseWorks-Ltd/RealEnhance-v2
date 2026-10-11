@@ -724,10 +724,15 @@ async function main() {
 }
 
 if (require.main === module) {
-  main().catch((e) => {
-    console.error(e);
-    process.exit(1);
-  });
+  // Exit explicitly: the worker modules this loads (Stage 2, Gemini helpers)
+  // keep background connections/timers open, so Node would otherwise never
+  // exit after the results are written.
+  main()
+    .then(() => process.exit(0))
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    });
 }
 
 export { fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, pasteBack, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
