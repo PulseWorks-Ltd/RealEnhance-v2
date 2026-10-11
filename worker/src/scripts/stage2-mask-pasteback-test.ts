@@ -25,6 +25,8 @@
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "C:/photos/lounge.jpg:living_room"
+//   npx tsx src/scripts/stage2-mask-pasteback-test.ts "photo.jpg:bedroom|old_failed_attempt.webp"
+//     (anything after "|" is an earlier failed result, shown first in the comparison sheet)
 //
 // Output: Test Images/Stage2_MaskPasteback/<run timestamp>/
 
@@ -60,7 +62,12 @@ loadDotEnvIfPresent(path.resolve(__dirname, "../../.env"));
 
 const ROOT = path.resolve(__dirname, "../../..");
 const T = path.join(ROOT, "Test Images");
-const OUT = path.join(T, "Stage2_MaskPasteback", new Date().toISOString().replace(/[:.]/g, "-"));
+// OUT_DIR (optional): results folder, relative to Test Images. A timestamped
+// subfolder is always created inside it.
+const OUT = path.join(
+  process.env.OUT_DIR ? path.resolve(T, process.env.OUT_DIR) : path.join(T, "Stage2_MaskPasteback"),
+  new Date().toISOString().replace(/[:.]/g, "-")
+);
 const PREVIOUS_STAGED_DIR = path.join(T, "Stage2_2K_Comparison");
 
 // Same set as stage2-2k-compare.ts so results can be compared side by side.
@@ -516,10 +523,14 @@ function resolveImages() {
   const args = process.argv.slice(2);
   if (args.length === 0) return DEFAULT_IMAGES.map((img) => ({ ...img, file: path.join(T, img.file) }));
   // "path/to/photo.jpg:room_type" (room type defaults to living_room).
+  // "path/to/photo.jpg:room_type|path/to/old_failed_attempt.webp" — room type
+  // defaults to living_room; the old attempt is optional.
   return args.map((arg) => {
-    const match = arg.match(/^(.*?)(?::([a-z_]+))?$/);
-    const file = path.resolve(match?.[1] || arg);
-    return { name: path.parse(file).name.replace(/[^A-Za-z0-9_-]+/g, "_"), file, roomType: match?.[2] || "living_room" };
+    const [photoPart, previousPart] = arg.split("|");
+    const match = photoPart.match(/^(.*?)(?::([a-z_]+))?$/);
+    const file = path.resolve(match?.[1] || photoPart);
+    const previousFile = previousPart ? path.resolve(previousPart.trim()) : undefined;
+    return { name: path.parse(file).name.replace(/[^A-Za-z0-9_-]+/g, "_"), file, roomType: match?.[2] || "living_room", previousFile };
   });
 }
 
@@ -549,7 +560,7 @@ async function stageImage(img: { name: string; file: string; roomType: string },
   return { staged: fs.readFileSync(outputPath), source: `staged now (${stagedWith}${variant ? `, STAGE2_PROMPT_VARIANT=${variant}` : ""})` };
 }
 
-async function runOne(img: { name: string; file: string; roomType: string }) {
+async function runOne(img: { name: string; file: string; roomType: string; previousFile?: string }) {
   const t0 = Date.now();
   const dir = path.join(OUT, img.name);
   fs.mkdirSync(dir, { recursive: true });
@@ -643,8 +654,19 @@ async function runOne(img: { name: string; file: string; roomType: string }) {
     row.error = String(e?.message || e).slice(0, 400);
   }
 
+  let previous: Buffer | null = null;
+  if (img.previousFile) {
+    if (fs.existsSync(img.previousFile)) {
+      previous = fs.readFileSync(img.previousFile);
+      fs.writeFileSync(path.join(dir, `0_old_failed_attempt${path.extname(img.previousFile)}`), previous);
+      row.oldFailedAttempt = path.relative(ROOT, img.previousFile);
+    } else {
+      console.warn(`[${img.name}] old attempt not found: ${img.previousFile}`);
+    }
+  }
   const sheet = await contactSheet(
     [
+      ...(previous ? [{ label: "0. Old failed attempt", image: previous }] : []),
       { label: "1. Original", image: original },
       { label: "2. Gemini staged (raw)", image: staged },
       { label: "3. Traced furniture (red)", image: traced },
