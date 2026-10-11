@@ -105,6 +105,12 @@ const PAIR_MODE = process.env.PAIR_MODE === "1";
 // where a removed fireplace or a new opening hides, so it is never kept
 // blindly. TRACE_ARTWORK=0 leaves art out entirely.
 const TRACE_ARTWORK = process.env.TRACE_ARTWORK !== "0";
+// Reflections of the added furniture in mirrors (mirrored wardrobe doors, wall
+// mirrors, glass) are traced in their own pass and carried over like the
+// furniture — otherwise paste-back removes them as "changed pixels", leaving a
+// mirror that doesn't reflect the bed or bedside table next to it.
+// TRACE_REFLECTIONS=0 leaves them out.
+const TRACE_REFLECTIONS = process.env.TRACE_REFLECTIONS !== "0";
 // Rebuild from an earlier run's saved staged image and raw traces — no Gemini
 // calls, no cost. Folder name under Test Images/Stage2_MaskPasteback, or a full path.
 const FROM_RUN = process.env.FROM_RUN
@@ -186,12 +192,15 @@ process.env.REALENHANCE_STAGE2_IMAGE_SIZE = process.env.REALENHANCE_STAGE2_IMAGE
 
 // Floor-furniture targets match the continuity branch's two extractor passes;
 // wall art has its own pass so it can be checked separately.
-type TraceKind = "floor" | "wall_art";
+type TraceKind = "floor" | "wall_art" | "reflection";
 const TRACE_PASSES: Array<{ label: string; kind: TraceKind; targets: string }> = [
   { label: "primary", kind: "floor", targets: "beds, sofas, dining tables, major rugs, major seating" },
   { label: "secondary", kind: "floor", targets: "lamps, bedside tables, chairs, decor on furniture, plants, secondary furniture" },
   ...(TRACE_ARTWORK
     ? [{ label: "wall_art", kind: "wall_art" as TraceKind, targets: "framed artwork, prints, paintings, canvases and mirrors hung on walls" }]
+    : []),
+  ...(TRACE_REFLECTIONS
+    ? [{ label: "reflections", kind: "reflection" as TraceKind, targets: "reflections of the added furniture and decor in mirrors, mirrored wardrobe doors, glass and glossy surfaces" }]
     : []),
 ];
 
@@ -242,7 +251,101 @@ async function callGeminiImage(params: {
 // Adapted from the continuity branch's buildOriginalExtractorPassPrompt: same
 // structure and rules, but both images share one camera position, and changes
 // to the room itself are explicitly excluded from the mask.
+function buildReflectionPrompt(roomType: string): string {
+  return [
+    "Generate a binary mask IMAGE.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Mask rule: WHITE = reflections of the ADDED furniture and decor, BLACK = everything else.",
+    "",
+    "You are given two images of the same room from the same camera position:",
+    "1. STAGED_IMAGE — the room after virtual staging, with furniture added.",
+    "2. EMPTY_IMAGE — the same room before staging.",
+    "",
+    "Task: in the STAGED_IMAGE, mark ONLY the reflections of the newly added furniture and decor",
+    "that appear in mirrors, mirrored wardrobe or closet doors, glass, or other reflective surfaces.",
+    "Rules:",
+    "- Mark the reflected image of the added items only (for example a bedside table or lamp seen in a mirror) — white",
+    "- Do NOT mark the furniture itself, only its reflection — black",
+    "- Do NOT mark mirror frames, door tracks, or anything the mirror also shows in the EMPTY_IMAGE (reflected walls, windows, doors, ceiling, floor) — black",
+    "- Do NOT mark windows, doors, openings, walls or fixtures — black",
+    "- If there are no mirrors or no reflections of added items, return a completely black image",
+    "- Match the perspective and dimensions of the STAGED_IMAGE",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
+// Mirrors in the EMPTY room. Only asked for when the reflection pass found
+// something. The empty photo is the real room, so this can't be fooled by a
+// staging mistake: a "reflection" outside a real mirror is rejected.
+function buildMirrorPrompt(roomType: string): string {
+  return [
+    "Generate a binary mask IMAGE of this photograph of an empty room.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Mask rule: WHITE = mirror surfaces, BLACK = everything else.",
+    "- Mark mirrors: wall mirrors, mirrored wardrobe or closet doors, mirrored splashbacks — the reflective glass area only",
+    "- Do NOT mark windows, glass doors to the outside, frames, walls, floor, ceiling or anything else — black",
+    "- If there are no mirrors, return a completely black image",
+    "- Keep exactly the same framing and dimensions as the photograph",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
+// Decides, piece by piece, whether a traced reflection is safe to carry over.
+// A real reflection is small, separate from the furniture itself, and the
+// mirror around it still shows the same room as before (only the reflected
+// item is new). A "reflection" that is really a new doorway or a removed wall
+// fails the last check, because the area around it changed too.
+async function evaluateReflections(original: Buffer, staged: Buffer, reflMask: Uint8Array, floorMask: Uint8Array, w: number, h: number, mirrorMask: Uint8Array | null) {
+  const mirrorNear = mirrorMask ? dilate(mirrorMask, w, h, Math.max(1, Math.round(w * 0.01))) : null;
+  const A = 640;
+  const AH = Math.max(1, Math.round((A * h) / w));
+  const [oRgb, sRgb] = await Promise.all([
+    sharp(original).removeAlpha().resize(A, AH, { fit: "fill" }).blur(1.5).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(A, AH, { fit: "fill" }).blur(1.5).raw().toBuffer(),
+  ]);
+  const keep = new Uint8Array(w * h);
+  const dropped = new Uint8Array(w * h);
+  const itself = new Uint8Array(w * h);
+  const minArea = Math.max(64, Math.round(w * h * 0.0005));
+  const report: any[] = [];
+  for (const piece of labelComponents(reflMask, w, h)) {
+    if (piece.pixels.length < minArea) continue;
+    let onFurniture = 0, inMirror = 0;
+    for (const i of piece.pixels) {
+      onFurniture += floorMask[i];
+      if (mirrorNear) inMirror += mirrorNear[i];
+    }
+    const sx = A / w, sy = AH / h;
+    const x1 = Math.max(0, Math.floor(piece.x1 * sx)), x2 = Math.min(A - 1, Math.ceil(piece.x2 * sx));
+    const y1 = Math.max(0, Math.floor(piece.y1 * sy)), y2 = Math.min(AH - 1, Math.ceil(piece.y2 * sy));
+    const pad = Math.round(A * 0.02);
+    let rn = 0, rd = 0;
+    for (let y = Math.max(0, y1 - pad); y <= Math.min(AH - 1, y2 + pad); y++) for (let x = Math.max(0, x1 - pad); x <= Math.min(A - 1, x2 + pad); x++) {
+      if (x >= x1 && x <= x2 && y >= y1 && y <= y2) continue;
+      const i = (y * A + x) * 3;
+      rd += (Math.abs(oRgb[i] - sRgb[i]) + Math.abs(oRgb[i + 1] - sRgb[i + 1]) + Math.abs(oRgb[i + 2] - sRgb[i + 2])) / 3;
+      rn++;
+    }
+    const stats = {
+      areaPct: +((piece.pixels.length / (w * h)) * 100).toFixed(2),
+      onFurniturePct: Math.round((onFurniture / piece.pixels.length) * 100),
+      inMirrorPct: Math.round((inMirror / piece.pixels.length) * 100),
+      ringDiff: +(rd / Math.max(1, rn)).toFixed(1),
+    };
+    let reason: string | null = null;
+    if (stats.onFurniturePct > 50) reason = "is the furniture itself, not a reflection";
+    else if (stats.inMirrorPct < 80) reason = "not inside a mirror in the empty room";
+    else if (stats.areaPct > 6) reason = "too large to be a reflection";
+    else if (stats.ringDiff > ART_MAX_RING_DIFF) reason = "the mirror/wall around it changed in staging";
+    const target = reason === "is the furniture itself, not a reflection" ? itself : reason ? dropped : keep;
+    for (const i of piece.pixels) target[i] = 1;
+    report.push({ ...stats, kept: !reason, reason: reason || "reflection, surroundings unchanged" });
+  }
+  return { keep, dropped, itself, report };
+}
+
 function buildTracePrompt(roomType: string, targets: string, kind: TraceKind = "floor"): string {
+  if (kind === "reflection") return buildReflectionPrompt(roomType);
   const kindRules =
     kind === "wall_art"
       ? ["- Mark ONLY items hung on walls. Do NOT mark furniture, lamps, plants, rugs, TVs, shelves, curtains, blinds or light fittings — they stay black"]
@@ -1699,8 +1802,9 @@ async function compositeStagedFirst(original: Buffer, staged: Buffer, solidPng: 
   };
 }
 
-// Panel 3: furniture red, kept wall art blue, dropped wall art orange.
-async function layersOverlay(staged: Buffer, floor: Uint8Array, artKept: Uint8Array, artDropped: Uint8Array, w: number, h: number): Promise<Buffer> {
+// Panel 3: furniture red, kept wall art blue, kept reflections purple,
+// dropped art/reflections orange.
+async function layersOverlay(staged: Buffer, floor: Uint8Array, artKept: Uint8Array, artDropped: Uint8Array, w: number, h: number, reflKept?: Uint8Array): Promise<Buffer> {
   const raw = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
   const tint = (i: number, r: number, g2: number, b: number) => {
     raw[i * 3] = Math.round(raw[i * 3] * 0.45 + r * 0.55);
@@ -1709,6 +1813,7 @@ async function layersOverlay(staged: Buffer, floor: Uint8Array, artKept: Uint8Ar
   };
   for (let i = 0; i < w * h; i++) {
     if (artDropped[i]) tint(i, 255, 140, 0);
+    else if (reflKept && reflKept[i]) tint(i, 170, 60, 255);
     else if (artKept[i]) tint(i, 40, 110, 255);
     else if (floor[i]) tint(i, 255, 0, 80);
   }
@@ -2013,6 +2118,48 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     let floor = new Uint8Array(w * h);
     for (const p of passes) if (p.kind === "floor") for (let i = 0; i < floor.length; i++) floor[i] |= p.mask[i] & (artAll[i] ^ 1);
     floor = removeSmallComponents(floor, w, h, minSpeck);
+    // Reflections: their own pass is the authority too (so a "reflection" can't
+    // skip its checks by also being marked as furniture), except pieces that
+    // turn out to be the furniture itself.
+    let reflAll = new Uint8Array(w * h);
+    for (const p of passes) if (p.kind === "reflection") for (let i = 0; i < reflAll.length; i++) reflAll[i] |= p.mask[i];
+    reflAll = removeSmallComponents(reflAll, w, h, minSpeck);
+    // Mirrors in the empty room — only looked up when a reflection was found.
+    let mirrorMask: Uint8Array | null = null;
+    if (labelComponents(reflAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
+      const savedMirrors = FROM_RUN ? path.join(FROM_RUN, img.name, "3_trace_mirrors_raw.png") : null;
+      let mirrorRaw: Buffer | null = null;
+      if (savedMirrors) {
+        mirrorRaw = fs.existsSync(savedMirrors) ? fs.readFileSync(savedMirrors) : null;
+        if (!mirrorRaw) console.warn(`[${img.name}] FROM_RUN: no saved mirrors trace — reflections will be dropped`);
+      } else {
+        mirrorRaw = await callGeminiImage({
+          model: TRACE_MODEL,
+          parts: [{ text: buildMirrorPrompt(img.roomType) }, imagePart(original, mimeFor(img.file))],
+          imageSize: TRACE_IMAGE_SIZE,
+          aspectRatio,
+        })
+          .then((res) => {
+            row.mirrorTraceCostUsd = approxOutputCost(res.usage);
+            return res.image;
+          })
+          .catch((e) => {
+            console.warn(`[${img.name}] mirror trace failed: ${String(e?.message || e).slice(0, 200)} — reflections will be dropped`);
+            return null;
+          });
+      }
+      if (mirrorRaw) {
+        fs.writeFileSync(path.join(dir, "3_trace_mirrors_raw.png"), mirrorRaw);
+        mirrorMask = (await binarizeTraceResponse(mirrorRaw, w, h)).mask;
+        row.mirrorPctOfImage = +(ratioOf(mirrorMask) * 100).toFixed(1);
+      }
+    }
+    const refl = await evaluateReflections(original, staged, reflAll, floor, w, h, mirrorMask ?? new Uint8Array(w * h));
+    row.reflections = refl.report;
+    for (const piece of refl.report) {
+      console.log(`[${img.name}] reflection ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
+    }
+    for (let i = 0; i < floor.length; i++) if (refl.keep[i] || refl.dropped[i]) floor[i] = 0;
     const tracedRatio = ratioOf(floor);
     // Harmonise keeps the tight outline (only small enclosed holes filled), so
     // no floor or shadow from the staged image comes along with the furniture.
@@ -2031,7 +2178,12 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
 
     // Solid layer = furniture + kept art, with a thin margin. Shadow zone =
     // around and below floor furniture, outside the solid layer.
-    const artRegion = await refineArtRegion(original, staged, art.keep, w, h);
+    const artOnly = await refineArtRegion(original, staged, art.keep, w, h);
+    // Kept reflections are carried over exactly like kept art: refined to where
+    // the staged image actually differs, taken per pixel, no shadow zone.
+    const reflRegion = await refineArtRegion(original, staged, refl.keep, w, h);
+    const artRegion = new Uint8Array(w * h);
+    for (let i = 0; i < artRegion.length; i++) artRegion[i] = artOnly[i] | reflRegion[i];
     let solid = new Uint8Array(w * h);
     for (let i = 0; i < solid.length; i++) solid[i] = floor[i] | artRegion[i];
     solid = dilate(solid, w, h, Math.max(1, Math.round((w * SOLID_GROW_PCT) / 100)));
@@ -2043,6 +2195,8 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       furniture: +(furnitureRatio * 100).toFixed(1),
       wallArtKept: +(ratioOf(art.keep) * 100).toFixed(1),
       wallArtDropped: +(ratioOf(art.dropped) * 100).toFixed(1),
+      reflectionsKept: +(ratioOf(reflRegion) * 100).toFixed(1),
+      reflectionsDropped: +(ratioOf(refl.dropped) * 100).toFixed(1),
       solid: +(ratioOf(solid) * 100).toFixed(1),
       shadowZone: +(ratioOf(zone) * 100).toFixed(1),
     };
@@ -2052,13 +2206,15 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     const solidPng = await maskToPng(solid, w, h);
     fs.writeFileSync(path.join(dir, "3_mask_final.png"), solidPng);
     fs.writeFileSync(path.join(dir, "3_mask_shadow_zone.png"), await maskToPng(zone, w, h));
-    traced = await layersOverlay(staged, floor, artRegion, art.dropped, w, h);
+    const droppedAll = new Uint8Array(w * h);
+    for (let i = 0; i < droppedAll.length; i++) droppedAll[i] = art.dropped[i] | refl.dropped[i];
+    traced = await layersOverlay(staged, floor, artOnly, droppedAll, w, h, reflRegion);
     fs.writeFileSync(path.join(dir, "3_mask_overlay.jpg"), traced);
 
     // Room-change measurements ignore furniture and ALL traced art (kept or
     // dropped), so they reflect the room itself.
     const measureMask = new Uint8Array(w * h);
-    for (let i = 0; i < measureMask.length; i++) measureMask[i] = solid[i] | artAll[i];
+    for (let i = 0; i < measureMask.length; i++) measureMask[i] = solid[i] | artAll[i] | reflAll[i];
     row.stagedChangesOutsideMask = await measureOutsideDrift(original, staged, measureMask, w, h);
     row.framingCheck = await checkFraming(original, staged, measureMask, w, h);
     if (row.framingCheck.framingChanged) {
@@ -2309,14 +2465,14 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       ? [
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
-          { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
+          { label: "3. Furniture red / art blue / reflections purple / dropped orange", image: traced },
           { label: "4. Hybrid result" + reshaped, image: hybridFinal },
         ]
       : MERGE_MODE === "both"
       ? [
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
-          { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
+          { label: "3. Furniture red / art blue / reflections purple / dropped orange", image: traced },
           { label: "4. Original-first result" + reshaped, image: final },
           { label: "5. Staged-first: reverted areas (red)", image: stagedFirstReverted },
           { label: "6. Staged-first result" + reshaped, image: stagedFirstFinal },
@@ -2325,7 +2481,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           ...(previous ? [{ label: "0. Old failed attempt", image: previous }] : []),
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
-          { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
+          { label: "3. Furniture red / art blue / reflections purple / dropped orange", image: traced },
           ...(MERGE_MODE === "staged_first"
             ? [
                 { label: "4. Staged-first: reverted areas (red)", image: stagedFirstReverted },
@@ -2372,4 +2528,4 @@ if (require.main === module) {
     });
 }
 
-export { checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
