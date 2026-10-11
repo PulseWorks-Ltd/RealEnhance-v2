@@ -1,18 +1,25 @@
-// Stand-alone experiment: Stage 2 staging with a furniture-shape mask and a
-// "paste back" composite. Nothing here is wired into the live pipeline.
+// Stand-alone experiment: Stage 2 "stage, trace, paste back". Nothing here is
+// wired into the live pipeline.
 //
 // Per image:
-//   1. Layout call (Gemini, 1K): draw proposed furniture as flat magenta shapes.
-//   2. Mask: keep only the magenta pixels, clean up, grow a little (plus extra
-//      downwards for floor shadows).
-//   3. Staging call (Gemini, 2K): photo + magenta plan + mask, "only add
-//      furniture in the white areas".
-//   4. Paste back: staged pixels inside the (feathered) mask, original photo
-//      pixels everywhere else — so windows, doors, openings, ceilings and
-//      light fittings outside the furniture area cannot change.
+//   1. Stage: the normal Stage 2 generation (runStage2GenerationAttempt) at 2K,
+//      one attempt, no validators. Or reuse an existing staged result.
+//   2. Trace: Gemini is shown the empty photo and its staged version (same
+//      camera position) and returns a black/white mask of the furniture it
+//      added. Ported from feature/vertex-secondary-inpainting-continuity's
+//      "original extractor" — the approach that produced clean bed/rug
+//      outlines there: two passes run side by side (primary furniture, then
+//      secondary pieces/decor), temperature 0, merged, tiny specks removed.
+//   3. Paste back: staged pixels inside the (grown, feathered) mask, original
+//      photo pixels everywhere else — so window removals, filled openings and
+//      added light fittings outside the furniture cannot survive. The staged
+//      image's overall brightness/colour is matched to the original first.
+//   Framing check: paste-back only works if Gemini kept the room's shape. If
+//   it reframed or reshaped the room, the photo is flagged for re-staging.
 //
 // Run from the worker folder:
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts
+//   REUSE_STAGED=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts   (reuse Test Images/Stage2_2K_Comparison)
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "C:/photos/lounge.jpg:living_room"
 //
@@ -22,12 +29,11 @@ import path from "path";
 import fs from "fs";
 import sharp from "sharp";
 import { generateContentViaRest } from "../ai/geminiRestClient";
-import { closestGeminiAspectRatio } from "../ai/gemini";
-import { STYLE_PROMPT_MODIFIERS, normalizeStagingStyle } from "../ai/stagingStyles";
 
 const ROOT = path.resolve(__dirname, "../../..");
 const T = path.join(ROOT, "Test Images");
 const OUT = path.join(T, "Stage2_MaskPasteback", new Date().toISOString().replace(/[:.]/g, "-"));
+const PREVIOUS_STAGED_DIR = path.join(T, "Stage2_2K_Comparison");
 
 // Same set as stage2-2k-compare.ts so results can be compared side by side.
 const DEFAULT_IMAGES: Array<{ name: string; file: string; roomType: string }> = [
@@ -39,33 +45,41 @@ const DEFAULT_IMAGES: Array<{ name: string; file: string; roomType: string }> = 
   { name: "Bedroom12", file: "Validator Testing Images/job_59ac76ce_Bedroom_12_UPLOAD.jpg", roomType: "bedroom" },
 ];
 
-const LAYOUT_MODEL = process.env.LAYOUT_MODEL || "gemini-3.1-flash-image";
 const STAGE_MODEL = process.env.STAGE_MODEL || "gemini-3.1-flash-image";
-const LAYOUT_IMAGE_SIZE = (process.env.LAYOUT_IMAGE_SIZE || "1K").toUpperCase();
-const STAGE_IMAGE_SIZE = (process.env.STAGE_IMAGE_SIZE || "2K").toUpperCase();
-const STAGING_STYLE = normalizeStagingStyle(process.env.STAGING_STYLE || "standard_listing");
+const TRACE_MODEL = process.env.TRACE_MODEL || "gemini-3.1-flash-image";
+const TRACE_IMAGE_SIZE = (process.env.TRACE_IMAGE_SIZE || "1K").toUpperCase();
+const STAGING_STYLE = process.env.STAGING_STYLE || "nz_standard";
+const REUSE_STAGED = process.env.REUSE_STAGED === "1";
 // Mask growth, as a percentage of image width/height.
-const GROW_PCT = Number(process.env.GROW_PCT || 1.2);
+const GROW_PCT = Number(process.env.GROW_PCT || 1.0);
 const SHADOW_PCT = Number(process.env.SHADOW_PCT || 2.5);
 const FEATHER_PX = Number(process.env.FEATHER_PX || 4);
 // Same "changed pixel" threshold as the outside-mask drift check on feature/vertex-mask-inpainting.
 const CHANGE_THRESHOLD = 18;
+// Framing check. A wall/ceiling patch counts as changed above CHANGED_TILE_DIFF
+// (average grey-level difference). The photo is flagged as reframed when the
+// MEDIAN patch is above REFRAMED_MEDIAN_DIFF — a median ignores a few locally
+// changed spots (a removed window) but not a moved/reshaped room. Calibrated
+// on Test Images/Stage2_2K_Comparison: the two reframed results scored 28.9
+// and 30.9, the ten good ones 10.2 or lower.
+const CHANGED_TILE_DIFF = 12;
+const REFRAMED_MEDIAN_DIFF = Number(process.env.REFRAMED_MEDIAN_DIFF || 15);
 // Gemini 3.1 Flash Image output tokens, USD per 1M (Google pricing page, Oct 2026).
 const OUTPUT_PRICE_PER_M = Number(process.env.OUTPUT_PRICE_PER_M || 60);
 
-const ROOM_LABELS: Record<string, string> = {
-  living_room: "living room",
-  dining_room: "dining room",
-  bedroom: "bedroom",
-};
+// The Stage 2 model is read once when the Stage 2 code first loads, so these
+// must be set before anything imports ../ai/gemini or ../pipeline/stage2.
+process.env.USE_GEMINI_STAGE2 = "1";
+process.env.REALENHANCE_MODEL_STAGE2_PRIMARY = STAGE_MODEL;
+process.env.REALENHANCE_STAGE2_IMAGE_SIZE = process.env.REALENHANCE_STAGE2_IMAGE_SIZE || "2K";
 
-const FURNITURE_HINTS: Record<string, string> = {
-  living_room: "a sofa, one or two armchairs, a coffee table, a rug and a side table",
-  dining_room: "a dining table with chairs and, if there is room, a sideboard",
-  bedroom: "a bed, two bedside tables and, if there is room, a chest of drawers",
-};
+// Target lists match the continuity branch's two extractor passes.
+const TRACE_PASSES = [
+  { label: "primary", targets: "beds, sofas, dining tables, major rugs, major seating" },
+  { label: "secondary", targets: "lamps, bedside tables, chairs, artwork, decor, plants, secondary furniture" },
+];
 
-// ── Gemini calls ─────────────────────────────────────────────────────────────
+// ── Gemini tracing call ──────────────────────────────────────────────────────
 
 function mimeFor(file: string): string {
   const ext = path.extname(file).toLowerCase();
@@ -83,7 +97,6 @@ async function callGeminiImage(params: {
   parts: any[];
   imageSize: string;
   aspectRatio: string;
-  temperature: number;
 }): Promise<{ image: Buffer; usage: any; text: string }> {
   const apiKey = process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY;
   if (!apiKey) throw new Error("GEMINI_API_KEY is not set");
@@ -94,7 +107,8 @@ async function callGeminiImage(params: {
     body: {
       contents: [{ role: "user", parts: params.parts }],
       generationConfig: {
-        temperature: params.temperature,
+        temperature: 0,
+        topP: 0.1,
         imageConfig: { imageSize: params.imageSize, aspectRatio: params.aspectRatio },
       },
     },
@@ -109,43 +123,53 @@ async function callGeminiImage(params: {
   return { image: Buffer.from(img.inlineData.data, "base64"), usage: resp?.usageMetadata || null, text };
 }
 
-function buildLayoutPrompt(roomType: string): string {
-  const room = ROOM_LABELS[roomType] || roomType.replace(/_/g, " ");
-  const hint = FURNITURE_HINTS[roomType] || "the furniture a professional stager would use";
+// Adapted from the continuity branch's buildOriginalExtractorPassPrompt: same
+// structure and rules, but both images share one camera position, and changes
+// to the room itself are explicitly excluded from the mask.
+function buildTracePrompt(roomType: string, targets: string): string {
   return [
-    `You are a professional real estate home stager planning furniture for this empty ${room}.`,
-    "Return this exact same photograph with ONE change: draw each piece of furniture you would place as a flat, solid, pure magenta (#FF00FF) silhouette, at realistic size and in the correct perspective, standing on the floor where it would go.",
-    `Typical pieces for this room: ${hint}.`,
+    "Generate a binary furniture mask IMAGE.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Mask rule: WHITE = pixels showing the added furniture in the STAGED_IMAGE, BLACK = everything else.",
     "",
-    "Rules:",
-    "- Use only flat pure magenta (#FF00FF) for the furniture. No shading, outlines, texture, gradients or other colours.",
-    "- Change nothing else in the photo. Do not alter, remove, cover or add windows, doors, openings, walls, ceilings, light fittings, power points, heaters, cabinetry or any other fixture.",
-    "- Keep doorways and walkways clear. Furniture may sit below a window sill but must not cover window glass or frames.",
-    "- Draw nothing on the ceiling or walls: no ceiling lights, pendant lights, wall lights, curtains, blinds or wall art.",
-    "- Keep the same camera angle, framing and crop.",
+    "You are given two images of the same room from the same camera position:",
+    "1. STAGED_IMAGE — the room after virtual staging, with furniture added.",
+    "2. EMPTY_IMAGE — the same room before staging.",
+    "",
+    "Task: mark where the added furniture appears in the STAGED_IMAGE.",
+    "Generate a single black-and-white mask image that:",
+    `- Targets these object types: ${targets}`,
+    "- Matches the perspective and dimensions of the STAGED_IMAGE",
+    "- Shows WHITE where those furniture objects appear",
+    "- Shows BLACK everywhere else (walls, ceiling, floor outside furniture areas, windows, doors)",
+    "",
+    "Critical rules:",
+    "- Output ONLY the binary mask — do NOT return the staged image or the empty image",
+    "- Mark the furniture silhouette and footprint regions as white, including rugs on the floor",
+    "- Do NOT mark changes to the room itself, even if the two images differ there: windows, doors, openings, walls, ceilings, light fittings, curtains, blinds and built-in fixtures stay black",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
   ].join("\n");
 }
 
-function buildStagingPrompt(roomType: string): string {
-  const room = ROOM_LABELS[roomType] || roomType.replace(/_/g, " ");
-  const style = STYLE_PROMPT_MODIFIERS[STAGING_STYLE];
-  return [
-    "You are given three images:",
-    "IMAGE 1 — the real room photograph.",
-    "IMAGE 2 — the furniture plan: the same photograph with each planned piece of furniture drawn as a flat magenta shape.",
-    "IMAGE 3 — the editing mask: WHITE = where you may add furniture, BLACK = must stay exactly as in IMAGE 1.",
-    "",
-    `Task: virtually stage this ${room} for a real estate listing. Replace each magenta shape from IMAGE 2 with a realistic piece of furniture of the matching type, position, size and perspective, placed into IMAGE 1.`,
-    style,
-    "",
-    "Rules:",
-    "- Only add furniture (and items on it such as cushions, bedding or a vase) inside the WHITE areas of IMAGE 3.",
-    "- Everything in the BLACK areas must stay identical to IMAGE 1: walls, windows, doors, openings, ceilings, light fittings, flooring and fixtures.",
-    "- Do not add ceiling lights, pendant lights, wall lights, curtains, blinds or wall art.",
-    "- Do not change the camera angle, crop, framing, lighting or colours.",
-    "- Add natural contact shadows under the furniture.",
-    "- Output the full photograph with the same framing as IMAGE 1. No magenta anywhere in the result.",
-  ].filter(Boolean).join("\n");
+// Turns Gemini's mask image into a 0/1 mask at the original photo size.
+// Transparent pixels count as black; if most of the frame comes back white the
+// model has flipped the colours, so it is inverted (the continuity branch
+// handled the same polarity problem).
+async function binarizeTraceResponse(image: Buffer, w: number, h: number) {
+  const gray = await sharp(image)
+    .flatten({ background: "#000000" })
+    .resize(w, h, { fit: "fill", kernel: sharp.kernel.nearest })
+    .grayscale()
+    .raw()
+    .toBuffer();
+  let mask = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) mask[i] = gray[i] >= 128 ? 1 : 0;
+  let inverted = false;
+  if (ratioOf(mask) > 0.6) {
+    mask = invert(mask);
+    inverted = true;
+  }
+  return { mask, inverted };
 }
 
 // ── Mask helpers (binary masks: Uint8Array of 0/1, row-major) ────────────────
@@ -236,25 +260,6 @@ function maskToPng(mask: Uint8Array, w: number, h: number): Promise<Buffer> {
   return sharp(px, { raw: { width: w, height: h, channels: 1 } }).png().toBuffer();
 }
 
-async function extractMagentaMask(layoutImage: Buffer, w: number, h: number) {
-  const raw = await sharp(layoutImage).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
-  let mask = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) {
-    const r = raw[i * 3], g = raw[i * 3 + 1], b = raw[i * 3 + 2];
-    mask[i] = r >= 170 && b >= 170 && g <= 110 && r - g >= 90 && b - g >= 90 ? 1 : 0;
-  }
-  const rawRatio = ratioOf(mask);
-  // Close small holes and gaps inside each shape, then drop specks.
-  const closeR = Math.max(2, Math.round(w * 0.004));
-  mask = erode(dilate(mask, w, h, closeR), w, h, closeR);
-  mask = removeSmallComponents(mask, w, h, Math.round(w * h * 0.002));
-  const shapeRatio = ratioOf(mask);
-  // Grow for soft edges, and further downwards for floor shadows.
-  mask = dilate(mask, w, h, Math.round((w * GROW_PCT) / 100));
-  mask = growDown(mask, w, h, Math.round((h * SHADOW_PCT) / 100));
-  return { mask, rawRatio, shapeRatio, finalRatio: ratioOf(mask) };
-}
-
 // ── Measurements and output images ──────────────────────────────────────────
 
 // How much the raw Gemini output changed OUTSIDE the mask, compared with the
@@ -292,12 +297,34 @@ async function pasteBack(original: Buffer, staged: Buffer, maskPng: Buffer, srcW
     sharp(staged).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
     sharp(maskPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
   ]);
+  // Gemini often shifts the whole room's brightness/colour slightly while
+  // staging. Measure that on the untouched area and correct the staged pixels
+  // so pasted furniture matches the original lighting and edges don't show.
+  const sums = [0, 0, 0, 0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < fw * fh; i++) {
+    if (alpha[i] > 12) continue;
+    for (let c = 0; c < 3; c++) {
+      sums[c] += orig[i * 3 + c];
+      sums[c + 3] += stg[i * 3 + c];
+    }
+    count++;
+  }
+  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
   const out = Buffer.alloc(fw * fh * 3);
   for (let i = 0; i < fw * fh; i++) {
     const a = alpha[i] / 255;
-    for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(stg[i * 3 + c] * a + orig[i * 3 + c] * (1 - a));
+    for (let c = 0; c < 3; c++) {
+      const matched = Math.min(255, stg[i * 3 + c] * gains[c]);
+      out[i * 3 + c] = Math.round(matched * a + orig[i * 3 + c] * (1 - a));
+    }
   }
-  return { buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(), width: fw, height: fh };
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    width: fw,
+    height: fh,
+    colourGains: gains.map((g) => Number(g.toFixed(3))),
+  };
 }
 
 async function maskOverlay(original: Buffer, mask: Uint8Array, w: number, h: number): Promise<Buffer> {
@@ -339,6 +366,74 @@ function approxOutputCost(usage: any): number | null {
   return Number.isFinite(tokens) ? Number(((tokens * OUTPUT_PRICE_PER_M) / 1_000_000).toFixed(4)) : null;
 }
 
+// Checks whether Gemini kept the room's geometry. The area outside the mask is
+// split into tiles and each textured tile is compared with the staged image.
+// A removed window only spoils a few tiles, but a reframed or re-shaped room
+// spoils many — and paste-back cannot repair that.
+async function checkFraming(original: Buffer, staged: Buffer, mask: Uint8Array, w: number, h: number) {
+  const sw = 480;
+  const sh = Math.round((sw * h) / w);
+  const [a, b, m] = await Promise.all([
+    sharp(original).removeAlpha().resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
+    sharp(await maskToPng(mask, w, h)).resize(sw, sh, { fit: "fill" }).raw().toBuffer(),
+  ]);
+  const tile = 40, maxShift = 2;
+  const diffs: number[] = [];
+  let checked = 0, changed = 0;
+  for (let ty = maxShift; ty + tile + maxShift <= sh; ty += tile) {
+    for (let tx = maxShift; tx + tile + maxShift <= sw; tx += tile) {
+      let masked = 0, mean = 0, sq = 0;
+      for (let y = ty; y < ty + tile; y++) for (let x = tx; x < tx + tile; x++) {
+        const i = y * sw + x;
+        if (m[i] > 127) masked++;
+        mean += a[i];
+        sq += a[i] * a[i];
+      }
+      const n = tile * tile;
+      const std = Math.sqrt(Math.max(0, sq / n - (mean / n) ** 2));
+      if (masked > n * 0.1 || std < 6) continue; // furniture area, or a flat patch with nothing to line up
+      const samples = (tile / 2) ** 2;
+      const diffAt = (dx: number, dy: number) => {
+        let sum = 0;
+        for (let y = ty; y < ty + tile; y += 2) for (let x = tx; x < tx + tile; x += 2) sum += Math.abs(a[y * sw + x] - b[(y + dy) * sw + x + dx]);
+        return sum / samples;
+      };
+      checked++;
+      // A patch counts as changed when it no longer matches the original in
+      // place. Allow a tiny nudge (Gemini's output is rarely pixel-exact),
+      // then measure the leftover difference in grey levels.
+      let bestNearby = Infinity;
+      for (let dy = -2; dy <= 2; dy += 2) for (let dx = -2; dx <= 2; dx += 2) bestNearby = Math.min(bestNearby, diffAt(dx, dy));
+      diffs.push(bestNearby);
+      if (bestNearby > CHANGED_TILE_DIFF) changed++;
+    }
+  }
+  const changedPct = checked > 0 ? Number(((changed / checked) * 100).toFixed(1)) : 0;
+  const sorted = [...diffs].sort((x, y) => x - y);
+  const medianDiff = sorted.length ? Number(sorted[Math.floor(sorted.length / 2)].toFixed(1)) : 0;
+  return { tilesChecked: checked, tilesChanged: changed, changedPct, medianDiff, framingChanged: checked >= 6 && medianDiff > REFRAMED_MEDIAN_DIFF };
+}
+
+// Red where the raw staged image changed the room OUTSIDE the furniture mask —
+// i.e. exactly what paste-back throws away.
+async function undoneOverlay(original: Buffer, staged: Buffer, mask: Uint8Array, w: number, h: number): Promise<Buffer> {
+  const [a, b] = await Promise.all([
+    sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer(),
+  ]);
+  const out = Buffer.from(a);
+  for (let i = 0; i < w * h; i++) {
+    if (mask[i]) continue;
+    const d = Math.max(Math.abs(a[i * 3] - b[i * 3]), Math.abs(a[i * 3 + 1] - b[i * 3 + 1]), Math.abs(a[i * 3 + 2] - b[i * 3 + 2]));
+    if (d < CHANGE_THRESHOLD * 2) continue;
+    out[i * 3] = 255;
+    out[i * 3 + 1] = Math.round(a[i * 3 + 1] * 0.3);
+    out[i * 3 + 2] = Math.round(a[i * 3 + 2] * 0.3);
+  }
+  return sharp(out, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
+}
+
 // ── Main ─────────────────────────────────────────────────────────────────────
 
 function resolveImages() {
@@ -352,6 +447,23 @@ function resolveImages() {
   });
 }
 
+async function stageImage(img: { name: string; file: string; roomType: string }, dir: string): Promise<{ staged: Buffer; source: string }> {
+  if (REUSE_STAGED) {
+    const previous = path.join(PREVIOUS_STAGED_DIR, `${img.name}__${STAGE_MODEL}.webp`);
+    if (fs.existsSync(previous)) return { staged: fs.readFileSync(previous), source: `reused ${path.relative(T, previous)}` };
+    console.warn(`[${img.name}] no previous staged result at ${previous} — staging now`);
+  }
+  const { runStage2GenerationAttempt } = await import("../pipeline/stage2");
+  const input = path.join(dir, `stage2_input${path.extname(img.file)}`);
+  fs.copyFileSync(img.file, input);
+  const outputPath = path.join(dir, "2_staged_raw.webp");
+  await runStage2GenerationAttempt(input, {
+    roomType: img.roomType, sceneType: "interior", promptMode: "full", sourceStage: "1A",
+    stagingStyle: STAGING_STYLE, jobId: `pasteback_${img.name}`, imageId: img.name, outputPath, attempt: 1,
+  });
+  return { staged: fs.readFileSync(outputPath), source: `staged now (${STAGE_MODEL})` };
+}
+
 async function runOne(img: { name: string; file: string; roomType: string }) {
   const t0 = Date.now();
   const dir = path.join(OUT, img.name);
@@ -359,58 +471,80 @@ async function runOne(img: { name: string; file: string; roomType: string }) {
   const original = fs.readFileSync(img.file);
   const meta = await sharp(original).metadata();
   const w = meta.width || 0, h = meta.height || 0;
+  const { closestGeminiAspectRatio } = await import("../ai/gemini");
   const aspectRatio = closestGeminiAspectRatio(w, h);
   fs.writeFileSync(path.join(dir, `1_original${path.extname(img.file)}`), original);
   const row: any = { image: img.name, roomType: img.roomType, input: `${w}x${h}`, aspectRatio };
-  let layout: Buffer | null = null, overlay: Buffer | null = null, staged: Buffer | null = null, final: Buffer | null = null;
+  let staged: Buffer | null = null, traced: Buffer | null = null, undone: Buffer | null = null, final: Buffer | null = null;
 
   try {
-    console.log(`[${img.name}] 1/3 layout (${LAYOUT_MODEL}, ${LAYOUT_IMAGE_SIZE})`);
-    const layoutRes = await callGeminiImage({
-      model: LAYOUT_MODEL,
-      parts: [{ text: buildLayoutPrompt(img.roomType) }, imagePart(original, mimeFor(img.file))],
-      imageSize: LAYOUT_IMAGE_SIZE,
-      aspectRatio,
-      temperature: 0.4,
-    });
-    layout = layoutRes.image;
-    fs.writeFileSync(path.join(dir, "2_layout_magenta.png"), layout);
-    row.layoutCostUsd = approxOutputCost(layoutRes.usage);
-
-    const { mask, rawRatio, shapeRatio, finalRatio } = await extractMagentaMask(layout, w, h);
-    row.maskPct = { magentaFound: +(rawRatio * 100).toFixed(1), shapes: +(shapeRatio * 100).toFixed(1), afterGrow: +(finalRatio * 100).toFixed(1) };
-    const maskPng = await maskToPng(mask, w, h);
-    fs.writeFileSync(path.join(dir, "3_mask.png"), maskPng);
-    overlay = await maskOverlay(original, mask, w, h);
-    fs.writeFileSync(path.join(dir, "3_mask_overlay.jpg"), overlay);
-    if (shapeRatio < 0.01) throw new Error(`layout step drew almost no magenta furniture (${(shapeRatio * 100).toFixed(2)}% of image) — skipping staging`);
-    if (finalRatio > 0.7) console.warn(`[${img.name}] warning: mask covers ${(finalRatio * 100).toFixed(0)}% of the image — protection will be weak`);
-
-    console.log(`[${img.name}] 2/3 staging (${STAGE_MODEL}, ${STAGE_IMAGE_SIZE})`);
-    const stageRes = await callGeminiImage({
-      model: STAGE_MODEL,
-      parts: [
-        { text: buildStagingPrompt(img.roomType) },
-        { text: "IMAGE 1 — room photograph:" }, imagePart(original, mimeFor(img.file)),
-        { text: "IMAGE 2 — furniture plan:" }, imagePart(layout, "image/png"),
-        { text: "IMAGE 3 — editing mask:" }, imagePart(maskPng, "image/png"),
-      ],
-      imageSize: STAGE_IMAGE_SIZE,
-      aspectRatio,
-      temperature: 0.2,
-    });
-    staged = stageRes.image;
-    fs.writeFileSync(path.join(dir, "4_gemini_staged_no_pasteback.png"), staged);
+    console.log(`[${img.name}] 1/3 stage`);
+    const stageRes = await stageImage(img, dir);
+    staged = stageRes.staged;
+    row.staging = stageRes.source;
+    if (!fs.existsSync(path.join(dir, "2_staged_raw.webp"))) fs.writeFileSync(path.join(dir, "2_staged_raw.webp"), staged);
     const stagedMeta = await sharp(staged).metadata();
     row.stagedSize = `${stagedMeta.width}x${stagedMeta.height}`;
-    row.stagingCostUsd = approxOutputCost(stageRes.usage);
-    row.geminiChangesOutsideMask = await measureOutsideDrift(original, staged, mask, w, h);
+
+    console.log(`[${img.name}] 2/3 trace (${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${TRACE_PASSES.length} passes)`);
+    const passes = await Promise.all(
+      TRACE_PASSES.map(async (pass) => {
+        const res = await callGeminiImage({
+          model: TRACE_MODEL,
+          parts: [
+            { text: buildTracePrompt(img.roomType, pass.targets) },
+            { text: "STAGED_IMAGE" }, imagePart(staged!, "image/webp"),
+            { text: "EMPTY_IMAGE" }, imagePart(original, mimeFor(img.file)),
+          ],
+          imageSize: TRACE_IMAGE_SIZE,
+          aspectRatio,
+        });
+        fs.writeFileSync(path.join(dir, `3_trace_${pass.label}_raw.png`), res.image);
+        const bin = await binarizeTraceResponse(res.image, w, h);
+        return { label: pass.label, ...bin, cost: approxOutputCost(res.usage) };
+      })
+    );
+    row.traceCostUsd = Number(passes.reduce((sum, p) => sum + (p.cost || 0), 0).toFixed(4));
+    row.tracePasses = passes.map((p) => ({ pass: p.label, coveragePct: +(ratioOf(p.mask) * 100).toFixed(1), coloursFlipped: p.inverted }));
+
+    // Merge (OR), then drop tiny specks only — thin parts like lamp stems and chair legs must survive.
+    let mask = new Uint8Array(w * h);
+    for (const p of passes) for (let i = 0; i < mask.length; i++) mask[i] |= p.mask[i];
+    mask = removeSmallComponents(mask, w, h, Math.max(24, Math.round(w * h * 0.0002)));
+    const furnitureRatio = ratioOf(mask);
+    fs.writeFileSync(path.join(dir, "3_mask_traced.png"), await maskToPng(mask, w, h));
+    if (furnitureRatio < 0.01) throw new Error(`tracing found almost no furniture (${(furnitureRatio * 100).toFixed(2)}% of image)`);
+
+    // Grow for soft edges, and further downwards for floor shadows.
+    mask = dilate(mask, w, h, Math.round((w * GROW_PCT) / 100));
+    mask = growDown(mask, w, h, Math.round((h * SHADOW_PCT) / 100));
+    row.maskPct = { furniture: +(furnitureRatio * 100).toFixed(1), afterGrow: +(ratioOf(mask) * 100).toFixed(1) };
+    if (ratioOf(mask) > 0.7) console.warn(`[${img.name}] warning: mask covers ${(ratioOf(mask) * 100).toFixed(0)}% of the image — protection will be weak`);
+    const maskPng = await maskToPng(mask, w, h);
+    fs.writeFileSync(path.join(dir, "3_mask_final.png"), maskPng);
+    traced = await maskOverlay(staged, mask, w, h);
+    fs.writeFileSync(path.join(dir, "3_mask_overlay.jpg"), traced);
+
+    row.stagedChangesOutsideMask = await measureOutsideDrift(original, staged, mask, w, h);
+    row.framingCheck = await checkFraming(original, staged, mask, w, h);
+    if (row.framingCheck.framingChanged) {
+      console.warn(`[${img.name}] Gemini reshaped/reframed the room (typical wall/ceiling patch differs by ${row.framingCheck.medianDiff}) — paste-back can't fix this; this photo would need re-staging`);
+    }
+    undone = await undoneOverlay(original, staged, mask, w, h);
+    fs.writeFileSync(path.join(dir, "4_changes_removed_by_pasteback.jpg"), undone);
 
     console.log(`[${img.name}] 3/3 paste back`);
     const pasted = await pasteBack(original, staged, maskPng, w, h);
     final = pasted.buffer;
     fs.writeFileSync(path.join(dir, "5_final_pasteback.webp"), final);
     row.finalSize = `${pasted.width}x${pasted.height}`;
+    row.colourGains = pasted.colourGains;
+    // A big average change across the untouched room usually means Gemini
+    // re-lit or slightly reframed the photo, which can leave visible seams.
+    if (row.stagedChangesOutsideMask.meanAbsoluteDelta > 8) {
+      row.checkSeams = true;
+      console.warn(`[${img.name}] Gemini changed the rest of the room a lot (avg ${row.stagedChangesOutsideMask.meanAbsoluteDelta}) — check panel 5 for seams`);
+    }
     row.ok = true;
   } catch (e: any) {
     row.ok = false;
@@ -420,10 +554,10 @@ async function runOne(img: { name: string; file: string; roomType: string }) {
   const sheet = await contactSheet(
     [
       { label: "1. Original", image: original },
-      { label: "2. Gemini furniture plan", image: layout },
-      { label: "3. Mask (red = editable)", image: overlay },
-      { label: "4. Gemini staged (no paste-back)", image: staged },
-      { label: "5. Final (pasted back)", image: final },
+      { label: "2. Gemini staged (raw)", image: staged },
+      { label: "3. Traced furniture (red)", image: traced },
+      { label: "4. Room changes removed (red)", image: undone },
+      { label: row.framingCheck?.framingChanged ? "5. Final - ROOM RESHAPED, re-stage" : "5. Final (pasted back)", image: final },
     ],
     w,
     h
@@ -458,4 +592,4 @@ if (require.main === module) {
   });
 }
 
-export { extractMagentaMask, measureOutsideDrift, pasteBack, maskToPng, maskOverlay, contactSheet };
+export { checkFraming, binarizeTraceResponse, measureOutsideDrift, pasteBack, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
