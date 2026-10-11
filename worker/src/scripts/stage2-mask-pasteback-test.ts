@@ -17,6 +17,8 @@
 //   Framing check: paste-back only works if Gemini kept the room's shape. If
 //   it reframed or reshaped the room, the photo is flagged for re-staging.
 //
+// Gemini settings (GEMINI_API_KEY etc.) are read from worker/.env automatically.
+//
 // Run from the worker folder:
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   REUSE_STAGED=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts   (reuse Test Images/Stage2_2K_Comparison)
@@ -29,6 +31,31 @@ import path from "path";
 import fs from "fs";
 import sharp from "sharp";
 import { generateContentViaRest } from "../ai/geminiRestClient";
+
+// The worker package does not depend on `dotenv`. Load worker/.env with the
+// same minimal parser as measure-stage1a-pregen.ts so GEMINI_API_KEY (and the
+// rest of the worker's Gemini settings) are picked up. Values already set in
+// the shell win over the file.
+function loadDotEnvIfPresent(envPath: string) {
+  if (!fs.existsSync(envPath)) return;
+  const raw = fs.readFileSync(envPath, "utf8");
+  for (const line of raw.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+loadDotEnvIfPresent(path.resolve(__dirname, "../../.env"));
 
 const ROOT = path.resolve(__dirname, "../../..");
 const T = path.join(ROOT, "Test Images");
