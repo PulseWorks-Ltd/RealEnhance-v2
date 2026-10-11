@@ -542,7 +542,11 @@ async function stageImage(img: { name: string; file: string; roomType: string },
     roomType: img.roomType, sceneType: "interior", promptMode: "full", sourceStage: "1A",
     stagingStyle: STAGING_STYLE, jobId: `pasteback_${img.name}`, imageId: img.name, outputPath, attempt: 1,
   });
-  return { staged: fs.readFileSync(outputPath), source: `staged now (${STAGE_MODEL})` };
+  // STAGE2_PROMPT_VARIANT=grok/grok_skill (from worker/.env) sends staging to
+  // Grok's image-edit API instead of Gemini, exactly as in production.
+  const variant = String(process.env.STAGE2_PROMPT_VARIANT || "").trim();
+  const stagedWith = variant === "grok" || variant === "grok_skill" ? `grok (${process.env.GROK_IMAGE_MODEL || "grok-imagine-image-quality"})` : STAGE_MODEL;
+  return { staged: fs.readFileSync(outputPath), source: `staged now (${stagedWith}${variant ? `, STAGE2_PROMPT_VARIANT=${variant}` : ""})` };
 }
 
 async function runOne(img: { name: string; file: string; roomType: string }) {
