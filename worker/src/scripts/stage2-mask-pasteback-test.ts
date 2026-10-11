@@ -618,7 +618,10 @@ async function compositeLayers(
   // hybrid: around the furniture, use Gemini's actual pixels (its natural
   // shadows and contact shading) wherever the neighbourhood is only shading on
   // the same surface, instead of transferring darkening onto the original.
-  hybrid = false
+  hybrid = false,
+  // matte: decide the edge band by colour — furniture-coloured pixels keep the
+  // staged pixel, floor-coloured ones get the original back (see below).
+  matte = false
 ) {
   const stagedMeta = await sharp(staged).metadata();
   const fw = stagedMeta.width || srcW;
@@ -677,6 +680,36 @@ async function compositeLayers(
   }
   const texDiff = await sharp(texDiffRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer();
 
+  // Edge matte. The traced shape includes a thin strip of the STAGED floor
+  // around the furniture (darker, smoother carpet), which shows as a cut-out
+  // outline. For each band pixel, compare it with the furniture colour just
+  // inside and the staged floor colour just outside: furniture-like -> staged,
+  // floor-like -> original, in between -> blended (a natural soft edge).
+  let matteF: Buffer | null = null, matteFd: Buffer | null = null, matteB: Buffer | null = null, matteBd: Buffer | null = null;
+  if (matte) {
+    const inF = Buffer.alloc(N, 0), inB = Buffer.alloc(N, 0);
+    const rgbF = Buffer.alloc(N * 3, 0), rgbB = Buffer.alloc(N * 3, 0);
+    for (let i = 0; i < N; i++) {
+      if (coreA[i] > 200) {
+        inF[i] = 255;
+        for (let c = 0; c < 3; c++) rgbF[i * 3 + c] = sBlur[i * 3 + c];
+      } else if (solidA[i] < 20) {
+        inB[i] = 255;
+        for (let c = 0; c < 3; c++) rgbB[i * 3 + c] = sBlur[i * 3 + c];
+      }
+    }
+    // Wide enough to reach across the whole band from both sides.
+    const bandPx = ((srcW * (CORE_ERODE_PCT + SOLID_GROW_PCT)) / 100) * scale;
+    const sig = Math.max(2, bandPx * 0.8);
+    [matteF, matteFd, matteB, matteBd] = await Promise.all([
+      sharp(rgbF, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
+      sharp(inF, { raw: { width: fw, height: fh, channels: 1 } }).blur(sig).grayscale().raw().toBuffer(),
+      sharp(rgbB, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
+      sharp(inB, { raw: { width: fw, height: fh, channels: 1 } }).blur(sig).grayscale().raw().toBuffer(),
+    ]);
+  }
+  let matteUsed = 0;
+
   const factor = Buffer.alloc(N, 255); // darkening to apply to the original (255 = none)
   const known = Buffer.alloc(N, 0); // 255 where the pixel passed the shadow test
   const take = Buffer.alloc(N, 0); // 255 = use the staged pixel (edge band only)
@@ -694,6 +727,24 @@ async function compositeLayers(
       // essentially the original (trace overshoot onto unchanged wall/floor).
       bandPixels++;
       take[i] = Math.round(Math.min(1, Math.max(0, (diff - 6) / 10)) * 255);
+      if (matteF && matteFd && matteB && matteBd && matteFd[i] > 6 && matteBd[i] > 6) {
+        // Average furniture (F) and staged-floor (B) colours nearby; project
+        // this pixel onto the line between them to get how "furniture" it is.
+        let fb2 = 0, pf = 0;
+        for (let c = 0; c < 3; c++) {
+          const F = (matteF[i * 3 + c] * 255) / matteFd[i];
+          const B = (matteB[i * 3 + c] * 255) / matteBd[i];
+          const S = sBlur[i * 3 + c];
+          fb2 += (F - B) ** 2;
+          pf += (S - B) * (F - B);
+        }
+        // Only when furniture and floor clearly differ in colour.
+        if (fb2 > 25 * 25) {
+          const alpha = Math.min(1, Math.max(0, pf / fb2));
+          take[i] = Math.round(Math.min(take[i] / 255, Math.min(1, Math.max(0, (alpha - 0.2) / 0.6))) * 255);
+          matteUsed++;
+        }
+      }
       if (take[i] > 127) bandStaged++;
     }
     // Shadow test (used outside the traced shape; computed in the band too so
@@ -748,11 +799,15 @@ async function compositeLayers(
     await Promise.all([dbg("dbg_solid.png", solidA), dbg("dbg_core.png", coreA), dbg("dbg_zone.png", zoneA), dbg("dbg_take.png", takeSmooth), dbg("dbg_factor.png", factorSmooth)]);
   }
   const out = Buffer.alloc(N * 3);
+  // How much of each output pixel is staged furniture (used by harmonise so
+  // shadows land only on floor pixels and lighting only on furniture pixels).
+  const furnitureAlpha = Buffer.alloc(N, 0);
   for (let i = 0; i < N; i++) {
     const sa = solidA[i] / 255, ca = coreA[i] / 255, za = zoneA[i] / 255;
     // How strongly the staged pixel is used: always in the core, per-pixel in the band.
     const bandTake = takeSmooth[i] / 255;
     const a = Math.min(1, ca + sa * (1 - ca) * bandTake);
+    furnitureAlpha[i] = Math.round(a * 255);
     // Shadows darken the original in the zone, and in the edge band wherever the
     // original is shown there (otherwise a pale ring appears around furniture).
     // Average shadow strength nearby, weighted by how many nearby pixels are
@@ -786,6 +841,8 @@ async function compositeLayers(
     shadowPctOfZone: zonePixels ? Number(((shadowPixels / zonePixels) * 100).toFixed(1)) : 0,
     edgeBandStagedPct: bandPixels ? Number(((bandStaged / bandPixels) * 100).toFixed(1)) : 0,
     hybridStagedPctOfImage: hybrid ? Number(((hybridStagedPixels / N) * 100).toFixed(1)) : undefined,
+    edgeMattePctOfBand: matte && bandPixels ? Number(((matteUsed / bandPixels) * 100).toFixed(1)) : undefined,
+    furnitureAlphaPng: await sharp(furnitureAlpha, { raw: { width: fw, height: fh, channels: 1 } }).png().toBuffer(),
   };
 }
 
@@ -1810,7 +1867,8 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       const tSolidPng = await maskToPng(tSolid, w, h);
       const tCorePng = await maskToPng(tCore, w, h);
       fs.writeFileSync(path.join(dir, "3_mask_tight.png"), tSolidPng);
-      const safeRes = await compositeLayers(original, staged, tSolidPng, tCorePng, await maskToPng(new Uint8Array(w * h), w, h), w, h);
+      const safeRes = await compositeLayers(original, staged, tSolidPng, tCorePng, await maskToPng(new Uint8Array(w * h), w, h), w, h, false, true);
+      const edgeMattePctOfBand = safeRes.edgeMattePctOfBand;
       safeFinal = safeRes.buffer;
       fs.writeFileSync(path.join(dir, "9_safe_composite.webp"), safeFinal);
 
@@ -1845,7 +1903,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       const affected = new Uint8Array(w * h);
       for (let i = 0; i < affected.length; i++) affected[i] = tSolid[i] | hZone[i];
       fs.writeFileSync(path.join(dir, "3_mask_harmonise_shadow_zone.png"), await maskToPng(hZone, w, h));
-      row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1) };
+      row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1), edgeMattePctOfBand };
       let blendUsable = !!harmRaw;
       if (harmRaw) {
         // Did Gemini keep the room's framing in its blend? If not, its shadows
@@ -1862,7 +1920,11 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       let sunPatchMask: Uint8Array | null = null;
       if (blendUsable) {
         const hZonePng = await maskToPng(hZone, w, h);
-        const sun = await removeSunPatches(safeFinal, harmRaw!, tSolidPng, tCorePng, hZonePng);
+        // The safe composite's own furniture alpha (exactly which pixels are
+        // staged furniture) protects the furniture from floor shadow/sun steps.
+        const furnPng = safeRes.furnitureAlphaPng;
+        fs.writeFileSync(path.join(dir, "9_furniture_alpha.png"), furnPng);
+        const sun = await removeSunPatches(safeFinal, harmRaw!, tSolidPng, furnPng, hZonePng);
         row.harmonise.sunPatchPctOfImage = sun.regionPctOfImage;
         if (sun.regionMask) {
           fs.writeFileSync(path.join(dir, "9_sun_patch_region.png"), sun.regionMask);
@@ -1870,7 +1932,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           sunPatchMask = new Uint8Array(w * h);
           for (let i = 0; i < w * h; i++) sunPatchMask[i] = m[i] > 0 ? 1 : 0;
         }
-        const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, tCorePng, hZonePng);
+        const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng);
         harmFinal = hm.buffer;
         Object.assign(row.harmonise, {
           blendUsed: true,
