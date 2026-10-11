@@ -1184,6 +1184,262 @@ async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPng: Buff
   };
 }
 
+// Checked blend. Uses Gemini's blend itself as the final (its shadows and
+// lighting are the most natural), but first checks it against the safe
+// composite, patch by patch, everywhere except the furniture:
+//  - each small patch may shift a few pixels and change brightness/contrast
+//    (Gemini redraws the whole picture and relights it) without failing;
+//  - a patch fails when its content changed: a line/edge that isn't in the
+//    safe composite, or one that has gone (window, door, downlight, power
+//    point, corbel...). Near the furniture (shadow zone) Gemini may also
+//    darken — that's a shadow — but not brighten or add shapes.
+// Failed patches are repaired with the safe composite's pixels, relit to match
+// the blend's light around them. If too much fails, the caller falls back.
+const BLEND_MAX_REPAIR_PCT = Number(process.env.BLEND_MAX_REPAIR_PCT || 8);
+async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Array, zone: Uint8Array, w: number, h: number) {
+  const meta = await sharp(safe).metadata();
+  const fw = meta.width || 0, fh = meta.height || 0;
+  const N = fw * fh;
+  // ── Analysis at 800px wide, lightly blurred (carpet grain etc. ignored).
+  const AW = 800, AH = Math.max(1, Math.round((AW * fh) / fw));
+  const [aGs, hGs, aC, hC, furnA, zoneA] = await Promise.all([
+    sharp(safe).removeAlpha().resize(AW, AH, { fit: "fill" }).grayscale().blur(1.2).raw().toBuffer(),
+    sharp(blend).removeAlpha().resize(AW, AH, { fit: "fill" }).grayscale().blur(1.2).raw().toBuffer(),
+    sharp(safe).removeAlpha().resize(AW, AH, { fit: "fill" }).blur(1.2).raw().toBuffer(),
+    sharp(blend).removeAlpha().resize(AW, AH, { fit: "fill" }).blur(1.2).raw().toBuffer(),
+    sharp(await maskToPng(furniture, w, h)).resize(AW, AH, { fit: "fill" }).grayscale().raw().toBuffer(),
+    sharp(await maskToPng(zone, w, h)).resize(AW, AH, { fit: "fill" }).grayscale().raw().toBuffer(),
+  ]);
+  // Shapes and lines are compared on DETAIL images (image minus a blurred
+  // copy), so smooth light changes — a lamp's glow, a soft shadow, Gemini's
+  // general relighting — don't count; colour/brightness jumps are checked
+  // separately below.
+  const [aLow, hLow] = await Promise.all([
+    sharp(aGs, { raw: { width: AW, height: AH, channels: 1 } }).blur(4).grayscale().raw().toBuffer(),
+    sharp(hGs, { raw: { width: AW, height: AH, channels: 1 } }).blur(4).grayscale().raw().toBuffer(),
+  ]);
+  const aG = new Float32Array(AW * AH), hG = new Float32Array(AW * AH);
+  for (let i = 0; i < AW * AH; i++) { aG[i] = aGs[i] - aLow[i]; hG[i] = hGs[i] - hLow[i]; }
+  // Overall brightness change of the blend (for the "only darker" test).
+  let sa = 0, sh = 0;
+  for (let i = 0; i < AW * AH; i++) if (furnA[i] < 128 && zoneA[i] < 128) { sa += aGs[i]; sh += hGs[i]; }
+  const gain = sa > 0 ? sh / sa : 1;
+  const T = 24, STEP = 12, MAXS = 3;
+  const suspect = new Uint8Array(AW * AH);
+  let checked = 0, failed = 0;
+  const reasons = { appeared_or_gone: 0, content_changed: 0, brightened_near_furniture: 0, colour_changed: 0 };
+  // Per-patch average colour (safe and blend), for the colour-jump test.
+  const GX = Math.floor((AW - T - 2 * MAXS) / STEP) + 1, GY = Math.floor((AH - T - 2 * MAXS) / STEP) + 1;
+  const tileOk = new Uint8Array(GX * GY), tileZone = new Uint8Array(GX * GY), tileFailed = new Uint8Array(GX * GY);
+  const tileRatio = new Float32Array(GX * GY * 3);
+  // How far Gemini's blend is shifted at each patch (sub-pixel), so repairs
+  // can be moved into line with it — otherwise repaired areas show doubled
+  // edges where Gemini's redraw sits a pixel or two off.
+  const shiftX = new Float32Array(GX * GY), shiftY = new Float32Array(GX * GY), shiftW = new Float32Array(GX * GY);
+  for (let gy = 0, ty = MAXS; gy < GY; gy++, ty += STEP) {
+    for (let gx = 0, tx = MAXS; gx < GX; gx++, tx += STEP) {
+      let fCount = 0, zCount = 0, ma = 0, qa = 0;
+      for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) {
+        const i = y * AW + x;
+        if (furnA[i] >= 128) fCount++;
+        if (zoneA[i] >= 128) zCount++;
+        ma += aG[i]; qa += aG[i] * aG[i];
+      }
+      const n = T * T;
+      if (fCount > n * 0.3) continue; // furniture: Gemini may restyle it
+      checked++;
+      const inZone = zCount > n * 0.3;
+      const g = gy * GX + gx;
+      tileOk[g] = 1;
+      tileZone[g] = inZone ? 1 : 0;
+      {
+        const sumA = [0, 0, 0], sumH = [0, 0, 0];
+        for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) {
+          const i = (y * AW + x) * 3;
+          for (let c = 0; c < 3; c++) { sumA[c] += aC[i + c]; sumH[c] += hC[i + c]; }
+        }
+        for (let c = 0; c < 3; c++) tileRatio[g * 3 + c] = (sumH[c] / n + 2) / (sumA[c] / n + 2);
+      }
+      ma /= n;
+      const stdA = Math.sqrt(Math.max(0, qa / n - ma * ma));
+      // Best match over small shifts (normalised correlation: ignores brightness/contrast).
+      let best = -2, bestStdH = 0, bestDx = 0, bestDy = 0;
+      const nccAt = new Float32Array((2 * MAXS + 1) ** 2);
+      for (let dy = -MAXS; dy <= MAXS; dy++) for (let dx = -MAXS; dx <= MAXS; dx++) {
+        let mh = 0, qh = 0, cr = 0;
+        for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) {
+          const v = hG[(y + dy) * AW + x + dx];
+          mh += v; qh += v * v; cr += v * aG[y * AW + x];
+        }
+        mh /= n;
+        const stdH = Math.sqrt(Math.max(0, qh / n - mh * mh));
+        const ncc = stdA > 0.5 && stdH > 0.5 ? (cr / n - ma * mh) / (stdA * stdH) : stdA <= 0.5 && stdH <= 0.5 ? 1 : 0;
+        nccAt[(dy + MAXS) * (2 * MAXS + 1) + dx + MAXS] = ncc;
+        if (ncc > best) { best = ncc; bestStdH = stdH; bestDx = dx; bestDy = dy; }
+      }
+      if (stdA >= 4 && best > 0.7) {
+        // Parabola through the best match and its neighbours -> sub-pixel shift.
+        const at = (dx: number, dy: number) => nccAt[(dy + MAXS) * (2 * MAXS + 1) + dx + MAXS];
+        const refine = (m: number, c: number, p2: number) => {
+          const den = m - 2 * c + p2;
+          return Math.abs(den) > 1e-6 ? Math.max(-0.5, Math.min(0.5, (0.5 * (m - p2)) / den)) : 0;
+        };
+        const fx = Math.abs(bestDx) < MAXS ? refine(at(bestDx - 1, bestDy), best, at(bestDx + 1, bestDy)) : 0;
+        const fy = Math.abs(bestDy) < MAXS ? refine(at(bestDx, bestDy - 1), best, at(bestDx, bestDy + 1)) : 0;
+        shiftX[g] = bestDx + fx;
+        shiftY[g] = bestDy + fy;
+        shiftW[g] = 1;
+      }
+      const hi = Math.max(stdA, bestStdH), lo = Math.min(stdA, bestStdH);
+      let reason: keyof typeof reasons | null = null;
+      if (hi < 2.5) reason = null; // both plain
+      else if (lo / hi < 0.35 && hi > 4) reason = "appeared_or_gone";
+      else if (lo >= 4 && best < (inZone ? 0.3 : 0.5)) reason = "content_changed";
+      if (reason && inZone) {
+        // Near furniture, a darker blend is a shadow, not a change.
+        let brighter = 0;
+        for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) {
+          if (hGs[(y + bestDy) * AW + x + bestDx] > aGs[y * AW + x] * gain + 12) brighter++;
+        }
+        reason = brighter > n * 0.05 ? "brightened_near_furniture" : null;
+      }
+      if (!reason) continue;
+      failed++;
+      tileFailed[g] = 1;
+      reasons[reason]++;
+      for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) if (furnA[y * AW + x] < 128) suspect[y * AW + x] = 1;
+    }
+  }
+  // Colour jump: a patch whose colour/brightness change differs sharply from
+  // the patches around it (Gemini's relighting is smooth; a new door, a
+  // painted-over window or a recoloured wall isn't). Near furniture, darker
+  // than the surroundings is allowed (shadow).
+  const RAD = 5;
+  for (let gy = 0; gy < GY; gy++) for (let gx = 0; gx < GX; gx++) {
+    const g = gy * GX + gx;
+    if (!tileOk[g] || tileFailed[g]) continue;
+    let worst = 0, darkerOnly = true;
+    const devs: number[] = [];
+    for (let c = 0; c < 3; c++) {
+      const vals: number[] = [];
+      for (let yy = Math.max(0, gy - RAD); yy <= Math.min(GY - 1, gy + RAD); yy++) for (let xx = Math.max(0, gx - RAD); xx <= Math.min(GX - 1, gx + RAD); xx++) {
+        const k = yy * GX + xx;
+        if (k !== g && tileOk[k]) vals.push(tileRatio[k * 3 + c]);
+      }
+      if (vals.length < 8) { worst = 0; break; }
+      vals.sort((p, q) => p - q);
+      const med = vals[Math.floor(vals.length / 2)];
+      const dev = Math.log(tileRatio[g * 3 + c] / med);
+      devs.push(dev);
+      if (dev > 0) darkerOnly = false;
+      worst = Math.max(worst, Math.abs(dev));
+    }
+    if (worst < Math.log(1.3)) continue;
+    // A shadow darkens all colours about equally; a new brown door doesn't.
+    const sameColour = devs.length === 3 && Math.max(...devs) - Math.min(...devs) < Math.log(1.12);
+    if (tileZone[g] && darkerOnly && sameColour) continue;
+    failed++;
+    reasons.colour_changed++;
+    const ty = MAXS + gy * STEP, tx = MAXS + gx * STEP;
+    for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) if (furnA[y * AW + x] < 128) suspect[y * AW + x] = 1;
+  }
+  const repairPct = checked ? (failed / checked) * 100 : 0;
+  // Smooth shift map: average of reliable patch shifts nearby (failed patches
+  // excluded), spread to fill gaps.
+  const smoothShift = (src: Float32Array) => {
+    let val = new Float32Array(GX * GY), wt = new Float32Array(GX * GY);
+    for (let g = 0; g < GX * GY; g++) if (shiftW[g] && !tileFailed[g]) { val[g] = src[g]; wt[g] = 1; }
+    for (let pass = 0; pass < 6; pass++) {
+      const nv = new Float32Array(GX * GY), nw = new Float32Array(GX * GY);
+      for (let gy = 0; gy < GY; gy++) for (let gx = 0; gx < GX; gx++) {
+        let sv = 0, sw = 0;
+        for (let yy = Math.max(0, gy - 2); yy <= Math.min(GY - 1, gy + 2); yy++) for (let xx = Math.max(0, gx - 2); xx <= Math.min(GX - 1, gx + 2); xx++) {
+          sv += val[yy * GX + xx] * wt[yy * GX + xx];
+          sw += wt[yy * GX + xx];
+        }
+        nv[gy * GX + gx] = sw > 0 ? sv / sw : 0;
+        nw[gy * GX + gx] = Math.min(1, sw);
+      }
+      val = nv; wt = nw;
+    }
+    return val;
+  };
+  const sxG = smoothShift(shiftX), syG = smoothShift(shiftY);
+
+  // ── Repair at full size.
+  const grown = dilate(suspect, AW, AH, Math.round(T / 3));
+  const sPx = Buffer.alloc(AW * AH);
+  for (let i = 0; i < AW * AH; i++) sPx[i] = grown[i] ? 255 : 0;
+  const u = fw / 1000;
+  const [A, H, rA, okA] = await Promise.all([
+    sharp(safe).removeAlpha().raw().toBuffer(),
+    sharp(blend).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(sPx, { raw: { width: AW, height: AH, channels: 1 } }).resize(fw, fh, { fit: "fill" }).blur(Math.max(1, 6 * u)).grayscale().raw().toBuffer(),
+    sharp(sPx, { raw: { width: AW, height: AH, channels: 1 } }).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer(),
+  ]);
+  // Light of the blend around each repaired patch, measured only where the
+  // two images agree, so the repaired pixels take on Gemini's lighting.
+  const okMask = Buffer.alloc(N), aOk = Buffer.alloc(N * 3), hOk = Buffer.alloc(N * 3);
+  for (let i = 0; i < N; i++) {
+    if (okA[i] > 0) continue;
+    okMask[i] = 255;
+    for (let c = 0; c < 3; c++) { aOk[i * 3 + c] = A[i * 3 + c]; hOk[i * 3 + c] = H[i * 3 + c]; }
+  }
+  const sig = Math.max(3, 40 * u);
+  const [aB, hB, wB] = await Promise.all([
+    sharp(aOk, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
+    sharp(hOk, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
+    sharp(okMask, { raw: { width: fw, height: fh, channels: 1 } }).blur(sig).grayscale().raw().toBuffer(),
+  ]);
+  // Whole-image lighting change, used deep inside large repairs where there
+  // is too little agreeing area nearby to measure the local light.
+  const gSum = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < N; i++) if (okMask[i]) for (let c = 0; c < 3; c++) { gSum[c] += A[i * 3 + c]; gSum[c + 3] += H[i * 3 + c]; }
+  const gGlobal = [0, 1, 2].map((c) => (gSum[c] > 0 ? Math.min(1.6, Math.max(0.6, gSum[c + 3] / gSum[c])) : 1));
+  const out = Buffer.from(H);
+  const view = Buffer.from(H);
+  const k = AW / fw; // full-size pixels -> analysis pixels
+  const gridAt = (G: Float32Array, ax: number, ay: number) => {
+    const fx = Math.max(0, Math.min(GX - 1, (ax - MAXS - T / 2) / STEP));
+    const fy = Math.max(0, Math.min(GY - 1, (ay - MAXS - T / 2) / STEP));
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(GX - 1, x0 + 1), y1 = Math.min(GY - 1, y0 + 1);
+    const tx = fx - x0, ty = fy - y0;
+    return (G[y0 * GX + x0] * (1 - tx) + G[y0 * GX + x1] * tx) * (1 - ty) + (G[y1 * GX + x0] * (1 - tx) + G[y1 * GX + x1] * tx) * ty;
+  };
+  for (let i = 0; i < N; i++) {
+    const r = rA[i] / 255;
+    if (r <= 0) continue;
+    // Safe-composite pixel moved into line with the blend (bilinear sample).
+    const x = i % fw, y = (i - x) / fw;
+    const sx = Math.max(0, Math.min(fw - 1.001, x - gridAt(sxG, x * k, y * k) / k));
+    const sy = Math.max(0, Math.min(fh - 1.001, y - gridAt(syG, x * k, y * k) / k));
+    const x0 = Math.floor(sx), y0 = Math.floor(sy), ax = sx - x0, ay = sy - y0;
+    const i00 = (y0 * fw + x0) * 3, i01 = i00 + 3, i10 = i00 + fw * 3, i11 = i10 + 3;
+    for (let c = 0; c < 3; c++) {
+      // Local light where enough agreeing area is nearby, else the global one.
+      const conf = Math.min(1, wB[i] / 255 / 0.3);
+      const gLocal = wB[i] > 2 ? Math.min(1.6, Math.max(0.6, (hB[i * 3 + c] + 1) / (aB[i * 3 + c] + 1))) : gGlobal[c];
+      const g = gGlobal[c] + (gLocal - gGlobal[c]) * conf;
+      const a = (A[i00 + c] * (1 - ax) + A[i01 + c] * ax) * (1 - ay) + (A[i10 + c] * (1 - ax) + A[i11 + c] * ax) * ay;
+      out[i * 3 + c] = Math.round(Math.min(255, a * g) * r + H[i * 3 + c] * (1 - r));
+    }
+    if (okA[i] > 0) {
+      view[i * 3] = Math.round(view[i * 3] * 0.45 + 255 * 0.55);
+      view[i * 3 + 1] = Math.round(view[i * 3 + 1] * 0.45);
+      view[i * 3 + 2] = Math.round(view[i * 3 + 2] * 0.45);
+    }
+  }
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    repairedView: await sharp(view, { raw: { width: fw, height: fh, channels: 3 } }).jpeg({ quality: 88 }).toBuffer(),
+    patchesChecked: checked,
+    patchesRepaired: failed,
+    repairPct: Number(repairPct.toFixed(1)),
+    reasons,
+    tooMuchChanged: repairPct > BLEND_MAX_REPAIR_PCT,
+  };
+}
+
 // Phase 3. Starts from the SAFE composite (original room + furniture, no
 // shadows) and only borrows from Gemini's blended image:
 //  - around the furniture: DARKENING only, and only where Gemini's change
@@ -1678,6 +1934,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   let stagedFirstFinal: Buffer | null = null, stagedFirstReverted: Buffer | null = null, hybridFinal: Buffer | null = null;
   let surfaceFinal: Buffer | null = null, structureView: Buffer | null = null;
   let safeFinal: Buffer | null = null, harmRaw: Buffer | null = null, harmFinal: Buffer | null = null;
+  let checkedBlend: Buffer | null = null, checkedBlendView: Buffer | null = null;
 
   try {
     console.log(`[${img.name}] 1/3 stage`);
@@ -1956,8 +2213,34 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       const structure = await checkStructureRetained(original, harmFinal, dilate(affected, w, h, Math.round(w * 0.03)), w, h);
       row.harmonise.structureCheck = structure;
       if (!row.harmonise.structureCheck.retained) console.warn(`[${img.name}] harmonise structure check FAILED: ${JSON.stringify(structure)}`);
+
+      // Checked blend: Gemini's blend as the final, patch-checked and repaired.
+      if (blendUsable && harmRaw) {
+        const zoneAll = new Uint8Array(w * h);
+        for (let i = 0; i < zoneAll.length; i++) zoneAll[i] = hZone[i] | (sunPatchMask ? sunPatchMask[i] : 0);
+        // Checked against (and repaired from) the app-built final: same room
+        // structure as the safe composite, but with sun patches already
+        // softened and shadows in, so repairs near furniture match.
+        const cb = await checkBlend(harmFinal, harmRaw, tSolid, zoneAll, w, h);
+        checkedBlendView = cb.repairedView;
+        fs.writeFileSync(path.join(dir, "11_checked_blend_repairs.jpg"), cb.repairedView);
+        row.checkedBlend = {
+          patchesChecked: cb.patchesChecked,
+          patchesRepaired: cb.patchesRepaired,
+          repairPct: cb.repairPct,
+          reasons: cb.reasons,
+          usedAppBuiltInstead: cb.tooMuchChanged,
+        };
+        if (cb.tooMuchChanged) {
+          console.warn(`[${img.name}] checked blend: ${cb.repairPct}% of patches changed (limit ${BLEND_MAX_REPAIR_PCT}%) — using the app-built final instead`);
+          checkedBlend = harmFinal;
+        } else {
+          checkedBlend = cb.buffer;
+        }
+        fs.writeFileSync(path.join(dir, "11_final_checked_blend.webp"), checkedBlend);
+      }
     }
-    if (MERGE_MODE === "hybrid" || MERGE_MODE === "all" || HARMONISE) {
+    if (MERGE_MODE === "hybrid" || MERGE_MODE === "all") {
       const hy = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h, true);
       hybridFinal = hy.buffer;
       fs.writeFileSync(path.join(dir, "7_final_hybrid.webp"), hy.buffer);
@@ -2000,9 +2283,10 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
           { label: "3. Safe composite (no shadows)", image: safeFinal },
-          { label: "4. Gemini blend (raw, NOT used directly)", image: harmRaw },
-          { label: "5. Hybrid (for comparison)" + reshaped, image: hybridFinal },
-          { label: "6. Harmonise final" + reshaped + (row.harmonise && !row.harmonise.blendUsed ? " - NO SHADOWS" : ""), image: harmFinal },
+          { label: "4. Gemini blend (raw, unchecked)", image: harmRaw },
+          { label: "5. App-built final" + reshaped + (row.harmonise && !row.harmonise.blendUsed ? " - NO SHADOWS" : ""), image: harmFinal },
+          { label: `6. Checked blend: repaired patches (red)${row.checkedBlend ? ` ${row.checkedBlend.repairPct}%` : ""}`, image: checkedBlendView },
+          { label: "7. Checked blend final" + reshaped + (row.checkedBlend?.usedAppBuiltInstead ? " - TOO MANY CHANGES, used 5" : ""), image: checkedBlend },
         ]
       : MERGE_MODE === "all"
       ? [
@@ -2088,4 +2372,4 @@ if (require.main === module) {
     });
 }
 
-export { removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
