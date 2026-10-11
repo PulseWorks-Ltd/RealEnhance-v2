@@ -995,6 +995,138 @@ function buildHarmonisePrompt(roomType: string): string {
   ].join("\n");
 }
 
+// Phase 3a. Sun patches. The original often has a bright patch of direct sun
+// on the floor where the furniture now stands. Gemini's blend removes it (the
+// furniture would block the sun), but the safe composite still shows it, which
+// left half-darkened, blotchy patches. Where Gemini's blend is clearly darker
+// over a bright area next to the furniture (same colour family, original
+// bright), the broad lighting there is taken from the blend while the fine
+// texture stays the original's — so the carpet stays crisp and Gemini's
+// mottling doesn't come through. Darkening only, so nothing can appear.
+async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer) {
+  const meta = await sharp(safe).metadata();
+  const fw = meta.width || 0, fh = meta.height || 0;
+  const N = fw * fh;
+  const u = fw / 1000;
+  const [A, H, solidA, coreA, zoneHard] = await Promise.all([
+    sharp(safe).removeAlpha().raw().toBuffer(),
+    sharp(harmonised).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(solidPng).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer(),
+    sharp(corePng).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer(),
+    sharp(zonePng).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer(),
+  ]);
+  const sums = [0, 0, 0, 0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < N; i++) {
+    if (solidA[i] > 12 || zoneHard[i] > 12) continue;
+    for (let c = 0; c < 3; c++) {
+      sums[c] += A[i * 3 + c];
+      sums[c + 3] += H[i * 3 + c];
+    }
+    count++;
+  }
+  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
+  const Hadj = Buffer.alloc(N * 3);
+  for (let i = 0; i < N * 3; i++) Hadj[i] = Math.min(255, Math.round(H[i] * gains[i % 3]));
+  const [aW, hW, aS] = await Promise.all([
+    sharp(A, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(2, 10 * u)).raw().toBuffer(),
+    sharp(Hadj, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(2, 10 * u)).raw().toBuffer(),
+    // Median, not blur: it smooths the carpet grain but keeps the patch's
+    // sharp edges, so no light/dark outline is left where the patch was.
+    sharp(A, { raw: { width: fw, height: fh, channels: 3 } }).median(Math.max(3, 2 * Math.round(3 * u) + 1)).raw().toBuffer(),
+  ]);
+  // Candidate relit areas, found on a quarter-size grid.
+  const q = 4, qw = Math.max(1, Math.floor(fw / q)), qh = Math.max(1, Math.floor(fh / q));
+  let cand = new Uint8Array(qw * qh);
+  const near = new Uint8Array(qw * qh);
+  for (let qy = 0; qy < qh; qy++) for (let qx = 0; qx < qw; qx++) {
+    const i = qy * q * fw + qx * q, k = qy * qw + qx;
+    if (coreA[i] > 128) continue;
+    if (zoneHard[i] >= 128 || solidA[i] >= 128) near[k] = 1;
+    const a0 = aW[i * 3], a1 = aW[i * 3 + 1], a2 = aW[i * 3 + 2];
+    const h0 = hW[i * 3], h1 = hW[i * 3 + 1], h2 = hW[i * 3 + 2];
+    const la = (a0 + a1 + a2) / 3, lh = (h0 + h1 + h2) / 3;
+    const sa = a0 + a1 + a2 || 1, sh = h0 + h1 + h2 || 1;
+    const chroma = Math.max(Math.abs(a0 / sa - h0 / sh), Math.abs(a1 / sa - h1 / sh), Math.abs(a2 / sa - h2 / sh));
+    const r = lh / Math.max(1, la);
+    if (la >= 70 && r >= 0.3 && r <= 0.85 && chroma <= 0.1) cand[k] = 1;
+  }
+  cand = erode(dilate(cand, qw, qh, 2), qw, qh, 2);
+  const region = new Uint8Array(qw * qh);
+  const minArea = Math.round(qw * qh * 0.002);
+  for (const piece of labelComponents(cand, qw, qh)) {
+    if (piece.pixels.length < minArea) continue;
+    if (!piece.pixels.some((k) => near[k])) continue; // only patches next to the furniture
+    for (const k of piece.pixels) region[k] = 1;
+  }
+  const regionPct = ratioOf(region) * 100;
+  if (regionPct === 0) return { buffer: safe, regionPctOfImage: 0, regionMask: null as Buffer | null };
+  const grown = dilate(region, qw, qh, 3);
+  const regionPx = Buffer.alloc(qw * qh);
+  for (let k = 0; k < qw * qh; k++) regionPx[k] = grown[k] ? 255 : 0;
+  const regionSoft = await sharp(regionPx, { raw: { width: qw, height: qh, channels: 1 } })
+    .resize(fw, fh, { fit: "fill" })
+    .blur(Math.max(1, 6 * u))
+    .grayscale()
+    .raw()
+    .toBuffer();
+  const out = Buffer.from(A);
+  // The bright patch itself (original clearly brighter than the blend's light).
+  const patch = Buffer.alloc(N, 0);
+  for (let i = 0; i < N; i++) {
+    const m = (regionSoft[i] / 255) * (1 - coreA[i] / 255);
+    if (m <= 0) continue;
+    const la = aS[i * 3] + aS[i * 3 + 1] + aS[i * 3 + 2], lh = hW[i * 3] + hW[i * 3 + 1] + hW[i * 3 + 2];
+    if (m > 0.5 && solidA[i] < 128 && la > lh * 1.15) patch[i] = 255;
+    for (let c = 0; c < 3; c++) {
+      // Broad light from the blend, fine texture from the original.
+      const f = Math.min(1, Math.max(0.35, (hW[i * 3 + c] + 1) / (aS[i * 3 + c] + 1)));
+      out[i * 3 + c] = Math.round(A[i * 3 + c] * (1 - m + m * f));
+    }
+  }
+  // Second step: match the old patch to the real floor right around it (the
+  // blend can leave it a touch lighter, showing a faint rectangle). The
+  // surrounding floor's colour is spread into the patch (furniture and the
+  // patch itself excluded) and the patch is scaled to match — darkening only.
+  // Include the patch's soft edge and the thin shade lines inside it (window
+  // frame shadows between sun squares), otherwise they show as faint outlines.
+  let patchBin = new Uint8Array(N);
+  for (let i = 0; i < N; i++) patchBin[i] = patch[i] ? 1 : 0;
+  const rClose = Math.max(2, Math.round(8 * u));
+  patchBin = erode(dilate(patchBin, fw, fh, rClose), fw, fh, rClose);
+  patchBin = dilate(patchBin, fw, fh, Math.max(1, Math.round(2.5 * u)));
+  for (let i = 0; i < N; i++) patch[i] = patchBin[i] && coreA[i] < 128 ? 255 : 0;
+  const patchGrown = await sharp(patch, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 1.5 * u)).grayscale().raw().toBuffer();
+  const known = Buffer.alloc(N, 0);
+  const knownRgb = Buffer.alloc(N * 3, 0);
+  for (let i = 0; i < N; i++) {
+    if (patchGrown[i] > 8 || solidA[i] > 8) continue;
+    known[i] = 255;
+    for (let c = 0; c < 3; c++) knownRgb[i * 3 + c] = out[i * 3 + c];
+  }
+  const [num, den, oMed] = await Promise.all([
+    sharp(knownRgb, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(2, 15 * u)).raw().toBuffer(),
+    sharp(known, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 15 * u)).grayscale().raw().toBuffer(),
+    sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).median(Math.max(3, 2 * Math.round(3 * u) + 1)).raw().toBuffer(),
+  ]);
+  const patchSoft = await sharp(patch, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 2 * u)).grayscale().raw().toBuffer();
+  for (let i = 0; i < N; i++) {
+    const m = (patchSoft[i] / 255) * (1 - coreA[i] / 255);
+    if (m <= 0 || den[i] < 20) continue;
+    for (let c = 0; c < 3; c++) {
+      // num/den = average surrounding floor colour (the known weight is 255).
+      const target = (num[i * 3 + c] * 255) / den[i];
+      const f = Math.min(1, Math.max(0.6, (target + 1) / (oMed[i * 3 + c] + 1)));
+      out[i * 3 + c] = Math.round(out[i * 3 + c] * (1 - m + m * f));
+    }
+  }
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    regionPctOfImage: Number(regionPct.toFixed(1)),
+    regionMask: await sharp(regionPx, { raw: { width: qw, height: qh, channels: 1 } }).png().toBuffer(),
+  };
+}
+
 // Phase 3. Starts from the SAFE composite (original room + furniture, no
 // shadows) and only borrows from Gemini's blended image:
 //  - around the furniture: DARKENING only, and only where Gemini's change
@@ -1727,8 +1859,18 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           console.warn(`[${img.name}] Gemini's blend reframed the room (median ${framing.medianDiff}) — using the safe composite without shadows`);
         }
       }
+      let sunPatchMask: Uint8Array | null = null;
       if (blendUsable) {
-        const hm = await compositeHarmonise(safeFinal, harmRaw!, tSolidPng, tCorePng, await maskToPng(hZone, w, h));
+        const hZonePng = await maskToPng(hZone, w, h);
+        const sun = await removeSunPatches(safeFinal, harmRaw!, tSolidPng, tCorePng, hZonePng);
+        row.harmonise.sunPatchPctOfImage = sun.regionPctOfImage;
+        if (sun.regionMask) {
+          fs.writeFileSync(path.join(dir, "9_sun_patch_region.png"), sun.regionMask);
+          const m = await sharp(sun.regionMask).resize(w, h, { fit: "fill" }).grayscale().raw().toBuffer();
+          sunPatchMask = new Uint8Array(w * h);
+          for (let i = 0; i < w * h; i++) sunPatchMask[i] = m[i] > 0 ? 1 : 0;
+        }
+        const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, tCorePng, hZonePng);
         harmFinal = hm.buffer;
         Object.assign(row.harmonise, {
           blendUsed: true,
@@ -1747,6 +1889,8 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       // Structure check: outside the furniture and its shadow zone (plus the
       // soft fade at its edge) the final must be the original photo — only
       // resize/compression noise allowed.
+      // Sun patches softened next to the furniture are lighting, not structure.
+      if (sunPatchMask) for (let i = 0; i < affected.length; i++) affected[i] |= sunPatchMask[i];
       const structure = await checkStructureRetained(original, harmFinal, dilate(affected, w, h, Math.round(w * 0.03)), w, h);
       row.harmonise.structureCheck = structure;
       if (!row.harmonise.structureCheck.retained) console.warn(`[${img.name}] harmonise structure check FAILED: ${JSON.stringify(structure)}`);
@@ -1882,4 +2026,4 @@ if (require.main === module) {
     });
 }
 
-export { checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
