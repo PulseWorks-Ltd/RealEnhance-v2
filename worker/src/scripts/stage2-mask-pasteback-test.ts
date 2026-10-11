@@ -30,6 +30,7 @@
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   PAIR_MODE=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts "baseline.jpg:bedroom|failed_staged.jpg"
 //     (no staging: traces the furniture in the failed image and pastes it onto the baseline)
+//   MERGE_MODE=both  (or staged_first) also builds the staged-first result: start from the staged image, revert room changes
 //   DEBUG_LAYERS_DIR=/some/folder  saves the merge's decision maps (solid, core, zone, take, factor) there
 //   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "C:/photos/lounge.jpg:living_room"
@@ -123,6 +124,13 @@ const CORE_ERODE_PCT = Number(process.env.CORE_ERODE_PCT || 0.6); // % of width
 const ZONE_GROW_PCT = Number(process.env.ZONE_GROW_PCT || 2); // % of width, all round
 const ZONE_DOWN_PCT = Number(process.env.ZONE_DOWN_PCT || 4); // % of height, extra downwards
 const FEATHER_PX = Number(process.env.FEATHER_PX || 1.5); // at the 2K output size
+// MERGE_MODE:
+//   original_first (default) — start from the original photo, add furniture,
+//     art and shadows from the staged image.
+//   staged_first — start from the staged image (natural shadows/lighting) and
+//     revert to the original anywhere the room itself changed.
+//   both — produce both, side by side in the comparison sheet.
+const MERGE_MODE = (process.env.MERGE_MODE || "original_first").toLowerCase();
 // Wall-art safety checks, calibrated on the failed-pair and fresh-staging test
 // images: bare wall scores 0 on the busiest patch, while windows, doors, a
 // fireplace corbel, switches/power points and wall corners score 33-96; the
@@ -688,6 +696,120 @@ async function compositeLayers(
   };
 }
 
+// ── Staged-first merge ───────────────────────────────────────────────────────
+
+// Starts from the STAGED image, so Gemini's shadows, contact shading and room
+// lighting stay exactly as rendered. Then, outside the furniture/kept art,
+// every area where the ROOM ITSELF changed is reverted to the original photo:
+//   unchanged (only lighting/texture noise) -> keep staged
+//   looks like a shadow (same colour/texture, darker) -> keep staged
+//   anything else (removed wall, new door/opening, added light, changed
+//   frame, dropped wall art) -> revert to the original
+// Decided by neighbourhood so carpet/tile texture noise doesn't trigger it.
+// Reverted pieces are colour-matched to the staged lighting so they blend.
+async function compositeStagedFirst(original: Buffer, staged: Buffer, solidPng: Buffer, srcW: number, srcH: number) {
+  const stagedMeta = await sharp(staged).metadata();
+  const fw = stagedMeta.width || srcW;
+  const fh = Math.round((fw * srcH) / srcW);
+  const scale = fw / srcW;
+  const N = fw * fh;
+  const [orig, stg, solidA] = await Promise.all([
+    sharp(original).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(solidPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
+  ]);
+  // Overall lighting difference (original vs staged) on non-furniture areas.
+  const sums = [0, 0, 0, 0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < N; i++) {
+    if (solidA[i] > 12) continue;
+    for (let c = 0; c < 3; c++) {
+      sums[c] += orig[i * 3 + c];
+      sums[c + 3] += stg[i * 3 + c];
+    }
+    count++;
+  }
+  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
+  // Staged brought to the original's lighting, for comparison only.
+  const stgCmp = Buffer.alloc(N * 3);
+  for (let i = 0; i < N * 3; i++) stgCmp[i] = Math.min(255, Math.round(stg[i] * gains[i % 3]));
+  const [oBlur, sBlur] = await Promise.all([
+    sharp(orig, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(0.6, 1.5 * scale)).raw().toBuffer(),
+    sharp(stgCmp, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(0.6, 1.5 * scale)).raw().toBuffer(),
+  ]);
+  // Texture comparison (same idea as the shadow test in compositeLayers).
+  const lum = (buf: Buffer) => {
+    const out = Buffer.alloc(N);
+    for (let i = 0; i < N; i++) out[i] = Math.round((buf[i * 3] + buf[i * 3 + 1] + buf[i * 3 + 2]) / 3);
+    return out;
+  };
+  const oLum = lum(orig), sLum = lum(stgCmp);
+  const [oLumBlur, sLumBlur] = await Promise.all([
+    sharp(oLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer(),
+    sharp(sLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer(),
+  ]);
+  const texRaw = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) {
+    const r = oLumBlur[i] > 0 ? sLumBlur[i] / oLumBlur[i] : 1;
+    texRaw[i] = Math.min(255, Math.round(Math.abs(sLum[i] - sLumBlur[i] - (oLum[i] - oLumBlur[i]) * r) * 4));
+  }
+  const tex = await sharp(texRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer();
+
+  const changedRaw = Buffer.alloc(N, 0);
+  for (let i = 0; i < N; i++) {
+    if (solidA[i] > 200) continue;
+    const o0 = oBlur[i * 3], o1 = oBlur[i * 3 + 1], o2 = oBlur[i * 3 + 2];
+    const t0 = sBlur[i * 3], t1 = sBlur[i * 3 + 1], t2 = sBlur[i * 3 + 2];
+    const diff = Math.max(Math.abs(o0 - t0), Math.abs(o1 - t1), Math.abs(o2 - t2));
+    if (diff <= 14) continue; // unchanged
+    const lo = (o0 + o1 + o2) / 3, ls = (t0 + t1 + t2) / 3;
+    const so = o0 + o1 + o2 || 1, st = t0 + t1 + t2 || 1;
+    const chroma = Math.max(Math.abs(o0 / so - t0 / st), Math.abs(o1 / so - t1 / st), Math.abs(o2 / so - t2 / st));
+    const ratio = ls / Math.max(1, lo);
+    const sameSurface = chroma <= 0.05 && tex[i] <= 20;
+    if (sameSurface && lo >= 15 && ratio >= 0.15 && ratio <= 1.12) continue; // shadow or lighting change on the same surface
+    changedRaw[i] = 255;
+  }
+  // Neighbourhood decision, then clean up: drop specks, grow slightly so the
+  // whole changed feature is covered, soften the edge.
+  const score = await sharp(changedRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 4 * scale)).grayscale().raw().toBuffer();
+  let revert = new Uint8Array(N);
+  for (let i = 0; i < N; i++) revert[i] = score[i] > 110 && solidA[i] < 128 ? 1 : 0;
+  revert = removeSmallComponents(revert, fw, fh, Math.round(N * 0.0005));
+  revert = dilate(revert, fw, fh, Math.max(1, Math.round(fw * 0.005)));
+  const revertPx = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) revertPx[i] = revert[i] ? 255 : 0;
+  const revertA = await sharp(revertPx, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * scale)).grayscale().raw().toBuffer();
+
+  const out = Buffer.alloc(N * 3);
+  let reverted = 0;
+  for (let i = 0; i < N; i++) {
+    const r = (revertA[i] / 255) * (1 - solidA[i] / 255);
+    if (r > 0.5) reverted++;
+    for (let c = 0; c < 3; c++) {
+      // Original brought to the staged lighting so the reverted piece blends.
+      const o = Math.min(255, orig[i * 3 + c] / gains[c]);
+      out[i * 3 + c] = Math.round(stg[i * 3 + c] * (1 - r) + o * r);
+    }
+  }
+  // Panel: what was reverted (red) on the staged image.
+  const vis = Buffer.from(stg);
+  for (let i = 0; i < N; i++) {
+    const r = (revertA[i] / 255) * (1 - solidA[i] / 255);
+    if (r < 0.5) continue;
+    vis[i * 3] = Math.round(vis[i * 3] * 0.4 + 255 * 0.6);
+    vis[i * 3 + 1] = Math.round(vis[i * 3 + 1] * 0.4);
+    vis[i * 3 + 2] = Math.round(vis[i * 3 + 2] * 0.4 + 40 * 0.6);
+  }
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    revertedView: await sharp(vis, { raw: { width: fw, height: fh, channels: 3 } }).jpeg({ quality: 88 }).toBuffer(),
+    width: fw,
+    height: fh,
+    revertedPct: Number(((reverted / N) * 100).toFixed(1)),
+  };
+}
+
 // Panel 3: furniture red, kept wall art blue, dropped wall art orange.
 async function layersOverlay(staged: Buffer, floor: Uint8Array, artKept: Uint8Array, artDropped: Uint8Array, w: number, h: number): Promise<Buffer> {
   const raw = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
@@ -898,6 +1020,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   fs.writeFileSync(path.join(dir, `1_original${path.extname(img.file)}`), original);
   const row: any = { image: img.name, roomType: img.roomType, input: `${w}x${h}`, aspectRatio };
   let staged: Buffer | null = null, traced: Buffer | null = null, undone: Buffer | null = null, final: Buffer | null = null;
+  let stagedFirstFinal: Buffer | null = null, stagedFirstReverted: Buffer | null = null;
 
   try {
     console.log(`[${img.name}] 1/3 stage`);
@@ -1013,6 +1136,14 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     row.colourGains = pasted.colourGains;
     row.shadowPctOfZone = pasted.shadowPctOfZone;
     row.edgeBandStagedPct = pasted.edgeBandStagedPct;
+    if (MERGE_MODE === "staged_first" || MERGE_MODE === "both") {
+      const sf = await compositeStagedFirst(original, staged, solidPng, w, h);
+      stagedFirstFinal = sf.buffer;
+      stagedFirstReverted = sf.revertedView;
+      fs.writeFileSync(path.join(dir, "6_final_staged_first.webp"), sf.buffer);
+      fs.writeFileSync(path.join(dir, "6_staged_first_reverted.jpg"), sf.revertedView);
+      row.stagedFirst = { revertedPctOfImage: sf.revertedPct };
+    }
     // A big average change across the untouched room usually means Gemini
     // re-lit or slightly reframed the photo, which can leave visible seams.
     if (row.stagedChangesOutsideMask.meanAbsoluteDelta > 8) {
@@ -1035,18 +1166,33 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       console.warn(`[${img.name}] old attempt not found: ${img.previousFile}`);
     }
   }
-  const sheet = await contactSheet(
-    [
-      ...(previous ? [{ label: "0. Old failed attempt", image: previous }] : []),
-      { label: "1. Original", image: original },
-      { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
-      { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
-      { label: "4. Room changes removed (red)", image: undone },
-      { label: row.framingCheck?.framingChanged ? "5. Final - ROOM RESHAPED, re-stage" : "5. Final (pasted back)", image: final },
-    ],
-    w,
-    h
-  );
+  const reshaped = row.framingCheck?.framingChanged ? " - RESHAPED, re-stage" : "";
+  const panels =
+    MERGE_MODE === "both"
+      ? [
+          { label: "1. Original", image: original },
+          { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
+          { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
+          { label: "4. Original-first result" + reshaped, image: final },
+          { label: "5. Staged-first: reverted areas (red)", image: stagedFirstReverted },
+          { label: "6. Staged-first result" + reshaped, image: stagedFirstFinal },
+        ]
+      : [
+          ...(previous ? [{ label: "0. Old failed attempt", image: previous }] : []),
+          { label: "1. Original", image: original },
+          { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
+          { label: "3. Furniture red / art kept blue / dropped orange", image: traced },
+          ...(MERGE_MODE === "staged_first"
+            ? [
+                { label: "4. Staged-first: reverted areas (red)", image: stagedFirstReverted },
+                { label: "5. Staged-first result" + reshaped, image: stagedFirstFinal },
+              ]
+            : [
+                { label: "4. Room changes removed (red)", image: undone },
+                { label: row.framingCheck?.framingChanged ? "5. Final - ROOM RESHAPED, re-stage" : "5. Final (pasted back)", image: final },
+              ]),
+        ];
+  const sheet = await contactSheet(panels, w, h);
   fs.writeFileSync(path.join(OUT, `${img.name}__compare.jpg`), sheet);
   row.seconds = (Date.now() - t0) / 1000;
   console.log("RESULT", JSON.stringify(row));
@@ -1082,4 +1228,4 @@ if (require.main === module) {
     });
 }
 
-export { refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
