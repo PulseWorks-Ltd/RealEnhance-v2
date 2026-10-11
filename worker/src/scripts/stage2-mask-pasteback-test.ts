@@ -140,7 +140,21 @@ const FEATHER_PX = Number(process.env.FEATHER_PX || 1.5); // at the 2K output si
 //     walls, ceiling, openings and fixtures come entirely from the original.
 //     Cuts follow the room's own lines (snapped to the skirting edge).
 //   all — original-first, hybrid and surface side by side.
+//   harmonise — three phases: (1) furniture traced TIGHTLY (no shadows) and
+//     pasted onto the original = a structurally safe image with no shadows;
+//     (2) Gemini is asked only to add shadows / blend the lighting of that
+//     image; (3) Gemini's result is NEVER published directly — it is only used
+//     as a donor for soft darkening near the furniture and for the furniture's
+//     lighting. Walls, windows, doors and fixtures always stay the original's.
 const MERGE_MODE = (process.env.MERGE_MODE || "original_first").toLowerCase();
+const HARMONISE = MERGE_MODE === "harmonise";
+const HARMONISE_MODEL = process.env.HARMONISE_MODEL || "gemini-3.1-flash-image";
+const HARMONISE_IMAGE_SIZE = (process.env.HARMONISE_IMAGE_SIZE || "2K").toUpperCase();
+// Where Gemini's shadows may be used: around the furniture (% of width) and
+// extra downwards (% of height). Darkening is never stronger than MAX_SHADOW.
+const HARM_ZONE_GROW_PCT = Number(process.env.HARM_ZONE_GROW_PCT || 8);
+const HARM_ZONE_DOWN_PCT = Number(process.env.HARM_ZONE_DOWN_PCT || 10);
+const HARM_MAX_SHADOW = Number(process.env.HARM_MAX_SHADOW || 0.65);
 // Wall-art safety checks, calibrated on the failed-pair and fresh-staging test
 // images: bare wall scores 0 on the busiest patch, while windows, doors, a
 // fireplace corbel, switches/power points and wall corners score 33-96; the
@@ -156,7 +170,9 @@ const CHANGE_THRESHOLD = 18;
 // MEDIAN patch is above REFRAMED_MEDIAN_DIFF — a median ignores a few locally
 // changed spots (a removed window) but not a moved/reshaped room. Calibrated
 // on Test Images/Stage2_2K_Comparison: the two reframed results scored 28.9
-// and 30.9, the ten good ones 10.2 or lower.
+// and 30.9, the ten good ones 10.2 or lower. Re-checked after fixing the mask
+// read (furniture tiles are now properly skipped): reshaped Bedroom12 scores
+// 20, the five good photos in Stage2_MaskPasteback 6.4 or lower.
 const CHANGED_TILE_DIFF = 12;
 const REFRAMED_MEDIAN_DIFF = Number(process.env.REFRAMED_MEDIAN_DIFF || 15);
 // Gemini 3.1 Flash Image output tokens, USD per 1M (Google pricing page, Oct 2026).
@@ -251,7 +267,10 @@ function buildTracePrompt(roomType: string, targets: string, kind: TraceKind = "
     "- Output ONLY the binary mask — do NOT return the staged image or the empty image",
     kind === "wall_art"
       ? "- Mark the full outline of each hung item, including its frame, as white"
+      : HARMONISE
+      ? "- Trace each furniture object tightly along its own visible edges, including rugs on the floor"
       : "- Mark the furniture silhouette and footprint regions as white, including rugs on the floor",
+    ...(HARMONISE ? ["- Do NOT include shadows the objects cast on the floor or walls — shadows stay black"] : []),
     "- Do NOT mark changes to the room itself, even if the two images differ there: windows, doors, openings, walls, ceilings, light fittings, curtains, blinds and built-in fixtures stay black",
     ...kindRules,
     `Room type: ${roomType.replace(/_/g, " ")}`,
@@ -394,6 +413,37 @@ function removeSmallComponents(src: Uint8Array, w: number, h: number, minArea: n
       }
     }
     if (members.length < minArea) for (const i of members) out[i] = 0;
+  }
+  return out;
+}
+
+// Fills holes that are completely enclosed by the mask (a coffee table traced
+// black on top of a white rug, the gap inside a chair outline), but only small
+// ones, so a large area of room surrounded by furniture is never swallowed.
+function fillEnclosedHoles(src: Uint8Array, w: number, h: number, maxHoleArea: number): Uint8Array {
+  const out = src.slice();
+  const seen = new Uint8Array(w * h);
+  const stack = new Int32Array(w * h);
+  for (let start = 0; start < w * h; start++) {
+    if (src[start] || seen[start]) continue;
+    let sp = 0;
+    stack[sp++] = start;
+    seen[start] = 1;
+    const members: number[] = [];
+    let touchesBorder = false;
+    while (sp > 0) {
+      const i = stack[--sp];
+      members.push(i);
+      const x = i % w, y = (i - x) / w;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) touchesBorder = true;
+      const neighbours = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+      for (const n of neighbours) {
+        if (n < 0 || n >= w * h || seen[n] || src[n]) continue;
+        seen[n] = 1;
+        stack[sp++] = n;
+      }
+    }
+    if (!touchesBorder && members.length <= maxHoleArea) for (const i of members) out[i] = 1;
   }
   return out;
 }
@@ -920,6 +970,176 @@ async function compositeSurface(original: Buffer, staged: Buffer, floorSurface: 
   };
 }
 
+// ── Harmonise (phase 2 prompt + phase 3 merge) ──────────────────────────────
+
+function buildHarmonisePrompt(roomType: string): string {
+  return [
+    "Edit this photograph. Return the edited photograph as an IMAGE ONLY. No text.",
+    "",
+    "This is a real estate photo of a room where furniture has just been placed into the empty room.",
+    "The furniture currently looks pasted in: it casts no shadows and its lighting may not match the room.",
+    "",
+    "Task: make the furniture sit naturally in the room.",
+    "- Add realistic contact shadows where the furniture touches the floor.",
+    "- Add soft shadows cast by the furniture onto the floor and nearby walls, matching the direction, colour and softness of the room's existing light (windows, doors, lamps).",
+    "- Gently adjust the lighting and shading on the furniture so it matches the light in the room.",
+    "",
+    "Strict rules:",
+    "- Do NOT add, remove, move, resize, replace or restyle anything. No new furniture, decor, rugs, plants, artwork, lamps, lights or fixtures.",
+    "- Do NOT change the walls, ceiling, floor material or colour, windows, doors, doorways, openings, curtains, blinds, light fittings, switches or any built-in features.",
+    "- Do NOT change the view through windows or doorways.",
+    "- Keep exactly the same camera angle, framing, perspective and image proportions.",
+    "- Do not brighten, darken or recolour the whole image; only add shadows and blend the furniture's lighting.",
+    "- The result must look like one real, professional photograph.",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
+// Phase 3. Starts from the SAFE composite (original room + furniture, no
+// shadows) and only borrows from Gemini's blended image:
+//  - around the furniture: DARKENING only, and only where Gemini's change
+//    looks like a shadow on the same surface (same colour and texture, just
+//    darker), decided by neighbourhood so it comes out smooth;
+//  - on the furniture itself: Gemini's broad lighting (a soft brightness
+//    change), never its pixels, so the furniture stays crisp and in place.
+// Nothing outside the shadow zone and the furniture can change at all, so a
+// window, door or wall Gemini altered in its blend can never come through.
+async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer) {
+  const meta = await sharp(safe).metadata();
+  const fw = meta.width || 0, fh = meta.height || 0;
+  const N = fw * fh;
+  const u = fw / 1000; // blur sizes scale with the output width
+  const [A, H, solidA, coreA, zoneHard, zoneSoft] = await Promise.all([
+    sharp(safe).removeAlpha().raw().toBuffer(),
+    sharp(harmonised).removeAlpha().resize(fw, fh, { fit: "fill", kernel: sharp.kernel.lanczos3 }).raw().toBuffer(),
+    sharp(solidPng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
+    sharp(corePng).resize(fw, fh, { fit: "fill" }).blur(Math.max(0.3, FEATHER_PX)).grayscale().raw().toBuffer(),
+    sharp(zonePng).resize(fw, fh, { fit: "fill" }).grayscale().raw().toBuffer(),
+    // Wide soft fade so the borrowed shadow has no visible edge.
+    sharp(zonePng).resize(fw, fh, { fit: "fill" }).blur(Math.max(1, 12 * u)).grayscale().raw().toBuffer(),
+  ]);
+  // Overall colour/brightness shift of Gemini's blend, measured far from the
+  // furniture, removed first so a general re-light is not mistaken for shadow.
+  const sums = [0, 0, 0, 0, 0, 0];
+  let count = 0;
+  for (let i = 0; i < N; i++) {
+    if (solidA[i] > 12 || zoneHard[i] > 12) continue;
+    for (let c = 0; c < 3; c++) {
+      sums[c] += A[i * 3 + c];
+      sums[c + 3] += H[i * 3 + c];
+    }
+    count++;
+  }
+  const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
+  const Hadj = Buffer.alloc(N * 3);
+  for (let i = 0; i < N * 3; i++) Hadj[i] = Math.min(255, Math.round(H[i] * gains[i % 3]));
+
+  const [aB, hB] = await Promise.all([
+    sharp(A, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(0.6, 1.5 * u)).raw().toBuffer(),
+    sharp(Hadj, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(0.6, 1.5 * u)).raw().toBuffer(),
+  ]);
+  const lum = (buf: Buffer) => {
+    const out = Buffer.alloc(N);
+    for (let i = 0; i < N; i++) out[i] = Math.round((buf[i * 3] + buf[i * 3 + 1] + buf[i * 3 + 2]) / 3);
+    return out;
+  };
+  const aLum = lum(A), hLum = lum(Hadj);
+  const [aLumBlur, hLumBlur, aLumWide, hLumWide] = await Promise.all([
+    sharp(aLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer(),
+    sharp(hLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer(),
+    sharp(aLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
+    sharp(hLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
+  ]);
+  const texRaw = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) {
+    const r = aLumBlur[i] > 0 ? hLumBlur[i] / aLumBlur[i] : 1;
+    texRaw[i] = Math.min(255, Math.round(Math.abs(hLum[i] - hLumBlur[i] - (aLum[i] - aLumBlur[i]) * r) * 4));
+  }
+  const tex = await sharp(texRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer();
+
+  // Shadow test, outside the furniture core.
+  const known = Buffer.alloc(N, 0);
+  const knownFactor = Buffer.alloc(N, 0);
+  let zonePixels = 0, shadowPixels = 0, coreN = 0, coreDiffSum = 0;
+  for (let i = 0; i < N; i++) {
+    const t0 = aB[i * 3], t1 = aB[i * 3 + 1], t2 = aB[i * 3 + 2];
+    const h0 = hB[i * 3], h1 = hB[i * 3 + 1], h2 = hB[i * 3 + 2];
+    if (coreA[i] > 200) {
+      // How closely Gemini kept the furniture itself (if it redrew or moved
+      // it, its lighting can't be borrowed safely).
+      coreN++;
+      coreDiffSum += Math.max(Math.abs(t0 - h0), Math.abs(t1 - h1), Math.abs(t2 - h2));
+      continue;
+    }
+    if (zoneHard[i] < 8 && solidA[i] < 8) continue;
+    if (zoneHard[i] >= 8) zonePixels++;
+    const la = (t0 + t1 + t2) / 3, lh = (h0 + h1 + h2) / 3;
+    const sa = t0 + t1 + t2 || 1, sh = h0 + h1 + h2 || 1;
+    const chroma = Math.max(Math.abs(t0 / sa - h0 / sh), Math.abs(t1 / sa - h1 / sh), Math.abs(t2 / sa - h2 / sh));
+    const ratio = lh / Math.max(1, la);
+    const chromaLimit = ratio < 0.65 ? 0.09 : 0.05;
+    if (la >= 15 && ratio >= 0.2 && ratio <= 0.98 && chroma <= chromaLimit && tex[i] <= 20) {
+      known[i] = 255;
+      knownFactor[i] = Math.round(Math.max(1 - HARM_MAX_SHADOW, ratio) * 255);
+      if (zoneHard[i] >= 8) shadowPixels++;
+    } else if (la >= 15 && Math.abs(ratio - 1) <= 0.02 && chroma <= 0.05) {
+      // Unchanged surface: counts as "no shadow here" in the average.
+      known[i] = 255;
+      knownFactor[i] = 255;
+    }
+  }
+  const [numBlur, denBlur, denWide] = await Promise.all([
+    sharp(knownFactor, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 5 * u)).grayscale().raw().toBuffer(),
+    sharp(known, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 5 * u)).grayscale().raw().toBuffer(),
+    // Wide version of the agreement map, so the yes/no decision itself is soft
+    // and can't flicker on and off across the carpet (patchy shadows).
+    sharp(known, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 12 * u)).grayscale().raw().toBuffer(),
+  ]);
+  const coreDiff = coreN ? coreDiffSum / coreN : 0;
+  // Calibrate: at or below this average difference Gemini kept the furniture.
+  const furnitureKept = coreN > 0 && coreDiff <= 25;
+
+  // Shadow: neighbourhood-average darkening where most of the wider area
+  // agrees it is a shadow (ramps in between 30% and 60% agreement), then the
+  // whole shadow map is softened once more so it has no blotches or hard edges.
+  const darkRaw = Buffer.alloc(N, 0);
+  for (let i = 0; i < N; i++) {
+    const ca = coreA[i] / 255, sa = solidA[i] / 255, za = zoneSoft[i] / 255;
+    const avg = denBlur[i] > 4 ? Math.min(1, numBlur[i] / denBlur[i]) : 1;
+    const agreement = Math.min(1, Math.max(0, (denWide[i] / 255 - 0.3) / 0.3));
+    const where = Math.max(za, sa) * (1 - ca);
+    darkRaw[i] = Math.round(Math.min(HARM_MAX_SHADOW, (1 - avg) * agreement * where) * 255);
+  }
+  const darkMap = await sharp(darkRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 4 * u)).grayscale().raw().toBuffer();
+
+  const out = Buffer.alloc(N * 3);
+  let maxDark = 0, lightingChangedPx = 0;
+  for (let i = 0; i < N; i++) {
+    const ca = coreA[i] / 255;
+    // Keep the furniture's own pixels free of borrowed floor shadow.
+    const dark = (darkMap[i] / 255) * (1 - ca);
+    if (dark > maxDark) maxDark = dark;
+    // Furniture lighting: Gemini's broad brightness change on the furniture.
+    let light = 1;
+    if (furnitureKept && ca > 0) {
+      const r = Math.min(1.2, Math.max(0.8, (hLumWide[i] + 1) / (aLumWide[i] + 1)));
+      light = 1 + (r - 1) * ca;
+      if (Math.abs(light - 1) > 0.03) lightingChangedPx++;
+    }
+    const f = (1 - dark) * light;
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.min(255, Math.round(A[i * 3 + c] * f));
+  }
+  return {
+    buffer: await sharp(out, { raw: { width: fw, height: fh, channels: 3 } }).webp({ quality: 95 }).toBuffer(),
+    colourGains: gains.map((g2) => Number(g2.toFixed(3))),
+    shadowPctOfZone: zonePixels ? Number(((shadowPixels / zonePixels) * 100).toFixed(1)) : 0,
+    strongestShadowPct: Math.round(maxDark * 100),
+    furnitureDiffVsBlend: Number(coreDiff.toFixed(1)),
+    furnitureLightingUsed: furnitureKept,
+    furnitureLightingChangedPctOfImage: Number(((lightingChangedPx / N) * 100).toFixed(1)),
+  };
+}
+
 // ── Staged-first merge ───────────────────────────────────────────────────────
 
 // Starts from the STAGED image, so Gemini's shadows, contact shading and room
@@ -1125,7 +1345,7 @@ async function checkFraming(original: Buffer, staged: Buffer, mask: Uint8Array, 
   const [a, b, m] = await Promise.all([
     sharp(original).removeAlpha().resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
     sharp(staged).removeAlpha().resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
-    sharp(await maskToPng(mask, w, h)).resize(sw, sh, { fit: "fill" }).raw().toBuffer(),
+    sharp(await maskToPng(mask, w, h)).resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
   ]);
   const tile = 40, maxShift = 2;
   const diffs: number[] = [];
@@ -1162,6 +1382,28 @@ async function checkFraming(original: Buffer, staged: Buffer, mask: Uint8Array, 
   const sorted = [...diffs].sort((x, y) => x - y);
   const medianDiff = sorted.length ? Number(sorted[Math.floor(sorted.length / 2)].toFixed(1)) : 0;
   return { tilesChecked: checked, tilesChanged: changed, changedPct, medianDiff, framingChanged: checked >= 6 && medianDiff > REFRAMED_MEDIAN_DIFF };
+}
+
+// Harmonise structure check: outside the given mask, does the final still show
+// the original room? Compared at 640px wide and lightly softened, so carpet
+// grain and resize/compression noise don't count, but a moved or removed
+// window, door, wall or fixture does.
+async function checkStructureRetained(original: Buffer, final: Buffer, mask: Uint8Array, w: number, h: number) {
+  const sw = 640, sh = Math.max(1, Math.round((sw * h) / w));
+  const [a, b, m] = await Promise.all([
+    sharp(original).removeAlpha().resize(sw, sh, { fit: "fill" }).blur(1).raw().toBuffer(),
+    sharp(final).removeAlpha().resize(sw, sh, { fit: "fill" }).blur(1).raw().toBuffer(),
+    sharp(await maskToPng(mask, w, h)).resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
+  ]);
+  let outside = 0, changed = 0;
+  for (let i = 0; i < sw * sh; i++) {
+    if (m[i] > 0) continue;
+    outside++;
+    const d = Math.max(Math.abs(a[i * 3] - b[i * 3]), Math.abs(a[i * 3 + 1] - b[i * 3 + 1]), Math.abs(a[i * 3 + 2] - b[i * 3 + 2]));
+    if (d >= CHANGE_THRESHOLD) changed++;
+  }
+  const changedPixelPct = Number(((changed / Math.max(1, outside)) * 100).toFixed(2));
+  return { checkedPctOfImage: Number(((outside / (sw * sh)) * 100).toFixed(1)), changedPixelPct, retained: changedPixelPct < 0.5 };
 }
 
 // Red where the raw staged image changed the room OUTSIDE the furniture mask —
@@ -1246,6 +1488,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   let staged: Buffer | null = null, traced: Buffer | null = null, undone: Buffer | null = null, final: Buffer | null = null;
   let stagedFirstFinal: Buffer | null = null, stagedFirstReverted: Buffer | null = null, hybridFinal: Buffer | null = null;
   let surfaceFinal: Buffer | null = null, structureView: Buffer | null = null;
+  let safeFinal: Buffer | null = null, harmRaw: Buffer | null = null, harmFinal: Buffer | null = null;
 
   try {
     console.log(`[${img.name}] 1/3 stage`);
@@ -1325,6 +1568,9 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     for (const p of passes) if (p.kind === "floor") for (let i = 0; i < floor.length; i++) floor[i] |= p.mask[i] & (artAll[i] ^ 1);
     floor = removeSmallComponents(floor, w, h, minSpeck);
     const tracedRatio = ratioOf(floor);
+    // Harmonise keeps the tight outline (only small enclosed holes filled), so
+    // no floor or shadow from the staged image comes along with the furniture.
+    const tightFloor = HARMONISE ? fillEnclosedHoles(floor, w, h, Math.round(w * h * 0.02)) : null;
     floor = fillFurnitureColumns(floor, w, h);
     const furnitureRatio = ratioOf(floor);
     fs.writeFileSync(path.join(dir, "3_mask_traced.png"), await maskToPng(floor, w, h));
@@ -1421,7 +1667,91 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
         }
       }
     }
-    if (MERGE_MODE === "hybrid" || MERGE_MODE === "all") {
+    if (HARMONISE && tightFloor) {
+      console.log(`[${img.name}] harmonise: safe composite -> Gemini blend -> borrow shadows/lighting only`);
+      // Phase 1: original room + tightly traced furniture + kept art, no shadows.
+      let tSolid = new Uint8Array(w * h);
+      for (let i = 0; i < tSolid.length; i++) tSolid[i] = tightFloor[i] | artRegion[i];
+      tSolid = dilate(tSolid, w, h, Math.max(1, Math.round((w * SOLID_GROW_PCT) / 100)));
+      const tCore = erode(tightFloor, w, h, Math.max(1, Math.round((w * CORE_ERODE_PCT) / 100)));
+      for (let i = 0; i < tCore.length; i++) tCore[i] |= artRegion[i];
+      const tSolidPng = await maskToPng(tSolid, w, h);
+      const tCorePng = await maskToPng(tCore, w, h);
+      fs.writeFileSync(path.join(dir, "3_mask_tight.png"), tSolidPng);
+      const safeRes = await compositeLayers(original, staged, tSolidPng, tCorePng, await maskToPng(new Uint8Array(w * h), w, h), w, h);
+      safeFinal = safeRes.buffer;
+      fs.writeFileSync(path.join(dir, "9_safe_composite.webp"), safeFinal);
+
+      // Phase 2: Gemini adds shadows / blends lighting on the safe image.
+      if (FROM_RUN) {
+        const saved = path.join(FROM_RUN, img.name, "9_harmonise_raw.png");
+        harmRaw = fs.existsSync(saved) ? fs.readFileSync(saved) : null;
+        if (!harmRaw) console.warn(`[${img.name}] FROM_RUN: no saved 9_harmonise_raw.png — using the safe composite as the final`);
+      } else {
+        harmRaw = await callGeminiImage({
+          model: HARMONISE_MODEL,
+          parts: [{ text: buildHarmonisePrompt(img.roomType) }, imagePart(safeFinal, "image/webp")],
+          imageSize: HARMONISE_IMAGE_SIZE,
+          aspectRatio,
+        })
+          .then((res) => {
+            row.harmoniseCostUsd = approxOutputCost(res.usage);
+            return res.image;
+          })
+          .catch((e) => {
+            console.warn(`[${img.name}] harmonise call failed: ${String(e?.message || e).slice(0, 200)}`);
+            row.harmoniseError = String(e?.message || e).slice(0, 300);
+            return null;
+          });
+      }
+      if (harmRaw) fs.writeFileSync(path.join(dir, "9_harmonise_raw.png"), harmRaw);
+
+      // Phase 3: borrow only shadows (near furniture) and furniture lighting.
+      let hZone = dilate(tightFloor, w, h, Math.round((w * HARM_ZONE_GROW_PCT) / 100));
+      hZone = growDown(hZone, w, h, Math.round((h * HARM_ZONE_DOWN_PCT) / 100));
+      for (let i = 0; i < hZone.length; i++) if (tSolid[i]) hZone[i] = 0;
+      const affected = new Uint8Array(w * h);
+      for (let i = 0; i < affected.length; i++) affected[i] = tSolid[i] | hZone[i];
+      fs.writeFileSync(path.join(dir, "3_mask_harmonise_shadow_zone.png"), await maskToPng(hZone, w, h));
+      row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1) };
+      let blendUsable = !!harmRaw;
+      if (harmRaw) {
+        // Did Gemini keep the room's framing in its blend? If not, its shadows
+        // won't line up, so none of it is used.
+        const framing = await checkFraming(safeFinal, harmRaw, affected, w, h);
+        row.harmonise.blendFraming = framing;
+        // How much Gemini changed the rest of the room in its blend (ignored either way).
+        row.harmonise.blendChangesElsewhere = await measureOutsideDrift(safeFinal, harmRaw, affected, w, h);
+        if (framing.framingChanged) {
+          blendUsable = false;
+          console.warn(`[${img.name}] Gemini's blend reframed the room (median ${framing.medianDiff}) — using the safe composite without shadows`);
+        }
+      }
+      if (blendUsable) {
+        const hm = await compositeHarmonise(safeFinal, harmRaw!, tSolidPng, tCorePng, await maskToPng(hZone, w, h));
+        harmFinal = hm.buffer;
+        Object.assign(row.harmonise, {
+          blendUsed: true,
+          colourGains: hm.colourGains,
+          shadowPctOfZone: hm.shadowPctOfZone,
+          strongestShadowPct: hm.strongestShadowPct,
+          furnitureDiffVsBlend: hm.furnitureDiffVsBlend,
+          furnitureLightingUsed: hm.furnitureLightingUsed,
+          furnitureLightingChangedPctOfImage: hm.furnitureLightingChangedPctOfImage,
+        });
+      } else {
+        harmFinal = safeFinal;
+        row.harmonise.blendUsed = false;
+      }
+      fs.writeFileSync(path.join(dir, "10_final_harmonise.webp"), harmFinal);
+      // Structure check: outside the furniture and its shadow zone (plus the
+      // soft fade at its edge) the final must be the original photo — only
+      // resize/compression noise allowed.
+      const structure = await checkStructureRetained(original, harmFinal, dilate(affected, w, h, Math.round(w * 0.03)), w, h);
+      row.harmonise.structureCheck = structure;
+      if (!row.harmonise.structureCheck.retained) console.warn(`[${img.name}] harmonise structure check FAILED: ${JSON.stringify(structure)}`);
+    }
+    if (MERGE_MODE === "hybrid" || MERGE_MODE === "all" || HARMONISE) {
       const hy = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h, true);
       hybridFinal = hy.buffer;
       fs.writeFileSync(path.join(dir, "7_final_hybrid.webp"), hy.buffer);
@@ -1459,7 +1789,16 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   }
   const reshaped = row.framingCheck?.framingChanged ? " - RESHAPED, re-stage" : "";
   const panels =
-    MERGE_MODE === "all"
+    HARMONISE
+      ? [
+          { label: "1. Original", image: original },
+          { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
+          { label: "3. Safe composite (no shadows)", image: safeFinal },
+          { label: "4. Gemini blend (raw, NOT used directly)", image: harmRaw },
+          { label: "5. Hybrid (for comparison)" + reshaped, image: hybridFinal },
+          { label: "6. Harmonise final" + reshaped + (row.harmonise && !row.harmonise.blendUsed ? " - NO SHADOWS" : ""), image: harmFinal },
+        ]
+      : MERGE_MODE === "all"
       ? [
           { label: "1. Original", image: original },
           { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
@@ -1543,4 +1882,4 @@ if (require.main === module) {
     });
 }
 
-export { classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
