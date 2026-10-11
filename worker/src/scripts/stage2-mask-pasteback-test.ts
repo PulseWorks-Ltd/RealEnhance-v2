@@ -23,6 +23,7 @@
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   REUSE_STAGED=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts   (reuse Test Images/Stage2_2K_Comparison)
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
+//   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "C:/photos/lounge.jpg:living_room"
 //
 // Output: Test Images/Stage2_MaskPasteback/<run timestamp>/
@@ -77,6 +78,11 @@ const TRACE_MODEL = process.env.TRACE_MODEL || "gemini-3.1-flash-image";
 const TRACE_IMAGE_SIZE = (process.env.TRACE_IMAGE_SIZE || "1K").toUpperCase();
 const STAGING_STYLE = process.env.STAGING_STYLE || "nz_standard";
 const REUSE_STAGED = process.env.REUSE_STAGED === "1";
+// Rebuild from an earlier run's saved staged image and raw traces — no Gemini
+// calls, no cost. Folder name under Test Images/Stage2_MaskPasteback, or a full path.
+const FROM_RUN = process.env.FROM_RUN
+  ? path.resolve(path.join(T, "Stage2_MaskPasteback"), process.env.FROM_RUN)
+  : null;
 // Mask growth, as a percentage of image width/height.
 const GROW_PCT = Number(process.env.GROW_PCT || 1.0);
 const SHADOW_PCT = Number(process.env.SHADOW_PCT || 2.5);
@@ -244,6 +250,49 @@ function growDown(src: Uint8Array, w: number, h: number, n: number): Uint8Array 
         out[i] = 1;
         remaining--;
       }
+    }
+  }
+  return out;
+}
+
+// Gemini traces outlines, but often leaves holes: a coffee table drawn black
+// on top of a white rug, or the floor (and shadows) between table and chair
+// legs. For each separate piece of furniture, fill every column from its top
+// edge to its bottom edge. This only fills between parts of the same piece,
+// so it cannot spread up onto walls, windows or doors above the furniture.
+function fillFurnitureColumns(src: Uint8Array, w: number, h: number): Uint8Array {
+  const labels = new Int32Array(w * h);
+  const stack = new Int32Array(w * h);
+  const tops: Int32Array[] = [];
+  const bottoms: Int32Array[] = [];
+  for (let start = 0; start < w * h; start++) {
+    if (!src[start] || labels[start]) continue;
+    const id = tops.length + 1;
+    const top = new Int32Array(w).fill(-1);
+    const bottom = new Int32Array(w).fill(-1);
+    let sp = 0;
+    stack[sp++] = start;
+    labels[start] = id;
+    while (sp > 0) {
+      const i = stack[--sp];
+      const x = i % w, y = (i - x) / w;
+      if (top[x] === -1 || y < top[x]) top[x] = y;
+      if (y > bottom[x]) bottom[x] = y;
+      const neighbours = [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w];
+      for (const n of neighbours) {
+        if (n < 0 || n >= w * h || labels[n] || !src[n]) continue;
+        labels[n] = id;
+        stack[sp++] = n;
+      }
+    }
+    tops.push(top);
+    bottoms.push(bottom);
+  }
+  const out = src.slice();
+  for (let c = 0; c < tops.length; c++) {
+    for (let x = 0; x < w; x++) {
+      if (tops[c][x] < 0) continue;
+      for (let y = tops[c][x]; y <= bottoms[c][x]; y++) out[y * w + x] = 1;
     }
   }
   return out;
@@ -475,6 +524,11 @@ function resolveImages() {
 }
 
 async function stageImage(img: { name: string; file: string; roomType: string }, dir: string): Promise<{ staged: Buffer; source: string }> {
+  if (FROM_RUN) {
+    const previous = path.join(FROM_RUN, img.name, "2_staged_raw.webp");
+    if (!fs.existsSync(previous)) throw new Error(`FROM_RUN: no staged image at ${previous}`);
+    return { staged: fs.readFileSync(previous), source: `from run ${path.basename(FROM_RUN)}` };
+  }
   if (REUSE_STAGED) {
     const previous = path.join(PREVIOUS_STAGED_DIR, `${img.name}__${STAGE_MODEL}.webp`);
     if (fs.existsSync(previous)) return { staged: fs.readFileSync(previous), source: `reused ${path.relative(T, previous)}` };
@@ -488,7 +542,11 @@ async function stageImage(img: { name: string; file: string; roomType: string },
     roomType: img.roomType, sceneType: "interior", promptMode: "full", sourceStage: "1A",
     stagingStyle: STAGING_STYLE, jobId: `pasteback_${img.name}`, imageId: img.name, outputPath, attempt: 1,
   });
-  return { staged: fs.readFileSync(outputPath), source: `staged now (${STAGE_MODEL})` };
+  // STAGE2_PROMPT_VARIANT=grok/grok_skill (from worker/.env) sends staging to
+  // Grok's image-edit API instead of Gemini, exactly as in production.
+  const variant = String(process.env.STAGE2_PROMPT_VARIANT || "").trim();
+  const stagedWith = variant === "grok" || variant === "grok_skill" ? `grok (${process.env.GROK_IMAGE_MODEL || "grok-imagine-image-quality"})` : STAGE_MODEL;
+  return { staged: fs.readFileSync(outputPath), source: `staged now (${stagedWith}${variant ? `, STAGE2_PROMPT_VARIANT=${variant}` : ""})` };
 }
 
 async function runOne(img: { name: string; file: string; roomType: string }) {
@@ -513,9 +571,14 @@ async function runOne(img: { name: string; file: string; roomType: string }) {
     const stagedMeta = await sharp(staged).metadata();
     row.stagedSize = `${stagedMeta.width}x${stagedMeta.height}`;
 
-    console.log(`[${img.name}] 2/3 trace (${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${TRACE_PASSES.length} passes)`);
+    console.log(`[${img.name}] 2/3 trace (${FROM_RUN ? "saved traces, no Gemini call" : `${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${TRACE_PASSES.length} passes`})`);
     const passes = await Promise.all(
       TRACE_PASSES.map(async (pass) => {
+        if (FROM_RUN) {
+          const saved = fs.readFileSync(path.join(FROM_RUN, img.name, `3_trace_${pass.label}_raw.png`));
+          fs.writeFileSync(path.join(dir, `3_trace_${pass.label}_raw.png`), saved);
+          return { label: pass.label, ...(await binarizeTraceResponse(saved, w, h)), cost: 0 };
+        }
         const res = await callGeminiImage({
           model: TRACE_MODEL,
           parts: [
@@ -538,6 +601,8 @@ async function runOne(img: { name: string; file: string; roomType: string }) {
     let mask = new Uint8Array(w * h);
     for (const p of passes) for (let i = 0; i < mask.length; i++) mask[i] |= p.mask[i];
     mask = removeSmallComponents(mask, w, h, Math.max(24, Math.round(w * h * 0.0002)));
+    const tracedRatio = ratioOf(mask);
+    mask = fillFurnitureColumns(mask, w, h);
     const furnitureRatio = ratioOf(mask);
     fs.writeFileSync(path.join(dir, "3_mask_traced.png"), await maskToPng(mask, w, h));
     if (furnitureRatio < 0.01) throw new Error(`tracing found almost no furniture (${(furnitureRatio * 100).toFixed(2)}% of image)`);
@@ -545,7 +610,7 @@ async function runOne(img: { name: string; file: string; roomType: string }) {
     // Grow for soft edges, and further downwards for floor shadows.
     mask = dilate(mask, w, h, Math.round((w * GROW_PCT) / 100));
     mask = growDown(mask, w, h, Math.round((h * SHADOW_PCT) / 100));
-    row.maskPct = { furniture: +(furnitureRatio * 100).toFixed(1), afterGrow: +(ratioOf(mask) * 100).toFixed(1) };
+    row.maskPct = { traced: +(tracedRatio * 100).toFixed(1), furniture: +(furnitureRatio * 100).toFixed(1), afterGrow: +(ratioOf(mask) * 100).toFixed(1) };
     if (ratioOf(mask) > 0.7) console.warn(`[${img.name}] warning: mask covers ${(ratioOf(mask) * 100).toFixed(0)}% of the image — protection will be weak`);
     const maskPng = await maskToPng(mask, w, h);
     fs.writeFileSync(path.join(dir, "3_mask_final.png"), maskPng);
@@ -619,4 +684,4 @@ if (require.main === module) {
   });
 }
 
-export { checkFraming, binarizeTraceResponse, measureOutsideDrift, pasteBack, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, pasteBack, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
