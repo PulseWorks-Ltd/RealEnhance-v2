@@ -23,6 +23,8 @@
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts
 //   REUSE_STAGED=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts   (reuse Test Images/Stage2_2K_Comparison)
 //   ONLY=Bedroom12 npx tsx src/scripts/stage2-mask-pasteback-test.ts
+//   PAIR_MODE=1 npx tsx src/scripts/stage2-mask-pasteback-test.ts "baseline.jpg:bedroom|failed_staged.jpg"
+//     (no staging: traces the furniture in the failed image and pastes it onto the baseline)
 //   FROM_RUN=2026-10-11T05-08-04-943Z npx tsx src/scripts/stage2-mask-pasteback-test.ts   (rebuild from saved traces, free)
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "C:/photos/lounge.jpg:living_room"
 //   npx tsx src/scripts/stage2-mask-pasteback-test.ts "photo.jpg:bedroom|old_failed_attempt.webp"
@@ -85,6 +87,15 @@ const TRACE_MODEL = process.env.TRACE_MODEL || "gemini-3.1-flash-image";
 const TRACE_IMAGE_SIZE = (process.env.TRACE_IMAGE_SIZE || "1K").toUpperCase();
 const STAGING_STYLE = process.env.STAGING_STYLE || "nz_standard";
 const REUSE_STAGED = process.env.REUSE_STAGED === "1";
+// PAIR_MODE=1: no staging call. The image after "|" in each argument (an
+// already-generated, typically failed, staged result) is used as the staged
+// image; only its furniture is traced and pasted onto the baseline. This shows
+// whether paste-back would have prevented that failure.
+const PAIR_MODE = process.env.PAIR_MODE === "1";
+// Wall art is left out of the trace by default: it is exactly where a removed
+// fireplace, opening or other wall change hides, and tracing it would paste
+// that change back in. TRACE_ARTWORK=1 includes it.
+const TRACE_ARTWORK = process.env.TRACE_ARTWORK === "1";
 // Rebuild from an earlier run's saved staged image and raw traces — no Gemini
 // calls, no cost. Folder name under Test Images/Stage2_MaskPasteback, or a full path.
 const FROM_RUN = process.env.FROM_RUN
@@ -116,7 +127,12 @@ process.env.REALENHANCE_STAGE2_IMAGE_SIZE = process.env.REALENHANCE_STAGE2_IMAGE
 // Target lists match the continuity branch's two extractor passes.
 const TRACE_PASSES = [
   { label: "primary", targets: "beds, sofas, dining tables, major rugs, major seating" },
-  { label: "secondary", targets: "lamps, bedside tables, chairs, artwork, decor, plants, secondary furniture" },
+  {
+    label: "secondary",
+    targets: TRACE_ARTWORK
+      ? "lamps, bedside tables, chairs, artwork, decor, plants, secondary furniture"
+      : "lamps, bedside tables, chairs, decor on furniture, plants, secondary furniture",
+  },
 ];
 
 // ── Gemini tracing call ──────────────────────────────────────────────────────
@@ -187,6 +203,7 @@ function buildTracePrompt(roomType: string, targets: string): string {
     "- Output ONLY the binary mask — do NOT return the staged image or the empty image",
     "- Mark the furniture silhouette and footprint regions as white, including rugs on the floor",
     "- Do NOT mark changes to the room itself, even if the two images differ there: windows, doors, openings, walls, ceilings, light fittings, curtains, blinds and built-in fixtures stay black",
+    ...(TRACE_ARTWORK ? [] : ["- Do NOT mark anything hung on or attached to walls (artwork, mirrors, shelves, TVs) — it stays black"]),
     `Room type: ${roomType.replace(/_/g, " ")}`,
   ].join("\n");
 }
@@ -534,7 +551,13 @@ function resolveImages() {
   });
 }
 
-async function stageImage(img: { name: string; file: string; roomType: string }, dir: string): Promise<{ staged: Buffer; source: string }> {
+async function stageImage(img: { name: string; file: string; roomType: string; previousFile?: string }, dir: string): Promise<{ staged: Buffer; source: string }> {
+  if (PAIR_MODE) {
+    if (!img.previousFile || !fs.existsSync(img.previousFile)) {
+      throw new Error(`PAIR_MODE: no staged image given after "|" (or file missing): ${img.previousFile || "none"}`);
+    }
+    return { staged: fs.readFileSync(img.previousFile), source: `pair image ${path.basename(img.previousFile)} (no staging call)` };
+  }
   if (FROM_RUN) {
     const previous = path.join(FROM_RUN, img.name, "2_staged_raw.webp");
     if (!fs.existsSync(previous)) throw new Error(`FROM_RUN: no staged image at ${previous}`);
@@ -580,6 +603,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     row.staging = stageRes.source;
     if (!fs.existsSync(path.join(dir, "2_staged_raw.webp"))) fs.writeFileSync(path.join(dir, "2_staged_raw.webp"), staged);
     const stagedMeta = await sharp(staged).metadata();
+    const stagedMime = stagedMeta.format === "jpeg" ? "image/jpeg" : stagedMeta.format === "png" ? "image/png" : "image/webp";
     row.stagedSize = `${stagedMeta.width}x${stagedMeta.height}`;
 
     console.log(`[${img.name}] 2/3 trace (${FROM_RUN ? "saved traces, no Gemini call" : `${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${TRACE_PASSES.length} passes`})`);
@@ -594,7 +618,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           model: TRACE_MODEL,
           parts: [
             { text: buildTracePrompt(img.roomType, pass.targets) },
-            { text: "STAGED_IMAGE" }, imagePart(staged!, "image/webp"),
+            { text: "STAGED_IMAGE" }, imagePart(staged!, stagedMime),
             { text: "EMPTY_IMAGE" }, imagePart(original, mimeFor(img.file)),
           ],
           imageSize: TRACE_IMAGE_SIZE,
@@ -655,7 +679,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
   }
 
   let previous: Buffer | null = null;
-  if (img.previousFile) {
+  if (img.previousFile && !PAIR_MODE) {
     if (fs.existsSync(img.previousFile)) {
       previous = fs.readFileSync(img.previousFile);
       fs.writeFileSync(path.join(dir, `0_old_failed_attempt${path.extname(img.previousFile)}`), previous);
@@ -668,7 +692,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     [
       ...(previous ? [{ label: "0. Old failed attempt", image: previous }] : []),
       { label: "1. Original", image: original },
-      { label: "2. Gemini staged (raw)", image: staged },
+      { label: PAIR_MODE ? "2. Failed image (input)" : "2. Gemini staged (raw)", image: staged },
       { label: "3. Traced furniture (red)", image: traced },
       { label: "4. Room changes removed (red)", image: undone },
       { label: row.framingCheck?.framingChanged ? "5. Final - ROOM RESHAPED, re-stage" : "5. Final (pasted back)", image: final },
