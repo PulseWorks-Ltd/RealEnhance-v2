@@ -53,7 +53,43 @@ function normalizeContentsForRest(contents: any[]): any[] {
   return [{ role: "user", parts: contents }];
 }
 
+// Google sometimes answers with a short-lived error ("503 The service is
+// currently unavailable", "429 resource exhausted", 500/502/504) or drops the
+// connection. Those calls do no work and are not billed, so they are retried
+// after a short wait instead of failing the job (real case: a Bedroom 05
+// re-stage lost to one 503). Timeouts are NOT retried — they already took
+// minutes. GEMINI_REST_TRANSIENT_RETRIES (default 2) and
+// GEMINI_REST_RETRY_DELAY_MS (default 8000; doubles each retry) tune it.
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504]);
+const TRANSIENT_NETWORK_CODES = new Set(["ECONNRESET", "ECONNREFUSED", "EPIPE", "EAI_AGAIN", "ENOTFOUND", "UND_ERR_SOCKET"]);
+
+export function isTransientGeminiRestError(err: any): boolean {
+  if (!err || err.code === "ETIMEDOUT") return false;
+  if (typeof err.status === "number") return TRANSIENT_STATUSES.has(err.status);
+  return TRANSIENT_NETWORK_CODES.has(String(err.code || err.cause?.code || ""));
+}
+
 export async function generateContentViaRest(params: {
+  apiKey: string;
+  model: string;
+  body: GeminiRestGenerateContentBody;
+  timeoutMs?: number;
+}): Promise<any> {
+  const retries = Math.max(0, Math.floor(Number(process.env.GEMINI_REST_TRANSIENT_RETRIES ?? 2)));
+  const baseDelayMs = Math.max(0, Number(process.env.GEMINI_REST_RETRY_DELAY_MS ?? 8000));
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await generateContentViaRestOnce(params);
+    } catch (err: any) {
+      if (attempt >= retries || !isTransientGeminiRestError(err)) throw err;
+      const waitMs = baseDelayMs * 2 ** attempt;
+      console.warn(`[GEMINI_REST_RETRY] model=${params.model} status=${err?.status ?? err?.code ?? "?"} retry=${attempt + 1}/${retries} wait_ms=${waitMs}`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+}
+
+async function generateContentViaRestOnce(params: {
   apiKey: string;
   model: string;
   body: GeminiRestGenerateContentBody;
