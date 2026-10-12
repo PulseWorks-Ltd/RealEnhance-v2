@@ -61,6 +61,7 @@ const ROOM_LABELS: Record<string, string> = {
   living_room: "living room",
   living: "living room",
   dining_room: "dining room",
+  dining: "dining room",
   kitchen: "kitchen",
   kitchen_dining: "open-plan kitchen and dining room",
   kitchen_living: "open-plan kitchen and living room",
@@ -88,7 +89,8 @@ function roomTypeGuidance(roomType: string): string {
   if (key === "kitchen_living_dining") return [living, dining, kitchenOnly, openPlan].join("\n");
   if (key === "kitchen_dining") return [dining, kitchenOnly, `The dining table sits next to the kitchen (in front of or beside the bench/island) without blocking the kitchen's working area, with a clear path into the kitchen.`].join("\n");
   if (key === "kitchen_living") return [living, kitchenOnly, `The living furniture stays out of the kitchen's working area.`].join("\n");
-  if (key === "living_dining" || key === "dining_room") return [living, dining, openPlan].join("\n");
+  if (key === "living_dining") return [living, dining, openPlan].join("\n");
+  if (key === "dining_room" || key === "dining") return [dining, `Do not add a sofa, armchair, coffee table or TV — this is a dining room only. A sideboard against a solid, clearly visible wall is optional if there is room.`].join("\n");
   if (key === "living_room" || key === "living") return living;
   if (key === "kitchen") return kitchenOnly;
   if (key.startsWith("bedroom")) {

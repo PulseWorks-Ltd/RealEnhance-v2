@@ -1,5 +1,5 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}) }));
-import { checkRoomBrief, buildStage2PromptFromRoomBrief, type RoomBrief } from "../src/pipeline/roomBrief";
+import { checkRoomBrief, buildStage2PromptFromRoomBrief, buildRoomBriefInstruction, type RoomBrief } from "../src/pipeline/roomBrief";
 
 const good: RoomBrief = {
   roomSummary: "An open-plan kitchen, living and dining room.",
@@ -59,5 +59,14 @@ describe("room brief checks", () => {
     expect(p).toMatch(/AVOID IN THIS ROOM\n- Placing the dining table between the sofa and the TV wall\.\n- Do not block the doorway\./);
     expect(p).not.toMatch(/\.\./);
     expect(p).not.toMatch(/\.;/);
+  });
+  it("plans a dining room without living-room furniture", () => {
+    for (const rt of ["dining_room", "dining"]) {
+      const t = buildRoomBriefInstruction(rt);
+      expect(t).toMatch(/DINING AREA/);
+      expect(t).not.toMatch(/LIVING AREA/);
+      expect(t).toMatch(/a dining room\b/);
+    }
+    expect(buildRoomBriefInstruction("living_dining")).toMatch(/LIVING AREA/);
   });
 });
