@@ -1130,6 +1130,84 @@ async function compositeSurface(original: Buffer, staged: Buffer, floorSurface: 
   };
 }
 
+// ── Door access (practical layout) check ────────────────────────────────────
+// The paste-back guarantees the room's STRUCTURE, not that the layout is
+// usable: when Gemini moved a door while staging, it planned the furniture
+// around its moved door, and once the real door is put back a bed can end up
+// across it. One vision question on the final image catches that. A model
+// (not code) judges it because perspective matters: furniture that only
+// LOOKS in front of a doorway from the camera's angle but stands well forward
+// in the room doesn't block it. Same question as the app's
+// doorAccessClearanceCheck.ts, but standalone: it finds the doors itself in
+// the empty photo. Blocked -> the app would re-stage (structure is never at
+// risk, so a wrong call here only costs a retry).
+// Uses Grok when STAGE2_VALIDATOR_MODEL=grok (as production does), else Gemini.
+const DOOR_CHECK = process.env.DOOR_CHECK !== "0";
+const DOOR_CHECK_MODELS = (process.env.DOOR_CHECK_MODEL || "gemini-3-flash-preview,gemini-2.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
+
+function buildDoorAccessPrompt(roomType: string): string {
+  return `Image 1 is the EMPTY room (the real room). Image 2 is the same room after virtual staging, from the same camera position.
+
+Step 1 — In Image 1, find every door and walkthrough opening a person would walk through: entry doors, doorways and openings into hallways or other rooms, sliding doors to outside. Do NOT include wardrobe/closet doors, windows, or kitchen bench pass-through openings.
+
+Step 2 — For EACH of those, look at Image 2 and judge its immediate approach area: the floor space directly in front of the opening, roughly as wide as the opening and about one typical step out from it — the space a person needs to walk through it, or a hinged door needs to swing open.
+Judge this in 3D, not by the flat picture: furniture that only appears in front of a doorway from the camera's angle, but actually stands well forward in the room with clear floor between it and the doorway, does NOT block it. A small side table or chair beside the opening, out of the direct path, does not block it either. It is blocked only when a large piece of furniture (bed, sofa, dresser, table, cabinet) has its footprint across the opening's threshold or swing path, so a person could not walk through, or the door could not open, without moving it.
+
+Answer for each opening: "yes" (blocked), "no" (clear), or "cannot_tell" (not visible enough to judge).
+
+Respond with ONLY a single valid JSON object:
+{
+  "openings": [
+    { "description": string, "approachAreaDescription": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
+  ]
+}
+Room type: ${roomType.replace(/_/g, " ")}`;
+}
+
+// Pure decision: blocked only on a clear "yes" ("cannot_tell" passes, as in
+// doorAccessClearanceCheck.ts — an unclear read should never force a retry).
+function evaluateDoorAccess(raw: any) {
+  const openings: any[] = Array.isArray(raw?.openings) ? raw.openings : [];
+  const items = openings.map((o) => ({
+    description: String(o?.description || ""),
+    approachAreaDescription: String(o?.approachAreaDescription || ""),
+    accessBlocked: ["yes", "no", "cannot_tell"].includes(o?.accessBlocked) ? o.accessBlocked : "cannot_tell",
+  }));
+  const blocked = items.filter((o) => o.accessBlocked === "yes");
+  return { openingsFound: items.length, blocked: blocked.length > 0, wouldRestage: blocked.length > 0, items };
+}
+
+async function runDoorAccessCheck(emptyPath: string, finalImage: Buffer, roomType: string, dir: string, name: string) {
+  const finalPath = path.join(dir, "12_door_check_input.jpg");
+  fs.writeFileSync(finalPath, await sharp(finalImage).jpeg({ quality: 90 }).toBuffer());
+  // Imported here, not at the top: it loads the Gemini helpers, which must
+  // only load after this script has set the Stage 2 env vars.
+  const { callValidatorModel } = await import("../validators/validatorModelCall");
+  const usingGrok = String(process.env.STAGE2_VALIDATOR_MODEL || "").trim().toLowerCase() === "grok";
+  let lastError = "";
+  for (const model of usingGrok ? ["grok"] : DOOR_CHECK_MODELS) {
+    try {
+      const raw = await callValidatorModel({
+        images: [
+          { path: emptyPath, label: "Image 1 (empty room):" },
+          { path: finalPath, label: "Image 2 (staged room):" },
+        ],
+        systemInstruction: "You are a careful visual inspector checking whether a staged room's furniture layout leaves its doors and walkthroughs usable.",
+        userPrompt: buildDoorAccessPrompt(roomType),
+        model,
+        reasonPrefix: "door_access_final",
+        timeoutMs: 60000,
+        ctx: { jobId: `pasteback_${name}`, imageId: name, callLabel: "final" },
+      });
+      return { model: usingGrok ? `grok (${process.env.GROK_VISION_MODEL || "default"})` : model, ...evaluateDoorAccess(raw) };
+    } catch (e: any) {
+      lastError = String(e?.message || e).slice(0, 200);
+      console.warn(`[${name}] door check with ${model} failed: ${lastError}`);
+    }
+  }
+  return { model: "none", error: lastError, openingsFound: 0, blocked: false, wouldRestage: false, items: [] };
+}
+
 // ── Harmonise (phase 2 prompt + phase 3 merge) ──────────────────────────────
 
 function buildHarmonisePrompt(roomType: string): string {
@@ -2395,6 +2473,16 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
         }
         fs.writeFileSync(path.join(dir, "11_final_checked_blend.webp"), checkedBlend);
       }
+      // Practical layout: is any real door/walkthrough blocked in the final?
+      if (DOOR_CHECK && !FROM_RUN) {
+        const finalForCheck = checkedBlend || harmFinal;
+        if (finalForCheck) {
+          row.doorAccess = await runDoorAccessCheck(img.file, finalForCheck, img.roomType, dir, img.name);
+          if (row.doorAccess.blocked) {
+            console.warn(`[${img.name}] DOOR ACCESS BLOCKED — the app would re-stage this photo: ${row.doorAccess.items.filter((o: any) => o.accessBlocked === "yes").map((o: any) => `${o.description}: ${o.approachAreaDescription}`).join(" | ")}`);
+          }
+        }
+      }
     }
     if (MERGE_MODE === "hybrid" || MERGE_MODE === "all") {
       const hy = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h, true);
@@ -2442,7 +2530,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           { label: "4. Gemini blend (raw, unchecked)", image: harmRaw },
           { label: "5. App-built final" + reshaped + (row.harmonise && !row.harmonise.blendUsed ? " - NO SHADOWS" : ""), image: harmFinal },
           { label: `6. Checked blend: repaired patches (red)${row.checkedBlend ? ` ${row.checkedBlend.repairPct}%` : ""}`, image: checkedBlendView },
-          { label: "7. Checked blend final" + reshaped + (row.checkedBlend?.usedAppBuiltInstead ? " - TOO MANY CHANGES, used 5" : ""), image: checkedBlend },
+          { label: "7. Checked blend final" + reshaped + (row.checkedBlend?.usedAppBuiltInstead ? " - TOO MANY CHANGES, used 5" : "") + (row.doorAccess?.blocked ? " - DOOR BLOCKED, re-stage" : ""), image: checkedBlend },
         ]
       : MERGE_MODE === "all"
       ? [
@@ -2528,4 +2616,4 @@ if (require.main === module) {
     });
 }
 
-export { buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
