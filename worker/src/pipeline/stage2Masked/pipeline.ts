@@ -678,6 +678,12 @@ export async function runMaskedStage2Job(p: {
       const stagedPath = await p.stage(attempt, hints);
       const staged = fs.readFileSync(stagedPath);
       io.save?.("2_staged_raw.webp", staged);
+      // The exact staging prompt (and room brief, if used), saved by Stage 2.
+      for (const [suffix, name] of [[".prompt.txt", "2_stage_prompt.txt"], [".room-brief.json", "2_room_brief.json"]] as const) {
+        try {
+          if (fs.existsSync(stagedPath + suffix)) io.save?.(name, fs.readFileSync(stagedPath + suffix));
+        } catch {}
+      }
       const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
       const layers = await traceLayers(ctx);
       if (row.framingCheck?.framingChanged) {

@@ -74,6 +74,7 @@ import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 import { startFurniturePrecheckWorker } from "./precheck/furniturePrecheck";
 import { buildLayoutContext, type LayoutContextResult } from "./ai/layoutPlanner";
+import { roomBriefEnabled } from "./pipeline/roomBrief";
 
 import {
   updateJob,
@@ -6458,6 +6459,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (!plannerEnabled) return null;
     if (!ctx.basePath) return null;
     if (ctx.isExteriorScene) return null;
+    // The room brief (STAGE2_ROOM_BRIEF=1) writes the layout itself for full
+    // staging — no separate layout-planner call (cost).
+    if (roomBriefEnabled() && ctx.promptMode === "full") return null;
 
     // Routing fix: anchorLockedStaging.ts and layoutPlanner.ts used to both
     // always run, with layoutPlanner.ts's independently-computed plan
@@ -11363,7 +11367,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // layout-planner context is built the same way, from the same env var.
       let maskedLayoutContext: LayoutContextResult | null = null;
       const runMaskedStage2 = async () => {
-        if (stage2PromptMode === "full" && process.env.USE_GEMINI_LAYOUT_PLANNER === "1") {
+        if (stage2PromptMode === "full" && process.env.USE_GEMINI_LAYOUT_PLANNER === "1" && !roomBriefEnabled()) {
           try {
             maskedLayoutContext = await buildLayoutContext(stage2InputResolved);
           } catch (layoutErr: any) {

@@ -27,6 +27,8 @@ function mimeFromExt(filePath: string): string {
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
   if (ext === ".png") return "image/png";
   if (ext === ".webp") return "image/webp";
+  if (ext === ".txt") return "text/plain; charset=utf-8";
+  if (ext === ".json") return "application/json";
   return "application/octet-stream";
 }
 

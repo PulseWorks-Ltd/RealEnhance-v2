@@ -26,6 +26,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
+import { roomBriefEnabled, getRoomBriefCached, buildStage2PromptFromRoomBrief, type RoomBrief } from "./roomBrief";
 import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS, buildUniversalFeatureProtectionSection, shouldUseAnchorLockedLayoutPlanning } from "./anchorLockedStaging";
 import type { StructuralBaseline } from "../validators/openingPreservationValidator";
 import { grokImageEdit, grokImageModel } from "../ai/grok";
@@ -961,7 +962,36 @@ The camera viewpoint, lens perspective, and framing of the image must remain exa
 
   let stage2Prompt = defaultStage2Prompt;
   let anchorLockedFallbackReason: string | null = null;
-  if (USE_ANCHOR_LOCKED_PROMPT) {
+  // Room brief (STAGE2_ROOM_BRIEF=1): one AI call describes the room and the
+  // layout in plain language, replacing the anchor-locked planner's calls
+  // for the prompt. Interior full staging only; falls back to the existing
+  // planner if the brief fails its rule checks.
+  let roomBriefUsed: RoomBrief | null = null;
+  let roomBriefFallbackReason: string | null = null;
+  if (roomBriefEnabled() && resolvedPromptMode === "full" && scene !== "exterior") {
+    const briefRes = await getRoomBriefCached({
+      jobId: opts.jobId,
+      imagePath: basePath,
+      roomType: canonicalRoomType,
+      styleDescription: nanoRoomProgramGuidance.style,
+    });
+    for (const u of briefRes.usage) {
+      console.log("[ROOM_BRIEF_USAGE]", JSON.stringify({ jobId: opts.jobId, ...u }));
+    }
+    if (briefRes.ok) {
+      roomBriefUsed = briefRes.brief;
+      stage2Prompt = buildStage2PromptFromRoomBrief(briefRes.brief, {
+        roomType: canonicalRoomType,
+        styleDescription: nanoRoomProgramGuidance.style,
+      });
+    } else {
+      roomBriefFallbackReason = `${briefRes.reason}${briefRes.issues.length ? `: ${briefRes.issues.join("; ")}` : ""}`;
+      console.warn("[ROOM_BRIEF_FALLBACK]", JSON.stringify({ jobId: opts.jobId, reason: roomBriefFallbackReason }));
+    }
+  }
+  if (roomBriefUsed) {
+    // Brief prompt in use — the anchor-locked/combined planners are skipped.
+  } else if (USE_ANCHOR_LOCKED_PROMPT) {
     const anchorLockedResult = await (USE_SKILL_LOCKS ? buildGrokSkillStage2Prompt : buildAnchorLockedStage2Prompt)({
       imagePath: basePath,
       roomType: canonicalRoomType,
@@ -1042,7 +1072,7 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
   console.log("[STAGE2_PROMPT_VARIANT]", {
     requested: process.env.STAGE2_PROMPT_VARIANT || "legacy",
     mode: resolvedPromptMode,
-    variant: USE_ANCHOR_LOCKED_PROMPT
+    variant: roomBriefUsed ? "room_brief" : USE_ANCHOR_LOCKED_PROMPT
       ? (anchorLockedFallbackReason
           ? (USE_SKILL_LOCKS ? "grok_skill_fallback" : USE_GROK_GENERATION ? "grok_anchor_locked_fallback" : "anchor_locked_fallback")
           : (USE_SKILL_LOCKS ? "grok_skill" : USE_GROK_GENERATION ? "grok_anchor_locked" : "anchor_locked"))
@@ -1051,6 +1081,7 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
         : (USE_NANO_BANANA_PROMPT ? "nano_banana" : "legacy"),
     generationModel: USE_GROK_GENERATION ? "grok" : "gemini",
     ...(anchorLockedFallbackReason ? { anchorLockedFallbackReason } : {}),
+    ...(roomBriefFallbackReason ? { roomBriefFallbackReason } : {}),
   });
 
   let textPrompt = stage2Prompt;
@@ -1159,7 +1190,7 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
   // plan is never appended on top of anchorLockedStaging's own prompt for
   // a room this routing decision says anchorLockedStaging owns.
   const anchorLockedOwnsThisRoom = shouldUseAnchorLockedLayoutPlanning(canonicalRoomType, resolvedPromptMode);
-  if (opts.layoutPlan && !anchorLockedOwnsThisRoom) {
+  if (opts.layoutPlan && !anchorLockedOwnsThisRoom && !roomBriefUsed) {
     const plannerInstructionMode: "exact" | "guided" = attemptNumber > 1 ? "guided" : "exact";
     const plannerInstructionLine = plannerInstructionMode === "guided"
       ? "Base the staging composition on the following layout plan while preserving architectural continuity and adhering to all staging prompt restrictions."
@@ -1252,6 +1283,15 @@ Do not add blinds, rods, tracks, or new window coverings.
   });
   if (process.env.STAGE2_DEBUG_DUMP_PROMPT === "1") {
     require("fs").writeFileSync("/tmp/stage2_debug_prompt.txt", textPrompt);
+  }
+  // Save the exact prompt (and room brief, if used) next to the output, so
+  // the masked pipeline can upload it with the debug images
+  // (STAGE2_SAVE_PROMPT=0 turns it off).
+  if (opts.outputPath && process.env.STAGE2_SAVE_PROMPT !== "0") {
+    try {
+      require("fs").writeFileSync(`${opts.outputPath}.prompt.txt`, textPrompt);
+      if (roomBriefUsed) require("fs").writeFileSync(`${opts.outputPath}.room-brief.json`, JSON.stringify(roomBriefUsed, null, 2));
+    } catch {}
   }
 
   const requestParts: any[] = [];
