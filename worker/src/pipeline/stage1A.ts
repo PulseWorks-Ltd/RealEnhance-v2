@@ -547,22 +547,22 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
  * said "colour... may be improved" as a blanket allowance, which would have
  * contradicted this narrower scope).
  */
-const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR OUTLOOK — brighten the view through existing windows and doors without changing what is out there.
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR OUTLOOK — make the view through existing windows and doors look sunny, without changing what is out there.
 
 THE ONE RULE THAT OVERRIDES EVERYTHING BELOW: everything visible through a window or door — fences, lattice, trellis, screens, walls, gates, hedges, trees, shrubs, gardens, neighbouring houses, roofs, sheds, poles and power lines — must stay exactly where it is, with exactly the same outline, size and coverage of the glass. Nothing may be removed, lowered, thinned out, made see-through or painted over to reveal more sky or a different view, and nothing new may be added.
 
-Sky:
-- Only change sky that is ALREADY visible in the original photo, and only inside that same patch of sky.
-- If a window or door shows no sky — for example the glass is filled by a fence, wall, hedge, trees or a neighbouring house — there is no sky to change. Leave that view exactly as it is.
-- Where a patch of sky is visible and looks flat, grey or overcast, you may make that same patch brighter and clearer (for example a soft blue). Its outline, and everything in front of it, stays exactly the same.
-- Never add sky where the original shows none, and never enlarge a patch of sky.
+Sky — make the outlook look sunny:
+- Wherever any sky shows through a window or door — whether it is cloudy, grey, overcast, white or washed out — replace it with a clear blue sky (a few light white clouds are fine), as if the photo was taken on a bright sunny day.
+- Let the exterior look sunlit: natural warm daylight and soft shadows on the things that are already out there, without changing their colour or shape.
+- The new sky fills exactly the same area the old sky did — it stops at the same rooflines, treetops, fence tops and lattice edges, and shows through the same gaps.
+- If a window or door shows no sky at all — for example the glass is filled by a fence, wall, hedge, trees or a neighbouring house — leave that view exactly as it is. Never create sky where there was none, and never enlarge the area of sky.
 
 Weather and glass:
 - Only where real fog or mist clearly reduces visibility, you may clear it so the existing view is easier to see — without inventing anything that is not genuinely present in the original.
 - Where they are clearly visible, you may gently remove raindrops, water streaks, condensation, smudges and similar temporary marks from the glass.
 
 Light and detail:
-- Keep the exterior view's exposure close to the original. Never brighten, soften or blur it so much that its detail fades — fence boards, lattice and trellis patterns, leaves and branches must stay as crisp and visible as in the original.
+- Apart from the sky and sunlight above, keep the exterior view's exposure close to the original. Never brighten, soften or blur it so much that its detail fades — fence boards, lattice and trellis patterns, leaves and branches must stay as crisp and visible as in the original.
 - The daylight coming into the room should look consistent with the view.
 
 Never:
@@ -571,7 +571,7 @@ Never:
 - Add new scenery, distant houses, rooftops, hills, water or views that are not in the original photo.
 - Open, move, remove or change blinds, curtains, shutters, window coverings or doors, or reveal anything hidden behind them.
 
-Keep the result realistic and natural, like a professionally edited real estate photograph. If you are unsure whether a change is allowed, leave that part of the view exactly as it is.`;
+Keep the result realistic and natural, like a professionally edited real estate photograph. If you are unsure whether part of the view is sky, leave that part exactly as it is.`;
 
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
