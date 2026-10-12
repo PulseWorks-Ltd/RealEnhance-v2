@@ -513,10 +513,21 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
     for (let c = 0; c < 3; c++) { sums[c] += a[i * 3 + c]; sums[c + 3] += b[i * 3 + c]; }
   }
   const gains = [0, 1, 2].map((c) => (sums[c + 3] > 0 ? sums[c] / sums[c + 3] : 1));
+  // Staged brought to the original's lighting, globally and then area by
+  // area (see matchLocalLighting): Gemini's relit wall beside a piece is not
+  // a "change", only real new content is.
+  const bAdj = Buffer.alloc(w * h * 3);
+  for (let i = 0; i < w * h * 3; i++) bAdj[i] = Math.min(255, Math.round(b[i] * gains[i % 3]));
+  if (LOCAL_LIGHT_MATCH) {
+    const furn = dilate(floor, w, h, Math.max(1, Math.round(w * 0.01)));
+    const solidMask = Buffer.alloc(w * h, 0);
+    for (let i = 0; i < w * h; i++) if (furn[i]) solidMask[i] = 255;
+    await matchLocalLighting(a, bAdj, solidMask, Buffer.alloc(w * h, 0), w, h);
+  }
   let added = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) {
     if (!cols[i] || out[i]) continue;
-    const d = Math.max(Math.abs(a[i * 3] - b[i * 3] * gains[0]), Math.abs(a[i * 3 + 1] - b[i * 3 + 1] * gains[1]), Math.abs(a[i * 3 + 2] - b[i * 3 + 2] * gains[2]));
+    const d = Math.max(Math.abs(a[i * 3] - bAdj[i * 3]), Math.abs(a[i * 3 + 1] - bAdj[i * 3 + 1]), Math.abs(a[i * 3 + 2] - bAdj[i * 3 + 2]));
     if (d > 35) added[i] = 1;
   }
   const r = Math.max(1, Math.round(w * 0.002));
@@ -530,7 +541,7 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
   // the results to show whether the tracing missed furniture.
   const changed = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) {
-    const d = Math.max(Math.abs(a[i * 3] - b[i * 3] * gains[0]), Math.abs(a[i * 3 + 1] - b[i * 3 + 1] * gains[1]), Math.abs(a[i * 3 + 2] - b[i * 3 + 2] * gains[2]));
+    const d = Math.max(Math.abs(a[i * 3] - bAdj[i * 3]), Math.abs(a[i * 3 + 1] - bAdj[i * 3 + 1]), Math.abs(a[i * 3 + 2] - bAdj[i * 3 + 2]));
     changed[i] = d > 35 ? 1 : 0;
   }
   const near = dilate(out, w, h, Math.round(w * 0.03));
@@ -719,6 +730,59 @@ export async function refineArtRegion(original: Buffer, staged: Buffer, artKeep:
 // A removed wall, a new doorway or a changed frame is neither "the same" nor
 // "the same but darker", so it can only come through inside the furniture
 // core itself.
+// Local lighting match. Gemini often relights the room unevenly (a wall it
+// paints brighter beside the furniture than the real photo is), so one
+// whole-image colour correction leaves a strip of Gemini's own wall around
+// each piece that doesn't match the photo — a pale or dark halo (Bedroom 12).
+// Here the staged image is corrected area by area to the original's lighting,
+// measured on the room around the furniture and spread smoothly underneath
+// it. The strip of Gemini wall then matches the photo (the edge test hands it
+// back to the original), and the furniture takes on the photo's local light.
+// Shadows in the shadow zone are not measured, so they are kept.
+export const LOCAL_LIGHT_MATCH = String(process.env.STAGE2_LOCAL_LIGHT_MATCH ?? "1").trim() !== "0";
+export async function matchLocalLighting(
+  orig: Buffer,
+  stgAdj: Buffer,
+  solidA: Buffer,
+  zoneA: Buffer,
+  fw: number,
+  fh: number
+): Promise<{ meanGain: number[] }> {
+  const N = fw * fh;
+  const oM = Buffer.alloc(N * 3, 0), sM = Buffer.alloc(N * 3, 0), m = Buffer.alloc(N, 0);
+  for (let i = 0; i < N; i++) {
+    if (solidA[i] > 12 || zoneA[i] > 12) continue;
+    m[i] = 255;
+    for (let c = 0; c < 3; c++) {
+      oM[i * 3 + c] = orig[i * 3 + c];
+      sM[i * 3 + c] = stgAdj[i * 3 + c];
+    }
+  }
+  const sig = Math.max(4, fw * 0.02);
+  const [oB, sB, mB] = await Promise.all([
+    sharp(oM, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
+    sharp(sM, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
+    sharp(m, { raw: { width: fw, height: fh, channels: 1 } }).blur(sig).grayscale().raw().toBuffer(),
+  ]);
+  // Where little room is visible nearby (deep under a big piece), the
+  // correction fades to none rather than guessing.
+  const gainSum = [0, 0, 0];
+  let n = 0;
+  for (let i = 0; i < N; i++) {
+    const w = Math.min(1, mB[i] / 255 / 0.15);
+    if (w <= 0) continue;
+    for (let c = 0; c < 3; c++) {
+      const sv = sB[i * 3 + c];
+      const r = sv > 6 ? Math.min(1.4, Math.max(0.7, oB[i * 3 + c] / sv)) : 1;
+      const g = 1 + (r - 1) * w;
+      stgAdj[i * 3 + c] = Math.min(255, Math.round(stgAdj[i * 3 + c] * g));
+      gainSum[c] += g;
+    }
+    n++;
+  }
+  return { meanGain: gainSum.map((g) => Number((n ? g / n : 1).toFixed(3))) };
+}
+
 export async function compositeLayers(
   original: Buffer,
   staged: Buffer,
@@ -762,6 +826,7 @@ export async function compositeLayers(
   const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
   const stgAdj = Buffer.alloc(N * 3);
   for (let i = 0; i < N * 3; i++) stgAdj[i] = Math.min(255, Math.round(stg[i] * gains[i % 3]));
+  const localLight = LOCAL_LIGHT_MATCH ? await matchLocalLighting(orig, stgAdj, solidA, zoneA, fw, fh) : null;
 
   // Decisions are made on lightly smoothed images so carpet/tile texture and
   // compression noise don't create speckle; the decision maps are smoothed again.
@@ -950,6 +1015,7 @@ export async function compositeLayers(
     width: fw,
     height: fh,
     colourGains: gains.map((g2) => Number(g2.toFixed(3))),
+    localLightMatch: localLight ? localLight.meanGain : undefined,
     shadowPctOfZone: zonePixels ? Number(((shadowPixels / zonePixels) * 100).toFixed(1)) : 0,
     edgeBandStagedPct: bandPixels ? Number(((bandStaged / bandPixels) * 100).toFixed(1)) : 0,
     hybridStagedPctOfImage: hybrid ? Number(((hybridStagedPixels / N) * 100).toFixed(1)) : undefined,
@@ -1800,6 +1866,7 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
 //    change), never its pixels, so the furniture stays crisp and in place.
 // Nothing outside the shadow zone and the furniture can change at all, so a
 // window, door or wall Gemini altered in its blend can never come through.
+export const HARM_SHADOW_SOFTEN = Math.max(1, Number(process.env.HARM_SHADOW_SOFTEN || 12));
 export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer) {
   const meta = await sharp(safe).metadata();
   const fw = meta.width || 0, fh = meta.height || 0;
@@ -1898,15 +1965,30 @@ export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solid
   // Shadow: neighbourhood-average darkening where most of the wider area
   // agrees it is a shadow (ramps in between 30% and 60% agreement), then the
   // whole shadow map is softened once more so it has no blotches or hard edges.
+  // The map is softened enough that only gentle shading comes across (Gemini
+  // redraws objects a few pixels off in its blend; a sharp map copied those
+  // shifted shapes onto the wall). It is softened only from the area around
+  // the furniture — the furniture itself doesn't count as "no shadow" — so
+  // the shadow stays strongest right against the piece instead of leaving a
+  // pale rim between the furniture and its shadow.
   const darkRaw = Buffer.alloc(N, 0);
+  const darkW = Buffer.alloc(N, 0);
   for (let i = 0; i < N; i++) {
     const ca = coreA[i] / 255, sa = solidA[i] / 255, za = zoneSoft[i] / 255;
     const avg = denBlur[i] > 4 ? Math.min(1, numBlur[i] / denBlur[i]) : 1;
     const agreement = Math.min(1, Math.max(0, (denWide[i] / 255 - 0.3) / 0.3));
-    const where = Math.max(za, sa) * (1 - ca);
-    darkRaw[i] = Math.round(Math.min(HARM_MAX_SHADOW, (1 - avg) * agreement * where) * 255);
+    const where = Math.max(za, sa);
+    const w = 1 - ca;
+    darkW[i] = Math.round(w * 255);
+    darkRaw[i] = Math.round(Math.min(HARM_MAX_SHADOW, (1 - avg) * agreement * where) * w * 255);
   }
-  const darkMap = await sharp(darkRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 4 * u)).grayscale().raw().toBuffer();
+  const darkSig = Math.max(1, HARM_SHADOW_SOFTEN * u);
+  const [darkNum, darkDen] = await Promise.all([
+    sharp(darkRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(darkSig).grayscale().raw().toBuffer(),
+    sharp(darkW, { raw: { width: fw, height: fh, channels: 1 } }).blur(darkSig).grayscale().raw().toBuffer(),
+  ]);
+  const darkMap = Buffer.alloc(N, 0);
+  for (let i = 0; i < N; i++) darkMap[i] = darkDen[i] > 4 ? Math.min(255, Math.round((darkNum[i] * 255) / darkDen[i])) : 0;
 
   const out = Buffer.alloc(N * 3);
   let maxDark = 0, lightingChangedPx = 0;

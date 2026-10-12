@@ -351,6 +351,7 @@ export function resolveFurnitureDetectorModel(_sceneType?: "interior" | "exterio
   return FURNITURE_DETECTOR_RUNTIME_MODEL;
 }
 
+const MAX_NUISANCE_ONLY_ITEMS = Math.max(1, Number(process.env.DETECTOR_MAX_NUISANCE_ITEMS || 4));
 const MINOR_PORTABLE_NUISANCE_TOKEN_SET = new Set<string>([
   "cable",
   "cord",
@@ -373,6 +374,20 @@ const MINOR_PORTABLE_NUISANCE_TOKEN_SET = new Set<string>([
   "papers",
   "trash",
   "rubbish",
+  "litter",
+  "candle",
+  "bottle",
+  "cup",
+  "mug",
+  "remote",
+  "book",
+  "magazine",
+  "ornament",
+  "picture_frame",
+  "power_cord",
+  "power_cable",
+  "extension_cord",
+  "charger",
 ]);
 
 function isMinorPortableNuisanceItem(item: DetectedItem): boolean {
@@ -1001,9 +1016,13 @@ export function resolveFurnishedGateDecision(params: {
   const detectedItems = Array.isArray(analysis.detectedItems) ? analysis.detectedItems : [];
   const nuisancePortableItems = detectedItems.filter(isMinorPortableNuisanceItem);
   const nonNuisancePortableItems = detectedItems.filter((item) => !isMinorPortableNuisanceItem(item));
+  // Up to four minor items (cables, a vase or two, a plant, a stray paper or
+  // bit of litter) is not a reason to declutter the whole room — staging
+  // handles them (real complaint 2026-10-12: rooms decluttered for cables
+  // and a couple of vases).
   const hasNuisanceOnlyPortableItems =
     detectedItems.length > 0
-    && detectedItems.length <= 2
+    && detectedItems.length <= MAX_NUISANCE_ONLY_ITEMS
     && nuisancePortableItems.length === detectedItems.length;
 
   // Widened from hasLoosePortableItems-only, then widened again to include
@@ -1026,7 +1045,13 @@ export function resolveFurnishedGateDecision(params: {
   // of these two specifically defaults to requiring 1B rather than being
   // assumed minor, since an unitemized flag gives no positive evidence
   // it's actually trivial.
-  const emptyListCountsAsMinor = hasLoosePortableItems && !hasCounterClutter && !hasSurfaceClutter && detectedItems.length === 0;
+  // A clutter flag with NO items listed is not evidence of clutter. The
+  // detector sets these flags for cables and a couple of small objects
+  // without itemising anything (Bedroom 12, 2026-10-12: an empty room with
+  // hasSurfaceClutter + hasLoosePortableItems and detectedItems [] was sent
+  // to a full declutter). Real clutter is itemised (the prompt now requires
+  // it), so an unitemised flag on its own no longer forces Stage 1B.
+  const emptyListCountsAsMinor = detectedItems.length === 0;
   const minorPortableClutterOnly =
     (hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems)
     && (emptyListCountsAsMinor || hasNuisanceOnlyPortableItems);
@@ -1034,14 +1059,16 @@ export function resolveFurnishedGateDecision(params: {
   const nonNuisancePortableItemsWithConfidence = nonNuisancePortableItems.filter(
     (item) => Number(item?.confidence) >= 0.55
   );
+  // Real (non-minor) clutter items listed by the detector count even when it
+  // left the flags off, since the flags are now reserved for clearly
+  // cluttered surfaces/floors.
   const materialPortableClutter =
-    (hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems)
+    (hasCounterClutter || hasSurfaceClutter || hasLoosePortableItems || nonNuisancePortableItemsWithConfidence.length >= 2)
     && !minorPortableClutterOnly
     && (
       nonNuisancePortableItemsWithConfidence.length >= 1
       || nonNuisancePortableItems.length >= 2
       || detectedItems.length >= 3
-      || ((hasCounterClutter || hasSurfaceClutter) && detectedItems.length === 0)
     );
   // All three clutter flags deliberately routed only through
   // materialPortableClutter (not as unconditional OR-terms) — same
@@ -1503,15 +1530,16 @@ Rules:
 - built-in fixture labels MUST NOT be included in detectedAnchors.
 - hasBuiltInFixtures=true when built-in storage/fixtures are visible.
 - builtInFixtureTypes should use canonical labels like wardrobe, closet, cabinetry, shelving, fixed_storage.
-- detectedItems should usually be [] for interior scenes unless you are highly confident about a clearly identifiable portable clutter object.
+- detectedItems: list EVERY removable clutter object you can clearly see, one entry each, using short labels (e.g. box, bag, clothes_pile, laundry_basket, shoes, toys, papers, bottle, cable, vase). Use [] only when there is no removable clutter at all. Never set a clutter flag without listing the items behind it.
+- Minor items do NOT make a room cluttered: power cables and cords, a couple of small decor pieces (a vase, a plant, a candle), a stray paper or small piece of litter. List them in detectedItems, but do not set the clutter flags for them alone.
 - furnitureItems must contain a complete list of visible furniture in the room, including both anchor furniture and secondary items.
 - Include ALL visible furniture items. If unsure, include your best guess with a lower confidence rather than omitting the item.
 - Do NOT omit furnitureItems. Use [] only when there is truly no visible furniture.
 - confidence must be between 0 and 1.
 - hasMovableSeating=true if movable stools/chairs/seating are clearly visible.
-- hasCounterClutter=true if clutter is clearly visible on kitchen counters/island.
-- hasSurfaceClutter=true if clutter is visible on tables/benches/other surfaces.
-- hasLoosePortableItems=true for visible loose bags/boxes/portable objects.
+- hasCounterClutter=true only if kitchen counters/island are clearly cluttered (many items that would need clearing before staging).
+- hasSurfaceClutter=true only if tables/benches/other surfaces are clearly cluttered (many items, piles), not for one or two small objects.
+- hasLoosePortableItems=true only for real loose clutter on the floor: bags, boxes, piles of clothes or belongings, rubbish piles.
 - isStageReady=true only when room appears clean and ready for direct staging.
 - If no valid anchor is clearly visible, set detectedAnchors to [] and hasFurniture=false.
 - Built-ins alone must not set hasFurniture=true.

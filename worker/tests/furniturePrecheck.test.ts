@@ -65,6 +65,49 @@ describe("furniture pre-check decision", () => {
     expect(decideRequiresDeclutter(false, base, "bedroom")).toBe(false);
   });
 
+  // Real detector outputs from the 2026-10-12 Railway run.
+  it("Bedroom 12: empty room with unlisted clutter flags is NOT sent to declutter", () => {
+    const bedroom12 = { ...base, hasSurfaceClutter: true, hasLoosePortableItems: true, detectedItems: [] };
+    expect(decideRequiresDeclutter(false, bedroom12, "bedroom")).toBe(false);
+  });
+
+  it("Bedroom 2: furnished room with an unlisted surface-clutter flag is not decluttered", () => {
+    const bedroom2 = {
+      ...base,
+      hasFurniture: true,
+      detectedAnchors: ["bed", "chair", "large_freestanding_cabinet"],
+      hasSurfaceClutter: true,
+    };
+    expect(decideRequiresDeclutter(false, bedroom2, "bedroom")).toBe(false);
+  });
+
+  it("cables, two vases and a bit of litter are minor: no declutter", () => {
+    const minor = {
+      ...base,
+      hasSurfaceClutter: true,
+      detectedItems: [
+        { type: "cable", confidence: 0.9 },
+        { type: "vase", confidence: 0.9 },
+        { type: "vase", confidence: 0.8 },
+        { type: "litter", confidence: 0.7 },
+      ],
+    };
+    expect(decideRequiresDeclutter(false, minor, "living_room")).toBe(false);
+  });
+
+  it("real clutter (boxes, bags, clothes) still goes to declutter", () => {
+    const messy = {
+      ...base,
+      hasLoosePortableItems: true,
+      detectedItems: [
+        { type: "box", confidence: 0.9 },
+        { type: "bag", confidence: 0.9 },
+        { type: "clothes_pile", confidence: 0.85 },
+      ],
+    };
+    expect(decideRequiresDeclutter(false, messy, "bedroom")).toBe(true);
+  });
+
   it("normalises room types like the pipeline", () => {
     expect(normalizePrecheckRoomType("Bathroom-1")).toBe("bathroom_1");
     expect(normalizePrecheckRoomType("multiple_living")).toBe("kitchen_living_dining");
