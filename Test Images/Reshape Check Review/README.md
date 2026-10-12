@@ -26,3 +26,9 @@ Made by `worker/src/scripts/reshape-check-pairs.ts` (no AI calls). Re-run after 
 - #58 Living (Baseline) / Diningroom 01-staged-v1.webp — checks say **RESHAPED (full check)** (framing 15.3, zoom 1)
 - #59 Living (Baseline) / Living 07-staged-sharedpath.webp — checks say **RESHAPED (full check)** (framing 18, zoom 1.08)
 - #60 Living (Baseline) / Living 10-staged-sharedpath.webp — checks say **RESHAPED (full check)** (framing 15.6, zoom 1)
+
+## Owner's labels (ground truth)
+
+Saved in `owner_labels.json`: only these are reshaped beyond what merging can save: 7, 11, 12, 13, 21, 24, 31, 33, 34, 39, 40, 41, 42, 44, 45, 46, 47, 48, 49, 50 (possibly 10). 15 and 17: shape fine, but furniture blocks doorways. Everything else is salvageable by merging.
+
+Against these labels the current reshape rule catches 20/20 but wrongly rejects 39/58 salvageable photos: it measures how far the view moved, not whether the merged furniture still fits.
