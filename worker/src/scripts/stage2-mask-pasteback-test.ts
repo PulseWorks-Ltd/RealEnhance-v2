@@ -1271,7 +1271,9 @@ async function compositeSurface(original: Buffer, staged: Buffer, floorSurface: 
 //     3D: furniture that only LOOKS in front of a doorway from the camera
 //     angle but stands well forward in the room doesn't block it.
 //  4. Blocked -> re-stage the photo with a note to keep that doorway clear and
-//     run the whole pipeline again (max DOOR_MAX_RESTAGES). Clear -> publish.
+//     run the whole pipeline again (one re-stage, STAGE2_MASKED_MAX_RESTAGES).
+//     Still blocked -> the photo fails and the app delivers its last good
+//     output (the Stage 2 input). Clear -> publish.
 // Uses Grok when STAGE2_VALIDATOR_MODEL=grok (as production does), else Gemini.
 const DOOR_CHECK = process.env.DOOR_CHECK !== "0";
 // Door-check model. DOOR_CHECK_MODEL (a Gemini text model) takes precedence:
@@ -1280,7 +1282,10 @@ const DOOR_CHECK = process.env.DOOR_CHECK !== "0";
 // default Gemini models below. Comma-separated = tried in order.
 const DOOR_CHECK_MODEL_SET = Boolean(String(process.env.DOOR_CHECK_MODEL || "").trim());
 const DOOR_CHECK_MODELS = (process.env.DOOR_CHECK_MODEL || "gemini-3.8-flash,gemini-3.1-flash-lite").split(",").map((m) => m.trim()).filter(Boolean);
-const DOOR_MAX_RESTAGES = Number(process.env.DOOR_MAX_RESTAGES || 2);
+// One re-stage budget per photo, for ANY reason (blocked doorway or a room
+// Gemini reshaped). If the re-staged result also fails, the photo fails and
+// the app falls back to its last good output (the Stage 2 input).
+const MAX_RESTAGES = Number(process.env.STAGE2_MASKED_MAX_RESTAGES || process.env.DOOR_MAX_RESTAGES || 1);
 // Share of the floor area in front of a doorway that must have changed for
 // the code to call it "appears blocked" and ask the AI.
 const DOOR_APPROACH_CHANGED = Number(process.env.DOOR_APPROACH_CHANGED || 0.3);
@@ -2964,20 +2969,38 @@ async function main() {
       console.warn(`Skipping ${img.name}: file not found (${img.file})`);
       continue;
     }
-    // Door blocked in the final image -> re-stage the photo with a note to
-    // keep that doorway clear and run everything again (max DOOR_MAX_RESTAGES).
+    // A photo needs re-staging when the final image has a blocked doorway or
+    // Gemini reshaped the room. One re-stage (MAX_RESTAGES) for any reason; if
+    // the re-staged result also fails, the photo fails and the app delivers
+    // its last good output — the Stage 2 input (Stage 1A, or 1B if decluttered).
     let opts: { attempt: number; hints: string[]; doors?: DoorOpening[] | null } = { attempt: 1, hints: [] };
     for (;;) {
       const row = await runOne(img, opts);
       rows.push(row);
-      if (!row.doorAccess?.blocked) break;
-      if (PAIR_MODE || FROM_RUN || opts.attempt > DOOR_MAX_RESTAGES) {
-        row.doorAccess.result = PAIR_MODE || FROM_RUN ? "BLOCKED (pair/offline mode: can't re-stage)" : "BLOCKED after max re-stages — would be flagged";
-        console.warn(`[${row.image}] ${row.doorAccess.result}`);
+      const reasons = [
+        ...(row.doorAccess?.blocked ? ["doorway blocked"] : []),
+        ...(row.framingCheck?.framingChanged ? ["room reshaped"] : []),
+        ...(row.ok === false ? ["processing error"] : []),
+      ];
+      if (reasons.length === 0) {
+        row.outcome = "publish";
         break;
       }
-      console.warn(`[${row.image}] re-staging (attempt ${opts.attempt + 1}) to keep the doorway clear`);
-      opts = { attempt: opts.attempt + 1, hints: row.doorAccess.restageHints || [], doors: row.doorAccess.doors };
+      if (PAIR_MODE || FROM_RUN) {
+        row.outcome = `needs re-stage (${reasons.join(", ")}) — not possible in pair/offline mode`;
+        console.warn(`[${row.image}] ${row.outcome}`);
+        break;
+      }
+      if (opts.attempt > MAX_RESTAGES) {
+        row.outcome = `FAILED after re-stage (${reasons.join(", ")}) — the app delivers its last good output (the Stage 2 input)`;
+        const dir = path.join(OUT, row.image);
+        if (fs.existsSync(dir)) fs.copyFileSync(img.file, path.join(dir, `13_fallback_output${path.extname(img.file)}`));
+        console.warn(`[${row.image}] ${row.outcome}`);
+        break;
+      }
+      row.outcome = `re-stage (${reasons.join(", ")})`;
+      console.warn(`[${row.image}] re-staging (attempt ${opts.attempt + 1}): ${reasons.join(", ")}`);
+      opts = { attempt: opts.attempt + 1, hints: row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : [], doors: row.doorAccess?.doors ?? null };
     }
   }
   fs.writeFileSync(path.join(OUT, "results.json"), JSON.stringify(rows, null, 2));
