@@ -464,6 +464,18 @@ export async function finalDoorCheck(ctx: MaskedContext, finalImage: Buffer | nu
 
 // ── App entry point ──────────────────────────────────────────────────────────
 
+// STAGE2_MASKED_HARMONISE switches the app's main Stage 2 to this pipeline
+// (interior rooms only). Accepts on / 1 / true / yes. Off by default.
+export function maskedStage2Enabled(): boolean {
+  return ["on", "1", "true", "yes"].includes(String(process.env.STAGE2_MASKED_HARMONISE || "").trim().toLowerCase());
+}
+
+// STAGE2_MASKED_DEBUG_UPLOAD=1: upload each attempt's in-between images to S3
+// (debug-attempts/<jobId>/masked/...) and log signed links.
+export function maskedStage2DebugUploadEnabled(): boolean {
+  return ["on", "1", "true", "yes"].includes(String(process.env.STAGE2_MASKED_DEBUG_UPLOAD || "").trim().toLowerCase());
+}
+
 // Doors and walkthroughs from the app's structural baseline (extracted in
 // parallel with Stage 1A). Closet doors and windows are not walked through.
 export function doorsFromStructuralBaseline(baseline: any): DoorOpening[] | null {
@@ -503,6 +515,8 @@ export async function runMaskedStage2Job(p: {
   onAttemptFiles?: (attempt: number, dir: string, files: string[]) => Promise<void>;
   log?: (msg: string) => void;
   warn?: (msg: string) => void;
+  // Offline replay for tests: saved Gemini outputs per attempt, no calls.
+  replay?: (attempt: number, name: string) => Buffer | null;
 }): Promise<MaskedJobResult> {
   const original = fs.readFileSync(p.inputPath);
   const meta = await sharp(original).metadata();
@@ -524,6 +538,7 @@ export async function runMaskedStage2Job(p: {
       },
       log: p.log,
       warn: p.warn,
+      ...(p.replay ? { load: (name: string) => p.replay!(attempt, name) } : {}),
     };
     const row: any = { attempt, roomType: p.roomType, input: `${w}x${h}`, aspectRatio, ...(attempt > 1 ? { restageHints: hints } : {}) };
     reports.push(row);
@@ -533,7 +548,7 @@ export async function runMaskedStage2Job(p: {
       const stagedPath = await p.stage(attempt, hints);
       const staged = fs.readFileSync(stagedPath);
       io.save?.("2_staged_raw.webp", staged);
-      const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: false, dir, io, row };
+      const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
       const layers = await traceLayers(ctx);
       const hm = await harmonise(ctx, layers);
       final = hm.checkedBlend || hm.harmFinal;

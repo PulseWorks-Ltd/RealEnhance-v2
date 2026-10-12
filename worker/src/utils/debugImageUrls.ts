@@ -34,8 +34,15 @@ export function isDebugImageUrlLoggingEnabled(): boolean {
   return process.env.ENABLE_DEBUG_IMAGE_URLS === "1" || process.env.SIGN_ALL_STAGE_OUTPUTS === "1";
 }
 
-export async function createDebugSignedUrl(localPath: string, jobId: string): Promise<DebugSignedUrlResult> {
-  if (!isDebugImageUrlLoggingEnabled()) {
+export async function createDebugSignedUrl(
+  localPath: string,
+  jobId: string,
+  // force: upload even when debug URL logging is off (masked Stage 2's own
+  // STAGE2_MASKED_DEBUG_UPLOAD switch). keyName: object name, default the
+  // file's basename.
+  options?: { force?: boolean; keyName?: string }
+): Promise<DebugSignedUrlResult> {
+  if (!options?.force && !isDebugImageUrlLoggingEnabled()) {
     return { signedUrl: null, key: null };
   }
 
@@ -60,7 +67,7 @@ export async function createDebugSignedUrl(localPath: string, jobId: string): Pr
   }
 
   const body = await fs.readFile(localPath);
-  const fileName = path.basename(localPath);
+  const fileName = options?.keyName || path.basename(localPath);
   const key = `debug-attempts/${jobId}/${fileName}`;
   const contentType = mimeFromExt(localPath);
 

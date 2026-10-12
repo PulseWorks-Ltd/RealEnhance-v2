@@ -97,6 +97,13 @@ import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage, publishThumbnailVariant, type PublishResult } from "./utils/publish";
 import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
+import {
+  runMaskedStage2Job,
+  doorsFromStructuralBaseline,
+  maskedStage2Enabled,
+  maskedStage2DebugUploadEnabled,
+} from "./pipeline/stage2Masked/pipeline";
+import { MAX_RESTAGES as MASKED_STAGE2_MAX_RESTAGES } from "./pipeline/stage2Masked/core";
 import { downloadToTemp } from "./utils/remote";
 import { isTerminalStatus, safeWriteJobStatus } from "./utils/statusUtils";
 import { canMarkJobComplete, logCompletionGuard } from "./utils/completionGuard";
@@ -11232,6 +11239,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   let path2: string = stage2InputResolved;
   let stage2LayoutPlan: Stage2LayoutPlan | null = null;
   let stage2TimedOut = false; // FIX 4: Track timeout status
+  // Masked Stage 2 (STAGE2_MASKED_HARMONISE): when used, the post-generation
+  // validation/retry controller below is skipped — the masked pipeline does
+  // its own checks and its single re-stage.
+  let maskedStage2Used = false;
   
   try {
     if (payload.options.virtualStage && !stage2Blocked) {
@@ -11298,7 +11309,100 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
       if (await stopIfCancelled("pre_stage2")) return;
       const stage2MainStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
-      const stage2Promise = payload.options.virtualStage && !stage2Blocked
+      const stage2MainRoomType = (
+        !payload.options.roomType ||
+        ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
+      )
+        ? String(detectedRoom || "living_room")
+        : payload.options.roomType;
+      // ═══ MASKED STAGE 2 (STAGE2_MASKED_HARMONISE) ═══
+      // Interior rooms only (exteriors never reach Stage 2). Gemini stages the
+      // room; the furniture it added is traced and pasted onto the Stage 2 input
+      // (so the room's structure cannot change); Gemini blends shadows/lighting;
+      // the blend is checked patch by patch; a final door check runs. One
+      // re-stage for any failure; if that also fails, the job falls back to the
+      // last good output (the Stage 2 input) via the existing
+      // composite_validation_exhausted ending.
+      const useMaskedStage2 = Boolean(
+        payload.options.virtualStage && !stage2Blocked && sceneLabel === "interior" && maskedStage2Enabled() &&
+          // STAGE2_MASKED_REFRESH=0 keeps refresh (decluttered/furnished) jobs on the old path.
+          (stage2PromptMode === "full" || String(process.env.STAGE2_MASKED_REFRESH ?? "1").trim() !== "0")
+      );
+      if (useMaskedStage2) maskedStage2Used = true;
+      const runMaskedStage2 = async () => {
+        const debugUpload = maskedStage2DebugUploadEnabled();
+        const debugLinks: Record<string, string> = {};
+        const result = await runMaskedStage2Job({
+          inputPath: stage2InputResolved,
+          roomType: String(stage2MainRoomType),
+          jobId: payload.jobId,
+          doors: doorsFromStructuralBaseline(stage2MainStructuralBaseline),
+          maxRestages: MASKED_STAGE2_MAX_RESTAGES,
+          stage: (attempt, hints) =>
+            runStage2GenerationAttempt(stage2InputResolved, {
+              roomType: String(stage2MainRoomType),
+              sceneType: "interior",
+              profile,
+              structuralBaseline: stage2MainStructuralBaseline,
+              stagingStyle: stagingStyleNorm,
+              sourceStage: stage2SourceStage,
+              promptMode: stage2PromptMode,
+              stage2Mode: explicitStage2ModeMain,
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              outputPath: siblingOutPath(stage2InputResolved, `-2-masked-staged${attempt}`, ".webp"),
+              attempt,
+              layoutPlan: stage2LayoutPlan,
+              retryInstructions: (payload as any).retryInstructions,
+              retryCorrectionHints: hints.length ? hints : null,
+              curtainRailLikely: jobContext.curtainRailLikely,
+            }),
+          outputPathFor: (attempt) => siblingOutPath(stage2InputResolved, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
+          workDir: siblingOutPath(stage2InputResolved, "-2-masked-work", ""),
+          onAttemptFiles: debugUpload
+            ? async (attempt, dir, files) => {
+                for (const name of files) {
+                  try {
+                    const res = await createDebugSignedUrl(path.join(dir, name), payload.jobId, {
+                      force: true,
+                      keyName: `masked/attempt${attempt}/${name}`,
+                    });
+                    if (res.signedUrl) debugLinks[`attempt${attempt}/${name}`] = res.signedUrl;
+                  } catch (uploadErr: any) {
+                    nLog("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
+                  }
+                }
+              }
+            : undefined,
+          log: (msg) => nLog(`[STAGE2_MASKED] ${msg}`),
+          warn: (msg) => nLog(`[STAGE2_MASKED] ${msg}`),
+        });
+        const summary = {
+          ok: result.ok,
+          attempts: result.attempts,
+          ...(result.ok ? {} : { reasons: result.reasons }),
+          reports: result.reports,
+          ...(debugUpload ? { debugLinks } : {}),
+        };
+        nLog("[STAGE2_MASKED_RESULT]", { jobId: payload.jobId, imageId: payload.imageId, ...summary });
+        try {
+          await updateJob(payload.jobId, { stage2Masked: summary });
+        } catch {}
+        if (result.ok) {
+          return {
+            outputPath: result.outputPath,
+            attempts: result.attempts,
+            maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1,
+            validationRisk: false,
+            fallbackUsed: false,
+            localReasons: [] as string[],
+          };
+        }
+        return { maskedFailed: true as const, reasons: result.reasons, attempts: result.attempts };
+      };
+      const stage2Promise = payload.options.virtualStage && !stage2Blocked && useMaskedStage2
+        ? withMemoryPhase("stage2_generation_masked", { stage2BaseStage, promptMode: stage2PromptMode }, runMaskedStage2)
+        : payload.options.virtualStage && !stage2Blocked
         ? withMemoryPhase(
             "stage2_generation_main",
             { stage2BaseStage, promptMode: stage2PromptMode },
@@ -11361,8 +11465,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       
       // FIX 4: Wrap Stage 2 execution with timeout
       let stage2TimeoutHandle: ReturnType<typeof setTimeout> | undefined;
+      // The masked pipeline (staging + tracing + blend, and possibly one full
+      // re-stage) takes longer than a single staging call.
+      const effectiveStage2TimeoutMs = useMaskedStage2
+        ? Number(process.env.STAGE2_MASKED_TIMEOUT_MS || 900000)
+        : STAGE2_TIMEOUT_MS;
       const timeoutPromise = new Promise((_, reject) => {
-        stage2TimeoutHandle = setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), STAGE2_TIMEOUT_MS);
+        stage2TimeoutHandle = setTimeout(() => reject(new Error('STAGE2_TIMEOUT')), effectiveStage2TimeoutMs);
       });
       
       let stage2Outcome: any;
@@ -11371,11 +11480,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       } catch (timeoutError: any) {
         if (timeoutError?.message === 'STAGE2_TIMEOUT') {
           stage2TimedOut = true;
-          logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2", kind: "timeout", elapsedMs: STAGE2_TIMEOUT_MS });
-          nLog(`[worker] ⏱️ Stage 2 timeout after ${STAGE2_TIMEOUT_MS}ms, falling back to Stage ${stage2BaseStage}`);
+          logEvent("SYSTEM_ERROR", { jobId: payload.jobId, stage: "2", kind: "timeout", elapsedMs: effectiveStage2TimeoutMs });
+          nLog(`[worker] ⏱️ Stage 2 timeout after ${effectiveStage2TimeoutMs}ms, falling back to Stage ${stage2BaseStage}`);
           stage2Blocked = true;
           stage2FallbackStage = stage2BaseStage;
-          stage2BlockedReason = `Stage 2 processing exceeded ${STAGE2_TIMEOUT_MS / 1000}s timeout. Using best available result.`;
+          stage2BlockedReason = `Stage 2 processing exceeded ${effectiveStage2TimeoutMs / 1000}s timeout. Using best available result.`;
           stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
         } else if (isStage2RetryableGenerationError(timeoutError)) {
           nLog("[STAGE2_GENERATION_RETRYABLE]", {
@@ -11399,6 +11508,22 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         if (stage2TimeoutHandle) clearTimeout(stage2TimeoutHandle);
       }
       
+      // Masked Stage 2 failed even after its re-stage: fall back to the last
+      // good output (the Stage 2 input) through the existing
+      // composite_validation_exhausted ending after the (skipped) validation.
+      if (stage2Outcome && typeof stage2Outcome === "object" && (stage2Outcome as any).maskedFailed) {
+        nLog("[STAGE2_MASKED_FALLBACK]", {
+          jobId: payload.jobId,
+          reasons: (stage2Outcome as any).reasons,
+          attempts: (stage2Outcome as any).attempts,
+          fallbackStage: stage2BaseStage,
+        });
+        stage2Blocked = true;
+        stage2FallbackStage = stage2BaseStage;
+        stage2BlockedReason = "composite_validation_exhausted";
+        stage2Outcome = stageLineage.stage1B.committed && stageLineage.stage1B.output ? stageLineage.stage1B.output : path1A;
+      }
+
       // FIX 6: Track Stage 2 end
       timestamps.stage2End = Date.now();
       if (payload.options.virtualStage && !stage2Blocked && !(await ensureStage2AttemptOwner("stage2_end"))) return;
@@ -11833,7 +11958,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     );
   };
 
-  if (payload.options.virtualStage) {
+  // Masked Stage 2 runs its own checks (structure, checked blend, door access)
+  // and its own single re-stage, so the validation/retry controller is skipped.
+  if (payload.options.virtualStage && !maskedStage2Used) {
     let pendingStage2StructuralFailureType: StructuralFailureType | null = null;
     let pendingStage2RetryStrategy: string | null = null;
     let pendingStage2RetryReason: string | null = null;
