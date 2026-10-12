@@ -1,0 +1,28 @@
+[
+  {
+    "photo": "Bedroom 05",
+    "roomType": "bedroom",
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 22.6,
+      "calls": 1,
+      "byModel": {
+        "gemini-3.8-flash": 1
+      },
+      "inputTokens": 2462,
+      "outputTokens": 920,
+      "thinkingTokens": 1180,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2462,
+          "outputTokens": 920,
+          "thinkingTokens": 1180,
+          "latencyMs": 22436
+        }
+      ]
+    }
+  }
+]
