@@ -1,0 +1,938 @@
+[
+  {
+    "image": "Bedroom_02",
+    "roomType": "bedroom",
+    "input": "1439x1079",
+    "aspectRatio": "4:3",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.227,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 14.7,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 16.5,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 16.6,
+      "furniture": 18.8,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 19.5,
+      "shadowZone": 5.1
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 10.19,
+      "changedPixelPct": 17.09
+    },
+    "framingCheck": {
+      "tilesChecked": 33,
+      "tilesChanged": 1,
+      "changedPct": 3,
+      "medianDiff": 5.5,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.988,
+      1.008,
+      1.002
+    ],
+    "shadowPctOfZone": 20,
+    "edgeBandStagedPct": 94.1,
+    "harmoniseCostUsd": 0.1189,
+    "harmonise": {
+      "tightFurniturePct": 18.8,
+      "shadowZonePct": 17.3,
+      "edgeMattePctOfBand": 65.2,
+      "blendFraming": {
+        "tilesChecked": 25,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 1.9,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 3.48,
+        "changedPixelPct": 3.09
+      },
+      "sunPatchPctOfImage": 1.8,
+      "blendUsed": true,
+      "colourGains": [
+        0.981,
+        0.993,
+        0.988
+      ],
+      "shadowPctOfZone": 14.1,
+      "strongestShadowPct": 64,
+      "furnitureDiffVsBlend": 5.1,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 2.9,
+      "structureCheck": {
+        "checkedPctOfImage": 57.8,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2461,
+      "patchesRepaired": 69,
+      "repairPct": 2.8,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 9,
+        "colour_changed": 60
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 170.055
+  },
+  {
+    "image": "Bedroom_04",
+    "roomType": "bedroom",
+    "input": "1920x1079",
+    "aspectRatio": "16:9",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2752x1536",
+    "traceCostUsd": 0.2296,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 17.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 17.7,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 17.7,
+      "furniture": 17.8,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 18.4,
+      "shadowZone": 3.8
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 8.63,
+      "changedPixelPct": 16.34
+    },
+    "framingCheck": {
+      "tilesChecked": 34,
+      "tilesChanged": 8,
+      "changedPct": 23.5,
+      "medianDiff": 4.9,
+      "framingChanged": false
+    },
+    "finalSize": "2752x1547",
+    "colourGains": [
+      1.001,
+      1.02,
+      1.012
+    ],
+    "shadowPctOfZone": 65.5,
+    "edgeBandStagedPct": 91.3,
+    "harmoniseCostUsd": 0.1193,
+    "harmonise": {
+      "tightFurniturePct": 17.7,
+      "shadowZonePct": 16.1,
+      "edgeMattePctOfBand": 56.2,
+      "blendFraming": {
+        "tilesChecked": 27,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 2.2,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 3.74,
+        "changedPixelPct": 1.95
+      },
+      "sunPatchPctOfImage": 1.2,
+      "blendUsed": true,
+      "colourGains": [
+        0.977,
+        0.991,
+        0.983
+      ],
+      "shadowPctOfZone": 23.2,
+      "strongestShadowPct": 16,
+      "furnitureDiffVsBlend": 5.2,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 2.9,
+      "structureCheck": {
+        "checkedPctOfImage": 58.7,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 1895,
+      "patchesRepaired": 0,
+      "repairPct": 0,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 0,
+        "colour_changed": 0
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 157.877
+  },
+  {
+    "image": "Bedroom_06",
+    "roomType": "bedroom",
+    "input": "2048x1536",
+    "aspectRatio": "4:3",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.2272,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 12.3,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 15.5,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0.4,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [
+      {
+        "areaPct": 0.37,
+        "busiestPatchPct": 58,
+        "edgePct": 17.1,
+        "wallStd": 43.1,
+        "ringDiff": 38.3,
+        "kept": false,
+        "reason": "not plain wall underneath (window, door, fireplace, fixture or wall corner)"
+      }
+    ],
+    "maskPct": {
+      "traced": 15.6,
+      "furniture": 17,
+      "wallArtKept": 0,
+      "wallArtDropped": 0.4,
+      "solid": 17.6,
+      "shadowZone": 6
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 20.81,
+      "changedPixelPct": 59.19
+    },
+    "framingCheck": {
+      "tilesChecked": 36,
+      "tilesChanged": 17,
+      "changedPct": 47.2,
+      "medianDiff": 12,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.92,
+      0.932,
+      0.896
+    ],
+    "shadowPctOfZone": 19.8,
+    "edgeBandStagedPct": 97.5,
+    "harmoniseCostUsd": 0.1189,
+    "harmonise": {
+      "tightFurniturePct": 16.7,
+      "shadowZonePct": 19.7,
+      "edgeMattePctOfBand": 75.2,
+      "blendFraming": {
+        "tilesChecked": 28,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 1.6,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 4.33,
+        "changedPixelPct": 2.83
+      },
+      "sunPatchPctOfImage": 2,
+      "blendUsed": true,
+      "colourGains": [
+        0.963,
+        0.992,
+        0.974
+      ],
+      "shadowPctOfZone": 15,
+      "strongestShadowPct": 63,
+      "furnitureDiffVsBlend": 4.9,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 5.1,
+      "structureCheck": {
+        "checkedPctOfImage": 57.8,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2519,
+      "patchesRepaired": 9,
+      "repairPct": 0.4,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 4,
+        "colour_changed": 5
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 157.285
+  },
+  {
+    "image": "Bedroom_11",
+    "roomType": "bedroom",
+    "input": "1152x1536",
+    "aspectRatio": "3:4",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.2276,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 9.4,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 9.4,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 9.4,
+      "furniture": 9.5,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 9.9,
+      "shadowZone": 4.5
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 8.18,
+      "changedPixelPct": 13.2
+    },
+    "framingCheck": {
+      "tilesChecked": 85,
+      "tilesChanged": 14,
+      "changedPct": 16.5,
+      "medianDiff": 4.5,
+      "framingChanged": false
+    },
+    "finalSize": "1792x2389",
+    "colourGains": [
+      0.987,
+      1.001,
+      0.993
+    ],
+    "shadowPctOfZone": 13.7,
+    "edgeBandStagedPct": 89.1,
+    "harmoniseCostUsd": 0.1207,
+    "harmonise": {
+      "tightFurniturePct": 9.4,
+      "shadowZonePct": 18.8,
+      "edgeMattePctOfBand": 56.9,
+      "blendFraming": {
+        "tilesChecked": 53,
+        "tilesChanged": 1,
+        "changedPct": 1.9,
+        "medianDiff": 2.9,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 4.7,
+        "changedPixelPct": 5.79
+      },
+      "sunPatchPctOfImage": 2.8,
+      "blendUsed": true,
+      "colourGains": [
+        0.984,
+        0.992,
+        0.985
+      ],
+      "shadowPctOfZone": 5.5,
+      "strongestShadowPct": 18,
+      "furnitureDiffVsBlend": 4.4,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 2.6,
+      "structureCheck": {
+        "checkedPctOfImage": 65,
+        "changedPixelPct": 0.01,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 5032,
+      "patchesRepaired": 15,
+      "repairPct": 0.3,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 13,
+        "colour_changed": 2
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 170.84
+  },
+  {
+    "image": "Bedroom_12",
+    "roomType": "bedroom",
+    "input": "1440x1080",
+    "aspectRatio": "4:3",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.2285,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 9.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 9.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 9.6,
+      "furniture": 9.8,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 10.4,
+      "shadowZone": 5.9
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 10.66,
+      "changedPixelPct": 21.15
+    },
+    "framingCheck": {
+      "tilesChecked": 49,
+      "tilesChanged": 7,
+      "changedPct": 14.3,
+      "medianDiff": 3.2,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.983,
+      0.997,
+      0.987
+    ],
+    "shadowPctOfZone": 37.8,
+    "edgeBandStagedPct": 91.7,
+    "harmoniseCostUsd": 0.119,
+    "harmonise": {
+      "tightFurniturePct": 9.7,
+      "shadowZonePct": 21.8,
+      "edgeMattePctOfBand": 58.7,
+      "blendFraming": {
+        "tilesChecked": 35,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 1.3,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 3.21,
+        "changedPixelPct": 2.65
+      },
+      "sunPatchPctOfImage": 7,
+      "blendUsed": true,
+      "colourGains": [
+        0.986,
+        0.997,
+        0.99
+      ],
+      "shadowPctOfZone": 19.6,
+      "strongestShadowPct": 25,
+      "furnitureDiffVsBlend": 8.6,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 4.6,
+      "structureCheck": {
+        "checkedPctOfImage": 60.4,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2741,
+      "patchesRepaired": 17,
+      "repairPct": 0.6,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 13,
+        "colour_changed": 4
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 164.27
+  },
+  {
+    "image": "Bedroom_14",
+    "roomType": "bedroom",
+    "input": "1600x1200",
+    "aspectRatio": "4:3",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.226,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 16.9,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 16.8,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 16.9,
+      "furniture": 17.6,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 18.5,
+      "shadowZone": 7.8
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 5.51,
+      "changedPixelPct": 6.27
+    },
+    "framingCheck": {
+      "tilesChecked": 48,
+      "tilesChanged": 1,
+      "changedPct": 2.1,
+      "medianDiff": 1.9,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.977,
+      0.997,
+      0.99
+    ],
+    "shadowPctOfZone": 59.5,
+    "edgeBandStagedPct": 88.3,
+    "harmoniseCostUsd": 0.1208,
+    "harmonise": {
+      "tightFurniturePct": 17.3,
+      "shadowZonePct": 26.9,
+      "edgeMattePctOfBand": 58.1,
+      "blendFraming": {
+        "tilesChecked": 34,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 1.9,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 2.83,
+        "changedPixelPct": 1.29
+      },
+      "sunPatchPctOfImage": 4.9,
+      "blendUsed": true,
+      "colourGains": [
+        0.973,
+        0.993,
+        0.987
+      ],
+      "shadowPctOfZone": 14.6,
+      "strongestShadowPct": 31,
+      "furnitureDiffVsBlend": 4.5,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 3.6,
+      "structureCheck": {
+        "checkedPctOfImage": 47.9,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2458,
+      "patchesRepaired": 18,
+      "repairPct": 0.7,
+      "reasons": {
+        "appeared_or_gone": 1,
+        "content_changed": 0,
+        "brightened_near_furniture": 10,
+        "colour_changed": 7
+      },
+      "usedAppBuiltInstead": false
+    },
+    "ok": true,
+    "seconds": 149.415
+  },
+  {
+    "image": "job_24a3b64f_Kitchen_06_UPLOAD",
+    "roomType": "kitchen_dining",
+    "input": "2048x1536",
+    "aspectRatio": "4:3",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.2269,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 5.1,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 4.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 5.1,
+      "furniture": 6,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 6.7,
+      "shadowZone": 5.4
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 20.22,
+      "changedPixelPct": 38.28
+    },
+    "framingCheck": {
+      "tilesChecked": 50,
+      "tilesChanged": 37,
+      "changedPct": 74,
+      "medianDiff": 19.5,
+      "framingChanged": true
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.937,
+      0.965,
+      0.954
+    ],
+    "shadowPctOfZone": 31.1,
+    "edgeBandStagedPct": 81.6,
+    "harmoniseCostUsd": 0.1169,
+    "harmonise": {
+      "tightFurniturePct": 5.5,
+      "shadowZonePct": 16.6,
+      "edgeMattePctOfBand": 39.6,
+      "blendFraming": {
+        "tilesChecked": 42,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 2.4,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 4.86,
+        "changedPixelPct": 5.71
+      },
+      "sunPatchPctOfImage": 0,
+      "blendUsed": true,
+      "colourGains": [
+        0.975,
+        0.993,
+        0.982
+      ],
+      "shadowPctOfZone": 15.5,
+      "strongestShadowPct": 57,
+      "furnitureDiffVsBlend": 6.6,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 3,
+      "structureCheck": {
+        "checkedPctOfImage": 71.2,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2867,
+      "patchesRepaired": 3,
+      "repairPct": 0.1,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 0,
+        "colour_changed": 3
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 202.491
+  },
+  {
+    "image": "job_f61d8dc1_Living_07_UPLOAD",
+    "roomType": "living_room",
+    "input": "810x1080",
+    "aspectRatio": "3:4",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.2297,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 21.4,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 22,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 22,
+      "furniture": 24.9,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 25.6,
+      "shadowZone": 8.9
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 10.33,
+      "changedPixelPct": 20
+    },
+    "framingCheck": {
+      "tilesChecked": 67,
+      "tilesChanged": 17,
+      "changedPct": 25.4,
+      "medianDiff": 7.3,
+      "framingChanged": false
+    },
+    "finalSize": "1792x2389",
+    "colourGains": [
+      0.976,
+      1,
+      0.988
+    ],
+    "shadowPctOfZone": 0.2,
+    "edgeBandStagedPct": 82.7,
+    "harmoniseCostUsd": 0.1189,
+    "harmonise": {
+      "tightFurniturePct": 22.1,
+      "shadowZonePct": 29.6,
+      "edgeMattePctOfBand": 54.5,
+      "blendFraming": {
+        "tilesChecked": 36,
+        "tilesChanged": 2,
+        "changedPct": 5.6,
+        "medianDiff": 2.2,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 4.95,
+        "changedPixelPct": 6.54
+      },
+      "sunPatchPctOfImage": 2.2,
+      "blendUsed": true,
+      "colourGains": [
+        0.971,
+        0.994,
+        0.987
+      ],
+      "shadowPctOfZone": 1.4,
+      "strongestShadowPct": 38,
+      "furnitureDiffVsBlend": 9.7,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 10.2,
+      "structureCheck": {
+        "checkedPctOfImage": 42.4,
+        "changedPixelPct": 0.01,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 4217,
+      "patchesRepaired": 67,
+      "repairPct": 1.6,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 37,
+        "colour_changed": 30
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 158.341
+  },
+  {
+    "image": "87fda763_Kitchen01_1A_baseline",
+    "roomType": "kitchen_living",
+    "input": "2048x1494",
+    "aspectRatio": "4:3",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.23,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 12.9,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 14.7,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 14.8,
+      "furniture": 15.3,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "solid": 16,
+      "shadowZone": 6
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 16.5,
+      "changedPixelPct": 23.58
+    },
+    "framingCheck": {
+      "tilesChecked": 50,
+      "tilesChanged": 11,
+      "changedPct": 22,
+      "medianDiff": 6.9,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1751",
+    "colourGains": [
+      0.968,
+      0.985,
+      0.974
+    ],
+    "shadowPctOfZone": 23.8,
+    "edgeBandStagedPct": 87.1,
+    "harmoniseCostUsd": 0.1192,
+    "harmonise": {
+      "tightFurniturePct": 14.8,
+      "shadowZonePct": 18.7,
+      "edgeMattePctOfBand": 65.9,
+      "blendFraming": {
+        "tilesChecked": 39,
+        "tilesChanged": 1,
+        "changedPct": 2.6,
+        "medianDiff": 3.9,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 9.02,
+        "changedPixelPct": 12.56
+      },
+      "sunPatchPctOfImage": 1.3,
+      "blendUsed": true,
+      "colourGains": [
+        0.982,
+        1,
+        0.985
+      ],
+      "shadowPctOfZone": 7.6,
+      "strongestShadowPct": 9,
+      "furnitureDiffVsBlend": 19.4,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 9.7,
+      "structureCheck": {
+        "checkedPctOfImage": 60.5,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2511,
+      "patchesRepaired": 169,
+      "repairPct": 6.7,
+      "reasons": {
+        "appeared_or_gone": 13,
+        "content_changed": 51,
+        "brightened_near_furniture": 86,
+        "colour_changed": 19
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 249.433
+  }
+]
