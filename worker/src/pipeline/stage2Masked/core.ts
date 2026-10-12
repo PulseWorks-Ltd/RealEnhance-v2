@@ -2572,7 +2572,11 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
 // ---------------------------------------------------------------------------
 export type FloorPatch = {
   x1: number; x2: number; top: number; bottom: number; // patch box (planning pixels)
-  floorTop: number; // top of the floor/skirting band; above it only the wall strip beside a corner is patched
+  floorTop: number; // top of the floor/skirting band
+  runTop: number;   // top of the floating piece
+  // A corner whose far side is a structure NEARER the camera (a pillar or wall
+  // return): it hides everything behind it, so no shadow may fall on it.
+  leftOccluder?: number; rightOccluder?: number; // the real edge column
   runX1: number; runX2: number; runBottom: number;      // the floating piece's columns
   floor?: FloorMatch;
   left: "piece in front" | "wall corner" | "photo edge";
@@ -2636,11 +2640,11 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
       for (let y = 0; y < h; y++) if (floorMask[y * w + x]) { runTop = Math.min(runTop, y); break; }
       if (line[x] >= 0) { lMin = Math.min(lMin, line[x]); lMax = Math.max(lMax, line[x]); }
     }
-    let top = Math.max(0, Math.min(lMin, runBottom) - Math.round(h * 0.05));
+    const top = Math.max(0, Math.min(lMin, runBottom) - Math.round(h * 0.05));
     const bot = Math.min(h - 1, Math.max(lMax, runBottom) + Math.round(h * 0.05));
     const wallY1 = top - Math.round(h * 0.08), wallY2 = top + Math.round(h * 0.02);
     const reach = Math.round(w * FLOOR_PATCH_REACH);
-    const side = (dir: -1 | 1): { at: number; why: FloorPatch["left"] } | string => {
+    const side = (dir: -1 | 1): { at: number; why: FloorPatch["left"]; occluder?: number } | string => {
       const start = dir < 0 ? xa : xb;
       for (let k = 1; k <= reach; k++) {
         const x = start + dir * k;
@@ -2671,7 +2675,19 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
           };
           const pO = peak(gO), pS = peak(gS);
           if (pS.b < 6 || Math.abs(pO.bx - pS.bx) > w * 0.006) return "Gemini moved the wall corner";
-          return { at: dir < 0 ? Math.max(pO.bx, pS.bx) + 1 : Math.min(pO.bx, pS.bx) - 1, why: "wall corner" };
+          // Nearer structure beyond the corner? Its floor line is missing (it
+          // runs out of the photo) or jumps lower; an inside corner's floor
+          // line just bends.
+          const inside = line[Math.max(0, Math.min(w - 1, pO.bx - dir * Math.round(w * 0.01)))];
+          let near = 0, n = 0;
+          for (let k2 = Math.round(w * 0.015); k2 <= Math.round(w * 0.05); k2++) {
+            const xx = pO.bx + dir * k2;
+            if (xx < 0 || xx >= w) break;
+            n++;
+            if (line[xx] < 0 || (inside >= 0 && line[xx] > inside + h * 0.03)) near++;
+          }
+          const occluder = n > 0 && near >= 0.6 * n ? pO.bx : undefined;
+          return { at: dir < 0 ? Math.max(pO.bx, pS.bx) + 1 : Math.min(pO.bx, pS.bx) - 1, why: "wall corner", occluder };
         }
       }
       return "no corner or piece within reach";
@@ -2682,13 +2698,7 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
       notes.push(`${where}: ${typeof L === "string" ? `left side: ${L}` : `right side: ${R}`}`);
       return { ok: false as const, patches: [], notes };
     }
-    // Beside a wall corner, the blend's borrowed shadow can lap onto the wall
-    // next to the corner, where Gemini's floor isn't: take the patch up to
-    // the top of the piece so that strip of wall is Gemini's own too.
     const floorTop = top;
-    if (L.why === "wall corner" || R.why === "wall corner") {
-      top = Math.max(0, Math.min(top, Math.max(runTop - Math.round(h * 0.02), runBottom - Math.round(h * 0.35))));
-    }
     // Same floor material? (carpet must stay carpet)
     const floor = compareFloorMaterial(cO, cS, gO, gS, (x, y) =>
       x >= L.at && x <= R.at && y <= bot && line[x] >= 0 && y >= line[x] + h * 0.01 && !floorMask[y * w + x], w, h);
@@ -2696,8 +2706,9 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
       notes.push(`${where}: ${floor.why} (colour ${floor.chromaDiff}, brightness x${floor.brightRatio}, texture x${floor.textureRatio}, grain x${floor.grainRatio})`);
       return { ok: false as const, patches: [], notes };
     }
-    patches.push({ x1: L.at, x2: R.at, top, bottom: bot, floorTop, runX1: xa, runX2: xb, runBottom, left: L.why, right: R.why, floor });
-    notes.push(`${where}: patch x ${((L.at / w) * 100).toFixed(1)}-${((R.at / w) * 100).toFixed(1)}% (${L.why} | ${R.why})`);
+    patches.push({ x1: L.at, x2: R.at, top, bottom: bot, floorTop, runTop, leftOccluder: L.occluder, rightOccluder: R.occluder, runX1: xa, runX2: xb, runBottom, left: L.why, right: R.why, floor });
+    const tag = (sd: { why: string; occluder?: number }) => sd.why + (sd.occluder !== undefined ? " (nearer structure)" : "");
+    notes.push(`${where}: patch x ${((L.at / w) * 100).toFixed(1)}-${((R.at / w) * 100).toFixed(1)}% (${tag(L)} | ${tag(R)})`);
   }
   return { ok: patches.length > 0, patches, notes };
 }
@@ -2726,30 +2737,15 @@ export async function applyFloorPatches(original: Buffer, final: Buffer, staged:
     const xa = Math.round(p.runX1 * sx), xb = Math.round(p.runX2 * sx), runBottom = Math.round(p.runBottom * sy);
     // colour offset (final - Gemini) on a coarse grid: fixed along the border
     // (except a photo edge, which is free), smooth inside
-    // Relight factor final/real photo, from the clean wall just above the
-    // patch: along a corner join the border follows the REAL photo relit
-    // (the final there may carry a borrowed shadow that laps the corner).
-    const relit = [0, 0, 0], realSum = [0, 0, 0];
-    for (let y = Math.max(0, top - Math.round(FH * 0.04)); y < top; y++) for (let x = L; x <= R; x++) {
-      if (mk[y * FW + x] > 127) continue;
-      for (let c = 0; c < 3; c++) { relit[c] += fin[(y * FW + x) * 3 + c]; realSum[c] += org[(y * FW + x) * 3 + c]; }
-    }
-    const gain = [0, 1, 2].map((c) => (realSum[c] > 0 ? relit[c] / realSum[c] : 1));
     const floorTop = Math.round(p.floorTop * sy);
-    // Which pixels take Gemini's: the floor/skirting band (except the lower
-    // parts of other pieces: a rug, the foot of the bed), plus, above it, the
-    // bare wall strip between a corner and the piece.
-    const replace = (x: number, y: number) => {
-      const m = mk[y * FW + x] > 127;
-      if (y >= floorTop) return !(m && (x < xa || x > xb) && y > runBottom + FH * 0.01);
-      if (m) return false;
-      return (p.left === "wall corner" && x < xa) || (p.right === "wall corner" && x > xb);
-    };
+    // Which pixels take Gemini's: the floor/skirting band, except the lower
+    // parts of other pieces (a rug, the foot of the bed).
+    const replace = (x: number, y: number) =>
+      y >= floorTop && !(mk[y * FW + x] > 127 && (x < xa || x > xb) && y > runBottom + FH * 0.01);
     // Colour offset (target - Gemini) on a coarse grid: fixed wherever pixels
     // are kept and along the box border (except a photo edge, which is free),
-    // smooth where pixels are replaced. The target is the final, except along
-    // a corner join, where it is the real photo relit (the final there may
-    // carry a borrowed shadow lapping the corner).
+    // smooth where pixels are replaced. The target is the final, so shadows
+    // the blend gave the wall and floor carry on into the patch.
     const cs = Math.max(2, Math.round(4 * sx));
     const gx = Math.ceil((R - L + 1) / cs), gy = Math.ceil((bot - top + 1) / cs);
     const D = [0, 1, 2].map(() => new Float32Array(gx * gy));
@@ -2761,11 +2757,10 @@ export async function applyFloorPatches(original: Buffer, final: Buffer, staged:
       let rep = 0, n = 0;
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { if (replace(x, y)) rep++; n++; }
       if (!(border && !freeEdge) && rep * 2 >= n) continue; // solved
-      const cornerSide = (cx === 0 && p.left === "wall corner") || (cx === gx - 1 && p.right === "wall corner");
       const sum = [0, 0, 0];
       for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
         const i = (y * FW + x) * 3;
-        for (let c = 0; c < 3; c++) sum[c] += (cornerSide ? org[i + c] * gain[c] : fin[i + c]) - stg[i + c];
+        for (let c = 0; c < 3; c++) sum[c] += fin[i + c] - stg[i + c];
       }
       for (let c = 0; c < 3; c++) D[c][cy * gx + cx] = sum[c] / Math.max(1, n);
       fixed[cy * gx + cx] = 1;
@@ -2804,10 +2799,8 @@ export async function applyFloorPatches(original: Buffer, final: Buffer, staged:
       if (inX < 0 || outX < 0 || inX >= FW || outX >= FW) continue;
       let ex = 0, n = 0;
       for (let y = top; y <= bot; y++) {
-        // compare with the real photo's own edge there (relit)
         const now = Math.abs(lum(img, y * FW + outX) - lum(img, y * FW + inX));
-        const rl = (i: number) => (org[i * 3] * gain[0] + org[i * 3 + 1] * gain[1] + org[i * 3 + 2] * gain[2]) / 3;
-        const was = Math.abs(rl(y * FW + outX) - rl(y * FW + inX));
+        const was = Math.abs(lum(fin, y * FW + outX) - lum(fin, y * FW + inX));
         ex += Math.max(0, now - was - 4);
         n++;
       }
@@ -2817,6 +2810,34 @@ export async function applyFloorPatches(original: Buffer, final: Buffer, staged:
         img.set(backup);
         return { image: null, notes: [...notes, "corner join would show"] };
       }
+    }
+    // A nearer structure (pillar, wall return) takes precedence: a shadow from
+    // the piece behind it must stop at its edge. Where the blend darkened its
+    // face, put back the real photo (relit to match the final just above).
+    for (const [edge, dir] of [[p.leftOccluder, -1], [p.rightOccluder, 1]] as const) {
+      if (edge === undefined) continue;
+      const ex = Math.round(edge * sx), reach = Math.round(FW * 0.03);
+      const y1 = Math.max(0, Math.round((p.runTop - h * 0.02) * sy)), y2 = Math.min(FH - 1, bot + Math.round(FH * 0.05));
+      const cols: number[] = [];
+      for (let k = 0; k <= reach; k++) { const x = ex + dir * k; if (x >= 0 && x < FW) cols.push(x); }
+      // relight factor from the same face higher up (no shadow there)
+      const a = [0, 0, 0], b = [0, 0, 0];
+      for (let y = Math.max(0, y1 - Math.round(FH * 0.12)); y < y1; y++) for (const x of cols) {
+        if (mk[y * FW + x] > 127) continue;
+        for (let c = 0; c < 3; c++) { a[c] += fin[(y * FW + x) * 3 + c]; b[c] += org[(y * FW + x) * 3 + c]; }
+      }
+      const gain = [0, 1, 2].map((c) => (b[c] > 0 ? a[c] / b[c] : 1));
+      let fixedPx = 0;
+      for (let y = y1; y <= y2; y++) for (const x of cols) {
+        if (mk[y * FW + x] > 127) continue;
+        const i = (y * FW + x) * 3;
+        const t = [0, 1, 2].map((c) => Math.min(255, org[i + c] * gain[c]));
+        if ((t[0] + t[1] + t[2]) / 3 - lum(img, y * FW + x) > 3) {
+          for (let c = 0; c < 3; c++) img[i + c] = Math.round(t[c]);
+          fixedPx++;
+        }
+      }
+      notes.push(`shadow kept off the nearer structure (${fixedPx} px restored)`);
     }
   }
   const out = await sharp(img, { raw: { width: FW, height: FH, channels: 3 } }).png().toBuffer();
