@@ -630,6 +630,14 @@ export type MaskedJobResult =
   | { ok: true; outputPath: string; attempts: number; reports: any[] }
   | { ok: false; reasons: string[]; attempts: number; reports: any[] };
 
+// Early reshape screen. The framing check scores almost the same without the
+// traced furniture outline (calibrated on Stage2_MaskPasteback + the Bedroom 05
+// production job: reshaped rooms 28.9 and 36, good results 7.6 or lower), so a
+// clearly reshaped room is caught straight after staging, before the 3-6
+// Gemini tracing calls that would be thrown away. Anything at or below this
+// score goes through the normal (traced) check as before.
+export const REFRAMED_EARLY_MEDIAN_DIFF = Number(process.env.REFRAMED_EARLY_MEDIAN_DIFF || 22);
+
 // One photo through the masked Stage 2: stage -> trace -> harmonise ->
 // checked blend -> final door check. A photo is re-staged ONCE (for any
 // reason: blocked doorway, reshaped room, structure check or processing
@@ -660,6 +668,10 @@ export async function runMaskedStage2Job(p: {
   const originalMime = meta.format === "png" ? "image/png" : meta.format === "webp" ? "image/webp" : "image/jpeg";
   const reports: any[] = [];
   let hints: string[] = [];
+  // Debug uploads run in the background so they never hold up a re-stage or
+  // publish; all of them are awaited once before returning.
+  const pendingUploads: Promise<void>[] = [];
+  const finishUploads = async () => { await Promise.all(pendingUploads); };
   for (let attempt = 1; ; attempt++) {
     const dir = path.join(p.workDir, `attempt${attempt}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -690,31 +702,42 @@ export async function runMaskedStage2Job(p: {
         } catch {}
       }
       const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
-      const layers = await traceLayers(ctx);
-      if (row.framingCheck?.framingChanged) {
-        // Reshaped room: paste-back can't fix it, so skip the blend and door
-        // check (time and cost) and go straight to the re-stage / fallback.
+      const early = await checkFraming(original, staged, new Uint8Array(w * h), w, h);
+      row.earlyFramingCheck = early;
+      if (early.tilesChecked >= 6 && early.medianDiff > REFRAMED_EARLY_MEDIAN_DIFF) {
+        // Clearly reshaped: skip tracing, blend and door check entirely.
+        row.framingCheck = { ...early, framingChanged: true, early: true };
+        p.warn?.(`[${ctx.name}] Gemini reshaped/reframed the room (early check, typical wall/ceiling patch differs by ${early.medianDiff}) — skipping tracing; re-staging`);
         reasons.push("room reshaped");
       } else {
-        const hm = await harmonise(ctx, layers);
-        final = hm.checkedBlend || hm.harmFinal;
-        await finalDoorCheck(ctx, final, p.doors);
-        if (row.doorAccess?.blocked) reasons.push("doorway blocked");
-        if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+        const layers = await traceLayers(ctx);
+        if (row.framingCheck?.framingChanged) {
+          // Reshaped room: paste-back can't fix it, so skip the blend and door
+          // check (time and cost) and go straight to the re-stage / fallback.
+          reasons.push("room reshaped");
+        } else {
+          const hm = await harmonise(ctx, layers);
+          final = hm.checkedBlend || hm.harmFinal;
+          await finalDoorCheck(ctx, final, p.doors);
+          if (row.doorAccess?.blocked) reasons.push("doorway blocked");
+          if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+        }
       }
     } catch (e: any) {
       row.error = String(e?.message || e).slice(0, 400);
       reasons.push(`processing error: ${row.error}`);
     }
-    if (p.onAttemptFiles) await p.onAttemptFiles(attempt, dir, files).catch(() => {});
+    if (p.onAttemptFiles) pendingUploads.push(p.onAttemptFiles(attempt, dir, [...files]).catch(() => {}));
     if (reasons.length === 0 && final) {
       const outputPath = p.outputPathFor(attempt);
       await sharp(final).webp({ quality: 95 }).toFile(outputPath);
       row.outcome = "publish";
+      await finishUploads();
       return { ok: true, outputPath, attempts: attempt, reports };
     }
     if (attempt > p.maxRestages) {
       row.outcome = `FAILED after re-stage (${reasons.join(", ")})`;
+      await finishUploads();
       return { ok: false, reasons, attempts: attempt, reports };
     }
     row.outcome = `re-stage (${reasons.join(", ")})`;

@@ -11439,7 +11439,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           workDir: siblingOutPath(stage2InputResolved, "-2-masked-work", ""),
           onAttemptFiles: debugUpload
             ? async (attempt, dir, files) => {
-                for (const name of files) {
+                await Promise.all(files.map(async (name) => {
                   try {
                     const res = await createDebugSignedUrl(path.join(dir, name), payload.jobId, {
                       force: true,
@@ -11449,7 +11449,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                   } catch (uploadErr: any) {
                     console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
                   }
-                }
+                }));
                 // Print this attempt's links straight away, so they can be
                 // found in the logs even if the job stops before the end.
                 for (const name of files) {
