@@ -103,7 +103,7 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
   if (key === "kitchen") return kitchenOnly;
   if (key.startsWith("bedroom")) {
     return `BEDROOM: a bed with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp beside it.
-BED SPACE CHECK: first judge the open floor you can actually see. Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
+BED SPACE CHECK: first judge the open floor you can actually see. Measure the headboard wall by its VISIBLE length only — if it runs off the edge of the photo, the hidden part does not count, so a bed and bedside tables must fit within what is shown (they may run slightly past the photo edge, but never need more room than the visible wall). Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
 Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
   }
   if (key === "study" || key === "office") return `STUDY: a desk and desk chair, ideally facing the window or a wall with the window to the side, plus a bookshelf or a small armchair if there is room.`;
@@ -138,7 +138,8 @@ Rules — these always apply:
 - Write each placement so that someone looking at the same photo can find the exact spot. Only refer to features you listed in "landmarks".
 - Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
 - Plan only the main furniture in "layout" (up to about 8 items, fewer in a small or tight space, and none where the room type above says the layout stays empty). Small decor is handled separately.
-- Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved.
+- Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved. A wall that runs off the edge of the photo counts only for its visible length.
+- When in doubt between two sizes, choose the smaller one — a slightly small piece looks natural; a piece that is too big forces the room to change.
 
 Return ONLY a JSON object:
 {
@@ -380,6 +381,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     `- Every wall, window, door, doorway, floor, ceiling, light fitting and fixed feature, exactly where and how it is. Use only the walls and floor visible in the photo — never extend, add or move a wall, and never mount anything on a wall that is not in the photo.`,
     `- Keep every doorway and walking path clear.`,
     `- If a piece does not fit in the floor space shown, make it smaller or leave it out — never change the room, the stairs, the cabinetry or the camera view to make room for it.`,
+    `- A piece may be partly cut off by the edge of the photo, or partly hidden behind a wall, doorframe, bench or other fixed feature, exactly as real furniture would be. Keep each piece in its planned spot — only its size and how much of it shows may change.`,
     ``,
     `FINISHING TOUCHES`,
     `You may add a few small finishing touches that suit this room: ${finishingTouchesFor(opts.roomType)}. Do not add any other large furniture, and do not move the pieces listed above.`,
