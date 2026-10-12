@@ -1131,55 +1131,33 @@ async function compositeSurface(original: Buffer, staged: Buffer, floorSurface: 
 }
 
 // ── Door access (practical layout) check ────────────────────────────────────
-// The paste-back guarantees the room's STRUCTURE, not that the layout is
-// usable: when Gemini moved a door while staging, it planned the furniture
-// around its moved door, and once the real door is put back a bed can end up
-// across it. One vision question on the final image catches that. A model
-// (not code) judges it because perspective matters: furniture that only
-// LOOKS in front of a doorway from the camera's angle but stands well forward
-// in the room doesn't block it. Same question as the app's
-// doorAccessClearanceCheck.ts, but standalone: it finds the doors itself in
-// the empty photo. Blocked -> the app would re-stage (structure is never at
-// risk, so a wrong call here only costs a retry).
+// The paste-back guarantees the room's STRUCTURE, not a usable layout: when
+// Gemini moved a door while staging, it planned the furniture around its moved
+// door, so once the real door is put back a bed can end up across it.
+// Order (runs straight after staging, before any tracing, so a rejected
+// staging costs nothing more):
+//  1. Doors: the app already has them — extractStructuralBaseline() runs in
+//     parallel with Stage 1A and returns doors/walkthroughs with boxes. This
+//     test script doesn't run that, so it asks a cheap text model for the same
+//     boxes, in parallel with staging (no added time).
+//  2. Code pre-check: has anything been added on the floor in front of each
+//     real door/walkthrough? If not -> continue, no AI call.
+//  3. If so -> wait for one vision question about just those doors. It judges
+//     in 3D: furniture that only LOOKS in front of a doorway from the camera
+//     angle but stands well forward in the room doesn't block it.
+//  4. Blocked -> re-stage with a note to keep that doorway clear (max
+//     DOOR_MAX_RESTAGES), then back to 2. Clear -> tracing etc. as normal.
 // Uses Grok when STAGE2_VALIDATOR_MODEL=grok (as production does), else Gemini.
 const DOOR_CHECK = process.env.DOOR_CHECK !== "0";
 const DOOR_CHECK_MODELS = (process.env.DOOR_CHECK_MODEL || "gemini-3-flash-preview,gemini-2.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
+const DOOR_MAX_RESTAGES = Number(process.env.DOOR_MAX_RESTAGES || 2);
+// Share of the floor area in front of a doorway that must have changed for
+// the code to call it "appears blocked" and ask the AI.
+const DOOR_APPROACH_CHANGED = Number(process.env.DOOR_APPROACH_CHANGED || 0.3);
 
-function buildDoorAccessPrompt(roomType: string): string {
-  return `Image 1 is the EMPTY room (the real room). Image 2 is the same room after virtual staging, from the same camera position.
+type DoorOpening = { id: string; type: string; description: string; bbox: [number, number, number, number] };
 
-Step 1 — In Image 1, find every door and walkthrough opening a person would walk through: entry doors, doorways and openings into hallways or other rooms, sliding doors to outside. Do NOT include wardrobe/closet doors, windows, or kitchen bench pass-through openings.
-
-Step 2 — For EACH of those, look at Image 2 and judge its immediate approach area: the floor space directly in front of the opening, roughly as wide as the opening and about one typical step out from it — the space a person needs to walk through it, or a hinged door needs to swing open.
-Judge this in 3D, not by the flat picture: furniture that only appears in front of a doorway from the camera's angle, but actually stands well forward in the room with clear floor between it and the doorway, does NOT block it. A small side table or chair beside the opening, out of the direct path, does not block it either. It is blocked only when a large piece of furniture (bed, sofa, dresser, table, cabinet) has its footprint across the opening's threshold or swing path, so a person could not walk through, or the door could not open, without moving it.
-
-Answer for each opening: "yes" (blocked), "no" (clear), or "cannot_tell" (not visible enough to judge).
-
-Respond with ONLY a single valid JSON object:
-{
-  "openings": [
-    { "description": string, "approachAreaDescription": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
-  ]
-}
-Room type: ${roomType.replace(/_/g, " ")}`;
-}
-
-// Pure decision: blocked only on a clear "yes" ("cannot_tell" passes, as in
-// doorAccessClearanceCheck.ts — an unclear read should never force a retry).
-function evaluateDoorAccess(raw: any) {
-  const openings: any[] = Array.isArray(raw?.openings) ? raw.openings : [];
-  const items = openings.map((o) => ({
-    description: String(o?.description || ""),
-    approachAreaDescription: String(o?.approachAreaDescription || ""),
-    accessBlocked: ["yes", "no", "cannot_tell"].includes(o?.accessBlocked) ? o.accessBlocked : "cannot_tell",
-  }));
-  const blocked = items.filter((o) => o.accessBlocked === "yes");
-  return { openingsFound: items.length, blocked: blocked.length > 0, wouldRestage: blocked.length > 0, items };
-}
-
-async function runDoorAccessCheck(emptyPath: string, finalImage: Buffer, roomType: string, dir: string, name: string) {
-  const finalPath = path.join(dir, "12_door_check_input.jpg");
-  fs.writeFileSync(finalPath, await sharp(finalImage).jpeg({ quality: 90 }).toBuffer());
+async function callJsonModel(images: { path: string; label: string }[], systemInstruction: string, userPrompt: string, name: string, label: string) {
   // Imported here, not at the top: it loads the Gemini helpers, which must
   // only load after this script has set the Stage 2 env vars.
   const { callValidatorModel } = await import("../validators/validatorModelCall");
@@ -1188,24 +1166,118 @@ async function runDoorAccessCheck(emptyPath: string, finalImage: Buffer, roomTyp
   for (const model of usingGrok ? ["grok"] : DOOR_CHECK_MODELS) {
     try {
       const raw = await callValidatorModel({
-        images: [
-          { path: emptyPath, label: "Image 1 (empty room):" },
-          { path: finalPath, label: "Image 2 (staged room):" },
-        ],
-        systemInstruction: "You are a careful visual inspector checking whether a staged room's furniture layout leaves its doors and walkthroughs usable.",
-        userPrompt: buildDoorAccessPrompt(roomType),
-        model,
-        reasonPrefix: "door_access_final",
-        timeoutMs: 60000,
-        ctx: { jobId: `pasteback_${name}`, imageId: name, callLabel: "final" },
+        images, systemInstruction, userPrompt, model,
+        reasonPrefix: label, timeoutMs: 60000,
+        ctx: { jobId: `pasteback_${name}`, imageId: name, callLabel: label },
       });
-      return { model: usingGrok ? `grok (${process.env.GROK_VISION_MODEL || "default"})` : model, ...evaluateDoorAccess(raw) };
+      return { raw, model: usingGrok ? `grok (${process.env.GROK_VISION_MODEL || "default"})` : model };
     } catch (e: any) {
       lastError = String(e?.message || e).slice(0, 200);
-      console.warn(`[${name}] door check with ${model} failed: ${lastError}`);
+      console.warn(`[${name}] ${label} with ${model} failed: ${lastError}`);
     }
   }
-  return { model: "none", error: lastError, openingsFound: 0, blocked: false, wouldRestage: false, items: [] };
+  throw new Error(`${label}: all models failed (${lastError})`);
+}
+
+// Test stand-in for the app's structural baseline: doors and walkthroughs
+// with boxes [x1, y1, x2, y2] as fractions of the image (same format).
+async function findDoors(emptyPath: string, roomType: string, name: string): Promise<DoorOpening[]> {
+  const prompt = `List every door and walkthrough opening in this photo of an empty ${roomType.replace(/_/g, " ")} that a person would walk through: entry doors, doorways and openings to hallways or other rooms, sliding doors to outside. Do NOT include wardrobe/closet doors, windows, or kitchen bench pass-through openings.
+For each, give its bounding box [x1, y1, x2, y2] as fractions of the image width and height (0 = left/top, 1 = right/bottom), covering the whole opening down to the floor.
+Respond with ONLY a single valid JSON object: { "openings": [ { "type": "door" | "walkthrough", "description": string, "bbox": [number, number, number, number] } ] }`;
+  const { raw } = await callJsonModel([{ path: emptyPath, label: "Photo:" }], "You are a careful architectural surveyor.", prompt, name, "door_find");
+  const list: any[] = Array.isArray(raw?.openings) ? raw.openings : [];
+  return list
+    .filter((o) => Array.isArray(o?.bbox) && o.bbox.length === 4 && o.bbox.every((v: any) => Number.isFinite(Number(v))))
+    .map((o, i) => {
+      const b = o.bbox.map((v: any) => Math.min(1, Math.max(0, Number(v)))) as [number, number, number, number];
+      return { id: `door_${i + 1}`, type: String(o.type || "door"), description: String(o.description || `opening ${i + 1}`), bbox: [Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.max(b[0], b[2]), Math.max(b[1], b[3])] };
+    });
+}
+
+// Code pre-check: share of changed pixels in the floor area in front of each
+// door — the bottom of the opening plus a band of floor below it, a bit wider
+// than the opening. Changes are measured after removing any overall colour
+// shift, on a softened 640px image so texture noise doesn't count.
+async function doorwayAppearsBlocked(input: Buffer, staged: Buffer, doors: DoorOpening[]) {
+  const W = 640;
+  const m = await sharp(input).metadata();
+  const H = Math.max(1, Math.round((W * (m.height || 1)) / (m.width || 1)));
+  const [a, b] = await Promise.all([
+    sharp(input).removeAlpha().resize(W, H, { fit: "fill" }).blur(2).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).blur(2).raw().toBuffer(),
+  ]);
+  const sums = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < W * H; i++) for (let c = 0; c < 3; c++) { sums[c] += a[i * 3 + c]; sums[c + 3] += b[i * 3 + c]; }
+  const gains = [0, 1, 2].map((c) => (sums[c + 3] > 0 ? sums[c] / sums[c + 3] : 1));
+  return doors.map((d) => {
+    const [x1, y1, x2, y2] = d.bbox;
+    const dw = x2 - x1, dh = y2 - y1;
+    const zx1 = Math.max(0, Math.floor((x1 - 0.25 * dw) * W)), zx2 = Math.min(W - 1, Math.ceil((x2 + 0.25 * dw) * W));
+    const zy1 = Math.max(0, Math.floor((y2 - 0.35 * dh) * H)), zy2 = Math.min(H - 1, Math.ceil(Math.min(1, y2 + 0.08) * H));
+    let n = 0, changed = 0;
+    for (let y = zy1; y <= zy2; y++) for (let x = zx1; x <= zx2; x++) {
+      const i = (y * W + x) * 3;
+      n++;
+      const diff = Math.max(Math.abs(a[i] - b[i] * gains[0]), Math.abs(a[i + 1] - b[i + 1] * gains[1]), Math.abs(a[i + 2] - b[i + 2] * gains[2]));
+      if (diff > 25) changed++;
+    }
+    const share = n ? changed / n : 0;
+    return { ...d, approachChangedPct: Math.round(share * 100), appearsBlocked: share >= DOOR_APPROACH_CHANGED };
+  });
+}
+
+function buildDoorAccessPrompt(roomType: string, doors: DoorOpening[]): string {
+  const list = doors.map((d) => `- "${d.id}": ${d.description} (in Image 1 at x ${d.bbox[0].toFixed(2)}–${d.bbox[2].toFixed(2)}, y ${d.bbox[1].toFixed(2)}–${d.bbox[3].toFixed(2)} of the image)`).join("\n");
+  return `Image 1 is the EMPTY room (the real room). Image 2 is the same room after virtual staging, from the same camera position.
+
+These real doors/walkthroughs are in Image 1:
+${list}
+
+For EACH of them, look at Image 2 and judge its immediate approach area: the floor space directly in front of where the opening is in Image 1, roughly as wide as the opening and about one typical step out from it — the space a person needs to walk through it, or a hinged door needs to swing open.
+Image 2 may wrongly show the opening moved, changed or covered over — that will be corrected afterwards. Ignore that; judge only whether furniture stands on the floor in front of where the opening really is (Image 1).
+Judge this in 3D, not by the flat picture: furniture that only appears in front of a doorway from the camera's angle, but actually stands well forward in the room with clear floor between it and the doorway, does NOT block it. A small side table or chair beside the opening, out of the direct path, does not block it either. It is blocked only when a large piece of furniture (bed, sofa, dresser, table, cabinet) has its footprint across the opening's threshold or swing path, so a person could not walk through, or the door could not open, without moving it.
+
+Answer for each: "yes" (blocked), "no" (clear), or "cannot_tell" (not visible enough to judge).
+
+Respond with ONLY a single valid JSON object:
+{
+  "openings": [
+    { "id": string, "approachAreaDescription": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
+  ]
+}
+Room type: ${roomType.replace(/_/g, " ")}`;
+}
+
+// Pure decision: blocked only on a clear "yes" ("cannot_tell" passes, as in
+// doorAccessClearanceCheck.ts — an unclear read should never force a re-stage).
+function evaluateDoorAccess(raw: any) {
+  const openings: any[] = Array.isArray(raw?.openings) ? raw.openings : [];
+  const items = openings.map((o) => ({
+    id: String(o?.id || ""),
+    approachAreaDescription: String(o?.approachAreaDescription || ""),
+    accessBlocked: ["yes", "no", "cannot_tell"].includes(o?.accessBlocked) ? o.accessBlocked : "cannot_tell",
+  }));
+  const blocked = items.filter((o) => o.accessBlocked === "yes");
+  return { blocked: blocked.length > 0, blockedIds: blocked.map((o) => o.id), items };
+}
+
+async function askDoorAccess(emptyPath: string, staged: Buffer, doors: DoorOpening[], roomType: string, dir: string, name: string) {
+  const stagedPath = path.join(dir, "2_door_check_input.jpg");
+  fs.writeFileSync(stagedPath, await sharp(staged).jpeg({ quality: 90 }).toBuffer());
+  try {
+    const { raw, model } = await callJsonModel(
+      [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: stagedPath, label: "Image 2 (staged room):" }],
+      "You are a careful visual inspector checking whether a staged room's furniture layout leaves its doors and walkthroughs usable.",
+      buildDoorAccessPrompt(roomType, doors),
+      name,
+      "door_access",
+    );
+    return { model, ...evaluateDoorAccess(raw) };
+  } catch (e: any) {
+    // A failed check never blocks (structure is protected regardless).
+    return { model: "none", error: String(e?.message || e).slice(0, 200), blocked: false, blockedIds: [] as string[], items: [] as any[] };
+  }
 }
 
 // ── Harmonise (phase 2 prompt + phase 3 merge) ──────────────────────────────
@@ -2070,7 +2142,12 @@ function resolveImages() {
   });
 }
 
-async function stageImage(img: { name: string; file: string; roomType: string; previousFile?: string }, dir: string): Promise<{ staged: Buffer; source: string }> {
+async function stageImage(
+  img: { name: string; file: string; roomType: string; previousFile?: string },
+  dir: string,
+  correctionHints: string[] = [],
+  attempt = 1
+): Promise<{ staged: Buffer; source: string }> {
   if (PAIR_MODE) {
     if (!img.previousFile || !fs.existsSync(img.previousFile)) {
       throw new Error(`PAIR_MODE: no staged image given after "|" (or file missing): ${img.previousFile || "none"}`);
@@ -2082,7 +2159,7 @@ async function stageImage(img: { name: string; file: string; roomType: string; p
     if (!fs.existsSync(previous)) throw new Error(`FROM_RUN: no staged image at ${previous}`);
     return { staged: fs.readFileSync(previous), source: `from run ${path.basename(FROM_RUN)}` };
   }
-  if (REUSE_STAGED) {
+  if (REUSE_STAGED && attempt === 1) {
     const previous = path.join(PREVIOUS_STAGED_DIR, `${img.name}__${STAGE_MODEL}.webp`);
     if (fs.existsSync(previous)) return { staged: fs.readFileSync(previous), source: `reused ${path.relative(T, previous)}` };
     console.warn(`[${img.name}] no previous staged result at ${previous} — staging now`);
@@ -2093,13 +2170,14 @@ async function stageImage(img: { name: string; file: string; roomType: string; p
   const outputPath = path.join(dir, "2_staged_raw.webp");
   await runStage2GenerationAttempt(input, {
     roomType: img.roomType, sceneType: "interior", promptMode: "full", sourceStage: "1A",
-    stagingStyle: STAGING_STYLE, jobId: `pasteback_${img.name}`, imageId: img.name, outputPath, attempt: 1,
+    stagingStyle: STAGING_STYLE, jobId: `pasteback_${img.name}`, imageId: img.name, outputPath, attempt,
+    retryCorrectionHints: correctionHints.length ? correctionHints : null,
   });
   // STAGE2_PROMPT_VARIANT=grok/grok_skill (from worker/.env) sends staging to
   // Grok's image-edit API instead of Gemini, exactly as in production.
   const variant = String(process.env.STAGE2_PROMPT_VARIANT || "").trim();
   const stagedWith = variant === "grok" || variant === "grok_skill" ? `grok (${process.env.GROK_IMAGE_MODEL || "grok-imagine-image-quality"})` : STAGE_MODEL;
-  return { staged: fs.readFileSync(outputPath), source: `staged now (${stagedWith}${variant ? `, STAGE2_PROMPT_VARIANT=${variant}` : ""})` };
+  return { staged: fs.readFileSync(outputPath), source: `staged now (${stagedWith}${variant ? `, STAGE2_PROMPT_VARIANT=${variant}` : ""}${attempt > 1 ? `, attempt ${attempt}` : ""})` };
 }
 
 async function runOne(img: { name: string; file: string; roomType: string; previousFile?: string }) {
@@ -2121,7 +2199,48 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
 
   try {
     console.log(`[${img.name}] 1/3 stage`);
-    const stageRes = await stageImage(img, dir);
+    // Doors of the real room, looked up while staging runs (the app gets these
+    // free from its structural baseline).
+    const doorsPromise: Promise<DoorOpening[] | null> = !DOOR_CHECK
+      ? Promise.resolve(null)
+      : FROM_RUN
+      ? Promise.resolve(fs.existsSync(path.join(FROM_RUN, img.name, "0_doors.json")) ? JSON.parse(fs.readFileSync(path.join(FROM_RUN, img.name, "0_doors.json"), "utf8")) : null)
+      : findDoors(img.file, img.roomType, img.name).catch((e) => {
+          console.warn(`[${img.name}] door lookup failed — skipping the door check: ${String(e?.message || e).slice(0, 200)}`);
+          return null;
+        });
+    let stageRes = await stageImage(img, dir);
+    const doors = (await doorsPromise)?.filter((d) => d.type === "door" || d.type === "walkthrough") ?? null;
+    if (doors) fs.writeFileSync(path.join(dir, "0_doors.json"), JSON.stringify(doors, null, 2));
+    row.doorAccess = { doorsFound: doors ? doors.length : "lookup failed", attempts: [] as any[] };
+    for (let attempt = 1; doors && doors.length > 0; attempt++) {
+      // 2. Code pre-check on the raw staged image.
+      const pre = await doorwayAppearsBlocked(original, stageRes.staged, doors);
+      const flagged = pre.filter((d) => d.appearsBlocked);
+      const step: any = { attempt, approachChangedPct: Object.fromEntries(pre.map((d) => [d.id, d.approachChangedPct])) };
+      row.doorAccess.attempts.push(step);
+      if (flagged.length === 0) { step.result = "clear (code check, no AI call)"; break; }
+      if (FROM_RUN) { step.result = "appears blocked (AI check skipped in FROM_RUN)"; break; }
+      // 3. Wait for the AI on just the flagged doors.
+      console.log(`[${img.name}] doorway may be blocked (${flagged.map((d) => `${d.id} ${d.approachChangedPct}%`).join(", ")}) — asking the AI`);
+      const ai = await askDoorAccess(img.file, stageRes.staged, flagged, img.roomType, dir, img.name);
+      step.ai = ai;
+      if (!ai.blocked) { step.result = "clear (AI)"; break; }
+      if (PAIR_MODE || attempt > DOOR_MAX_RESTAGES) {
+        step.result = PAIR_MODE ? "BLOCKED (pair mode: can't re-stage)" : "BLOCKED after max re-stages — would be flagged";
+        console.warn(`[${img.name}] ${step.result}`);
+        break;
+      }
+      // 4. Re-stage with a note to keep the blocked doorway(s) clear.
+      const blockedDoors = flagged.filter((d) => ai.blockedIds.includes(d.id));
+      const hints = (blockedDoors.length ? blockedDoors : flagged).map(
+        (d) => `Keep the ${d.description} completely clear: do not place a bed, sofa, table, dresser or any large furniture across it or directly in front of it. Leave a clear walking path to it.`
+      );
+      step.result = "BLOCKED (AI) — re-staging";
+      console.warn(`[${img.name}] DOORWAY BLOCKED — re-staging (attempt ${attempt + 1}) with: ${hints.join(" ")}`);
+      fs.copyFileSync(path.join(dir, "2_staged_raw.webp"), path.join(dir, `2_staged_raw_attempt${attempt}_door_blocked.webp`));
+      stageRes = await stageImage(img, dir, hints, attempt + 1);
+    }
     staged = stageRes.staged;
     row.staging = stageRes.source;
     if (!fs.existsSync(path.join(dir, "2_staged_raw.webp"))) fs.writeFileSync(path.join(dir, "2_staged_raw.webp"), staged);
@@ -2473,16 +2592,6 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
         }
         fs.writeFileSync(path.join(dir, "11_final_checked_blend.webp"), checkedBlend);
       }
-      // Practical layout: is any real door/walkthrough blocked in the final?
-      if (DOOR_CHECK && !FROM_RUN) {
-        const finalForCheck = checkedBlend || harmFinal;
-        if (finalForCheck) {
-          row.doorAccess = await runDoorAccessCheck(img.file, finalForCheck, img.roomType, dir, img.name);
-          if (row.doorAccess.blocked) {
-            console.warn(`[${img.name}] DOOR ACCESS BLOCKED — the app would re-stage this photo: ${row.doorAccess.items.filter((o: any) => o.accessBlocked === "yes").map((o: any) => `${o.description}: ${o.approachAreaDescription}`).join(" | ")}`);
-          }
-        }
-      }
     }
     if (MERGE_MODE === "hybrid" || MERGE_MODE === "all") {
       const hy = await compositeLayers(original, staged, solidPng, await maskToPng(core, w, h), zonePng, w, h, true);
@@ -2530,7 +2639,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           { label: "4. Gemini blend (raw, unchecked)", image: harmRaw },
           { label: "5. App-built final" + reshaped + (row.harmonise && !row.harmonise.blendUsed ? " - NO SHADOWS" : ""), image: harmFinal },
           { label: `6. Checked blend: repaired patches (red)${row.checkedBlend ? ` ${row.checkedBlend.repairPct}%` : ""}`, image: checkedBlendView },
-          { label: "7. Checked blend final" + reshaped + (row.checkedBlend?.usedAppBuiltInstead ? " - TOO MANY CHANGES, used 5" : "") + (row.doorAccess?.blocked ? " - DOOR BLOCKED, re-stage" : ""), image: checkedBlend },
+          { label: "7. Checked blend final" + reshaped + (row.checkedBlend?.usedAppBuiltInstead ? " - TOO MANY CHANGES, used 5" : "") + (row.doorAccess?.attempts?.some((a: any) => String(a.result || "").startsWith("BLOCKED after") || String(a.result || "").startsWith("BLOCKED (pair")) ? " - DOOR STILL BLOCKED" : ""), image: checkedBlend },
         ]
       : MERGE_MODE === "all"
       ? [
@@ -2616,4 +2725,4 @@ if (require.main === module) {
     });
 }
 
-export { evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { doorwayAppearsBlocked, evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
