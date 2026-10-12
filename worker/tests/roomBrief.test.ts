@@ -45,7 +45,19 @@ describe("room brief checks", () => {
     const p = buildStage2PromptFromRoomBrief(good, { roomType: "kitchen_living_dining", styleDescription: "modern NZ" });
     expect(p).toMatch(/^Stage this empty open-plan kitchen, living and dining room/);
     expect(p.indexOf("LAYOUT")).toBeLessThan(p.indexOf("KEEP EXACTLY"));
-    expect(p).toMatch(/1\. TV: mounted on the black TV wall bracket/);
+    expect(p).toMatch(/1\. TV: Mounted on the black TV wall bracket/);
     expect(p).not.toMatch(/\[0\./);
+  });
+  it("tidies model wording into clean sentences", () => {
+    const b = {
+      ...good,
+      camera: "Stands in the front-left foreground, looking toward the kitchen",
+      avoid: ["Placing the dining table between the sofa and the TV wall.", "Do not block the doorway"],
+    };
+    const p = buildStage2PromptFromRoomBrief(b, { roomType: "kitchen_living_dining" });
+    expect(p).toMatch(/The camera stands in the front-left foreground, looking toward the kitchen\./);
+    expect(p).toMatch(/AVOID IN THIS ROOM\n- Placing the dining table between the sofa and the TV wall\.\n- Do not block the doorway\./);
+    expect(p).not.toMatch(/\.\./);
+    expect(p).not.toMatch(/\.;/);
   });
 });

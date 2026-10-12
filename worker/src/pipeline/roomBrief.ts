@@ -114,7 +114,8 @@ Rules — these always apply:
 - Every TV must hang on, or stand against, a wall that is clearly visible. If there is a TV wall bracket, the TV goes on that bracket and nowhere else.
 - Keep every door, sliding door and doorway clear, with a walking path between them. Do not cover windows, the heat pump, switches, outlets, the fireplace or any other fixed feature.
 - Describe every position with words about visible landmarks and the room ("at the back of the room, in front of the kitchen bench", "against the plain wall on the left, between the sliding door and the window"). Never use coordinates, pixels, percentages or wall numbers in "layout", "relationships", "avoid" or "keepUntouched".
-- Write each placement so that someone looking at the same photo can find the exact spot.
+- Write each placement so that someone looking at the same photo can find the exact spot. Only refer to features you listed in "landmarks".
+- Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
 - Plan only the main furniture in "layout" (roughly 3–8 items). Small decor is handled separately.
 
 Return ONLY a JSON object:
@@ -285,26 +286,43 @@ export function getRoomBriefCached(params: { jobId: string; imagePath: string; r
  * room and its layout in plain language, then this room's own features to
  * keep, two hard rules, and a narrow allowance for small finishing touches.
  */
+// Tidy one model-written phrase into a sentence: capital first letter,
+// exactly one closing full stop.
+function asSentence(s: string): string {
+  const t = String(s || "").trim().replace(/[\s.;,]+$/, "");
+  if (!t) return "";
+  return `${t.charAt(0).toUpperCase()}${t.slice(1)}${/[!?]$/.test(t) ? "" : "."}`;
+}
+
+// The model sometimes drops the subject ("Stands in the front-left...").
+function cameraSentence(s: string): string {
+  const t = String(s || "").trim();
+  if (!t) return "";
+  if (/\bcamera\b/i.test(t)) return asSentence(t);
+  if (/^(stands|sits|is|looks|faces|points)\b/i.test(t)) return asSentence(`The camera ${t.charAt(0).toLowerCase()}${t.slice(1)}`);
+  return asSentence(`Camera position: ${t}`);
+}
+
 export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomType: string; styleDescription?: string }): string {
   const label = roomLabelFor(opts.roomType);
   const style = opts.styleDescription ? ` in a ${opts.styleDescription} style` : "";
-  const layoutLines = brief.layout.map((l, i) => `${i + 1}. ${l.item}: ${l.placement.replace(/\s+$/, "").replace(/([^.!])$/, "$1.")}`);
-  const relationships = (brief.relationships || []).filter(Boolean);
-  const avoid = (brief.avoid || []).filter(Boolean);
-  const keep = (brief.keepUntouched || []).filter(Boolean);
-  const zones = (brief.zones || []).filter((z) => z?.name && z?.description).map((z) => `${z.name}: ${z.description}`);
+  const layoutLines = brief.layout.map((l, i) => `${i + 1}. ${l.item}: ${asSentence(l.placement)}`);
+  const relationships = (brief.relationships || []).filter(Boolean).map(asSentence);
+  const avoid = (brief.avoid || []).filter(Boolean).map(asSentence);
+  const keep = (brief.keepUntouched || []).filter(Boolean).map((k) => String(k).trim().replace(/[\s.;,]+$/, ""));
+  const zones = (brief.zones || []).filter((z) => z?.name && z?.description).map((z) => `${z.name}: ${asSentence(z.description)}`);
 
   return [
     `Stage this empty ${label} for a real-estate listing photo. Add realistic, correctly scaled furniture and decor${style}, with lighting, shadows and perspective that match the photo. The room itself and the camera framing stay exactly as they are.`,
     ``,
     `THE ROOM`,
-    [brief.roomSummary, brief.camera].filter(Boolean).join(" "),
+    [asSentence(brief.roomSummary), cameraSentence(brief.camera)].filter(Boolean).join(" "),
     ...(zones.length ? [``, `Areas of the room:`, ...zones.map((z) => `- ${z}`)] : []),
     ``,
     `LAYOUT — place these pieces exactly as described:`,
     ...layoutLines,
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
-    ...(avoid.length ? [``, `Do not: ${avoid.map((a) => a.replace(/^do not\s+/i, "")).join("; ")}.`] : []),
+    ...(avoid.length ? [``, `AVOID IN THIS ROOM`, ...avoid.map((a) => `- ${a}`)] : []),
     ``,
     `KEEP EXACTLY AS IN THE PHOTO`,
     ...keep.map((k) => `- ${k}`),
