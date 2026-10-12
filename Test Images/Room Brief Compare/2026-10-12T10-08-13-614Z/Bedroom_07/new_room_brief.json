@@ -1,0 +1,118 @@
+{
+  "roomSummary": "A compact bedroom with carpeted flooring, featuring a large window with vertical blinds centered on the back wall and clear solid walls on both sides.",
+  "camera": "The camera stands at the entrance of the bedroom, looking directly toward the back wall and its central window.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "window",
+      "description": "large window centered on the back wall",
+      "box": [
+        0.106,
+        0.24,
+        0.526,
+        0.852
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "blind",
+      "description": "grey vertical blinds fitted inside the back window",
+      "box": [
+        0.138,
+        0.261,
+        0.501,
+        0.835
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "switch_or_outlet",
+      "description": "white light switch or outlet plate low on the left wall in the foreground",
+      "box": [
+        0.908,
+        0.081,
+        0.985,
+        0.102
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "back wall",
+      "description": "back wall dominated by the large window with vertical blinds",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "left wall",
+      "description": "plain solid wall running from the foreground to the back corner",
+      "usableForLargeFurniture": true,
+      "partlyVisible": false
+    },
+    {
+      "name": "right wall",
+      "description": "plain solid wall on the right side of the room",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "sleeping area",
+      "description": "along the solid left wall extending outward toward the center of the room"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "none",
+    "reason": "This is a dedicated bedroom."
+  },
+  "bedSpace": {
+    "bed": "queen",
+    "bedsideTables": 2,
+    "reason": "The solid left wall provides sufficient continuous length to comfortably accommodate a queen bed flanked by two bedside tables, while keeping the window and walking paths unobstructed."
+  },
+  "layout": [
+    {
+      "item": "Queen bed",
+      "placement": "headboard placed flat against the solid left wall, centered between the back corner and the foreground, extending into the center of the room"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "against the left wall, on the side of the bed closer to the back corner window"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "against the left wall, on the side of the bed closer to the foreground, clear of the low wall switch"
+    },
+    {
+      "item": "Bedside lamp",
+      "placement": "resting on the bedside table closer to the back window"
+    },
+    {
+      "item": "Bedside lamp",
+      "placement": "resting on the bedside table in the foreground"
+    },
+    {
+      "item": "Area rug",
+      "placement": "centered under the queen bed on the carpeted floor, extending outward into the walking space"
+    }
+  ],
+  "relationships": [
+    "The queen bed faces across the room toward the right wall, keeping the back window fully clear of any headboard."
+  ],
+  "avoid": [
+    "Do not place the headboard against the back wall across the window.",
+    "Do not cover the low switch plate on the left wall.",
+    "Do not crowd the right side of the room to maintain a clear circulation path."
+  ],
+  "keepUntouched": [
+    "the window with vertical blinds on the back wall",
+    "the switch plate on the lower left wall",
+    "the existing carpet and white skirting boards"
+  ]
+}
