@@ -73,6 +73,7 @@ import {
 import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 import { startFurniturePrecheckWorker } from "./precheck/furniturePrecheck";
+import { buildLayoutContext, type LayoutContextResult } from "./ai/layoutPlanner";
 
 import {
   updateJob,
@@ -11358,7 +11359,17 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           (stage2PromptMode === "full" || ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_MASKED_REFRESH || "").trim().toLowerCase()))
       );
       if (useMaskedStage2) maskedStage2Used = true;
+      // Same generation inputs as the old path (runStage2): the optional
+      // layout-planner context is built the same way, from the same env var.
+      let maskedLayoutContext: LayoutContextResult | null = null;
       const runMaskedStage2 = async () => {
+        if (stage2PromptMode === "full" && process.env.USE_GEMINI_LAYOUT_PLANNER === "1") {
+          try {
+            maskedLayoutContext = await buildLayoutContext(stage2InputResolved);
+          } catch (layoutErr: any) {
+            nLog("[STAGE2_MASKED] layout planner failed - continuing without layout context", { error: layoutErr?.message || String(layoutErr) });
+          }
+        }
         const debugUpload = maskedStage2DebugUploadEnabled();
         const debugLinks: Record<string, string> = {};
         const result = await runMaskedStage2Job({
@@ -11382,9 +11393,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
               outputPath: siblingOutPath(stage2InputResolved, `-2-masked-staged${attempt}`, ".webp"),
               attempt,
               layoutPlan: stage2LayoutPlan,
+              layoutContext: maskedLayoutContext,
+              retryType: (payload as any).retryType,
               retryInstructions: (payload as any).retryInstructions,
               retryCorrectionHints: hints.length ? hints : null,
               curtainRailLikely: jobContext.curtainRailLikely,
+              modelReason: attempt === 1 ? "stage2_masked_initial_generation" : `stage2_masked_restage_${attempt - 1}`,
             }),
           outputPathFor: (attempt) => siblingOutPath(stage2InputResolved, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
           workDir: siblingOutPath(stage2InputResolved, "-2-masked-work", ""),
