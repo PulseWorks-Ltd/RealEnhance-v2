@@ -8737,13 +8737,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // no planner runs, so nothing starts early for them.
   try {
     const earlyRoomType = String(payload.options.roomType || "").trim();
-    const earlyPrecheck = (payload.options as any)?.furniturePrecheck as { localEmpty?: boolean } | undefined;
+    const earlyPrecheck = (payload.options as any)?.furniturePrecheck as { localEmpty?: boolean; analysis?: any } | undefined;
+    // Same "empty" decision the routing makes later: the local check, or the
+    // pre-check's furniture detector finding no furniture (the local check
+    // often says false on empty rooms that the detector clears).
+    const earlyRoomEmpty = earlyPrecheck?.localEmpty === true
+      || (!!earlyPrecheck?.analysis && isFurnitureDetectionSuccess(earlyPrecheck.analysis) && earlyPrecheck.analysis.hasFurniture === false);
     const earlyStage2Mode = String((payload.options as any)?.stage2Mode || "").trim().toUpperCase();
     if (
       payload.options.virtualStage
       && roomBriefEnabled()
       && stage1ASceneLabel === "interior"
-      && earlyPrecheck?.localEmpty === true
+      && earlyRoomEmpty
       && earlyRoomType
       && !["auto", "unknown"].includes(earlyRoomType.toLowerCase())
       && earlyStage2Mode !== "REFRESH"
