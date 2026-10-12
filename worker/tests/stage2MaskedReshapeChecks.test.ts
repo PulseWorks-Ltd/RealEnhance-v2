@@ -74,7 +74,7 @@ describe("masked Stage 2 reshape checks", () => {
       expect({ name, ok: plan.ok, notes: plan.notes }).toEqual({ name, ok: patchable, notes: plan.notes });
       if (!plan.ok) continue;
       const final = fs.readFileSync(path.join(FIX, name, "11_final_checked_blend.webp"));
-      const res = await applyFloorPatches(final, staged, mask, plan.patches, w, h);
+      const res = await applyFloorPatches(o, final, staged, mask, plan.patches, w, h);
       expect(res.image).not.toBeNull();
       // only the patch area changed; the rest of the photo is untouched
       const fm = await sharp(final).metadata();
@@ -82,6 +82,29 @@ describe("masked Stage 2 reshape checks", () => {
       let changed = 0;
       for (let i = 0; i < a.length; i += 3) if (Math.abs(a[i] - b[i]) > 3) changed++;
       expect(changed / (fm.width! * fm.height!)).toBeLessThan(0.05);
+    }
+  }, 300000);
+
+  // Gemini's floor must be the same material as the real one: if it laid
+  // boards over carpet, patching would bring a strip of boards into the photo.
+  (haveFix ? it : it.skip)("refuses the floor patch when Gemini changed the floor material", async () => {
+    const dir = path.join(FIX, "Bedroom_05");
+    const o = fs.readFileSync(path.join(dir, "1_original.jpg"));
+    const staged = fs.readFileSync(path.join(dir, "2_staged_raw.webp"));
+    const om = await sharp(o).metadata();
+    const w = om.width!, h = om.height!;
+    const raw = await sharp(path.join(dir, "3_mask_traced.png")).resize(w, h, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+    const mask = Uint8Array.from(raw, (v: number) => (v > 127 ? 1 : 0));
+    const chk = await checkFloatingFurniture(o, mask, w, h);
+    const sm = await sharp(staged).metadata();
+    const H = Math.round(sm.height! * 0.14); // the floor strip only (corner untouched)
+    for (const [fill, line] of [["#9a6b43", "#5a3a20"], ["#7d7a74", "#55524d"]]) { // brown boards; grey boards in the carpet's colour
+      let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${sm.width}" height="${H}"><rect width="100%" height="100%" fill="${fill}"/>`;
+      for (let y = 0; y < H; y += Math.round(H / 14)) svg += `<line x1="0" y1="${y}" x2="${sm.width}" y2="${y + H * 0.05}" stroke="${line}" stroke-width="3"/>`;
+      svg += "</svg>";
+      const boards = await sharp(staged).composite([{ input: await sharp(Buffer.from(svg)).png().toBuffer(), left: 0, top: sm.height! - H }]).png().toBuffer();
+      const plan = await planFloorPatches(o, boards, mask, chk.runs, w, h);
+      expect({ fill, ok: plan.ok, floorNote: /floor/.test(plan.notes.join(" ")) }).toEqual({ fill, ok: false, floorNote: true });
     }
   }, 300000);
 });

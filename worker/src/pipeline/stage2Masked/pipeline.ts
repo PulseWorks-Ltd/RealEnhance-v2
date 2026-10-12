@@ -729,7 +729,7 @@ export async function runMaskedStage2Job(p: {
         const hm = await harmonise(ctx, layers);
         final = hm.checkedBlend || hm.harmFinal;
         if (floorPlan?.ok && final) {
-          const fp = await applyFloorPatches(final, staged, layers.floor, floorPlan.patches, w, h)
+          const fp = await applyFloorPatches(original, final, staged, layers.floor, floorPlan.patches, w, h)
             .catch((e: any) => ({ image: null, notes: [`apply error: ${String(e?.message || e)}`] }));
           row.floorPatch.applied = Boolean(fp.image);
           row.floorPatch.notes.push(...fp.notes);

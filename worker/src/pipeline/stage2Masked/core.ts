@@ -2572,15 +2572,51 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
 // ---------------------------------------------------------------------------
 export type FloorPatch = {
   x1: number; x2: number; top: number; bottom: number; // patch box (planning pixels)
+  floorTop: number; // top of the floor/skirting band; above it only the wall strip beside a corner is patched
   runX1: number; runX2: number; runBottom: number;      // the floating piece's columns
+  floor?: FloorMatch;
   left: "piece in front" | "wall corner" | "photo edge";
   right: "piece in front" | "wall corner" | "photo edge";
 };
 const FLOOR_PATCH_REACH = 0.12; // look this far (fraction of width) for an edge
 
+// Is Gemini's floor under the patch the same material as the real floor
+// (carpet vs boards vs tiles)? Compares colour, brightness and texture of the
+// two floors over the same area (furniture excluded). The patch's colour
+// matching would hide a tint, but not planks next to carpet.
+export type FloorMatch = { same: boolean; chromaDiff: number; brightRatio: number; textureRatio: number; grainRatio: number; why?: string };
+export function compareFloorMaterial(o: Buffer, s: Buffer, gO: Buffer, gS: Buffer, sel: (x: number, y: number) => boolean, w: number, h: number): FloorMatch {
+  const acc = () => ({ r: 0, g: 0, b: 0, n: 0, lap: 0, dx: 0, dy: 0 });
+  const A = acc(), B = acc();
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    if (!sel(x, y)) continue;
+    const i = y * w + x;
+    for (const [src, g, t] of [[o, gO, A], [s, gS, B]] as const) {
+      t.r += src[i * 3]; t.g += src[i * 3 + 1]; t.b += src[i * 3 + 2]; t.n++;
+      t.lap += Math.abs(4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w]);
+      t.dx += Math.abs(g[i + 1] - g[i - 1]); t.dy += Math.abs(g[i + w] - g[i - w]);
+    }
+  }
+  if (A.n < 50) return { same: false, chromaDiff: 0, brightRatio: 0, textureRatio: 0, grainRatio: 0, why: "too little floor to compare" };
+  const sumA = A.r + A.g + A.b, sumB = B.r + B.g + B.b;
+  const chromaDiff = Math.abs(A.r / sumA - B.r / sumB) + Math.abs(A.g / sumA - B.g / sumB) + Math.abs(A.b / sumA - B.b / sumB);
+  const brightRatio = sumB / Math.max(1, sumA);
+  const textureRatio = (B.lap / Math.max(1, sumB)) / Math.max(1e-9, A.lap / Math.max(1, sumA));
+  const grainRatio = (B.dx / Math.max(1, B.dy)) / Math.max(1e-9, A.dx / Math.max(1, A.dy));
+  const r2 = (v: number) => +v.toFixed(3);
+  const out = { chromaDiff: r2(chromaDiff), brightRatio: r2(brightRatio), textureRatio: r2(textureRatio), grainRatio: r2(grainRatio) };
+  const why = chromaDiff > 0.06 ? "different floor colour"
+    : brightRatio < 0.6 || brightRatio > 1.6 ? "different floor brightness"
+    : textureRatio < 0.5 || textureRatio > 2 ? "different floor texture"
+    : grainRatio < 0.6 || grainRatio > 1.67 ? "different floor grain (boards vs carpet)"
+    : undefined;
+  return { same: !why, ...out, ...(why ? { why } : {}) };
+}
+
 export async function planFloorPatches(original: Buffer, staged: Buffer, floorMask: Uint8Array, runs: FloatingRun[], w: number, h: number) {
   const grey = (b: Buffer) => sharp(b).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(1.5).raw().toBuffer();
-  const [gO, gS, line] = await Promise.all([grey(original), grey(staged), realFloorLine(original, w, h)]);
+  const rgb = (b: Buffer) => sharp(b).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer();
+  const [gO, gS, line, cO, cS] = await Promise.all([grey(original), grey(staged), realFloorLine(original, w, h), rgb(original), rgb(staged)]);
   const bottom = new Int32Array(w).fill(-1);
   for (let x = 0; x < w; x++) for (let y = h - 1; y >= 0; y--) if (floorMask[y * w + x]) { bottom[x] = y; break; }
   // mean |horizontal gradient| at column x over rows [y1, y2)
@@ -2594,12 +2630,13 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
   const notes: string[] = [];
   for (const r of runs) {
     const xa = Math.max(0, Math.floor((r.x1Pct / 100) * w)), xb = Math.min(w - 1, Math.ceil((r.x2Pct / 100) * w));
-    let runBottom = 0, lMin = h, lMax = 0;
+    let runBottom = 0, runTop = h, lMin = h, lMax = 0;
     for (let x = xa; x <= xb; x++) {
       runBottom = Math.max(runBottom, bottom[x]);
+      for (let y = 0; y < h; y++) if (floorMask[y * w + x]) { runTop = Math.min(runTop, y); break; }
       if (line[x] >= 0) { lMin = Math.min(lMin, line[x]); lMax = Math.max(lMax, line[x]); }
     }
-    const top = Math.max(0, Math.min(lMin, runBottom) - Math.round(h * 0.05));
+    let top = Math.max(0, Math.min(lMin, runBottom) - Math.round(h * 0.05));
     const bot = Math.min(h - 1, Math.max(lMax, runBottom) + Math.round(h * 0.05));
     const wallY1 = top - Math.round(h * 0.08), wallY2 = top + Math.round(h * 0.02);
     const reach = Math.round(w * FLOOR_PATCH_REACH);
@@ -2634,7 +2671,7 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
           };
           const pO = peak(gO), pS = peak(gS);
           if (pS.b < 6 || Math.abs(pO.bx - pS.bx) > w * 0.006) return "Gemini moved the wall corner";
-          return { at: dir < 0 ? Math.max(pO.bx, pS.bx) + 2 : Math.min(pO.bx, pS.bx) - 2, why: "wall corner" };
+          return { at: dir < 0 ? Math.max(pO.bx, pS.bx) + 1 : Math.min(pO.bx, pS.bx) - 1, why: "wall corner" };
         }
       }
       return "no corner or piece within reach";
@@ -2645,7 +2682,21 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
       notes.push(`${where}: ${typeof L === "string" ? `left side: ${L}` : `right side: ${R}`}`);
       return { ok: false as const, patches: [], notes };
     }
-    patches.push({ x1: L.at, x2: R.at, top, bottom: bot, runX1: xa, runX2: xb, runBottom, left: L.why, right: R.why });
+    // Beside a wall corner, the blend's borrowed shadow can lap onto the wall
+    // next to the corner, where Gemini's floor isn't: take the patch up to
+    // the top of the piece so that strip of wall is Gemini's own too.
+    const floorTop = top;
+    if (L.why === "wall corner" || R.why === "wall corner") {
+      top = Math.max(0, Math.min(top, Math.max(runTop - Math.round(h * 0.02), runBottom - Math.round(h * 0.35))));
+    }
+    // Same floor material? (carpet must stay carpet)
+    const floor = compareFloorMaterial(cO, cS, gO, gS, (x, y) =>
+      x >= L.at && x <= R.at && y <= bot && line[x] >= 0 && y >= line[x] + h * 0.01 && !floorMask[y * w + x], w, h);
+    if (!floor.same) {
+      notes.push(`${where}: ${floor.why} (colour ${floor.chromaDiff}, brightness x${floor.brightRatio}, texture x${floor.textureRatio}, grain x${floor.grainRatio})`);
+      return { ok: false as const, patches: [], notes };
+    }
+    patches.push({ x1: L.at, x2: R.at, top, bottom: bot, floorTop, runX1: xa, runX2: xb, runBottom, left: L.why, right: R.why, floor });
     notes.push(`${where}: patch x ${((L.at / w) * 100).toFixed(1)}-${((R.at / w) * 100).toFixed(1)}% (${L.why} | ${R.why})`);
   }
   return { ok: patches.length > 0, patches, notes };
@@ -2655,15 +2706,16 @@ export async function planFloorPatches(original: Buffer, staged: Buffer, floorMa
 // resolution. Seamless: Gemini's pixels plus a smooth colour offset solved so
 // it matches the final exactly along the patch border (no tone step at any
 // join). Returns null when a join at a wall corner would add a visible edge.
-export async function applyFloorPatches(final: Buffer, staged: Buffer, floorMask: Uint8Array, patches: FloorPatch[], w: number, h: number) {
+export async function applyFloorPatches(original: Buffer, final: Buffer, staged: Buffer, floorMask: Uint8Array, patches: FloorPatch[], w: number, h: number) {
   const meta = await sharp(final).metadata();
   const FW = meta.width!, FH = meta.height!;
   const sx = FW / w, sy = FH / h;
-  const [fin, stg, mk] = await Promise.all([
+  const [fin, stg, mk, org] = await Promise.all([
     sharp(final).removeAlpha().raw().toBuffer(),
     sharp(staged).removeAlpha().resize(FW, FH, { fit: "fill" }).raw().toBuffer(),
     sharp(Buffer.from(floorMask.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
       .resize(FW, FH, { fit: "fill" }).extractChannel(0).raw().toBuffer(),
+    sharp(original).removeAlpha().resize(FW, FH, { fit: "fill" }).raw().toBuffer(),
   ]);
   const img = Buffer.from(fin);
   const notes: string[] = [];
@@ -2674,21 +2726,46 @@ export async function applyFloorPatches(final: Buffer, staged: Buffer, floorMask
     const xa = Math.round(p.runX1 * sx), xb = Math.round(p.runX2 * sx), runBottom = Math.round(p.runBottom * sy);
     // colour offset (final - Gemini) on a coarse grid: fixed along the border
     // (except a photo edge, which is free), smooth inside
+    // Relight factor final/real photo, from the clean wall just above the
+    // patch: along a corner join the border follows the REAL photo relit
+    // (the final there may carry a borrowed shadow that laps the corner).
+    const relit = [0, 0, 0], realSum = [0, 0, 0];
+    for (let y = Math.max(0, top - Math.round(FH * 0.04)); y < top; y++) for (let x = L; x <= R; x++) {
+      if (mk[y * FW + x] > 127) continue;
+      for (let c = 0; c < 3; c++) { relit[c] += fin[(y * FW + x) * 3 + c]; realSum[c] += org[(y * FW + x) * 3 + c]; }
+    }
+    const gain = [0, 1, 2].map((c) => (realSum[c] > 0 ? relit[c] / realSum[c] : 1));
+    const floorTop = Math.round(p.floorTop * sy);
+    // Which pixels take Gemini's: the floor/skirting band (except the lower
+    // parts of other pieces: a rug, the foot of the bed), plus, above it, the
+    // bare wall strip between a corner and the piece.
+    const replace = (x: number, y: number) => {
+      const m = mk[y * FW + x] > 127;
+      if (y >= floorTop) return !(m && (x < xa || x > xb) && y > runBottom + FH * 0.01);
+      if (m) return false;
+      return (p.left === "wall corner" && x < xa) || (p.right === "wall corner" && x > xb);
+    };
+    // Colour offset (target - Gemini) on a coarse grid: fixed wherever pixels
+    // are kept and along the box border (except a photo edge, which is free),
+    // smooth where pixels are replaced. The target is the final, except along
+    // a corner join, where it is the real photo relit (the final there may
+    // carry a borrowed shadow lapping the corner).
     const cs = Math.max(2, Math.round(4 * sx));
     const gx = Math.ceil((R - L + 1) / cs), gy = Math.ceil((bot - top + 1) / cs);
     const D = [0, 1, 2].map(() => new Float32Array(gx * gy));
     const fixed = new Uint8Array(gx * gy);
     for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
-      if (!(cx === 0 || cy === 0 || cx === gx - 1 || cy === gy - 1)) continue;
-      if ((cx === 0 && p.left === "photo edge") || (cx === gx - 1 && p.right === "photo edge")) continue;
+      const x0 = L + cx * cs, y0 = top + cy * cs, x1 = Math.min(R + 1, x0 + cs), y1 = Math.min(bot + 1, y0 + cs);
+      const border = cx === 0 || cy === 0 || cx === gx - 1 || cy === gy - 1;
+      const freeEdge = (cx === 0 && p.left === "photo edge") || (cx === gx - 1 && p.right === "photo edge");
+      let rep = 0, n = 0;
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) { if (replace(x, y)) rep++; n++; }
+      if (!(border && !freeEdge) && rep * 2 >= n) continue; // solved
+      const cornerSide = (cx === 0 && p.left === "wall corner") || (cx === gx - 1 && p.right === "wall corner");
       const sum = [0, 0, 0];
-      let n = 0;
-      for (let y = top + cy * cs; y < Math.min(bot + 1, top + (cy + 1) * cs); y++) {
-        for (let x = L + cx * cs; x < Math.min(R + 1, L + (cx + 1) * cs); x++) {
-          const i = (y * FW + x) * 3;
-          for (let c = 0; c < 3; c++) sum[c] += fin[i + c] - stg[i + c];
-          n++;
-        }
+      for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+        const i = (y * FW + x) * 3;
+        for (let c = 0; c < 3; c++) sum[c] += (cornerSide ? org[i + c] * gain[c] : fin[i + c]) - stg[i + c];
       }
       for (let c = 0; c < 3; c++) D[c][cy * gx + cx] = sum[c] / Math.max(1, n);
       fixed[cy * gx + cx] = 1;
@@ -2716,8 +2793,7 @@ export async function applyFloorPatches(final: Buffer, staged: Buffer, floorMask
     };
     const backup = Buffer.from(img);
     for (let y = top; y <= bot; y++) for (let x = L; x <= R; x++) {
-      // other pieces' lower parts (a rug, the foot of the bed) stay as they are
-      if (mk[y * FW + x] > 127 && (x < xa || x > xb) && y > runBottom + FH * 0.01) continue;
+      if (!replace(x, y)) continue;
       const i = (y * FW + x) * 3, fx = (x - L) / cs - 0.5, fy = (y - top) / cs - 0.5;
       for (let c = 0; c < 3; c++) img[i + c] = Math.max(0, Math.min(255, Math.round(stg[i + c] + at(D[c], fx, fy))));
     }
@@ -2728,8 +2804,10 @@ export async function applyFloorPatches(final: Buffer, staged: Buffer, floorMask
       if (inX < 0 || outX < 0 || inX >= FW || outX >= FW) continue;
       let ex = 0, n = 0;
       for (let y = top; y <= bot; y++) {
+        // compare with the real photo's own edge there (relit)
         const now = Math.abs(lum(img, y * FW + outX) - lum(img, y * FW + inX));
-        const was = Math.abs(lum(fin, y * FW + outX) - lum(fin, y * FW + inX));
+        const rl = (i: number) => (org[i * 3] * gain[0] + org[i * 3 + 1] * gain[1] + org[i * 3 + 2] * gain[2]) / 3;
+        const was = Math.abs(rl(y * FW + outX) - rl(y * FW + inX));
         ex += Math.max(0, now - was - 4);
         n++;
       }
