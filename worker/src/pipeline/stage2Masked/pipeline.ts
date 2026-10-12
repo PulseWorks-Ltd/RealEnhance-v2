@@ -107,6 +107,102 @@ function warn(ctx: MaskedContext, msg: string) {
 
 export type TraceLayers = Awaited<ReturnType<typeof traceLayers>>;
 
+// Close-up re-trace. The full-image trace sometimes misses a piece — Bedroom
+// 12's bedside table and lamp, cut off by the photo's right edge, were left
+// out, so the final showed a ghost of them. The changed-area check already
+// spots such places (staged image differs from the room, right next to the
+// traced furniture). Here a crop around them is traced again, close up, and
+// new pieces it finds there are added. Only pieces the trace model marks as
+// furniture are added, and only where they reach a flagged area — never the
+// changed area itself by rule (that could be a door Gemini moved).
+const CLOSEUP_RETRACE = String(process.env.STAGE2_CLOSEUP_RETRACE ?? "1").trim() !== "0";
+const CLOSEUP_MIN_AREA_PCT = 0.3;
+const CLOSEUP_MIN_TOUCHING_PCT = 10;
+const CLOSEUP_TARGETS =
+  "every piece of furniture and decor that was added in the staged image — beds, sofas, chairs, tables, bedside tables, dressers, lamps, rugs, plants, cushions and items on furniture — including pieces only partly in view at the edge of the photo";
+
+async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Array, minSpeck: number): Promise<Mask> {
+  const { original, staged, w, h, row } = ctx;
+  if (!CLOSEUP_RETRACE) return floor;
+  const probe = await fillChangedGaps(floor, original, staged, w, h);
+  const missed: Array<{ areaPct: number; touchingFurniturePct: number; box: number[] }> = ((probe as any).possiblyMissedByTrace || []).filter(
+    (m: any) => m.areaPct >= CLOSEUP_MIN_AREA_PCT && m.touchingFurniturePct >= CLOSEUP_MIN_TOUCHING_PCT
+  );
+  if (missed.length === 0) return floor;
+  // Crop: all flagged areas, padded, at least 30% of the photo each way.
+  let bx1 = 1, by1 = 1, bx2 = 0, by2 = 0;
+  for (const m of missed) {
+    bx1 = Math.min(bx1, m.box[0]); by1 = Math.min(by1, m.box[1]);
+    bx2 = Math.max(bx2, m.box[2]); by2 = Math.max(by2, m.box[3]);
+  }
+  const PAD = 0.06, MIN = 0.3;
+  const span = (a: number, b: number): [number, number] => {
+    a = Math.max(0, a - PAD); b = Math.min(1, b + PAD);
+    if (b - a < MIN) {
+      const c = (a + b) / 2;
+      a = Math.max(0, Math.min(1 - MIN, c - MIN / 2));
+      b = a + MIN;
+    }
+    return [a, b];
+  };
+  const [cx1, cx2] = span(bx1, bx2), [cy1, cy2] = span(by1, by2);
+  const left = Math.floor(cx1 * w), top = Math.floor(cy1 * h);
+  const cw = Math.max(1, Math.min(w - left, Math.round((cx2 - cx1) * w)));
+  const ch = Math.max(1, Math.min(h - top, Math.round((cy2 - cy1) * h)));
+  row.closeUpRetrace = { flaggedAreas: missed, crop: [+cx1.toFixed(2), +cy1.toFixed(2), +cx2.toFixed(2), +cy2.toFixed(2)] };
+
+  let raw: Buffer | null = null;
+  if (ctx.offline) {
+    raw = ctx.io.load?.("3_trace_closeup_raw.png") ?? null;
+    if (!raw) warn(ctx, `[${ctx.name}] FROM_RUN: no saved close-up trace — skipping it`);
+  } else {
+    const cropOf = (b: Buffer) =>
+      sharp(b).removeAlpha().resize(w, h, { fit: "fill" }).extract({ left, top, width: cw, height: ch }).png().toBuffer();
+    const [sCrop, oCrop] = await Promise.all([cropOf(staged), cropOf(original)]);
+    save(ctx, "3_trace_closeup_input.png", sCrop);
+    raw = await callGeminiImage({
+      model: TRACE_MODEL,
+      parts: [
+        { text: buildTracePrompt(ctx.roomType, CLOSEUP_TARGETS, "floor", ctx.tight) },
+        { text: "STAGED_IMAGE" }, imagePart(sCrop, "image/png"),
+        { text: "EMPTY_IMAGE" }, imagePart(oCrop, "image/png"),
+      ],
+      imageSize: TRACE_IMAGE_SIZE,
+      aspectRatio: closestGeminiAspectRatio(cw, ch),
+    })
+      .then((res) => {
+        row.closeUpRetrace.costUsd = approxOutputCost(res.usage);
+        row.traceCostUsd = Number(((row.traceCostUsd || 0) + (row.closeUpRetrace.costUsd || 0)).toFixed(4));
+        return res.image;
+      })
+      .catch((e) => {
+        warn(ctx, `[${ctx.name}] close-up re-trace failed: ${String(e?.message || e).slice(0, 200)}`);
+        return null;
+      });
+  }
+  if (!raw) return floor;
+  save(ctx, "3_trace_closeup_raw.png", raw);
+  const crop = (await binarizeTraceResponse(raw, cw, ch)).mask;
+  const added = new Uint8Array(w * h);
+  for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+    const gi = (top + y) * w + left + x;
+    if (crop[y * cw + x] && !exclude[gi] && !floor[gi]) added[gi] = 1;
+  }
+  const near = 0.02;
+  const reaches = (p: { x1: number; y1: number; x2: number; y2: number }) =>
+    missed.some((m) => p.x2 / w >= m.box[0] - near && p.x1 / w <= m.box[2] + near && p.y2 / h >= m.box[1] - near && p.y1 / h <= m.box[3] + near);
+  const out = Uint8Array.from(floor);
+  let addedPx = 0;
+  for (const piece of labelComponents(added, w, h)) {
+    if (piece.pixels.length < minSpeck || !reaches(piece)) continue;
+    for (const i of piece.pixels) out[i] = 1;
+    addedPx += piece.pixels.length;
+  }
+  row.closeUpRetrace.addedPctOfImage = +((addedPx / (w * h)) * 100).toFixed(2);
+  log(ctx, `[${ctx.name}] close-up re-trace: ${missed.length} possibly-missed area(s); added ${row.closeUpRetrace.addedPctOfImage}% of image as furniture`);
+  return out;
+}
+
 export async function traceLayers(ctx: MaskedContext) {
   const { original, staged, w, h, row } = ctx;
   const stagedMeta = await sharp(staged).metadata();
@@ -159,6 +255,13 @@ export async function traceLayers(ctx: MaskedContext) {
   let reflAll = new Uint8Array(w * h);
   for (const p of passes) if (p.kind === "reflection") for (let i = 0; i < reflAll.length; i++) reflAll[i] |= p.mask[i];
   reflAll = removeSmallComponents(reflAll, w, h, minSpeck);
+  // Close-up re-trace of changed areas the trace may have missed (only when
+  // there are some), e.g. a bedside table cut off by the photo's edge.
+  if (ctx.tight) {
+    const exclude = new Uint8Array(w * h);
+    for (let i = 0; i < exclude.length; i++) exclude[i] = artAll[i] | reflAll[i];
+    floor = await closeUpRetrace(ctx, floor, exclude, minSpeck);
+  }
   // Mirrors in the empty room — only looked up when a reflection was found.
   let mirrorMask: Mask | null = null;
   if (labelComponents(reflAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
@@ -428,7 +531,16 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
       furnitureRestyledAndRepaired: cb.furnitureChanged,
       usedAppBuiltInstead: cb.tooMuchChanged,
     };
-    if (cb.tooMuchChanged) {
+    // Gemini's blend moved part of the room itself (a doorway or window edge
+    // shifted). Patch repairs then mix moved and unmoved pieces, which shows
+    // as broken lines (Bedroom 12's doorway), so the app-built final is used.
+    const blendMovedRoom = (row.harmonise.blendFraming?.tilesChanged || 0) > 0;
+    row.checkedBlend.blendMovedRoom = blendMovedRoom;
+    if (blendMovedRoom) {
+      warn(ctx, `[${ctx.name}] checked blend: Gemini's blend moved part of the room (${row.harmonise.blendFraming.tilesChanged} wall/ceiling patch(es)) — using the app-built final instead`);
+      row.checkedBlend.usedAppBuiltInstead = true;
+      checkedBlend = harmFinal;
+    } else if (cb.tooMuchChanged) {
       warn(ctx, `[${ctx.name}] checked blend: ${cb.repairPct}% of patches changed (limit ${BLEND_MAX_REPAIR_PCT}%) — using the app-built final instead`);
       checkedBlend = harmFinal;
     } else {
@@ -550,12 +662,17 @@ export async function runMaskedStage2Job(p: {
       io.save?.("2_staged_raw.webp", staged);
       const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
       const layers = await traceLayers(ctx);
-      const hm = await harmonise(ctx, layers);
-      final = hm.checkedBlend || hm.harmFinal;
-      await finalDoorCheck(ctx, final, p.doors);
-      if (row.doorAccess?.blocked) reasons.push("doorway blocked");
-      if (row.framingCheck?.framingChanged) reasons.push("room reshaped");
-      if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+      if (row.framingCheck?.framingChanged) {
+        // Reshaped room: paste-back can't fix it, so skip the blend and door
+        // check (time and cost) and go straight to the re-stage / fallback.
+        reasons.push("room reshaped");
+      } else {
+        const hm = await harmonise(ctx, layers);
+        final = hm.checkedBlend || hm.harmFinal;
+        await finalDoorCheck(ctx, final, p.doors);
+        if (row.doorAccess?.blocked) reasons.push("doorway blocked");
+        if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+      }
     } catch (e: any) {
       row.error = String(e?.message || e).slice(0, 400);
       reasons.push(`processing error: ${row.error}`);
@@ -573,6 +690,11 @@ export async function runMaskedStage2Job(p: {
     }
     row.outcome = `re-stage (${reasons.join(", ")})`;
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
-    hints = row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : [];
+    hints = [
+      ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
+      ...(row.framingCheck?.framingChanged
+        ? ["Keep the camera exactly where it is: same framing, zoom and perspective as the input photo. Do not crop, widen, rotate or redraw the walls, ceiling, windows or doors — only add furniture."]
+        : []),
+    ];
   }
 }
