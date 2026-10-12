@@ -12,7 +12,6 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import { checkFraming, checkCameraAlignment, REFRAMED_MEDIAN_DIFF } from "../pipeline/stage2Masked/core";
-import { REFRAMED_EARLY_MEDIAN_DIFF } from "../pipeline/stage2Masked/pipeline";
 
 const TI = path.resolve(__dirname, "../../../Test Images");
 const BASE_DIRS = ["Bedroom (Baseline)", "Living (Baseline)", "Kitchen"];
@@ -98,17 +97,18 @@ async function writeSheets(rows: any[], out: string) {
     const s = await sharp(sb).rotate().resize(w, h, { fit: "fill" }).toBuffer();
     const f = await checkFraming(o, s, new Uint8Array(w * h), w, h);
     const c = await checkCameraAlignment(o, s);
-    const early = c.moved || (f.tilesChecked >= 6 && f.medianDiff > REFRAMED_EARLY_MEDIAN_DIFF);
-    const full = early || f.medianDiff > REFRAMED_MEDIAN_DIFF;
+    // Untraced approximation of the pipeline's traced framing check (the real
+    // check also leaves out the traced furniture, which lowers the score).
+    const full = f.tilesChecked >= 6 && f.medianDiff > REFRAMED_MEDIAN_DIFF;
     rows.push({
       group: p.group, base: path.basename(p.base), staged: path.basename(p.staged),
       basePath: p.base, stagedPath: p.staged,
       aspectBase: +(w / h).toFixed(3), aspectStaged: +((sm.width || 1) / (sm.height || 1)).toFixed(3),
       framing: f.medianDiff, camGain: c.gain, camScale: c.scale, camShift: c.shiftPct, moved: c.moved,
-      verdict: early ? "RESHAPED (early)" : full ? "RESHAPED (full check)" : "ok",
+      verdict: full ? "RESHAPED (untraced)" : "ok",
     });
   }
-  const order: Record<string, number> = { "RESHAPED (early)": 0, "RESHAPED (full check)": 1, ok: 2 };
+  const order: Record<string, number> = { "RESHAPED (untraced)": 0, ok: 1 };
   rows.sort((x, y) => (order[x.verdict] ?? 3) - (order[y.verdict] ?? 3) || x.group.localeCompare(y.group) || x.staged.localeCompare(y.staged));
   rows.forEach((r, i) => (r.n = i + 1));
   await writeSheets(rows, outDir);

@@ -631,14 +631,6 @@ export type MaskedJobResult =
   | { ok: true; outputPath: string; attempts: number; reports: any[] }
   | { ok: false; reasons: string[]; attempts: number; reports: any[] };
 
-// Early reshape screen. The framing check scores almost the same without the
-// traced furniture outline (calibrated on Stage2_MaskPasteback + the Bedroom 05
-// production job: reshaped rooms 28.9 and 36, good results 7.6 or lower), so a
-// clearly reshaped room is caught straight after staging, before the 3-6
-// Gemini tracing calls that would be thrown away. Anything at or below this
-// score goes through the normal (traced) check as before.
-export const REFRAMED_EARLY_MEDIAN_DIFF = Number(process.env.REFRAMED_EARLY_MEDIAN_DIFF || 22);
-
 // One photo through the masked Stage 2: stage -> trace -> harmonise ->
 // checked blend -> final door check. A photo is re-staged ONCE (for any
 // reason: blocked doorway, reshaped room, structure check or processing
@@ -703,31 +695,22 @@ export async function runMaskedStage2Job(p: {
         } catch {}
       }
       const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
-      const [early, camera] = await Promise.all([
-        checkFraming(original, staged, new Uint8Array(w * h), w, h),
-        checkCameraAlignment(original, staged),
-      ]);
-      row.earlyFramingCheck = early;
-      row.cameraAlignment = camera;
-      if (camera.moved || (early.tilesChecked >= 6 && early.medianDiff > REFRAMED_EARLY_MEDIAN_DIFF)) {
-        // Camera moved, or the room is clearly redrawn: paste-back can't fix
-        // it, so skip tracing, blend and door check entirely.
-        row.framingCheck = { ...early, framingChanged: true, early: true };
-        p.warn?.(`[${ctx.name}] Gemini reshaped/reframed the room (early check: ${camera.moved ? `camera moved — zoom ${camera.scale}, shift ${camera.shiftPct}%` : `typical wall/ceiling patch differs by ${early.medianDiff}`}) — skipping tracing; re-staging`);
+      // Camera-movement check: logged only. An early (untraced) reshape screen
+      // was removed: on owner-labelled merge tests it rejected photos the
+      // merge saves (furniture can't be told from room before tracing), while
+      // the traced framing check below matched the merged results on all 6.
+      row.cameraAlignment = await checkCameraAlignment(original, staged).catch(() => null);
+      const layers = await traceLayers(ctx);
+      if (row.framingCheck?.framingChanged) {
+        // Reshaped room: paste-back can't fix it, so skip the blend and door
+        // check (time and cost) and go straight to the re-stage / fallback.
         reasons.push("room reshaped");
       } else {
-        const layers = await traceLayers(ctx);
-        if (row.framingCheck?.framingChanged) {
-          // Reshaped room: paste-back can't fix it, so skip the blend and door
-          // check (time and cost) and go straight to the re-stage / fallback.
-          reasons.push("room reshaped");
-        } else {
-          const hm = await harmonise(ctx, layers);
-          final = hm.checkedBlend || hm.harmFinal;
-          await finalDoorCheck(ctx, final, p.doors);
-          if (row.doorAccess?.blocked) reasons.push("doorway blocked");
-          if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
-        }
+        const hm = await harmonise(ctx, layers);
+        final = hm.checkedBlend || hm.harmFinal;
+        await finalDoorCheck(ctx, final, p.doors);
+        if (row.doorAccess?.blocked) reasons.push("doorway blocked");
+        if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
       }
     } catch (e: any) {
       row.error = String(e?.message || e).slice(0, 400);
