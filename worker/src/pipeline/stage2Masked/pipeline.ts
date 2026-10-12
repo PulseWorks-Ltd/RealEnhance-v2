@@ -54,6 +54,7 @@ import {
   layersOverlay,
   measureOutsideDrift,
   checkFraming,
+  checkCameraAlignment,
   undoneOverlay,
   compositeLayers,
   removeSunPatches,
@@ -702,12 +703,17 @@ export async function runMaskedStage2Job(p: {
         } catch {}
       }
       const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
-      const early = await checkFraming(original, staged, new Uint8Array(w * h), w, h);
+      const [early, camera] = await Promise.all([
+        checkFraming(original, staged, new Uint8Array(w * h), w, h),
+        checkCameraAlignment(original, staged),
+      ]);
       row.earlyFramingCheck = early;
-      if (early.tilesChecked >= 6 && early.medianDiff > REFRAMED_EARLY_MEDIAN_DIFF) {
-        // Clearly reshaped: skip tracing, blend and door check entirely.
+      row.cameraAlignment = camera;
+      if (camera.moved || (early.tilesChecked >= 6 && early.medianDiff > REFRAMED_EARLY_MEDIAN_DIFF)) {
+        // Camera moved, or the room is clearly redrawn: paste-back can't fix
+        // it, so skip tracing, blend and door check entirely.
         row.framingCheck = { ...early, framingChanged: true, early: true };
-        p.warn?.(`[${ctx.name}] Gemini reshaped/reframed the room (early check, typical wall/ceiling patch differs by ${early.medianDiff}) — skipping tracing; re-staging`);
+        p.warn?.(`[${ctx.name}] Gemini reshaped/reframed the room (early check: ${camera.moved ? `camera moved — zoom ${camera.scale}, shift ${camera.shiftPct}%` : `typical wall/ceiling patch differs by ${early.medianDiff}`}) — skipping tracing; re-staging`);
         reasons.push("room reshaped");
       } else {
         const layers = await traceLayers(ctx);

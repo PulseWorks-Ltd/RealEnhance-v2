@@ -2287,6 +2287,23 @@ export async function checkFraming(original: Buffer, staged: Buffer, mask: Uint8
     sharp(staged).removeAlpha().resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
     sharp(await maskToPng(mask, w, h)).resize(sw, sh, { fit: "fill" }).grayscale().raw().toBuffer(),
   ]);
+  // Match the staged image's overall brightness and contrast to the original
+  // first (over the room, not the furniture), so a brighter or darker staged
+  // image is not mistaken for a moved room. Without this a +16% brightness
+  // change alone scored 19-29 on good results.
+  {
+    let ma = 0, qa = 0, mb = 0, qb = 0, n = 0;
+    for (let i = 0; i < a.length; i++) {
+      if (m[i] > 127) continue;
+      ma += a[i]; qa += a[i] * a[i]; mb += b[i]; qb += b[i] * b[i]; n++;
+    }
+    if (n > 0) {
+      ma /= n; mb /= n;
+      const sa = Math.sqrt(Math.max(1e-6, qa / n - ma * ma)), sb = Math.sqrt(Math.max(1e-6, qb / n - mb * mb));
+      const gain = sa / sb;
+      for (let i = 0; i < b.length; i++) b[i] = Math.max(0, Math.min(255, Math.round((b[i] - mb) * gain + ma)));
+    }
+  }
   const tile = 40, maxShift = 2;
   const diffs: number[] = [];
   let checked = 0, changed = 0;
@@ -2323,6 +2340,93 @@ export async function checkFraming(original: Buffer, staged: Buffer, mask: Uint8
   const medianDiff = sorted.length ? Number(sorted[Math.floor(sorted.length / 2)].toFixed(1)) : 0;
   return { tilesChecked: checked, tilesChanged: changed, changedPct, medianDiff, framingChanged: checked >= 6 && medianDiff > REFRAMED_MEDIAN_DIFF };
 }
+
+// Camera-movement check: did Gemini zoom or shift the view? Both images are
+// reduced to brightness-independent structure edges, then the staged image is
+// zoomed (0.86-1.14) and shifted (up to ~7%) to find its best fit on the
+// original. Good results fit best where they are (gain 0, also when Gemini
+// brightened the image); a moved or redrawn view fits clearly better
+// somewhere else. Calibration (30th-percentile tile score): good and +16%
+// brightened results 0; 6% zoom fakes 0.07-0.21; Bedroom 05 0.116;
+// Bedroom 12 0.133. Used for DETECTION only: on real reshapes the best zoom /
+// shift is not a reliable estimate, because Gemini changes the perspective
+// (Bedroom 05 could not be lined up by any zoom + shift), so a moved room is
+// re-staged, never warped back.
+export const CAMERA_MOVED_MIN_GAIN = Number(process.env.CAMERA_MOVED_MIN_GAIN || 0.05);
+const ALIGN_W = 240;
+// Which tile score decides the fit: a low percentile lets the room's unchanged
+// structure (windows, corners, ceiling lines) decide, so furniture and local
+// repaints (a removed wall) can't pull the estimate around.
+const ALIGN_PERCENTILE = Number(process.env.ALIGN_PERCENTILE || 0.3);
+
+async function structureEdges(buf: Buffer, h: number): Promise<Float32Array> {
+  const g = await sharp(buf).removeAlpha().resize(ALIGN_W, h, { fit: "fill" }).greyscale().raw().toBuffer();
+  let mean = 0, sq = 0;
+  for (const v of g) { mean += v; sq += v * v; }
+  mean /= g.length;
+  const sd = Math.sqrt(Math.max(1e-6, sq / g.length - mean * mean));
+  const f = new Float32Array(g.length);
+  for (let i = 0; i < g.length; i++) f[i] = (g[i] - mean) / sd;
+  const e = new Float32Array(g.length);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < ALIGN_W - 1; x++) {
+    const i = y * ALIGN_W + x;
+    e[i] = Math.abs(f[i + 1] - f[i - 1]) + Math.abs(f[i + ALIGN_W] - f[i - ALIGN_W]);
+  }
+  return e;
+}
+
+function alignmentScore(a: Float32Array, b: Float32Array, h: number, scale: number, dx: number, dy: number, step = 2): number {
+  const cx = ALIGN_W / 2, cy = h / 2, T = 20;
+  const tiles: number[] = [];
+  for (let ty = 4; ty + T <= h - 4; ty += T) for (let tx = 4; tx + T <= ALIGN_W - 4; tx += T) {
+    let sum = 0, n = 0, tex = 0;
+    for (let y = ty; y < ty + T; y += step) for (let x = tx; x < tx + T; x += step) {
+      const bx = Math.round(cx + (x - cx) * scale + dx), by = Math.round(cy + (y - cy) * scale + dy);
+      if (bx < 1 || by < 1 || bx >= ALIGN_W - 1 || by >= h - 1) continue;
+      const va = a[y * ALIGN_W + x];
+      sum += Math.abs(va - b[by * ALIGN_W + bx]);
+      tex += va;
+      n++;
+    }
+    if (n > ((T * T) / (step * step)) * 0.8 && tex / n > 0.15) tiles.push(sum / n);
+  }
+  tiles.sort((p, q) => p - q);
+  return tiles.length ? tiles[Math.floor(tiles.length * ALIGN_PERCENTILE)] : 0;
+}
+
+export type CameraAlignment = {
+  identity: number; best: number; gain: number;
+  scale: number; dxPct: number; dyPct: number; shiftPct: number;
+  moved: boolean;
+};
+
+export async function checkCameraAlignment(original: Buffer, staged: Buffer): Promise<CameraAlignment> {
+  const meta = await sharp(original).metadata();
+  const h = Math.max(8, Math.round((ALIGN_W * (meta.height || 1)) / (meta.width || 1)));
+  const [a, b] = await Promise.all([structureEdges(original, h), structureEdges(staged, h)]);
+  // Coarse search on every 2nd pixel, then a fine search around the best fit,
+  // then both the identity and the best fit re-scored on every pixel.
+  let best = { score: alignmentScore(a, b, h, 1, 0, 0), scale: 1, dx: 0, dy: 0 };
+  for (let sc = 0.86; sc <= 1.141; sc += 0.02) for (let dx = -18; dx <= 18; dx += 3) for (let dy = -12; dy <= 12; dy += 4) {
+    const v = alignmentScore(a, b, h, sc, dx, dy);
+    if (v < best.score) best = { score: v, scale: sc, dx, dy };
+  }
+  const coarse = { ...best };
+  for (let sc = coarse.scale - 0.02; sc <= coarse.scale + 0.021; sc += 0.005) for (let dx = coarse.dx - 3; dx <= coarse.dx + 3; dx++) for (let dy = coarse.dy - 4; dy <= coarse.dy + 4; dy++) {
+    const v = alignmentScore(a, b, h, sc, dx, dy);
+    if (v < best.score) best = { score: v, scale: sc, dx, dy };
+  }
+  const identity = alignmentScore(a, b, h, 1, 0, 0, 1);
+  best.score = Math.min(identity, alignmentScore(a, b, h, best.scale, best.dx, best.dy, 1));
+  if (best.score === identity) best = { score: identity, scale: 1, dx: 0, dy: 0 };
+  const gain = identity - best.score;
+  const dxPct = (best.dx / ALIGN_W) * 100, dyPct = (best.dy / h) * 100;
+  const shiftPct = Math.hypot(dxPct, dyPct);
+  const moved = gain >= CAMERA_MOVED_MIN_GAIN && (Math.abs(best.scale - 1) >= 0.01 || shiftPct >= 0.8);
+  const r = (v: number, d = 3) => Number(v.toFixed(d));
+  return { identity: r(identity), best: r(best.score), gain: r(gain), scale: r(best.scale), dxPct: r(dxPct, 2), dyPct: r(dyPct, 2), shiftPct: r(shiftPct, 2), moved };
+}
+
 
 // Harmonise structure check: outside the given mask, does the final still show
 // the original room? Compared at 640px wide and lightly softened, so carpet
