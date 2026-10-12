@@ -1388,58 +1388,92 @@ async function doorwayAppearsBlocked(input: Buffer, staged: Buffer, doors: DoorO
   });
 }
 
+function doorLabel(i: number) {
+  return `DOOR ${i + 1}`;
+}
+
 function buildDoorAccessPrompt(roomType: string, doors: DoorOpening[]): string {
-  const list = doors.map((d) => `- "${d.id}": ${d.description} (in Image 1 at x ${d.bbox[0].toFixed(2)}–${d.bbox[2].toFixed(2)}, y ${d.bbox[1].toFixed(2)}–${d.bbox[3].toFixed(2)} of the image)`).join("\n");
-  return `Image 1 is the EMPTY room (the real room). Image 2 is the same room after virtual staging, from the same camera position.
-
-These real doors/walkthroughs are in Image 1:
+  const list = doors.map((d, i) => `- ${doorLabel(i)}: ${d.description}`).join("\n");
+  return `Image 1 is the EMPTY room. Image 2 is the same room after virtual staging, from the same camera position.
+In Image 2, each real doorway of the room is outlined in red and labelled:
 ${list}
+The staged picture may wrongly show a doorway moved, changed or covered by wall — always trust the red outline, not the picture.
 
-For EACH of them, look at Image 2 and judge its immediate approach area: the floor space directly in front of where the opening is in Image 1, roughly as wide as the opening and about one typical step out from it — the space a person needs to walk through it, or a hinged door needs to swing open.
-Image 2 may wrongly show the opening moved, changed or covered over — that will be corrected afterwards. Ignore that; judge only whether furniture stands on the floor in front of where the opening really is (Image 1).
-Judge this in 3D, not by the flat picture: furniture that only appears in front of a doorway from the camera's angle, but actually stands well forward in the room with clear floor between it and the doorway, does NOT block it. A small side table or chair beside the opening, out of the direct path, does not block it either. It is blocked only when a large piece of furniture (bed, sofa, dresser, table, cabinet) has its footprint across the opening's threshold or swing path, so a person could not walk through, or the door could not open, without moving it.
+For each outlined doorway: could a person walk into and out of the room through it without moving any furniture?
+Judge this in 3D, not by the flat picture: furniture that only appears in front of the outline from the camera's angle, but stands forward in the room with floor space between it and the doorway, does not block it. Small items beside the doorway, out of the walking path, don't block it either.
 
-For a sliding door, judge the part that slides open: it is usable if a person can walk through that part.
-
-Answer for each: "yes" (blocked), "no" (clear), or "cannot_tell" (not visible enough to judge).
-If you answer "yes", you MUST name the specific piece of furniture that blocks it in "blockingFurniture" (for example "the bed's headboard"). If you cannot name one, the answer is not "yes".
+Answer for each doorway: "yes" (blocked — a person could not walk through without moving furniture), "no" (a person can walk through), or "cannot_tell" (not visible enough to judge).
+If you answer "yes", you MUST name the furniture in the way in "blockingFurniture" (for example "the bed's headboard"). If you cannot name it, the answer is not "yes".
 
 Respond with ONLY a single valid JSON object:
 {
-  "openings": [
-    { "id": string, "approachAreaDescription": string, "blockingFurniture": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
+  "doorways": [
+    { "door": "DOOR 1", "whatIsInFrontOfIt": string, "blockingFurniture": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
   ]
 }
 Room type: ${roomType.replace(/_/g, " ")}`;
 }
 
-// Pure decision: blocked only on a clear "yes" ("cannot_tell" passes, as in
-// doorAccessClearanceCheck.ts — an unclear read should never force a re-stage).
-function evaluateDoorAccess(raw: any) {
-  const openings: any[] = Array.isArray(raw?.openings) ? raw.openings : [];
-  const items = openings.map((o) => {
+// Image 2 for the AI: the staged image (at the empty photo's size, so the
+// boxes line up) with each real doorway outlined in red and labelled — the AI
+// only has to look at what stands in front of the outline, instead of
+// translating coordinates between two images or seeing past a door Gemini
+// moved.
+async function buildDoorCheckImage(input: Buffer, staged: Buffer, doors: DoorOpening[]): Promise<Buffer> {
+  const m = await sharp(input).metadata();
+  const W = m.width || 1, H = m.height || 1;
+  const base = await sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).toBuffer();
+  const sw = Math.max(3, Math.round(W * 0.005));
+  const fs2 = Math.max(16, Math.round(W * 0.028));
+  const shapes = doors.map((d, i) => {
+    const [x1, y1, x2, y2] = d.bbox;
+    const rx = x1 * W, ry = y1 * H, rw = (x2 - x1) * W, rh = (y2 - y1) * H;
+    const label = doorLabel(i);
+    const lw = fs2 * 0.62 * label.length + fs2 * 0.6, lh = fs2 * 1.4;
+    const lx = Math.min(Math.max(0, rx), W - lw), ly = ry - lh - sw >= 0 ? ry - lh - sw : ry + sw;
+    return `<rect x="${rx}" y="${ry}" width="${rw}" height="${rh}" fill="none" stroke="#ff1a1a" stroke-width="${sw}"/>` +
+      `<rect x="${lx}" y="${ly}" width="${lw}" height="${lh}" fill="#ff1a1a"/>` +
+      `<text x="${lx + fs2 * 0.3}" y="${ly + fs2 * 1.05}" font-family="sans-serif" font-weight="bold" font-size="${fs2}" fill="#ffffff">${label}</text>`;
+  });
+  const svg = Buffer.from(`<svg width="${W}" height="${H}">${shapes.join("")}</svg>`);
+  return sharp(base).composite([{ input: svg }]).jpeg({ quality: 90 }).toBuffer();
+}
+
+// Pure decision: blocked only on a clear "yes" that names the furniture
+// ("cannot_tell" and unnamed "yes" pass, as in doorAccessClearanceCheck.ts —
+// an unclear read should never force a re-stage).
+function evaluateDoorAccess(raw: any, doors: DoorOpening[]) {
+  const answers: any[] = Array.isArray(raw?.doorways) ? raw.doorways : [];
+  const items = answers.map((o) => {
+    const label = String(o?.door || "").toUpperCase().replace(/\s+/g, " ").trim();
+    const idx = doors.findIndex((_, i) => doorLabel(i) === label);
     const blockingFurniture = String(o?.blockingFurniture || "").trim();
     let accessBlocked = ["yes", "no", "cannot_tell"].includes(o?.accessBlocked) ? o.accessBlocked : "cannot_tell";
-    // "Blocked" only counts with a named piece of furniture as evidence.
     if (accessBlocked === "yes" && (!blockingFurniture || /^(none|n\/a|unknown|nothing)$/i.test(blockingFurniture))) accessBlocked = "cannot_tell";
-    return { id: String(o?.id || ""), approachAreaDescription: String(o?.approachAreaDescription || ""), blockingFurniture, accessBlocked };
+    return {
+      id: idx >= 0 ? doors[idx].id : `unmatched:${label}`,
+      door: label,
+      whatIsInFrontOfIt: String(o?.whatIsInFrontOfIt || ""),
+      blockingFurniture,
+      accessBlocked,
+    };
   });
-  const blocked = items.filter((o) => o.accessBlocked === "yes");
+  const blocked = items.filter((o) => o.accessBlocked === "yes" && !o.id.startsWith("unmatched:"));
   return { blocked: blocked.length > 0, blockedIds: blocked.map((o) => o.id), items };
 }
 
 async function askDoorAccess(emptyPath: string, staged: Buffer, doors: DoorOpening[], roomType: string, dir: string, name: string) {
-  const stagedPath = path.join(dir, "2_door_check_input.jpg");
-  fs.writeFileSync(stagedPath, await sharp(staged).jpeg({ quality: 90 }).toBuffer());
+  const markedPath = path.join(dir, "2_door_check_input.jpg");
+  fs.writeFileSync(markedPath, await buildDoorCheckImage(fs.readFileSync(emptyPath), staged, doors));
   try {
     const { raw, model } = await callJsonModel(
-      [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: stagedPath, label: "Image 2 (staged room):" }],
-      "You are a careful visual inspector checking whether a staged room's furniture layout leaves its doors and walkthroughs usable.",
+      [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: markedPath, label: "Image 2 (staged room, real doorways outlined in red):" }],
+      "You are a careful visual inspector checking whether people can still walk in and out of a staged room through its real doorways.",
       buildDoorAccessPrompt(roomType, doors),
       name,
       "door_access",
     );
-    return { model, ...evaluateDoorAccess(raw) };
+    return { model, ...evaluateDoorAccess(raw, doors) };
   } catch (e: any) {
     // A failed check never blocks (structure is protected regardless).
     return { model: "none", error: String(e?.message || e).slice(0, 200), blocked: false, blockedIds: [] as string[], items: [] as any[] };
@@ -2967,4 +3001,4 @@ if (require.main === module) {
     });
 }
 
-export { fillChangedGaps, buildAppliancePrompt, buildApplianceSpacePrompt, doorwayAppearsBlocked, evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { buildDoorCheckImage, fillChangedGaps, buildAppliancePrompt, buildApplianceSpacePrompt, doorwayAppearsBlocked, evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
