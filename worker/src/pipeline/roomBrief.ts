@@ -48,6 +48,9 @@ export type RoomBrief = {
   // tight kitchen/dining shot go without a table instead of the image model
   // reshaping the room to make one fit.
   diningSpace?: { fits: "full" | "small" | "none"; reason?: string };
+  // Same idea for bedrooms: the largest bed and the number of bedside
+  // tables the visible floor really takes.
+  bedSpace?: { bed: "king" | "queen" | "double" | "single"; bedsideTables: 0 | 1 | 2; reason?: string };
   layout: Array<{ item: string; placement: string }>;
   relationships: string[];
   avoid: string[];
@@ -99,7 +102,9 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
   if (key === "living_room" || key === "living") return living;
   if (key === "kitchen") return kitchenOnly;
   if (key.startsWith("bedroom")) {
-    return `BEDROOM: a bed (queen or king if the room allows) with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp on each side where there is room. Optionally a dresser, a chair or a bench at the end of the bed if space allows. Keep the paths to the door and the wardrobe clear.`;
+    return `BEDROOM: a bed with its headboard against a solid, clearly visible wall — not across a window or in front of a door or wardrobe — with a bedside table and lamp beside it.
+BED SPACE CHECK: first judge the open floor you can actually see. Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
+Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
   }
   if (key === "study" || key === "office") return `STUDY: a desk and desk chair, ideally facing the window or a wall with the window to the side, plus a bookshelf or a small armchair if there is room.`;
   return `Furnish the room for its purpose with a small number of correctly scaled pieces.`;
@@ -137,6 +142,7 @@ Return ONLY a JSON object:
   "kitchenVisible": boolean,
   "fridgeSpace": { "present": boolean, "description": string },   // true only for an empty cavity clearly built for a fridge
   "diningSpace": { "fits": "full" | "small" | "none", "reason": string },   // only for room types with a dining area
+  "bedSpace": { "bed": "king" | "queen" | "double" | "single", "bedsideTables": 0 | 1 | 2, "reason": string },   // only for bedrooms
   "layout": [ { "item": string, "placement": string } ],          // e.g. { "item": "TV", "placement": "mounted on the black TV wall bracket on the white wall on the right, covering the bracket" }
   "relationships": [ string ],    // how the areas and pieces relate, e.g. "The dining table stays at the back near the kitchen, never between the sofa and the TV."
   "avoid": [ string ],            // specific placements to avoid in THIS room
@@ -178,6 +184,7 @@ export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
     issues.push("the TV must be mounted on the existing TV wall bracket — say so in its placement");
   }
 
+  if (key.startsWith("bedroom") && !brief.layout.some((l) => /\bbed\b/i.test(l.item))) issues.push("a bedroom needs a bed in the layout — choose the largest size that fits");
   const expectsDining = /dining/.test(key) && !noDiningRoom;
   const dining = brief.layout.find((l) => /\bdining\b|\btable\b/i.test(l.item) && !/\b(coffee|side|bedside|console)\b/i.test(l.item));
   if (expectsDining && !dining) issues.push("this room type needs a dining table in the layout");

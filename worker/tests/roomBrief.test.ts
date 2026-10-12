@@ -79,4 +79,13 @@ describe("room brief checks", () => {
     expect(p).toMatch(/no room here for large furniture/);
     expect(p).toMatch(/never change the room, the stairs, the cabinetry or the camera view/);
   });
+  it("sizes bedrooms to the space and always plans a bed", () => {
+    const t = buildRoomBriefInstruction("bedroom");
+    expect(t).toMatch(/BED SPACE CHECK/);
+    expect(t).toMatch(/king, else queen, else double, else single/);
+    const bed = { ...good, landmarks: [], layout: [{ item: "Double bed", placement: "headboard against the plain wall on the right" }] };
+    expect(checkRoomBrief(bed, "bedroom")).toEqual([]);
+    const noBed = { ...good, landmarks: [], layout: [{ item: "Bedside table", placement: "against the plain wall on the right" }] };
+    expect(checkRoomBrief(noBed, "bedroom").join(" ")).toMatch(/needs a bed/);
+  });
 });
