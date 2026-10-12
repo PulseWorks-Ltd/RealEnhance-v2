@@ -44,6 +44,10 @@ export type RoomBrief = {
   zones: Array<{ name: string; description: string }>;
   kitchenVisible: boolean;
   fridgeSpace?: { present: boolean; description?: string };
+  // How much dining furniture the visible floor really takes; "none" lets a
+  // tight kitchen/dining shot go without a table instead of the image model
+  // reshaping the room to make one fit.
+  diningSpace?: { fits: "full" | "small" | "none"; reason?: string };
   layout: Array<{ item: string; placement: string }>;
   relationships: string[];
   avoid: string[];
@@ -83,7 +87,8 @@ export function roomLabelFor(roomType: string): string {
 function roomTypeGuidance(roomType: string): string {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
   const living = `LIVING AREA: a sofa (and an armchair if there is room), a coffee table and a rug, arranged as one conversation group. If the room has a TV wall bracket, the TV is mounted ON that bracket and the seating faces it; a low TV unit may sit on the floor below it. Without a bracket, put a TV unit against a solid, clearly visible wall opposite the seating — or, if no wall suits a TV, face the seating toward the window or fireplace and add no TV.`;
-  const dining = `DINING AREA: a dining table with 4–6 chairs, freestanding with room to pull the chairs out. Centre it under the dining light fitting if there is one.`;
+  const dining = `DINING AREA: a dining table with 4–6 chairs, freestanding with room to pull the chairs out. Centre it under the dining light fitting if there is one.
+DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat table with chairs pulled out AND a clear walking path will not fit there, plan a small table for two (a round bistro table) instead. If even that would block a walkway, a door, the stairs or the kitchen's working area, plan NO dining table. Record your decision in "diningSpace".`;
   const kitchenOnly = `KITCHEN: do not add large furniture. Bar stools only where an island or peninsula has an overhang for seating; a few small items on the benches (a bowl of fruit, a plant, a chopping board) are enough.`;
   const openPlan = `OPEN-PLAN RULES: each area keeps its own furniture. The dining table goes in the area nearest the kitchen (in front of or beside the kitchen bench/island) — never inside the living area, never in front of the sofa, and never between the sofa and the TV. The living area is the part of the room furthest from the kitchen, around the TV bracket or focal wall. The back of the sofa may face the dining area to separate the two areas. Keep a clear walking path from the entrance to the kitchen.`;
   if (key === "kitchen_living_dining") return [living, dining, kitchenOnly, openPlan].join("\n");
@@ -118,7 +123,8 @@ Rules — these always apply:
 - Describe every position with words about visible landmarks and the room ("at the back of the room, in front of the kitchen bench", "against the plain wall on the left, between the sliding door and the window"). Never use coordinates, pixels, percentages or wall numbers in "layout", "relationships", "avoid" or "keepUntouched".
 - Write each placement so that someone looking at the same photo can find the exact spot. Only refer to features you listed in "landmarks".
 - Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
-- Plan only the main furniture in "layout" (roughly 3–8 items). Small decor is handled separately.
+- Plan only the main furniture in "layout" (roughly 3–8 items, fewer in a small or tight space). Small decor is handled separately.
+- Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved.
 
 Return ONLY a JSON object:
 {
@@ -130,6 +136,7 @@ Return ONLY a JSON object:
   "zones": [ { "name": string, "description": string } ],
   "kitchenVisible": boolean,
   "fridgeSpace": { "present": boolean, "description": string },   // true only for an empty cavity clearly built for a fridge
+  "diningSpace": { "fits": "full" | "small" | "none", "reason": string },   // only for room types with a dining area
   "layout": [ { "item": string, "placement": string } ],          // e.g. { "item": "TV", "placement": "mounted on the black TV wall bracket on the white wall on the right, covering the bracket" }
   "relationships": [ string ],    // how the areas and pieces relate, e.g. "The dining table stays at the back near the kitchen, never between the sofa and the TV."
   "avoid": [ string ],            // specific placements to avoid in THIS room
@@ -144,8 +151,15 @@ function hasCoordinates(text: string): boolean {
 /** Checks the brief against the rules the code must guarantee. */
 export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
   const issues: string[] = [];
-  if (!Array.isArray(brief.layout) || brief.layout.length === 0) {
-    issues.push("layout is empty — plan the main furniture");
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  const noDiningRoom = brief.diningSpace?.fits === "none" && /dining/.test(key);
+  if (!Array.isArray(brief.layout)) {
+    issues.push("layout is missing — plan the main furniture");
+    return issues;
+  }
+  if (brief.layout.length === 0) {
+    // A kitchen/dining shot too tight for a table may legitimately get no large furniture.
+    if (!(noDiningRoom && /kitchen/.test(key))) issues.push("layout is empty — plan the main furniture");
     return issues;
   }
   for (const l of brief.layout) {
@@ -164,8 +178,7 @@ export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
     issues.push("the TV must be mounted on the existing TV wall bracket — say so in its placement");
   }
 
-  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
-  const expectsDining = /dining/.test(key);
+  const expectsDining = /dining/.test(key) && !noDiningRoom;
   const dining = brief.layout.find((l) => /\bdining\b|\btable\b/i.test(l.item) && !/\b(coffee|side|bedside|console)\b/i.test(l.item));
   if (expectsDining && !dining) issues.push("this room type needs a dining table in the layout");
   if (expectsDining && dining && brief.kitchenVisible && !/kitchen|bench|island|counter|peninsula/i.test(dining.placement)) {
@@ -321,8 +334,9 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     [asSentence(brief.roomSummary), cameraSentence(brief.camera)].filter(Boolean).join(" "),
     ...(zones.length ? [``, `Areas of the room:`, ...zones.map((z) => `- ${z}`)] : []),
     ``,
-    `LAYOUT — place these pieces exactly as described:`,
-    ...layoutLines,
+    ...(layoutLines.length
+      ? [`LAYOUT — place these pieces exactly as described:`, ...layoutLines]
+      : [`LAYOUT — there is no room here for large furniture. Add only the small finishing touches described below.`]),
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
     ...(avoid.length ? [``, `AVOID IN THIS ROOM`, ...avoid.map((a) => `- ${a}`)] : []),
     ``,
@@ -330,6 +344,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     ...keep.map((k) => `- ${k}`),
     `- Every wall, window, door, doorway, floor, ceiling, light fitting and fixed feature, exactly where and how it is. Use only the walls and floor visible in the photo — never extend, add or move a wall, and never mount anything on a wall that is not in the photo.`,
     `- Keep every doorway and walking path clear.`,
+    `- If a piece does not fit in the floor space shown, make it smaller or leave it out — never change the room, the stairs, the cabinetry or the camera view to make room for it.`,
     ``,
     `FINISHING TOUCHES`,
     `You may add a few small finishing touches that suit this layout: a rug under the seating or dining table, a floor or table lamp, cushions and a throw, a plant, books and small decor on surfaces, and artwork on plain wall areas (never over windows, doors, switches or other features). Do not add any other large furniture, and do not move the pieces listed above.`,

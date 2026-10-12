@@ -69,4 +69,14 @@ describe("room brief checks", () => {
     }
     expect(buildRoomBriefInstruction("living_dining")).toMatch(/LIVING AREA/);
   });
+  it("lets a tight kitchen/dining shot skip the dining table", () => {
+    const tight = { ...good, diningSpace: { fits: "none" as const, reason: "only a walkway in front of the kitchen" }, layout: [] };
+    expect(checkRoomBrief(tight, "kitchen_dining")).toEqual([]);
+    expect(checkRoomBrief({ ...good, layout: [] }, "kitchen_dining").join(" ")).toMatch(/layout is empty/);
+    const noTable = { ...good, layout: good.layout.filter((l) => !/dining/i.test(l.item)) };
+    expect(checkRoomBrief(noTable, "kitchen_living_dining").join(" ")).toMatch(/needs a dining table/);
+    const p = buildStage2PromptFromRoomBrief(tight, { roomType: "kitchen_dining" });
+    expect(p).toMatch(/no room here for large furniture/);
+    expect(p).toMatch(/never change the room, the stairs, the cabinetry or the camera view/);
+  });
 });
