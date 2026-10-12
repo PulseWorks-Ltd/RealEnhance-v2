@@ -1317,7 +1317,7 @@ async function callJsonModel(images: { path: string; label: string }[], systemIn
 // Test stand-in for the app's structural baseline: doors and walkthroughs
 // with boxes [x1, y1, x2, y2] as fractions of the image (same format).
 async function findDoors(emptyPath: string, roomType: string, name: string): Promise<DoorOpening[]> {
-  const prompt = `List every door and walkthrough opening in this photo of an empty ${roomType.replace(/_/g, " ")} that a person would walk through: entry doors, doorways and openings to hallways or other rooms, sliding doors to outside. Do NOT include wardrobe/closet doors, windows, or kitchen bench pass-through openings.
+  const prompt = `List every door and walkthrough opening in this photo of an empty ${roomType.replace(/_/g, " ")} that a person would walk through: entry doors, doorways and openings to hallways or other rooms, sliding doors to outside. Only count real openings framed in a wall — with a door frame, architrave, or wall edges on both sides. Do NOT include open-plan areas, room corners, or places where the room simply continues into another area without a framed opening. Do NOT include wardrobe/closet doors, windows, or kitchen bench pass-through openings.
 For each, give its bounding box [x1, y1, x2, y2] as fractions of the image width and height (0 = left/top, 1 = right/bottom), covering the whole opening down to the floor.
 Respond with ONLY a single valid JSON object: { "openings": [ { "type": "door" | "walkthrough", "description": string, "bbox": [number, number, number, number] } ] }`;
   const { raw } = await callJsonModel([{ path: emptyPath, label: "Photo:" }], "You are a careful architectural surveyor.", prompt, name, "door_find");
@@ -1330,10 +1330,16 @@ Respond with ONLY a single valid JSON object: { "openings": [ { "type": "door" |
     });
 }
 
-// Code pre-check: share of changed pixels in the floor area in front of each
-// door — the bottom of the opening plus a band of floor below it, a bit wider
-// than the opening. Changes are measured after removing any overall colour
-// shift, on a softened 640px image so texture noise doesn't count.
+// Code pre-check: does furniture stand AGAINST the doorway? Looks inside the
+// lower part of each opening (just above the floor line), column by column: a
+// column is covered when most of it changed. A rug in front of a door only
+// changes the floor, not the opening, so it doesn't count; furniture standing
+// in front of the opening covers it. The doorway "appears blocked" when there
+// is no clear stretch across at least DOOR_MIN_CLEAR of its width — only then
+// is the AI asked (it judges depth: furniture that only LOOKS in front of a
+// doorway from the camera angle passes). Changes are measured after removing
+// any overall colour shift, on a softened 640px image.
+const DOOR_MIN_CLEAR = Number(process.env.DOOR_MIN_CLEAR || 0.5);
 async function doorwayAppearsBlocked(input: Buffer, staged: Buffer, doors: DoorOpening[]) {
   const W = 640;
   const m = await sharp(input).metadata();
@@ -1347,18 +1353,38 @@ async function doorwayAppearsBlocked(input: Buffer, staged: Buffer, doors: DoorO
   const gains = [0, 1, 2].map((c) => (sums[c + 3] > 0 ? sums[c] / sums[c + 3] : 1));
   return doors.map((d) => {
     const [x1, y1, x2, y2] = d.bbox;
-    const dw = x2 - x1, dh = y2 - y1;
-    const zx1 = Math.max(0, Math.floor((x1 - 0.25 * dw) * W)), zx2 = Math.min(W - 1, Math.ceil((x2 + 0.25 * dw) * W));
-    const zy1 = Math.max(0, Math.floor((y2 - 0.35 * dh) * H)), zy2 = Math.min(H - 1, Math.ceil(Math.min(1, y2 + 0.08) * H));
-    let n = 0, changed = 0;
-    for (let y = zy1; y <= zy2; y++) for (let x = zx1; x <= zx2; x++) {
-      const i = (y * W + x) * 3;
-      n++;
-      const diff = Math.max(Math.abs(a[i] - b[i] * gains[0]), Math.abs(a[i + 1] - b[i + 1] * gains[1]), Math.abs(a[i + 2] - b[i + 2] * gains[2]));
-      if (diff > 25) changed++;
+    const dh = y2 - y1;
+    const zx1 = Math.max(0, Math.floor(x1 * W)), zx2 = Math.min(W - 1, Math.ceil(x2 * W));
+    const zy1 = Math.max(0, Math.floor((y2 - 0.4 * dh) * H)), zy2 = Math.min(H - 1, Math.ceil(y2 * H));
+    // Threshold strip: the floor right at the door's floor line.
+    const ty1 = Math.max(0, Math.floor((y2 - 0.01) * H)), ty2 = Math.min(H - 1, Math.ceil((y2 + 0.03) * H));
+    const changedShare = (x: number, ya: number, yb: number) => {
+      let n = 0, changed = 0;
+      for (let y = ya; y <= yb; y++) {
+        const i = (y * W + x) * 3;
+        n++;
+        const diff = Math.max(Math.abs(a[i] - b[i] * gains[0]), Math.abs(a[i + 1] - b[i + 1] * gains[1]), Math.abs(a[i + 2] - b[i + 2] * gains[2]));
+        if (diff > 25) changed++;
+      }
+      return n > 0 ? changed / n : 0;
+    };
+    let longestClear = 0, run = 0, coveredCols = 0;
+    const cols = Math.max(1, zx2 - zx1 + 1);
+    for (let x = zx1; x <= zx2; x++) {
+      // Covered only when furniture covers BOTH the lower part of the opening
+      // and the floor at its threshold: furniture standing against the door.
+      // Furniture standing forward in the room leaves the threshold floor
+      // visible; a rug covers the threshold but not the opening.
+      const covered = changedShare(x, zy1, zy2) >= 0.5 && changedShare(x, ty1, ty2) >= 0.5;
+      if (covered) { coveredCols++; run = 0; } else { run++; longestClear = Math.max(longestClear, run); }
     }
-    const share = n ? changed / n : 0;
-    return { ...d, approachChangedPct: Math.round(share * 100), appearsBlocked: share >= DOOR_APPROACH_CHANGED };
+    const clearShare = longestClear / cols;
+    return {
+      ...d,
+      openingCoveredPct: Math.round((coveredCols / cols) * 100),
+      longestClearPct: Math.round(clearShare * 100),
+      appearsBlocked: clearShare < DOOR_MIN_CLEAR,
+    };
   });
 }
 
@@ -1373,12 +1399,15 @@ For EACH of them, look at Image 2 and judge its immediate approach area: the flo
 Image 2 may wrongly show the opening moved, changed or covered over — that will be corrected afterwards. Ignore that; judge only whether furniture stands on the floor in front of where the opening really is (Image 1).
 Judge this in 3D, not by the flat picture: furniture that only appears in front of a doorway from the camera's angle, but actually stands well forward in the room with clear floor between it and the doorway, does NOT block it. A small side table or chair beside the opening, out of the direct path, does not block it either. It is blocked only when a large piece of furniture (bed, sofa, dresser, table, cabinet) has its footprint across the opening's threshold or swing path, so a person could not walk through, or the door could not open, without moving it.
 
+For a sliding door, judge the part that slides open: it is usable if a person can walk through that part.
+
 Answer for each: "yes" (blocked), "no" (clear), or "cannot_tell" (not visible enough to judge).
+If you answer "yes", you MUST name the specific piece of furniture that blocks it in "blockingFurniture" (for example "the bed's headboard"). If you cannot name one, the answer is not "yes".
 
 Respond with ONLY a single valid JSON object:
 {
   "openings": [
-    { "id": string, "approachAreaDescription": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
+    { "id": string, "approachAreaDescription": string, "blockingFurniture": string, "accessBlocked": "yes" | "no" | "cannot_tell" }
   ]
 }
 Room type: ${roomType.replace(/_/g, " ")}`;
@@ -1388,11 +1417,13 @@ Room type: ${roomType.replace(/_/g, " ")}`;
 // doorAccessClearanceCheck.ts — an unclear read should never force a re-stage).
 function evaluateDoorAccess(raw: any) {
   const openings: any[] = Array.isArray(raw?.openings) ? raw.openings : [];
-  const items = openings.map((o) => ({
-    id: String(o?.id || ""),
-    approachAreaDescription: String(o?.approachAreaDescription || ""),
-    accessBlocked: ["yes", "no", "cannot_tell"].includes(o?.accessBlocked) ? o.accessBlocked : "cannot_tell",
-  }));
+  const items = openings.map((o) => {
+    const blockingFurniture = String(o?.blockingFurniture || "").trim();
+    let accessBlocked = ["yes", "no", "cannot_tell"].includes(o?.accessBlocked) ? o.accessBlocked : "cannot_tell";
+    // "Blocked" only counts with a named piece of furniture as evidence.
+    if (accessBlocked === "yes" && (!blockingFurniture || /^(none|n\/a|unknown|nothing)$/i.test(blockingFurniture))) accessBlocked = "cannot_tell";
+    return { id: String(o?.id || ""), approachAreaDescription: String(o?.approachAreaDescription || ""), blockingFurniture, accessBlocked };
+  });
   const blocked = items.filter((o) => o.accessBlocked === "yes");
   return { blocked: blocked.length > 0, blockedIds: blocked.map((o) => o.id), items };
 }
@@ -2381,12 +2412,12 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       // 2. Code pre-check on the raw staged image.
       const pre = await doorwayAppearsBlocked(original, stageRes.staged, doors);
       const flagged = pre.filter((d) => d.appearsBlocked);
-      const step: any = { attempt, approachChangedPct: Object.fromEntries(pre.map((d) => [d.id, d.approachChangedPct])) };
+      const step: any = { attempt, codeCheck: Object.fromEntries(pre.map((d) => [d.id, { openingCoveredPct: d.openingCoveredPct, longestClearPct: d.longestClearPct }])) };
       row.doorAccess.attempts.push(step);
       if (flagged.length === 0) { step.result = "clear (code check, no AI call)"; break; }
       if (FROM_RUN) { step.result = "appears blocked (AI check skipped in FROM_RUN)"; break; }
       // 3. Wait for the AI on just the flagged doors.
-      console.log(`[${img.name}] doorway may be blocked (${flagged.map((d) => `${d.id} ${d.approachChangedPct}%`).join(", ")}) — asking the AI`);
+      console.log(`[${img.name}] doorway may be blocked (${flagged.map((d) => `${d.id}: clear stretch only ${d.longestClearPct}% of its width`).join(", ")}) — asking the AI`);
       const ai = await askDoorAccess(img.file, stageRes.staged, flagged, img.roomType, dir, img.name);
       step.ai = ai;
       if (!ai.blocked) { step.result = "clear (AI)"; break; }
