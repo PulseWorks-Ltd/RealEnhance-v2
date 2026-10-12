@@ -1,0 +1,685 @@
+[
+  {
+    "image": "job_24a3b64f_Kitchen_06_UPLOAD",
+    "roomType": "kitchen_dining",
+    "input": "2048x1536",
+    "aspectRatio": "4:3",
+    "doorAccess": {
+      "doorsFound": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "approachChangedPct": {
+            "door_1": 55
+          },
+          "ai": {
+            "model": "gemini-3-flash-preview",
+            "blocked": false,
+            "blockedIds": [],
+            "items": [
+              {
+                "id": "door_1",
+                "approachAreaDescription": "the floor space directly in front of the sliding glass door on the right wall",
+                "accessBlocked": "no"
+              }
+            ]
+          },
+          "result": "clear (AI)"
+        }
+      ]
+    },
+    "staging": "pair image 2_staged_raw.webp (no staging call)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.3763,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 5.3,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 5,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "reflections",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "appliances",
+        "coveragePct": 2.2,
+        "coloursFlipped": false
+      }
+    ],
+    "reflections": [],
+    "applianceSpaceTraceCostUsd": 0.0743,
+    "applianceSpacePctOfImage": 0,
+    "appliances": [
+      {
+        "areaPct": 2.16,
+        "onFurniturePct": 0,
+        "inMirrorPct": 0,
+        "ringDiff": 22.3,
+        "kept": false,
+        "reason": "not inside an empty appliance space in the empty room"
+      }
+    ],
+    "possiblyMissedByTrace": [
+      {
+        "areaPct": 0.3,
+        "touchingFurniturePct": 17,
+        "box": [
+          0.38,
+          0.46,
+          0.44,
+          0.58
+        ]
+      },
+      {
+        "areaPct": 0.65,
+        "touchingFurniturePct": 23,
+        "box": [
+          0.18,
+          0.47,
+          0.36,
+          0.58
+        ]
+      },
+      {
+        "areaPct": 0.33,
+        "touchingFurniturePct": 2,
+        "box": [
+          0.84,
+          0.55,
+          0.89,
+          0.77
+        ]
+      },
+      {
+        "areaPct": 1.32,
+        "touchingFurniturePct": 26,
+        "box": [
+          0.58,
+          0.76,
+          0.83,
+          1
+        ]
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 5.7,
+      "furniture": 6.3,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "reflectionsKept": 0,
+      "reflectionsDropped": 0,
+      "solid": 7.2,
+      "shadowZone": 8.1
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 19.99,
+      "changedPixelPct": 38.02
+    },
+    "framingCheck": {
+      "tilesChecked": 49,
+      "tilesChanged": 36,
+      "changedPct": 73.5,
+      "medianDiff": 17,
+      "framingChanged": true
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.934,
+      0.962,
+      0.95
+    ],
+    "shadowPctOfZone": 22.8,
+    "edgeBandStagedPct": 82.8,
+    "harmoniseCostUsd": 0.1181,
+    "harmonise": {
+      "tightFurniturePct": 5.9,
+      "shadowZonePct": 30.1,
+      "edgeMattePctOfBand": 41.2,
+      "blendFraming": {
+        "tilesChecked": 23,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 2.7,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 5,
+        "changedPixelPct": 5.05
+      },
+      "sunPatchPctOfImage": 0,
+      "blendUsed": true,
+      "colourGains": [
+        0.97,
+        0.99,
+        0.98
+      ],
+      "shadowPctOfZone": 9.3,
+      "strongestShadowPct": 64,
+      "furnitureDiffVsBlend": 13,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 5.4,
+      "structureCheck": {
+        "checkedPctOfImage": 53.5,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2843,
+      "patchesRepaired": 2,
+      "repairPct": 0.1,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 0,
+        "colour_changed": 2
+      },
+      "furnitureRestyledAndRepaired": {
+        "patches": 191,
+        "restyledPatches": 0
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 97.468
+  },
+  {
+    "image": "Bedroom_04",
+    "roomType": "bedroom",
+    "input": "1920x1079",
+    "aspectRatio": "16:9",
+    "doorAccess": {
+      "doorsFound": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "approachChangedPct": {
+            "door_1": 47
+          },
+          "ai": {
+            "model": "gemini-3-flash-preview",
+            "blocked": false,
+            "blockedIds": [],
+            "items": [
+              {
+                "id": "door_1",
+                "approachAreaDescription": "the floor space immediately in front of the entry door on the left",
+                "accessBlocked": "no"
+              }
+            ]
+          },
+          "result": "clear (AI)"
+        }
+      ]
+    },
+    "staging": "pair image 2_staged_raw.webp (no staging call)",
+    "stagedSize": "2752x1536",
+    "traceCostUsd": 0.3059,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 17.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 17.7,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "reflections",
+        "coveragePct": 0.6,
+        "coloursFlipped": false
+      }
+    ],
+    "mirrorTraceCostUsd": 0.0748,
+    "mirrorPctOfImage": 3.4,
+    "reflections": [
+      {
+        "areaPct": 0.6,
+        "onFurniturePct": 0,
+        "inMirrorPct": 100,
+        "ringDiff": 17.4,
+        "kept": true,
+        "reason": "reflection, surroundings unchanged"
+      }
+    ],
+    "possiblyMissedByTrace": [
+      {
+        "areaPct": 0.6,
+        "touchingFurniturePct": 34,
+        "box": [
+          0.4,
+          0.6,
+          0.51,
+          0.75
+        ]
+      },
+      {
+        "areaPct": 0.3,
+        "touchingFurniturePct": 47,
+        "box": [
+          0.41,
+          0.9,
+          0.5,
+          1
+        ]
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 17.7,
+      "furniture": 17.8,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "reflectionsKept": 1.4,
+      "reflectionsDropped": 0,
+      "solid": 20,
+      "shadowZone": 3.6
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 7.73,
+      "changedPixelPct": 14.98
+    },
+    "framingCheck": {
+      "tilesChecked": 32,
+      "tilesChanged": 7,
+      "changedPct": 21.9,
+      "medianDiff": 4.4,
+      "framingChanged": false
+    },
+    "finalSize": "2752x1547",
+    "colourGains": [
+      0.997,
+      1.014,
+      1.005
+    ],
+    "shadowPctOfZone": 66.4,
+    "edgeBandStagedPct": 87.7,
+    "harmoniseCostUsd": 0.1203,
+    "harmonise": {
+      "tightFurniturePct": 17.7,
+      "shadowZonePct": 14.5,
+      "edgeMattePctOfBand": 52.7,
+      "blendFraming": {
+        "tilesChecked": 27,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 2.2,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 3.88,
+        "changedPixelPct": 1.98
+      },
+      "sunPatchPctOfImage": 0.7,
+      "blendUsed": true,
+      "colourGains": [
+        0.976,
+        0.989,
+        0.98
+      ],
+      "shadowPctOfZone": 22.7,
+      "strongestShadowPct": 18,
+      "furnitureDiffVsBlend": 5.2,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 3.4,
+      "structureCheck": {
+        "checkedPctOfImage": 58.7,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 1848,
+      "patchesRepaired": 0,
+      "repairPct": 0,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 0,
+        "colour_changed": 0
+      },
+      "furnitureRestyledAndRepaired": {
+        "patches": 437,
+        "restyledPatches": 0
+      },
+      "usedAppBuiltInstead": false
+    },
+    "ok": true,
+    "seconds": 81.838
+  },
+  {
+    "image": "job_f61d8dc1_Living_07_UPLOAD",
+    "roomType": "living_room",
+    "input": "810x1080",
+    "aspectRatio": "3:4",
+    "doorAccess": {
+      "doorsFound": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "approachChangedPct": {
+            "door_1": 47,
+            "door_2": 73
+          },
+          "ai": {
+            "model": "gemini-3-flash-preview",
+            "blocked": true,
+            "blockedIds": [
+              "door_1",
+              "door_2"
+            ],
+            "items": [
+              {
+                "id": "door_1",
+                "approachAreaDescription": "the floor space directly in front of the sliding glass door on the left",
+                "accessBlocked": "yes"
+              },
+              {
+                "id": "door_2",
+                "approachAreaDescription": "the wide walkthrough area leading to the adjacent room on the right side",
+                "accessBlocked": "yes"
+              }
+            ]
+          },
+          "result": "BLOCKED (pair mode: can't re-stage)"
+        }
+      ]
+    },
+    "staging": "pair image 2_staged_raw.webp (no staging call)",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.305,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 22,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 24.4,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "reflections",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "reflections": [],
+    "possiblyMissedByTrace": [
+      {
+        "areaPct": 0.4,
+        "touchingFurniturePct": 21,
+        "box": [
+          0.08,
+          0.63,
+          0.23,
+          0.7
+        ]
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 24.5,
+      "furniture": 25.7,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "reflectionsKept": 0,
+      "reflectionsDropped": 0,
+      "solid": 26.4,
+      "shadowZone": 8.4
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 9.83,
+      "changedPixelPct": 19.2
+    },
+    "framingCheck": {
+      "tilesChecked": 66,
+      "tilesChanged": 16,
+      "changedPct": 24.2,
+      "medianDiff": 7.3,
+      "framingChanged": false
+    },
+    "finalSize": "1792x2389",
+    "colourGains": [
+      0.977,
+      0.999,
+      0.988
+    ],
+    "shadowPctOfZone": 0.2,
+    "edgeBandStagedPct": 81,
+    "harmoniseCostUsd": 0.1178,
+    "harmonise": {
+      "tightFurniturePct": 24.9,
+      "shadowZonePct": 27,
+      "edgeMattePctOfBand": 55.6,
+      "blendFraming": {
+        "tilesChecked": 36,
+        "tilesChanged": 2,
+        "changedPct": 5.6,
+        "medianDiff": 2.3,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 4.92,
+        "changedPixelPct": 6.37
+      },
+      "sunPatchPctOfImage": 1.3,
+      "blendUsed": true,
+      "colourGains": [
+        0.97,
+        0.995,
+        0.988
+      ],
+      "shadowPctOfZone": 1.4,
+      "strongestShadowPct": 3,
+      "furnitureDiffVsBlend": 10.1,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 12.2,
+      "structureCheck": {
+        "checkedPctOfImage": 42.5,
+        "changedPixelPct": 0.01,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 4077,
+      "patchesRepaired": 20,
+      "repairPct": 0.5,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 3,
+        "colour_changed": 17
+      },
+      "furnitureRestyledAndRepaired": {
+        "patches": 1447,
+        "restyledPatches": 2
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 110.817
+  },
+  {
+    "image": "Bedroom_12",
+    "roomType": "bedroom",
+    "input": "1440x1080",
+    "aspectRatio": "4:3",
+    "doorAccess": {
+      "doorsFound": 2,
+      "attempts": [
+        {
+          "attempt": 1,
+          "approachChangedPct": {
+            "door_1": 17,
+            "door_2": 83
+          },
+          "ai": {
+            "model": "gemini-3-flash-preview",
+            "blocked": true,
+            "blockedIds": [
+              "door_2"
+            ],
+            "items": [
+              {
+                "id": "door_2",
+                "approachAreaDescription": "The floor area directly in front of the doorway on the right side of the back wall.",
+                "accessBlocked": "yes"
+              }
+            ]
+          },
+          "result": "BLOCKED (pair mode: can't re-stage)"
+        }
+      ]
+    },
+    "staging": "pair image 2_staged_raw.webp (no staging call)",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.3015,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 9.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 9.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "wall_art",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "reflections",
+        "coveragePct": 0,
+        "coloursFlipped": false
+      }
+    ],
+    "reflections": [],
+    "possiblyMissedByTrace": [
+      {
+        "areaPct": 2.09,
+        "touchingFurniturePct": 47,
+        "box": [
+          0.36,
+          0.72,
+          0.78,
+          0.96
+        ]
+      }
+    ],
+    "wallArt": [],
+    "maskPct": {
+      "traced": 9.6,
+      "furniture": 9.8,
+      "wallArtKept": 0,
+      "wallArtDropped": 0,
+      "reflectionsKept": 0,
+      "reflectionsDropped": 0,
+      "solid": 10.4,
+      "shadowZone": 5.9
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 10.66,
+      "changedPixelPct": 21.15
+    },
+    "framingCheck": {
+      "tilesChecked": 49,
+      "tilesChanged": 7,
+      "changedPct": 14.3,
+      "medianDiff": 3.2,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.983,
+      0.997,
+      0.987
+    ],
+    "shadowPctOfZone": 37.8,
+    "edgeBandStagedPct": 91.7,
+    "harmoniseCostUsd": 0.1211,
+    "harmonise": {
+      "tightFurniturePct": 9.7,
+      "shadowZonePct": 21.8,
+      "edgeMattePctOfBand": 58.4,
+      "blendFraming": {
+        "tilesChecked": 35,
+        "tilesChanged": 0,
+        "changedPct": 0,
+        "medianDiff": 1.4,
+        "framingChanged": false
+      },
+      "blendChangesElsewhere": {
+        "meanAbsoluteDelta": 3.11,
+        "changedPixelPct": 2.4
+      },
+      "sunPatchPctOfImage": 7.1,
+      "blendUsed": true,
+      "colourGains": [
+        0.984,
+        0.997,
+        0.989
+      ],
+      "shadowPctOfZone": 17.3,
+      "strongestShadowPct": 26,
+      "furnitureDiffVsBlend": 8.4,
+      "furnitureLightingUsed": true,
+      "furnitureLightingChangedPctOfImage": 4.5,
+      "structureCheck": {
+        "checkedPctOfImage": 59.9,
+        "changedPixelPct": 0,
+        "retained": true
+      }
+    },
+    "checkedBlend": {
+      "patchesChecked": 2741,
+      "patchesRepaired": 23,
+      "repairPct": 0.8,
+      "reasons": {
+        "appeared_or_gone": 0,
+        "content_changed": 0,
+        "brightened_near_furniture": 20,
+        "colour_changed": 3
+      },
+      "furnitureRestyledAndRepaired": {
+        "patches": 328,
+        "restyledPatches": 0
+      },
+      "usedAppBuiltInstead": false
+    },
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 64.854
+  }
+]
