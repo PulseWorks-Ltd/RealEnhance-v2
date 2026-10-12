@@ -1,5 +1,5 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}) }));
-import { checkRoomBrief, buildStage2PromptFromRoomBrief, buildRoomBriefInstruction, type RoomBrief } from "../src/pipeline/roomBrief";
+import { checkRoomBrief, buildStage2PromptFromRoomBrief, buildRoomBriefInstruction, roomAllowsEmptyLayout, type RoomBrief } from "../src/pipeline/roomBrief";
 
 const good: RoomBrief = {
   roomSummary: "An open-plan kitchen, living and dining room.",
@@ -76,7 +76,7 @@ describe("room brief checks", () => {
     const noTable = { ...good, layout: good.layout.filter((l) => !/dining/i.test(l.item)) };
     expect(checkRoomBrief(noTable, "kitchen_living_dining").join(" ")).toMatch(/needs a dining table/);
     const p = buildStage2PromptFromRoomBrief(tight, { roomType: "kitchen_dining" });
-    expect(p).toMatch(/no room here for large furniture/);
+    expect(p).toMatch(/add no large furniture in this room/);
     expect(p).toMatch(/never change the room, the stairs, the cabinetry or the camera view/);
   });
   it("sizes bedrooms to the space and always plans a bed", () => {
@@ -87,5 +87,33 @@ describe("room brief checks", () => {
     expect(checkRoomBrief(bed, "bedroom")).toEqual([]);
     const noBed = { ...good, landmarks: [], layout: [{ item: "Bedside table", placement: "against the plain wall on the right" }] };
     expect(checkRoomBrief(noBed, "bedroom").join(" ")).toMatch(/needs a bed/);
+  });
+  // Every interior room type the app offers (client batch-processor list).
+  const APP_ROOM_TYPES = [
+    "bedroom", "living_room", "dining_room", "kitchen", "kitchen_dining", "kitchen_living", "living_dining",
+    "kitchen_living_dining", "study", "office", "bathroom-1", "bathroom-2", "laundry", "garage", "basement",
+    "attic", "hallway", "staircase", "entryway", "closet", "pantry", "sunroom",
+  ];
+  it("gives every app room type its own furniture guidance", () => {
+    for (const rt of APP_ROOM_TYPES) {
+      const t = buildRoomBriefInstruction(rt);
+      expect({ rt, generic: /Furnish the room for its purpose/.test(t) }).toEqual({ rt, generic: false });
+    }
+  });
+  it("accepts an empty plan only for rooms that take no furniture", () => {
+    const empty = { ...good, landmarks: [], layout: [] };
+    for (const rt of APP_ROOM_TYPES) {
+      const issues = checkRoomBrief(empty, rt);
+      expect({ rt, ok: issues.length === 0 }).toEqual({ rt, ok: roomAllowsEmptyLayout(rt) });
+    }
+    for (const rt of ["kitchen", "bathroom-1", "laundry", "garage", "hallway"]) expect(roomAllowsEmptyLayout(rt)).toBe(true);
+    for (const rt of ["bedroom", "living_room", "dining_room", "study", "sunroom"]) expect(roomAllowsEmptyLayout(rt)).toBe(false);
+  });
+  it("suggests finishing touches that suit the room", () => {
+    const empty = { ...good, landmarks: [], layout: [] };
+    const bath = buildStage2PromptFromRoomBrief(empty, { roomType: "bathroom-1" });
+    expect(bath).toMatch(/towels/);
+    expect(bath).not.toMatch(/cushions and a throw/);
+    expect(buildStage2PromptFromRoomBrief(good, { roomType: "living_room" })).toMatch(/cushions and a throw/);
   });
 });

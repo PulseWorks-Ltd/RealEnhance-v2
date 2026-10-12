@@ -107,6 +107,15 @@ BED SPACE CHECK: first judge the open floor you can actually see. Choose the lar
 Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
   }
   if (key === "study" || key === "office") return `STUDY: a desk and desk chair, ideally facing the window or a wall with the window to the side, plus a bookshelf or a small armchair if there is room.`;
+  if (key.startsWith("bathroom")) return `BATHROOM: add no furniture — the "layout" stays empty. Styling is limited to small touches (towels, a bath mat, a soap dispenser, a small plant), which are handled separately.`;
+  if (key === "laundry") return `LAUNDRY: add no furniture or appliances — the "layout" stays empty. Styling is limited to small touches (a laundry basket, folded towels, a plant), which are handled separately.`;
+  if (key === "pantry" || key === "closet") return `${key === "pantry" ? "PANTRY" : "CLOSET"}: add no furniture — the "layout" stays empty. Styling is limited to a few neat items on the existing shelves, which are handled separately.`;
+  if (key === "garage") return `GARAGE: show it clean and empty — the "layout" stays empty. Do not add cars, furniture, shelving or tools.`;
+  if (key === "staircase") return `STAIRCASE: add no furniture on or around the stairs — the "layout" stays empty unless a landing has clear floor away from every step, where one small plant stand or bench may go.`;
+  if (key === "hallway" || key === "entryway") return `${key === "hallway" ? "HALLWAY" : "ENTRYWAY"}: at most one slim console table or bench against a solid, clearly visible wall, and only if the walkway stays wide and every door can open fully. Otherwise the "layout" stays empty.`;
+  if (key === "sunroom") return `SUNROOM: relaxed seating facing the windows or the view — a small sofa or two armchairs, a coffee or side table and a rug, with plants. Keep the doors and walkway clear.`;
+  if (key === "basement") return `BASEMENT: furnish it as a family or rumpus room — a sofa, a coffee table and a rug, plus a TV unit against a solid, clearly visible wall if one suits. Keep the stairs and doors clear.`;
+  if (key === "attic") return `ATTIC: furnish it as a quiet retreat sized to the headroom — a reading nook (armchair, side table, floor lamp, rug), or a single or double bed only where the ceiling is high enough to stand beside it. Keep the stairs or hatch clear.`;
   return `Furnish the room for its purpose with a small number of correctly scaled pieces.`;
 }
 
@@ -128,7 +137,7 @@ Rules — these always apply:
 - Describe every position with words about visible landmarks and the room ("at the back of the room, in front of the kitchen bench", "against the plain wall on the left, between the sliding door and the window"). Never use coordinates, pixels, percentages or wall numbers in "layout", "relationships", "avoid" or "keepUntouched".
 - Write each placement so that someone looking at the same photo can find the exact spot. Only refer to features you listed in "landmarks".
 - Write "camera" as a full sentence starting "The camera…", and each "avoid" entry as a full sentence starting "Do not…".
-- Plan only the main furniture in "layout" (roughly 3–8 items, fewer in a small or tight space). Small decor is handled separately.
+- Plan only the main furniture in "layout" (up to about 8 items, fewer in a small or tight space, and none where the room type above says the layout stays empty). Small decor is handled separately.
 - Every piece must fit in the floor space the photo really shows. Never plan furniture that would only fit if the room were bigger or the camera were moved.
 
 Return ONLY a JSON object:
@@ -150,6 +159,24 @@ Return ONLY a JSON object:
 }`;
 }
 
+// Room types whose guidance allows (or requires) no large furniture.
+export function roomAllowsEmptyLayout(roomType: string): boolean {
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  return key === "kitchen" || key.startsWith("bathroom") || ["laundry", "pantry", "closet", "garage", "staircase", "hallway", "entryway"].includes(key);
+}
+
+// Small finishing touches that suit each kind of room.
+function finishingTouchesFor(roomType: string): string {
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  const art = `artwork on plain wall areas (never over windows, doors, switches or other features)`;
+  if (key.startsWith("bathroom")) return `neatly folded towels on the existing rails or vanity, a bath mat, a soap dispenser and a small plant`;
+  if (key === "kitchen" || key === "laundry") return `a few items on the benches (a bowl of fruit, a plant, a chopping board${key === "laundry" ? ", a laundry basket, folded towels" : ""})`;
+  if (key === "pantry" || key === "closet") return key === "pantry" ? `neat jars and baskets on the existing shelves` : `a few clothes on hangers and folded items or baskets on the existing shelves`;
+  if (key === "garage") return `nothing — leave the garage clean and empty`;
+  if (key === "staircase" || key === "hallway" || key === "entryway") return `a runner rug where the floor is clear, a plant, and ${art}`;
+  return `a rug under the seating, bed or dining table, a floor or table lamp, cushions and a throw, a plant, books and small decor on surfaces, and ${art}`;
+}
+
 function hasCoordinates(text: string): boolean {
   return /\[\s*0?\.\d|\b0\.\d{2,}\b|\d+\s*%|\bpixel|\bwall_\d|\bx\s*=|\by\s*=/i.test(text);
 }
@@ -164,8 +191,9 @@ export function checkRoomBrief(brief: RoomBrief, roomType: string): string[] {
     return issues;
   }
   if (brief.layout.length === 0) {
-    // A kitchen/dining shot too tight for a table may legitimately get no large furniture.
-    if (!(noDiningRoom && /kitchen/.test(key))) issues.push("layout is empty — plan the main furniture");
+    // Rooms that take no furniture, and a kitchen/dining shot too tight for
+    // a table, may legitimately have an empty layout.
+    if (!(roomAllowsEmptyLayout(key) || (noDiningRoom && /kitchen/.test(key)))) issues.push("layout is empty — plan the main furniture");
     return issues;
   }
   for (const l of brief.layout) {
@@ -343,7 +371,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     ``,
     ...(layoutLines.length
       ? [`LAYOUT — place these pieces exactly as described:`, ...layoutLines]
-      : [`LAYOUT — there is no room here for large furniture. Add only the small finishing touches described below.`]),
+      : [`LAYOUT — add no large furniture in this room. Add only the small finishing touches described below.`]),
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
     ...(avoid.length ? [``, `AVOID IN THIS ROOM`, ...avoid.map((a) => `- ${a}`)] : []),
     ``,
@@ -354,7 +382,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     `- If a piece does not fit in the floor space shown, make it smaller or leave it out — never change the room, the stairs, the cabinetry or the camera view to make room for it.`,
     ``,
     `FINISHING TOUCHES`,
-    `You may add a few small finishing touches that suit this layout: a rug under the seating or dining table, a floor or table lamp, cushions and a throw, a plant, books and small decor on surfaces, and artwork on plain wall areas (never over windows, doors, switches or other features). Do not add any other large furniture, and do not move the pieces listed above.`,
+    `You may add a few small finishing touches that suit this room: ${finishingTouchesFor(opts.roomType)}. Do not add any other large furniture, and do not move the pieces listed above.`,
     ``,
     `The result must look like a real, professionally staged listing photograph of this exact room.`,
   ].join("\n");
