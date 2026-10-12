@@ -11369,13 +11369,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                     });
                     if (res.signedUrl) debugLinks[`attempt${attempt}/${name}`] = res.signedUrl;
                   } catch (uploadErr: any) {
-                    nLog("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
+                    console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
                   }
                 }
               }
             : undefined,
-          log: (msg) => nLog(`[STAGE2_MASKED] ${msg}`),
-          warn: (msg) => nLog(`[STAGE2_MASKED] ${msg}`),
+          log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
+          warn: (msg) => console.warn(`[STAGE2_MASKED] ${msg}`),
         });
         const summary = {
           ok: result.ok,
@@ -11384,7 +11384,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           reports: result.reports,
           ...(debugUpload ? { debugLinks } : {}),
         };
-        nLog("[STAGE2_MASKED_RESULT]", { jobId: payload.jobId, imageId: payload.imageId, ...summary });
+        // console.log, not nLog: these must show even when quiet log modes mute nLog.
+        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, ...summary }));
         try {
           await updateJob(payload.jobId, { stage2Masked: summary });
         } catch {}
@@ -11512,12 +11513,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // good output (the Stage 2 input) through the existing
       // composite_validation_exhausted ending after the (skipped) validation.
       if (stage2Outcome && typeof stage2Outcome === "object" && (stage2Outcome as any).maskedFailed) {
-        nLog("[STAGE2_MASKED_FALLBACK]", {
+        console.log("[STAGE2_MASKED_FALLBACK]", JSON.stringify({
           jobId: payload.jobId,
           reasons: (stage2Outcome as any).reasons,
           attempts: (stage2Outcome as any).attempts,
           fallbackStage: stage2BaseStage,
-        });
+        }));
         stage2Blocked = true;
         stage2FallbackStage = stage2BaseStage;
         stage2BlockedReason = "composite_validation_exhausted";
