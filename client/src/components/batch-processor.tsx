@@ -150,8 +150,15 @@ function ensureDownloadFilename(filenameBase: string, mime?: string | null, data
   return `${normalizedBase}${inferredExtension || ".png"}`;
 }
 
+// Same rule as shared/src/billing/rules.ts estimateCredits: declutter + stage on
+// an interior image = 2 credits, everything else = 1.
+function estimateImageCredits(img: { sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }): number {
+  if (String(img.sceneType || "").toLowerCase() === "exterior") return 1;
+  return img.userSelectedStage1B && img.userSelectedStage2 ? 2 : 1;
+}
+
 function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
-  return images.length;
+  return images.reduce((sum, img) => sum + estimateImageCredits(img), 0);
 }
 
 const fileIdMap = new WeakMap<File, string>();
@@ -7852,6 +7859,23 @@ export default function BatchProcessor({
                       </p>
                     </button>
 
+                    <div
+                      className={`rounded-lg border px-3 py-2 text-xs leading-5 ${declutter && effectiveAllowStaging ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+                      data-testid="text-credit-cost-note"
+                    >
+                      {declutter && effectiveAllowStaging ? (
+                        <>
+                          <span className="font-semibold">Declutter + Virtual Staging: 2 credits per interior image.</span>{" "}
+                          If staging can't be completed, or the room needs no declutter, only 1 credit is used.
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-semibold">1 credit per image.</span>{" "}
+                          Declutter + Virtual Staging together use 2 credits per interior image.
+                        </>
+                      )}
+                    </div>
+
                     <label
                       htmlFor="enhance-exterior-outlook-global"
                       className="block cursor-pointer py-2"
@@ -8311,6 +8335,12 @@ export default function BatchProcessor({
                     >
                       Process Batch #{Math.floor(Math.random() * 1000) + 2000} ({files.length} Images)
                     </button>
+                    {files.length > 0 && (
+                      <p className="mt-2 text-xs text-slate-600" data-testid="text-batch-credit-cost">
+                        This batch uses up to {requiredBatchCredits} credit{requiredBatchCredits === 1 ? "" : "s"}
+                        {requiredBatchCredits > files.length ? " (Declutter + Virtual Staging = 2 credits per interior image)" : ""}.
+                      </p>
+                    )}
                     {isEnhanceCreditBlocked && (
                       <button
                         type="button"
@@ -9693,14 +9723,14 @@ export default function BatchProcessor({
           <DialogHeader>
             <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
-              This enhancement requires {creditGateModal.requiredCredits} images, but your plan currently includes {creditGateModal.availableCredits} remaining.
-              Add {creditGateModal.missingCredits} more images to continue processing your batch. Get 7 images for $19 — no subscription required.
+              This enhancement requires {creditGateModal.requiredCredits} credits, but your plan currently includes {creditGateModal.availableCredits} remaining. Each image uses 1 credit; Declutter + Virtual Staging uses 2.
+              Add {creditGateModal.missingCredits} more credits to continue processing your batch. Get 7 images for $19 — no subscription required.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
-            <div>Required: {creditGateModal.requiredCredits} images</div>
-            <div>Available: {creditGateModal.availableCredits} images</div>
-            <div>Needed: {creditGateModal.missingCredits} images</div>
+            <div>Required: {creditGateModal.requiredCredits} credits</div>
+            <div>Available: {creditGateModal.availableCredits} credits</div>
+            <div>Needed: {creditGateModal.missingCredits} credits</div>
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button

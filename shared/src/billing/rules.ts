@@ -33,8 +33,9 @@ export interface StageFlags {
  * 
  * Rules:
  * - if !stage1A_success → charge = 0
- * - else if sceneType == "exterior" → charge = 1 (billing cap)
- * - else if stage1B_success && stage2_success → charge = 2
+ * - else if sceneType == "exterior" → charge = 1
+ * - else if interior fell back to 1A after asking for more → charge = 0 (refund)
+ * - else if user chose declutter && stage1B_success && stage2_success → charge = 2
  * - else → charge = 1
  */
 export function computeCharge(flags: StageFlags): { amount: number; reason: string } {
@@ -65,6 +66,14 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
     return { amount: 0, reason: "interior_fallback_1a_refund" };
   }
 
+  // Declutter + stage: 2 credits, but only when the user chose declutter and
+  // BOTH the decluttered and the staged images were delivered. Staging that
+  // fell back to the decluttered image, or a room that turned out empty (no
+  // declutter needed), costs 1.
+  if (flags.stage1BUserSelected !== false && flags.stage1B && flags.stage2) {
+    return { amount: 2, reason: "declutter_and_stage" };
+  }
+
   return { amount: 1, reason: "flat_one_image_model" };
 }
 
@@ -84,7 +93,9 @@ export function estimateCredits(params: {
   userSelectedStage1B: boolean; // declutter enabled
   userSelectedStage2: boolean; // virtual staging enabled
 }): number {
-  return 1;
+  const sceneType = String(params.sceneType || "").toLowerCase();
+  if (sceneType === "exterior") return 1;
+  return params.userSelectedStage1B && params.userSelectedStage2 ? 2 : 1;
 }
 
 /**

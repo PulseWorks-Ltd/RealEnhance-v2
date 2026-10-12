@@ -8045,6 +8045,8 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             completionType: "full_success",
             finalDeliveredStage: "2",
             requestedBeyond1A: true,
+            // Staging an existing (already decluttered) image: no new declutter, 1 credit.
+            stage1BUserSelected: false,
           });
         } catch (chargeErr) {
           nLog("[BILLING] Failed to finalize charge (stage2-only retry):", (chargeErr as any)?.message || chargeErr);
@@ -16155,7 +16157,17 @@ All openings must remain identical in position and size to the original image.`;
     billingStage1BSuccess &&
     (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
 
-  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+  // Declutter + stage = 2 credits, only when the user chose declutter and both
+  // the decluttered and the staged images were delivered (same rule as
+  // computeCharge in shared/src/billing/rules.ts). Everything else = 1.
+  const declutterAndStageDelivered =
+    String(sceneLabel || "interior").toLowerCase() !== "exterior" &&
+    originalUserDeclutter &&
+    billingStage1BSuccess &&
+    billingStage2Success;
+  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob
+    ? (declutterAndStageDelivered ? 2 : 1)
+    : 0;
 
   nLog("[BILLING_CHARGE_TELEMETRY]", {
     jobId: payload.jobId,

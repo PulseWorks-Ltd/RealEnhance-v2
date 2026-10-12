@@ -840,7 +840,19 @@ export function uploadRouter() {
 
       const jobId = "job_" + crypto.randomUUID();
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      const requiredImages = 1;
+      // Declutter + stage on an interior image = 2 credits (reserved up front;
+      // the worker refunds 1 if staging falls back or the room needed no
+      // declutter). An empty room (declutter skipped) or a stage-2-only job = 1.
+      const declutterAndStage =
+        String(opts.sceneType || "").toLowerCase() !== "exterior" &&
+        opts.stage2Only !== true &&
+        opts.declutter === true &&
+        finalVirtualStage &&
+        opts.furnishedState !== "empty";
+      const requiredImages = declutterAndStage ? 2 : 1;
+      // Free-trial images are counted per image (trial use is not reconciled
+      // after the job, so it can't be refunded if staging falls back).
+      const trialRequiredImages = 1;
 
       const trialEligible = Boolean(
         agencyId &&
@@ -853,14 +865,14 @@ export function uploadRouter() {
 
       if (!requiresPayment && agencyId && trialEligible) {
         try {
-          const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages });
+          const trialReserve = await reserveTrialCredits({ agencyId, jobId, requiredImages: trialRequiredImages });
           if (trialReserve.allowed) {
             trialReservedJobs.push(jobId);
             usedTrial = true;
             if (trialSummary) {
               trialSummary = {
                 ...trialSummary,
-                remaining: Math.max(0, trialSummary.remaining - requiredImages),
+                remaining: Math.max(0, trialSummary.remaining - trialRequiredImages),
               };
             }
           } else if (trialReserve.reason === "TRIAL_DEPLETED" || trialReserve.reason === "TRIAL_EXPIRED") {

@@ -10,13 +10,14 @@ function deriveRequiredCreditsFromJobPayload(payload: any): number {
   const virtualStage = !!options?.virtualStage;
   const declutter = !!options?.declutter;
   const furnishedState = String(options?.furnishedState || "").toLowerCase();
+  const sceneType = String(options?.sceneType || "").toLowerCase() === "exterior" ? "exterior" : "interior";
 
   // Match upload-side projection: declutter+stage with empty room can skip Stage 1B (1 credit total).
-  const stage1BProjected = declutter && (!virtualStage || furnishedState !== "empty");
+  const stage1BProjected = declutter && options?.stage2Only !== true && (!virtualStage || furnishedState !== "empty");
 
   return estimateBatchCredits([
     {
-      sceneType: "interior",
+      sceneType,
       userSelectedStage1B: stage1BProjected,
       userSelectedStage2: virtualStage,
     },
@@ -160,7 +161,7 @@ export function enhanceRouter() {
           jobId,
           requiredCredits,
           currentCredits: await getAvailableCredits(sessUser.id),
-          missingCredits: 1,
+          missingCredits: Math.max(1, requiredCredits - (await getAvailableCredits(sessUser.id))),
         });
       }
 

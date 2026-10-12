@@ -1,4 +1,4 @@
-import { computeCharge } from "../src/billing/rules";
+import { computeCharge, estimateCredits, estimateBatchCredits } from "../src/billing/rules";
 
 describe("billing rules", () => {
   it("returns 0 when stage1A failed", () => {
@@ -12,15 +12,74 @@ describe("billing rules", () => {
     expect(result.reason).toBe("stage1A_failed");
   });
 
-  it("returns 1 for full interior pipeline", () => {
+  it("returns 2 for declutter + stage when both were delivered", () => {
     const result = computeCharge({
       stage1A: true,
       stage1B: true,
       stage2: true,
       sceneType: "interior",
+      stage1BUserSelected: true,
+    });
+    expect(result.amount).toBe(2);
+    expect(result.reason).toBe("declutter_and_stage");
+  });
+
+  it("returns 1 when staging an empty room (no declutter chosen)", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: false,
+      stage2: true,
+      sceneType: "interior",
+      stage1BUserSelected: false,
     });
     expect(result.amount).toBe(1);
-    expect(result.reason).toBe("flat_one_image_model");
+  });
+
+  it("returns 1 when 1B ran but the user did not choose declutter", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: true,
+      stage2: true,
+      sceneType: "interior",
+      stage1BUserSelected: false,
+    });
+    expect(result.amount).toBe(1);
+  });
+
+  it("returns 1 for declutter + stage when staging fell back to the decluttered image", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: true,
+      stage2: false,
+      sceneType: "interior",
+      stage1BUserSelected: true,
+      completionType: "fallback_1b" as any,
+      finalDeliveredStage: "1B",
+      requestedBeyond1A: true,
+    });
+    expect(result.amount).toBe(1);
+  });
+
+  it("returns 1 for declutter + stage when the room was empty (declutter skipped)", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: false,
+      stage2: true,
+      sceneType: "interior",
+      stage1BUserSelected: true,
+    });
+    expect(result.amount).toBe(1);
+  });
+
+  it("returns 1 for declutter only", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: true,
+      stage2: false,
+      sceneType: "interior",
+      stage1BUserSelected: true,
+    });
+    expect(result.amount).toBe(1);
   });
 
   it("returns 1 for partial interior pipeline", () => {
@@ -84,5 +143,28 @@ describe("billing rules", () => {
     });
     expect(result.amount).toBe(1);
     expect(result.reason).toBe("flat_one_image_model");
+  });
+
+  describe("estimates", () => {
+    it("declutter + stage interior = 2", () => {
+      expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: true })).toBe(2);
+    });
+    it("stage only, declutter only, enhance only = 1", () => {
+      expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: false, userSelectedStage2: true })).toBe(1);
+      expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: false })).toBe(1);
+      expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: false, userSelectedStage2: false })).toBe(1);
+    });
+    it("exterior = 1", () => {
+      expect(estimateCredits({ sceneType: "exterior", userSelectedStage1B: true, userSelectedStage2: true })).toBe(1);
+    });
+    it("batch sums per image", () => {
+      expect(
+        estimateBatchCredits([
+          { sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: true },
+          { sceneType: "interior", userSelectedStage1B: false, userSelectedStage2: true },
+          { sceneType: "exterior", userSelectedStage1B: false, userSelectedStage2: false },
+        ])
+      ).toBe(4);
+    });
   });
 });

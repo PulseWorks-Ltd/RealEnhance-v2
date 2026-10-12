@@ -119,6 +119,48 @@ export async function finalizeReservationFromWorker(params: {
           const refundTotal = Math.abs(delta);
           const refundableAddon = Math.min(refundTotal, Math.max(0, Number(jr.reserved_from_addon || 0)));
           const refundableIncluded = Math.min(refundTotal - refundableAddon, Math.max(0, Number(jr.reserved_from_included || 0)));
+          // A 2-credit reservation (declutter + stage) that ends up charging 1
+          // (staging fell back) can also have been paid from listing-pack or
+          // pilot-promo credits; those are given back too.
+          const refundableListingPack = Math.min(
+            refundTotal - refundableAddon - refundableIncluded,
+            Math.max(0, Number(jr.reserved_from_listing_pack || 0))
+          );
+          const refundablePilotPromo = jr.pilot_promo_redemption_id
+            ? Math.min(
+                refundTotal - refundableAddon - refundableIncluded - refundableListingPack,
+                Math.max(0, Number(jr.reserved_from_pilot_promo || 0))
+              )
+            : 0;
+          if (refundableListingPack > 0) {
+            await client.query(
+              `UPDATE agency_accounts
+                 SET listing_pack_credits = listing_pack_credits + $1,
+                     updated_at = NOW()
+               WHERE agency_id = $2`,
+              [refundableListingPack, jr.agency_id]
+            );
+          }
+          if (refundablePilotPromo > 0) {
+            await client.query(
+              `UPDATE pilot_promo_redemptions
+                 SET credits_used = GREATEST(0, credits_used - $1),
+                     updated_at = NOW()
+               WHERE id = $2`,
+              [refundablePilotPromo, jr.pilot_promo_redemption_id]
+            );
+          }
+          if (refundableListingPack > 0 || refundablePilotPromo > 0) {
+            await client.query(
+              `UPDATE job_reservations
+                 SET reserved_images = reserved_images - $1,
+                     reserved_from_listing_pack = reserved_from_listing_pack - $2,
+                     reserved_from_pilot_promo = reserved_from_pilot_promo - $3,
+                     updated_at = NOW()
+               WHERE job_id = $4`,
+              [refundableListingPack + refundablePilotPromo, refundableListingPack, refundablePilotPromo, params.jobId]
+            );
+          }
 
           if (refundableIncluded > 0 || refundableAddon > 0) {
             await client.query(
@@ -146,7 +188,7 @@ export async function finalizeReservationFromWorker(params: {
                      reserved_from_addon = reserved_from_addon - $3,
                      updated_at = NOW()
                WHERE job_id = $4`,
-              [refundTotal, refundableIncluded, refundableAddon, params.jobId]
+              [refundableIncluded + refundableAddon, refundableIncluded, refundableAddon, params.jobId]
             );
           }
         }
