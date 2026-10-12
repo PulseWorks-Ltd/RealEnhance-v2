@@ -35,6 +35,7 @@ import {
   resolveStage2Model,
   runStage2,
   runStage2GenerationAttempt,
+  roomBriefStyleFor,
 } from "./pipeline/stage2";
 import { classifyStructuralFailure, type StructuralFailureType } from "./pipeline/structuralRetryHelpers";
 import {
@@ -74,7 +75,7 @@ import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
 import { startFurniturePrecheckWorker } from "./precheck/furniturePrecheck";
 import { buildLayoutContext, type LayoutContextResult } from "./ai/layoutPlanner";
-import { roomBriefEnabled } from "./pipeline/roomBrief";
+import { roomBriefEnabled, startRoomBriefPrefetch } from "./pipeline/roomBrief";
 
 import {
   updateJob,
@@ -8728,6 +8729,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage1ASunnyExteriorEnabled = strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
+  // Layout planner early start (empty rooms only): the upload pre-check
+  // already found the room empty, so Stage 2 will furnish it from the Stage
+  // 1A photo and run the room brief anyway. Start the brief on the original
+  // now so it runs alongside Stage 1A (which changes light and colour, not
+  // the room's shape). Furnished rooms go through 1B and refresh mode, where
+  // no planner runs, so nothing starts early for them.
+  try {
+    const earlyRoomType = String(payload.options.roomType || "").trim();
+    const earlyPrecheck = (payload.options as any)?.furniturePrecheck as { localEmpty?: boolean } | undefined;
+    const earlyStage2Mode = String((payload.options as any)?.stage2Mode || "").trim().toUpperCase();
+    if (
+      payload.options.virtualStage
+      && roomBriefEnabled()
+      && stage1ASceneLabel === "interior"
+      && earlyPrecheck?.localEmpty === true
+      && earlyRoomType
+      && !["auto", "unknown"].includes(earlyRoomType.toLowerCase())
+      && earlyStage2Mode !== "REFRESH"
+    ) {
+      const earlyStyle = (payload as any)?.options?.stagingStyle;
+      startRoomBriefPrefetch({
+        jobId: payload.jobId,
+        imagePath: canonicalPath,
+        roomType: earlyRoomType,
+        styleDescription: roomBriefStyleFor(earlyRoomType, typeof earlyStyle === "string" ? earlyStyle.trim() : undefined),
+      });
+    }
+  } catch (err: any) {
+    console.warn("[ROOM_BRIEF_PREFETCH_SKIPPED]", { jobId: payload.jobId, error: err?.message || String(err) });
+  }
   await safeWriteJobStatus(
     payload.jobId,
     {

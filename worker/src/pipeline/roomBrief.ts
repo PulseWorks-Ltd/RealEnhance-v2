@@ -318,11 +318,52 @@ export async function buildRoomBrief(params: {
 // instead of paying for it again.
 const briefCache = new Map<string, Promise<RoomBriefResult>>();
 const BRIEF_CACHE_MAX = 50;
+function buildRoomBriefSafe(params: { imagePath: string; roomType: string; styleDescription?: string }): Promise<RoomBriefResult> {
+  return buildRoomBrief(params).catch((e: any) => ({ ok: false as const, reason: `room_brief_error: ${String(e?.message || e).slice(0, 200)}`, issues: [], usage: [] }));
+}
+
+// Same canonical room type Stage 2 uses (stage2.ts canonicalRoomType).
+export function canonicalRoomTypeForBrief(roomType: string): string {
+  const n = String(roomType || "").toLowerCase().replace(/-/g, "_").trim();
+  return n === "multiple_living_areas" || n === "multiple_living" ? "kitchen_living_dining" : n;
+}
+
+// Early start for EMPTY rooms: the worker starts the brief on the original
+// photo while Stage 1A runs (Stage 1A changes light and colour, never the
+// room's shape), so Stage 2 finds it ready instead of waiting ~20s. Keyed by
+// job + room type, not by file, because Stage 2 asks with the Stage 1A path.
+const prefetchedBriefs = new Map<string, Promise<RoomBriefResult>>();
+const prefetchKey = (jobId: string, roomType: string) => `${jobId}::${canonicalRoomTypeForBrief(roomType)}`;
+
+export function startRoomBriefPrefetch(params: { jobId: string; imagePath: string; roomType: string; styleDescription?: string }): void {
+  const key = prefetchKey(params.jobId, params.roomType);
+  if (prefetchedBriefs.has(key)) return;
+  const startedAt = Date.now();
+  console.log("[ROOM_BRIEF_PREFETCH_START]", JSON.stringify({ jobId: params.jobId, roomType: canonicalRoomTypeForBrief(params.roomType) }));
+  const p = buildRoomBriefSafe({ ...params, roomType: canonicalRoomTypeForBrief(params.roomType) });
+  void p.then((r) => console.log("[ROOM_BRIEF_PREFETCH_DONE]", JSON.stringify({ jobId: params.jobId, ok: r.ok, ms: Date.now() - startedAt })));
+  prefetchedBriefs.set(key, p);
+  while (prefetchedBriefs.size > BRIEF_CACHE_MAX) {
+    const oldest = prefetchedBriefs.keys().next().value;
+    if (oldest === undefined) break;
+    prefetchedBriefs.delete(oldest);
+  }
+}
+
 export function getRoomBriefCached(params: { jobId: string; imagePath: string; roomType: string; styleDescription?: string }): Promise<RoomBriefResult> {
   const key = `${params.jobId}::${params.imagePath}::${params.roomType}`;
   const hit = briefCache.get(key);
   if (hit) return hit;
-  const p = buildRoomBrief(params).catch((e: any) => ({ ok: false as const, reason: `room_brief_error: ${String(e?.message || e).slice(0, 200)}`, issues: [], usage: [] }));
+  const early = prefetchedBriefs.get(prefetchKey(params.jobId, params.roomType));
+  // A failed early brief is not reused — Stage 2 builds one the normal way.
+  const p = early
+    ? early.then((r) => {
+        console.log("[ROOM_BRIEF_PREFETCH_USED]", JSON.stringify({ jobId: params.jobId, ok: r.ok }));
+        if (r.ok) return r;
+        for (const u of r.usage) console.log("[ROOM_BRIEF_USAGE]", JSON.stringify({ jobId: params.jobId, prefetch: true, ...u }));
+        return buildRoomBriefSafe(params);
+      })
+    : buildRoomBriefSafe(params);
   briefCache.set(key, p);
   while (briefCache.size > BRIEF_CACHE_MAX) {
     const oldest = briefCache.keys().next().value;

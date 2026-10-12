@@ -26,7 +26,7 @@ import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import { logEvent as logPipelineEvent, logGeminiUsage } from "../ai/usageTelemetry";
 import { runWithSelectedImageModel } from "../ai/runWithImageModelFallback";
 import { resolveStage2ImageModel } from "../ai/modelResolver";
-import { roomBriefEnabled, getRoomBriefCached, buildStage2PromptFromRoomBrief, type RoomBrief } from "./roomBrief";
+import { roomBriefEnabled, getRoomBriefCached, buildStage2PromptFromRoomBrief, canonicalRoomTypeForBrief, type RoomBrief } from "./roomBrief";
 import { buildAnchorLockedStage2Prompt, buildGrokSkillStage2Prompt, splitAnchorLockedPlanningSection, COMPACT_STRUCTURAL_LOCKS, buildUniversalFeatureProtectionSection, shouldUseAnchorLockedLayoutPlanning } from "./anchorLockedStaging";
 import type { StructuralBaseline } from "../validators/openingPreservationValidator";
 import { grokImageEdit, grokImageModel } from "../ai/grok";
@@ -372,6 +372,12 @@ type NanoRoomProgramGuidance = {
   roomRules: string[];
   itemBudget: string;
 };
+
+// The style text Stage 2 passes to the room brief, for starting the brief
+// early (before Stage 2) with exactly the same input.
+export function roomBriefStyleFor(roomType: string, stagingStyle?: string): string {
+  return buildNanoRoomProgramGuidance({ roomType: canonicalRoomTypeForBrief(roomType), stagingStyle: normalizeStagingStyle(stagingStyle) }).style;
+}
 
 function buildNanoRoomProgramGuidance(opts: {
   roomType: string;
