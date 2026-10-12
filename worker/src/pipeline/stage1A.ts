@@ -1672,8 +1672,17 @@ export async function runStage1A(
   const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
   const artifactsPromise: Promise<BaseArtifacts | null> | null = buildArtifacts ? (async (): Promise<BaseArtifacts | null> => {
     try {
-      const base = img.clone();
-      const meta = await base.metadata();
+      // Render the tone pipeline to pixels first, then derive the artifacts
+      // from those pixels. sharp runs its operations in a fixed internal
+      // order — greyscale() is applied BEFORE linear() — so asking for a
+      // greyscale copy of a pipeline that carries the per-channel neutral
+      // balance (linear with 3 values) fails with "Band expansion using
+      // linear is unsupported", and the artifacts were silently lost.
+      const rendered = await img.clone().raw().toBuffer({ resolveWithObject: true });
+      const base = sharp(rendered.data, {
+        raw: { width: rendered.info.width, height: rendered.info.height, channels: rendered.info.channels as 1 | 2 | 3 | 4 },
+      });
+      const meta = { width: rendered.info.width, height: rendered.info.height };
       const [gray, small] = await Promise.all([
         base.clone().greyscale().raw().toBuffer({ resolveWithObject: true }),
         base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true }),
