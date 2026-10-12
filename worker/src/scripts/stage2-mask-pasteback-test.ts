@@ -1271,7 +1271,12 @@ async function compositeSurface(original: Buffer, staged: Buffer, floorSurface: 
 //     DOOR_MAX_RESTAGES), then back to 2. Clear -> tracing etc. as normal.
 // Uses Grok when STAGE2_VALIDATOR_MODEL=grok (as production does), else Gemini.
 const DOOR_CHECK = process.env.DOOR_CHECK !== "0";
-const DOOR_CHECK_MODELS = (process.env.DOOR_CHECK_MODEL || "gemini-3-flash-preview,gemini-2.5-flash").split(",").map((m) => m.trim()).filter(Boolean);
+// Door-check model. DOOR_CHECK_MODEL (a Gemini text model) takes precedence:
+// when set, the door check uses Gemini even if STAGE2_VALIDATOR_MODEL=grok.
+// When not set, it follows STAGE2_VALIDATOR_MODEL (Grok) or falls back to the
+// default Gemini models below. Comma-separated = tried in order.
+const DOOR_CHECK_MODEL_SET = Boolean(String(process.env.DOOR_CHECK_MODEL || "").trim());
+const DOOR_CHECK_MODELS = (process.env.DOOR_CHECK_MODEL || "gemini-3.8-flash,gemini-3.1-flash-lite").split(",").map((m) => m.trim()).filter(Boolean);
 const DOOR_MAX_RESTAGES = Number(process.env.DOOR_MAX_RESTAGES || 2);
 // Share of the floor area in front of a doorway that must have changed for
 // the code to call it "appears blocked" and ask the AI.
@@ -1283,15 +1288,23 @@ async function callJsonModel(images: { path: string; label: string }[], systemIn
   // Imported here, not at the top: it loads the Gemini helpers, which must
   // only load after this script has set the Stage 2 env vars.
   const { callValidatorModel } = await import("../validators/validatorModelCall");
-  const usingGrok = String(process.env.STAGE2_VALIDATOR_MODEL || "").trim().toLowerCase() === "grok";
+  const { runWithForcedValidatorModel } = await import("../validators/occlusionVsRemovalCheck");
+  const usingGrok = !DOOR_CHECK_MODEL_SET && String(process.env.STAGE2_VALIDATOR_MODEL || "").trim().toLowerCase() === "grok";
   let lastError = "";
   for (const model of usingGrok ? ["grok"] : DOOR_CHECK_MODELS) {
     try {
-      const raw = await callValidatorModel({
-        images, systemInstruction, userPrompt, model,
-        reasonPrefix: label, timeoutMs: 60000,
-        ctx: { jobId: `pasteback_${name}`, imageId: name, callLabel: label },
-      });
+      // Forced per call, so DOOR_CHECK_MODEL wins over STAGE2_VALIDATOR_MODEL
+      // without affecting any other validator.
+      const raw = await runWithForcedValidatorModel(usingGrok ? "grok" : "gemini", () =>
+        callValidatorModel({
+          images, systemInstruction, userPrompt, model,
+          reasonPrefix: label, timeoutMs: 60000,
+          // Newer Gemini Flash models "think" by default and thinking counts
+          // toward this limit; too low a limit cuts the JSON answer off.
+          maxOutputTokens: 8192,
+          ctx: { jobId: `pasteback_${name}`, imageId: name, callLabel: label },
+        })
+      );
       return { raw, model: usingGrok ? `grok (${process.env.GROK_VISION_MODEL || "default"})` : model };
     } catch (e: any) {
       lastError = String(e?.message || e).slice(0, 200);
