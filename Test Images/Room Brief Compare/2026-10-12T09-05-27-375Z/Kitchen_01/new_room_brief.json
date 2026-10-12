@@ -1,0 +1,153 @@
+{
+  "roomSummary": "Spacious open-plan living and dining area leading into a rear kitchen, featuring dark carpeting, large side windows, and a pre-installed TV mount.",
+  "camera": "The camera stands at the front of the main room looking toward the dining zone and kitchen in the background.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "tv_bracket",
+      "description": "Black TV wall mount on the right wall",
+      "box": [
+        0.43,
+        0.81,
+        0.52,
+        0.96
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "window",
+      "description": "Large window with curtains along the left wall",
+      "box": [
+        0.43,
+        0.25,
+        0.62,
+        0.47
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "kitchen_bench",
+      "description": "Peninsula bench separating kitchen and living areas",
+      "box": [
+        0.54,
+        0.53,
+        0.65,
+        0.66
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "heat_pump",
+      "description": "Wall-mounted heat pump high on the rear wall above the kitchen boundary",
+      "box": [
+        0.42,
+        0.46,
+        0.46,
+        0.52
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "door",
+      "description": "White interior door at the rear right next to the kitchen",
+      "box": [
+        0.45,
+        0.69,
+        0.64,
+        0.73
+      ]
+    },
+    {
+      "id": "L6",
+      "type": "curtain",
+      "description": "Curtains flanking the left foreground window edge",
+      "box": [
+        0.26,
+        0,
+        0.98,
+        0.09
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Right wall",
+      "description": "Solid white wall holding the TV bracket",
+      "usableForLargeFurniture": true,
+      "partlyVisible": false
+    },
+    {
+      "name": "Left wall",
+      "description": "Long wall dominated by a central window and draped curtains",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Rear wall",
+      "description": "Contains kitchen cabinetry, heat pump, and entry door",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Living Zone",
+      "description": "Foreground and midground area centered around the TV bracket on the right wall"
+    },
+    {
+      "name": "Dining Zone",
+      "description": "Midground area in front of the kitchen peninsula bench and left window"
+    },
+    {
+      "name": "Kitchen Zone",
+      "description": "Rear right section behind the peninsula bench"
+    }
+  ],
+  "kitchenVisible": true,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "layout": [
+    {
+      "item": "TV",
+      "placement": "Mounted directly on the black TV wall bracket on the right wall, concealing it"
+    },
+    {
+      "item": "TV Unit",
+      "placement": "Low profile console placed against the right wall directly under the mounted TV"
+    },
+    {
+      "item": "Sofa",
+      "placement": "Three-seater sofa facing the right wall, set in the central foreground"
+    },
+    {
+      "item": "Coffee Table",
+      "placement": "Placed atop an area rug directly in front of the sofa"
+    },
+    {
+      "item": "Armchair",
+      "placement": "Angled inward on the far side of the rug facing back toward the sofa"
+    },
+    {
+      "item": "Dining Table",
+      "placement": "Rectangular dining table with four chairs placed in the midground space between the kitchen peninsula and the left window"
+    }
+  ],
+  "relationships": [
+    "The dining suite sits behind the sofa back and before the kitchen peninsula.",
+    "The living seating faces the right TV wall, preserving a central walkway from the entry toward the kitchen."
+  ],
+  "avoid": [
+    "Do not place the dining table between the sofa and the TV wall.",
+    "Do not block access to the kitchen peninsula or the rear door.",
+    "Do not position furniture that obstructs the left wall windows or curtains."
+  ],
+  "keepUntouched": [
+    "Black TV bracket position (covered by TV)",
+    "Wall-mounted heat pump",
+    "Kitchen peninsula and upper cabinets",
+    "Rear interior door",
+    "Window trims and hanging drapery"
+  ]
+}
