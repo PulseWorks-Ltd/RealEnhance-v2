@@ -192,10 +192,18 @@ process.env.REALENHANCE_STAGE2_IMAGE_SIZE = process.env.REALENHANCE_STAGE2_IMAGE
 
 // Floor-furniture targets match the continuity branch's two extractor passes;
 // wall art has its own pass so it can be checked separately.
-type TraceKind = "floor" | "wall_art" | "reflection";
+type TraceKind = "floor" | "wall_art" | "reflection" | "appliance";
+// Kitchens only: freestanding appliances (a fridge in an empty fridge space).
+// Kept only if they stand inside an EMPTY appliance space in the empty room —
+// a fridge that replaced pantry doors is a change to the cabinetry and goes.
+const TRACE_APPLIANCES = process.env.TRACE_APPLIANCES !== "0";
+const APPLIANCE_PASS = { label: "appliances", kind: "appliance" as TraceKind, targets: "freestanding appliances added by staging" };
+function tracePassesFor(roomType: string) {
+  return TRACE_APPLIANCES && /kitchen/i.test(roomType) ? [...TRACE_PASSES, APPLIANCE_PASS] : TRACE_PASSES;
+}
 const TRACE_PASSES: Array<{ label: string; kind: TraceKind; targets: string }> = [
   { label: "primary", kind: "floor", targets: "beds, sofas, dining tables, major rugs, major seating" },
-  { label: "secondary", kind: "floor", targets: "lamps, bedside tables, chairs, decor on furniture, plants, secondary furniture" },
+  { label: "secondary", kind: "floor", targets: "lamps, bedside tables, chairs, decor on furniture, plants, secondary furniture, and loose items placed on kitchen benches, islands, shelves and window sills (fruit bowls, plants, kettles, toasters, coffee machines, knife blocks, chopping boards, vases, books)" },
   ...(TRACE_ARTWORK
     ? [{ label: "wall_art", kind: "wall_art" as TraceKind, targets: "framed artwork, prints, paintings, canvases and mirrors hung on walls" }]
     : []),
@@ -295,7 +303,17 @@ function buildMirrorPrompt(roomType: string): string {
 // mirror around it still shows the same room as before (only the reflected
 // item is new). A "reflection" that is really a new doorway or a removed wall
 // fails the last check, because the area around it changed too.
-async function evaluateReflections(original: Buffer, staged: Buffer, reflMask: Uint8Array, floorMask: Uint8Array, w: number, h: number, mirrorMask: Uint8Array | null) {
+async function evaluateReflections(
+  original: Buffer,
+  staged: Buffer,
+  reflMask: Uint8Array,
+  floorMask: Uint8Array,
+  w: number,
+  h: number,
+  mirrorMask: Uint8Array | null,
+  // Shared with appliances: the same checks against a different "space".
+  opts: { what: string; space: string; maxAreaPct: number } = { what: "reflection", space: "a mirror", maxAreaPct: 6 }
+) {
   const mirrorNear = mirrorMask ? dilate(mirrorMask, w, h, Math.max(1, Math.round(w * 0.01))) : null;
   const A = 640;
   const AH = Math.max(1, Math.round((A * h) / w));
@@ -333,23 +351,67 @@ async function evaluateReflections(original: Buffer, staged: Buffer, reflMask: U
       ringDiff: +(rd / Math.max(1, rn)).toFixed(1),
     };
     let reason: string | null = null;
-    if (stats.onFurniturePct > 50) reason = "is the furniture itself, not a reflection";
-    else if (stats.inMirrorPct < 80) reason = "not inside a mirror in the empty room";
-    else if (stats.areaPct > 6) reason = "too large to be a reflection";
-    else if (stats.ringDiff > ART_MAX_RING_DIFF) reason = "the mirror/wall around it changed in staging";
-    const target = reason === "is the furniture itself, not a reflection" ? itself : reason ? dropped : keep;
+    const itselfReason = `is the furniture itself, not a ${opts.what}`;
+    if (stats.onFurniturePct > 50) reason = itselfReason;
+    else if (stats.inMirrorPct < 80) reason = `not inside ${opts.space} in the empty room`;
+    else if (stats.areaPct > opts.maxAreaPct) reason = `too large to be a ${opts.what}`;
+    else if (stats.ringDiff > ART_MAX_RING_DIFF) reason = "the area around it changed in staging";
+    const target = reason === itselfReason ? itself : reason ? dropped : keep;
     for (const i of piece.pixels) target[i] = 1;
-    report.push({ ...stats, kept: !reason, reason: reason || "reflection, surroundings unchanged" });
+    report.push({ ...stats, kept: !reason, reason: reason || `${opts.what}, surroundings unchanged` });
   }
   return { keep, dropped, itself, report };
 }
 
+function buildAppliancePrompt(roomType: string): string {
+  return [
+    "Generate a binary mask IMAGE.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Mask rule: WHITE = freestanding appliances ADDED by staging, BLACK = everything else.",
+    "",
+    "You are given two images of the same room from the same camera position:",
+    "1. STAGED_IMAGE — the room after virtual staging.",
+    "2. EMPTY_IMAGE — the same room before staging.",
+    "",
+    "Task: in the STAGED_IMAGE, mark ONLY freestanding appliances that are not in the EMPTY_IMAGE: fridges, freezers, wine fridges, washing machines, dryers.",
+    "Rules:",
+    "- Mark the whole appliance, white",
+    "- Do NOT mark cabinetry, cupboard or pantry doors, benches, ovens, cooktops, rangehoods, dishwashers or anything built in — black",
+    "- Do NOT mark appliances that are already in the EMPTY_IMAGE — black",
+    "- Do NOT mark furniture, decor or small benchtop items — black",
+    "- If no freestanding appliance was added, return a completely black image",
+    "- Match the perspective and dimensions of the STAGED_IMAGE",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
+// Empty appliance spaces in the EMPTY room (only asked for when an appliance
+// was traced): the real room decides where an appliance may stand.
+function buildApplianceSpacePrompt(roomType: string): string {
+  return [
+    "Generate a binary mask IMAGE of this photograph of an empty room.",
+    "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
+    "Mask rule: WHITE = empty appliance spaces, BLACK = everything else.",
+    "- Mark open, empty spaces built to take a freestanding appliance: an empty fridge space or recess in the cabinetry, an empty laundry space for a washing machine or dryer — the open space itself, from the floor to the top of the opening",
+    "- Do NOT mark cupboard doors, pantry doors, drawers, closed cabinetry, benches, walls, windows or doors — black",
+    "- If there is no empty appliance space, return a completely black image",
+    "- Keep exactly the same framing and dimensions as the photograph",
+    `Room type: ${roomType.replace(/_/g, " ")}`,
+  ].join("\n");
+}
+
 function buildTracePrompt(roomType: string, targets: string, kind: TraceKind = "floor"): string {
   if (kind === "reflection") return buildReflectionPrompt(roomType);
+  if (kind === "appliance") return buildAppliancePrompt(roomType);
   const kindRules =
     kind === "wall_art"
       ? ["- Mark ONLY items hung on walls. Do NOT mark furniture, lamps, plants, rugs, TVs, shelves, curtains, blinds or light fittings — they stay black"]
-      : ["- Do NOT mark anything hung on or attached to walls (artwork, mirrors, shelves, TVs) — it stays black"];
+      : [
+          "- Do NOT mark anything hung on or attached to walls (artwork, mirrors, shelves, TVs) — it stays black",
+          "- Furniture standing ON a rug is white too — never leave a coffee table, chair or other item black where it sits on a rug",
+          "- Loose items placed ON benches, islands, shelves or window sills (a kettle, fruit bowl or plant on a kitchen bench) ARE added decor: mark them white, even though the bench or shelf itself stays black",
+          "- Do NOT mark freestanding appliances (fridges, washing machines) — they stay black",
+        ];
   return [
     "Generate a binary furniture mask IMAGE.",
     "Output the mask as an IMAGE ONLY. No text, no JSON, no explanation.",
@@ -548,6 +610,66 @@ function fillEnclosedHoles(src: Uint8Array, w: number, h: number, maxHoleArea: n
     }
     if (!touchesBorder && members.length <= maxHoleArea) for (const i of members) out[i] = 1;
   }
+  return out;
+}
+
+async function fillChangedGaps(floor: Uint8Array, original: Buffer, staged: Buffer, w: number, h: number): Promise<Uint8Array> {
+  const out = fillEnclosedHoles(floor, w, h, Math.round(w * h * 0.02));
+  const cols = fillFurnitureColumns(floor, w, h);
+  const [a, b] = await Promise.all([
+    sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).blur(2).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).blur(2).raw().toBuffer(),
+  ]);
+  const sums = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < w * h; i++) {
+    if (cols[i]) continue;
+    for (let c = 0; c < 3; c++) { sums[c] += a[i * 3 + c]; sums[c + 3] += b[i * 3 + c]; }
+  }
+  const gains = [0, 1, 2].map((c) => (sums[c + 3] > 0 ? sums[c] / sums[c + 3] : 1));
+  let added = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    if (!cols[i] || out[i]) continue;
+    const d = Math.max(Math.abs(a[i * 3] - b[i * 3] * gains[0]), Math.abs(a[i * 3 + 1] - b[i * 3 + 1] * gains[1]), Math.abs(a[i * 3 + 2] - b[i * 3 + 2] * gains[2]));
+    if (d > 35) added[i] = 1;
+  }
+  const r = Math.max(1, Math.round(w * 0.002));
+  added = erode(dilate(added, w, h, r), w, h, r);
+  added = removeSmallComponents(added, w, h, Math.round(w * h * 0.0005));
+  for (let i = 0; i < w * h; i++) out[i] |= added[i] & cols[i];
+  // Report only (not filled): changed areas next to traced furniture that
+  // the trace left out. Filling them by rule isn't safe — the back of a
+  // coffee table the trace missed and a door Gemini moved behind a bed both
+  // touch the furniture on only part of their edge — so they are listed in
+  // the results to show whether the tracing missed furniture.
+  const changed = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    const d = Math.max(Math.abs(a[i * 3] - b[i * 3] * gains[0]), Math.abs(a[i * 3 + 1] - b[i * 3 + 1] * gains[1]), Math.abs(a[i * 3 + 2] - b[i * 3 + 2] * gains[2]));
+    changed[i] = d > 35 ? 1 : 0;
+  }
+  const near = dilate(out, w, h, Math.round(w * 0.03));
+  let cand = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) cand[i] = changed[i] && near[i] && !out[i] ? 1 : 0;
+  cand = erode(dilate(cand, w, h, r), w, h, r);
+  const missed: Array<{ areaPct: number; touchingFurniturePct: number; box: number[] }> = [];
+  for (const piece of labelComponents(cand, w, h)) {
+    if (piece.pixels.length < w * h * 0.002) continue;
+    let edge = 0, touching = 0;
+    for (const i of piece.pixels) {
+      const x = i % w;
+      let isEdge = false, touches = false;
+      for (const n of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
+        if (n < 0 || n >= w * h) { isEdge = true; continue; }
+        if (!cand[n]) { isEdge = true; if (out[n]) touches = true; }
+      }
+      if (isEdge) { edge++; if (touches) touching++; }
+    }
+    missed.push({
+      areaPct: +((piece.pixels.length / (w * h)) * 100).toFixed(2),
+      touchingFurniturePct: Math.round((touching / Math.max(1, edge)) * 100),
+      box: [+(piece.x1 / w).toFixed(2), +(piece.y1 / h).toFixed(2), +(piece.x2 / w).toFixed(2), +(piece.y2 / h).toFixed(2)],
+    });
+  }
+  (out as any).possiblyMissedByTrace = missed;
   return out;
 }
 
@@ -1597,6 +1719,34 @@ async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Array, zo
     for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) if (furnA[y * AW + x] < 128) suspect[y * AW + x] = 1;
   }
   const repairPct = checked ? (failed / checked) * 100 : 0;
+  // Furniture: the blend should only change its shading, not restyle it.
+  // Checked patch by patch (furniture pieces often touch — a table on a rug
+  // on a sofa is one traced shape): a furniture patch whose COLOUR changed (a
+  // wooden table turned grey) is taken from the app-built final. Shading
+  // keeps the colour; a lamp Gemini switched on gets warmer but also clearly
+  // brighter, so that glow is allowed.
+  let furnitureChangedPatches = 0, furniturePatches = 0;
+  for (let ty = 0; ty + T <= AH; ty += STEP) {
+    for (let tx = 0; tx + T <= AW; tx += STEP) {
+      let fCount = 0;
+      const sumA = [0, 0, 0], sumH = [0, 0, 0];
+      for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) {
+        const i = y * AW + x;
+        if (furnA[i] < 128) continue;
+        fCount++;
+        for (let c = 0; c < 3; c++) { sumA[c] += aC[i * 3 + c]; sumH[c] += hC[i * 3 + c]; }
+      }
+      if (fCount < T * T * 0.6) continue;
+      furniturePatches++;
+      const tA = sumA[0] + sumA[1] + sumA[2] || 1, tH = sumH[0] + sumH[1] + sumH[2] || 1;
+      const chromaShift = Math.max(...[0, 1, 2].map((c) => Math.abs(sumA[c] / tA - sumH[c] / tH)));
+      const brighter = tH / tA / (gain || 1);
+      if (chromaShift <= 0.05 || brighter > 1.15) continue;
+      furnitureChangedPatches++;
+      for (let y = ty; y < ty + T; y++) for (let x = tx; x < tx + T; x++) if (furnA[y * AW + x] >= 128) suspect[y * AW + x] = 1;
+    }
+  }
+  const furnitureChanged = { patches: furniturePatches, restyledPatches: furnitureChangedPatches };
   // Smooth shift map: average of reliable patch shifts nearby (failed patches
   // excluded), spread to fill gaps.
   const smoothShift = (src: Float32Array) => {
@@ -1689,6 +1839,7 @@ async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Array, zo
     patchesRepaired: failed,
     repairPct: Number(repairPct.toFixed(1)),
     reasons,
+    furnitureChanged,
     tooMuchChanged: repairPct > BLEND_MAX_REPAIR_PCT,
   };
 }
@@ -2248,7 +2399,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
     const stagedMime = stagedMeta.format === "jpeg" ? "image/jpeg" : stagedMeta.format === "png" ? "image/png" : "image/webp";
     row.stagedSize = `${stagedMeta.width}x${stagedMeta.height}`;
 
-    console.log(`[${img.name}] 2/3 trace (${FROM_RUN ? "saved traces, no Gemini call" : `${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${TRACE_PASSES.length} passes`})`);
+    console.log(`[${img.name}] 2/3 trace (${FROM_RUN ? "saved traces, no Gemini call" : `${TRACE_MODEL}, ${TRACE_IMAGE_SIZE}, ${tracePassesFor(img.roomType).length} passes`})`);
     // Structure map of the EMPTY room (surface merge only), in parallel with tracing.
     const wantSurface = MERGE_MODE === "surface" || MERGE_MODE === "all";
     const structurePromise: Promise<Buffer | null> = !wantSurface
@@ -2273,7 +2424,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
             return null;
           });
     const passes = await Promise.all(
-      TRACE_PASSES.map(async (pass) => {
+      tracePassesFor(img.roomType).map(async (pass) => {
         if (FROM_RUN) {
           const savedPath = path.join(FROM_RUN, img.name, `3_trace_${pass.label}_raw.png`);
           if (!fs.existsSync(savedPath)) {
@@ -2357,10 +2508,56 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
       console.log(`[${img.name}] reflection ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
     }
     for (let i = 0; i < floor.length; i++) if (refl.keep[i] || refl.dropped[i]) floor[i] = 0;
+
+    // Appliances (kitchens): their pass is the authority; each is kept only
+    // inside an empty appliance space of the real room, then treated exactly
+    // like furniture (shadows, edges, lighting).
+    let appAll = new Uint8Array(w * h);
+    for (const p of passes) if (p.kind === "appliance") for (let i = 0; i < appAll.length; i++) appAll[i] |= p.mask[i];
+    appAll = removeSmallComponents(appAll, w, h, minSpeck);
+    if (labelComponents(appAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
+      const savedSpaces = FROM_RUN ? path.join(FROM_RUN, img.name, "3_trace_appliance_spaces_raw.png") : null;
+      let spaceRaw: Buffer | null = null;
+      if (savedSpaces) {
+        spaceRaw = fs.existsSync(savedSpaces) ? fs.readFileSync(savedSpaces) : null;
+      } else {
+        spaceRaw = await callGeminiImage({
+          model: TRACE_MODEL,
+          parts: [{ text: buildApplianceSpacePrompt(img.roomType) }, imagePart(original, mimeFor(img.file))],
+          imageSize: TRACE_IMAGE_SIZE,
+          aspectRatio,
+        })
+          .then((res) => {
+            row.applianceSpaceTraceCostUsd = approxOutputCost(res.usage);
+            return res.image;
+          })
+          .catch((e) => {
+            console.warn(`[${img.name}] appliance-space trace failed: ${String(e?.message || e).slice(0, 200)} — appliances will be dropped`);
+            return null;
+          });
+      }
+      let spaceMask = new Uint8Array(w * h);
+      if (spaceRaw) {
+        fs.writeFileSync(path.join(dir, "3_trace_appliance_spaces_raw.png"), spaceRaw);
+        spaceMask = (await binarizeTraceResponse(spaceRaw, w, h)).mask;
+        row.applianceSpacePctOfImage = +(ratioOf(spaceMask) * 100).toFixed(1);
+      }
+      const appl = await evaluateReflections(original, staged, appAll, floor, w, h, spaceMask, { what: "appliance", space: "an empty appliance space", maxAreaPct: 15 });
+      row.appliances = appl.report;
+      for (const piece of appl.report) console.log(`[${img.name}] appliance ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
+      for (let i = 0; i < floor.length; i++) {
+        if (appl.dropped[i]) floor[i] = 0;
+        if (appl.keep[i]) floor[i] = 1;
+      }
+    }
     const tracedRatio = ratioOf(floor);
     // Harmonise keeps the tight outline (only small enclosed holes filled), so
     // no floor or shadow from the staged image comes along with the furniture.
-    const tightFloor = HARMONISE ? fillEnclosedHoles(floor, w, h, Math.round(w * h * 0.02)) : null;
+    // Gaps inside a traced piece (a coffee table Gemini drew black on top of a
+    // white rug) are filled too, but only where the staged image really
+    // differs from the original — bare floor showing between chair legs stays.
+    const tightFloor = HARMONISE ? await fillChangedGaps(floor, original, staged, w, h) : null;
+    if (tightFloor) row.possiblyMissedByTrace = (tightFloor as any).possiblyMissedByTrace;
     floor = fillFurnitureColumns(floor, w, h);
     const furnitureRatio = ratioOf(floor);
     fs.writeFileSync(path.join(dir, "3_mask_traced.png"), await maskToPng(floor, w, h));
@@ -2582,6 +2779,7 @@ async function runOne(img: { name: string; file: string; roomType: string; previ
           patchesRepaired: cb.patchesRepaired,
           repairPct: cb.repairPct,
           reasons: cb.reasons,
+          furnitureRestyledAndRepaired: cb.furnitureChanged,
           usedAppBuiltInstead: cb.tooMuchChanged,
         };
         if (cb.tooMuchChanged) {
@@ -2725,4 +2923,4 @@ if (require.main === module) {
     });
 }
 
-export { doorwayAppearsBlocked, evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
+export { fillChangedGaps, buildAppliancePrompt, buildApplianceSpacePrompt, doorwayAppearsBlocked, evaluateDoorAccess, buildDoorAccessPrompt, buildMirrorPrompt, evaluateReflections, buildReflectionPrompt, checkBlend, removeSunPatches, checkStructureRetained, fillEnclosedHoles, compositeHarmonise, buildHarmonisePrompt, classifyStructure, snapFloorTop, compositeSurface, structureOverlay, STRUCTURE_LABELS, compositeStagedFirst, refineArtRegion, evaluateWallArt, compositeLayers, layersOverlay, labelComponents, fillFurnitureColumns, checkFraming, binarizeTraceResponse, measureOutsideDrift, maskToPng, maskOverlay, undoneOverlay, contactSheet, removeSmallComponents, dilate, growDown, ratioOf };
