@@ -1,0 +1,177 @@
+{
+  "roomSummary": "This is an open-plan room with carpet throughout, extending from a spacious living area in the foreground to a dining space in the midground and a kitchen at the far end.",
+  "camera": "The camera stands in the front living area, looking directly down the length of the room toward the kitchen peninsula and back wall.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "kitchen_bench",
+      "description": "White kitchen peninsula bench dividing the kitchen from the main living and dining space",
+      "box": [
+        0.45,
+        0.51,
+        0.62,
+        0.58
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "light_fitting",
+      "description": "Two dark pendant lights hanging over the kitchen bench",
+      "box": [
+        0.46,
+        0.41,
+        0.55,
+        0.47
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "heat_pump",
+      "description": "Wall-mounted heat pump high on the right wall near the kitchen",
+      "box": [
+        0.58,
+        0.41,
+        0.63,
+        0.45
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "window",
+      "description": "Tall vertical window on the right wall looking out to the yard",
+      "box": [
+        0.64,
+        0.39,
+        0.74,
+        0.59
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "window",
+      "description": "High horizontal window on the right wall in the foreground",
+      "box": [
+        0.84,
+        0.3,
+        1,
+        0.44
+      ]
+    },
+    {
+      "id": "L6",
+      "type": "door",
+      "description": "Interior passage doors along the left hallway wall leading toward the kitchen",
+      "box": [
+        0.31,
+        0.39,
+        0.36,
+        0.65
+      ]
+    },
+    {
+      "id": "L7",
+      "type": "switch_or_outlet",
+      "description": "Double power outlet on the lower section of the prominent left wall",
+      "box": [
+        0.14,
+        0.63,
+        0.17,
+        0.65
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Left foreground wall",
+      "description": "Solid, white protruding wall section on the left with power outlet, facing into the living space",
+      "usableForLargeFurniture": true,
+      "partlyVisible": false
+    },
+    {
+      "name": "Left corridor wall",
+      "description": "Recessed left wall with interior passage doors leading to the kitchen",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Right wall",
+      "description": "Long perimeter wall containing a high horizontal window in the foreground and a tall window in the midground",
+      "usableForLargeFurniture": true,
+      "partlyVisible": false
+    },
+    {
+      "name": "Far kitchen wall",
+      "description": "Back wall containing kitchen cabinetry, rangehood, and fridge alcove",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    }
+  ],
+  "zones": [
+    {
+      "name": "Living Zone",
+      "description": "The carpeted area across the foreground and midground, bounded by the left foreground wall and right perimeter wall"
+    },
+    {
+      "name": "Dining Zone",
+      "description": "The carpeted area directly in front of the kitchen peninsula bench"
+    },
+    {
+      "name": "Kitchen Zone",
+      "description": "The tiled zone at the back behind the kitchen peninsula bench"
+    }
+  ],
+  "kitchenVisible": true,
+  "fridgeSpace": {
+    "present": true,
+    "description": "Recessed tall alcove to the left of the kitchen cabinetry and rangehood"
+  },
+  "layout": [
+    {
+      "item": "Low TV unit",
+      "placement": "Against the solid left foreground wall, centered below the light switch and over the double power outlet"
+    },
+    {
+      "item": "TV",
+      "placement": "Standing neatly on top of the low TV unit against the solid left foreground wall"
+    },
+    {
+      "item": "Three-seater sofa",
+      "placement": "Positioned across the carpeted living area facing the TV unit on the left wall, with its back toward the right wall under the high horizontal window"
+    },
+    {
+      "item": "Coffee table",
+      "placement": "Centred in front of the three-seater sofa in the living zone"
+    },
+    {
+      "item": "Area rug",
+      "placement": "Under the coffee table and front feet of the sofa to define the living zone"
+    },
+    {
+      "item": "Dining table",
+      "placement": "Centred in the dining space in front of the kitchen peninsula bench, positioned lengthways across the room"
+    },
+    {
+      "item": "Four dining chairs",
+      "placement": "Tucked neatly along both long sides of the dining table"
+    }
+  ],
+  "relationships": [
+    "The dining table stays in the midground directly in front of the kitchen bench, leaving a clear separation between the dining area and the living space.",
+    "The sofa faces the left wall TV setup, maintaining a clear open walkway down the left side into the kitchen.",
+    "The living area furniture is kept entirely forward of the tall window on the right."
+  ],
+  "avoid": [
+    "Do not place the dining table between the sofa and the TV unit.",
+    "Do not block the hallway doors along the left side with any furniture.",
+    "Do not push furniture directly against the tall window on the right.",
+    "Do not place tall furniture against the right wall that would obstruct the high horizontal window."
+  ],
+  "keepUntouched": [
+    "Kitchen peninsula bench, cabinetry, rangehood, and splashback",
+    "Pendant lights over the kitchen bench",
+    "Heat pump on the upper right wall",
+    "Tall vertical window and high horizontal window on the right wall",
+    "Interior doors and trim on the left hallway wall",
+    "All light switches and wall outlets"
+  ]
+}
