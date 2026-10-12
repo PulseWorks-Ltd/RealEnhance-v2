@@ -2341,18 +2341,19 @@ export async function checkFraming(original: Buffer, staged: Buffer, mask: Uint8
   return { tilesChecked: checked, tilesChanged: changed, changedPct, medianDiff, framingChanged: checked >= 6 && medianDiff > REFRAMED_MEDIAN_DIFF };
 }
 
-// Camera-movement check: did Gemini zoom or shift the view? Both images are
-// reduced to brightness-independent structure edges, then the staged image is
-// zoomed (0.86-1.14) and shifted (up to ~7%) to find its best fit on the
-// original. Good results fit best where they are (gain 0, also when Gemini
-// brightened the image); a moved or redrawn view fits clearly better
-// somewhere else. Calibration (30th-percentile tile score): good and +16%
-// brightened results 0; 6% zoom fakes 0.07-0.21; Bedroom 05 0.116;
-// Bedroom 12 0.133. Used for DETECTION only: on real reshapes the best zoom /
-// shift is not a reliable estimate, because Gemini changes the perspective
-// (Bedroom 05 could not be lined up by any zoom + shift), so a moved room is
-// re-staged, never warped back.
+// Camera-movement check: did Gemini zoom the view? Both images are reduced to
+// brightness-independent structure edges, then the staged image is zoomed
+// (0.86-1.14) and shifted (up to ~7%) to find its best fit on the original.
+// It only counts a CLEAR zoom (>= 5%) with a real improvement in fit: on 79
+// eye-checked baseline/staged pairs in Test Images the shift estimate and
+// small zooms were unreliable (Gemini often returns a slightly different
+// shape). Together with the brightness-matched framing check it caught all
+// 51 reshaped pairs with 2 false alarms (framing alone: 50 and 1; camera
+// check with any zoom or shift: 5 false alarms). Detection only — a moved
+// room is re-staged, never warped back (Bedroom 05 could not be lined up by
+// any zoom + shift: the perspective itself changed).
 export const CAMERA_MOVED_MIN_GAIN = Number(process.env.CAMERA_MOVED_MIN_GAIN || 0.05);
+export const CAMERA_MOVED_MIN_ZOOM = Number(process.env.CAMERA_MOVED_MIN_ZOOM || 0.05);
 const ALIGN_W = 240;
 // Which tile score decides the fit: a low percentile lets the room's unchanged
 // structure (windows, corners, ceiling lines) decide, so furniture and local
@@ -2422,7 +2423,9 @@ export async function checkCameraAlignment(original: Buffer, staged: Buffer): Pr
   const gain = identity - best.score;
   const dxPct = (best.dx / ALIGN_W) * 100, dyPct = (best.dy / h) * 100;
   const shiftPct = Math.hypot(dxPct, dyPct);
-  const moved = gain >= CAMERA_MOVED_MIN_GAIN && (Math.abs(best.scale - 1) >= 0.01 || shiftPct >= 0.8);
+  // Only a clear zoom counts: on real results the shift estimate is unreliable
+  // and small zooms come from Gemini returning a slightly different shape.
+  const moved = gain >= CAMERA_MOVED_MIN_GAIN && Math.abs(best.scale - 1) >= CAMERA_MOVED_MIN_ZOOM;
   const r = (v: number, d = 3) => Number(v.toFixed(d));
   return { identity: r(identity), best: r(best.score), gain: r(gain), scale: r(best.scale), dxPct: r(dxPct, 2), dyPct: r(dyPct, 2), shiftPct: r(shiftPct, 2), moved };
 }
