@@ -1,0 +1,123 @@
+{
+  "roomSummary": "A rectangular bedroom featuring a rear window, built-in shelves and sliding door on the left, and an unbroken wall on the right.",
+  "camera": "The camera stands near the entrance looking forward toward the back window.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "window",
+      "description": "window on the far back wall overlooking greenery",
+      "box": [
+        0.52,
+        0.34,
+        0.69,
+        0.52
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "curtain",
+      "description": "dark curtains framing the back window",
+      "box": [
+        0.49,
+        0.34,
+        0.73,
+        0.64
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "sliding_door",
+      "description": "timber sliding door on the left wall",
+      "box": [
+        0.37,
+        0.25,
+        0.46,
+        0.74
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "other_fixture",
+      "description": "built-in open shelving between sliding door and back corner",
+      "box": [
+        0.45,
+        0.33,
+        0.51,
+        0.58
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "light_fitting",
+      "description": "ceiling light fixture near room center",
+      "box": [
+        0.59,
+        0.14,
+        0.61,
+        0.2
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Right wall",
+      "description": "Long, solid plain wall extending from foreground to far corner",
+      "usableForLargeFurniture": true,
+      "partlyVisible": false
+    },
+    {
+      "name": "Back wall",
+      "description": "Wall containing the window and curtains",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Left wall",
+      "description": "Wall broken up by sliding door track, door, and shelves",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Sleeping area",
+      "description": "Centered along the solid right wall opposite the sliding door"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "layout": [
+    {
+      "item": "Queen Bed",
+      "placement": "headboard placed against the solid right wall, centered opposite the sliding door"
+    },
+    {
+      "item": "Left Bedside Table",
+      "placement": "against the right wall, positioned on the side of the bed closer to the back window"
+    },
+    {
+      "item": "Right Bedside Table",
+      "placement": "against the right wall, positioned on the side of the bed closer to the foreground"
+    },
+    {
+      "item": "Bedside Lamps",
+      "placement": "one lamp placed on top of each bedside table"
+    }
+  ],
+  "relationships": [
+    "The bed sits perpendicular to the right wall, preserving clear floor space to access the sliding door and built-in shelves."
+  ],
+  "avoid": [
+    "Do not place furniture against the sliding door track or shelves on the left wall.",
+    "Do not block the rear window or curtains."
+  ],
+  "keepUntouched": [
+    "Timber sliding door and track on the left wall",
+    "Built-in wall shelves in the back-left corner",
+    "Rear window and dark curtains",
+    "Ceiling light fitting"
+  ]
+}

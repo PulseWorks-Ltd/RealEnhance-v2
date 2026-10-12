@@ -1,0 +1,127 @@
+{
+  "roomSummary": "An empty carpeted bedroom featuring a mirrored wardrobe, a rear vertical window, and a high horizontal accent window on the right.",
+  "camera": "The camera stands in the open doorway looking into the bedroom toward the back wall and right corner.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "doorway",
+      "description": "Open bedroom entry door and frame in foreground",
+      "box": [
+        0,
+        0,
+        0.24,
+        1
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "built_in_wardrobe",
+      "description": "Sliding wardrobe doors on the left wall",
+      "box": [
+        0.2,
+        0.34,
+        0.26,
+        0.76
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "window",
+      "description": "Vertical window with roller blind on the back wall",
+      "box": [
+        0.28,
+        0.38,
+        0.48,
+        0.6
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "window",
+      "description": "High horizontal window on the upper right wall",
+      "box": [
+        0.72,
+        0.36,
+        0.89,
+        0.44
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "switch_or_outlet",
+      "description": "Power outlet on the lower right wall",
+      "box": [
+        0.69,
+        0.6,
+        0.71,
+        0.62
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Back wall",
+      "description": "Rear wall containing a tall window on the left and smooth drywall on the right",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Right wall",
+      "description": "Long wall with a high horizontal window and outlet below",
+      "usableForLargeFurniture": true,
+      "partlyVisible": true
+    },
+    {
+      "name": "Left wall",
+      "description": "Occupied by sliding mirrored wardrobe doors",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Sleeping zone",
+      "description": "Along the right wall directly beneath the high window"
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "layout": [
+    {
+      "item": "Queen bed",
+      "placement": "Headboard centered against the right wall, directly below the high horizontal window"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "Against the right wall to the left of the bed, toward the back corner"
+    },
+    {
+      "item": "Bedside table",
+      "placement": "Against the right wall to the right of the bed, closer to the foreground"
+    },
+    {
+      "item": "Table lamps",
+      "placement": "Placed on top of each bedside table"
+    },
+    {
+      "item": "Area rug",
+      "placement": "Partially under the bed, extending into the central floor space"
+    }
+  ],
+  "relationships": [
+    "The bed centers under the high transom window, maintaining a clear path between the entry doorway and the sliding wardrobe."
+  ],
+  "avoid": [
+    "Do not place the bed against the back wall across the tall window.",
+    "Do not block access to the sliding wardrobe doors on the left."
+  ],
+  "keepUntouched": [
+    "Tall window and roller blind on the back wall",
+    "High horizontal window on the right wall",
+    "Sliding wardrobe tracks and doors on the left wall",
+    "Lower wall outlet on the right wall"
+  ]
+}

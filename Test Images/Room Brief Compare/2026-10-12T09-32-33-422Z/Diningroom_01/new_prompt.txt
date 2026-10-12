@@ -1,0 +1,34 @@
+Stage this empty dining room for a real-estate listing photo. Add realistic, correctly scaled furniture and decor, with lighting, shadows and perspective that match the photo. The room itself and the camera framing stay exactly as they are.
+
+THE ROOM
+Tiled dining room featuring timber sliding glass doors on the left, a curtained window at the far end, and a decorative fireplace mantel on the right. The camera stands near the room entry looking across the tiled floor toward the far window and left sliding doors.
+
+Areas of the room:
+- Dining area: Central floor area under the ceiling light fitting.
+
+LAYOUT — place these pieces exactly as described:
+1. Dining table: Centered on the tiled floor roughly beneath the ceiling light mount.
+2. Dining chairs: Set around the dining table with two on each long side and one at each end.
+3. Area rug: Under the dining table and chairs, centered in the open floor space.
+
+How the pieces relate: The dining set sits centrally to allow clear walk paths between the right doorway, the left sliding doors, and the far window.
+
+AVOID IN THIS ROOM
+- Do not place furniture blocking the sliding doors on the left.
+- Do not obstruct the doorway on the right foreground.
+- Do not place any items directly against or blocking the decorative fireplace mantel.
+- Do not add living room furniture such as sofas, armchairs, or coffee tables.
+
+KEEP EXACTLY AS IN THE PHOTO
+- Timber sliding doors on the left wall
+- Far window and curtains
+- White decorative mantel on the right wall
+- Right foreground doorframe
+- Ceiling light fitting
+- Every wall, window, door, doorway, floor, ceiling, light fitting and fixed feature, exactly where and how it is. Use only the walls and floor visible in the photo — never extend, add or move a wall, and never mount anything on a wall that is not in the photo.
+- Keep every doorway and walking path clear.
+
+FINISHING TOUCHES
+You may add a few small finishing touches that suit this layout: a rug under the seating or dining table, a floor or table lamp, cushions and a throw, a plant, books and small decor on surfaces, and artwork on plain wall areas (never over windows, doors, switches or other features). Do not add any other large furniture, and do not move the pieces listed above.
+
+The result must look like a real, professionally staged listing photograph of this exact room.

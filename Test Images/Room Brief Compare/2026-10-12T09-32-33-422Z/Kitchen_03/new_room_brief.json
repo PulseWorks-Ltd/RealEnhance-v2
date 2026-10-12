@@ -1,0 +1,140 @@
+{
+  "roomSummary": "An open-plan kitchen and dining area featuring modern white and timber cabinetry with light wood flooring and tiled kitchen floor.",
+  "camera": "The camera stands in the living or dining entry area looking past a glass stair railing toward the kitchen and back exterior door.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "stairs",
+      "description": "Glass balustrade of the staircase on the far left",
+      "box": [
+        0,
+        0,
+        0.12,
+        0.98
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "door",
+      "description": "Dark grey exterior or passage door on the far left wall",
+      "box": [
+        0.11,
+        0.32,
+        0.17,
+        0.72
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "window",
+      "description": "Tall vertical window with a roller blind on the back wall",
+      "box": [
+        0.28,
+        0.36,
+        0.41,
+        0.67
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "light_fitting",
+      "description": "Black pendant light hanging above the kitchen counter",
+      "box": [
+        0.47,
+        0.13,
+        0.51,
+        0.34
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "kitchen_bench",
+      "description": "White kitchen peninsula with integrated sink and dishwasher",
+      "box": [
+        0.34,
+        0.56,
+        0.58,
+        0.87
+      ]
+    },
+    {
+      "id": "L6",
+      "type": "kitchen_cabinetry",
+      "description": "Wood-grain overhead cabinets mounted on the right wall",
+      "box": [
+        0.54,
+        0,
+        1,
+        0.42
+      ]
+    },
+    {
+      "id": "L7",
+      "type": "appliance",
+      "description": "Built-in oven and cooktop beneath overhead cabinetry",
+      "box": [
+        0.63,
+        0.58,
+        0.81,
+        0.84
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Back wall",
+      "description": "White wall containing the tall vertical window and leading to the dark door",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    },
+    {
+      "name": "Right kitchen wall",
+      "description": "Wall fully fitted with kitchen splashback tiles and cabinetry",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    }
+  ],
+  "zones": [
+    {
+      "name": "Kitchen",
+      "description": "Tiled floor section with peninsula, cooktop, and cabinetry on the right"
+    },
+    {
+      "name": "Dining / Circulation Area",
+      "description": "Light timber floor section in the foreground beside the glass stair railing"
+    }
+  ],
+  "kitchenVisible": true,
+  "fridgeSpace": {
+    "present": false,
+    "description": "No visible empty fridge cavity in the shot"
+  },
+  "layout": [
+    {
+      "item": "Dining table",
+      "placement": "In the open foreground on the timber floor, positioned centrally between the glass stair railing and the kitchen peninsula"
+    },
+    {
+      "item": "Dining chairs",
+      "placement": "Four chairs tucked neatly around the dining table"
+    },
+    {
+      "item": "Countertop decor",
+      "placement": "A decorative bowl and small vase placed on the edge of the white kitchen peninsula"
+    }
+  ],
+  "relationships": [
+    "The dining table sits in the foreground on the timber flooring without obstructing the walkway to the dark door or the kitchen cooking zone."
+  ],
+  "avoid": [
+    "Do not place bar stools along the kitchen peninsula as there is no counter overhang.",
+    "Do not block the walkway between the staircase railing and the dark door.",
+    "Do not place furniture directly in front of the tall back window."
+  ],
+  "keepUntouched": [
+    "Glass stair balustrade on the left",
+    "Dark door and tall window on the back wall",
+    "Pendant light fixture above the kitchen counter",
+    "Kitchen cabinetry, countertops, and appliances"
+  ]
+}
