@@ -1,0 +1,28 @@
+[
+  {
+    "photo": "Kitchen 03",
+    "roomType": "kitchen_dining",
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 20.8,
+      "calls": 1,
+      "byModel": {
+        "gemini-3.8-flash": 1
+      },
+      "inputTokens": 2279,
+      "outputTokens": 960,
+      "thinkingTokens": 956,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2279,
+          "outputTokens": 960,
+          "thinkingTokens": 956,
+          "latencyMs": 20709
+        }
+      ]
+    }
+  }
+]
