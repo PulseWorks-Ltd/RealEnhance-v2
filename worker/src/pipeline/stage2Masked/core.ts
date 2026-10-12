@@ -2472,3 +2472,88 @@ export async function undoneOverlay(original: Buffer, staged: Buffer, mask: Uint
   return sharp(out, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 90 }).toBuffer();
 }
 
+// ── Floating-furniture check ────────────────────────────────────────────────
+// Gemini sometimes draws the room's floor a little higher or lower than the
+// real one. Pasted onto the real photo, a piece then hovers: its legs end on
+// the real wall/skirting instead of the floor (Bedroom 05, Oct 2026: a
+// bedside table with the power point showing underneath).
+//
+// 1) Real floor line: in the EMPTY original, each column is scanned upward
+//    from the bottom to the first strong horizontal edge (where the floor
+//    meets the skirting/wall/door), then median-smoothed.
+// 2) For every column the furniture covers, its lowest pixel is "grounded"
+//    when it reaches at least FLOAT_GROUND_MARGIN_PCT below that line.
+// 3) A run of ungrounded columns is a floating piece when it is wide enough,
+//    hangs close to the floor (not a wall shelf or pendant far above it), and
+//    reaches a free edge of the furniture on at least one side — so the gap
+//    between a table's grounded legs is not counted, but a table whose legs
+//    all stop short of the floor is.
+export const FLOAT_GROUND_MARGIN_PCT = Number(process.env.FLOAT_GROUND_MARGIN_PCT || 1);
+export const FLOAT_MIN_WIDTH_PCT = Number(process.env.FLOAT_MIN_WIDTH_PCT || 3);
+export const FLOAT_NEAR_FLOOR_PCT = Number(process.env.FLOAT_NEAR_FLOOR_PCT || 12);
+
+export async function realFloorLine(original: Buffer, w: number, h: number): Promise<Int32Array> {
+  const g = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(2).raw().toBuffer();
+  const step = Math.max(2, Math.round(h * 0.004));
+  const raw = new Int32Array(w).fill(-1);
+  for (let x = 0; x < w; x++) {
+    for (let y = h - 1 - step; y > h * 0.35; y--) {
+      if (Math.abs(g[(y - step) * w + x] - g[(y + step) * w + x]) >= 18) { raw[x] = y; break; }
+    }
+  }
+  const win = Math.max(3, Math.round(w * 0.01));
+  const line = new Int32Array(w).fill(-1);
+  for (let x = 0; x < w; x++) {
+    const v: number[] = [];
+    for (let k = -win; k <= win; k++) {
+      const xx = x + k;
+      if (xx >= 0 && xx < w && raw[xx] >= 0) v.push(raw[xx]);
+    }
+    if (v.length) { v.sort((a, b) => a - b); line[x] = v[v.length >> 1]; }
+  }
+  return line;
+}
+
+export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number };
+
+export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8Array, w: number, h: number) {
+  // Work at a fixed, modest size: the check is about shapes, not detail.
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const line = await realFloorLine(original, W, H);
+  const m = await sharp(Buffer.from(floorMask.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+    .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const margin = (FLOAT_GROUND_MARGIN_PCT / 100) * H;
+  const near = (FLOAT_NEAR_FLOOR_PCT / 100) * H;
+  // Per column: lowest furniture pixel (-1 = no furniture in this column).
+  const bottom = new Int32Array(W).fill(-1);
+  for (let x = 0; x < W; x++) for (let y = H - 1; y >= 0; y--) if (m[y * W + x] > 127) { bottom[x] = y; break; }
+  // 0 = no furniture, 1 = grounded (or unknown floor), 2 = hanging near the floor
+  const state = new Uint8Array(W);
+  for (let x = 0; x < W; x++) {
+    if (bottom[x] < 0) continue;
+    const f = line[x];
+    if (f < 0 || bottom[x] >= H - 2) { state[x] = 1; continue; }
+    const gap = f - bottom[x];
+    state[x] = bottom[x] >= f + margin ? 1 : gap <= near ? 2 : 1; // far above the floor: wall item, not checked
+  }
+  const runs: FloatingRun[] = [];
+  for (let x = 0; x < W; ) {
+    if (state[x] !== 2) { x++; continue; }
+    let x2 = x;
+    while (x2 + 1 < W && state[x2 + 1] === 2) x2++;
+    const freeLeft = x === 0 || state[x - 1] === 0;
+    const freeRight = x2 === W - 1 || state[x2 + 1] === 0;
+    const widthPct = ((x2 - x + 1) / W) * 100;
+    if (widthPct >= FLOAT_MIN_WIDTH_PCT && (freeLeft || freeRight)) {
+      let gapSum = 0, n = 0, bSum = 0, fSum = 0;
+      for (let k = x; k <= x2; k++) { gapSum += line[k] - bottom[k]; bSum += bottom[k]; fSum += line[k]; n++; }
+      runs.push({
+        x1Pct: +((x / W) * 100).toFixed(1), x2Pct: +((x2 / W) * 100).toFixed(1),
+        gapPct: +(((gapSum / n) / H) * 100).toFixed(1),
+        bottomPct: +(((bSum / n) / H) * 100).toFixed(1), floorPct: +(((fSum / n) / H) * 100).toFixed(1),
+      });
+    }
+    x = x2 + 1;
+  }
+  return { floating: runs.length > 0, runs };
+}

@@ -55,6 +55,7 @@ import {
   measureOutsideDrift,
   checkFraming,
   checkCameraAlignment,
+  checkFloatingFurniture,
   undoneOverlay,
   compositeLayers,
   removeSunPatches,
@@ -701,10 +702,20 @@ export async function runMaskedStage2Job(p: {
       // the traced framing check below matched the merged results on all 6.
       row.cameraAlignment = await checkCameraAlignment(original, staged).catch(() => null);
       const layers = await traceLayers(ctx);
+      // Floating furniture: a piece whose legs stop short of the REAL floor
+      // (Gemini drew the floor/wall line higher or lower). Needs only the real
+      // photo and the traced outline, so it runs before the blend and door
+      // check and saves those calls when a re-stage is needed anyway.
+      row.floatingCheck = await checkFloatingFurniture(original, layers.floor, w, h).catch((e: any) => ({ floating: false, runs: [], error: String(e?.message || e) }));
+      if (row.floatingCheck.floating) {
+        p.warn?.(`[${ctx.name}] furniture floating above the real floor: ${row.floatingCheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ends ${r.gapPct}% above the floor line`).join("; ")}`);
+      }
       if (row.framingCheck?.framingChanged) {
         // Reshaped room: paste-back can't fix it, so skip the blend and door
         // check (time and cost) and go straight to the re-stage / fallback.
         reasons.push("room reshaped");
+      } else if (row.floatingCheck.floating) {
+        reasons.push("furniture floating");
       } else {
         const hm = await harmonise(ctx, layers);
         final = hm.checkedBlend || hm.harmFinal;
@@ -733,6 +744,9 @@ export async function runMaskedStage2Job(p: {
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
     hints = [
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
+      ...(row.floatingCheck?.floating
+        ? ["Stand every piece of furniture firmly on the floor: legs and bases must touch the floor, never end on the wall or skirting board. Keep the line where the floor meets each wall exactly where it is in the input photo."]
+        : []),
       ...(row.framingCheck?.framingChanged
         ? ["Keep the camera exactly where it is: same framing, zoom and perspective as the input photo. Do not crop, widen, rotate or redraw the walls, ceiling, windows or doors — only add furniture."]
         : []),
