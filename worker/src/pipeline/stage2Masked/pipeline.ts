@@ -594,9 +594,14 @@ export async function finalDoorCheck(ctx: MaskedContext, finalImage: Buffer | nu
 
 // ── App entry point ──────────────────────────────────────────────────────────
 
-// STAGE2_MASKED_HARMONISE switches the app's main Stage 2 to this pipeline
-// (interior rooms only). Accepts on / 1 / true / yes. Off by default.
+// Switches the app's main Stage 2 to this pipeline (interior rooms only).
+// Off by default. Either:
+//   STAGE2_SPECIALIST_VALIDATORS=merged — the production switch. "on" and
+//     "off" keep their existing behaviour; jobs that don't take this path
+//     (refresh staging) treat "merged" exactly like "on".
+//   STAGE2_MASKED_HARMONISE=on / 1 / true / yes — the original test switch.
 export function maskedStage2Enabled(): boolean {
+  if (String(process.env.STAGE2_SPECIALIST_VALIDATORS || "").trim().toLowerCase() === "merged") return true;
   return ["on", "1", "true", "yes"].includes(String(process.env.STAGE2_MASKED_HARMONISE || "").trim().toLowerCase());
 }
 
