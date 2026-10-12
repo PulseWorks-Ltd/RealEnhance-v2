@@ -11372,6 +11372,12 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
                     console.warn("[STAGE2_MASKED_DEBUG_UPLOAD_FAILED]", { jobId: payload.jobId, file: name, error: uploadErr?.message || String(uploadErr) });
                   }
                 }
+                // Print this attempt's links straight away, so they can be
+                // found in the logs even if the job stops before the end.
+                for (const name of files) {
+                  const url = debugLinks[`attempt${attempt}/${name}`];
+                  if (url) console.log(`[STAGE2_MASKED_DEBUG_URL] job_id=${payload.jobId} attempt=${attempt} file=${name} url=${url}`);
+                }
               }
             : undefined,
           log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
