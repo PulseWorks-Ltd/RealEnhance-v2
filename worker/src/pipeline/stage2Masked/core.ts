@@ -333,6 +333,14 @@ export function buildTracePrompt(roomType: string, targets: string, kind: TraceK
 // Transparent pixels count as black; if most of the frame comes back white the
 // model has flipped the colours, so it is inverted (the continuity branch
 // handled the same polarity problem).
+// A trace must come back as a black-and-white mask. Gemini sometimes returns
+// a darkened copy of the photo instead (Kitchen 01, 2026-10-12: the
+// appliance trace was the room itself; its brighter parts — sofa, lamp,
+// table — were read as "appliances" and then removed from the furniture,
+// leaving a see-through sofa). Masks are almost all pure black or white
+// (only edges are grey); a photo has lots of mid-tones. Such a response is
+// rejected and treated as an empty trace.
+export const TRACE_MAX_MIDTONE_PCT = Number(process.env.TRACE_MAX_MIDTONE_PCT || 20);
 export async function binarizeTraceResponse(image: Buffer, w: number, h: number) {
   const gray = await sharp(image)
     .flatten({ background: "#000000" })
@@ -340,6 +348,12 @@ export async function binarizeTraceResponse(image: Buffer, w: number, h: number)
     .grayscale()
     .raw()
     .toBuffer();
+  let mid = 0;
+  for (let i = 0; i < w * h; i++) if (gray[i] > 40 && gray[i] < 215) mid++;
+  const midtonePct = Number(((mid / Math.max(1, w * h)) * 100).toFixed(1));
+  if (midtonePct > TRACE_MAX_MIDTONE_PCT) {
+    return { mask: new Uint8Array(w * h) as Mask, inverted: false, invalid: true, midtonePct };
+  }
   let mask = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) mask[i] = gray[i] >= 128 ? 1 : 0;
   let inverted = false;
@@ -347,7 +361,7 @@ export async function binarizeTraceResponse(image: Buffer, w: number, h: number)
     mask = invert(mask);
     inverted = true;
   }
-  return { mask, inverted };
+  return { mask, inverted, invalid: false, midtonePct };
 }
 
 // ── Mask helpers (binary masks: Uint8Array of 0/1, row-major) ────────────────
@@ -1448,6 +1462,7 @@ export function buildHarmonisePrompt(roomType: string): string {
 // bright), the broad lighting there is taken from the blend while the fine
 // texture stays the original's — so the carpet stays crisp and Gemini's
 // mottling doesn't come through. Darkening only, so nothing can appear.
+export const SUN_PATCH_MIN_BRIGHTNESS = Number(process.env.SUN_PATCH_MIN_BRIGHTNESS || 1.25);
 export async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer) {
   const meta = await sharp(safe).metadata();
   const fw = meta.width || 0, fh = meta.height || 0;
@@ -1473,6 +1488,30 @@ export async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPn
   const gains = [0, 1, 2].map((c) => (count > 0 && sums[c + 3] > 0 ? Math.min(1.4, Math.max(0.7, sums[c] / sums[c + 3])) : 1));
   const Hadj = Buffer.alloc(N * 3);
   for (let i = 0; i < N * 3; i++) Hadj[i] = Math.min(255, Math.round(H[i] * gains[i % 3]));
+  // A real sun patch is (a) clearly brighter than the room around it in the
+  // original and (b) only a lighting change in the blend — the blend adds no
+  // new shapes there. Without these, a curtain Gemini nudged in its blend was
+  // read as a "sun patch" and smeared onto the real curtain (Bedroom 12).
+  const lumOf = (buf: Buffer) => {
+    const out = Buffer.alloc(N);
+    for (let i = 0; i < N; i++) out[i] = Math.round((buf[i * 3] + buf[i * 3 + 1] + buf[i * 3 + 2]) / 3);
+    return out;
+  };
+  const aL = lumOf(A), hL = lumOf(Hadj);
+  const [aLB, hLB, aRoom] = await Promise.all([
+    sharp(aL, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer(),
+    sharp(hL, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer(),
+    sharp(aL, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(4, 50 * u)).grayscale().raw().toBuffer(),
+  ]);
+  const dARaw = Buffer.alloc(N), dHRaw = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) {
+    dARaw[i] = Math.min(255, Math.abs(aL[i] - aLB[i]) * 4);
+    dHRaw[i] = Math.min(255, Math.abs(hL[i] - hLB[i]) * 4);
+  }
+  const [dA, dH] = await Promise.all([
+    sharp(dARaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 6 * u)).grayscale().raw().toBuffer(),
+    sharp(dHRaw, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 6 * u)).grayscale().raw().toBuffer(),
+  ]);
   const [aW, hW, aS] = await Promise.all([
     sharp(A, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(2, 10 * u)).raw().toBuffer(),
     sharp(Hadj, { raw: { width: fw, height: fh, channels: 3 } }).blur(Math.max(2, 10 * u)).raw().toBuffer(),
@@ -1494,7 +1533,9 @@ export async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPn
     const sa = a0 + a1 + a2 || 1, sh = h0 + h1 + h2 || 1;
     const chroma = Math.max(Math.abs(a0 / sa - h0 / sh), Math.abs(a1 / sa - h1 / sh), Math.abs(a2 / sa - h2 / sh));
     const r = lh / Math.max(1, la);
-    if (la >= 70 && r >= 0.3 && r <= 0.85 && chroma <= 0.1) cand[k] = 1;
+    const brighterThanRoom = la >= aRoom[i] * SUN_PATCH_MIN_BRIGHTNESS;
+    const lightingOnly = dH[i] <= dA[i] * 1.6 + 6;
+    if (la >= 70 && r >= 0.45 && r <= 0.85 && chroma <= 0.1 && brighterThanRoom && lightingOnly) cand[k] = 1;
   }
   cand = erode(dilate(cand, qw, qh, 2), qw, qh, 2);
   const region = new Uint8Array(qw * qh);
@@ -1502,6 +1543,10 @@ export async function removeSunPatches(safe: Buffer, harmonised: Buffer, solidPn
   for (const piece of labelComponents(cand, qw, qh)) {
     if (piece.pixels.length < minArea) continue;
     if (!piece.pixels.some((k) => near[k])) continue; // only patches next to the furniture
+    // Not at the photo's side edges, where curtains and side walls are (a
+    // curtain Gemini nudged at the edge read as a "patch" — Bedroom 12).
+    const sideMargin = Math.max(2, Math.round(qw * 0.04));
+    if (piece.x1 <= sideMargin || piece.x2 >= qw - 1 - sideMargin) continue;
     for (const k of piece.pixels) region[k] = 1;
   }
   const regionPct = ratioOf(region) * 100;
@@ -1866,6 +1911,7 @@ export async function checkBlend(safe: Buffer, blend: Buffer, furniture: Uint8Ar
 //    change), never its pixels, so the furniture stays crisp and in place.
 // Nothing outside the shadow zone and the furniture can change at all, so a
 // window, door or wall Gemini altered in its blend can never come through.
+export const HARM_MAX_FURNITURE_BRIGHTEN = Number(process.env.HARM_MAX_FURNITURE_BRIGHTEN || 1.03);
 export const HARM_SHADOW_SOFTEN = Math.max(1, Number(process.env.HARM_SHADOW_SOFTEN || 12));
 export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solidPng: Buffer, corePng: Buffer, zonePng: Buffer) {
   const meta = await sharp(safe).metadata();
@@ -1907,11 +1953,22 @@ export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solid
     return out;
   };
   const aLum = lum(A), hLum = lum(Hadj);
-  const [aLumBlur, hLumBlur, aLumWide, hLumWide] = await Promise.all([
+  // Furniture lighting is measured from the furniture's own pixels only
+  // (weighted by its alpha). Measured over the plain neighbourhood, Gemini's
+  // brighter wall right beside a piece leaked in and brightened the piece's
+  // soft edge, leaving a pale glow around it (Bedroom 12's plant).
+  const aLumF = Buffer.alloc(N), hLumF = Buffer.alloc(N);
+  for (let i = 0; i < N; i++) {
+    const wgt = coreA[i] / 255;
+    aLumF[i] = Math.round(aLum[i] * wgt);
+    hLumF[i] = Math.round(hLum[i] * wgt);
+  }
+  const [aLumBlur, hLumBlur, aLumWide, hLumWide, fWide] = await Promise.all([
     sharp(aLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer(),
     sharp(hLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(1, 3 * u)).grayscale().raw().toBuffer(),
-    sharp(aLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
-    sharp(hLum, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
+    sharp(aLumF, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
+    sharp(hLumF, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
+    sharp(coreA, { raw: { width: fw, height: fh, channels: 1 } }).blur(Math.max(2, 10 * u)).grayscale().raw().toBuffer(),
   ]);
   const texRaw = Buffer.alloc(N);
   for (let i = 0; i < N; i++) {
@@ -1999,8 +2056,11 @@ export async function compositeHarmonise(safe: Buffer, harmonised: Buffer, solid
     if (dark > maxDark) maxDark = dark;
     // Furniture lighting: Gemini's broad brightness change on the furniture.
     let light = 1;
-    if (furnitureKept && ca > 0) {
-      const r = Math.min(1.2, Math.max(0.8, (hLumWide[i] + 1) / (aLumWide[i] + 1)));
+    if (furnitureKept && ca > 0 && fWide[i] > 8) {
+      // Darken freely (shading), brighten only a touch: where Gemini redrew a
+      // piece a few pixels off (plant leaves), "brighter in the blend" is just
+      // wall showing through, and brightening it left a pale glow.
+      const r = Math.min(HARM_MAX_FURNITURE_BRIGHTEN, Math.max(0.8, (hLumWide[i] + 1) / (aLumWide[i] + 1)));
       light = 1 + (r - 1) * ca;
       if (Math.abs(light - 1) > 0.03) lightingChangedPx++;
     }

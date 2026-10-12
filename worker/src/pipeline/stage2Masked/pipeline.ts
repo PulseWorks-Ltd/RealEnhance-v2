@@ -182,7 +182,13 @@ async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Arr
   }
   if (!raw) return floor;
   save(ctx, "3_trace_closeup_raw.png", raw);
-  const crop = (await binarizeTraceResponse(raw, cw, ch)).mask;
+  const cropBin = await binarizeTraceResponse(raw, cw, ch);
+  if (cropBin.invalid) {
+    warn(ctx, `[${ctx.name}] close-up trace REJECTED: not a mask (${cropBin.midtonePct}% mid-tones)`);
+    row.closeUpRetrace.rejected = true;
+    return floor;
+  }
+  const crop = cropBin.mask;
   const added = new Uint8Array(w * h);
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     const gi = (top + y) * w + left + x;
@@ -234,7 +240,15 @@ export async function traceLayers(ctx: MaskedContext) {
     })
   );
   row.traceCostUsd = Number(passes.reduce((sum, p) => sum + (p.cost || 0), 0).toFixed(4));
-  row.tracePasses = passes.map((p) => ({ pass: p.label, coveragePct: +(ratioOf(p.mask) * 100).toFixed(1), coloursFlipped: p.inverted }));
+  row.tracePasses = passes.map((p) => ({
+    pass: p.label,
+    coveragePct: +(ratioOf(p.mask) * 100).toFixed(1),
+    coloursFlipped: p.inverted,
+    ...((p as any).invalid ? { rejected: `not a mask (${(p as any).midtonePct}% mid-tones)` } : {}),
+  }));
+  for (const p of passes) {
+    if ((p as any).invalid) warn(ctx, `[${ctx.name}] ${p.label} trace REJECTED: Gemini returned a photo, not a mask (${(p as any).midtonePct}% mid-tones) — treated as empty`);
+  }
 
   // Floor furniture: merge the floor passes (OR), drop tiny specks only (thin
   // parts like lamp stems and chair legs must survive), then fill holes.
@@ -287,7 +301,9 @@ export async function traceLayers(ctx: MaskedContext) {
     }
     if (mirrorRaw) {
       save(ctx, "3_trace_mirrors_raw.png", mirrorRaw);
-      mirrorMask = (await binarizeTraceResponse(mirrorRaw, w, h)).mask;
+      const mirrorBin = await binarizeTraceResponse(mirrorRaw, w, h);
+      if (mirrorBin.invalid) warn(ctx, `[${ctx.name}] mirror trace REJECTED: not a mask — reflections will be dropped`);
+      mirrorMask = mirrorBin.mask;
       row.mirrorPctOfImage = +(ratioOf(mirrorMask) * 100).toFixed(1);
     }
   }
@@ -327,7 +343,9 @@ export async function traceLayers(ctx: MaskedContext) {
     let spaceMask = new Uint8Array(w * h);
     if (spaceRaw) {
       save(ctx, "3_trace_appliance_spaces_raw.png", spaceRaw);
-      spaceMask = (await binarizeTraceResponse(spaceRaw, w, h)).mask;
+      const spaceBin = await binarizeTraceResponse(spaceRaw, w, h);
+      if (spaceBin.invalid) warn(ctx, `[${ctx.name}] appliance-space trace REJECTED: not a mask — appliances will be dropped`);
+      spaceMask = spaceBin.mask;
       row.applianceSpacePctOfImage = +(ratioOf(spaceMask) * 100).toFixed(1);
     }
     const appl = await evaluateReflections(original, staged, appAll, floor, w, h, spaceMask, { what: "appliance", space: "an empty appliance space", maxAreaPct: 15 });
