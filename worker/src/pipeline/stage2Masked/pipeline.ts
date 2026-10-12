@@ -1,0 +1,563 @@
+// Stage 2 "masked" staging — the pipeline steps, shared by the app (see
+// runMaskedStage2Job below, called from worker.ts) and the test script
+// (scripts/stage2-mask-pasteback-test.ts), so both run exactly the same code.
+//
+//   traceLayers      Gemini traces the furniture it added (plus wall art,
+//                    mirror reflections, kitchen appliances); each layer is
+//                    checked; the framing check spots a reshaped room.
+//   harmonise        Furniture pasted onto the real photo (safe composite),
+//                    Gemini adds shadows/lighting (blend), the app builds its
+//                    own final from it, then the blend itself is checked patch
+//                    by patch and repaired (checked blend = the final).
+//   finalDoorCheck   Code check, then (only if a doorway looks covered) an AI
+//                    review of the final image: can people still walk through
+//                    the real doorways?
+
+import fs from "fs";
+import path from "path";
+import sharp from "sharp";
+import { closestGeminiAspectRatio } from "../../ai/gemini";
+import {
+  TRACE_MODEL,
+  TRACE_IMAGE_SIZE,
+  SOLID_GROW_PCT,
+  CORE_ERODE_PCT,
+  ZONE_GROW_PCT,
+  ZONE_DOWN_PCT,
+  HARMONISE_MODEL,
+  HARMONISE_IMAGE_SIZE,
+  HARM_ZONE_GROW_PCT,
+  HARM_ZONE_DOWN_PCT,
+  BLEND_MAX_REPAIR_PCT,
+  DOOR_CHECK,
+  callGeminiImage,
+  imagePart,
+  approxOutputCost,
+  tracePassesFor,
+  buildTracePrompt,
+  buildMirrorPrompt,
+  buildApplianceSpacePrompt,
+  buildHarmonisePrompt,
+  binarizeTraceResponse,
+  removeSmallComponents,
+  labelComponents,
+  evaluateReflections,
+  fillChangedGaps,
+  fillFurnitureColumns,
+  maskToPng,
+  evaluateWallArt,
+  refineArtRegion,
+  dilate,
+  erode,
+  growDown,
+  ratioOf,
+  layersOverlay,
+  measureOutsideDrift,
+  checkFraming,
+  undoneOverlay,
+  compositeLayers,
+  removeSunPatches,
+  compositeHarmonise,
+  checkStructureRetained,
+  checkBlend,
+  doorwayAppearsBlocked,
+  askDoorAccess,
+  type DoorOpening,
+  type Mask,
+} from "./core";
+
+// Where intermediate images go (debug files, test output) and where saved
+// Gemini outputs come from in offline replays. Both optional.
+export type MaskedIO = {
+  save?: (name: string, data: Buffer | string) => void;
+  load?: (name: string) => Buffer | null;
+  log?: (msg: string) => void;
+  warn?: (msg: string) => void;
+};
+
+export type MaskedContext = {
+  name: string; // label for logs
+  original: Buffer; // the Stage 2 input (the real room)
+  originalPath: string;
+  originalMime: string;
+  staged: Buffer; // Gemini's staged image
+  roomType: string;
+  aspectRatio: string;
+  w: number;
+  h: number;
+  // Trace tightly, without shadows (harmonise). The test script's older merge
+  // modes use the wider "silhouette and footprint" wording.
+  tight: boolean;
+  // Offline replay: no Gemini calls; saved outputs are read through io.load.
+  offline: boolean;
+  dir: string; // folder for door-check input images
+  io: MaskedIO;
+  row: any; // report, filled in step by step
+};
+
+function save(ctx: MaskedContext, name: string, data: Buffer | string) {
+  ctx.io.save?.(name, data);
+}
+function log(ctx: MaskedContext, msg: string) {
+  (ctx.io.log || console.log)(msg);
+}
+function warn(ctx: MaskedContext, msg: string) {
+  (ctx.io.warn || console.warn)(msg);
+}
+
+export type TraceLayers = Awaited<ReturnType<typeof traceLayers>>;
+
+export async function traceLayers(ctx: MaskedContext) {
+  const { original, staged, w, h, row } = ctx;
+  const stagedMeta = await sharp(staged).metadata();
+  const stagedMime = stagedMeta.format === "jpeg" ? "image/jpeg" : stagedMeta.format === "png" ? "image/png" : "image/webp";
+  const passes = await Promise.all(
+    tracePassesFor(ctx.roomType).map(async (pass) => {
+      if (ctx.offline) {
+        const saved = ctx.io.load?.(`3_trace_${pass.label}_raw.png`) ?? null;
+        if (!saved) {
+          warn(ctx, `[${ctx.name}] FROM_RUN: no saved "${pass.label}" trace — treating it as empty`);
+          return { label: pass.label, kind: pass.kind, mask: new Uint8Array(w * h), inverted: false, cost: 0 };
+        }
+        save(ctx, `3_trace_${pass.label}_raw.png`, saved);
+        return { label: pass.label, kind: pass.kind, ...(await binarizeTraceResponse(saved, w, h)), cost: 0 };
+      }
+      const res = await callGeminiImage({
+        model: TRACE_MODEL,
+        parts: [
+          { text: buildTracePrompt(ctx.roomType, pass.targets, pass.kind, ctx.tight) },
+          { text: "STAGED_IMAGE" }, imagePart(staged, stagedMime),
+          { text: "EMPTY_IMAGE" }, imagePart(original, ctx.originalMime),
+        ],
+        imageSize: TRACE_IMAGE_SIZE,
+        aspectRatio: ctx.aspectRatio,
+      });
+      save(ctx, `3_trace_${pass.label}_raw.png`, res.image);
+      const bin = await binarizeTraceResponse(res.image, w, h);
+      return { label: pass.label, kind: pass.kind, ...bin, cost: approxOutputCost(res.usage) };
+    })
+  );
+  row.traceCostUsd = Number(passes.reduce((sum, p) => sum + (p.cost || 0), 0).toFixed(4));
+  row.tracePasses = passes.map((p) => ({ pass: p.label, coveragePct: +(ratioOf(p.mask) * 100).toFixed(1), coloursFlipped: p.inverted }));
+
+  // Floor furniture: merge the floor passes (OR), drop tiny specks only (thin
+  // parts like lamp stems and chair legs must survive), then fill holes.
+  const minSpeck = Math.max(24, Math.round(w * h * 0.0002));
+  // The wall-art pass is the authority on wall items: Gemini sometimes also
+  // marks art in the furniture passes, which would let it skip the wall-art
+  // safety checks, so anything the art pass marks is taken out of the floor
+  // layer first.
+  let artAll = new Uint8Array(w * h);
+  for (const p of passes) if (p.kind === "wall_art") for (let i = 0; i < artAll.length; i++) artAll[i] |= p.mask[i];
+  artAll = removeSmallComponents(artAll, w, h, minSpeck);
+  let floor = new Uint8Array(w * h);
+  for (const p of passes) if (p.kind === "floor") for (let i = 0; i < floor.length; i++) floor[i] |= p.mask[i] & (artAll[i] ^ 1);
+  floor = removeSmallComponents(floor, w, h, minSpeck);
+  // Reflections: their own pass is the authority too (so a "reflection" can't
+  // skip its checks by also being marked as furniture), except pieces that
+  // turn out to be the furniture itself.
+  let reflAll = new Uint8Array(w * h);
+  for (const p of passes) if (p.kind === "reflection") for (let i = 0; i < reflAll.length; i++) reflAll[i] |= p.mask[i];
+  reflAll = removeSmallComponents(reflAll, w, h, minSpeck);
+  // Mirrors in the empty room — only looked up when a reflection was found.
+  let mirrorMask: Mask | null = null;
+  if (labelComponents(reflAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
+    let mirrorRaw: Buffer | null = null;
+    if (ctx.offline) {
+      mirrorRaw = ctx.io.load?.("3_trace_mirrors_raw.png") ?? null;
+      if (!mirrorRaw) warn(ctx, `[${ctx.name}] FROM_RUN: no saved mirrors trace — reflections will be dropped`);
+    } else {
+      mirrorRaw = await callGeminiImage({
+        model: TRACE_MODEL,
+        parts: [{ text: buildMirrorPrompt(ctx.roomType) }, imagePart(original, ctx.originalMime)],
+        imageSize: TRACE_IMAGE_SIZE,
+        aspectRatio: ctx.aspectRatio,
+      })
+        .then((res) => {
+          row.mirrorTraceCostUsd = approxOutputCost(res.usage);
+          return res.image;
+        })
+        .catch((e) => {
+          warn(ctx, `[${ctx.name}] mirror trace failed: ${String(e?.message || e).slice(0, 200)} — reflections will be dropped`);
+          return null;
+        });
+    }
+    if (mirrorRaw) {
+      save(ctx, "3_trace_mirrors_raw.png", mirrorRaw);
+      mirrorMask = (await binarizeTraceResponse(mirrorRaw, w, h)).mask;
+      row.mirrorPctOfImage = +(ratioOf(mirrorMask) * 100).toFixed(1);
+    }
+  }
+  const refl = await evaluateReflections(original, staged, reflAll, floor, w, h, mirrorMask ?? new Uint8Array(w * h));
+  row.reflections = refl.report;
+  for (const piece of refl.report) {
+    log(ctx, `[${ctx.name}] reflection ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
+  }
+  for (let i = 0; i < floor.length; i++) if (refl.keep[i] || refl.dropped[i]) floor[i] = 0;
+
+  // Appliances (kitchens): their pass is the authority; each is kept only
+  // inside an empty appliance space of the real room, then treated exactly
+  // like furniture (shadows, edges, lighting).
+  let appAll = new Uint8Array(w * h);
+  for (const p of passes) if (p.kind === "appliance") for (let i = 0; i < appAll.length; i++) appAll[i] |= p.mask[i];
+  appAll = removeSmallComponents(appAll, w, h, minSpeck);
+  if (labelComponents(appAll, w, h).some((p) => p.pixels.length >= Math.max(64, Math.round(w * h * 0.0005)))) {
+    let spaceRaw: Buffer | null = null;
+    if (ctx.offline) {
+      spaceRaw = ctx.io.load?.("3_trace_appliance_spaces_raw.png") ?? null;
+    } else {
+      spaceRaw = await callGeminiImage({
+        model: TRACE_MODEL,
+        parts: [{ text: buildApplianceSpacePrompt(ctx.roomType) }, imagePart(original, ctx.originalMime)],
+        imageSize: TRACE_IMAGE_SIZE,
+        aspectRatio: ctx.aspectRatio,
+      })
+        .then((res) => {
+          row.applianceSpaceTraceCostUsd = approxOutputCost(res.usage);
+          return res.image;
+        })
+        .catch((e) => {
+          warn(ctx, `[${ctx.name}] appliance-space trace failed: ${String(e?.message || e).slice(0, 200)} — appliances will be dropped`);
+          return null;
+        });
+    }
+    let spaceMask = new Uint8Array(w * h);
+    if (spaceRaw) {
+      save(ctx, "3_trace_appliance_spaces_raw.png", spaceRaw);
+      spaceMask = (await binarizeTraceResponse(spaceRaw, w, h)).mask;
+      row.applianceSpacePctOfImage = +(ratioOf(spaceMask) * 100).toFixed(1);
+    }
+    const appl = await evaluateReflections(original, staged, appAll, floor, w, h, spaceMask, { what: "appliance", space: "an empty appliance space", maxAreaPct: 15 });
+    row.appliances = appl.report;
+    for (const piece of appl.report) log(ctx, `[${ctx.name}] appliance ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
+    for (let i = 0; i < floor.length; i++) {
+      if (appl.dropped[i]) floor[i] = 0;
+      if (appl.keep[i]) floor[i] = 1;
+    }
+  }
+  const tracedRatio = ratioOf(floor);
+  // Harmonise keeps the tight outline (only small enclosed holes filled), so
+  // no floor or shadow from the staged image comes along with the furniture.
+  // Gaps inside a traced piece (a coffee table Gemini drew black on top of a
+  // white rug) are filled too, but only where the staged image really
+  // differs from the original — bare floor showing between chair legs stays.
+  const tightFloor = ctx.tight ? await fillChangedGaps(floor, original, staged, w, h) : null;
+  if (tightFloor) row.possiblyMissedByTrace = (tightFloor as any).possiblyMissedByTrace;
+  floor = fillFurnitureColumns(floor, w, h);
+  const furnitureRatio = ratioOf(floor);
+  save(ctx, "3_mask_traced.png", await maskToPng(floor, w, h));
+  if (furnitureRatio < 0.01) throw new Error(`tracing found almost no furniture (${(furnitureRatio * 100).toFixed(2)}% of image)`);
+
+  // Wall art: its own layer, kept piece by piece only where it is safe.
+  const art = await evaluateWallArt(original, staged, artAll, floor, w, h);
+  row.wallArt = art.report;
+  for (const piece of art.report) {
+    log(ctx, `[${ctx.name}] wall art ${piece.kept ? "KEPT" : "DROPPED"} (${piece.areaPct}% of image): ${piece.reason}`);
+  }
+
+  // Solid layer = furniture + kept art, with a thin margin. Shadow zone =
+  // around and below floor furniture, outside the solid layer.
+  const artOnly = await refineArtRegion(original, staged, art.keep, w, h);
+  // Kept reflections are carried over exactly like kept art: refined to where
+  // the staged image actually differs, taken per pixel, no shadow zone.
+  const reflRegion = await refineArtRegion(original, staged, refl.keep, w, h);
+  const artRegion = new Uint8Array(w * h);
+  for (let i = 0; i < artRegion.length; i++) artRegion[i] = artOnly[i] | reflRegion[i];
+  let solid = new Uint8Array(w * h);
+  for (let i = 0; i < solid.length; i++) solid[i] = floor[i] | artRegion[i];
+  solid = dilate(solid, w, h, Math.max(1, Math.round((w * SOLID_GROW_PCT) / 100)));
+  let zone = dilate(floor, w, h, Math.round((w * ZONE_GROW_PCT) / 100));
+  zone = growDown(zone, w, h, Math.round((h * ZONE_DOWN_PCT) / 100));
+  for (let i = 0; i < zone.length; i++) if (solid[i]) zone[i] = 0;
+  row.maskPct = {
+    traced: +(tracedRatio * 100).toFixed(1),
+    furniture: +(furnitureRatio * 100).toFixed(1),
+    wallArtKept: +(ratioOf(art.keep) * 100).toFixed(1),
+    wallArtDropped: +(ratioOf(art.dropped) * 100).toFixed(1),
+    reflectionsKept: +(ratioOf(reflRegion) * 100).toFixed(1),
+    reflectionsDropped: +(ratioOf(refl.dropped) * 100).toFixed(1),
+    solid: +(ratioOf(solid) * 100).toFixed(1),
+    shadowZone: +(ratioOf(zone) * 100).toFixed(1),
+  };
+  // Core = furniture shrunk inwards; wall art has no core (decided per pixel).
+  const core = erode(floor, w, h, Math.max(1, Math.round((w * CORE_ERODE_PCT) / 100)));
+  for (let i = 0; i < core.length; i++) core[i] |= artRegion[i];
+  const solidPng = await maskToPng(solid, w, h);
+  save(ctx, "3_mask_final.png", solidPng);
+  save(ctx, "3_mask_shadow_zone.png", await maskToPng(zone, w, h));
+  const droppedAll = new Uint8Array(w * h);
+  for (let i = 0; i < droppedAll.length; i++) droppedAll[i] = art.dropped[i] | refl.dropped[i];
+  const traced = await layersOverlay(staged, floor, artOnly, droppedAll, w, h, reflRegion);
+  save(ctx, "3_mask_overlay.jpg", traced);
+
+  // Room-change measurements ignore furniture and ALL traced art (kept or
+  // dropped), so they reflect the room itself.
+  const measureMask = new Uint8Array(w * h);
+  for (let i = 0; i < measureMask.length; i++) measureMask[i] = solid[i] | artAll[i] | reflAll[i];
+  row.stagedChangesOutsideMask = await measureOutsideDrift(original, staged, measureMask, w, h);
+  row.framingCheck = await checkFraming(original, staged, measureMask, w, h);
+  if (row.framingCheck.framingChanged) {
+    warn(ctx, `[${ctx.name}] Gemini reshaped/reframed the room (typical wall/ceiling patch differs by ${row.framingCheck.medianDiff}) — paste-back can't fix this; this photo would need re-staging`);
+  }
+  const undone = await undoneOverlay(original, staged, solid, w, h);
+  save(ctx, "4_changes_removed_by_pasteback.jpg", undone);
+  return { floor, tightFloor, artRegion, solid, zone, core, solidPng, traced, undone };
+}
+
+export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
+  const { original, staged, w, h, row } = ctx;
+  const { tightFloor, artRegion } = layers;
+  if (!tightFloor) throw new Error("harmonise needs tight tracing (ctx.tight)");
+  let harmRaw: Buffer | null = null;
+  let checkedBlend: Buffer | null = null, checkedBlendView: Buffer | null = null;
+  log(ctx, `[${ctx.name}] harmonise: safe composite -> Gemini blend -> borrow shadows/lighting only`);
+  // Phase 1: original room + tightly traced furniture + kept art, no shadows.
+  let tSolid = new Uint8Array(w * h);
+  for (let i = 0; i < tSolid.length; i++) tSolid[i] = tightFloor[i] | artRegion[i];
+  tSolid = dilate(tSolid, w, h, Math.max(1, Math.round((w * SOLID_GROW_PCT) / 100)));
+  const tCore = erode(tightFloor, w, h, Math.max(1, Math.round((w * CORE_ERODE_PCT) / 100)));
+  for (let i = 0; i < tCore.length; i++) tCore[i] |= artRegion[i];
+  const tSolidPng = await maskToPng(tSolid, w, h);
+  const tCorePng = await maskToPng(tCore, w, h);
+  save(ctx, "3_mask_tight.png", tSolidPng);
+  const safeRes = await compositeLayers(original, staged, tSolidPng, tCorePng, await maskToPng(new Uint8Array(w * h), w, h), w, h, false, true);
+  const edgeMattePctOfBand = safeRes.edgeMattePctOfBand;
+  const safeFinal = safeRes.buffer;
+  save(ctx, "9_safe_composite.webp", safeFinal);
+
+  // Phase 2: Gemini adds shadows / blends lighting on the safe image.
+  if (ctx.offline) {
+    harmRaw = ctx.io.load?.("9_harmonise_raw.png") ?? null;
+    if (!harmRaw) warn(ctx, `[${ctx.name}] FROM_RUN: no saved 9_harmonise_raw.png — using the safe composite as the final`);
+  } else {
+    harmRaw = await callGeminiImage({
+      model: HARMONISE_MODEL,
+      parts: [{ text: buildHarmonisePrompt(ctx.roomType) }, imagePart(safeFinal, "image/webp")],
+      imageSize: HARMONISE_IMAGE_SIZE,
+      aspectRatio: ctx.aspectRatio,
+    })
+      .then((res) => {
+        row.harmoniseCostUsd = approxOutputCost(res.usage);
+        return res.image;
+      })
+      .catch((e) => {
+        warn(ctx, `[${ctx.name}] harmonise call failed: ${String(e?.message || e).slice(0, 200)}`);
+        row.harmoniseError = String(e?.message || e).slice(0, 300);
+        return null;
+      });
+  }
+  if (harmRaw) save(ctx, "9_harmonise_raw.png", harmRaw);
+
+  // Phase 3: borrow only shadows (near furniture) and furniture lighting.
+  let hZone = dilate(tightFloor, w, h, Math.round((w * HARM_ZONE_GROW_PCT) / 100));
+  hZone = growDown(hZone, w, h, Math.round((h * HARM_ZONE_DOWN_PCT) / 100));
+  for (let i = 0; i < hZone.length; i++) if (tSolid[i]) hZone[i] = 0;
+  const affected = new Uint8Array(w * h);
+  for (let i = 0; i < affected.length; i++) affected[i] = tSolid[i] | hZone[i];
+  save(ctx, "3_mask_harmonise_shadow_zone.png", await maskToPng(hZone, w, h));
+  row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1), edgeMattePctOfBand };
+  let blendUsable = !!harmRaw;
+  if (harmRaw) {
+    // Did Gemini keep the room's framing in its blend? If not, its shadows
+    // won't line up, so none of it is used.
+    const framing = await checkFraming(safeFinal, harmRaw, affected, w, h);
+    row.harmonise.blendFraming = framing;
+    // How much Gemini changed the rest of the room in its blend (ignored either way).
+    row.harmonise.blendChangesElsewhere = await measureOutsideDrift(safeFinal, harmRaw, affected, w, h);
+    if (framing.framingChanged) {
+      blendUsable = false;
+      warn(ctx, `[${ctx.name}] Gemini's blend reframed the room (median ${framing.medianDiff}) — using the safe composite without shadows`);
+    }
+  }
+  let sunPatchMask: Mask | null = null;
+  let harmFinal: Buffer;
+  if (blendUsable) {
+    const hZonePng = await maskToPng(hZone, w, h);
+    // The safe composite's own furniture alpha (exactly which pixels are
+    // staged furniture) protects the furniture from floor shadow/sun steps.
+    const furnPng = safeRes.furnitureAlphaPng;
+    save(ctx, "9_furniture_alpha.png", furnPng);
+    const sun = await removeSunPatches(safeFinal, harmRaw!, tSolidPng, furnPng, hZonePng);
+    row.harmonise.sunPatchPctOfImage = sun.regionPctOfImage;
+    if (sun.regionMask) {
+      save(ctx, "9_sun_patch_region.png", sun.regionMask);
+      const m = await sharp(sun.regionMask).resize(w, h, { fit: "fill" }).grayscale().raw().toBuffer();
+      sunPatchMask = new Uint8Array(w * h);
+      for (let i = 0; i < w * h; i++) sunPatchMask[i] = m[i] > 0 ? 1 : 0;
+    }
+    const hm = await compositeHarmonise(sun.buffer, harmRaw!, tSolidPng, furnPng, hZonePng);
+    harmFinal = hm.buffer;
+    Object.assign(row.harmonise, {
+      blendUsed: true,
+      colourGains: hm.colourGains,
+      shadowPctOfZone: hm.shadowPctOfZone,
+      strongestShadowPct: hm.strongestShadowPct,
+      furnitureDiffVsBlend: hm.furnitureDiffVsBlend,
+      furnitureLightingUsed: hm.furnitureLightingUsed,
+      furnitureLightingChangedPctOfImage: hm.furnitureLightingChangedPctOfImage,
+    });
+  } else {
+    harmFinal = safeFinal;
+    row.harmonise.blendUsed = false;
+  }
+  save(ctx, "10_final_harmonise.webp", harmFinal);
+  // Structure check: outside the furniture and its shadow zone (plus the
+  // soft fade at its edge) the final must be the original photo — only
+  // resize/compression noise allowed.
+  // Sun patches softened next to the furniture are lighting, not structure.
+  if (sunPatchMask) for (let i = 0; i < affected.length; i++) affected[i] |= sunPatchMask[i];
+  const structure = await checkStructureRetained(original, harmFinal, dilate(affected, w, h, Math.round(w * 0.03)), w, h);
+  row.harmonise.structureCheck = structure;
+  if (!row.harmonise.structureCheck.retained) warn(ctx, `[${ctx.name}] harmonise structure check FAILED: ${JSON.stringify(structure)}`);
+
+  // Checked blend: Gemini's blend as the final, patch-checked and repaired.
+  if (blendUsable && harmRaw) {
+    const zoneAll = new Uint8Array(w * h);
+    for (let i = 0; i < zoneAll.length; i++) zoneAll[i] = hZone[i] | (sunPatchMask ? sunPatchMask[i] : 0);
+    // Checked against (and repaired from) the app-built final: same room
+    // structure as the safe composite, but with sun patches already
+    // softened and shadows in, so repairs near furniture match.
+    const cb = await checkBlend(harmFinal, harmRaw, tSolid, zoneAll, w, h);
+    checkedBlendView = cb.repairedView;
+    save(ctx, "11_checked_blend_repairs.jpg", cb.repairedView);
+    row.checkedBlend = {
+      patchesChecked: cb.patchesChecked,
+      patchesRepaired: cb.patchesRepaired,
+      repairPct: cb.repairPct,
+      reasons: cb.reasons,
+      furnitureRestyledAndRepaired: cb.furnitureChanged,
+      usedAppBuiltInstead: cb.tooMuchChanged,
+    };
+    if (cb.tooMuchChanged) {
+      warn(ctx, `[${ctx.name}] checked blend: ${cb.repairPct}% of patches changed (limit ${BLEND_MAX_REPAIR_PCT}%) — using the app-built final instead`);
+      checkedBlend = harmFinal;
+    } else {
+      checkedBlend = cb.buffer;
+    }
+    save(ctx, "11_final_checked_blend.webp", checkedBlend);
+  }
+  return { safeFinal, harmRaw, harmFinal, checkedBlend, checkedBlendView };
+}
+
+// Final check: can people still walk through the real doorways?
+export async function finalDoorCheck(ctx: MaskedContext, finalImage: Buffer | null, doors: DoorOpening[] | null) {
+  const { original, row } = ctx;
+  row.doorAccess = { doorsFound: doors ? doors.length : "lookup failed", doors: doors ?? [] };
+  if (!(DOOR_CHECK && doors && doors.length > 0 && finalImage)) return;
+  const pre = await doorwayAppearsBlocked(original, finalImage, doors);
+  const flagged = pre.filter((d) => d.appearsBlocked);
+  row.doorAccess.codeCheck = Object.fromEntries(pre.map((d) => [d.id, { openingCoveredPct: d.openingCoveredPct, longestClearPct: d.longestClearPct }]));
+  if (flagged.length === 0) {
+    row.doorAccess.result = "clear (code check, no AI call)";
+  } else if (ctx.offline) {
+    row.doorAccess.result = "appears blocked (AI check skipped in FROM_RUN)";
+  } else {
+    log(ctx, `[${ctx.name}] doorway may be blocked (${flagged.map((d) => `${d.id}: clear stretch only ${d.longestClearPct}% of its width`).join(", ")}) — asking the AI to review the final image`);
+    const ai = await askDoorAccess(ctx.originalPath, finalImage, flagged, ctx.roomType, ctx.dir, ctx.name);
+    row.doorAccess.ai = ai;
+    row.doorAccess.blocked = ai.blocked;
+    row.doorAccess.restageHints = ai.restageHints;
+    row.doorAccess.result = ai.blocked ? "BLOCKED (AI)" : "clear (AI)";
+    if (ai.blocked) warn(ctx, `[${ctx.name}] DOORWAY BLOCKED in the final image: ${ai.items.filter((o: any) => o.accessBlocked === "yes").map((o: any) => `${o.description} — ${o.blockingFurniture}`).join(" | ")}`);
+  }
+}
+
+// ── App entry point ──────────────────────────────────────────────────────────
+
+// Doors and walkthroughs from the app's structural baseline (extracted in
+// parallel with Stage 1A). Closet doors and windows are not walked through.
+export function doorsFromStructuralBaseline(baseline: any): DoorOpening[] | null {
+  const openings: any[] = Array.isArray(baseline?.openings) ? baseline.openings : [];
+  if (!baseline) return null;
+  return openings
+    .filter((o) => (o?.type === "door" || o?.type === "walkthrough") && Array.isArray(o?.bbox) && o.bbox.length === 4)
+    .map((o, i) => ({
+      id: String(o.id || `door_${i + 1}`),
+      type: String(o.type),
+      description: String(o.description || (o.type === "walkthrough" ? "walkthrough opening" : "door")),
+      bbox: o.bbox.map((v: any) => Math.min(1, Math.max(0, Number(v)))) as [number, number, number, number],
+    }));
+}
+
+export type MaskedJobResult =
+  | { ok: true; outputPath: string; attempts: number; reports: any[] }
+  | { ok: false; reasons: string[]; attempts: number; reports: any[] };
+
+// One photo through the masked Stage 2: stage -> trace -> harmonise ->
+// checked blend -> final door check. A photo is re-staged ONCE (for any
+// reason: blocked doorway, reshaped room, structure check or processing
+// failure); if the re-staged result also fails, the caller falls back to the
+// last good output (the Stage 2 input).
+export async function runMaskedStage2Job(p: {
+  inputPath: string; // Stage 2 input (Stage 1A, or 1B if decluttered)
+  roomType: string;
+  jobId: string;
+  doors: DoorOpening[] | null;
+  maxRestages: number;
+  // Runs one Gemini staging and returns the staged image's path. Hints are
+  // the "keep this doorway clear" notes for a re-stage.
+  stage: (attempt: number, hints: string[]) => Promise<string>;
+  outputPathFor: (attempt: number) => string;
+  workDir: string;
+  // Optional: called with each attempt's work folder (debug uploads).
+  onAttemptFiles?: (attempt: number, dir: string, files: string[]) => Promise<void>;
+  log?: (msg: string) => void;
+  warn?: (msg: string) => void;
+}): Promise<MaskedJobResult> {
+  const original = fs.readFileSync(p.inputPath);
+  const meta = await sharp(original).metadata();
+  const w = meta.width || 0, h = meta.height || 0;
+  const aspectRatio = closestGeminiAspectRatio(w, h);
+  const originalMime = meta.format === "png" ? "image/png" : meta.format === "webp" ? "image/webp" : "image/jpeg";
+  const reports: any[] = [];
+  let hints: string[] = [];
+  for (let attempt = 1; ; attempt++) {
+    const dir = path.join(p.workDir, `attempt${attempt}`);
+    fs.mkdirSync(dir, { recursive: true });
+    const files: string[] = [];
+    const io: MaskedIO = {
+      save: (name, data) => {
+        try {
+          fs.writeFileSync(path.join(dir, name), data);
+          files.push(name);
+        } catch {}
+      },
+      log: p.log,
+      warn: p.warn,
+    };
+    const row: any = { attempt, roomType: p.roomType, input: `${w}x${h}`, aspectRatio, ...(attempt > 1 ? { restageHints: hints } : {}) };
+    reports.push(row);
+    const reasons: string[] = [];
+    let final: Buffer | null = null;
+    try {
+      const stagedPath = await p.stage(attempt, hints);
+      const staged = fs.readFileSync(stagedPath);
+      io.save?.("2_staged_raw.webp", staged);
+      const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: false, dir, io, row };
+      const layers = await traceLayers(ctx);
+      const hm = await harmonise(ctx, layers);
+      final = hm.checkedBlend || hm.harmFinal;
+      await finalDoorCheck(ctx, final, p.doors);
+      if (row.doorAccess?.blocked) reasons.push("doorway blocked");
+      if (row.framingCheck?.framingChanged) reasons.push("room reshaped");
+      if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+    } catch (e: any) {
+      row.error = String(e?.message || e).slice(0, 400);
+      reasons.push(`processing error: ${row.error}`);
+    }
+    if (p.onAttemptFiles) await p.onAttemptFiles(attempt, dir, files).catch(() => {});
+    if (reasons.length === 0 && final) {
+      const outputPath = p.outputPathFor(attempt);
+      await sharp(final).webp({ quality: 95 }).toFile(outputPath);
+      row.outcome = "publish";
+      return { ok: true, outputPath, attempts: attempt, reports };
+    }
+    if (attempt > p.maxRestages) {
+      row.outcome = `FAILED after re-stage (${reasons.join(", ")})`;
+      return { ok: false, reasons, attempts: attempt, reports };
+    }
+    row.outcome = `re-stage (${reasons.join(", ")})`;
+    p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
+    hints = row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : [];
+  }
+}
