@@ -1,0 +1,24 @@
+[
+  {
+    "id": "door_1",
+    "type": "door",
+    "description": "sliding glass door leading outside to a balcony",
+    "bbox": [
+      0.203,
+      0.342,
+      0.422,
+      0.751
+    ]
+  },
+  {
+    "id": "door_2",
+    "type": "walkthrough",
+    "description": "open doorway leading to a hallway or adjacent room",
+    "bbox": [
+      0.635,
+      0.381,
+      0.713,
+      0.64
+    ]
+  }
+]

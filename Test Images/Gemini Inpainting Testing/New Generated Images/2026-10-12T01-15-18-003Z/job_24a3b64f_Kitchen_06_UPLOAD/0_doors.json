@@ -1,0 +1,13 @@
+[
+  {
+    "id": "door_1",
+    "type": "door",
+    "description": "sliding glass door to outside",
+    "bbox": [
+      0.858,
+      0.398,
+      1,
+      0.778
+    ]
+  }
+]
