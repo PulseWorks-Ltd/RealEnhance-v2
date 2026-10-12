@@ -11325,8 +11325,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       // composite_validation_exhausted ending.
       const useMaskedStage2 = Boolean(
         payload.options.virtualStage && !stage2Blocked && sceneLabel === "interior" && maskedStage2Enabled() &&
-          // STAGE2_MASKED_REFRESH=0 keeps refresh (decluttered/furnished) jobs on the old path.
-          (stage2PromptMode === "full" || String(process.env.STAGE2_MASKED_REFRESH ?? "1").trim() !== "0")
+          // Refresh mode (room still has furniture; Gemini restyles it) stays on
+          // the old path unless STAGE2_MASKED_REFRESH=1: paste-back only carries
+          // new pieces, so restyled existing furniture can't come across.
+          (stage2PromptMode === "full" || ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_MASKED_REFRESH || "").trim().toLowerCase()))
       );
       if (useMaskedStage2) maskedStage2Used = true;
       const runMaskedStage2 = async () => {
@@ -11391,7 +11393,26 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           ...(debugUpload ? { debugLinks } : {}),
         };
         // console.log, not nLog: these must show even when quiet log modes mute nLog.
-        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, ...summary }));
+        // One short, readable line per attempt; the image links were printed one
+        // per line ([STAGE2_MASKED_DEBUG_URL]) and the full report (without the
+        // links) follows for detailed review.
+        for (const r of result.reports as any[]) {
+          const parts = [
+            `job=${payload.jobId}`,
+            `attempt=${r.attempt}`,
+            `outcome="${r.outcome || (r.error ? "error" : "?")}"`,
+            r.maskPct ? `furniture=${r.maskPct.furniture}%` : null,
+            r.closeUpRetrace ? `closeUpAdded=${r.closeUpRetrace.addedPctOfImage ?? 0}%` : null,
+            r.framingCheck ? `roomReshaped=${r.framingCheck.framingChanged ? "YES" : "no"}(median ${r.framingCheck.medianDiff})` : null,
+            r.checkedBlend ? `final=${r.checkedBlend.usedAppBuiltInstead ? "app-built" : "checked-blend"}(repairs ${r.checkedBlend.repairPct}%)` : null,
+            r.doorAccess?.result ? `doors="${r.doorAccess.result}"` : null,
+            r.error ? `error="${String(r.error).slice(0, 160)}"` : null,
+          ].filter(Boolean);
+          console.log(`[STAGE2_MASKED_SUMMARY] ${parts.join(" | ")}`);
+        }
+        console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} RESULT=${result.ok ? "published" : `FAILED -> fallback (${result.reasons.join(", ")})`} attempts=${result.attempts}`);
+        const { debugLinks: _links, ...summaryNoLinks } = summary as any;
+        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, ...summaryNoLinks }));
         try {
           await updateJob(payload.jobId, { stage2Masked: summary });
         } catch {}
