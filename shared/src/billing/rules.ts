@@ -26,6 +26,11 @@ export interface StageFlags {
    * Optional for backward compatibility.
    */
   geminiHasFurniture?: boolean;
+  /** Whether declutter + stage is billable at 2 credits for this image: the
+   * furniture pre-check found the room furnished and 2 credits were quoted
+   * before submit. When omitted, the user's declutter selection decides.
+   */
+  declutterAndStageBillable?: boolean;
 }
 
 /**
@@ -66,11 +71,14 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
     return { amount: 0, reason: "interior_fallback_1a_refund" };
   }
 
-  // Declutter + stage: 2 credits, but only when the user chose declutter and
-  // BOTH the decluttered and the staged images were delivered. Staging that
-  // fell back to the decluttered image, or a room that turned out empty (no
-  // declutter needed), costs 1.
-  if (flags.stage1BUserSelected !== false && flags.stage1B && flags.stage2) {
+  // Declutter + stage: 2 credits, but only when declutter + stage was quoted
+  // (furnished room) and BOTH the decluttered and the staged images were
+  // delivered. Staging that fell back to the decluttered image, or a room
+  // that turned out empty (no declutter needed), costs 1.
+  const declutterAndStageBillable = typeof flags.declutterAndStageBillable === "boolean"
+    ? flags.declutterAndStageBillable
+    : flags.stage1BUserSelected !== false;
+  if (declutterAndStageBillable && flags.stage1B && flags.stage2) {
     return { amount: 2, reason: "declutter_and_stage" };
   }
 
@@ -90,7 +98,9 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
  */
 export function estimateCredits(params: {
   sceneType: string;
-  userSelectedStage1B: boolean; // declutter enabled
+  /** Declutter will run before staging: the furniture pre-check found the
+   * room furnished (or, without a pre-check, the user chose declutter). */
+  userSelectedStage1B: boolean;
   userSelectedStage2: boolean; // virtual staging enabled
 }): number {
   const sceneType = String(params.sceneType || "").toLowerCase();

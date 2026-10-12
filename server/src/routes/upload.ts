@@ -14,6 +14,7 @@ import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, commitReservation, releaseReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { loadFurniturePrecheck, precheckRequiresDeclutter, type FurniturePrecheckRecord } from "./furniturePrecheck.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
@@ -512,6 +513,17 @@ export function uploadRouter() {
     let requiresPayment = false;
     let deficit = 0;
 
+    // Furniture pre-check answers (run on the website before submit). They
+    // decide, per photo, whether staging needs a declutter first (2 credits)
+    // or not (1), and are passed to the job so it is routed as quoted.
+    const precheckRecords: Array<FurniturePrecheckRecord | null> = await Promise.all(
+      Array.from({ length: uploadCount }, (_unused, i) => {
+        const meta = metaByIndex[i] || {};
+        const opts: any = optionsList[i] ?? {};
+        return loadFurniturePrecheck(meta.furniturePrecheckId ?? opts.furniturePrecheckId, String(sessUser.id));
+      })
+    );
+
     try {
       const estimateImages = Array.from({ length: uploadCount }, (_unused, i) => {
         const meta = metaByIndex[i] || {};
@@ -534,8 +546,14 @@ export function uploadRouter() {
                 ? furnishedStateForm
                 : (stage2Variant === "2A" ? "furnished" : stage2Variant === "2B" ? "empty" : undefined)));
 
-        // Declutter+Stage projected billing: empty -> 1 credit (skip 1B), furnished/unknown -> 2 credits.
-        const stage1BProjected = !!declutter && (!virtualStage || furnishedState !== "empty");
+        // Staging: the furniture pre-check decides (furnished -> declutter +
+        // stage = 2 credits, empty -> 1). Without a pre-check answer, count 2
+        // (any extra is refunded when the job finishes).
+        const precheckDecision = precheckRequiresDeclutter(
+          precheckRecords[i],
+          normalizeRoomType(meta.roomType || opts.roomType)
+        );
+        const stage1BProjected = !!virtualStage && precheckDecision !== false;
 
         return {
           sceneType: sceneType === "exterior" ? "exterior" : "interior",
@@ -840,16 +858,27 @@ export function uploadRouter() {
 
       const jobId = "job_" + crypto.randomUUID();
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      // Declutter + stage on an interior image = 2 credits (reserved up front;
-      // the worker refunds 1 if staging falls back or the room needed no
-      // declutter). An empty room (declutter skipped) or a stage-2-only job = 1.
+      // Staging an interior photo: the furniture pre-check decides. Furnished
+      // (declutter + stage) = 2 credits, empty = 1. Without a pre-check answer
+      // 2 are reserved and the worker refunds 1 if the room needed no
+      // declutter or staging falls back. The quote is passed to the job: it
+      // is the most that is charged, and the pre-check answer is reused for
+      // routing so the photo is processed as quoted.
+      const precheckRecord = precheckRecords[i] ?? null;
+      const precheckDecision = precheckRequiresDeclutter(precheckRecord, opts.roomType);
       const declutterAndStage =
         String(opts.sceneType || "").toLowerCase() !== "exterior" &&
-        opts.stage2Only !== true &&
-        opts.declutter === true &&
         finalVirtualStage &&
-        opts.furnishedState !== "empty";
+        precheckDecision !== false;
       const requiredImages = declutterAndStage ? 2 : 1;
+      opts.quotedCredits = requiredImages;
+      if (precheckRecord && precheckRecord.status === "done" && typeof precheckRecord.localEmpty === "boolean") {
+        opts.furniturePrecheck = {
+          localEmpty: precheckRecord.localEmpty,
+          analysis: precheckRecord.analysis ?? null,
+        };
+      }
+      delete opts.furniturePrecheckId;
       // Free-trial images are counted per image (trial use is not reconciled
       // after the job, so it can't be refunded if staging falls back).
       const trialRequiredImages = 1;
@@ -1041,6 +1070,10 @@ export function uploadRouter() {
           stagingStyle: opts.stagingStyle,
           stage2Variant: opts.stage2Variant,
           furnishedState: opts.furnishedState,
+          // Credits quoted before submit (most that is charged) and the
+          // furniture pre-check answer the worker reuses for routing.
+          quotedCredits: opts.quotedCredits,
+          ...(opts.furniturePrecheck ? { furniturePrecheck: opts.furniturePrecheck } : {}),
         },
       };
 

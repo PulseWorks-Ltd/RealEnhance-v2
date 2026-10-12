@@ -72,6 +72,7 @@ import {
 } from "./ai/furnitureDetector";
 import { runFurnitureDetectionSafe } from "./ai/runFurnitureDetectionSafe";
 import { isRoomEmpty } from "./vision/isRoomEmpty";
+import { startFurniturePrecheckWorker } from "./precheck/furniturePrecheck";
 
 import {
   updateJob,
@@ -9224,7 +9225,31 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         await reassertFurnishedGateResolvedFromSnapshot(routingSnapshot, "job_meta_routing_snapshot");
       } else {
         const stage1ABuffer = await fs.promises.readFile(path1A);
-        const localEmpty = await isRoomEmpty(stage1ABuffer);
+        // Furniture pre-check (run on the website preview before submit, and
+        // used to quote/reserve the credits): reuse its answer so the room is
+        // routed exactly as quoted. A failed pre-check detector result is not
+        // reused — the detector runs here as before.
+        const furniturePrecheck = (payload.options as any)?.furniturePrecheck as
+          | { localEmpty?: boolean; analysis?: any }
+          | undefined;
+        const usePrecheck = !shouldResolveExteriorDeclutter
+          && !!furniturePrecheck
+          && typeof furniturePrecheck.localEmpty === "boolean";
+        const localEmpty = usePrecheck ? furniturePrecheck!.localEmpty === true : await isRoomEmpty(stage1ABuffer);
+        if (usePrecheck && !localEmpty && isFurnitureDetectionSuccess(furniturePrecheck!.analysis)) {
+          jobContext.furnitureDetectionCache.set(
+            getFurnitureDetectionCacheKey({ imagePath: path1A, sceneType: "interior" }),
+            furniturePrecheck!.analysis
+          );
+        }
+        if (usePrecheck) {
+          nLog("[FURNITURE_PRECHECK_REUSED]", {
+            jobId: payload.jobId,
+            localEmpty,
+            detectorReused: !localEmpty && isFurnitureDetectionSuccess(furniturePrecheck!.analysis),
+            quotedCredits: (payload.options as any)?.quotedCredits ?? null,
+          });
+        }
 
         if (shouldResolveExteriorDeclutter) {
           const exteriorDetection = await runFurnitureDetectionOnce({
@@ -16157,12 +16182,17 @@ All openings must remain identical in position and size to the original image.`;
     billingStage1BSuccess &&
     (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
 
-  // Declutter + stage = 2 credits, only when the user chose declutter and both
-  // the decluttered and the staged images were delivered (same rule as
-  // computeCharge in shared/src/billing/rules.ts). Everything else = 1.
+  // Declutter + stage = 2 credits when the room was decluttered and staged
+  // and both images were delivered. The quote shown before submit (from the
+  // furniture pre-check) is the most that is charged: quoted 1 -> never 2.
+  // Jobs without a quote (older clients) use the detector's own verdict.
+  const quotedCredits = Number((payload.options as any)?.quotedCredits);
+  const declutterAndStageBillable = Number.isFinite(quotedCredits)
+    ? quotedCredits >= 2
+    : billingEffectiveStage1B;
   const declutterAndStageDelivered =
     String(sceneLabel || "interior").toLowerCase() !== "exterior" &&
-    originalUserDeclutter &&
+    declutterAndStageBillable &&
     billingStage1BSuccess &&
     billingStage2Success;
   const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob
@@ -16180,6 +16210,8 @@ All openings must remain identical in position and size to the original image.`;
     stage1BUserSelected: originalUserDeclutter,
     geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
     billingEffectiveStage1B,
+    quotedCredits: Number.isFinite(quotedCredits) ? quotedCredits : null,
+    declutterAndStageBillable,
     billableFinalSuccess,
     completedStatus: finalizedStatus,
     isEnhancementJob,
@@ -16223,6 +16255,7 @@ All openings must remain identical in position and size to the original image.`;
         requestedBeyond1A: !!(payload.options?.declutter || payload.options?.virtualStage),
         stage1BUserSelected: originalUserDeclutter,
         geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? undefined,
+        declutterAndStageBillable,
       });
     } catch (chargeErr) {
       // Billing errors must not crash the worker
@@ -17631,6 +17664,13 @@ void (async () => {
   try {
     await ensureEnhancedImagesCompletionTypeContract();
     nLog("[worker-startup] completion type contract confirmed");
+    // Fast lane for the website's furniture pre-check (runs alongside the
+    // main job worker, so pre-checks never wait behind photos being staged).
+    try {
+      startFurniturePrecheckWorker(REDIS_URL);
+    } catch (precheckErr) {
+      console.error("[worker-startup] furniture pre-check worker failed to start", precheckErr);
+    }
     await worker.run();
   } catch (err) {
     console.error("[worker-startup] completion type contract check failed", err);

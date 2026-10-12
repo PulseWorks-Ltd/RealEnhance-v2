@@ -7,6 +7,9 @@ import { getUserById } from "../services/users.js";
 
 function deriveRequiredCreditsFromJobPayload(payload: any): number {
   const options = payload?.options || {};
+  // Quote made at upload from the furniture pre-check (1 or 2).
+  const quoted = Number(options?.quotedCredits);
+  if (Number.isFinite(quoted) && quoted >= 1) return Math.min(2, Math.floor(quoted));
   const virtualStage = !!options?.virtualStage;
   const declutter = !!options?.declutter;
   const furnishedState = String(options?.furnishedState || "").toLowerCase();

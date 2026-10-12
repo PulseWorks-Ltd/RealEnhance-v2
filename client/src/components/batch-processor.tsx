@@ -8,6 +8,7 @@ import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useImageUpload } from "@/hooks/useImageUpload";
+import { useFurniturePrecheck, precheckRequiresDeclutter, type FurniturePrecheckEntry } from "@/hooks/useFurniturePrecheck";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import {
@@ -1282,6 +1283,15 @@ export default function BatchProcessor({
   const currentMessageByImageRef = useRef<Record<number, string>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
+  // Cost summary shown when Process is clicked (after the furniture pre-check):
+  // how many photos get declutter + stage (2 credits) vs stage / enhance (1).
+  const [costSummary, setCostSummary] = useState<null | {
+    checking: boolean;
+    counts: Record<string, number>;
+    total: number;
+    available: number | null;
+  }>(null);
+  const costConfirmedRef = useRef(false);
   const [creditGateModal, setCreditGateModal] = useState<{
     open: boolean;
     requiredCredits: number;
@@ -2317,24 +2327,52 @@ export default function BatchProcessor({
     return -1;
   }, [files.length, getImageIdForIndex, validationMap]);
 
+  // Furniture pre-check: each interior photo is checked in the background as
+  // soon as it is added (with staging on), so the exact cost is known before
+  // Process: furnished room = declutter + stage = 2 credits, empty room = 1.
+  const isExteriorImageId = useCallback((imageId: string) => {
+    const manual = manualSceneTypesById[imageId];
+    if (manual === "interior" || manual === "exterior") return manual === "exterior";
+    const explicit = imageSceneTypesById[imageId];
+    if (explicit === "interior" || explicit === "exterior") return explicit === "exterior";
+    return scenePredictionsById[imageId]?.scene === "exterior";
+  }, [imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
+
+  const furniturePrecheck = useFurniturePrecheck({
+    files,
+    getFileId,
+    enabled: !!effectiveAllowStaging,
+    isExterior: isExteriorImageId,
+  });
+
+  type ImageQuoteKind = "declutter_stage" | "stage" | "stage_unknown" | "declutter" | "enhance" | "exterior";
+  const quoteForIndex = useCallback((index: number, entries: Record<string, FurniturePrecheckEntry>): { kind: ImageQuoteKind; credits: number } => {
+    const imageId = getImageIdForIndex(index);
+    if (finalSceneForIndex(index) === "exterior") return { kind: "exterior", credits: 1 };
+    if (effectiveAllowStaging) {
+      const furnished = imageId ? precheckRequiresDeclutter(entries[imageId], imageRoomTypesById[imageId]) : null;
+      if (furnished === true) return { kind: "declutter_stage", credits: 2 };
+      if (furnished === false) return { kind: "stage", credits: 1 };
+      return { kind: "stage_unknown", credits: 2 };
+    }
+    return { kind: declutter ? "declutter" : "enhance", credits: 1 };
+  }, [declutter, effectiveAllowStaging, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
+
   const batchCreditEstimateInputs = useMemo(
     () => files.map((_, index) => {
-      const perImageMeta = (metaByIndex as Record<number, any>)[index] || {};
-      const scene = finalSceneForIndex(index) === "exterior" ? "exterior" : "interior";
-      const userSelectedStage1B = perImageMeta.declutter !== undefined
-        ? !!perImageMeta.declutter
-        : !!declutter;
-      const userSelectedStage2 = perImageMeta.virtualStage !== undefined
-        ? !!perImageMeta.virtualStage
-        : !!effectiveAllowStaging;
-
+      const quote = quoteForIndex(index, furniturePrecheck.entries);
       return {
-        sceneType: scene,
-        userSelectedStage1B,
-        userSelectedStage2,
+        sceneType: quote.kind === "exterior" ? "exterior" : "interior",
+        userSelectedStage1B: quote.credits === 2,
+        userSelectedStage2: quote.credits === 2,
       };
     }),
-    [declutter, effectiveAllowStaging, files, finalSceneForIndex, metaByIndex]
+    [files, furniturePrecheck.entries, quoteForIndex]
+  );
+
+  const precheckUnknownCount = useMemo(
+    () => files.reduce((n, _f, i) => n + (quoteForIndex(i, furniturePrecheck.entries).kind === "stage_unknown" ? 1 : 0), 0),
+    [files, furniturePrecheck.entries, quoteForIndex]
   );
 
   const requiredBatchCredits = useMemo(
@@ -2618,6 +2656,10 @@ export default function BatchProcessor({
         const roomType = imageRoomTypesById[imageId];
         if (roomType) metaItem.roomType = roomType;
       }
+      // Furniture pre-check id (server re-reads the stored answer to reserve
+      // exactly the quoted credits and to route the photo the same way).
+      const precheckId = furniturePrecheck.entries[imageId]?.precheckId;
+      if (precheckId && sceneType !== "exterior") metaItem.furniturePrecheckId = precheckId;
       // Sky replacement (only for exteriors)
       if (sceneType === "exterior" && imageSkyReplacementById[imageId] !== undefined) {
         metaItem.replaceSky = imageSkyReplacementById[imageId];
@@ -2642,7 +2684,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky, enhanceExteriorDusk]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky, enhanceExteriorDusk, furniturePrecheck.entries]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -5106,6 +5148,35 @@ export default function BatchProcessor({
       setCurrentImageIndex(blockingIndices[0]);
       return;
     }
+
+    // Show exactly what this batch will use before anything is processed.
+    // Staging: wait (briefly) for the furniture pre-check so each interior
+    // photo is priced as furnished (declutter + stage = 2) or empty (1).
+    if (!costConfirmedRef.current) {
+      setCostSummary({ checking: true, counts: {}, total: 0, available: availableCredits });
+      const interiorIds = files
+        .map((_, i) => (finalSceneForIndex(i) === "exterior" ? null : getImageIdForIndex(i)))
+        .filter((id): id is string => !!id);
+      const entries = effectiveAllowStaging
+        ? await furniturePrecheck.waitFor(interiorIds, 25_000)
+        : furniturePrecheck.entries;
+      const counts: Record<string, number> = {};
+      let total = 0;
+      files.forEach((_, i) => {
+        const quote = quoteForIndex(i, entries);
+        counts[quote.kind] = (counts[quote.kind] || 0) + 1;
+        total += quote.credits;
+      });
+      const summaryNow = await refreshCreditSummary();
+      setCostSummary({
+        checking: false,
+        counts,
+        total,
+        available: summaryNow?.availableCredits ?? availableCredits,
+      });
+      return;
+    }
+    costConfirmedRef.current = false;
 
     const totalCreditsNeeded = requiredBatchCredits;
 
@@ -7860,18 +7931,18 @@ export default function BatchProcessor({
                     </button>
 
                     <div
-                      className={`rounded-lg border px-3 py-2 text-xs leading-5 ${declutter && effectiveAllowStaging ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+                      className={`rounded-lg border px-3 py-2 text-xs leading-5 ${effectiveAllowStaging ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}
                       data-testid="text-credit-cost-note"
                     >
-                      {declutter && effectiveAllowStaging ? (
+                      {effectiveAllowStaging ? (
                         <>
-                          <span className="font-semibold">Declutter + Virtual Staging: 2 credits per interior image.</span>{" "}
-                          If staging can't be completed, or the room needs no declutter, only 1 credit is used.
+                          <span className="font-semibold">Staging: 1 credit per room, or 2 if the room needs decluttering first.</span>{" "}
+                          We check each photo automatically and declutter rooms that need it. You'll see the exact cost before processing starts.
                         </>
                       ) : (
                         <>
                           <span className="font-semibold">1 credit per image.</span>{" "}
-                          Declutter + Virtual Staging together use 2 credits per interior image.
+                          Staging a room that needs decluttering first (declutter + stage) uses 2 credits.
                         </>
                       )}
                     </div>
@@ -8337,8 +8408,9 @@ export default function BatchProcessor({
                     </button>
                     {files.length > 0 && (
                       <p className="mt-2 text-xs text-slate-600" data-testid="text-batch-credit-cost">
-                        This batch uses up to {requiredBatchCredits} credit{requiredBatchCredits === 1 ? "" : "s"}
-                        {requiredBatchCredits > files.length ? " (Declutter + Virtual Staging = 2 credits per interior image)" : ""}.
+                        {precheckUnknownCount > 0
+                          ? `This batch uses up to ${requiredBatchCredits} credits (still checking ${precheckUnknownCount} room${precheckUnknownCount === 1 ? "" : "s"}…).`
+                          : `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}${requiredBatchCredits > files.length ? " (rooms that need decluttering: declutter + stage = 2 credits)" : ""}.`}
                       </p>
                     )}
                     {isEnhanceCreditBlocked && (
@@ -9709,6 +9781,91 @@ export default function BatchProcessor({
       />
 
       <Dialog
+        open={!!costSummary}
+        onOpenChange={(open) => {
+          if (open) return;
+          setCostSummary(null);
+          costConfirmedRef.current = false;
+          if (runState === "idle" && activeTab === "enhance") setActiveTab("images");
+        }}
+      >
+        <DialogContent data-testid="dialog-cost-summary">
+          <DialogHeader>
+            <DialogTitle>
+              {costSummary?.checking
+                ? "Checking rooms…"
+                : `${files.length} photo${files.length === 1 ? "" : "s"} — ${costSummary?.total ?? 0} credit${costSummary?.total === 1 ? "" : "s"}`}
+            </DialogTitle>
+            <DialogDescription>
+              {costSummary?.checking
+                ? "We're checking which rooms need decluttering so we can show the exact cost."
+                : "Rooms with furniture or clutter to clear are decluttered automatically before staging."}
+            </DialogDescription>
+          </DialogHeader>
+          {costSummary?.checking ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking rooms…
+            </div>
+          ) : costSummary ? (
+            <div className="space-y-3 text-sm text-slate-700">
+              <ul className="space-y-1">
+                {(costSummary.counts.declutter_stage || 0) > 0 && (
+                  <li>• {costSummary.counts.declutter_stage} room{costSummary.counts.declutter_stage === 1 ? "" : "s"} will be <b>decluttered and staged</b> — 2 credits each ({costSummary.counts.declutter_stage * 2})</li>
+                )}
+                {(costSummary.counts.stage_unknown || 0) > 0 && (
+                  <li>• {costSummary.counts.stage_unknown} room{costSummary.counts.stage_unknown === 1 ? "" : "s"} couldn't be checked — counted as <b>declutter and stage</b>, 2 credits each ({costSummary.counts.stage_unknown * 2}); 1 is refunded if no decluttering is needed</li>
+                )}
+                {(costSummary.counts.stage || 0) > 0 && (
+                  <li>• {costSummary.counts.stage} room{costSummary.counts.stage === 1 ? "" : "s"} will be <b>staged</b> (no decluttering needed) — 1 credit each ({costSummary.counts.stage})</li>
+                )}
+                {(costSummary.counts.declutter || 0) > 0 && (
+                  <li>• {costSummary.counts.declutter} photo{costSummary.counts.declutter === 1 ? "" : "s"} <b>decluttered</b> — 1 credit each ({costSummary.counts.declutter})</li>
+                )}
+                {(costSummary.counts.enhance || 0) > 0 && (
+                  <li>• {costSummary.counts.enhance} photo{costSummary.counts.enhance === 1 ? "" : "s"} <b>enhanced</b> — 1 credit each ({costSummary.counts.enhance})</li>
+                )}
+                {(costSummary.counts.exterior || 0) > 0 && (
+                  <li>• {costSummary.counts.exterior} exterior photo{costSummary.counts.exterior === 1 ? "" : "s"} <b>enhanced</b> — 1 credit each ({costSummary.counts.exterior})</li>
+                )}
+              </ul>
+              <p className="text-xs text-slate-500">
+                If staging can't be completed for a room, you get the decluttered photo and only 1 credit is used.
+              </p>
+              {costSummary.available !== null && (
+                <p className={costSummary.total > costSummary.available ? "font-medium text-amber-700" : "text-slate-600"}>
+                  You have {Math.max(0, costSummary.available)} credit{costSummary.available === 1 ? "" : "s"} available
+                  {costSummary.total > costSummary.available ? ` — ${costSummary.total - costSummary.available} more needed.` : "."}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCostSummary(null);
+                    costConfirmedRef.current = false;
+                    if (runState === "idle" && activeTab === "enhance") setActiveTab("images");
+                  }}
+                  data-testid="button-cost-summary-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    costConfirmedRef.current = true;
+                    setCostSummary(null);
+                    void startBatchProcessing();
+                  }}
+                  data-testid="button-cost-summary-continue"
+                >
+                  Continue
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={creditGateModal.open}
         onOpenChange={(open) => {
           setCreditGateModal((prev) => ({ ...prev, open }));
@@ -9723,7 +9880,7 @@ export default function BatchProcessor({
           <DialogHeader>
             <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
-              This enhancement requires {creditGateModal.requiredCredits} credits, but your plan currently includes {creditGateModal.availableCredits} remaining. Each image uses 1 credit; Declutter + Virtual Staging uses 2.
+              This enhancement requires {creditGateModal.requiredCredits} credits, but your plan currently includes {creditGateModal.availableCredits} remaining. Each image uses 1 credit; staging a room that needs decluttering first uses 2.
               Add {creditGateModal.missingCredits} more credits to continue processing your batch. Get 7 images for $19 — no subscription required.
             </DialogDescription>
           </DialogHeader>

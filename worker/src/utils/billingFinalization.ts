@@ -254,6 +254,8 @@ export async function finalizeImageChargeFromWorker(params: {
   stage1BUserSelected?: boolean;
   /** Whether Gemini confirmed hasFurniture=true during the routing gate */
   geminiHasFurniture?: boolean;
+  /** Whether declutter + stage is billable at 2 credits (quoted before submit) */
+  declutterAndStageBillable?: boolean;
 }): Promise<void> {
   if (!pool) {
     console.error(`[BILLING] Error queueing charge finalization for job ${params.jobId}: DATABASE_URL is required`);
@@ -270,6 +272,7 @@ export async function finalizeImageChargeFromWorker(params: {
     requestedBeyond1A: params.requestedBeyond1A,
     stage1BUserSelected: params.stage1BUserSelected,
     geminiHasFurniture: params.geminiHasFurniture,
+    declutterAndStageBillable: params.declutterAndStageBillable,
   };
 
   const eventId = buildLedgerEventId(params.jobId, stageFlags);

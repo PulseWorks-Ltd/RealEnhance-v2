@@ -71,6 +71,30 @@ describe("billing rules", () => {
     expect(result.amount).toBe(1);
   });
 
+  it("returns 2 when the pre-check quoted declutter + stage (user only ticked Stage)", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: true,
+      stage2: true,
+      sceneType: "interior",
+      stage1BUserSelected: false,
+      declutterAndStageBillable: true,
+    });
+    expect(result.amount).toBe(2);
+  });
+
+  it("returns 1 when the pre-check quoted 1 even though declutter ran", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: true,
+      stage2: true,
+      sceneType: "interior",
+      stage1BUserSelected: true,
+      declutterAndStageBillable: false,
+    });
+    expect(result.amount).toBe(1);
+  });
+
   it("returns 1 for declutter only", () => {
     const result = computeCharge({
       stage1A: true,
