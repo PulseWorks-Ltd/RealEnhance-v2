@@ -547,26 +547,31 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
  * said "colour... may be improved" as a blanket allowance, which would have
  * contradicted this narrower scope).
  */
-const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `Primary objective: Deliver a premium real estate exterior outlook through existing windows and doors so the property appears professionally photographed on an ideal bright, clear day, while maintaining a realistic, natural photographic appearance.
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR OUTLOOK — brighten the view through existing windows and doors without changing what is out there.
 
-When exterior views are visible through existing windows or doors:
+THE ONE RULE THAT OVERRIDES EVERYTHING BELOW: everything visible through a window or door — fences, lattice, trellis, screens, walls, gates, hedges, trees, shrubs, gardens, neighbouring houses, roofs, sheds, poles and power lines — must stay exactly where it is, with exactly the same outline, size and coverage of the glass. Nothing may be removed, lowered, thinned out, made see-through or painted over to reveal more sky or a different view, and nothing new may be added.
 
-- Make the sky look clear and bright, as if photographed on a sunny day — replace flat, grey, or overcast skies with clear blue sky, natural sunlight, and matching shadows.
-- Where fog, mist, haze, or general poor-weather atmosphere reduces visibility of the exterior view, clear it so the existing exterior is genuinely visible — without inventing any new scenery beyond what is already present in the original image.
-- Adjust interior illumination naturally so sunlight and daylight entering through existing windows and doors appear consistent with the improved outdoor lighting conditions.
+Sky:
+- Only change sky that is ALREADY visible in the original photo, and only inside that same patch of sky.
+- If a window or door shows no sky — for example the glass is filled by a fence, wall, hedge, trees or a neighbouring house — there is no sky to change. Leave that view exactly as it is.
+- Where a patch of sky is visible and looks flat, grey or overcast, you may make that same patch brighter and clearer (for example a soft blue). Its outline, and everything in front of it, stays exactly the same.
+- Never add sky where the original shows none, and never enlarge a patch of sky.
 
-Where weather-related glass artifacts are clearly visible, gently remove temporary rain droplets, water streaks, condensation, water spotting, smudges, dirt, haze, residue, and similar temporary visibility obstructions from the glass surface only.
+Weather and glass:
+- Only where real fog or mist clearly reduces visibility, you may clear it so the existing view is easier to see — without inventing anything that is not genuinely present in the original.
+- Where they are clearly visible, you may gently remove raindrops, water streaks, condensation, smudges and similar temporary marks from the glass.
 
-Keep the final result realistic, natural, and high-end. The image should resemble a professionally edited real estate photograph, never an AI-generated or heavily processed image.
+Light and detail:
+- Keep the exterior view's exposure close to the original. Never brighten, soften or blur it so much that its detail fades — fence boards, lattice and trellis patterns, leaves and branches must stay as crisp and visible as in the original.
+- The daylight coming into the room should look consistent with the view.
 
-Do not add, remove, resize, reshape, or relocate any architectural elements, buildings, or structures.
-Do not alter roads, driveways, paths, fences, retaining walls, power lines, or any other civil or structural elements — keep them exactly as shown.
-Do not change the physical structure, layout, or architectural features of any property in the image.
-Do not alter vegetation, lawns, trees, shrubs, or gardens in any way — including colour, vibrancy, or saturation. Leave all vegetation exactly as it appears in the original image.
-Do not invent exterior content, scenery, or detail that is not genuinely visible in the original image.
-Do not open, move, remove, or modify blinds, curtains, shutters, window coverings, or doors, and do not reveal anything hidden behind them.
+Never:
+- Add, remove, move, resize or reshape any building, house, roof, fence, lattice, trellis, wall, gate, deck, path, driveway, road, power line, pole, tree, shrub, hedge, lawn or garden.
+- Change the colour, vibrancy or saturation of vegetation.
+- Add new scenery, distant houses, rooftops, hills, water or views that are not in the original photo.
+- Open, move, remove or change blinds, curtains, shutters, window coverings or doors, or reveal anything hidden behind them.
 
-Architectural accuracy always takes priority over visual enhancement. Improve only the sky, weather condition, ambient brightness, and glass clarity visible through the opening — never the physical structure, layout, colour, or content of the property, its vegetation, or anything else in view.`;
+Keep the result realistic and natural, like a professionally edited real estate photograph. If you are unsure whether a change is allowed, leave that part of the view exactly as it is.`;
 
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
