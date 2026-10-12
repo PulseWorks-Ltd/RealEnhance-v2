@@ -2557,3 +2557,190 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
   }
   return { floating: runs.length > 0, runs };
 }
+
+// ---------------------------------------------------------------------------
+// Floor patch for floating furniture. Gemini drew the piece standing on ITS
+// floor; the merge pasted it onto the real photo, where the floor/skirting sits
+// elsewhere, so the legs hang. Fix: under the piece, use Gemini's own floor,
+// skirting and the strip of wall just above it, from the piece out to a
+// natural edge on each side where the join can't be seen:
+//   - a piece standing in front (e.g. the bed beside a bedside table),
+//   - a wall corner / pillar edge that sits in the same place in both images,
+//   - the edge of the photo.
+// Anything else (open wall, the same piece carrying on to the floor, a corner
+// Gemini moved) -> no patch; the caller re-stages instead.
+// ---------------------------------------------------------------------------
+export type FloorPatch = {
+  x1: number; x2: number; top: number; bottom: number; // patch box (planning pixels)
+  runX1: number; runX2: number; runBottom: number;      // the floating piece's columns
+  left: "piece in front" | "wall corner" | "photo edge";
+  right: "piece in front" | "wall corner" | "photo edge";
+};
+const FLOOR_PATCH_REACH = 0.12; // look this far (fraction of width) for an edge
+
+export async function planFloorPatches(original: Buffer, staged: Buffer, floorMask: Uint8Array, runs: FloatingRun[], w: number, h: number) {
+  const grey = (b: Buffer) => sharp(b).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(1.5).raw().toBuffer();
+  const [gO, gS, line] = await Promise.all([grey(original), grey(staged), realFloorLine(original, w, h)]);
+  const bottom = new Int32Array(w).fill(-1);
+  for (let x = 0; x < w; x++) for (let y = h - 1; y >= 0; y--) if (floorMask[y * w + x]) { bottom[x] = y; break; }
+  // mean |horizontal gradient| at column x over rows [y1, y2)
+  const vGrad = (g: Buffer, x: number, y1: number, y2: number) => {
+    if (x < 2 || x >= w - 2) return 0;
+    let s = 0, n = 0;
+    for (let y = Math.max(0, y1); y < Math.min(h, y2); y++) { s += Math.abs(g[y * w + x + 2] - g[y * w + x - 2]); n++; }
+    return n ? s / n : 0;
+  };
+  const patches: FloorPatch[] = [];
+  const notes: string[] = [];
+  for (const r of runs) {
+    const xa = Math.max(0, Math.floor((r.x1Pct / 100) * w)), xb = Math.min(w - 1, Math.ceil((r.x2Pct / 100) * w));
+    let runBottom = 0, lMin = h, lMax = 0;
+    for (let x = xa; x <= xb; x++) {
+      runBottom = Math.max(runBottom, bottom[x]);
+      if (line[x] >= 0) { lMin = Math.min(lMin, line[x]); lMax = Math.max(lMax, line[x]); }
+    }
+    const top = Math.max(0, Math.min(lMin, runBottom) - Math.round(h * 0.05));
+    const bot = Math.min(h - 1, Math.max(lMax, runBottom) + Math.round(h * 0.05));
+    const wallY1 = top - Math.round(h * 0.08), wallY2 = top + Math.round(h * 0.02);
+    const reach = Math.round(w * FLOOR_PATCH_REACH);
+    const side = (dir: -1 | 1): { at: number; why: FloorPatch["left"] } | string => {
+      const start = dir < 0 ? xa : xb;
+      for (let k = 1; k <= reach; k++) {
+        const x = start + dir * k;
+        if (x < 0 || x >= w) return { at: dir < 0 ? 0 : w - 1, why: "photo edge" };
+        if (bottom[x] >= 0) {
+          const prev = bottom[x - dir];
+          if (prev >= 0 && bottom[x] - prev > h * 0.03) {
+            // a piece in front: carry on until it covers the whole patch height,
+            // then 1% further to swallow leftovers along its edge
+            for (let j = 0; j < Math.round(w * 0.08); j++) {
+              const xx = x + dir * j;
+              if (xx < 0 || xx >= w) break;
+              let cov = 0;
+              for (let y = top; y <= bot; y++) if (floorMask[y * w + xx]) cov++;
+              if (cov >= 0.95 * (bot - top + 1)) return { at: Math.max(0, Math.min(w - 1, xx + dir * Math.round(w * 0.01))), why: "piece in front" };
+            }
+            return "the piece in front doesn't cover the join";
+          }
+          if (line[x] >= 0 && bottom[x] >= line[x]) return "the same piece reaches the floor further along";
+          continue; // the same piece, still hanging: include it
+        }
+        if (vGrad(gO, x, wallY1, wallY2) >= 10) {
+          const win = Math.round(w * 0.015);
+          const peak = (g: Buffer) => {
+            let b = -1, bx = x;
+            for (let xx = x - win; xx <= x + win; xx++) { const v = vGrad(g, xx, wallY1, wallY2); if (v > b) { b = v; bx = xx; } }
+            return { bx, b };
+          };
+          const pO = peak(gO), pS = peak(gS);
+          if (pS.b < 6 || Math.abs(pO.bx - pS.bx) > w * 0.006) return "Gemini moved the wall corner";
+          return { at: dir < 0 ? Math.max(pO.bx, pS.bx) + 2 : Math.min(pO.bx, pS.bx) - 2, why: "wall corner" };
+        }
+      }
+      return "no corner or piece within reach";
+    };
+    const L = side(-1), R = side(1);
+    const where = `x ${r.x1Pct}-${r.x2Pct}%`;
+    if (typeof L === "string" || typeof R === "string") {
+      notes.push(`${where}: ${typeof L === "string" ? `left side: ${L}` : `right side: ${R}`}`);
+      return { ok: false as const, patches: [], notes };
+    }
+    patches.push({ x1: L.at, x2: R.at, top, bottom: bot, runX1: xa, runX2: xb, runBottom, left: L.why, right: R.why });
+    notes.push(`${where}: patch x ${((L.at / w) * 100).toFixed(1)}-${((R.at / w) * 100).toFixed(1)}% (${L.why} | ${R.why})`);
+  }
+  return { ok: patches.length > 0, patches, notes };
+}
+
+// Paste each planned patch from Gemini's image into the final, at the final's
+// resolution. Seamless: Gemini's pixels plus a smooth colour offset solved so
+// it matches the final exactly along the patch border (no tone step at any
+// join). Returns null when a join at a wall corner would add a visible edge.
+export async function applyFloorPatches(final: Buffer, staged: Buffer, floorMask: Uint8Array, patches: FloorPatch[], w: number, h: number) {
+  const meta = await sharp(final).metadata();
+  const FW = meta.width!, FH = meta.height!;
+  const sx = FW / w, sy = FH / h;
+  const [fin, stg, mk] = await Promise.all([
+    sharp(final).removeAlpha().raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(FW, FH, { fit: "fill" }).raw().toBuffer(),
+    sharp(Buffer.from(floorMask.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+      .resize(FW, FH, { fit: "fill" }).extractChannel(0).raw().toBuffer(),
+  ]);
+  const img = Buffer.from(fin);
+  const notes: string[] = [];
+  const lum = (b: Buffer, i: number) => (b[i * 3] + b[i * 3 + 1] + b[i * 3 + 2]) / 3;
+  for (const p of patches) {
+    const L = Math.max(0, Math.round(p.x1 * sx)), R = Math.min(FW - 1, Math.round(p.x2 * sx));
+    const top = Math.max(0, Math.round(p.top * sy)), bot = Math.min(FH - 1, Math.round(p.bottom * sy));
+    const xa = Math.round(p.runX1 * sx), xb = Math.round(p.runX2 * sx), runBottom = Math.round(p.runBottom * sy);
+    // colour offset (final - Gemini) on a coarse grid: fixed along the border
+    // (except a photo edge, which is free), smooth inside
+    const cs = Math.max(2, Math.round(4 * sx));
+    const gx = Math.ceil((R - L + 1) / cs), gy = Math.ceil((bot - top + 1) / cs);
+    const D = [0, 1, 2].map(() => new Float32Array(gx * gy));
+    const fixed = new Uint8Array(gx * gy);
+    for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
+      if (!(cx === 0 || cy === 0 || cx === gx - 1 || cy === gy - 1)) continue;
+      if ((cx === 0 && p.left === "photo edge") || (cx === gx - 1 && p.right === "photo edge")) continue;
+      const sum = [0, 0, 0];
+      let n = 0;
+      for (let y = top + cy * cs; y < Math.min(bot + 1, top + (cy + 1) * cs); y++) {
+        for (let x = L + cx * cs; x < Math.min(R + 1, L + (cx + 1) * cs); x++) {
+          const i = (y * FW + x) * 3;
+          for (let c = 0; c < 3; c++) sum[c] += fin[i + c] - stg[i + c];
+          n++;
+        }
+      }
+      for (let c = 0; c < 3; c++) D[c][cy * gx + cx] = sum[c] / Math.max(1, n);
+      fixed[cy * gx + cx] = 1;
+    }
+    for (let it = 0; it < 1500; it++) {
+      for (let c = 0; c < 3; c++) {
+        const d = D[c];
+        for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
+          const k = cy * gx + cx;
+          if (fixed[k]) continue;
+          let s = 0, n = 0;
+          if (cx > 0) { s += d[k - 1]; n++; }
+          if (cx < gx - 1) { s += d[k + 1]; n++; }
+          if (cy > 0) { s += d[k - gx]; n++; }
+          if (cy < gy - 1) { s += d[k + gx]; n++; }
+          d[k] = s / n;
+        }
+      }
+    }
+    const at = (d: Float32Array, fx: number, fy: number) => {
+      const x0 = Math.max(0, Math.min(gx - 1, Math.floor(fx))), y0 = Math.max(0, Math.min(gy - 1, Math.floor(fy)));
+      const x1 = Math.min(gx - 1, x0 + 1), y1 = Math.min(gy - 1, y0 + 1);
+      const tx = Math.max(0, Math.min(1, fx - x0)), ty = Math.max(0, Math.min(1, fy - y0));
+      return (d[y0 * gx + x0] * (1 - tx) + d[y0 * gx + x1] * tx) * (1 - ty) + (d[y1 * gx + x0] * (1 - tx) + d[y1 * gx + x1] * tx) * ty;
+    };
+    const backup = Buffer.from(img);
+    for (let y = top; y <= bot; y++) for (let x = L; x <= R; x++) {
+      // other pieces' lower parts (a rug, the foot of the bed) stay as they are
+      if (mk[y * FW + x] > 127 && (x < xa || x > xb) && y > runBottom + FH * 0.01) continue;
+      const i = (y * FW + x) * 3, fx = (x - L) / cs - 0.5, fy = (y - top) / cs - 0.5;
+      for (let c = 0; c < 3; c++) img[i + c] = Math.max(0, Math.min(255, Math.round(stg[i + c] + at(D[c], fx, fy))));
+    }
+    // A join at a wall corner must not add an edge the final didn't have there.
+    for (const [why, x] of [[p.left, L], [p.right, R]] as const) {
+      if (why !== "wall corner") continue;
+      const inX = x === L ? x + 3 : x - 3, outX = x === L ? x - 3 : x + 3;
+      if (inX < 0 || outX < 0 || inX >= FW || outX >= FW) continue;
+      let ex = 0, n = 0;
+      for (let y = top; y <= bot; y++) {
+        const now = Math.abs(lum(img, y * FW + outX) - lum(img, y * FW + inX));
+        const was = Math.abs(lum(fin, y * FW + outX) - lum(fin, y * FW + inX));
+        ex += Math.max(0, now - was - 4);
+        n++;
+      }
+      const score = ex / Math.max(1, n);
+      notes.push(`corner join adds ${score.toFixed(1)}`);
+      if (score > 8) {
+        img.set(backup);
+        return { image: null, notes: [...notes, "corner join would show"] };
+      }
+    }
+  }
+  const out = await sharp(img, { raw: { width: FW, height: FH, channels: 3 } }).png().toBuffer();
+  return { image: out, notes };
+}

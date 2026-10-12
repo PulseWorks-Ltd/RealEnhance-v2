@@ -56,6 +56,8 @@ import {
   checkFraming,
   checkCameraAlignment,
   checkFloatingFurniture,
+  planFloorPatches,
+  applyFloorPatches,
   undoneOverlay,
   compositeLayers,
   removeSunPatches,
@@ -703,25 +705,48 @@ export async function runMaskedStage2Job(p: {
       row.cameraAlignment = await checkCameraAlignment(original, staged).catch(() => null);
       const layers = await traceLayers(ctx);
       // Floating furniture: a piece whose legs stop short of the REAL floor
-      // (Gemini drew the floor/wall line higher or lower). Needs only the real
-      // photo and the traced outline, so it runs before the blend and door
-      // check and saves those calls when a re-stage is needed anyway.
+      // (Gemini drew the floor/wall line higher or lower). Where the join can
+      // be hidden (a piece in front, a wall corner, the photo edge) we keep
+      // Gemini's own floor and skirting under the piece ("floor patch");
+      // otherwise re-stage. Planning needs no AI call, so a photo that must be
+      // re-staged anyway skips the blend and door check.
       row.floatingCheck = await checkFloatingFurniture(original, layers.floor, w, h).catch((e: any) => ({ floating: false, runs: [], error: String(e?.message || e) }));
+      let floorPlan: Awaited<ReturnType<typeof planFloorPatches>> | null = null;
       if (row.floatingCheck.floating) {
         p.warn?.(`[${ctx.name}] furniture floating above the real floor: ${row.floatingCheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ends ${r.gapPct}% above the floor line`).join("; ")}`);
+        floorPlan = await planFloorPatches(original, staged, layers.floor, row.floatingCheck.runs, w, h)
+          .catch((e: any) => ({ ok: false as const, patches: [], notes: [`plan error: ${String(e?.message || e)}`] }));
+        row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
+        (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
       }
       if (row.framingCheck?.framingChanged) {
         // Reshaped room: paste-back can't fix it, so skip the blend and door
         // check (time and cost) and go straight to the re-stage / fallback.
         reasons.push("room reshaped");
-      } else if (row.floatingCheck.floating) {
+      } else if (row.floatingCheck.floating && !floorPlan?.ok) {
         reasons.push("furniture floating");
       } else {
         const hm = await harmonise(ctx, layers);
         final = hm.checkedBlend || hm.harmFinal;
-        await finalDoorCheck(ctx, final, p.doors);
-        if (row.doorAccess?.blocked) reasons.push("doorway blocked");
-        if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+        if (floorPlan?.ok && final) {
+          const fp = await applyFloorPatches(final, staged, layers.floor, floorPlan.patches, w, h)
+            .catch((e: any) => ({ image: null, notes: [`apply error: ${String(e?.message || e)}`] }));
+          row.floorPatch.applied = Boolean(fp.image);
+          row.floorPatch.notes.push(...fp.notes);
+          if (fp.image) {
+            final = fp.image;
+            io.save?.("12_floor_patched.webp", await sharp(fp.image).webp({ quality: 92 }).toBuffer());
+            p.log?.(`[${ctx.name}] floor patch applied: ${fp.notes.join("; ") || "ok"}`);
+          } else {
+            p.warn?.(`[${ctx.name}] floor patch rejected: ${fp.notes.join("; ")}`);
+            reasons.push("furniture floating");
+          }
+        }
+        if (reasons.length === 0) {
+          await finalDoorCheck(ctx, final, p.doors);
+          if (row.doorAccess?.blocked) reasons.push("doorway blocked");
+          if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+        }
       }
     } catch (e: any) {
       row.error = String(e?.message || e).slice(0, 400);
