@@ -60,6 +60,8 @@ import {
   applyFloorPatches,
   canRealign,
   shouldPrealign,
+  BED_WALL_CHECK,
+  askBedWall,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
   cutPieceCompletionZone,
@@ -759,6 +761,12 @@ export async function runMaskedStage2Job(p: {
   // publish; all of them are awaited once before returning.
   const pendingUploads: Promise<void>[] = [];
   const finishUploads = async () => { await Promise.all(pendingUploads); };
+  // The survey may still be running: look the doors up once, when first needed.
+  let doorsPromise: Promise<DoorOpening[] | null> | null = null;
+  const getDoors = () => {
+    if (!doorsPromise) doorsPromise = typeof p.doors === "function" ? p.doors().catch(() => null) : Promise.resolve(p.doors);
+    return doorsPromise;
+  };
   for (let attempt = 1; ; attempt++) {
     const dir = path.join(p.workDir, `attempt${attempt}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -882,7 +890,21 @@ export async function runMaskedStage2Job(p: {
       } else if (row.floatingCheck.floating && !floorPlan?.ok) {
         reasons.push("furniture floating");
       } else {
+        // Bed wall check (bedrooms), alongside the blend.
+        const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
+          ? getDoors().then((doors) => (doors && doors.length ? askBedWall(ctx.originalPath, ctx.staged, doors, dir, ctx.name) : null))
+          : Promise.resolve(null);
         const hm = await harmonise(ctx, layers);
+        const bedWall = await bedWallP;
+        if (bedWall) {
+          row.bedWall = { model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+          if (bedWall.failed) {
+            const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window"].filter(Boolean).join("; ");
+            p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)}`);
+            reasons.push("bed against a door wall or window");
+            row.bedWall.restageHints = bedWall.restageHints;
+          }
+        }
         final = hm.checkedBlend || hm.harmFinal;
         // A piece cut off by the line-up must have been continued by the blend.
         if (ctx.completionZone && !(row.realignCompletion?.applied && row.realignCompletion.filledPct >= 30)) {
@@ -903,11 +925,7 @@ export async function runMaskedStage2Job(p: {
           }
         }
         if (reasons.length === 0) {
-          if (typeof p.doors === "function") {
-            const getDoors = p.doors;
-            p.doors = await getDoors().catch(() => null);
-          }
-          await finalDoorCheck(ctx, final, p.doors as DoorOpening[] | null);
+          await finalDoorCheck(ctx, final, await getDoors());
           if (row.doorAccess?.blocked) reasons.push("doorway blocked");
           if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
         }
@@ -933,6 +951,7 @@ export async function runMaskedStage2Job(p: {
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
     hints = [
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
+      ...(row.bedWall?.restageHints || []),
       ...(row.floatingCheck?.floating || row.furnitureCutByTrace
         ? ["Stand every piece of furniture firmly on the floor: legs and bases must touch the floor, never end on the wall or skirting board. Keep the line where the floor meets each wall exactly where it is in the input photo."]
         : []),

@@ -1435,6 +1435,63 @@ export async function askDoorAccess(emptyPath: string, finalImage: Buffer, doors
   }
 }
 
+// ── Bed wall check (bedrooms) ────────────────────────────────────────────────
+// The bed's headboard belongs on a plain wall: never a wall with a door,
+// doorway or wardrobe door on it (when a plain wall exists), and never across
+// a window's glass. Carried over from the old layout planner, which scored
+// walls from the window/door survey. Code can't tell which wall a bed stands
+// against, so one small AI look at Gemini's staged image decides (runs
+// alongside the blend; bedrooms with a surveyed door only).
+// STAGE2_BED_WALL_CHECK=off disables it.
+export const BED_WALL_CHECK = String(process.env.STAGE2_BED_WALL_CHECK ?? "on").trim().toLowerCase() !== "off";
+
+export function buildBedWallPrompt(doors: DoorOpening[]): string {
+  const list = doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n");
+  return `Image 1 is the empty room. Image 2 is the same room after virtual staging (same camera).
+Doors and doorways found in the room (boxes are [x1, y1, x2, y2] as fractions of the image):
+${list}
+
+Look at the bed in Image 2 and the walls in Image 1, and answer:
+1. bedPresent: is there a bed in Image 2?
+2. headboardWall: which wall is the bed's headboard against (describe it)?
+3. doorOnHeadboardWall: is there a door, doorway or wardrobe door anywhere on that same wall — including one beside the bed? Judge by the wall itself in Image 1, not by what the camera angle makes look close.
+4. otherPlainWallAvailable: does the room show another wall, long enough for the bed, with no door, doorway, wardrobe door or window on it?
+5. headboardCoversWindow: does the bed or its headboard cover any part of a window's glass?
+6. bedCoversDoor: does the bed or its headboard stand in front of, cover or hide any part of a door, doorway, opening or wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)?
+Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "bedCoversDoor": "yes" | "no", "reason": string }`;
+}
+
+export function evaluateBedWall(raw: any) {
+  const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
+  const bed = yes(raw?.bedPresent);
+  const doorWall = bed && yes(raw?.doorOnHeadboardWall) && yes(raw?.otherPlainWallAvailable);
+  const window = bed && yes(raw?.headboardCoversWindow);
+  const coversDoor = bed && yes(raw?.bedCoversDoor);
+  const hints: string[] = [];
+  if (coversDoor) hints.push("Your previous attempt placed the bed in front of a door or doorway, covering it. Every door, doorway and wardrobe door must stay fully visible and clear; put the bed against a plain stretch of wall.");
+  if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
+  if (window) hints.push("Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible.");
+  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, failed: doorWall || window || coversDoor, restageHints: hints, answer: raw };
+}
+
+export async function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
+  const stagedPath = path.join(dir, "12_bed_wall_check_input.jpg");
+  fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
+  try {
+    const { raw, model } = await callJsonModel(
+      [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: stagedPath, label: "Image 2 (staged):" }],
+      "You are an experienced real-estate stager checking where the bed was placed.",
+      buildBedWallPrompt(doors),
+      name,
+      "bed_wall",
+    );
+    return { model, ...evaluateBedWall(raw) };
+  } catch (e: any) {
+    // A failed check never blocks.
+    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, failed: false, restageHints: [] as string[], answer: null };
+  }
+}
+
 // ── Harmonise (phase 2 prompt + phase 3 merge) ──────────────────────────────
 
 export function buildHarmonisePrompt(roomType: string, opts: { completeCutPieces?: boolean } = {}): string {
