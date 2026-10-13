@@ -11406,7 +11406,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         });
       }
       if (await stopIfCancelled("pre_stage2")) return;
-      const stage2MainStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
       const stage2MainRoomType = (
         !payload.options.roomType ||
         ["auto", "unknown"].includes(String(payload.options.roomType).toLowerCase())
@@ -11428,6 +11427,18 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           // new pieces, so restyled existing furniture can't come across.
           (stage2PromptMode === "full" || ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_MASKED_REFRESH || "").trim().toLowerCase()))
       );
+      // The window/door survey doesn't decide whether staging runs. Merged
+      // staging with the room planner only needs it for the final door check
+      // (and the backup prompt if the planner fails), so start staging now and
+      // pick the survey up at the door check (production Oct 2026: staging
+      // waited 61-79 s for it after Stage 1A on every staged room).
+      const stagingWithoutSurveyWait = useMaskedStage2 && roomBriefEnabled() && stage2PromptMode === "full";
+      const stage2MainStructuralBaseline = stagingWithoutSurveyWait
+        ? (structuralBaseline || null)
+        : await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
+      if (stagingWithoutSurveyWait) {
+        nLog("[STAGE2_STARTED_WITHOUT_SURVEY_WAIT]", { jobId: payload.jobId, surveyReady: !!structuralBaseline });
+      }
       if (useMaskedStage2) maskedStage2Used = true;
       // Same generation inputs as the old path (runStage2): the optional
       // layout-planner context is built the same way, from the same env var.
@@ -11446,7 +11457,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           inputPath: stage2InputResolved,
           roomType: String(stage2MainRoomType),
           jobId: payload.jobId,
-          doors: doorsFromStructuralBaseline(stage2MainStructuralBaseline),
+          doors: stagingWithoutSurveyWait
+            ? async () => doorsFromStructuralBaseline(await resolveStructuralBaselineForValidation("stage2_masked_door_check"))
+            : doorsFromStructuralBaseline(stage2MainStructuralBaseline),
           maxRestages: MASKED_STAGE2_MAX_RESTAGES,
           stage: (attempt, hints) =>
             runStage2GenerationAttempt(stage2InputResolved, {

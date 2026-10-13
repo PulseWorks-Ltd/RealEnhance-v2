@@ -405,6 +405,8 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
   const zones = (brief.zones || []).filter((z) => z?.name && z?.description).map((z) => `${z.name}: ${asSentence(z.description)}`);
 
   return [
+    `RULE 1 — THE CAMERA IS LOCKED. This outranks everything below, including the layout. The result must be this exact photo with furniture added: the same size, framing, zoom, viewpoint and perspective. Every wall edge, corner, window, door, the ceiling line and the edges of the floor stay at exactly the same place in the picture. If the furniture does not fit, change the furniture — make it smaller, move it slightly, let the edge of the photo cut it off, or leave it out. Never zoom in or out, crop, widen, rotate, tilt or move the viewpoint to make room for furniture.`,
+    ``,
     `Stage this empty ${label} for a real-estate listing photo. Add realistic, correctly scaled furniture and decor${style}, with lighting, shadows and perspective that match the photo. The room itself and the camera framing stay exactly as they are.`,
     ``,
     `THE ROOM`,

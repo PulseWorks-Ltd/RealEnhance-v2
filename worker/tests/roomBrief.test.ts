@@ -43,7 +43,8 @@ describe("room brief checks", () => {
   });
   it("builds a prompt with the layout first and no coordinates", () => {
     const p = buildStage2PromptFromRoomBrief(good, { roomType: "kitchen_living_dining", styleDescription: "modern NZ" });
-    expect(p).toMatch(/^Stage this empty open-plan kitchen, living and dining room/);
+    expect(p).toMatch(/^RULE 1 — THE CAMERA IS LOCKED\..*outranks everything below, including the layout/);
+    expect(p).toMatch(/\n\nStage this empty open-plan kitchen, living and dining room/);
     expect(p.indexOf("LAYOUT")).toBeLessThan(p.indexOf("KEEP EXACTLY"));
     expect(p).toMatch(/1\. TV: Mounted on the black TV wall bracket/);
     expect(p).not.toMatch(/\[0\./);

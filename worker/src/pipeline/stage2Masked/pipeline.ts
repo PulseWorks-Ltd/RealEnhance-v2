@@ -630,6 +630,20 @@ export function doorsFromStructuralBaseline(baseline: any): DoorOpening[] | null
     }));
 }
 
+// Re-stage instruction after a reshaped room: say what went wrong (zoomed in,
+// zoomed out, or redrawn from another viewpoint) and that the furniture must
+// give way to the room, never the other way round.
+export function reshapeHint(cam: { scale?: number } | null | undefined): string {
+  const scale = Number(cam?.scale);
+  const pct = Number.isFinite(scale) ? Math.round(Math.abs(scale - 1) * 100) : 0;
+  const what = Number.isFinite(scale) && scale >= 1.03
+    ? `zoomed in on the room by about ${pct}%, cutting off parts of the walls, ceiling and floor`
+    : Number.isFinite(scale) && scale <= 0.97
+      ? `zoomed out by about ${pct}%, showing more of the room than the photo does`
+      : "redrew the room from a different viewpoint, so the walls, corners and windows moved";
+  return `Your previous attempt ${what}, and it was rejected. The camera is locked: the result must have exactly the same framing, zoom, viewpoint and perspective as the input photo, with every wall edge, corner, window, door and the ceiling line in the same place. The furniture must fit the room, never the other way round — make pieces smaller, move them, let the edge of the photo cut them off, or leave pieces out. Do not crop, zoom, widen, rotate or redraw the room.`;
+}
+
 export type MaskedJobResult =
   | { ok: true; outputPath: string; attempts: number; reports: any[] }
   | { ok: false; reasons: string[]; attempts: number; reports: any[] };
@@ -643,7 +657,9 @@ export async function runMaskedStage2Job(p: {
   inputPath: string; // Stage 2 input (Stage 1A, or 1B if decluttered)
   roomType: string;
   jobId: string;
-  doors: DoorOpening[] | null;
+  // The doors, or a function that fetches them (the window/door survey may
+  // still be running when staging starts; it's only needed for the door check).
+  doors: DoorOpening[] | null | (() => Promise<DoorOpening[] | null>);
   maxRestages: number;
   // Runs one Gemini staging and returns the staged image's path. Hints are
   // the "keep this doorway clear" notes for a re-stage.
@@ -743,7 +759,11 @@ export async function runMaskedStage2Job(p: {
           }
         }
         if (reasons.length === 0) {
-          await finalDoorCheck(ctx, final, p.doors);
+          if (typeof p.doors === "function") {
+            const getDoors = p.doors;
+            p.doors = await getDoors().catch(() => null);
+          }
+          await finalDoorCheck(ctx, final, p.doors as DoorOpening[] | null);
           if (row.doorAccess?.blocked) reasons.push("doorway blocked");
           if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
         }
@@ -772,9 +792,7 @@ export async function runMaskedStage2Job(p: {
       ...(row.floatingCheck?.floating
         ? ["Stand every piece of furniture firmly on the floor: legs and bases must touch the floor, never end on the wall or skirting board. Keep the line where the floor meets each wall exactly where it is in the input photo."]
         : []),
-      ...(row.framingCheck?.framingChanged
-        ? ["Keep the camera exactly where it is: same framing, zoom and perspective as the input photo. Do not crop, widen, rotate or redraw the walls, ceiling, windows or doors — only add furniture."]
-        : []),
+      ...(row.framingCheck?.framingChanged ? [reshapeHint(row.cameraAlignment)] : []),
     ];
   }
 }
