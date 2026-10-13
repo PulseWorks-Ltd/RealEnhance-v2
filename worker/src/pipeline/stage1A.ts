@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import fs from "fs";
 import { enhanceWithStabilityConservativeStage1A } from "../ai/stabilityConservativeUpscaleStage1A";
 import { enhanceWithGemini } from "../ai/gemini";
 import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
@@ -552,10 +553,14 @@ const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR OUTLOOK — make the 
 THE ONE RULE THAT OVERRIDES EVERYTHING BELOW: everything visible through a window or door — fences, lattice, trellis, screens, walls, gates, hedges, trees, shrubs, gardens, neighbouring houses, roofs, sheds, poles and power lines — must stay exactly where it is, with exactly the same outline, size and coverage of the glass. Nothing may be removed, lowered, thinned out, made see-through or painted over to reveal more sky or a different view, and nothing new may be added.
 
 Sky — make the outlook look sunny:
-- Wherever any sky shows through a window or door — whether it is cloudy, grey, overcast, white or washed out — replace it with a clear blue sky (a few light white clouds are fine), as if the photo was taken on a bright sunny day.
+- Wherever sky shows through a window or door — whether it is cloudy, grey, overcast or pale — replace it with a clear blue sky (a few light white clouds are fine), as if the photo was taken on a bright sunny day. Only treat an area as sky when you can see what it sits above in the original: a roofline, treetops, a fence top, hills or similar.
 - Let the exterior look sunlit: natural warm daylight and soft shadows on the things that are already out there, without changing their colour or shape.
 - The new sky fills exactly the same area the old sky did — it stops at the same rooflines, treetops, fence tops and lattice edges, and shows through the same gaps.
 - If a window or door shows no sky at all — for example the glass is filled by a fence, wall, hedge, trees or a neighbouring house — leave that view exactly as it is. Never create sky where there was none, and never enlarge the area of sky.
+
+Blown-out windows (overexposed glass):
+- If the glass is so bright that the view is plain white, with no roofline, trees, fence or other outside detail visible, the camera did not record what is out there. Leave it bright and plain. Never paint a sky, fence, lattice, roof, trees, garden or any other scenery into it, and never guess what might be outside.
+- The same applies to glass seen between the slats of blinds or through sheer curtains: if it is plain white in the original, it stays plain white.
 
 Weather and glass:
 - Only where real fog or mist clearly reduces visibility, you may clear it so the existing view is easier to see — without inventing anything that is not genuinely present in the original.
@@ -691,6 +696,28 @@ async function enhanceWithGeminiStage1A(
   });
 
   let finalGeminiPath = geminiPath;
+
+  // Blown-out window guard (interior): where the glass was plain white in the
+  // image sent to Gemini, the camera recorded no view, so detailed scenery
+  // there is invented — put the original white back. Code-only, no AI call.
+  if (sceneType === "interior") {
+    try {
+      const { blownWindowGuardEnabled, repairInventedBlownWindows } = await import("../validators/stage1ABlownWindowGuard.js");
+      if (blownWindowGuardEnabled()) {
+        const guard = await repairInventedBlownWindows(await fs.promises.readFile(sharpPath), await fs.promises.readFile(geminiPath));
+        const invented = guard.regions.filter((r) => r.invented);
+        if (guard.image) {
+          const repairedPath = geminiPath.replace(/\.(jpg|jpeg|png|webp)$/i, "") + "-blown-window-guard.webp";
+          await sharp(guard.image).webp({ quality: 95 }).toFile(repairedPath);
+          finalGeminiPath = repairedPath;
+        }
+        console.log("[STAGE1A_BLOWN_WINDOW_GUARD]", JSON.stringify({ jobId, imageId, outlookPrompt: stage1ASunnyExteriorPromptInjected, regions: guard.regions.length, repaired: invented.length, invented }));
+      }
+    } catch (guardErr) {
+      // Fail-open: never cost a customer their enhancement.
+      logIfNotFocusMode("[stage1A] Blown-out window guard failed to run — continuing without it", guardErr);
+    }
+  }
 
   // "Enhance Exterior Outlook" hallucination check — only runs when the
   // checkbox actually granted permission to touch exterior content for this
