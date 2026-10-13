@@ -118,3 +118,34 @@ describe("room brief checks", () => {
     expect(buildStage2PromptFromRoomBrief(good, { roomType: "living_room" })).toMatch(/cushions and a throw/);
   });
 });
+
+describe("conservative bed plan (code rule)", () => {
+  const { makeBedPlanConservative } = require("../src/pipeline/roomBrief");
+  const plan006 = {
+    bedSpace: { bed: "queen", bedsideTables: 2, reason: "plenty of room while remaining outside the door swing path" },
+    layout: [
+      { item: "Queen bed", placement: "against the plain left wall, centered in the visible expanse well clear of the door swing" },
+      { item: "Bedside table", placement: "to the left of the queen bed against the left wall toward the foreground" },
+      { item: "Bedside table", placement: "to the right of the queen bed against the left wall, well back from the door frame" },
+      { item: "Table lamp", placement: "on top of each bedside table" },
+    ],
+  };
+  it("near a door: one bedside table (the door side goes) and the bed pushed away from the door", () => {
+    const { brief, changed } = makeBedPlanConservative(plan006, "bedroom");
+    const tables = brief.layout.filter((it: any) => /bedside/i.test(it.item));
+    expect(tables).toHaveLength(1);
+    expect(tables[0].placement).toMatch(/toward the foreground/);
+    expect(brief.bedSpace.bedsideTables).toBe(1);
+    expect(brief.layout[0].placement).toMatch(/furthest from the door/);
+    expect(changed.length).toBeGreaterThan(0);
+  });
+  it("no door mentioned: plan unchanged", () => {
+    const plain = { ...plan006, bedSpace: { bed: "queen", bedsideTables: 2, reason: "long plain wall" }, layout: plan006.layout.map((it: any) => ({ ...it, placement: it.placement.replace(/,? ?(well clear of|well back from) the door[^,]*/g, "") })) };
+    const { brief, changed } = makeBedPlanConservative(plain, "bedroom");
+    expect(changed).toHaveLength(0);
+    expect(brief.layout.filter((it: any) => /bedside/i.test(it.item))).toHaveLength(2);
+  });
+  it("leaves non-bedrooms alone", () => {
+    expect(makeBedPlanConservative(plan006, "living_room").changed).toHaveLength(0);
+  });
+});

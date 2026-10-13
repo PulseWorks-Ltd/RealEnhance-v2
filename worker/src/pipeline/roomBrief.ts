@@ -106,6 +106,7 @@ DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat
 BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, wardrobe door or window anywhere along it; (2) only if there is no such wall, a wall with a window — then the headboard is low and sits below the window sill, the window frame and sill stay fully visible, and nothing hangs above the headboard; (3) never a wall with a door, doorway or wardrobe door on it, even beside the bed. Mark walls with a door, doorway or wardrobe door as "usableForLargeFurniture": false. Only if every visible wall has a door, doorway or wardrobe door, use the one with the longest plain stretch, with the whole bed and its bedside tables on that plain stretch, well clear of the door and its swing.
 DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. Measure the plain wall available for the bed from the photo edge or room corner up to the door frame, minus the door's swing. If the bed with two bedside tables does not fit there, do this, in order, until it fits: (1) keep only the bedside table on the side away from the door; (2) choose a smaller bed; (3) slide the bed further away from the door, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
 MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are, so measure the plain stretch in door-widths before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, go one size smaller.
+BE CONSERVATIVE, NOT OPTIMISTIC: an under-furnished bedroom looks fine; a crowded one, or one with a blocked door, is a failure. Plan TWO bedside tables only when the plain wall is clearly long enough for them with room to spare. When space is at all tight, plan ONE bedside table (on the side away from any door), and NONE if even one would crowd a door, wardrobe or window. Choose the smaller bed whenever in doubt.
 WHEN THE BED WALL ENDS AT A DOOR: never centre the bed on that wall. Push the whole setup to the far end, away from the door — against the room corner or out to the edge of the photo, letting the photo edge cut off the far bedside table or the side of the bed — and describe it that way in "layout" (for example "pushed to the far left end of the left wall, partly cut off by the left edge of the photo, leaving a clear gap before the door").
 BED SPACE CHECK: first judge the open floor you can actually see. Measure the headboard wall by its VISIBLE length only — if it runs off the edge of the photo, the hidden part does not count, so a bed and bedside tables must fit within what is shown (they may run slightly past the photo edge, but never need more room than the visible wall). Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
 Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
@@ -279,6 +280,45 @@ async function callBriefModel(image: { data: string; mime: string }, instruction
   };
 }
 
+/**
+ * Conservative bed plan (code, not AI judgement). The planner keeps judging
+ * walls longer than they are (Oct 2026, production: "ample room for a queen
+ * and two bedside tables" beside an open door, three runs out of three). When
+ * a bedroom plan mentions a door near the bed setup: at most ONE bedside table
+ * (the one on the door side goes), and the bed is pushed to the end of the
+ * wall away from the door, letting the photo edge cut it off.
+ */
+export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  if (!/bed/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return { brief, changed };
+  const isBed = (it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || ""));
+  const isTable = (it: any) => /bedside|night ?stand|side table/i.test(String(it?.item || ""));
+  const bedSetupText = [
+    ...brief.layout.filter((it: any) => isBed(it) || isTable(it)).map((it: any) => String(it?.placement || "")),
+    String((brief as any).bedSpace?.reason || ""),
+  ].join(" ");
+  if (!brief.layout.some(isBed) || !/door/i.test(bedSetupText)) return { brief, changed };
+  const tables = brief.layout.filter(isTable);
+  let layout = brief.layout;
+  if (tables.length > 1) {
+    const doorSide = tables.find((it: any) => /door/i.test(String(it?.placement || ""))) || tables[tables.length - 1];
+    layout = layout.filter((it: any) => it !== doorSide);
+    changed.push(`dropped the bedside table "${String(doorSide?.placement || "").slice(0, 80)}"`);
+  }
+  layout = layout.map((it: any) => {
+    if (!isBed(it)) return it;
+    changed.push("bed pushed away from the door");
+    return {
+      ...it,
+      placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — pushed to the end of the wall furthest from the door (against the corner or out to the edge of the photo, which may cut part of it off), leaving at least one door-width of clear wall before the door frame; it must not be centred on the wall`,
+    };
+  });
+  const bedSpace = (brief as any).bedSpace;
+  const out: any = { ...brief, layout };
+  if (bedSpace && Number(bedSpace.bedsideTables) > 1) out.bedSpace = { ...bedSpace, bedsideTables: 1 };
+  return { brief: out, changed };
+}
+
 /** One room-brief call (plus one corrected retry only if the rule checks fail). */
 export async function buildRoomBrief(params: {
   imagePath: string;
@@ -311,6 +351,11 @@ export async function buildRoomBrief(params: {
     } catch {
       lastIssues = ["the answer was not valid JSON — return only the JSON object"];
       continue;
+    }
+    const conservative = makeBedPlanConservative(brief, params.roomType);
+    if (conservative.changed.length) {
+      brief = conservative.brief;
+      console.log("[ROOM_BRIEF_CONSERVATIVE_BED]", JSON.stringify({ changed: conservative.changed }));
     }
     lastBrief = brief;
     lastIssues = checkRoomBrief(brief, params.roomType);

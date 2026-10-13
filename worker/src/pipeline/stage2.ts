@@ -1109,13 +1109,17 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
   }
 
   const promptPrefixBlocks: string[] = [];
+  // Re-stage corrections go AFTER the main prompt, below the camera and
+  // structure locks, never above them (Oct 2026, production: placed first,
+  // "legs must touch the floor" outranked RULE 1 and Gemini moved the floor
+  // line, a wall and a door, or changed the flooring, to obey it).
+  let retryCorrectionSuffix = "";
 
   const validRetryCorrectionHints = (opts.retryCorrectionHints || []).filter(
     (h): h is string => typeof h === "string" && h.trim().length > 0
   );
   if (validRetryCorrectionHints.length > 0) {
-    const retryCorrectionBlock = `PREVIOUS ATTEMPT CORRECTION — DO NOT REPEAT\n\n${validRetryCorrectionHints.join("\n\n")}`;
-    promptPrefixBlocks.push(retryCorrectionBlock);
+    retryCorrectionSuffix = `PREVIOUS ATTEMPT CORRECTION — DO NOT REPEAT\n\n${validRetryCorrectionHints.join("\n\n")}\n\nFix this ONLY by moving, resizing, replacing or leaving out furniture. Every rule above still applies in full: the camera, walls, doors, door frames, windows, floor line, skirting boards and flooring stay exactly as they are in the input photo.`;
     nLog("[STAGE2_RETRY_CORRECTION_INJECTED]", {
       jobId: opts.jobId,
       imageId: opts.imageId,
@@ -1142,6 +1146,7 @@ ${nanoRoomProgramGuidance.itemBudget} Staging style: ${nanoRoomProgramGuidance.s
   if (resolvedPromptMode === "full") {
     textPrompt += "\n\nDOOR STATE LOCK: Any door that is closed in the input image must remain closed in the staged output.";
   }
+  if (retryCorrectionSuffix) textPrompt += `\n\n${retryCorrectionSuffix}`;
 
   // If we have a staging region, strongly insist edits are limited to the provided mask.
   if (opts.stagingRegion) {

@@ -961,8 +961,12 @@ export async function runMaskedStage2Job(p: {
     hints = [
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
       ...(row.bedWall?.restageHints || []),
-      ...(row.floatingCheck?.floating || row.furnitureCutByTrace
-        ? ["Stand every piece of furniture firmly on the floor: legs and bases must touch the floor, never end on the wall or skirting board. Keep the line where the floor meets each wall exactly where it is in the input photo."]
+      // Floating furniture: Gemini's pieces ended above the real floor. Say so
+      // in terms of the furniture only — "touch the floor" alone made Gemini
+      // move the floor line or change the flooring. A piece the TRACE cut off
+      // is our tracing error, not Gemini's, so it gets no correction at all.
+      ...(row.floatingCheck?.floating
+        ? ["Some furniture legs ended above the floor. Place and size each piece so its legs or base rest on the existing floor exactly as the input photo shows it — move or resize the furniture, never the floor line, skirting boards, walls or flooring."]
         : []),
       ...(row.framingCheck?.framingChanged ? [reshapeHint(row.cameraAlignment)] : []),
     ];
