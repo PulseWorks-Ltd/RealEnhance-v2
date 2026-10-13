@@ -32,3 +32,9 @@ Made by `worker/src/scripts/reshape-check-pairs.ts` (no AI calls). Re-run after 
 Saved in `owner_labels.json`: only these are reshaped beyond what merging can save: 7, 11, 12, 13, 21, 24, 31, 33, 34, 39, 40, 41, 42, 44, 45, 46, 47, 48, 49, 50 (possibly 10). 15 and 17: shape fine, but furniture blocks doorways. Everything else is salvageable by merging.
 
 Against these labels the current reshape rule catches 20/20 but wrongly rejects 39/58 salvageable photos: it measures how far the view moved, not whether the merged furniture still fits.
+
+**What the labels mean (owner, Oct 13 2026):** "unsalvageable" was judged from the staged and
+baseline images laid over each other at 50% transparency — how far Gemini's room drifts from the
+real one — not from the merged result. After merging, pairs 21 and 50 were published and the owner
+judged both "perfectly fine to publish". So an "unsalvageable" label does not mean the merged
+output must be rejected; judge merge changes on the published images, not on these labels alone.
