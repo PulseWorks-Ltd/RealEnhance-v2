@@ -355,7 +355,13 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack || error.message : String(error));
-  process.exitCode = 1;
-});
+// Exit explicitly: the validator modules open a Redis client on import, and
+// with no Redis (CI) its reconnect loop keeps the process alive forever, so
+// the CI step hit its 20-minute timeout and was cancelled even though every
+// fixture passed.
+main()
+  .then(() => process.exit(process.exitCode ?? 0))
+  .catch((error) => {
+    console.error(error instanceof Error ? error.stack || error.message : String(error));
+    process.exit(1);
+  });
