@@ -22,6 +22,9 @@ const MIN_REGION_PCT = 0.25;   // ignore specks smaller than this % of the image
 const EDGE_STEP = 30;          // brightness step that counts as an edge
 const INVENTED_EDGE_GAIN = 0.04; // edge density the output gained inside the region
 const INVENTED_OTHER = 0.12;     // share of pixels that are neither white nor sky
+const MAX_EDGE_BEFORE = 0.02;    // the pane must be truly featureless in the original:
+                                 // glass already showing a roof, fence or bushes
+                                 // (production, Oct 2026: 5.4% and 24.7%) is a real view
 const GROW_MIN = 200;            // repair also covers bright neighbours (blind slats, frame)
 const GROW_BOX_PCT = 1.5;        // ...but only within the pane's box, grown by this much
 
@@ -112,7 +115,7 @@ export async function findInventedBlownWindows(before: Buffer, after: Buffer) {
     }
     if (n < 50) continue;
     const edgeBefore = eB / n, edgeAfter = eA / n, otherPct = other / n;
-    const invented = edgeAfter - edgeBefore > INVENTED_EDGE_GAIN && otherPct > INVENTED_OTHER;
+    const invented = edgeBefore <= MAX_EDGE_BEFORE && edgeAfter - edgeBefore > INVENTED_EDGE_GAIN && otherPct > INVENTED_OTHER;
     if (invented) {
       // Repair the whole bright window, not just the pure-white pixels: Gemini
       // may also have removed blinds or redrawn the frame. Grow from the pane
