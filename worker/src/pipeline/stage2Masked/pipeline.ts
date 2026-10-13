@@ -666,9 +666,18 @@ export async function finalDoorCheck(ctx: MaskedContext, finalImage: Buffer | nu
     log(ctx, `[${ctx.name}] doorway may be blocked (${flagged.map((d) => `${d.id}: clear stretch only ${d.longestClearPct}% of its width`).join(", ")}) — asking the AI to review the final image`);
     const ai = await askDoorAccess(ctx.originalPath, finalImage, flagged, ctx.roomType, ctx.dir, ctx.name);
     row.doorAccess.ai = ai;
-    row.doorAccess.blocked = ai.blocked;
-    row.doorAccess.restageHints = ai.restageHints;
-    row.doorAccess.result = ai.blocked ? "BLOCKED (AI)" : "clear (AI)";
+    if ((ai as any).error) {
+      // The code check says a doorway looks blocked and the AI could not be
+      // asked: don't publish on a guess — re-stage with a plain hint.
+      row.doorAccess.blocked = true;
+      row.doorAccess.restageHints = flagged.map((d) => `Keep ${d.description ? (/^(the|a|an)\s/i.test(d.description) ? d.description : `the ${d.description}`) : "the doorway"} completely clear: no bed, bedside table, sofa, table or other furniture in front of it or in the space its door swings through.`);
+      row.doorAccess.result = "appears blocked (AI check failed — re-staging)";
+      warn(ctx, `[${ctx.name}] door AI check failed (${String((ai as any).error).slice(0, 160)}) — treating the flagged doorway as blocked`);
+    } else {
+      row.doorAccess.blocked = ai.blocked;
+      row.doorAccess.restageHints = ai.restageHints;
+      row.doorAccess.result = ai.blocked ? "BLOCKED (AI)" : "clear (AI)";
+    }
     if (ai.blocked) warn(ctx, `[${ctx.name}] DOORWAY BLOCKED in the final image: ${ai.items.filter((o: any) => o.accessBlocked === "yes").map((o: any) => `${o.description} — ${o.blockingFurniture}`).join(" | ")}`);
   }
 }

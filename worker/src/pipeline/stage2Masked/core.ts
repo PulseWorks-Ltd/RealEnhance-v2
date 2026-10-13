@@ -1249,10 +1249,11 @@ export async function compositeSurface(original: Buffer, staged: Buffer, floorSu
 //     output (the Stage 2 input). Clear -> publish.
 // Uses Grok when STAGE2_VALIDATOR_MODEL=grok (as production does), else Gemini.
 export const DOOR_CHECK = process.env.DOOR_CHECK !== "0";
-// Door-check model. DOOR_CHECK_MODEL (a Gemini text model) takes precedence:
-// when set, the door check uses Gemini even if STAGE2_VALIDATOR_MODEL=grok.
-// When not set, it follows STAGE2_VALIDATOR_MODEL (Grok) or falls back to the
-// default Gemini models below. Comma-separated = tried in order.
+// Door and bed check models: Gemini by default, whatever STAGE2_VALIDATOR_MODEL
+// says (Oct 2026, production: with STAGE2_VALIDATOR_MODEL=grok both checks went
+// to Grok, timed out after 60 s and let blocked doors through). DOOR_CHECK_MODEL
+// overrides the list (comma-separated, tried in order); "grok" may be listed
+// explicitly and the Gemini defaults are still tried after it.
 export const DOOR_CHECK_MODEL_SET = Boolean(String(process.env.DOOR_CHECK_MODEL || "").trim());
 export const DOOR_CHECK_MODELS = (process.env.DOOR_CHECK_MODEL || "gemini-3.8-flash,gemini-3.1-flash-lite").split(",").map((m) => m.trim()).filter(Boolean);
 // One re-stage budget per photo, for ANY reason (blocked doorway or a room
@@ -1266,12 +1267,13 @@ export const DOOR_APPROACH_CHANGED = Number(process.env.DOOR_APPROACH_CHANGED ||
 export type DoorOpening = { id: string; type: string; description: string; bbox: [number, number, number, number] };
 
 export async function callJsonModel(images: { path: string; label: string }[], systemInstruction: string, userPrompt: string, name: string, label: string) {
-  const usingGrok = !DOOR_CHECK_MODEL_SET && String(process.env.STAGE2_VALIDATOR_MODEL || "").trim().toLowerCase() === "grok";
   let lastError = "";
-  for (const model of usingGrok ? ["grok"] : DOOR_CHECK_MODELS) {
+  const models = [...DOOR_CHECK_MODELS, ...(DOOR_CHECK_MODELS.some((m) => m.toLowerCase() === "grok") ? ["gemini-3.8-flash", "gemini-3.1-flash-lite"] : [])];
+  for (const model of models) {
+    const usingGrok = model.toLowerCase() === "grok";
     try {
-      // Forced per call, so DOOR_CHECK_MODEL wins over STAGE2_VALIDATOR_MODEL
-      // without affecting any other validator.
+      // Forced per call, so this check never follows STAGE2_VALIDATOR_MODEL
+      // and no other validator is affected.
       const raw = await runWithForcedValidatorModel(usingGrok ? "grok" : "gemini", () =>
         callValidatorModel({
           images, systemInstruction, userPrompt, model,
