@@ -8729,6 +8729,33 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage1ASunnyExteriorEnabled = strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
+  // Exterior clutter check early start: exteriors always get this check (it
+  // decides the automatic exterior tidy-up), and it used to run only after
+  // Stage 1A, adding ~30 s after the enhanced photo was ready (production
+  // Oct 2026: 31 s, then a timeout). Run it on the original now, alongside
+  // Stage 1A — enhancing changes light and colour, not what's in the yard.
+  let exteriorClutterPrefetch: Promise<CachedFurnitureDetectionResult | null> | null = null;
+  if (stage1ASceneLabel === "exterior" && !frozenRoutingSnapshot) {
+    nLog("[EXTERIOR_CLUTTER_PREFETCH_START]", { jobId: payload.jobId });
+    const prefetchStartedAt = Date.now();
+    exteriorClutterPrefetch = runFurnitureDetectionOnce({
+      payload,
+      imagePath: canonicalPath,
+      detectorCache: jobContext.furnitureDetectionCache,
+      detectorCacheStats: jobContext.detectorCacheStats,
+      sceneType: "exterior",
+      startedEvent: "DETECTOR_STARTED",
+      startedFields: { confidence: null, finalSkipStage1B: null, early: true },
+    })
+      .then((r) => {
+        nLog("[EXTERIOR_CLUTTER_PREFETCH_DONE]", { jobId: payload.jobId, ms: Date.now() - prefetchStartedAt, status: (r as any)?.status ?? null });
+        return r;
+      })
+      .catch((err: any) => {
+        nLog("[EXTERIOR_CLUTTER_PREFETCH_FAILED]", { jobId: payload.jobId, error: err?.message || String(err) });
+        return null;
+      });
+  }
   // Layout planner early start (empty rooms only): the upload pre-check
   // already found the room empty, so Stage 2 will furnish it from the Stage
   // 1A photo and run the room brief anyway. Start the brief on the original
@@ -8807,7 +8834,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   }
 
   const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
-  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent;
+  // The window/door survey only serves staging, and exteriors are never
+  // staged: skip it (production Oct 2026: a 72 s Gemini call, and the job
+  // waited for it after deciding not to stage).
+  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent && stage1ASceneLabel !== "exterior" && sceneLabel !== "exterior";
   const shouldTriggerBaselineDuringStage1A = canRunParallelBaseline && !structuralBaseline && !structuralBaselinePromise;
   const baselineTriggerReason = !stage2Requested
     ? "stage2_not_required"
@@ -9293,7 +9323,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         }
 
         if (shouldResolveExteriorDeclutter) {
-          const exteriorDetection = await runFurnitureDetectionOnce({
+          const exteriorDetection = (exteriorClutterPrefetch ? await exteriorClutterPrefetch : null) || await runFurnitureDetectionOnce({
             payload,
             imagePath: path1A,
             detectorCache: jobContext.furnitureDetectionCache,
