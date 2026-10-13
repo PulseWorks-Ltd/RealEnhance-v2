@@ -719,6 +719,27 @@ async function enhanceWithGeminiStage1A(
     }
   }
 
+  // Invented-sky guard (interior): trees or hedges trimmed to open up sky the
+  // camera never saw. Puts the original plants back, colour-matched to the
+  // enhanced view. Code-only, no AI call.
+  if (sceneType === "interior") {
+    try {
+      const { inventedSkyGuardEnabled, repairInventedSky } = await import("../validators/stage1ABlownWindowGuard.js");
+      if (inventedSkyGuardEnabled()) {
+        const sky = await repairInventedSky(await fs.promises.readFile(sharpPath), await fs.promises.readFile(finalGeminiPath));
+        if (sky.image) {
+          const repairedPath = finalGeminiPath.replace(/\.(jpg|jpeg|png|webp)$/i, "") + "-invented-sky-guard.webp";
+          await sharp(sky.image).webp({ quality: 95 }).toFile(repairedPath);
+          finalGeminiPath = repairedPath;
+        }
+        console.log("[STAGE1A_INVENTED_SKY_GUARD]", JSON.stringify({ jobId, imageId, outlookPrompt: stage1ASunnyExteriorPromptInjected, newSkyPct: sky.totalPct, repaired: !!sky.image, regions: sky.regions, colourMatch: sky.gain, align: sky.align }));
+      }
+    } catch (skyErr) {
+      // Fail-open: never cost a customer their enhancement.
+      logIfNotFocusMode("[stage1A] Invented-sky guard failed to run — continuing without it", skyErr);
+    }
+  }
+
   // "Enhance Exterior Outlook" hallucination check — only runs when the
   // checkbox actually granted permission to touch exterior content for this
   // job (see stage1AExteriorHallucinationCheck.ts's header comment for why
