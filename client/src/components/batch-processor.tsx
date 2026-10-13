@@ -1285,6 +1285,9 @@ export default function BatchProcessor({
   // Server switch (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT). Off: every image is
   // 1 credit and no cost pop-up is shown before processing.
   const [extraDeclutterCredit, setExtraDeclutterCredit] = useState(false);
+  // Server switch (STAGE1A_EXTERIOR_OUTLOOK). Off: the option is hidden and
+  // never sent, whatever an older saved setting says.
+  const [exteriorOutlookAvailable, setExteriorOutlookAvailable] = useState(false);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
   // Cost summary shown when Process is clicked (after the furniture pre-check):
   // how many photos get declutter + stage (2 credits) vs stage / enhance (1).
@@ -2563,6 +2566,7 @@ export default function BatchProcessor({
       const totalAvailable = monthlyRemaining + addonRemaining;
       setAvailableCredits(totalAvailable);
       setExtraDeclutterCredit(summary?.declutterStageExtraCredit === true);
+      setExteriorOutlookAvailable(summary?.exteriorOutlookEnabled === true);
       return {
         monthlyRemaining,
         addonRemaining,
@@ -2672,7 +2676,7 @@ export default function BatchProcessor({
       // Global Stage 1A "Enhance Exterior Outlook" toggle — brightens the
       // exterior visible through windows/doors on interior shots (gated to
       // interior scenes worker-side).
-      metaItem.enhanceExteriorSky = enhanceExteriorSky;
+      metaItem.enhanceExteriorSky = exteriorOutlookAvailable && enhanceExteriorSky;
       // Global Stage 1A "Twilight / Dusk Photo" toggle — converts exterior
       // daytime shots into a dusk/twilight photo (gated to exterior scenes
       // worker-side).
@@ -2689,7 +2693,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky, enhanceExteriorDusk, furniturePrecheck.entries]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky, exteriorOutlookAvailable, enhanceExteriorDusk, furniturePrecheck.entries]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -5291,7 +5295,7 @@ export default function BatchProcessor({
       allowRetouch: true,
       furnitureReplacement,
       declutter,
-      enhanceExteriorSky,
+      enhanceExteriorSky: exteriorOutlookAvailable && enhanceExteriorSky,
       enhanceExteriorDusk,
       stage2Only,
       outdoorStaging,
@@ -7957,6 +7961,7 @@ export default function BatchProcessor({
                       )}
                     </div>
 
+                    {exteriorOutlookAvailable && (
                     <label
                       htmlFor="enhance-exterior-outlook-global"
                       className="block cursor-pointer py-2"
@@ -7982,6 +7987,7 @@ export default function BatchProcessor({
                         </div>
                       </div>
                     </label>
+                    )}
 
                     <label
                       htmlFor="enhance-exterior-dusk-global"

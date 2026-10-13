@@ -59,6 +59,7 @@ import {
   planFloorPatches,
   applyFloorPatches,
   canRealign,
+  shouldPrealign,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
   cutPieceCompletionZone,
@@ -132,6 +133,11 @@ export type TraceLayers = Awaited<ReturnType<typeof traceLayers>>;
 const CLOSEUP_RETRACE = String(process.env.STAGE2_CLOSEUP_RETRACE ?? "1").trim() !== "0";
 const CLOSEUP_MIN_AREA_PCT = 0.3;
 const CLOSEUP_MIN_TOUCHING_PCT = 10;
+const CUT_UNDER_MIN_AREA_PCT = Number(process.env.CUT_UNDER_MIN_AREA_PCT || 0.8); // missed area under furniture...
+const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);              // ...with this much furniture right above it
+const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
+const CLOSEUP_MAX_ADD_FLOOR_PCT = 2;  // ...or 2% of the photo, whichever is larger
+const CLOSEUP_MAX_CUT_EDGE = 0.25;    // marking along >25% of a crop cut edge = a block
 const CLOSEUP_TARGETS =
   "every piece of furniture and decor that was added in the staged image — beds, sofas, chairs, tables, bedside tables, dressers, lamps, rugs, plants, cushions and items on furniture — including pieces only partly in view at the edge of the photo";
 
@@ -204,9 +210,49 @@ async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Arr
   }
   const crop = cropBin.mask;
   const added = new Uint8Array(w * h);
+  let rawAdded = 0;
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
     const gi = (top + y) * w + left + x;
-    if (crop[y * cw + x] && !exclude[gi] && !floor[gi]) added[gi] = 1;
+    if (crop[y * cw + x] && !exclude[gi] && !floor[gi]) { added[gi] = 1; rawAdded++; }
+  }
+  // Sanity checks (Oct 2026, production: a close-up trace came back as a
+  // big block over doors and walls Gemini had redrawn; pasting it made a
+  // patchwork room and hid the reshape from the room check):
+  //  - it may add at most a few times the area that was flagged as missed;
+  //  - nothing it adds may run along the crop's cut edge (inside the photo):
+  //    a straight cut there is the crop boundary, not a furniture outline.
+  const flaggedPx = missed.reduce((s, m) => s + (m.areaPct / 100) * w * h, 0);
+  const maxAdd = Math.max(CLOSEUP_MAX_ADD_FACTOR * flaggedPx, w * h * (CLOSEUP_MAX_ADD_FLOOR_PCT / 100));
+  const edgeRun = (fixed: "x" | "y", at: number, from: number, to: number) => {
+    let run = 0, best = 0;
+    for (let k = from; k < to; k++) {
+      const i = fixed === "x" ? k * w + at : at * w + k;
+      if (added[i]) { run++; if (run > best) best = run; } else run = 0;
+    }
+    return best;
+  };
+  const inset = 2;
+  const cutEdges: Array<[number, number]> = [];
+  if (left > 0) cutEdges.push([edgeRun("x", left + inset, top, top + ch), ch]);
+  if (left + cw < w) cutEdges.push([edgeRun("x", left + cw - 1 - inset, top, top + ch), ch]);
+  if (top > 0) cutEdges.push([edgeRun("y", top + inset, left, left + cw), cw]);
+  if (top + ch < h) cutEdges.push([edgeRun("y", top + ch - 1 - inset, left, left + cw), cw]);
+  const worstEdge = cutEdges.reduce((m, [run, len]) => Math.max(m, run / Math.max(1, len)), 0);
+  if (rawAdded > maxAdd || worstEdge > CLOSEUP_MAX_CUT_EDGE) {
+    const why = rawAdded > maxAdd
+      ? `marked ${((rawAdded / (w * h)) * 100).toFixed(1)}% of the photo, far more than the ${((flaggedPx / (w * h)) * 100).toFixed(1)}% flagged`
+      : `its marking runs along the crop's cut edge (${Math.round(worstEdge * 100)}% of it) — a block, not furniture`;
+    warn(ctx, `[${ctx.name}] close-up trace REJECTED: ${why}`);
+    row.closeUpRetrace.rejected = true;
+    row.closeUpRetrace.rejectedWhy = why;
+    return floor;
+  }
+  // Only where the staged image actually changed (new furniture is new
+  // content; an unchanged wall or floor is never furniture).
+  const changedMap: Uint8Array | undefined = (probe as any).changedMap;
+  if (changedMap) {
+    const near = dilate(changedMap, w, h, Math.max(1, Math.round(w * 0.004)));
+    for (let i = 0; i < w * h; i++) if (added[i] && !near[i]) added[i] = 0;
   }
   const near = 0.02;
   const reaches = (p: { x1: number; y1: number; x2: number; y2: number }) =>
@@ -285,10 +331,15 @@ export async function traceLayers(ctx: MaskedContext) {
   reflAll = removeSmallComponents(reflAll, w, h, minSpeck);
   // Close-up re-trace of changed areas the trace may have missed (only when
   // there are some), e.g. a bedside table cut off by the photo's edge.
+  // What the close-up adds is kept apart for the room-shape check below: it
+  // must never be able to hide a reshaped room (Oct 2026, production).
+  const closeUpAdded = new Uint8Array(w * h);
   if (ctx.tight) {
     const exclude = new Uint8Array(w * h);
     for (let i = 0; i < exclude.length; i++) exclude[i] = artAll[i] | reflAll[i];
+    const before = floor;
     floor = await closeUpRetrace(ctx, floor, exclude, minSpeck);
+    for (let i = 0; i < floor.length; i++) closeUpAdded[i] = floor[i] & (before[i] ^ 1);
   }
   // Mirrors in the empty room — only looked up when a reflection was found.
   let mirrorMask: Mask | null = null;
@@ -426,9 +477,11 @@ export async function traceLayers(ctx: MaskedContext) {
   save(ctx, "3_mask_overlay.jpg", traced);
 
   // Room-change measurements ignore furniture and ALL traced art (kept or
-  // dropped), so they reflect the room itself.
+  // dropped), so they reflect the room itself. Furniture found only by the
+  // close-up re-trace is NOT ignored: the room check runs as if the close-up
+  // had not happened, so it can't hide redrawn walls or doors.
   const measureMask = new Uint8Array(w * h);
-  for (let i = 0; i < measureMask.length; i++) measureMask[i] = solid[i] | artAll[i] | reflAll[i];
+  for (let i = 0; i < measureMask.length; i++) measureMask[i] = (solid[i] & (closeUpAdded[i] ^ 1)) | artAll[i] | reflAll[i];
   row.stagedChangesOutsideMask = await measureOutsideDrift(original, staged, measureMask, w, h);
   row.framingCheck = await checkFraming(original, staged, measureMask, w, h);
   if (row.framingCheck.framingChanged) {
@@ -741,12 +794,37 @@ export async function runMaskedStage2Job(p: {
       // merge saves (furniture can't be told from room before tracing), while
       // the traced framing check below matched the merged results on all 6.
       row.cameraAlignment = await checkCameraAlignment(original, staged).catch(() => null);
+      // Zoomed/shifted noticeably: line up first, then trace once.
+      let prealigned: { empty: Uint8Array; W: number; H: number; emptyPct: number } | null = null;
+      if (!ctx.offline && shouldPrealign(row.cameraAlignment)) {
+        const al = await alignStagedToOriginal(original, staged, row.cameraAlignment).catch(() => null);
+        if (al && al.emptyPct <= REALIGN_MAX_EMPTY_PCT) {
+          io.save?.("2_staged_aligned.webp", await sharp(al.aligned).webp({ quality: 92 }).toBuffer());
+          p.log?.(`[${ctx.name}] Gemini's picture is zoomed/shifted (zoom ${row.cameraAlignment.scale}, shift ${row.cameraAlignment.shiftPct}%) — lining it up with the real photo before tracing`);
+          ctx = { ...ctx, staged: al.aligned };
+          prealigned = { empty: al.empty, W: al.W, H: al.H, emptyPct: al.emptyPct };
+        } else {
+          row.prealign = { lined: false, emptyStripPct: al?.emptyPct ?? null };
+        }
+      }
       let layers = await traceLayers(ctx);
+      if (prealigned) {
+        const cut = await furnitureCutAtEmptyEdge(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
+        if (cut.cutPct > 0) {
+          const cz = await cutPieceCompletionZone(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
+          if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
+        }
+        row.prealign = { lined: true, scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct, emptyStripPct: prealigned.emptyPct, furnitureCutAtEdgePct: cut.cutPct };
+      } else if (row.prealign && row.prealign.lined === false) {
+        // Moved too far to line up safely: don't merge pieces of a shifted picture.
+        p.warn?.(`[${ctx.name}] Gemini's picture moved too far to line up (empty strip ${row.prealign.emptyStripPct}%) — re-staging`);
+        row.framingCheck = { ...(row.framingCheck || {}), framingChanged: true, reason: "camera moved too far to line up" };
+      }
       // Line-up: the room check failed, but Gemini only moved or zoomed the
       // room (not a new viewpoint). Move its picture back onto the real
       // photo's frame and trace again; the room check then decides. The second
       // trace only runs on photos that would otherwise be re-staged.
-      if (row.framingCheck?.framingChanged && !ctx.offline && canRealign(row.cameraAlignment)) {
+      if (row.framingCheck?.framingChanged && !prealigned && !ctx.offline && canRealign(row.cameraAlignment)) {
         const al = await alignStagedToOriginal(original, staged, row.cameraAlignment).catch(() => null);
         if (al && al.emptyPct <= REALIGN_MAX_EMPTY_PCT) {
           const first = row.framingCheck;
@@ -767,6 +845,19 @@ export async function runMaskedStage2Job(p: {
           p.log?.(`[${ctx.name}] line-up ${row.realign.rescued ? "RESCUED the staging" : "did not help"} (room check median ${first.medianDiff} -> ${row.framingCheck?.medianDiff}; empty strip ${al.emptyPct}%, furniture reaching it ${cut.cutPct}% of its edge)`);
         }
       }
+      // Part of a piece missed by the trace: a sizeable changed area directly
+      // UNDER traced furniture (where legs or a base should continue) that
+      // the close-up re-trace didn't fill. Merging would publish the piece
+      // cut off, with the real wall or skirting showing through (Oct 2026,
+      // production: a bedside table's legs) — re-stage instead.
+      const cutUnder = ((row.closeUpRetrace?.flaggedAreas || []) as any[]).filter(
+        (m) => m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT
+      );
+      const closeUpFilled = !row.closeUpRetrace?.rejected && (row.closeUpRetrace?.addedPctOfImage || 0) >= 0.5 * cutUnder.reduce((s, m) => s + m.areaPct, 0);
+      if (cutUnder.length && !closeUpFilled) {
+        row.furnitureCutByTrace = cutUnder;
+        p.warn?.(`[${ctx.name}] part of a piece missed by the trace (${cutUnder.map((m) => `${m.areaPct}% under furniture at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}%`).join("; ")}) — re-staging`);
+      }
       // Floating furniture: a piece whose legs stop short of the REAL floor
       // (Gemini drew the floor/wall line higher or lower). Where the join can
       // be hidden (a piece in front, a wall corner, the photo edge) we keep
@@ -782,7 +873,9 @@ export async function runMaskedStage2Job(p: {
         row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
         (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
       }
-      if (row.framingCheck?.framingChanged) {
+      if (row.furnitureCutByTrace) {
+        reasons.push("furniture cut off by the trace");
+      } else if (row.framingCheck?.framingChanged) {
         // Reshaped room: paste-back can't fix it, so skip the blend and door
         // check (time and cost) and go straight to the re-stage / fallback.
         reasons.push("room reshaped");
@@ -840,7 +933,7 @@ export async function runMaskedStage2Job(p: {
     p.warn?.(`[${p.jobId}] masked Stage 2: re-staging (attempt ${attempt + 1}): ${reasons.join(", ")}`);
     hints = [
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
-      ...(row.floatingCheck?.floating
+      ...(row.floatingCheck?.floating || row.furnitureCutByTrace
         ? ["Stand every piece of furniture firmly on the floor: legs and bases must touch the floor, never end on the wall or skirting board. Keep the line where the floor meets each wall exactly where it is in the input photo."]
         : []),
       ...(row.framingCheck?.framingChanged ? [reshapeHint(row.cameraAlignment)] : []),

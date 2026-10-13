@@ -7264,7 +7264,67 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         isExteriorScene: payload.options.sceneType === "exterior",
       });
       const stage2OnlyStructuralBaseline = await resolveStructuralBaselineForValidation("stage2_generation_anchor_locked");
-      const stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
+      // Manual retries use the same merged staging as new uploads (Oct 2026:
+      // retries still published Gemini's raw staging through the old path).
+      const stage2OnlyRetrySceneInterior = payload.options.sceneType !== "exterior";
+      const useMaskedRetry = stage2OnlyRetrySceneInterior && maskedStage2Enabled() && (
+        stage2OnlyPromptMode === "full" || ["1", "on", "true", "yes"].includes(String(process.env.STAGE2_MASKED_REFRESH || "").trim().toLowerCase())
+      );
+      let maskedRetryUsed = false;
+      let stage2Result: any;
+      if (useMaskedRetry) {
+        const retryRoomType = String(payload.options.roomType || "living_room");
+        const maskedRetry = await withMemoryPhase("stage2_generation_masked", { stage2BaseStage: stage2OnlyBaseStage, promptMode: stage2OnlyPromptMode, retry: true }, () => runMaskedStage2Job({
+          inputPath: basePath,
+          roomType: retryRoomType,
+          jobId: payload.jobId,
+          doors: async () => doorsFromStructuralBaseline(stage2OnlyStructuralBaseline || await resolveStructuralBaselineForValidation("stage2_masked_door_check")),
+          maxRestages: MASKED_STAGE2_MAX_RESTAGES,
+          stage: (attempt, hints) =>
+            runStage2GenerationAttempt(basePath, {
+              roomType: retryRoomType,
+              sceneType: "interior",
+              structuralBaseline: stage2OnlyStructuralBaseline,
+              stagingStyle: payload.options.stagingStyle || "standard_listing",
+              sourceStage: stage2OnlyRouting.sourceStage,
+              promptMode: stage2OnlyPromptMode,
+              stage2Mode: explicitStage2ModeStage2Only,
+              jobId: payload.jobId,
+              imageId: payload.imageId,
+              outputPath: siblingOutPath(basePath, `-2-masked-staged${attempt}`, ".webp"),
+              attempt,
+              layoutPlan: stage2OnlyLayoutPlan,
+              retryType: (payload as any).retryType,
+              retryInstructions: (payload as any).retryInstructions,
+              retryCorrectionHints: hints.length ? hints : null,
+              curtainRailLikely: jobContext.curtainRailLikely,
+              modelReason: attempt === 1 ? "stage2_masked_retry_generation" : `stage2_masked_retry_restage_${attempt - 1}`,
+            }),
+          outputPathFor: (attempt) => siblingOutPath(basePath, attempt === 1 ? "-2" : `-2-retry${attempt - 1}`, ".webp"),
+          workDir: siblingOutPath(basePath, "-2-masked-work", ""),
+          log: (msg) => console.log(`[STAGE2_MASKED] ${msg}`),
+          warn: (msg) => console.warn(`[STAGE2_MASKED] ${msg}`),
+        }));
+        console.log(`[STAGE2_MASKED_SUMMARY] job=${payload.jobId} path=manual_retry RESULT=${maskedRetry.ok ? "published" : `FAILED (${maskedRetry.reasons.join(", ")})`} attempts=${maskedRetry.attempts}`);
+        console.log("[STAGE2_MASKED_RESULT]", JSON.stringify({ jobId: payload.jobId, imageId: payload.imageId, path: "manual_retry", ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports }));
+        try { await updateJob(payload.jobId, { stage2Masked: { ok: maskedRetry.ok, attempts: maskedRetry.attempts, reports: maskedRetry.reports } }); } catch {}
+        if (!maskedRetry.ok) {
+          await consumeManualRetryAttemptIfNeeded("stage2_only", true);
+          await failManualStage2Retry(
+            "stage2_masked_failed",
+            `stage2_retry_failed: ${maskedRetry.reasons.join(", ")}`,
+            { stage2Ms: Date.now() - t2 }
+          );
+          return;
+        }
+        maskedRetryUsed = true;
+        stage2Result = {
+          outputPath: maskedRetry.outputPath,
+          attempts: maskedRetry.attempts,
+          maxAttempts: MASKED_STAGE2_MAX_RESTAGES + 1,
+          validationRisk: false,
+        };
+      } else stage2Result = await runStage2(basePath, stage2OnlyBaseStage, {
         stagingStyle: payload.options.stagingStyle || "standard_listing",
         roomType: payload.options.roomType,
         sceneType: payload.options.sceneType as any,
@@ -7373,7 +7433,9 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         return;
       }
 
-      await runStage2ValidationPipeline({
+      // Merged staging has its own checks (room shape, doors, blend); the old
+      // validator stack is for Gemini's raw staging only.
+      if (!maskedRetryUsed) await runStage2ValidationPipeline({
         jobId: payload.jobId,
         source: "stage2_only_retry",
         runSpecialists: async () => {
@@ -8746,7 +8808,10 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // excluding that lineage's later Grok-Stage1A-generator experiment).
   // Brightens the exterior visible through windows/doors on INTERIOR
   // shots only — see stage1A.ts's own gating on effectiveSceneType.
-  const stage1ASunnyExteriorEnabled = strictBool((payload.options as any)?.enhanceExteriorSky);
+  // Off unless STAGE1A_EXTERIOR_OUTLOOK=on (Oct 2026: with it on, Gemini
+  // invented windows and doorways in rooms without a visible view).
+  const exteriorOutlookAllowed = ["1", "true", "on", "yes"].includes(String(process.env.STAGE1A_EXTERIOR_OUTLOOK || "").trim().toLowerCase());
+  const stage1ASunnyExteriorEnabled = exteriorOutlookAllowed && strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
   // Window/door survey: reads the original photo, not the Stage 1A result, so

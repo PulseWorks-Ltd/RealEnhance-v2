@@ -37,3 +37,19 @@ describe("masked Stage 2 line-up", () => {
     expect(canRealign({ identity: 0.34, best: 0.34, gain: 0, scale: 1, dxPct: 0, dyPct: 0, shiftPct: 0, moved: false })).toBe(false);
   });
 });
+
+describe("line up before tracing (zoomed/shifted staging)", () => {
+  const { shouldPrealign } = require("../src/pipeline/stage2Masked/core");
+  const cam = (o: any) => ({ identity: 0.25, best: 0.22, gain: 0.03, scale: 1, dxPct: 0, dyPct: 0, shiftPct: 0, moved: false, ...o });
+  it("lines up a 3.5% zoom even when the fit gain is small (production 006)", () => {
+    expect(shouldPrealign(cam({ scale: 1.035, gain: 0.018, shiftPct: 1.78 }))).toBe(true);
+  });
+  it("lines up a 1.5%+ shift", () => {
+    expect(shouldPrealign(cam({ shiftPct: 1.6 }))).toBe(true);
+  });
+  it("leaves small moves and noisy readings to the room check", () => {
+    expect(shouldPrealign(cam({ scale: 1.01, shiftPct: 0.5 }))).toBe(false);
+    expect(shouldPrealign(cam({ scale: 1.05, gain: 0.005 }))).toBe(false);
+    expect(shouldPrealign(null)).toBe(false);
+  });
+});

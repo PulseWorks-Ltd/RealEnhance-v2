@@ -1,6 +1,15 @@
 import type { EnhancedImageCompletionType } from "../completionTypes";
 
 /**
+ * STAGE1A_EXTERIOR_OUTLOOK=on shows the "Enhance Exterior Outlook" option and
+ * lets the worker use it. Default off. Set it the same on server and worker.
+ */
+export function exteriorOutlookEnabled(): boolean {
+  const raw = typeof process !== "undefined" ? process.env?.STAGE1A_EXTERIOR_OUTLOOK : undefined;
+  return ["1", "true", "on", "yes"].includes(String(raw || "").trim().toLowerCase());
+}
+
+/**
  * BILLING_DECLUTTER_STAGE_EXTRA_CREDIT=on charges 2 credits for declutter +
  * stage (furnished room). Default off: every image costs 1 credit, whatever
  * processing is requested. Must be set the same on the server and the worker.

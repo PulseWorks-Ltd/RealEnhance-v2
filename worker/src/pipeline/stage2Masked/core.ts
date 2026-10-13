@@ -562,10 +562,10 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
   let cand = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) cand[i] = changed[i] && near[i] && !out[i] ? 1 : 0;
   cand = erode(dilate(cand, w, h, r), w, h, r);
-  const missed: Array<{ areaPct: number; touchingFurniturePct: number; box: number[] }> = [];
+  const missed: Array<{ areaPct: number; touchingFurniturePct: number; underFurniturePct: number; box: number[] }> = [];
   for (const piece of labelComponents(cand, w, h)) {
     if (piece.pixels.length < w * h * 0.002) continue;
-    let edge = 0, touching = 0;
+    let edge = 0, touching = 0, topEdge = 0, under = 0;
     for (const i of piece.pixels) {
       const x = i % w;
       let isEdge = false, touches = false;
@@ -574,14 +574,20 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
         if (!cand[n]) { isEdge = true; if (out[n]) touches = true; }
       }
       if (isEdge) { edge++; if (touches) touching++; }
+      // Top edge: is furniture directly above (the piece continues down here)?
+      if (i - w >= 0 && !cand[i - w]) { topEdge++; if (out[i - w]) under++; }
     }
     missed.push({
       areaPct: +((piece.pixels.length / (w * h)) * 100).toFixed(2),
       touchingFurniturePct: Math.round((touching / Math.max(1, edge)) * 100),
+      underFurniturePct: Math.round((under / Math.max(1, topEdge)) * 100),
       box: [+(piece.x1 / w).toFixed(2), +(piece.y1 / h).toFixed(2), +(piece.x2 / w).toFixed(2), +(piece.y2 / h).toFixed(2)],
     });
   }
   (out as any).possiblyMissedByTrace = missed;
+  // Where the staged image really differs from the original (after lighting
+  // match): the close-up re-trace may only add furniture there.
+  (out as any).changedMap = changed;
   return out;
 }
 
@@ -2894,6 +2900,20 @@ export async function applyFloorPatches(original: Buffer, final: Buffer, staged:
 // ---------------------------------------------------------------------------
 export const REALIGN_MIN_GAIN = Number(process.env.REALIGN_MIN_GAIN || 0.02);
 export const REALIGN_MAX_EMPTY_PCT = Number(process.env.REALIGN_MAX_EMPTY_PCT || 15);
+
+// Gemini's picture zoomed or shifted enough that pasting its furniture onto
+// the real photo would misplace things (Oct 2026, production: 3.5% zoom with
+// a weak fit gain of 0.018 was traced and merged as-is). Such pictures are
+// lined up BEFORE tracing — no extra trace cost. A very weak fit gain means
+// the "zoom" reading is noise, so the room check is left to decide.
+export const PREALIGN_MIN_SCALE_DIFF = Number(process.env.PREALIGN_MIN_SCALE_DIFF || 0.02);
+export const PREALIGN_MIN_SHIFT_PCT = Number(process.env.PREALIGN_MIN_SHIFT_PCT || 1.5);
+export const PREALIGN_MIN_GAIN = Number(process.env.PREALIGN_MIN_GAIN || 0.01);
+
+export function shouldPrealign(cam: CameraAlignment | null | undefined): boolean {
+  if (!cam || cam.gain < PREALIGN_MIN_GAIN) return false;
+  return Math.abs(cam.scale - 1) >= PREALIGN_MIN_SCALE_DIFF || cam.shiftPct >= PREALIGN_MIN_SHIFT_PCT;
+}
 
 export function canRealign(cam: CameraAlignment | null | undefined): boolean {
   if (!cam) return false;
