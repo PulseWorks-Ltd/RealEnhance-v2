@@ -8729,6 +8729,107 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   const stage1ASunnyExteriorEnabled = strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
+  // Window/door survey: reads the original photo, not the Stage 1A result, so
+  // start it alongside Stage 1A rather than after it (it used to start only
+  // once Stage 1A finished — 40-55 s later than it could).
+  const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
+  // The window/door survey only serves staging, and exteriors are never
+  // staged: skip it (production Oct 2026: a 72 s Gemini call, and the job
+  // waited for it after deciding not to stage).
+  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent && stage1ASceneLabel !== "exterior" && sceneLabel !== "exterior";
+  const shouldTriggerBaselineDuringStage1A = canRunParallelBaseline && !structuralBaseline && !structuralBaselinePromise;
+  const baselineTriggerReason = !stage2Requested
+    ? "stage2_not_required"
+    : !baselineApiKeyPresent
+      ? "missing_gemini_key"
+      : structuralBaseline
+        ? "already_hydrated"
+        : structuralBaselinePromise
+          ? "already_in_progress"
+          : "stage2_required_parallel_stage1a";
+  nLog("[OPENING_BASELINE_TRIGGER]", {
+    jobId: payload.jobId,
+    imageId: payload.imageId,
+    stage2Required: stage2Requested,
+    baselineStarted: shouldTriggerBaselineDuringStage1A,
+    reason: baselineTriggerReason,
+  });
+
+  if (shouldTriggerBaselineDuringStage1A) {
+    const baselineStartedAt = Date.now();
+    structuralBaselinePromise = (async () => {
+      try {
+        const extractedBaseline = await withMemoryPhase(
+          "stage1a_structural_baseline",
+          { attempt: 1, startedDuringStage1A: true },
+          async () => {
+            try {
+              return await extractStructuralBaseline(canonicalPath, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: 1,
+              });
+            } catch (firstAttemptErr: any) {
+              // One retry only, not a loop — this whole block already requires
+              // stage2Requested (see canRunParallelBaseline above), and runs in
+              // parallel with Stage 1A so the extra latency is largely hidden.
+              // A null baseline here silently degrades the combined-mode prompt
+              // assembly to generic text with no protected-feature list at all,
+              // so a transient failure is worth one retry before falling back.
+              nLog(`[STRUCTURAL_BASELINE_RETRY] jobId=${payload.jobId} reason=${firstAttemptErr?.message || firstAttemptErr}`);
+              return await extractStructuralBaseline(canonicalPath, {
+                jobId: payload.jobId,
+                imageId: payload.imageId,
+                attempt: 2,
+              });
+            }
+          }
+        );
+        structuralBaseline = extractedBaseline;
+        jobContext.structuralBaseline = extractedBaseline;
+
+        const persistenceStartedAt = Date.now();
+        await updateJob(payload.jobId, {
+          structuralBaseline: extractedBaseline as any,
+          meta: {
+            structuralBaseline: extractedBaseline as any,
+          } as any,
+        });
+        const persistenceMs = Date.now() - persistenceStartedAt;
+        const baselineCompletedAt = Date.now();
+        const totalMs = Math.max(0, baselineCompletedAt - baselineStartedAt);
+        const extractionCalls = Number(extractedBaseline?.graphMeta?.passCount || 1);
+        const totalGeminiCalls = Number(extractedBaseline?.graphMeta?.geminiCalls || extractionCalls || 1);
+        const mode = Number(extractedBaseline?.graphMeta?.geminiCalls || 0) === 1
+          ? "single_pass"
+          : String(extractedBaseline?.graphMeta?.baselineMethod || "consensus");
+        const completedBeforeStage1AFinished = timestamps.stage1AEnd === null
+          ? true
+          : baselineCompletedAt <= Number(timestamps.stage1AEnd);
+
+        nLog("[OPENING_BASELINE_METRICS]", {
+          jobId: payload.jobId,
+          imageId: payload.imageId,
+          mode,
+          extractionCalls,
+          totalGeminiCalls,
+          totalMs,
+          startedDuringStage1A: true,
+          completedBeforeStage1AFinished,
+          persistenceMs,
+        });
+        const anchorFixtureSummary = (extractedBaseline.anchorFixtures || [])
+          .map((f) => `${f.type}:${f.wallIndex}`)
+          .join(",");
+        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length} anchorFixtures=${(extractedBaseline.anchorFixtures || []).length} anchorFixtureSummary=[${anchorFixtureSummary}]`);
+        return extractedBaseline;
+      } catch (baselineErr: any) {
+        nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);
+        return null;
+      }
+    })();
+    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId} source=canonical startedDuringStage1A=true`);
+  }
   // Exterior clutter check early start: exteriors always get this check (it
   // decides the automatic exterior tidy-up), and it used to run only after
   // Stage 1A, adding ~30 s after the enhanced photo was ready (production
@@ -8833,104 +8934,7 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     path1A = await applyExteriorRelighting(path1A, exteriorLightingDecision, exteriorEnvironment?.environment || "uncertain");
   }
 
-  const baselineApiKeyPresent = Boolean(process.env.GEMINI_API_KEY || process.env.REALENHANCE_API_KEY);
-  // The window/door survey only serves staging, and exteriors are never
-  // staged: skip it (production Oct 2026: a 72 s Gemini call, and the job
-  // waited for it after deciding not to stage).
-  const canRunParallelBaseline = stage2Requested && baselineApiKeyPresent && stage1ASceneLabel !== "exterior" && sceneLabel !== "exterior";
-  const shouldTriggerBaselineDuringStage1A = canRunParallelBaseline && !structuralBaseline && !structuralBaselinePromise;
-  const baselineTriggerReason = !stage2Requested
-    ? "stage2_not_required"
-    : !baselineApiKeyPresent
-      ? "missing_gemini_key"
-      : structuralBaseline
-        ? "already_hydrated"
-        : structuralBaselinePromise
-          ? "already_in_progress"
-          : "stage2_required_parallel_stage1a";
-  nLog("[OPENING_BASELINE_TRIGGER]", {
-    jobId: payload.jobId,
-    imageId: payload.imageId,
-    stage2Required: stage2Requested,
-    baselineStarted: shouldTriggerBaselineDuringStage1A,
-    reason: baselineTriggerReason,
-  });
-
-  if (shouldTriggerBaselineDuringStage1A) {
-    const baselineStartedAt = Date.now();
-    structuralBaselinePromise = (async () => {
-      try {
-        const extractedBaseline = await withMemoryPhase(
-          "stage1a_structural_baseline",
-          { attempt: 1, startedDuringStage1A: true },
-          async () => {
-            try {
-              return await extractStructuralBaseline(canonicalPath, {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt: 1,
-              });
-            } catch (firstAttemptErr: any) {
-              // One retry only, not a loop — this whole block already requires
-              // stage2Requested (see canRunParallelBaseline above), and runs in
-              // parallel with Stage 1A so the extra latency is largely hidden.
-              // A null baseline here silently degrades the combined-mode prompt
-              // assembly to generic text with no protected-feature list at all,
-              // so a transient failure is worth one retry before falling back.
-              nLog(`[STRUCTURAL_BASELINE_RETRY] jobId=${payload.jobId} reason=${firstAttemptErr?.message || firstAttemptErr}`);
-              return await extractStructuralBaseline(canonicalPath, {
-                jobId: payload.jobId,
-                imageId: payload.imageId,
-                attempt: 2,
-              });
-            }
-          }
-        );
-        structuralBaseline = extractedBaseline;
-        jobContext.structuralBaseline = extractedBaseline;
-
-        const persistenceStartedAt = Date.now();
-        await updateJob(payload.jobId, {
-          structuralBaseline: extractedBaseline as any,
-          meta: {
-            structuralBaseline: extractedBaseline as any,
-          } as any,
-        });
-        const persistenceMs = Date.now() - persistenceStartedAt;
-        const baselineCompletedAt = Date.now();
-        const totalMs = Math.max(0, baselineCompletedAt - baselineStartedAt);
-        const extractionCalls = Number(extractedBaseline?.graphMeta?.passCount || 1);
-        const totalGeminiCalls = Number(extractedBaseline?.graphMeta?.geminiCalls || extractionCalls || 1);
-        const mode = Number(extractedBaseline?.graphMeta?.geminiCalls || 0) === 1
-          ? "single_pass"
-          : String(extractedBaseline?.graphMeta?.baselineMethod || "consensus");
-        const completedBeforeStage1AFinished = timestamps.stage1AEnd === null
-          ? true
-          : baselineCompletedAt <= Number(timestamps.stage1AEnd);
-
-        nLog("[OPENING_BASELINE_METRICS]", {
-          jobId: payload.jobId,
-          imageId: payload.imageId,
-          mode,
-          extractionCalls,
-          totalGeminiCalls,
-          totalMs,
-          startedDuringStage1A: true,
-          completedBeforeStage1AFinished,
-          persistenceMs,
-        });
-        const anchorFixtureSummary = (extractedBaseline.anchorFixtures || [])
-          .map((f) => `${f.type}:${f.wallIndex}`)
-          .join(",");
-        nLog(`[STRUCTURAL_BASELINE_EXTRACTED] jobId=${payload.jobId} openings=${extractedBaseline.openings.length} anchorFixtures=${(extractedBaseline.anchorFixtures || []).length} anchorFixtureSummary=[${anchorFixtureSummary}]`);
-        return extractedBaseline;
-      } catch (baselineErr: any) {
-        nLog(`[STRUCTURAL_BASELINE_ERROR] jobId=${payload.jobId} reason=${baselineErr?.message || baselineErr}`);
-        return null;
-      }
-    })();
-    nLog(`[STRUCTURAL_BASELINE_STARTED] jobId=${payload.jobId} source=canonical startedDuringStage1A=true`);
-  }
+  // (The window/door survey now starts before Stage 1A — see above.)
 
   try {
     const mask = jobContext.structuralMask;
