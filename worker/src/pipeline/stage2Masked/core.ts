@@ -1457,7 +1457,7 @@ Look at the bed in Image 2 and the walls in Image 1, and answer:
 3. doorOnHeadboardWall: is there a door, doorway or wardrobe door anywhere on that same wall — including one beside the bed? Judge by the wall itself in Image 1, not by what the camera angle makes look close.
 4. otherPlainWallAvailable: does the room show another wall, long enough for the bed, with no door, doorway, wardrobe door or window on it?
 5. headboardCoversWindow: does the bed or its headboard cover any part of a window's glass?
-6. bedCoversDoor: does the bed or its headboard stand in front of, cover or hide any part of a door, doorway, opening or wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)?
+6. bedCoversDoor: does the bed, its headboard, a bedside table or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, so the door could no longer close.
 Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "bedCoversDoor": "yes" | "no", "reason": string }`;
 }
 
@@ -1468,7 +1468,7 @@ export function evaluateBedWall(raw: any) {
   const window = bed && yes(raw?.headboardCoversWindow);
   const coversDoor = bed && yes(raw?.bedCoversDoor);
   const hints: string[] = [];
-  if (coversDoor) hints.push("Your previous attempt placed the bed in front of a door or doorway, covering it. Every door, doorway and wardrobe door must stay fully visible and clear; put the bed against a plain stretch of wall.");
+  if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed; or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
   if (window) hints.push("Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible.");
   return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, failed: doorWall || window || coversDoor, restageHints: hints, answer: raw };
