@@ -1431,7 +1431,7 @@ export async function askDoorAccess(emptyPath: string, finalImage: Buffer, doors
 
 // ── Harmonise (phase 2 prompt + phase 3 merge) ──────────────────────────────
 
-export function buildHarmonisePrompt(roomType: string): string {
+export function buildHarmonisePrompt(roomType: string, opts: { completeCutPieces?: boolean } = {}): string {
   return [
     "Edit this photograph. Return the edited photograph as an IMAGE ONLY. No text.",
     "",
@@ -1442,6 +1442,9 @@ export function buildHarmonisePrompt(roomType: string): string {
     "- Add realistic contact shadows where the furniture touches the floor.",
     "- Add soft shadows cast by the furniture onto the floor and nearby walls, matching the direction, colour and softness of the room's existing light (windows, doors, lamps).",
     "- Gently adjust the lighting and shading on the furniture so it matches the light in the room.",
+    ...(opts.completeCutPieces
+      ? ["- Some furniture or rugs near the edge of the photo end in a straight, cut-off line a little before the edge of the picture. Continue each of them naturally out to the edge of the photo — the same shape, colour and material, including any legs or corners — as if the photo had been taken with them fully in place. This is the only place where you may add to the furniture."]
+      : []),
     "",
     "Strict rules:",
     "- Do NOT add, remove, move, resize, replace or restyle anything. No new furniture, decor, rugs, plants, artwork, lamps, lights or fixtures.",
@@ -2880,4 +2883,124 @@ export async function applyFloorPatches(original: Buffer, final: Buffer, staged:
   }
   const out = await sharp(img, { raw: { width: FW, height: FH, channels: 3 } }).png().toBuffer();
   return { image: out, notes };
+}
+
+// ---------------------------------------------------------------------------
+// Line-up: when Gemini drew the room shifted or zoomed (camera estimate from
+// checkCameraAlignment), move/resize its staged image back onto the real
+// photo's frame. Where the moved image has no pixels (a strip along an edge),
+// the real photo is used, so outside the furniture everything is unchanged.
+// The traced room check afterwards decides whether the line-up really matches.
+// ---------------------------------------------------------------------------
+export const REALIGN_MIN_GAIN = Number(process.env.REALIGN_MIN_GAIN || 0.02);
+export const REALIGN_MAX_EMPTY_PCT = Number(process.env.REALIGN_MAX_EMPTY_PCT || 15);
+
+export function canRealign(cam: CameraAlignment | null | undefined): boolean {
+  if (!cam) return false;
+  if (cam.gain < REALIGN_MIN_GAIN) return false; // the fit barely improves: a new viewpoint, not a shift/zoom
+  return Math.abs(cam.scale - 1) >= 0.01 || cam.shiftPct >= 0.5;
+}
+
+export async function alignStagedToOriginal(original: Buffer, staged: Buffer, cam: CameraAlignment) {
+  const om = await sharp(original).metadata();
+  const W = om.width!, H = om.height!;
+  const [o, s] = await Promise.all([
+    sharp(original).removeAlpha().raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).raw().toBuffer(),
+  ]);
+  const out = Buffer.from(o);
+  const empty = new Uint8Array(W * H);
+  const cx = W / 2, cy = H / 2, dx = (cam.dxPct / 100) * W, dy = (cam.dyPct / 100) * H;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    // same mapping the camera check measured: real-photo pixel -> staged pixel
+    const bx = cx + (x - cx) * cam.scale + dx, by = cy + (y - cy) * cam.scale + dy;
+    const i = y * W + x;
+    if (bx < 0 || by < 0 || bx > W - 1.001 || by > H - 1.001) { empty[i] = 1; continue; }
+    const x0 = Math.floor(bx), y0 = Math.floor(by), tx = bx - x0, ty = by - y0;
+    for (let c = 0; c < 3; c++) {
+      const p = (xx: number, yy: number) => s[(yy * W + xx) * 3 + c];
+      out[i * 3 + c] = Math.round((p(x0, y0) * (1 - tx) + p(x0 + 1, y0) * tx) * (1 - ty) + (p(x0, y0 + 1) * (1 - tx) + p(x0 + 1, y0 + 1) * tx) * ty);
+    }
+  }
+  let n = 0;
+  for (const v of empty) n += v;
+  const aligned = await sharp(out, { raw: { width: W, height: H, channels: 3 } }).png().toBuffer();
+  return { aligned, empty, W, H, emptyPct: +((n / (W * H)) * 100).toFixed(1) };
+}
+
+// Furniture that runs into the empty strip: Gemini's picture ended there, so
+// the piece stops in a straight line short of the photo's edge. Returns the
+// share of the strip's border that furniture touches (0 = nothing cut).
+export async function furnitureCutAtEmptyEdge(furniture: Uint8Array, empty: Uint8Array, ew: number, eh: number, w: number, h: number) {
+  const e = await sharp(Buffer.from(empty.map((v) => (v ? 255 : 0))), { raw: { width: ew, height: eh, channels: 1 } })
+    .resize(w, h, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  let border = 0, touched = 0;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (e[i] > 127) continue;
+    if (!(e[i - 1] > 127 || e[i + 1] > 127 || e[i - w] > 127 || e[i + w] > 127)) continue;
+    border++;
+    let f = 0;
+    for (let k = -3; k <= 3 && !f; k++) for (let j = -3; j <= 3; j++) {
+      const yy = y + k, xx = x + j;
+      if (yy >= 0 && xx >= 0 && yy < h && xx < w && furniture[yy * w + xx]) { f = 1; break; }
+    }
+    touched += f;
+  }
+  return { borderPx: border, cutPct: border ? +((touched / border) * 100).toFixed(1) : 0 };
+}
+
+// The part of the empty strip (left by the line-up) next to furniture that
+// runs into it: where the cut pieces must be continued to the photo's edge.
+export async function cutPieceCompletionZone(furniture: Uint8Array, empty: Uint8Array, ew: number, eh: number, w: number, h: number) {
+  const e = await sharp(Buffer.from(empty.map((v) => (v ? 255 : 0))), { raw: { width: ew, height: eh, channels: 1 } })
+    .resize(w, h, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const touch = new Uint8Array(w * h);
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x;
+    if (!furniture[i] || e[i] > 127) continue;
+    for (let k = -3; k <= 3; k++) for (let j = -3; j <= 3; j++) {
+      const yy = y + k, xx = x + j;
+      if (yy >= 0 && xx >= 0 && yy < h && xx < w && e[yy * w + xx] > 127) { touch[i] = 1; k = 9; break; }
+    }
+  }
+  // reach across the strip from each touching point (strip <= REALIGN_MAX_EMPTY_PCT)
+  const grown = dilate(touch, w, h, Math.round(Math.max(w, h) * 0.12));
+  // band: the first ~1% just past the cut line, where the piece must carry on
+  const near = dilate(touch, w, h, Math.max(3, Math.round(Math.max(w, h) * 0.012)));
+  const zone = new Uint8Array(w * h), band = new Uint8Array(w * h);
+  let n = 0;
+  for (let i = 0; i < zone.length; i++) if (grown[i] && e[i] > 127) { zone[i] = 1; n++; if (near[i]) band[i] = 1; }
+  return { zone, band, zonePct: +((n / (w * h)) * 100).toFixed(2) };
+}
+
+// Put Gemini's continuation of the cut pieces (from its blend) into the final,
+// inside the completion zone only. Reports how much of the zone Gemini really
+// filled with something other than the bare floor (the real photo there).
+export async function applyCutPieceCompletion(final: Buffer, harmRaw: Buffer, original: Buffer, zone: Uint8Array, band: Uint8Array, w: number, h: number) {
+  const fm = await sharp(final).metadata();
+  const FW = fm.width!, FH = fm.height!;
+  const bandBig = await sharp(Buffer.from(band.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+    .resize(fm.width!, fm.height!, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const [f, g, o, z] = await Promise.all([
+    sharp(final).removeAlpha().raw().toBuffer(),
+    sharp(harmRaw).removeAlpha().resize(FW, FH, { fit: "fill" }).raw().toBuffer(),
+    sharp(original).removeAlpha().resize(FW, FH, { fit: "fill" }).raw().toBuffer(),
+    sharp(Buffer.from(zone.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+      .resize(FW, FH, { fit: "fill" }).blur(Math.max(0.6, FW / 900)).extractChannel(0).raw().toBuffer(),
+  ]);
+  const out = Buffer.from(f);
+  let inZone = 0, filled = 0;
+  for (let i = 0; i < FW * FH; i++) {
+    const t = z[i] / 255;
+    if (t <= 0) continue;
+    for (let c = 0; c < 3; c++) out[i * 3 + c] = Math.round(f[i * 3 + c] * (1 - t) + g[i * 3 + c] * t);
+    if (bandBig[i] > 127) {
+      inZone++;
+      const d = Math.abs(g[i * 3] - o[i * 3]) + Math.abs(g[i * 3 + 1] - o[i * 3 + 1]) + Math.abs(g[i * 3 + 2] - o[i * 3 + 2]);
+      if (d > 60) filled++;
+    }
+  }
+  const image = await sharp(out, { raw: { width: FW, height: FH, channels: 3 } }).png().toBuffer();
+  return { image, filledPct: inZone ? +((filled / inZone) * 100).toFixed(1) : 0 };
 }

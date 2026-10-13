@@ -58,6 +58,12 @@ import {
   checkFloatingFurniture,
   planFloorPatches,
   applyFloorPatches,
+  canRealign,
+  alignStagedToOriginal,
+  furnitureCutAtEmptyEdge,
+  cutPieceCompletionZone,
+  applyCutPieceCompletion,
+  REALIGN_MAX_EMPTY_PCT,
   undoneOverlay,
   compositeLayers,
   removeSunPatches,
@@ -97,6 +103,10 @@ export type MaskedContext = {
   dir: string; // folder for door-check input images
   io: MaskedIO;
   row: any; // report, filled in step by step
+  // After a line-up: the strip next to furniture that runs into the edge
+  // Gemini's picture no longer covers; the blend continues the pieces there.
+  completionZone?: Uint8Array | null;
+  completionBand?: Uint8Array | null;
 };
 
 function save(ctx: MaskedContext, name: string, data: Buffer | string) {
@@ -457,7 +467,7 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   } else {
     harmRaw = await callGeminiImage({
       model: HARMONISE_MODEL,
-      parts: [{ text: buildHarmonisePrompt(ctx.roomType) }, imagePart(safeFinal, "image/webp")],
+      parts: [{ text: buildHarmonisePrompt(ctx.roomType, { completeCutPieces: !!ctx.completionZone }) }, imagePart(safeFinal, "image/webp")],
       imageSize: HARMONISE_IMAGE_SIZE,
       aspectRatio: ctx.aspectRatio,
     })
@@ -569,6 +579,18 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
       checkedBlend = cb.buffer;
     }
     save(ctx, "11_final_checked_blend.webp", checkedBlend);
+  }
+  // Line-up completion: continue the pieces cut off by the empty strip, from
+  // Gemini's blend, inside that strip only.
+  if (ctx.completionZone) {
+    row.realignCompletion = { applied: false, filledPct: 0 };
+    if (blendUsable && harmRaw) {
+      const base = checkedBlend || harmFinal;
+      const done = await applyCutPieceCompletion(base, harmRaw, original, ctx.completionZone, ctx.completionBand || ctx.completionZone, w, h);
+      row.realignCompletion = { applied: true, filledPct: done.filledPct };
+      if (checkedBlend) checkedBlend = done.image; else harmFinal = done.image;
+      save(ctx, "12_cut_pieces_completed.webp", await sharp(done.image).webp({ quality: 92 }).toBuffer());
+    }
   }
   return { safeFinal, harmRaw, harmFinal, checkedBlend, checkedBlendView };
 }
@@ -713,13 +735,38 @@ export async function runMaskedStage2Job(p: {
           if (fs.existsSync(stagedPath + suffix)) io.save?.(name, fs.readFileSync(stagedPath + suffix));
         } catch {}
       }
-      const ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
+      let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
       // Camera-movement check: logged only. An early (untraced) reshape screen
       // was removed: on owner-labelled merge tests it rejected photos the
       // merge saves (furniture can't be told from room before tracing), while
       // the traced framing check below matched the merged results on all 6.
       row.cameraAlignment = await checkCameraAlignment(original, staged).catch(() => null);
-      const layers = await traceLayers(ctx);
+      let layers = await traceLayers(ctx);
+      // Line-up: the room check failed, but Gemini only moved or zoomed the
+      // room (not a new viewpoint). Move its picture back onto the real
+      // photo's frame and trace again; the room check then decides. The second
+      // trace only runs on photos that would otherwise be re-staged.
+      if (row.framingCheck?.framingChanged && !ctx.offline && canRealign(row.cameraAlignment)) {
+        const al = await alignStagedToOriginal(original, staged, row.cameraAlignment).catch(() => null);
+        if (al && al.emptyPct <= REALIGN_MAX_EMPTY_PCT) {
+          const first = row.framingCheck;
+          io.save?.("2_staged_aligned.webp", await sharp(al.aligned).webp({ quality: 92 }).toBuffer());
+          p.log?.(`[${ctx.name}] room moved (zoom ${row.cameraAlignment.scale}, shift ${row.cameraAlignment.shiftPct}%) — lining Gemini's picture up with the real photo and tracing again`);
+          ctx = { ...ctx, staged: al.aligned };
+          layers = await traceLayers(ctx);
+          const cut = await furnitureCutAtEmptyEdge(layers.floor, al.empty, al.W, al.H, w, h);
+          if (cut.cutPct > 0) {
+            const cz = await cutPieceCompletionZone(layers.floor, al.empty, al.W, al.H, w, h);
+            if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
+          }
+          row.realign = {
+            scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct,
+            emptyStripPct: al.emptyPct, firstRoomCheck: first,
+            rescued: !row.framingCheck?.framingChanged, furnitureCutAtEdgePct: cut.cutPct,
+          };
+          p.log?.(`[${ctx.name}] line-up ${row.realign.rescued ? "RESCUED the staging" : "did not help"} (room check median ${first.medianDiff} -> ${row.framingCheck?.medianDiff}; empty strip ${al.emptyPct}%, furniture reaching it ${cut.cutPct}% of its edge)`);
+        }
+      }
       // Floating furniture: a piece whose legs stop short of the REAL floor
       // (Gemini drew the floor/wall line higher or lower). Where the join can
       // be hidden (a piece in front, a wall corner, the photo edge) we keep
@@ -730,7 +777,7 @@ export async function runMaskedStage2Job(p: {
       let floorPlan: Awaited<ReturnType<typeof planFloorPatches>> | null = null;
       if (row.floatingCheck.floating) {
         p.warn?.(`[${ctx.name}] furniture floating above the real floor: ${row.floatingCheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ends ${r.gapPct}% above the floor line`).join("; ")}`);
-        floorPlan = await planFloorPatches(original, staged, layers.floor, row.floatingCheck.runs, w, h)
+        floorPlan = await planFloorPatches(original, ctx.staged, layers.floor, row.floatingCheck.runs, w, h)
           .catch((e: any) => ({ ok: false as const, patches: [], notes: [`plan error: ${String(e?.message || e)}`] }));
         row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
         (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
@@ -744,8 +791,12 @@ export async function runMaskedStage2Job(p: {
       } else {
         const hm = await harmonise(ctx, layers);
         final = hm.checkedBlend || hm.harmFinal;
+        // A piece cut off by the line-up must have been continued by the blend.
+        if (ctx.completionZone && !(row.realignCompletion?.applied && row.realignCompletion.filledPct >= 30)) {
+          reasons.push("furniture cut off at the photo edge");
+        }
         if (floorPlan?.ok && final) {
-          const fp = await applyFloorPatches(original, final, staged, layers.floor, floorPlan.patches, w, h)
+          const fp = await applyFloorPatches(original, final, ctx.staged, layers.floor, floorPlan.patches, w, h)
             .catch((e: any) => ({ image: null, notes: [`apply error: ${String(e?.message || e)}`] }));
           row.floorPatch.applied = Boolean(fp.image);
           row.floorPatch.notes.push(...fp.notes);
