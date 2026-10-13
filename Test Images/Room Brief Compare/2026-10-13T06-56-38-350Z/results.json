@@ -1,0 +1,28 @@
+[
+  {
+    "photo": "Living_05_1A",
+    "roomType": "living_dining",
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 27.4,
+      "calls": 1,
+      "byModel": {
+        "gemini-3.8-flash": 1
+      },
+      "inputTokens": 2502,
+      "outputTokens": 1284,
+      "thinkingTokens": 1573,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2502,
+          "outputTokens": 1284,
+          "thinkingTokens": 1573,
+          "latencyMs": 27058
+        }
+      ]
+    }
+  }
+]

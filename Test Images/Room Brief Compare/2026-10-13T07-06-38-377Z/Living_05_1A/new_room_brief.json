@@ -1,0 +1,146 @@
+{
+  "roomSummary": "This is a two-room open-plan suite featuring a spacious front living area connected via a wide cased opening to a bright dining room in the rear, both lined with dark carpet.",
+  "camera": "The camera stands in the front living space looking diagonally across the dark carpet toward the wide opening into the dining room and the curtained window along the right wall.",
+  "landmarks": [
+    {
+      "id": "L1",
+      "type": "curtain",
+      "description": "patterned floor-to-sill curtains covering a large window on the right wall",
+      "box": [
+        0,
+        0.54,
+        0.5,
+        1
+      ]
+    },
+    {
+      "id": "L2",
+      "type": "doorway",
+      "description": "wide cased opening leading into the rear dining room",
+      "box": [
+        0,
+        0.07,
+        0.53,
+        0.4
+      ]
+    },
+    {
+      "id": "L3",
+      "type": "window",
+      "description": "back window in the adjoining room flanked by grey curtains",
+      "box": [
+        0.1,
+        0.08,
+        0.36,
+        0.29
+      ]
+    },
+    {
+      "id": "L4",
+      "type": "window",
+      "description": "side window on the right wall of the adjoining room",
+      "box": [
+        0.1,
+        0.34,
+        0.36,
+        0.4
+      ]
+    },
+    {
+      "id": "L5",
+      "type": "switch_or_outlet",
+      "description": "wall outlet and adapter located on the lower wall beneath the right patterned curtains near the corner",
+      "box": [
+        0.41,
+        0.54,
+        0.46,
+        0.57
+      ]
+    }
+  ],
+  "walls": [
+    {
+      "name": "Right curtained wall",
+      "description": "The exterior wall on the right lined with patterned drapery and a power outlet below.",
+      "usableForLargeFurniture": false,
+      "partlyVisible": true
+    },
+    {
+      "name": "Centre partition wall",
+      "description": "The structural wall section between the wide opening and the right corner.",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    },
+    {
+      "name": "Rear dining room back wall",
+      "description": "The far wall of the adjoining room featuring a wide window.",
+      "usableForLargeFurniture": false,
+      "partlyVisible": false
+    }
+  ],
+  "zones": [
+    {
+      "name": "Living Zone",
+      "description": "The open foreground room in front of the camera."
+    },
+    {
+      "name": "Dining Zone",
+      "description": "The bright adjoining room viewed through the wide cased opening."
+    }
+  ],
+  "kitchenVisible": false,
+  "fridgeSpace": {
+    "present": false,
+    "description": ""
+  },
+  "diningSpace": {
+    "fits": "full",
+    "reason": "The dedicated adjoining room through the wide opening has sufficient open floor area to easily accommodate a full 4 to 6-seat dining table without obstructing any entryways or windows."
+  },
+  "bedSpace": {
+    "bed": "queen",
+    "bedsideTables": 0,
+    "reason": ""
+  },
+  "layout": [
+    {
+      "item": "Living area rug",
+      "placement": "centred on the carpeted floor in the main foreground living space"
+    },
+    {
+      "item": "Three-seater sofa",
+      "placement": "positioned on the foreground rug facing toward the patterned curtain wall on the right"
+    },
+    {
+      "item": "Coffee table",
+      "placement": "centred on the living area rug in front of the three-seater sofa"
+    },
+    {
+      "item": "Armchair",
+      "placement": "placed on the edge of the rug near the centre partition wall, angled toward the coffee table"
+    },
+    {
+      "item": "Dining table",
+      "placement": "freestanding in the centre of the adjoining rear room, framed by the wide cased opening"
+    },
+    {
+      "item": "Dining chairs",
+      "placement": "four to six chairs arranged neatly around the dining table in the rear room"
+    }
+  ],
+  "relationships": [
+    "The living area seating is grouped cohesively on an area rug in the foreground, leaving a direct walking route through the wide opening into the dining room.",
+    "The dining suite remains entirely within the adjoining rear room."
+  ],
+  "avoid": [
+    "Do not place furniture inside the wide cased opening that blocks circulation between the two rooms.",
+    "Do not place high-backed furniture directly against the patterned curtains on the right.",
+    "Do not cover the electrical outlets on the wall beneath the patterned curtains."
+  ],
+  "keepUntouched": [
+    "The patterned curtains covering the right-hand window.",
+    "The window frames and curtains in the rear dining room.",
+    "The power outlet and plug on the lower wall under the curtains.",
+    "The dark grey wall-to-wall carpeting and white architectural trims."
+  ]
+}
