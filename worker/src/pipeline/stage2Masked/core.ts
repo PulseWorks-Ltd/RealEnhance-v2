@@ -2536,6 +2536,44 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     const gap = f - bottom[x];
     state[x] = bottom[x] >= f + margin ? 1 : gap <= near ? 2 : 1; // far above the floor: wall item, not checked
   }
+  // Legged furniture (TV unit, sideboard): the body between and beyond the
+  // legs is raised off the floor by design. A raised stretch is supported
+  // when, right beside it, a narrow leg of the SAME piece drops lower, reaches
+  // the floor, and the piece rises again past it (or ends). Judged on that
+  // piece alone, so a rug in front can't hide a leg, and a neighbouring piece
+  // that just keeps going lower (the corner of a bed beside a bedside table)
+  // isn't a leg.
+  const labels = new Int32Array(W * H).fill(-1);
+  labelComponents(Uint8Array.from(m, (v: number) => (v > 127 ? 1 : 0)), W, H).forEach((pc, idx) => { for (const i of pc.pixels) labels[i] = idx; });
+  const standsOnLegBeside = (x1: number, x2: number, freeLeft: boolean, freeRight: boolean) => {
+    const votes = new Map<number, number>();
+    for (let k = x1; k <= x2; k++) { const l = labels[bottom[k] * W + k]; if (l >= 0) votes.set(l, (votes.get(l) || 0) + 1); }
+    let piece = -1, best = 0;
+    for (const [l, n] of votes) if (n > best) { best = n; piece = l; }
+    if (piece < 0) return false;
+    const pb = (x: number) => { for (let y = H - 1; y >= 0; y--) if (labels[y * W + x] === piece) return y; return -1; };
+    let bSum = 0;
+    for (let k = x1; k <= x2; k++) bSum += pb(k);
+    const runBottom = bSum / (x2 - x1 + 1);
+    const grounded = (x: number, b: number) => line[x] >= 0 && b >= line[x] + margin;
+    const maxLeg = Math.max(2, Math.round(W * 0.02)), tol = H * 0.015;
+    for (const dir of [-1, 1] as const) {
+      if ((dir < 0 && freeLeft) || (dir > 0 && freeRight)) continue;
+      const start = dir < 0 ? x1 - 1 : x2 + 1;
+      for (let k = 0; k <= Math.round(W * 0.01); k++) {
+        const s0 = start + dir * k;
+        if (s0 < 0 || s0 >= W) break;
+        const b0 = pb(s0);
+        if (b0 < 0 || !grounded(s0, b0) || b0 < runBottom + H * 0.015 || b0 > runBottom + H * 0.12) continue;
+        let n = 0, e = s0;
+        while (e >= 0 && e < W) { const be = pb(e); if (be < 0 || Math.abs(be - b0) > tol) break; n++; e += dir; }
+        const after = e >= 0 && e < W ? pb(e) : -1;
+        if (n <= maxLeg && (after < 0 || after < b0 - tol)) return true;
+        break;
+      }
+    }
+    return false;
+  };
   const runs: FloatingRun[] = [];
   for (let x = 0; x < W; ) {
     if (state[x] !== 2) { x++; continue; }
@@ -2544,7 +2582,7 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     const freeLeft = x === 0 || state[x - 1] === 0;
     const freeRight = x2 === W - 1 || state[x2 + 1] === 0;
     const widthPct = ((x2 - x + 1) / W) * 100;
-    if (widthPct >= FLOAT_MIN_WIDTH_PCT && (freeLeft || freeRight)) {
+    if (widthPct >= FLOAT_MIN_WIDTH_PCT && (freeLeft || freeRight) && !standsOnLegBeside(x, x2, freeLeft, freeRight)) {
       let gapSum = 0, n = 0, bSum = 0, fSum = 0;
       for (let k = x; k <= x2; k++) { gapSum += line[k] - bottom[k]; bSum += bottom[k]; fSum += line[k]; n++; }
       runs.push({

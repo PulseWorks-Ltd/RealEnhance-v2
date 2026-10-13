@@ -13,3 +13,8 @@ Original (empty) photo + traced furniture outline from the owner-labelled merge 
 
 Bedroom_14 and Bedroom_07 also carry Gemini's raw (2_staged_raw.webp) for the floor-patch test;
 both should NOT be patched (chest against open wall / chest carries on to the floor) -> re-stage.
+
+- Kitchen_01_a1 — TV unit on legs; the cabinet end overhangs past its right leg (raised by design).
+  Should NOT be flagged (production false alarm, Oct 2026).
+- Kitchen_01_a2 — same room, re-stage: the TV unit's front-left leg stands on the skirting and the
+  right legs end on the wall line. Should be flagged.
