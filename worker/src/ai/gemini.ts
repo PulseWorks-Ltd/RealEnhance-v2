@@ -690,6 +690,26 @@ export async function enhanceWithGemini(
       stage1AExteriorImageConfig = aspectRatio ? { imageSize, aspectRatio } : { imageSize };
     }
 
+    // Stage 1A interior at native 2K (opt-in, under evaluation): set
+    // REALENHANCE_MODEL_STAGE1A_INTERIOR_PRIMARY to a model that honours
+    // imageConfig (e.g. gemini-3.1-flash-image). Unset = unchanged (Gemini 2.5,
+    // no imageConfig). Falls back to the normal Stage 1A model via the SDK.
+    const stage1AInteriorModel = String(process.env.REALENHANCE_MODEL_STAGE1A_INTERIOR_PRIMARY || "").trim();
+    const isInterior2KStage1A = stage === "1A" && !isExteriorStage1A && sceneType !== "exterior" && modelSupportsImageConfig(stage1AInteriorModel);
+    let stage1AInteriorImageConfig: { imageSize: string; aspectRatio?: string } | undefined;
+    if (isInterior2KStage1A) {
+      const imageSize = (process.env.REALENHANCE_STAGE1A_INTERIOR_IMAGE_SIZE || "2K").toUpperCase();
+      let aspectRatio: string | undefined;
+      try {
+        const inputMeta = await sharp(inputPath).metadata();
+        aspectRatio = closestGeminiAspectRatio(inputMeta.width || 0, inputMeta.height || 0);
+      } catch {
+        // Leave aspectRatio undefined — model falls back to its own default framing.
+      }
+      focusLog("GEMINI_STAGE1A_INTERIOR_IMAGE_CONFIG", `[Gemini] 🖼️ Stage 1A interior imageConfig (model=${stage1AInteriorModel}): size=${imageSize} aspectRatio=${aspectRatio || "unset"}`);
+      stage1AInteriorImageConfig = aspectRatio ? { imageSize, aspectRatio } : { imageSize };
+    }
+
     // Stage 2 image-quality fix (2026-09-19): purely a function of which
     // model REALENHANCE_MODEL_STAGE2_PRIMARY resolves to — no separate kill
     // switch needed, since switching that env var back to
@@ -746,6 +766,7 @@ export async function enhanceWithGemini(
         ...(stage1AExteriorImageConfig ? { imageConfig: stage1AExteriorImageConfig } : {}),
         ...(stage2ImageConfig ? { imageConfig: stage2ImageConfig } : {}),
         ...(stage1BImageConfig ? { imageConfig: stage1BImageConfig } : {}),
+        ...(stage1AInteriorImageConfig ? { imageConfig: stage1AInteriorImageConfig } : {}),
       }
     } as any;
 
@@ -771,6 +792,31 @@ export async function enhanceWithGemini(
           reason: modelLogReason,
           selectedModel: MODEL_CONFIG.stage1AExterior.primary,
           fallbackModel: MODEL_CONFIG.stage1AExterior.fallback,
+        },
+      });
+      resp = result.resp;
+      modelUsed = result.modelUsed;
+    } else if (stage === "1A" && isInterior2KStage1A) {
+      // Stage 1A interior, opt-in native 2K via REST; fallback = the normal
+      // Stage 1A model via the SDK (imageConfig dropped).
+      const result = await runImageGenerationPrimaryThenFallbackViaRest({
+        ai: client as any,
+        apiKey,
+        baseRequestBody: baseRequest,
+        context: "enhance-1A-interior-2k",
+        primaryModel: stage1AInteriorModel,
+        fallbackModel: MODEL_CONFIG.stage1A.primary,
+        stageLabel: "1A",
+        meta: {
+          stage: "1A",
+          jobId,
+          imageId,
+          filename,
+          roomType,
+          callType: "image_generation",
+          reason: modelLogReason,
+          selectedModel: stage1AInteriorModel,
+          fallbackModel: MODEL_CONFIG.stage1A.primary,
         },
       });
       resp = result.resp;
