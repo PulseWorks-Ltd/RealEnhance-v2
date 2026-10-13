@@ -1,6 +1,16 @@
 import type { EnhancedImageCompletionType } from "../completionTypes";
 
 /**
+ * BILLING_DECLUTTER_STAGE_EXTRA_CREDIT=on charges 2 credits for declutter +
+ * stage (furnished room). Default off: every image costs 1 credit, whatever
+ * processing is requested. Must be set the same on the server and the worker.
+ */
+export function declutterStageExtraCreditEnabled(): boolean {
+  const raw = typeof process !== "undefined" ? process.env?.BILLING_DECLUTTER_STAGE_EXTRA_CREDIT : undefined;
+  return ["1", "true", "on", "yes"].includes(String(raw || "").trim().toLowerCase());
+}
+
+/**
  * Billing Finalization - Pure Functions
  * 
  * Stage-based billing rules for finalize-at-end credit deduction
@@ -78,7 +88,7 @@ export function computeCharge(flags: StageFlags): { amount: number; reason: stri
   const declutterAndStageBillable = typeof flags.declutterAndStageBillable === "boolean"
     ? flags.declutterAndStageBillable
     : flags.stage1BUserSelected !== false;
-  if (declutterAndStageBillable && flags.stage1B && flags.stage2) {
+  if (declutterStageExtraCreditEnabled() && declutterAndStageBillable && flags.stage1B && flags.stage2) {
     return { amount: 2, reason: "declutter_and_stage" };
   }
 
@@ -105,6 +115,7 @@ export function estimateCredits(params: {
 }): number {
   const sceneType = String(params.sceneType || "").toLowerCase();
   if (sceneType === "exterior") return 1;
+  if (!declutterStageExtraCreditEnabled()) return 1;
   return params.userSelectedStage1B && params.userSelectedStage2 ? 2 : 1;
 }
 

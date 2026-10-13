@@ -1,6 +1,9 @@
 import { computeCharge, estimateCredits, estimateBatchCredits } from "../src/billing/rules";
 
-describe("billing rules", () => {
+describe("billing rules (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT=on)", () => {
+  beforeAll(() => { process.env.BILLING_DECLUTTER_STAGE_EXTRA_CREDIT = "on"; });
+  afterAll(() => { delete process.env.BILLING_DECLUTTER_STAGE_EXTRA_CREDIT; });
+
   it("returns 0 when stage1A failed", () => {
     const result = computeCharge({
       stage1A: false,
@@ -190,5 +193,45 @@ describe("billing rules", () => {
         ])
       ).toBe(4);
     });
+  });
+});
+
+describe("billing rules (default: 1 credit per image)", () => {
+  beforeEach(() => { delete process.env.BILLING_DECLUTTER_STAGE_EXTRA_CREDIT; });
+
+  it("charges 1 for declutter + stage when the switch is off", () => {
+    const result = computeCharge({
+      stage1A: true,
+      stage1B: true,
+      stage2: true,
+      sceneType: "interior",
+      stage1BUserSelected: true,
+      declutterAndStageBillable: true,
+    });
+    expect(result.amount).toBe(1);
+    expect(result.reason).toBe("flat_one_image_model");
+  });
+
+  it("estimates 1 per image for declutter + stage when the switch is off", () => {
+    expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: true })).toBe(1);
+    expect(estimateBatchCredits([
+      { sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: true },
+      { sceneType: "exterior", userSelectedStage1B: false, userSelectedStage2: false },
+    ])).toBe(2);
+  });
+
+  it("still refunds a failed staging and charges 0 when Stage 1A failed", () => {
+    expect(computeCharge({ stage1A: false, stage1B: true, stage2: true, sceneType: "interior" }).amount).toBe(0);
+    expect(computeCharge({
+      stage1A: true, stage1B: false, stage2: false, sceneType: "interior",
+      completionType: "fallback_1a", finalDeliveredStage: "1A", requestedBeyond1A: true,
+    }).amount).toBe(0);
+  });
+
+  it("treats only on/1/true/yes as on", () => {
+    process.env.BILLING_DECLUTTER_STAGE_EXTRA_CREDIT = "off";
+    expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: true })).toBe(1);
+    process.env.BILLING_DECLUTTER_STAGE_EXTRA_CREDIT = "ON";
+    expect(estimateCredits({ sceneType: "interior", userSelectedStage1B: true, userSelectedStage2: true })).toBe(2);
   });
 });

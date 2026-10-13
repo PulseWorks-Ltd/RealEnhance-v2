@@ -1282,6 +1282,9 @@ export default function BatchProcessor({
   const lastDisplayedProgressByImageRef = useRef<Record<number, number>>({});
   const currentMessageByImageRef = useRef<Record<number, string>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  // Server switch (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT). Off: every image is
+  // 1 credit and no cost pop-up is shown before processing.
+  const [extraDeclutterCredit, setExtraDeclutterCredit] = useState(false);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
   // Cost summary shown when Process is clicked (after the furniture pre-check):
   // how many photos get declutter + stage (2 credits) vs stage / enhance (1).
@@ -2351,12 +2354,13 @@ export default function BatchProcessor({
     if (finalSceneForIndex(index) === "exterior") return { kind: "exterior", credits: 1 };
     if (effectiveAllowStaging) {
       const furnished = imageId ? precheckRequiresDeclutter(entries[imageId], imageRoomTypesById[imageId]) : null;
-      if (furnished === true) return { kind: "declutter_stage", credits: 2 };
+      const extra = extraDeclutterCredit ? 2 : 1;
+      if (furnished === true) return { kind: "declutter_stage", credits: extra };
       if (furnished === false) return { kind: "stage", credits: 1 };
-      return { kind: "stage_unknown", credits: 2 };
+      return { kind: "stage_unknown", credits: extra };
     }
     return { kind: declutter ? "declutter" : "enhance", credits: 1 };
-  }, [declutter, effectiveAllowStaging, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
+  }, [declutter, effectiveAllowStaging, extraDeclutterCredit, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
 
   const batchCreditEstimateInputs = useMemo(
     () => files.map((_, index) => {
@@ -2558,6 +2562,7 @@ export default function BatchProcessor({
       const addonRemaining = Math.max(0, Number(summary?.addOns?.remaining ?? 0));
       const totalAvailable = monthlyRemaining + addonRemaining;
       setAvailableCredits(totalAvailable);
+      setExtraDeclutterCredit(summary?.declutterStageExtraCredit === true);
       return {
         monthlyRemaining,
         addonRemaining,
@@ -5152,7 +5157,7 @@ export default function BatchProcessor({
     // Show exactly what this batch will use before anything is processed.
     // Staging: wait (briefly) for the furniture pre-check so each interior
     // photo is priced as furnished (declutter + stage = 2) or empty (1).
-    if (!costConfirmedRef.current) {
+    if (extraDeclutterCredit && !costConfirmedRef.current) {
       setCostSummary({ checking: true, counts: {}, total: 0, available: availableCredits });
       const interiorIds = files
         .map((_, i) => (finalSceneForIndex(i) === "exterior" ? null : getImageIdForIndex(i)))
@@ -7934,7 +7939,12 @@ export default function BatchProcessor({
                       className={`rounded-lg border px-3 py-2 text-xs leading-5 ${effectiveAllowStaging ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}
                       data-testid="text-credit-cost-note"
                     >
-                      {effectiveAllowStaging ? (
+                      {!extraDeclutterCredit ? (
+                        <>
+                          <span className="font-semibold">1 credit per image.</span>{" "}
+                          Enhance, declutter and staging are all included.
+                        </>
+                      ) : effectiveAllowStaging ? (
                         <>
                           <span className="font-semibold">Staging: 1 credit per room, or 2 if the room needs decluttering first.</span>{" "}
                           We check each photo automatically and declutter rooms that need it. You'll see the exact cost before processing starts.
@@ -8408,7 +8418,9 @@ export default function BatchProcessor({
                     </button>
                     {files.length > 0 && (
                       <p className="mt-2 text-xs text-slate-600" data-testid="text-batch-credit-cost">
-                        {precheckUnknownCount > 0
+                        {!extraDeclutterCredit
+                          ? `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}.`
+                          : precheckUnknownCount > 0
                           ? `This batch uses up to ${requiredBatchCredits} credits (still checking ${precheckUnknownCount} room${precheckUnknownCount === 1 ? "" : "s"}…).`
                           : `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}${requiredBatchCredits > files.length ? " (rooms that need decluttering: declutter + stage = 2 credits)" : ""}.`}
                       </p>

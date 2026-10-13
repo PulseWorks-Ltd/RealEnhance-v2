@@ -15,7 +15,7 @@ import {
   EditJobPayload,
   RegionEditJobPayload
 } from "@realenhance/shared/types";
-import { evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
+import { declutterStageExtraCreditEnabled, evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
 
 import fs from "fs";
 import path from "path";
@@ -16311,7 +16311,9 @@ All openings must remain identical in position and size to the original image.`;
   const declutterAndStageBillable = Number.isFinite(quotedCredits)
     ? quotedCredits >= 2
     : billingEffectiveStage1B;
+  // BILLING_DECLUTTER_STAGE_EXTRA_CREDIT off (default): always 1 credit.
   const declutterAndStageDelivered =
+    declutterStageExtraCreditEnabled() &&
     String(sceneLabel || "interior").toLowerCase() !== "exterior" &&
     declutterAndStageBillable &&
     billingStage1BSuccess &&

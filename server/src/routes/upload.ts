@@ -13,7 +13,7 @@ import { getUserByEmail, getUserById } from "../services/users.js";
 import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, commitReservation, releaseReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
-import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { declutterStageExtraCreditEnabled, estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import { loadFurniturePrecheck, precheckRequiresDeclutter, type FurniturePrecheckRecord } from "./furniturePrecheck.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
@@ -870,7 +870,7 @@ export function uploadRouter() {
         String(opts.sceneType || "").toLowerCase() !== "exterior" &&
         finalVirtualStage &&
         precheckDecision !== false;
-      const requiredImages = declutterAndStage ? 2 : 1;
+      const requiredImages = declutterAndStage && declutterStageExtraCreditEnabled() ? 2 : 1;
       opts.quotedCredits = requiredImages;
       if (precheckRecord && precheckRecord.status === "done" && typeof precheckRecord.localEmpty === "boolean") {
         opts.furniturePrecheck = {

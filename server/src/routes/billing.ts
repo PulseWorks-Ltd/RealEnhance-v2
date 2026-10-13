@@ -19,6 +19,7 @@ import {
 } from "@realenhance/shared/billing/stripePlans.js";
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
+import { declutterStageExtraCreditEnabled } from "@realenhance/shared/billing/rules.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
 import {
   convertTrialAndDetachUsageIfNeeded,
@@ -789,6 +790,8 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
       billingCurrency,
       seatLimit: effectivePlan?.seatLimit ?? null,
       allowInvites: effectivePlan?.allowInvites ?? false,
+      // false: 1 credit per image, no cost pop-up before processing
+      declutterStageExtraCredit: declutterStageExtraCreditEnabled(),
       allowance: {
         monthlyIncluded: effectiveMonthlyIncluded,
         monthlyUsed: effectiveMonthlyUsed,

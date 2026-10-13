@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from "express";
-import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { declutterStageExtraCreditEnabled, estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { enqueueStoredEnhanceJob, getJob, updateJob } from "../services/jobs.js";
 import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
@@ -7,6 +7,7 @@ import { getUserById } from "../services/users.js";
 
 function deriveRequiredCreditsFromJobPayload(payload: any): number {
   const options = payload?.options || {};
+  if (!declutterStageExtraCreditEnabled()) return 1;
   // Quote made at upload from the furniture pre-check (1 or 2).
   const quoted = Number(options?.quotedCredits);
   if (Number.isFinite(quoted) && quoted >= 1) return Math.min(2, Math.floor(quoted));
