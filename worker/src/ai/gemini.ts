@@ -717,6 +717,26 @@ export async function enhanceWithGemini(
       stage2ImageConfig = aspectRatio ? { imageSize, aspectRatio } : { imageSize };
     }
 
+    // Stage 1B (declutter) native 2K: same mechanism as Stage 2 above —
+    // imageConfig is only honoured by the confirmed models and only via the
+    // REST call. REALENHANCE_STAGE1B_IMAGE_SIZE=off reverts to the plain SDK
+    // call (model's own default size, upscaled for delivery as before).
+    const stage1BImageSizeEnv = (process.env.REALENHANCE_STAGE1B_IMAGE_SIZE || "2K").toUpperCase();
+    const isStage1BImageConfigModel = stage === "1B" && stage1BImageSizeEnv !== "OFF" && modelSupportsImageConfig(MODEL_CONFIG.stage1B.primary);
+
+    let stage1BImageConfig: { imageSize: string; aspectRatio?: string } | undefined;
+    if (isStage1BImageConfigModel) {
+      let aspectRatio: string | undefined;
+      try {
+        const inputMeta = await sharp(inputPath).metadata();
+        aspectRatio = closestGeminiAspectRatio(inputMeta.width || 0, inputMeta.height || 0);
+      } catch {
+        // Leave aspectRatio undefined — model falls back to its own default framing.
+      }
+      focusLog("GEMINI_STAGE1B_IMAGE_CONFIG", `[Gemini] 🖼️ Stage 1B imageConfig (model=${MODEL_CONFIG.stage1B.primary}): size=${stage1BImageSizeEnv} aspectRatio=${aspectRatio || "unset"}`);
+      stage1BImageConfig = aspectRatio ? { imageSize: stage1BImageSizeEnv, aspectRatio } : { imageSize: stage1BImageSizeEnv };
+    }
+
     const baseRequest = {
       contents: requestParts,
       generationConfig: (usingTest && !stage1ATempLocked) ? undefined : {
@@ -725,6 +745,7 @@ export async function enhanceWithGemini(
         topK: effectiveSampling.topK,
         ...(stage1AExteriorImageConfig ? { imageConfig: stage1AExteriorImageConfig } : {}),
         ...(stage2ImageConfig ? { imageConfig: stage2ImageConfig } : {}),
+        ...(stage1BImageConfig ? { imageConfig: stage1BImageConfig } : {}),
       }
     } as any;
 
@@ -769,8 +790,33 @@ export async function enhanceWithGemini(
       });
       resp = result.resp;
       modelUsed = result.modelUsed;
+    } else if (stage === "1B" && isStage1BImageConfigModel) {
+      // Stage 1B at native 2K: primary via REST (so imageConfig is honoured),
+      // fallback via the normal SDK without imageConfig.
+      const result = await runImageGenerationPrimaryThenFallbackViaRest({
+        ai: client as any,
+        apiKey,
+        baseRequestBody: baseRequest,
+        context: "enhance-1B-image-config",
+        primaryModel: MODEL_CONFIG.stage1B.primary,
+        fallbackModel: MODEL_CONFIG.stage1B.fallback!,
+        stageLabel: "1B",
+        meta: {
+          stage: "1B",
+          jobId,
+          imageId,
+          filename,
+          roomType,
+          callType: "image_generation",
+          reason: modelLogReason,
+          selectedModel: MODEL_CONFIG.stage1B.primary,
+          fallbackModel: MODEL_CONFIG.stage1B.fallback,
+        },
+      });
+      resp = result.resp;
+      modelUsed = result.modelUsed;
     } else if (stage === "1B") {
-      // Stage 1B: Gemini 3 → fallback to 2.5
+      // Stage 1B (model without imageConfig support, or size switched off): SDK → fallback to 2.5
       const result = await runWithPrimaryThenFallback({
         stageLabel: "1B",
         ai: client as any,

@@ -21,7 +21,7 @@ function ensureImageCapableModel(model: string | undefined, fallback: string, en
  * Per-stage Gemini model configuration with safe fallback
  *
  * Stage 1A: Gemini 2.5 Flash Image (no fallback, standard quality enhancement)
- * Stage 1B: Gemini 3 Pro Image → fallback to 2.5 on failure (declutter/furniture removal)
+ * Stage 1B: Gemini 3.1 Flash Image at native 2K → fallback to 2.5 on failure (declutter/furniture removal)
  * Stage 2:  Gemini 2.5 Flash Image (fallback defaults to same model, virtual staging)
  */
 
@@ -44,8 +44,11 @@ export const MODEL_CONFIG = {
     primary: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_PRIMARY || "gemini-3.1-flash-image",
     fallback: process.env.REALENHANCE_MODEL_STAGE1A_EXTERIOR_FALLBACK || "gemini-2.5-flash-image",
   },
+  // Stage 1B (declutter): gemini-3.1-flash-image with native 2K output
+  // (imageConfig via REST — see enhanceWithGemini), same model and price per
+  // image as 1K.
   stage1B: {
-    primary: process.env.REALENHANCE_MODEL_STAGE1B_PRIMARY || "gemini-3-pro-image-preview",
+    primary: process.env.REALENHANCE_MODEL_STAGE1B_PRIMARY || "gemini-3.1-flash-image",
     fallback: process.env.REALENHANCE_MODEL_STAGE1B_FALLBACK || "gemini-2.5-flash-image",
   },
   stage2: {
