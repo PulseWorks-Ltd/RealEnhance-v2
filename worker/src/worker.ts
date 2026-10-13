@@ -100,7 +100,7 @@ import { toBase64, siblingOutPath, logImageContentHash } from "./utils/images";
 import { isCancelled } from "./utils/cancel";
 import { getStagingProfile } from "./utils/groups";
 import { publishImage, publishThumbnailVariant, type PublishResult } from "./utils/publish";
-import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl } from "./utils/debugImageUrls";
+import { createDebugSignedUrl, isDebugImageUrlLoggingEnabled, logBaselineImageUrl, trackDebugUpload, flushDebugUploads } from "./utils/debugImageUrls";
 import {
   runMaskedStage2Job,
   doorsFromStructuralBaseline,
@@ -5776,40 +5776,55 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       filePath: localPath,
       ctx: { jobId: payload.jobId, imageId: payload.imageId, stage, attempt },
     });
-    const signed = await createDebugSignedUrl(localPath, payload.jobId);
-    const imageKey = signed.key;
-    const signedUrl = signed.signedUrl;
-
-    // Deliberately bypasses nLog — see comment on the cached branch above.
-    console.log(
-      `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
-    );
-
-    const snapshot = {
-      signedUrl,
-      imageKey,
-      publishedUrl: signedUrl,
+    // Debug upload in the background: read the image now (so temp-file
+    // cleanup can't race it), return at once, and fill in this same snapshot
+    // object (already handed to the attempt log) when the upload finishes.
+    const snapshot: { signedUrl: string | null; imageKey: string | null; publishedUrl: string | null } = {
+      signedUrl: null,
+      imageKey: null,
+      publishedUrl: null,
     };
     stageOutputSigningCache.set(localPath, snapshot);
+    const body = await fs.promises.readFile(localPath);
+    trackDebugUpload(
+      createDebugSignedUrl(localPath, payload.jobId, { body })
+        .then((signed) => {
+          const imageKey = signed.key;
+          const signedUrl = signed.signedUrl;
+          // Deliberately bypasses nLog — see comment on the cached branch above.
+          console.log(
+            `[IMAGE_ATTEMPT_URL] stage=${stage} attempt=${attempt} job_id=${payload.jobId} file=${localPath.split("/").pop() || localPath} signed_url=${signedUrl || ""}`
+          );
+          snapshot.signedUrl = signedUrl;
+          snapshot.imageKey = imageKey;
+          snapshot.publishedUrl = signedUrl;
+          annotateAttemptSignedUrl(stage, attempt, snapshot);
+          const stage2Match = stage === "2"
+            ? stage2AttemptOutputs.find((entry) => entry.localPath === localPath)
+            : null;
+          if (stage2Match) {
+            stage2Match.signedUrl = signedUrl || undefined;
+            stage2Match.imageKey = imageKey || undefined;
+            stage2Match.publishedUrl = stage2Match.publishedUrl || signedUrl || undefined;
+          }
+          logStructured("STAGE_OUTPUT_SIGNED", {
+            jobId: payload.jobId,
+            stage,
+            attempt,
+            imageKey,
+            signedUrl,
+          });
+        })
+        .catch((signErr: any) => {
+          nLog("[STAGE_OUTPUT_SIGNED] background sign failed", {
+            jobId: payload.jobId,
+            stage,
+            attempt,
+            error: signErr?.message || String(signErr),
+          });
+        })
+    );
     annotateAttemptSignedUrl(stage, attempt, snapshot);
-
-    const stage2Match = stage === "2"
-      ? stage2AttemptOutputs.find((entry) => entry.localPath === localPath)
-      : null;
-    if (stage2Match) {
-      stage2Match.signedUrl = signedUrl || undefined;
-      stage2Match.imageKey = imageKey || undefined;
-      stage2Match.publishedUrl = stage2Match.publishedUrl || signedUrl || undefined;
-    }
-
-    logStructured("STAGE_OUTPUT_SIGNED", {
-      jobId: payload.jobId,
-      stage,
-      attempt,
-      imageKey,
-      signedUrl,
-    });
-
     return snapshot;
   };
 
@@ -5817,62 +5832,67 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
     if (jobAttemptSummaryEmitted) return;
     jobAttemptSummaryEmitted = true;
 
-    logStructured("JOB_ATTEMPT_SUMMARY", {
-      ...jobAttemptLog,
-      detectorCacheStats: {
-        requests: jobContext.detectorCacheStats.requests,
-        hits: jobContext.detectorCacheStats.hits,
-        hitRate: jobContext.detectorCacheStats.requests > 0
-          ? Number((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests).toFixed(4))
-          : 0,
-      },
-      finalStatus,
-    });
+    // Debug uploads run in the background; give any still in flight a moment
+    // (max 20 s) so the summaries carry their links. The job doesn't wait.
+    const writeSummary = () => {
+      logStructured("JOB_ATTEMPT_SUMMARY", {
+        ...jobAttemptLog,
+        detectorCacheStats: {
+          requests: jobContext.detectorCacheStats.requests,
+          hits: jobContext.detectorCacheStats.hits,
+          hitRate: jobContext.detectorCacheStats.requests > 0
+            ? Number((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests).toFixed(4))
+            : 0,
+        },
+        finalStatus,
+      });
 
-    const lines: string[] = [];
-    lines.push("==============================");
-    lines.push("IMAGE JOB SUMMARY");
-    lines.push("==============================");
-    lines.push(`Image: ${payload.jobId}`);
-    lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
-    lines.push(`Staging Style: ${normalizeForensicStagingStyle(jobAttemptLog.stagingStyle)}`);
-    lines.push(
-      `Detector Cache Hit Rate: ${jobContext.detectorCacheStats.requests > 0 ? `${Math.round((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests) * 100)}%` : "0%"} (${jobContext.detectorCacheStats.hits}/${jobContext.detectorCacheStats.requests})`
-    );
-    lines.push("");
+      const lines: string[] = [];
+      lines.push("==============================");
+      lines.push("IMAGE JOB SUMMARY");
+      lines.push("==============================");
+      lines.push(`Image: ${payload.jobId}`);
+      lines.push(`Room: ${jobAttemptLog.roomType || payload.options.roomType || "unknown"}`);
+      lines.push(`Staging Style: ${normalizeForensicStagingStyle(jobAttemptLog.stagingStyle)}`);
+      lines.push(
+        `Detector Cache Hit Rate: ${jobContext.detectorCacheStats.requests > 0 ? `${Math.round((jobContext.detectorCacheStats.hits / jobContext.detectorCacheStats.requests) * 100)}%` : "0%"} (${jobContext.detectorCacheStats.hits}/${jobContext.detectorCacheStats.requests})`
+      );
+      lines.push("");
 
-    const renderStage = (stageLabel: "1B" | "2") => {
-      lines.push(`Stage ${stageLabel}:`);
-      const attempts = [...jobAttemptLog.stageLogs[stageLabel]].sort((a, b) => a.attempt - b.attempt);
-      if (!attempts.length) {
-        lines.push("  (no attempts)");
-        lines.push("");
-        return;
-      }
-      for (const attemptEntry of attempts) {
-        lines.push(`  Attempt ${attemptEntry.attempt}:`);
-        lines.push(`    URL: ${attemptEntry.signedUrl || "N/A"}`);
-        const result = String(attemptEntry.validation.final?.result || "UNKNOWN").toUpperCase();
-        lines.push(`    Result: ${result}`);
-        const reason = attemptEntry.validation.final?.reason || attemptEntry.validation.gemini?.violationType;
-        if (reason) {
-          const confidence = attemptEntry.validation.gemini?.confidence;
-          lines.push(
-            `    Reason: ${reason}${typeof confidence === "number" ? ` (confidence ${confidence})` : ""}`
-          );
+      const renderStage = (stageLabel: "1B" | "2") => {
+        lines.push(`Stage ${stageLabel}:`);
+        const attempts = [...jobAttemptLog.stageLogs[stageLabel]].sort((a, b) => a.attempt - b.attempt);
+        if (!attempts.length) {
+          lines.push("  (no attempts)");
+          lines.push("");
+          return;
         }
-        lines.push("");
+        for (const attemptEntry of attempts) {
+          lines.push(`  Attempt ${attemptEntry.attempt}:`);
+          lines.push(`    URL: ${attemptEntry.signedUrl || "N/A"}`);
+          const result = String(attemptEntry.validation.final?.result || "UNKNOWN").toUpperCase();
+          lines.push(`    Result: ${result}`);
+          const reason = attemptEntry.validation.final?.reason || attemptEntry.validation.gemini?.violationType;
+          if (reason) {
+            const confidence = attemptEntry.validation.gemini?.confidence;
+            lines.push(
+              `    Reason: ${reason}${typeof confidence === "number" ? ` (confidence ${confidence})` : ""}`
+            );
+          }
+          lines.push("");
+        }
+      };
+
+      renderStage("1B");
+      renderStage("2");
+      lines.push(`Final Status: ${finalStatus}`);
+      lines.push("==============================");
+
+      for (const line of lines) {
+        nLog(line);
       }
     };
-
-    renderStage("1B");
-    renderStage("2");
-    lines.push(`Final Status: ${finalStatus}`);
-    lines.push("==============================");
-
-    for (const line of lines) {
-      nLog(line);
-    }
+    void Promise.race([flushDebugUploads(), new Promise((r) => setTimeout(r, 20000))]).then(writeSummary);
   };
 
   const inferForensicRetryReason = (attemptNumber: number, reasonText: string): "initial" | "structural_violation" | "opening_removed" | "cosmetic" | "unknown" => {

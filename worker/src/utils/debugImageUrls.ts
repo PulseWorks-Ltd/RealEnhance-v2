@@ -42,7 +42,7 @@ export async function createDebugSignedUrl(
   // force: upload even when debug URL logging is off (masked Stage 2's own
   // STAGE2_MASKED_DEBUG_UPLOAD switch). keyName: object name, default the
   // file's basename.
-  options?: { force?: boolean; keyName?: string }
+  options?: { force?: boolean; keyName?: string; body?: Buffer }
 ): Promise<DebugSignedUrlResult> {
   if (!options?.force && !isDebugImageUrlLoggingEnabled()) {
     return { signedUrl: null, key: null };
@@ -68,7 +68,7 @@ export async function createDebugSignedUrl(
     };
   }
 
-  const body = await fs.readFile(localPath);
+  const body = options?.body ?? (await fs.readFile(localPath));
   const fileName = options?.keyName || path.basename(localPath);
   const key = `debug-attempts/${jobId}/${fileName}`;
   const contentType = mimeFromExt(localPath);
@@ -92,6 +92,37 @@ export async function createDebugSignedUrl(
   return { signedUrl, key };
 }
 
+// Debug uploads run in the background: the image is read into memory now (so
+// a later temp-file cleanup can't race it), the upload and log line follow
+// without holding up the job (production Oct 2026: 5-10 s per job waited on
+// these). pendingDebugUploads lets a caller wait for them if it ever needs to.
+const pendingDebugUploads = new Set<Promise<unknown>>();
+export function flushDebugUploads(): Promise<unknown> {
+  return Promise.allSettled([...pendingDebugUploads]);
+}
+export function trackDebugUpload<T>(p: Promise<T>): Promise<T> {
+  pendingDebugUploads.add(p);
+  p.finally(() => pendingDebugUploads.delete(p)).catch(() => {});
+  return p;
+}
+
+async function uploadInBackground(params: { ctx: PipelineContext; localPath: string }, extra: Record<string, unknown>) {
+  const fileName = path.basename(params.localPath);
+  let body: Buffer;
+  try {
+    body = await fs.readFile(params.localPath);
+  } catch (error: any) {
+    logEvent(params.ctx, "IMAGE_OUTPUT", { signedUrl: null, fileName, ...extra, reason: `ERROR:${error?.message || String(error)}` });
+    return;
+  }
+  trackDebugUpload(
+    createDebugSignedUrl(params.localPath, params.ctx.jobId, { body })
+      .then((signed) => logEvent(params.ctx, "IMAGE_OUTPUT", { signedUrl: signed.signedUrl || null, fileName, ...extra }))
+      .catch((error: any) => logEvent(params.ctx, "IMAGE_OUTPUT", { signedUrl: null, fileName, ...extra, reason: `ERROR:${error?.message || String(error)}` }))
+  );
+}
+
+// Returns at once; the link is logged when the background upload finishes.
 export async function logImageAttemptUrl(params: {
   ctx: PipelineContext;
   localPath: string;
@@ -99,26 +130,11 @@ export async function logImageAttemptUrl(params: {
   if (!isDebugImageUrlLoggingEnabled()) {
     return { signedUrl: null, key: null };
   }
-
-  const fileName = path.basename(params.localPath);
-  try {
-    const signed = await createDebugSignedUrl(params.localPath, params.ctx.jobId);
-    logEvent(params.ctx, "IMAGE_OUTPUT", {
-      signedUrl: signed.signedUrl || null,
-      fileName,
-    });
-    return signed;
-  } catch (error: any) {
-    const reason = error?.message || String(error);
-    logEvent(params.ctx, "IMAGE_OUTPUT", {
-      signedUrl: null,
-      fileName,
-      reason: `ERROR:${reason}`,
-    });
-    return { signedUrl: null, key: null };
-  }
+  await uploadInBackground(params, {});
+  return { signedUrl: null, key: null };
 }
 
+// Returns at once; the link is logged when the background upload finishes.
 export async function logBaselineImageUrl(params: {
   ctx: PipelineContext;
   localPath: string;
@@ -126,24 +142,6 @@ export async function logBaselineImageUrl(params: {
   if (!isDebugImageUrlLoggingEnabled()) {
     return { signedUrl: null, key: null };
   }
-
-  const fileName = path.basename(params.localPath);
-  try {
-    const signed = await createDebugSignedUrl(params.localPath, params.ctx.jobId);
-    logEvent(params.ctx, "IMAGE_OUTPUT", {
-      signedUrl: signed.signedUrl || null,
-      fileName,
-      baseline: true,
-    });
-    return signed;
-  } catch (error: any) {
-    const reason = error?.message || String(error);
-    logEvent(params.ctx, "IMAGE_OUTPUT", {
-      signedUrl: null,
-      fileName,
-      baseline: true,
-      reason: `ERROR:${reason}`,
-    });
-    return { signedUrl: null, key: null };
-  }
+  await uploadInBackground(params, { baseline: true });
+  return { signedUrl: null, key: null };
 }
