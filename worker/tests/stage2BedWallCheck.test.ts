@@ -30,4 +30,15 @@ describe("bed wall check", () => {
     expect(p).toContain("door_1: hall door (door), box [0.10, 0.20, 0.30, 0.90]");
     expect(p).toContain("bedCoversDoor");
   });
+  it("fails when the room was widened to fit the bed (client Image 02)", () => {
+    const r = evaluateBedWall({ ...base, roomWidened: "yes" });
+    expect(r.failed).toBe(true);
+    expect(r.roomWidened).toBe(true);
+    expect(r.restageHints.join(" ")).toMatch(/longest direction/);
+  });
+  it("still builds a prompt when the survey found no doors", () => {
+    const p = buildBedWallPrompt([]);
+    expect(p).toContain("none found by the survey");
+    expect(p).toContain("roomWidened");
+  });
 });

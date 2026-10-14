@@ -1448,7 +1448,9 @@ export async function askDoorAccess(emptyPath: string, finalImage: Buffer, doors
 export const BED_WALL_CHECK = String(process.env.STAGE2_BED_WALL_CHECK ?? "on").trim().toLowerCase() !== "off";
 
 export function buildBedWallPrompt(doors: DoorOpening[]): string {
-  const list = doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n");
+  const list = doors.length
+    ? doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n")
+    : "- none found by the survey (still check the photo yourself)";
   return `Image 1 is the empty room. Image 2 is the same room after virtual staging (same camera).
 Doors and doorways found in the room (boxes are [x1, y1, x2, y2] as fractions of the image):
 ${list}
@@ -1460,7 +1462,8 @@ Look at the bed in Image 2 and the walls in Image 1, and answer:
 4. otherPlainWallAvailable: does the room show another wall, long enough for the bed, with no door, doorway, wardrobe door or window on it?
 5. headboardCoversWindow: does the bed or its headboard cover any part of a window's glass?
 6. bedCoversDoor: does the bed, its headboard, a bedside table or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, so the door could no longer close.
-Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "bedCoversDoor": "yes" | "no", "reason": string }`;
+7. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that the bed, a bedside table or any other piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
+Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
 }
 
 export function evaluateBedWall(raw: any) {
@@ -1469,11 +1472,13 @@ export function evaluateBedWall(raw: any) {
   const doorWall = bed && yes(raw?.doorOnHeadboardWall) && yes(raw?.otherPlainWallAvailable);
   const window = bed && yes(raw?.headboardCoversWindow);
   const coversDoor = bed && yes(raw?.bedCoversDoor);
+  const roomWidened = yes(raw?.roomWidened);
   const hints: string[] = [];
+  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed, fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
   if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed; or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
   if (window) hints.push("Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible.");
-  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, failed: doorWall || window || coversDoor, restageHints: hints, answer: raw };
+  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
 }
 
 export async function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
@@ -1490,7 +1495,7 @@ export async function askBedWall(emptyPath: string, stagedImage: Buffer, doors: 
     return { model, ...evaluateBedWall(raw) };
   } catch (e: any) {
     // A failed check never blocks.
-    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, failed: false, restageHints: [] as string[], answer: null };
+    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, roomWidened: false, failed: false, restageHints: [] as string[], answer: null };
   }
 }
 

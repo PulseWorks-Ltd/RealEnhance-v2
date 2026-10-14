@@ -1,5 +1,5 @@
 jest.mock("../src/ai/gemini", () => ({ getGeminiClient: () => ({}) }));
-import { checkRoomBrief, buildStage2PromptFromRoomBrief, buildRoomBriefInstruction, roomAllowsEmptyLayout, type RoomBrief } from "../src/pipeline/roomBrief";
+import { checkRoomBrief, checkBedFits, buildStage2PromptFromRoomBrief, buildRoomBriefInstruction, roomAllowsEmptyLayout, type RoomBrief } from "../src/pipeline/roomBrief";
 
 const good: RoomBrief = {
   roomSummary: "An open-plan kitchen, living and dining room.",
@@ -82,6 +82,8 @@ describe("room brief checks", () => {
   });
   it("sizes bedrooms to the space and always plans a bed", () => {
     const t = buildRoomBriefInstruction("bedroom");
+    expect(t).toContain("CHECK THE DEPTH TOO");
+    expect(t).toContain("NEVER CHANGE THE ROOM TO FIT THE FURNITURE");
     expect(t).toMatch(/BED SPACE CHECK/);
     expect(t).toMatch(/king, else queen, else double, else single/);
     const bed = { ...good, landmarks: [], layout: [{ item: "Double bed", placement: "headboard against the plain wall on the right" }] };
@@ -147,5 +149,74 @@ describe("conservative bed plan (code rule)", () => {
   });
   it("leaves non-bedrooms alone", () => {
     expect(makeBedPlanConservative(plan006, "living_room").changed).toHaveLength(0);
+  });
+});
+
+describe("bed fit and photo-edge rules", () => {
+  const { makeBedPlanConservative } = require("../src/pipeline/roomBrief");
+  const plan = (bedSpace: any, tables: string[]) => ({
+    layout: [{ item: "Queen bed", placement: "centered against the plain right wall" }, ...tables.map((p) => ({ item: "Bedside table", placement: p }))],
+    bedSpace,
+  }) as any;
+  it("asks again when the bed sticks out further than the room is deep", () => {
+    const issues = checkBedFits(plan({ bed: "queen", bedsideTables: 1, wallMetres: 3, depthMetres: 2.2 }, ["far side"]));
+    expect(issues.join(" ")).toMatch(/longest direction/);
+  });
+  it("asks again when the wall is too short for the bed and its tables", () => {
+    expect(checkBedFits(plan({ bed: "queen", bedsideTables: 2, wallMetres: 2.2, depthMetres: 3.5 }, ["a", "b"])).join(" ")).toMatch(/fewer bedside tables/);
+  });
+  it("accepts a plan that fits its own measurements", () => {
+    expect(checkBedFits(plan({ bed: "queen", bedsideTables: 2, wallMetres: 3.2, depthMetres: 2.9 }, ["a", "b"]))).toEqual([]);
+  });
+  it("drops the near table and pushes the bed to the far corner when the wall runs off the photo (client Image 02)", () => {
+    const p = plan({ bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true }, [
+      "to the left of the bed against the right wall, near the far corner",
+      "to the right of the bed, toward the foreground",
+    ]);
+    const { brief, changed } = makeBedPlanConservative(p, "bedroom");
+    expect(changed.length).toBe(2);
+    const tables = brief.layout.filter((l: any) => /bedside/i.test(l.item));
+    expect(tables.map((t: any) => t.placement)).toEqual(["to the left of the bed against the right wall, near the far corner"]);
+    const bed = brief.layout.find((l: any) => l.item === "Queen bed")!;
+    expect(bed.placement).toMatch(/far corner/);
+    expect(bed.placement).not.toMatch(/centered/);
+    expect((brief as any).bedSpace.bedsideTables).toBe(1);
+  });
+  it("turns a single 'set of 2' bedside tables entry into one table (production Image 02 plan)", () => {
+    const p = {
+      bedSpace: { bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true },
+      layout: [
+        { item: "Queen bed", placement: "Centered along the plain right wall with headboard flat against it." },
+        { item: "Bedside tables (set of 2)", placement: "Flanking each side of the queen bed along the right wall." },
+        { item: "Table lamps (set of 2)", placement: "Placed on top of each bedside table." },
+      ],
+    };
+    const { brief } = makeBedPlanConservative(p, "bedroom");
+    expect(brief.layout.map((l: any) => l.item)).toEqual(["Queen bed", "Bedside table", "Table lamp"]);
+    expect(brief.layout[1].placement).toMatch(/far side/);
+    expect(brief.layout[0].placement).toMatch(/far corner/);
+  });
+  it("removes leftover references to the dropped table (lamps, relationships, zones)", () => {
+    const p = {
+      bedSpace: { bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true },
+      zones: [{ name: "Sleeping area", description: "Centered along the plain right wall" }],
+      relationships: ["The queen bed and both bedside tables sit along the solid right wall."],
+      layout: [
+        { item: "Queen bed", placement: "against the plain right wall" },
+        { item: "Bedside table", placement: "on the far side of the queen bed toward the window corner" },
+        { item: "Bedside table", placement: "on the near side of the queen bed toward the foreground" },
+        { item: "Table lamp", placement: "on the far bedside table" },
+        { item: "Table lamp", placement: "on the near bedside table" },
+      ],
+    };
+    const { brief } = makeBedPlanConservative(p, "bedroom");
+    expect(brief.layout.filter((l: any) => /lamp/i.test(l.item)).length).toBe(1);
+    expect(brief.layout.filter((l: any) => /bedside/i.test(l.item)).length).toBe(1);
+    expect(brief.relationships[0]).toBe("The queen bed and the single bedside table sit along the solid right wall.");
+    expect(brief.zones[0].description).not.toMatch(/centered/i);
+  });
+  it("leaves the plan alone when the bed wall is fully in view", () => {
+    const p = plan({ bed: "queen", bedsideTables: 2, wallRunsOffPhoto: false }, ["left", "right"]);
+    expect(makeBedPlanConservative(p, "bedroom").changed).toEqual([]);
   });
 });

@@ -924,16 +924,16 @@ export async function runMaskedStage2Job(p: {
       } else {
         // Bed wall check (bedrooms), alongside the blend.
         const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
-          ? getDoors().then((doors) => (doors && doors.length ? askBedWall(ctx.originalPath, ctx.staged, doors, dir, ctx.name) : null))
+          ? getDoors().then((doors) => askBedWall(ctx.originalPath, ctx.staged, doors || [], dir, ctx.name))
           : Promise.resolve(null);
         const hm = await harmonise(ctx, layers);
         const bedWall = await bedWallP;
         if (bedWall) {
           row.bedWall = { model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
           if (bedWall.failed) {
-            const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window"].filter(Boolean).join("; ");
+            const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
             p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)}`);
-            reasons.push("bed against a door wall or window");
+            reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : "bed against a door wall or window");
             row.bedWall.restageHints = bedWall.restageHints;
           }
         }
