@@ -48,6 +48,7 @@ import {
   evaluateWallArt,
   refineArtRegion,
   dilate,
+  invert,
   erode,
   growDown,
   ratioOf,
@@ -210,7 +211,29 @@ async function closeUpRetrace(ctx: MaskedContext, floor: Mask, exclude: Uint8Arr
     row.closeUpRetrace.rejected = true;
     return floor;
   }
-  const crop = cropBin.mask;
+  // Which way round is the close-up mask? The whole-photo rule ("more than
+  // 60% white = colours flipped") is wrong for a tight crop, where furniture
+  // can fill most of the picture (Oct 2026, production: the close-up marked
+  // the bed and a bedside table, was flipped to "just the plant", and the
+  // table was published made of carpet). Pick the way round that agrees best
+  // with the furniture the main trace already found inside the crop.
+  let crop = cropBin.mask;
+  {
+    const asIs = cropBin.inverted ? invert(cropBin.mask) : cropBin.mask;
+    const flipped = invert(asIs);
+    const agree = (m: Uint8Array) => {
+      let inter = 0, uni = 0;
+      for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
+        const a = m[y * cw + x], b = floor[(top + y) * w + left + x];
+        if (a && b) inter++;
+        if (a || b) uni++;
+      }
+      return uni ? inter / uni : 0;
+    };
+    const aAsIs = agree(asIs), aFlip = agree(flipped);
+    crop = aAsIs >= aFlip ? asIs : flipped;
+    row.closeUpRetrace.orientation = { whiteIsFurniture: aAsIs >= aFlip, agreeAsIs: +aAsIs.toFixed(2), agreeFlipped: +aFlip.toFixed(2) };
+  }
   const added = new Uint8Array(w * h);
   let rawAdded = 0;
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
