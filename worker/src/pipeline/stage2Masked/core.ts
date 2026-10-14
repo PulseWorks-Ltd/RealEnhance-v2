@@ -514,6 +514,23 @@ export function fillEnclosedHoles(src: Uint8Array, w: number, h: number, maxHole
   return out;
 }
 
+// A changed pixel that is just the original surface in shade: darker by a
+// shadow's amount (not near-black, like a dark furniture leg on a light wall)
+// with the same colour balance. Gemini darkens the carpet under and beside a
+// bed; that is a shadow, not part of the bed the trace missed (Oct 2026,
+// production marketing job: both attempts failed on a bed's carpet shadow).
+function isShadowPixel(orig: Buffer, staged: Buffer, i: number): boolean {
+  const r0 = orig[i * 3], g0 = orig[i * 3 + 1], b0 = orig[i * 3 + 2];
+  const r1 = staged[i * 3], g1 = staged[i * 3 + 1], b1 = staged[i * 3 + 2];
+  const s0 = r0 + g0 + b0, s1 = r1 + g1 + b1;
+  if (s0 < 30 || s1 >= s0) return false;
+  const ratio = s1 / s0;
+  if (ratio < SHADOW_MIN_RATIO || ratio > 0.95) return false;
+  const chroma = Math.max(Math.abs(r0 / s0 - r1 / s1), Math.abs(g0 / s0 - g1 / s1), Math.abs(b0 / s0 - b1 / s1));
+  return chroma < 0.035;
+}
+const SHADOW_MIN_RATIO = 0.4;
+
 export async function fillChangedGaps(floor: Uint8Array, original: Buffer, staged: Buffer, w: number, h: number): Promise<Mask> {
   const out = fillEnclosedHoles(floor, w, h, Math.round(w * h * 0.02));
   const cols = fillFurnitureColumns(floor, w, h);
@@ -562,11 +579,12 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
   let cand = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) cand[i] = changed[i] && near[i] && !out[i] ? 1 : 0;
   cand = erode(dilate(cand, w, h, r), w, h, r);
-  const missed: Array<{ areaPct: number; touchingFurniturePct: number; underFurniturePct: number; box: number[] }> = [];
+  const missed: Array<{ areaPct: number; touchingFurniturePct: number; underFurniturePct: number; shadowPct: number; box: number[] }> = [];
   for (const piece of labelComponents(cand, w, h)) {
     if (piece.pixels.length < w * h * 0.002) continue;
-    let edge = 0, touching = 0, topEdge = 0, under = 0;
+    let edge = 0, touching = 0, topEdge = 0, under = 0, shadow = 0;
     for (const i of piece.pixels) {
+      if (isShadowPixel(a, bAdj, i)) shadow++;
       const x = i % w;
       let isEdge = false, touches = false;
       for (const n of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) {
@@ -581,6 +599,7 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
       areaPct: +((piece.pixels.length / (w * h)) * 100).toFixed(2),
       touchingFurniturePct: Math.round((touching / Math.max(1, edge)) * 100),
       underFurniturePct: Math.round((under / Math.max(1, topEdge)) * 100),
+      shadowPct: Math.round((shadow / piece.pixels.length) * 100),
       box: [+(piece.x1 / w).toFixed(2), +(piece.y1 / h).toFixed(2), +(piece.x2 / w).toFixed(2), +(piece.y2 / h).toFixed(2)],
     });
   }

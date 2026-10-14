@@ -215,6 +215,18 @@ describe("bed fit and photo-edge rules", () => {
     expect(brief.relationships[0]).toBe("The queen bed and the single bedside table sit along the solid right wall.");
     expect(brief.zones[0].description).not.toMatch(/centered/i);
   });
+  it("never removes a bedside table that is named with its lamp", () => {
+    const p = {
+      bedSpace: { bed: "queen", bedsideTables: 2, wallRunsOffPhoto: true },
+      layout: [
+        { item: "Queen bed", placement: "against the plain right wall" },
+        { item: "Bedside table with lamp", placement: "on the far side of the bed toward the corner" },
+        { item: "Table lamp", placement: "on the near bedside table" },
+      ],
+    };
+    const { brief } = makeBedPlanConservative(p, "bedroom");
+    expect(brief.layout.some((l: any) => /bedside table/i.test(l.item))).toBe(true);
+  });
   it("leaves the plan alone when the bed wall is fully in view", () => {
     const p = plan({ bed: "queen", bedsideTables: 2, wallRunsOffPhoto: false }, ["left", "right"]);
     expect(makeBedPlanConservative(p, "bedroom").changed).toEqual([]);

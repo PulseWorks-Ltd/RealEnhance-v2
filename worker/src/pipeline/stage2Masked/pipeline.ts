@@ -137,7 +137,8 @@ const CLOSEUP_RETRACE = String(process.env.STAGE2_CLOSEUP_RETRACE ?? "1").trim()
 const CLOSEUP_MIN_AREA_PCT = 0.3;
 const CLOSEUP_MIN_TOUCHING_PCT = 10;
 const CUT_UNDER_MIN_AREA_PCT = Number(process.env.CUT_UNDER_MIN_AREA_PCT || 0.8); // missed area under furniture...
-const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);              // ...with this much furniture right above it
+const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);              // ...with this much furniture right above it...
+const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
 const CLOSEUP_MAX_ADD_FLOOR_PCT = 2;  // ...or 2% of the photo, whichever is larger
 const CLOSEUP_MAX_CUT_EDGE = 0.25;    // marking along >25% of a crop cut edge = a block
@@ -891,7 +892,7 @@ export async function runMaskedStage2Job(p: {
       // cut off, with the real wall or skirting showing through (Oct 2026,
       // production: a bedside table's legs) — re-stage instead.
       const cutUnder = ((row.closeUpRetrace?.flaggedAreas || []) as any[]).filter(
-        (m) => m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT
+        (m) => m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT && (m.shadowPct || 0) < CUT_UNDER_MAX_SHADOW_PCT
       );
       const closeUpFilled = !row.closeUpRetrace?.rejected && (row.closeUpRetrace?.addedPctOfImage || 0) >= 0.5 * cutUnder.reduce((s, m) => s + m.areaPct, 0);
       if (cutUnder.length && !closeUpFilled) {

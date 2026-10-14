@@ -23,6 +23,7 @@ import { getGeminiClient } from "../ai/gemini";
 
 export const ROOM_BRIEF_MODEL = String(process.env.ROOM_BRIEF_MODEL || "gemini-3.8-flash");
 const ROOM_BRIEF_MAX_SIDE = Math.max(512, Number(process.env.ROOM_BRIEF_IMAGE_MAX_SIDE || 1280));
+const ROOM_BRIEF_THINKING_BUDGET = Math.max(512, Number(process.env.ROOM_BRIEF_THINKING_BUDGET || 2048));
 const ROOM_BRIEF_TIMEOUT_MS = Math.max(10_000, Number(process.env.ROOM_BRIEF_TIMEOUT_MS || 90_000));
 
 export function roomBriefEnabled(): boolean {
@@ -289,7 +290,11 @@ async function callBriefModel(image: { data: string; mime: string }, instruction
   const call = ai.models.generateContent({
     model,
     contents: [{ role: "user", parts: [{ text: instruction }, { inlineData: { mimeType: image.mime, data: image.data } }] }],
-    config: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json" },
+    // The token limit counts the model's hidden thinking too. Uncapped, a run
+    // can think for ~8k tokens and cut the plan off mid-JSON (Oct 2026,
+    // production: 7,860 thinking + 325 answer, both tries, 2 minutes lost and
+    // the room plan dropped). Normal runs think 200-2,600 tokens.
+    config: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: ROOM_BRIEF_THINKING_BUDGET } },
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
@@ -323,7 +328,7 @@ async function callBriefModel(image: { data: string; mime: string }, instruction
  * near bedside table" brought the dropped table back).
  */
 function tidyToOneBedsideTable(brief: any): any {
-  const isLamp = (it: any) => /lamp/i.test(String(it?.item || "")) && !/floor lamp|pendant/i.test(String(it?.item || ""));
+  const isLamp = (it: any) => /lamp/i.test(String(it?.item || "")) && !/floor lamp|pendant|bedside|night ?stand|side table/i.test(String(it?.item || ""));
   const nearish = /\bnear\b|foreground|toward(s)? the camera|door|each|both/i;
   const lamps = (brief.layout || []).filter(isLamp);
   const keepLamp = lamps.find((it: any) => !nearish.test(String(it?.placement || ""))) || lamps[0];
