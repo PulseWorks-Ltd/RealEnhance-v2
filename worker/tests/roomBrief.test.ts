@@ -261,3 +261,34 @@ describe("office / study plans", () => {
     expect(checkDeskPlacement({ layout: [{ item: "Desk", placement: "against the plain right wall of the alcove" }] }, "study")).toEqual([]);
   });
 });
+
+describe("light mentions for dining tables", () => {
+  const { removeUnbackedLightMentions, buildRoomBriefInstruction } = require("../src/pipeline/roomBrief");
+  const plan = (landmarks: any[]) => ({
+    landmarks,
+    zones: [{ name: "dining", description: "Centred beneath the ceiling light fixture by the window" }],
+    relationships: ["The dining table sits centered under the pendant lights, away from the sofa."],
+    layout: [
+      { item: "Dining table", placement: "Placed on the rug, centered under the ceiling light fixture between the sliding doors and the right mantelpiece" },
+      { item: "Dining rug", placement: "Centred on the tiled floor beneath the ceiling light fixture" },
+      { item: "Sofa", placement: "against the plain left wall beneath the window" },
+    ],
+  });
+  it("removes every light mention when the room has no light fitting", () => {
+    const { brief, changed } = removeUnbackedLightMentions(plan([{ type: "window" }]));
+    expect(changed.length).toBe(2);
+    expect(brief.layout[0].placement).toBe("Placed on the rug between the sliding doors and the right mantelpiece");
+    expect(brief.layout[1].placement).toBe("Centred on the tiled floor");
+    expect(brief.layout[2].placement).toBe("against the plain left wall beneath the window");
+    expect(brief.relationships[0]).not.toMatch(/pendant/);
+    expect(brief.zones[0].description).not.toMatch(/light/);
+  });
+  it("keeps the mention when the plan lists a light fitting", () => {
+    expect(removeUnbackedLightMentions(plan([{ type: "light_fitting" }])).changed).toEqual([]);
+  });
+  it("tells the planner to mention a dining light only when one is there", () => {
+    const t = buildRoomBriefInstruction("dining_room");
+    expect(t).not.toContain("Centre it under the dining light fitting if there is one.");
+    expect(t).toMatch(/a mention of a light makes the image AI invent one/);
+  });
+});

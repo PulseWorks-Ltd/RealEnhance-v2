@@ -91,7 +91,7 @@ export function roomLabelFor(roomType: string): string {
 function roomTypeGuidance(roomType: string): string {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
   const living = `LIVING AREA: a sofa (and an armchair if there is room), a coffee table and a rug, arranged as one conversation group. If the room has a TV wall bracket, the TV is mounted ON that bracket and the seating faces it; a low TV unit may sit on the floor below it. Without a bracket, put a TV unit against a solid, clearly visible wall opposite the seating — or, if no wall suits a TV, face the seating toward the window or fireplace and add no TV. Never mount a TV on a wall with a window; on such a wall a TV may only stand on a low unit, below the window sill, never in front of the glass.`;
-  const dining = `DINING AREA: a dining table with 4–6 chairs, freestanding with room to pull the chairs out — never pushed flat against a wall. Centre it under the dining light fitting if there is one.
+  const dining = `DINING AREA: a dining table with 4–6 chairs, freestanding with room to pull the chairs out — never pushed flat against a wall. Only when a ceiling light fitting is clearly visible in the dining area itself (and listed in "landmarks") may the placement say the table is centred under that light, naming it. Otherwise never mention lights, pendants or light fittings for the dining table — describe its position by the walls, windows, kitchen bench and walkways instead (a mention of a light makes the image AI invent one).
 DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat table with chairs pulled out AND a clear walking path will not fit there, plan a small table for two (a round bistro table) instead. If even that would block a walkway, a door, the stairs or the kitchen's working area, plan NO dining table. Record your decision in "diningSpace".`;
   const kitchenOnly = `KITCHEN: do not add large furniture. Bar stools only where an island or peninsula has an overhang for seating; a few small items on the benches (a bowl of fruit, a plant, a chopping board) are enough.`;
   const openPlan = `OPEN-PLAN RULES: each area keeps its own furniture. The dining table goes in the area nearest the kitchen (in front of or beside the kitchen bench/island) — never inside the living area, never in front of the sofa, and never between the sofa and the TV. The living area is the part of the room furthest from the kitchen, around the TV bracket or focal wall. The back of the sofa may face the dining area to separate the two areas. Keep a clear walking path from the entrance to the kitchen.`;
@@ -490,6 +490,32 @@ export function checkDeskPlacement(brief: RoomBrief, roomType: string): string[]
   return [];
 }
 
+/**
+ * Light mentions without a light (code, not AI judgement). "Centred under the
+ * light" made Gemini add pendant lights over dining tables to satisfy it
+ * (Oct 2026). When the plan lists no light fitting, every mention of one in
+ * the layout, zones and relationships is removed.
+ */
+const LIGHT_PHRASE = /,?\s*(?:and\s+)?(?:(?:cente?red|centred|placed|positioned|set|directly|right|squarely)\s+)*(?:under|beneath|below)\s+(?:the\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,3}?(?:light|lights|pendant|pendants|chandelier|light fitting|light fixture|fixture|fitting)s?\b(?:\s+(?:fitting|fixture)s?)?/gi;
+export function removeUnbackedLightMentions(brief: RoomBrief): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  const hasLight = (brief.landmarks || []).some((l: any) => l?.type === "light_fitting");
+  if (hasLight || !Array.isArray(brief?.layout)) return { brief, changed };
+  const strip = (t: string) => String(t || "").replace(LIGHT_PHRASE, "").replace(/\s{2,}/g, " ").replace(/^\s*[,;]\s*/, "").trim();
+  const layout = brief.layout.map((it: any) => {
+    const before = String(it?.placement || "");
+    let after = strip(before);
+    if (after === before) return it;
+    if (after.length < 12) after = /dining|table/i.test(String(it?.item || "")) ? "freestanding in the dining area with clear floor on every side to pull the chairs out" : "in its area of the room";
+    changed.push(`removed a light mention from "${String(it?.item || "").slice(0, 40)}"`);
+    return { ...it, placement: after };
+  });
+  const out: any = { ...brief, layout };
+  if (Array.isArray(brief.relationships)) out.relationships = brief.relationships.map(strip);
+  if (Array.isArray(brief.zones)) out.zones = brief.zones.map((z: any) => ({ ...z, description: strip(z?.description) }));
+  return { brief: out, changed };
+}
+
 /** One room-brief call (plus one corrected retry only if the rule checks fail). */
 export async function buildRoomBrief(params: {
   imagePath: string;
@@ -528,6 +554,11 @@ export async function buildRoomBrief(params: {
     if (conservative.changed.length) {
       brief = conservative.brief;
       console.log("[ROOM_BRIEF_CONSERVATIVE_BED]", JSON.stringify({ changed: conservative.changed }));
+    }
+    const lightRule = removeUnbackedLightMentions(brief);
+    if (lightRule.changed.length) {
+      brief = lightRule.brief;
+      console.log("[ROOM_BRIEF_LIGHT_MENTIONS_REMOVED]", JSON.stringify({ changed: lightRule.changed }));
     }
     const deskRule = makeDeskPlanConservative(brief, params.roomType);
     if (deskRule.changed.length) {
@@ -658,6 +689,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     ``,
     `KEEP EXACTLY AS IN THE PHOTO`,
     ...keep.map((k) => `- ${k}`),
+    `- Never add a ceiling or hanging light — no pendant, chandelier, ceiling fan or light fitting that is not in the photo. Lighting comes only from table and floor lamps.`,
     `- Every wall, window, door, doorway, floor, ceiling, light fitting and fixed feature, exactly where and how it is. Use only the walls and floor visible in the photo — never extend, add or move a wall, and never mount anything on a wall that is not in the photo.`,
     `- Keep every doorway and walking path clear.`,
     `- If a piece does not fit in the floor space shown, make it smaller or leave it out — never change the room, the stairs, the cabinetry or the camera view to make room for it.`,
