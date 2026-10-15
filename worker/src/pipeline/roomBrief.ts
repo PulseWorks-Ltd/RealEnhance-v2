@@ -293,8 +293,11 @@ async function callBriefModel(image: { data: string; mime: string }, instruction
     // The token limit counts the model's hidden thinking too. Uncapped, a run
     // can think for ~8k tokens and cut the plan off mid-JSON (Oct 2026,
     // production: 7,860 thinking + 325 answer, both tries, 2 minutes lost and
-    // the room plan dropped). Normal runs think 200-2,600 tokens.
-    config: { temperature: 0.2, maxOutputTokens: 8192, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: ROOM_BRIEF_THINKING_BUDGET } },
+    // the room plan dropped). Normal runs think 200-2,600 tokens. The budget
+    // is a soft limit for this model (production: up to 5,715 with a 2,048
+    // budget), so the overall limit leaves room for the answer too; only the
+    // tokens actually used are billed.
+    config: { temperature: 0.2, maxOutputTokens: 16384, responseMimeType: "application/json", thinkingConfig: { thinkingBudget: ROOM_BRIEF_THINKING_BUDGET } },
   });
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
