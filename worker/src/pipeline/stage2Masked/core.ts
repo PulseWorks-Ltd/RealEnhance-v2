@@ -1505,6 +1505,60 @@ export function evaluateBedWall(raw: any) {
   return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
 }
 
+// ── Desk placement (studies / offices) ──────────────────────────────────────
+// Same idea as the bed check. The code door check depends on the survey's
+// door box reaching the right floor line; when it doesn't (Oct 2026: an
+// alcove door whose box ran down onto the main room's floor) a desk standing
+// in front of the door passes as "clear". This asks the AI directly.
+export function buildDeskDoorPrompt(doors: DoorOpening[]): string {
+  const list = doors.length
+    ? doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n")
+    : "- none found by the survey (still check the photo yourself)";
+  return `Image 1 is the empty room. Image 2 is the same room after virtual staging (same camera).
+Doors and doorways found in the room (boxes are [x1, y1, x2, y2] as fractions of the image):
+${list}
+
+Look at the desk in Image 2 and the walls in Image 1, and answer:
+1. deskPresent: is there a desk or work table in Image 2?
+2. deskWall: which wall does the desk stand against (describe it), or "none" if it stands out in the room?
+3. doorOnDeskWall: is there a door, doorway or wardrobe door on that same wall, next to the desk? Judge by the wall itself in Image 1, not by what the camera angle makes look close.
+4. otherPlainWallAvailable: does the room show another wall, long enough for a desk, with no door, doorway or wardrobe door on it?
+5. deskCoversDoor: does the desk, its chair, a bookshelf, an armchair or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, or in the walking path straight through a doorway.
+6. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that a piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
+Respond with ONLY a JSON object: { "deskPresent": "yes" | "no", "deskWall": string, "doorOnDeskWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "deskCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
+}
+
+export function evaluateDeskDoor(raw: any) {
+  const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
+  const desk = yes(raw?.deskPresent);
+  const coversDoor = desk && yes(raw?.deskCoversDoor);
+  const doorWall = desk && yes(raw?.doorOnDeskWall) && yes(raw?.otherPlainWallAvailable);
+  const roomWidened = yes(raw?.roomWidened);
+  const hints: string[] = [];
+  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a compact desk, leave out the bookshelf or armchair, or let the edge of the photo cut the desk off.");
+  if (coversDoor) hints.push("Your previous attempt placed the desk setup in front of a door: the desk, chair or another piece overlapped the door, its frame, the space it swings through or the path through the doorway. Every door, door leaf and doorway must stay fully visible and clear. Put the desk with its back against a plain wall that has no door on it; if that wall is short, use a compact desk, leave out the bookshelf or armchair, or slide the desk to the far end of that wall and let the edge of the photo cut it off. Never let any part of the desk, chair or shelves reach a door.");
+  if (doorWall) hints.push(`Your previous attempt put the desk against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the desk against a plain wall that has no door, doorway or wardrobe door on it.`);
+  return { deskPresent: desk, coversDoor, deskOnDoorWall: doorWall, roomWidened, failed: coversDoor || doorWall || roomWidened, restageHints: hints, answer: raw };
+}
+
+export async function askDeskDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
+  const stagedPath = path.join(dir, "12_desk_door_check_input.jpg");
+  fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
+  try {
+    const { raw, model } = await callJsonModel(
+      [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: stagedPath, label: "Image 2 (staged):" }],
+      "You are an experienced real-estate stager checking where the desk was placed.",
+      buildDeskDoorPrompt(doors),
+      name,
+      "desk_door",
+    );
+    return { model, ...evaluateDeskDoor(raw) };
+  } catch (e: any) {
+    // Unanswered: don't block the job.
+    return { model: "none", error: String(e?.message || e).slice(0, 200), ...evaluateDeskDoor(null) };
+  }
+}
+
 // ── Reflective surfaces (once per job, on the empty room) ───────────────────
 // The reflections trace pass (one Gemini image call per attempt) only finds
 // anything when the room has a mirror, glass panel or glossy floor.

@@ -115,7 +115,13 @@ WHEN THE BED WALL ENDS AT A DOOR: never centre the bed on that wall. Push the wh
 BED SPACE CHECK: first judge the open floor you can actually see, and record your measurements in "bedSpace" (wallMetres, depthMetres, measuredWith) — they are checked. Measure the headboard wall by its VISIBLE length only — if it runs off the edge of the photo, the hidden part does not count, so a bed and bedside tables must fit within what is shown (they may run slightly past the photo edge, but never need more room than the visible wall). Choose the largest bed that still leaves a clear walkway along at least one long side and past the foot of the bed, and lets the door and wardrobe open fully: king, else queen, else double, else single. Then bedside tables: one on each side if both sides have room, one if only one side does, none if neither (never squeeze one in front of a door, wardrobe or window). Name the bed size in the layout item (for example "Double bed"). Record your decision in "bedSpace".
 Optionally a dresser, a chair or a bench at the end of the bed, only if there is still clear floor after all of the above. Keep the paths to the door and the wardrobe clear.`;
   }
-  if (key === "study" || key === "office") return `STUDY: a desk and desk chair, ideally facing the window or a wall with the window to the side, plus a bookshelf or a small armchair if there is room.`;
+  if (key === "study" || key === "office") {
+    return `STUDY: a desk and desk chair, with the desk's back flat against a wall. Add a bookshelf or a small armchair only if there is clearly room to spare.
+DESK WALL CHOICE, in this order: (1) a plain solid wall with no door, doorway or wardrobe door anywhere along it; (2) under a window only if its sill is clearly above desk height and that wall has no door; (3) never against a wall with a door or doorway on it, even beside the desk, and never free-standing in the middle of the room or "in front of" a window away from the wall. In "placement", name the exact wall the desk stands against (for example "against the plain right wall of the alcove") — never "centred in the room" or "in front of the window".
+DOOR SWING: every door must still be able to close and every doorway stays walkable. The open door leaf, its frame, the floor it sweeps and the path straight through a doorway stay completely clear — no desk, chair (even pulled out), bookshelf, armchair or lamp may touch, overlap or stand in front of them, even partly. Keep at least one door-width of clear wall between the desk setup and any door frame.
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide. A standard desk (1.2 m) needs about 1.5 door-widths of plain wall, a compact writing desk (0.9 m) about 1.1, and the chair needs about one door-width of clear floor behind the desk. Photos make walls look longer than they are; if unsure, choose the compact desk and leave out the bookshelf and armchair.
+WHEN THE DESK WALL IS SHORT OR ENDS AT A DOOR: never centre the desk on it. Push the desk to the far end, away from the door — against the corner or out to the edge of the photo, letting the photo edge cut off part of the desk — and describe it that way in "layout".`;
+  }
   if (key.startsWith("bathroom")) return `BATHROOM: add no furniture — the "layout" stays empty. Styling is limited to small touches (towels, a bath mat, a soap dispenser, a small plant), which are handled separately.`;
   if (key === "laundry") return `LAUNDRY: add no furniture or appliances — the "layout" stays empty. Styling is limited to small touches (a laundry basket, folded towels, a plant), which are handled separately.`;
   if (key === "pantry" || key === "closet") return `${key === "pantry" ? "PANTRY" : "CLOSET"}: add no furniture — the "layout" stays empty. Styling is limited to a few neat items on the existing shelves, which are handled separately.`;
@@ -442,6 +448,48 @@ export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { b
   return { brief: out, changed };
 }
 
+/**
+ * Office/study plans, checked in code (Oct 2026, production: desks staged in
+ * front of an alcove's door while a plain wall was free). A desk whose plan
+ * mentions a door is pushed to the far end of its wall, away from the door,
+ * with the photo edge allowed to cut it off; the bookshelf and armchair are
+ * dropped when the plan puts them by a door.
+ */
+export function makeDeskPlanConservative(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  if (!/study|office/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return { brief, changed };
+  const isDesk = (it: any) => /\bdesk\b|work ?table/i.test(String(it?.item || "")) && !/chair|lamp/i.test(String(it?.item || ""));
+  const isExtra = (it: any) => /book ?shel|bookcase|shelving|armchair|accent chair|reading chair/i.test(String(it?.item || ""));
+  let layout = brief.layout.filter((it: any) => {
+    if (isExtra(it) && /door/i.test(String(it?.placement || ""))) {
+      changed.push(`dropped "${String(it.item || "").slice(0, 40)}" placed by a door`);
+      return false;
+    }
+    return true;
+  });
+  layout = layout.map((it: any) => {
+    if (!isDesk(it) || !/door/i.test(String(it?.placement || ""))) return it;
+    changed.push("desk pushed away from the door");
+    return {
+      ...it,
+      placement: `${String(it.placement || "").replace(/\bcente?red\b/gi, "placed").replace(/\.\s*$/, "")} — pushed to the end of that wall furthest from the door (against the corner or out to the edge of the photo, which may cut part of it off), leaving at least one door-width of clear wall before the door frame; the desk and chair never reach the door or its swing`,
+    };
+  });
+  return { brief: { ...brief, layout }, changed };
+}
+
+/** Soft check: the desk must stand against a named wall, not float in the room. */
+export function checkDeskPlacement(brief: RoomBrief, roomType: string): string[] {
+  if (!/study|office/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return [];
+  const desk = brief.layout.find((it: any) => /\bdesk\b|work ?table/i.test(String(it?.item || "")) && !/chair|lamp/i.test(String(it?.item || "")));
+  if (!desk) return ["a study needs a desk in the layout"];
+  const pl = String(desk.placement || "");
+  if (!/\bwall\b/i.test(pl) || /\b(middle|centre|center) of the (room|floor)\b|free-?standing/i.test(pl)) {
+    return ["the desk's placement must name the plain wall it stands against (for example \"against the plain right wall\"), never the middle of the room or in front of a window away from a wall"];
+  }
+  return [];
+}
+
 /** One room-brief call (plus one corrected retry only if the rule checks fail). */
 export async function buildRoomBrief(params: {
   imagePath: string;
@@ -481,12 +529,20 @@ export async function buildRoomBrief(params: {
       brief = conservative.brief;
       console.log("[ROOM_BRIEF_CONSERVATIVE_BED]", JSON.stringify({ changed: conservative.changed }));
     }
+    const deskRule = makeDeskPlanConservative(brief, params.roomType);
+    if (deskRule.changed.length) {
+      brief = deskRule.brief;
+      console.log("[ROOM_BRIEF_CONSERVATIVE_DESK]", JSON.stringify({ changed: deskRule.changed }));
+    }
     lastBrief = brief;
     lastIssues = checkRoomBrief(brief, params.roomType);
     // Bed fit is asked about once: a plan that still doesn't add up on the
     // retry is used anyway (logged) rather than losing the whole plan.
-    const bedFit = /^bedroom/i.test(String(params.roomType || "")) ? checkBedFits(brief) : [];
-    if (bedFit.length) console.log("[ROOM_BRIEF_BED_FIT]", JSON.stringify({ attempt, bedSpace: (brief as any).bedSpace, issues: bedFit }));
+    const bedFit = [
+      ...(/^bedroom/i.test(String(params.roomType || "")) ? checkBedFits(brief) : []),
+      ...checkDeskPlacement(brief, params.roomType),
+    ];
+    if (bedFit.length) console.log("[ROOM_BRIEF_FIT]", JSON.stringify({ attempt, bedSpace: (brief as any).bedSpace, issues: bedFit }));
     if (attempt === 1 && lastIssues.length === 0 && bedFit.length) usableBrief = brief;
     if (attempt === 1) lastIssues.push(...bedFit);
     if (lastIssues.length === 0) return { ok: true, brief, issues: [], usage };

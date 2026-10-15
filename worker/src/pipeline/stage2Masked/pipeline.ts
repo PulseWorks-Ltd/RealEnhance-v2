@@ -65,6 +65,7 @@ import {
   askBedWall,
   REFLECTION_GATE,
   askReflectiveSurfaces,
+  askDeskDoor,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
   cutPieceCompletionZone,
@@ -870,10 +871,14 @@ export async function runMaskedStage2Job(p: {
       }
       let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row, fillMissedUnder: attempt > p.maxRestages && PUBLISH_CUT_ON_LAST_ATTEMPT };
       // Bed placement (bedrooms) needs only the staged picture, so it runs now,
-      // alongside the line-up, and a rejected bed skips the trace and blend
+      // alongside the line-up, and a rejected placement skips the trace and blend
       // (~US$0.50 of Gemini calls) and goes straight to the re-stage.
       const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
         ? getDoors().then((doors) => askBedWall(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
+        : Promise.resolve(null);
+      // Same for the desk in a study / office.
+      const deskDoorP = BED_WALL_CHECK && !ctx.offline && /study|office/i.test(p.roomType)
+        ? getDoors().then((doors) => askDeskDoor(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
         : Promise.resolve(null);
       const reflective = await reflectiveP;
       if (reflective) {
@@ -899,7 +904,7 @@ export async function runMaskedStage2Job(p: {
         }
       }
       const bedWall = await bedWallP;
-      let bedRejected = false;
+      let placementRejected = false;
       if (bedWall) {
         row.bedWall = { model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
         if (bedWall.failed) {
@@ -907,10 +912,21 @@ export async function runMaskedStage2Job(p: {
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
           reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : "bed against a door wall or window");
           row.bedWall.restageHints = bedWall.restageHints;
-          bedRejected = true;
+          placementRejected = true;
         }
       }
-      if (!bedRejected) {
+      const deskDoor = await deskDoorP;
+      if (deskDoor) {
+        row.deskDoor = { model: deskDoor.model, coversDoor: deskDoor.coversDoor, deskOnDoorWall: deskDoor.deskOnDoorWall, roomWidened: deskDoor.roomWidened, answer: deskDoor.answer, ...(deskDoor as any).error ? { error: (deskDoor as any).error } : {} };
+        if (deskDoor.failed) {
+          const what = [deskDoor.coversDoor && "desk setup covers a door", deskDoor.deskOnDoorWall && "desk on a wall with a door", deskDoor.roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
+          p.warn?.(`[${ctx.name}] desk placement rejected: ${what} — ${String(deskDoor.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
+          reasons.push(deskDoor.roomWidened ? "room changed to fit the desk" : "desk blocking a door");
+          row.deskDoor.restageHints = deskDoor.restageHints;
+          placementRejected = true;
+        }
+      }
+      if (!placementRejected) {
         let layers = await traceLayers(ctx);
         if (prealigned) {
           const cut = await furnitureCutAtEmptyEdge(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
@@ -1044,6 +1060,7 @@ export async function runMaskedStage2Job(p: {
     hints = [
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
       ...(row.bedWall?.restageHints || []),
+      ...(row.deskDoor?.restageHints || []),
       // Floating furniture: Gemini's pieces ended above the real floor. Say so
       // in terms of the furniture only — "touch the floor" alone made Gemini
       // move the floor line or change the flooring. A piece the TRACE cut off

@@ -232,3 +232,32 @@ describe("bed fit and photo-edge rules", () => {
     expect(makeBedPlanConservative(p, "bedroom").changed).toEqual([]);
   });
 });
+
+describe("office / study plans", () => {
+  const { makeDeskPlanConservative, checkDeskPlacement, buildRoomBriefInstruction } = require("../src/pipeline/roomBrief");
+  it("tells the planner where a desk may go", () => {
+    const t = buildRoomBriefInstruction("office");
+    expect(t).toContain("DESK WALL CHOICE");
+    expect(t).toContain("DOOR SWING");
+    expect(t).toContain("WHEN THE DESK WALL IS SHORT OR ENDS AT A DOOR");
+  });
+  it("pushes a desk away from a door and drops a bookshelf by the door (production DSC07858)", () => {
+    const plan = { layout: [
+      { item: "desk", placement: "centered in front of the far alcove window, slightly offset to the right to keep access to the left door" },
+      { item: "office chair", placement: "tucked under the desk" },
+      { item: "bookshelf", placement: "against the wall beside the door" },
+    ] };
+    const { brief, changed } = makeDeskPlanConservative(plan, "office");
+    expect(changed).toContain("desk pushed away from the door");
+    expect(brief.layout.map((l: any) => l.item)).toEqual(["desk", "office chair"]);
+    expect(brief.layout[0].placement).toMatch(/furthest from the door/);
+    expect(brief.layout[0].placement).not.toMatch(/centered/);
+  });
+  it("leaves bedrooms alone", () => {
+    expect(makeDeskPlanConservative({ layout: [{ item: "desk", placement: "by the door" }] }, "bedroom").changed).toEqual([]);
+  });
+  it("asks again when the desk isn't against a named wall", () => {
+    expect(checkDeskPlacement({ layout: [{ item: "Desk", placement: "centered in front of the far window" }] }, "study").length).toBe(1);
+    expect(checkDeskPlacement({ layout: [{ item: "Desk", placement: "against the plain right wall of the alcove" }] }, "study")).toEqual([]);
+  });
+});
