@@ -63,6 +63,8 @@ import {
   shouldPrealign,
   BED_WALL_CHECK,
   askBedWall,
+  REFLECTION_GATE,
+  askReflectiveSurfaces,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
   cutPieceCompletionZone,
@@ -111,6 +113,12 @@ export type MaskedContext = {
   // Gemini's picture no longer covers; the blend continues the pieces there.
   completionZone?: Uint8Array | null;
   completionBand?: Uint8Array | null;
+  // The empty room has no mirror, glass panel or glossy floor: the
+  // reflections trace pass is skipped (one Gemini image call saved).
+  skipReflections?: boolean;
+  // Last attempt: areas under furniture the trace missed are taken from
+  // Gemini's picture (see isCutUnder) instead of failing the job.
+  fillMissedUnder?: boolean;
 };
 
 function save(ctx: MaskedContext, name: string, data: Buffer | string) {
@@ -138,6 +146,12 @@ const CLOSEUP_MIN_AREA_PCT = 0.3;
 const CLOSEUP_MIN_TOUCHING_PCT = 10;
 const CUT_UNDER_MIN_AREA_PCT = Number(process.env.CUT_UNDER_MIN_AREA_PCT || 0.8); // missed area under furniture...
 const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);              // ...with this much furniture right above it...
+// A changed area under traced furniture that the trace left out (legs, a
+// base, or the piece's shadow/reflection on the floor).
+function isCutUnder(m: any): boolean {
+  return m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT && (m.shadowPct || 0) < CUT_UNDER_MAX_SHADOW_PCT;
+}
+const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
 const CLOSEUP_MAX_ADD_FLOOR_PCT = 2;  // ...or 2% of the photo, whichever is larger
@@ -300,7 +314,7 @@ export async function traceLayers(ctx: MaskedContext) {
   const stagedMeta = await sharp(staged).metadata();
   const stagedMime = stagedMeta.format === "jpeg" ? "image/jpeg" : stagedMeta.format === "png" ? "image/png" : "image/webp";
   const passes = await Promise.all(
-    tracePassesFor(ctx.roomType).map(async (pass) => {
+    tracePassesFor(ctx.roomType).filter((pass) => !(ctx.skipReflections && pass.kind === "reflection")).map(async (pass) => {
       if (ctx.offline) {
         const saved = ctx.io.load?.(`3_trace_${pass.label}_raw.png`) ?? null;
         if (!saved) {
@@ -455,6 +469,25 @@ export async function traceLayers(ctx: MaskedContext) {
   // differs from the original — bare floor showing between chair legs stays.
   const tightFloor = ctx.tight ? await fillChangedGaps(floor, original, staged, w, h) : null;
   if (tightFloor) row.possiblyMissedByTrace = (tightFloor as any).possiblyMissedByTrace;
+  if (tightFloor && ctx.fillMissedUnder) {
+    // Last attempt: rather than fail, keep Gemini's own pixels in those
+    // areas — the legs or base when the trace really cut a piece off, or a
+    // natural shadow/reflection when that is all it was. Pasting the real
+    // photo there instead broke up 007's bedside table (Oct 2026 replay).
+    const list: any[] = (tightFloor as any).possiblyMissedByTrace || [];
+    const px: ArrayLike<number>[] = (tightFloor as any).missedPixels || [];
+    const filled: any[] = [];
+    list.forEach((m, k) => {
+      if (!isCutUnder(m) || !px[k]) return;
+      const piece = px[k];
+      for (let j = 0; j < piece.length; j++) { floor[piece[j]] = 1; tightFloor[piece[j]] = 1; }
+      filled.push(m);
+    });
+    if (filled.length) {
+      row.missedUnderFilled = filled;
+      log(ctx, `[${ctx.name}] last attempt: took ${filled.map((m) => `${m.areaPct}%`).join(", ")} under furniture from Gemini's picture (missed by the trace)`);
+    }
+  }
   floor = fillFurnitureColumns(floor, w, h);
   const furnitureRatio = ratioOf(floor);
   save(ctx, "3_mask_traced.png", await maskToPng(floor, w, h));
@@ -800,6 +833,12 @@ export async function runMaskedStage2Job(p: {
     if (!doorsPromise) doorsPromise = typeof p.doors === "function" ? p.doors().catch(() => null) : Promise.resolve(p.doors);
     return doorsPromise;
   };
+  // Once per job, while Gemini stages: does the empty room have anything
+  // that would show reflections of the furniture? If not, the reflections
+  // trace pass is skipped on every attempt. Unsure or failed -> keep it.
+  const reflectiveP = REFLECTION_GATE && !p.replay
+    ? askReflectiveSurfaces(p.inputPath, p.jobId).catch(() => null)
+    : Promise.resolve(null);
   for (let attempt = 1; ; attempt++) {
     const dir = path.join(p.workDir, `attempt${attempt}`);
     fs.mkdirSync(dir, { recursive: true });
@@ -829,7 +868,18 @@ export async function runMaskedStage2Job(p: {
           if (fs.existsSync(stagedPath + suffix)) io.save?.(name, fs.readFileSync(stagedPath + suffix));
         } catch {}
       }
-      let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row };
+      let ctx: MaskedContext = { name: `${p.jobId}#${attempt}`, original, originalPath: p.inputPath, originalMime, staged, roomType: p.roomType, aspectRatio, w, h, tight: true, offline: Boolean(p.replay), dir, io, row, fillMissedUnder: attempt > p.maxRestages && PUBLISH_CUT_ON_LAST_ATTEMPT };
+      // Bed placement (bedrooms) needs only the staged picture, so it runs now,
+      // alongside the line-up, and a rejected bed skips the trace and blend
+      // (~US$0.50 of Gemini calls) and goes straight to the re-stage.
+      const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
+        ? getDoors().then((doors) => askBedWall(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
+        : Promise.resolve(null);
+      const reflective = await reflectiveP;
+      if (reflective) {
+        row.reflectionGate = { reflective: reflective.reflective, what: reflective.what, model: reflective.model };
+        if (!reflective.reflective) ctx = { ...ctx, skipReflections: true };
+      }
       // Camera-movement check: logged only. An early (untraced) reshape screen
       // was removed: on owner-labelled merge tests it rejected photos the
       // merge saves (furniture can't be told from room before tracing), while
@@ -848,119 +898,128 @@ export async function runMaskedStage2Job(p: {
           row.prealign = { lined: false, emptyStripPct: al?.emptyPct ?? null };
         }
       }
-      let layers = await traceLayers(ctx);
-      if (prealigned) {
-        const cut = await furnitureCutAtEmptyEdge(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
-        if (cut.cutPct > 0) {
-          const cz = await cutPieceCompletionZone(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
-          if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
+      const bedWall = await bedWallP;
+      let bedRejected = false;
+      if (bedWall) {
+        row.bedWall = { model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+        if (bedWall.failed) {
+          const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
+          p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
+          reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : "bed against a door wall or window");
+          row.bedWall.restageHints = bedWall.restageHints;
+          bedRejected = true;
         }
-        row.prealign = { lined: true, scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct, emptyStripPct: prealigned.emptyPct, furnitureCutAtEdgePct: cut.cutPct };
-      } else if (row.prealign && row.prealign.lined === false) {
-        // Moved too far to line up safely: don't merge pieces of a shifted picture.
-        p.warn?.(`[${ctx.name}] Gemini's picture moved too far to line up (empty strip ${row.prealign.emptyStripPct}%) — re-staging`);
-        row.framingCheck = { ...(row.framingCheck || {}), framingChanged: true, reason: "camera moved too far to line up" };
       }
-      // Line-up: the room check failed, but Gemini only moved or zoomed the
-      // room (not a new viewpoint). Move its picture back onto the real
-      // photo's frame and trace again; the room check then decides. The second
-      // trace only runs on photos that would otherwise be re-staged.
-      if (row.framingCheck?.framingChanged && !prealigned && !ctx.offline && canRealign(row.cameraAlignment)) {
-        const al = await alignStagedToOriginal(original, staged, row.cameraAlignment).catch(() => null);
-        if (al && al.emptyPct <= REALIGN_MAX_EMPTY_PCT) {
-          const first = row.framingCheck;
-          io.save?.("2_staged_aligned.webp", await sharp(al.aligned).webp({ quality: 92 }).toBuffer());
-          p.log?.(`[${ctx.name}] room moved (zoom ${row.cameraAlignment.scale}, shift ${row.cameraAlignment.shiftPct}%) — lining Gemini's picture up with the real photo and tracing again`);
-          ctx = { ...ctx, staged: al.aligned };
-          layers = await traceLayers(ctx);
-          const cut = await furnitureCutAtEmptyEdge(layers.floor, al.empty, al.W, al.H, w, h);
+      if (!bedRejected) {
+        let layers = await traceLayers(ctx);
+        if (prealigned) {
+          const cut = await furnitureCutAtEmptyEdge(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
           if (cut.cutPct > 0) {
-            const cz = await cutPieceCompletionZone(layers.floor, al.empty, al.W, al.H, w, h);
+            const cz = await cutPieceCompletionZone(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
             if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
           }
-          row.realign = {
-            scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct,
-            emptyStripPct: al.emptyPct, firstRoomCheck: first,
-            rescued: !row.framingCheck?.framingChanged, furnitureCutAtEdgePct: cut.cutPct,
-          };
-          p.log?.(`[${ctx.name}] line-up ${row.realign.rescued ? "RESCUED the staging" : "did not help"} (room check median ${first.medianDiff} -> ${row.framingCheck?.medianDiff}; empty strip ${al.emptyPct}%, furniture reaching it ${cut.cutPct}% of its edge)`);
+          row.prealign = { lined: true, scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct, emptyStripPct: prealigned.emptyPct, furnitureCutAtEdgePct: cut.cutPct };
+        } else if (row.prealign && row.prealign.lined === false) {
+          // Moved too far to line up safely: don't merge pieces of a shifted picture.
+          p.warn?.(`[${ctx.name}] Gemini's picture moved too far to line up (empty strip ${row.prealign.emptyStripPct}%) — re-staging`);
+          row.framingCheck = { ...(row.framingCheck || {}), framingChanged: true, reason: "camera moved too far to line up" };
         }
-      }
-      // Part of a piece missed by the trace: a sizeable changed area directly
-      // UNDER traced furniture (where legs or a base should continue) that
-      // the close-up re-trace didn't fill. Merging would publish the piece
-      // cut off, with the real wall or skirting showing through (Oct 2026,
-      // production: a bedside table's legs) — re-stage instead.
-      const cutUnder = ((row.closeUpRetrace?.flaggedAreas || []) as any[]).filter(
-        (m) => m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT && (m.shadowPct || 0) < CUT_UNDER_MAX_SHADOW_PCT
-      );
-      const closeUpFilled = !row.closeUpRetrace?.rejected && (row.closeUpRetrace?.addedPctOfImage || 0) >= 0.5 * cutUnder.reduce((s, m) => s + m.areaPct, 0);
-      if (cutUnder.length && !closeUpFilled) {
-        row.furnitureCutByTrace = cutUnder;
-        p.warn?.(`[${ctx.name}] part of a piece missed by the trace (${cutUnder.map((m) => `${m.areaPct}% under furniture at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}%`).join("; ")}) — re-staging`);
-      }
-      // Floating furniture: a piece whose legs stop short of the REAL floor
-      // (Gemini drew the floor/wall line higher or lower). Where the join can
-      // be hidden (a piece in front, a wall corner, the photo edge) we keep
-      // Gemini's own floor and skirting under the piece ("floor patch");
-      // otherwise re-stage. Planning needs no AI call, so a photo that must be
-      // re-staged anyway skips the blend and door check.
-      row.floatingCheck = await checkFloatingFurniture(original, layers.floor, w, h).catch((e: any) => ({ floating: false, runs: [], error: String(e?.message || e) }));
-      let floorPlan: Awaited<ReturnType<typeof planFloorPatches>> | null = null;
-      if (row.floatingCheck.floating) {
-        p.warn?.(`[${ctx.name}] furniture floating above the real floor: ${row.floatingCheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ends ${r.gapPct}% above the floor line`).join("; ")}`);
-        floorPlan = await planFloorPatches(original, ctx.staged, layers.floor, row.floatingCheck.runs, w, h)
-          .catch((e: any) => ({ ok: false as const, patches: [], notes: [`plan error: ${String(e?.message || e)}`] }));
-        row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
-        (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
-      }
-      if (row.furnitureCutByTrace) {
-        reasons.push("furniture cut off by the trace");
-      } else if (row.framingCheck?.framingChanged) {
-        // Reshaped room: paste-back can't fix it, so skip the blend and door
-        // check (time and cost) and go straight to the re-stage / fallback.
-        reasons.push("room reshaped");
-      } else if (row.floatingCheck.floating && !floorPlan?.ok) {
-        reasons.push("furniture floating");
-      } else {
-        // Bed wall check (bedrooms), alongside the blend.
-        const bedWallP = BED_WALL_CHECK && !ctx.offline && /bed/i.test(p.roomType)
-          ? getDoors().then((doors) => askBedWall(ctx.originalPath, ctx.staged, doors || [], dir, ctx.name))
-          : Promise.resolve(null);
-        const hm = await harmonise(ctx, layers);
-        const bedWall = await bedWallP;
-        if (bedWall) {
-          row.bedWall = { model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
-          if (bedWall.failed) {
-            const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
-            p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)}`);
-            reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : "bed against a door wall or window");
-            row.bedWall.restageHints = bedWall.restageHints;
+        // Line-up: the room check failed, but Gemini only moved or zoomed the
+        // room (not a new viewpoint). Move its picture back onto the real
+        // photo's frame and trace again; the room check then decides. The second
+        // trace only runs on photos that would otherwise be re-staged.
+        if (row.framingCheck?.framingChanged && !prealigned && !ctx.offline && canRealign(row.cameraAlignment)) {
+          const al = await alignStagedToOriginal(original, staged, row.cameraAlignment).catch(() => null);
+          if (al && al.emptyPct <= REALIGN_MAX_EMPTY_PCT) {
+            const first = row.framingCheck;
+            io.save?.("2_staged_aligned.webp", await sharp(al.aligned).webp({ quality: 92 }).toBuffer());
+            p.log?.(`[${ctx.name}] room moved (zoom ${row.cameraAlignment.scale}, shift ${row.cameraAlignment.shiftPct}%) — lining Gemini's picture up with the real photo and tracing again`);
+            ctx = { ...ctx, staged: al.aligned };
+            layers = await traceLayers(ctx);
+            const cut = await furnitureCutAtEmptyEdge(layers.floor, al.empty, al.W, al.H, w, h);
+            if (cut.cutPct > 0) {
+              const cz = await cutPieceCompletionZone(layers.floor, al.empty, al.W, al.H, w, h);
+              if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
+            }
+            row.realign = {
+              scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct,
+              emptyStripPct: al.emptyPct, firstRoomCheck: first,
+              rescued: !row.framingCheck?.framingChanged, furnitureCutAtEdgePct: cut.cutPct,
+            };
+            p.log?.(`[${ctx.name}] line-up ${row.realign.rescued ? "RESCUED the staging" : "did not help"} (room check median ${first.medianDiff} -> ${row.framingCheck?.medianDiff}; empty strip ${al.emptyPct}%, furniture reaching it ${cut.cutPct}% of its edge)`);
           }
         }
-        final = hm.checkedBlend || hm.harmFinal;
-        // A piece cut off by the line-up must have been continued by the blend.
-        if (ctx.completionZone && !(row.realignCompletion?.applied && row.realignCompletion.filledPct >= 30)) {
-          reasons.push("furniture cut off at the photo edge");
+        // Part of a piece missed by the trace: a sizeable changed area directly
+        // UNDER traced furniture (where legs or a base should continue) that
+        // the close-up re-trace didn't fill. Merging would publish the piece
+        // cut off, with the real wall or skirting showing through (Oct 2026,
+        // production: a bedside table's legs) — re-stage instead.
+        const cutUnder = ((row.closeUpRetrace?.flaggedAreas || []) as any[]).filter(
+          isCutUnder
+        );
+        const closeUpFilled = !row.closeUpRetrace?.rejected && (row.closeUpRetrace?.addedPctOfImage || 0) >= 0.5 * cutUnder.reduce((s, m) => s + m.areaPct, 0);
+        if (cutUnder.length && !closeUpFilled) {
+          row.furnitureCutByTrace = cutUnder;
+          p.warn?.(`[${ctx.name}] part of a piece missed by the trace (${cutUnder.map((m) => `${m.areaPct}% under furniture at x ${Math.round(m.box[0] * 100)}-${Math.round(m.box[2] * 100)}%`).join("; ")}) — re-staging`);
         }
-        if (floorPlan?.ok && final) {
-          const fp = await applyFloorPatches(original, final, ctx.staged, layers.floor, floorPlan.patches, w, h)
-            .catch((e: any) => ({ image: null, notes: [`apply error: ${String(e?.message || e)}`] }));
-          row.floorPatch.applied = Boolean(fp.image);
-          row.floorPatch.notes.push(...fp.notes);
-          if (fp.image) {
-            final = fp.image;
-            io.save?.("12_floor_patched.webp", await sharp(fp.image).webp({ quality: 92 }).toBuffer());
-            p.log?.(`[${ctx.name}] floor patch applied: ${fp.notes.join("; ") || "ok"}`);
-          } else {
-            p.warn?.(`[${ctx.name}] floor patch rejected: ${fp.notes.join("; ")}`);
-            reasons.push("furniture floating");
+        // Floating furniture: a piece whose legs stop short of the REAL floor
+        // (Gemini drew the floor/wall line higher or lower). Where the join can
+        // be hidden (a piece in front, a wall corner, the photo edge) we keep
+        // Gemini's own floor and skirting under the piece ("floor patch");
+        // otherwise re-stage. Planning needs no AI call, so a photo that must be
+        // re-staged anyway skips the blend and door check.
+        row.floatingCheck = await checkFloatingFurniture(original, layers.floor, w, h).catch((e: any) => ({ floating: false, runs: [], error: String(e?.message || e) }));
+        let floorPlan: Awaited<ReturnType<typeof planFloorPatches>> | null = null;
+        if (row.floatingCheck.floating) {
+          p.warn?.(`[${ctx.name}] furniture floating above the real floor: ${row.floatingCheck.runs.map((r: any) => `x ${r.x1Pct}-${r.x2Pct}% ends ${r.gapPct}% above the floor line`).join("; ")}`);
+          floorPlan = await planFloorPatches(original, ctx.staged, layers.floor, row.floatingCheck.runs, w, h)
+            .catch((e: any) => ({ ok: false as const, patches: [], notes: [`plan error: ${String(e?.message || e)}`] }));
+          row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
+          (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
+        }
+        // Last attempt: a piece "missed by the trace" alone no longer fails
+        // the job. Most are a shadow or reflection on the floor (Oct 2026:
+        // DSC07855 failed 3 jobs on a glossy floor's reflection); the area was
+        // taken from Gemini's picture in traceLayers. Every other check still
+        // applies.
+        if (row.furnitureCutByTrace && row.missedUnderFilled?.length) {
+          row.furnitureCutByTraceAccepted = true;
+          p.warn?.(`[${ctx.name}] last attempt: publishing, with the area missed by the trace taken from Gemini's picture`);
+        }
+        if (row.furnitureCutByTrace && !row.furnitureCutByTraceAccepted) {
+          reasons.push("furniture cut off by the trace");
+        } else if (row.framingCheck?.framingChanged) {
+          // Reshaped room: paste-back can't fix it, so skip the blend and door
+          // check (time and cost) and go straight to the re-stage / fallback.
+          reasons.push("room reshaped");
+        } else if (row.floatingCheck.floating && !floorPlan?.ok) {
+          reasons.push("furniture floating");
+        } else {
+          const hm = await harmonise(ctx, layers);
+          final = hm.checkedBlend || hm.harmFinal;
+          // A piece cut off by the line-up must have been continued by the blend.
+          if (ctx.completionZone && !(row.realignCompletion?.applied && row.realignCompletion.filledPct >= 30)) {
+            reasons.push("furniture cut off at the photo edge");
           }
-        }
-        if (reasons.length === 0) {
-          await finalDoorCheck(ctx, final, await getDoors());
-          if (row.doorAccess?.blocked) reasons.push("doorway blocked");
-          if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+          if (floorPlan?.ok && final) {
+            const fp = await applyFloorPatches(original, final, ctx.staged, layers.floor, floorPlan.patches, w, h)
+              .catch((e: any) => ({ image: null, notes: [`apply error: ${String(e?.message || e)}`] }));
+            row.floorPatch.applied = Boolean(fp.image);
+            row.floorPatch.notes.push(...fp.notes);
+            if (fp.image) {
+              final = fp.image;
+              io.save?.("12_floor_patched.webp", await sharp(fp.image).webp({ quality: 92 }).toBuffer());
+              p.log?.(`[${ctx.name}] floor patch applied: ${fp.notes.join("; ") || "ok"}`);
+            } else {
+              p.warn?.(`[${ctx.name}] floor patch rejected: ${fp.notes.join("; ")}`);
+              reasons.push("furniture floating");
+            }
+          }
+          if (reasons.length === 0) {
+            await finalDoorCheck(ctx, final, await getDoors());
+            if (row.doorAccess?.blocked) reasons.push("doorway blocked");
+            if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+          }
         }
       }
     } catch (e: any) {

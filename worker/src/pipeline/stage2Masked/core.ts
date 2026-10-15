@@ -580,6 +580,7 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
   for (let i = 0; i < w * h; i++) cand[i] = changed[i] && near[i] && !out[i] ? 1 : 0;
   cand = erode(dilate(cand, w, h, r), w, h, r);
   const missed: Array<{ areaPct: number; touchingFurniturePct: number; underFurniturePct: number; shadowPct: number; box: number[] }> = [];
+  const missedPixels: ArrayLike<number>[] = [];
   for (const piece of labelComponents(cand, w, h)) {
     if (piece.pixels.length < w * h * 0.002) continue;
     let edge = 0, touching = 0, topEdge = 0, under = 0, shadow = 0;
@@ -595,6 +596,7 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
       // Top edge: is furniture directly above (the piece continues down here)?
       if (i - w >= 0 && !cand[i - w]) { topEdge++; if (out[i - w]) under++; }
     }
+    missedPixels.push(piece.pixels);
     missed.push({
       areaPct: +((piece.pixels.length / (w * h)) * 100).toFixed(2),
       touchingFurniturePct: Math.round((touching / Math.max(1, edge)) * 100),
@@ -604,6 +606,9 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
     });
   }
   (out as any).possiblyMissedByTrace = missed;
+  // Pixels of each listed area (same order), kept off the report so they are
+  // never logged: the last attempt may take these areas from Gemini's picture.
+  (out as any).missedPixels = missedPixels;
   // Where the staged image really differs from the original (after lighting
   // match): the close-up re-trace may only add furniture there.
   (out as any).changedMap = changed;
@@ -1498,6 +1503,32 @@ export function evaluateBedWall(raw: any) {
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
   if (window) hints.push("Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible.");
   return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
+}
+
+// ── Reflective surfaces (once per job, on the empty room) ───────────────────
+// The reflections trace pass (one Gemini image call per attempt) only finds
+// anything when the room has a mirror, glass panel or glossy floor.
+export const REFLECTION_GATE = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_REFLECTION_GATE || "").trim().toLowerCase());
+
+export function buildReflectivePrompt(): string {
+  return `Look at this photo of a room. Would furniture placed in this room show a visible reflection anywhere in the photo?
+Answer "yes" if ANY of these is visible: a mirror or mirrored wardrobe door; a glass door, glass balustrade or glass panel that reaches down near the floor; a glossy or polished floor (polished timber, glossy tiles, polished concrete) showing reflections or bright light streaks; any other shiny surface at floor or furniture height.
+Answer "no" only if every floor and low surface is matte (carpet, matte floorboards, matte tiles) and there is no mirror or low glass. Ordinary windows above sill height do not count.
+If unsure, answer "yes".
+Respond with ONLY a JSON object: { "reflective": "yes" | "no", "what": string }`;
+}
+
+export async function askReflectiveSurfaces(emptyPath: string, name: string) {
+  const { raw, model } = await callJsonModel(
+    [{ path: emptyPath, label: "Room photo:" }],
+    "You are a real-estate photo retoucher.",
+    buildReflectivePrompt(),
+    name,
+    "reflective_surfaces",
+  );
+  const ans = String(raw?.reflective ?? "").trim().toLowerCase();
+  // Anything but a clear "no" keeps the reflections pass.
+  return { reflective: ans !== "no", what: String(raw?.what || "").slice(0, 200), model };
 }
 
 export async function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
