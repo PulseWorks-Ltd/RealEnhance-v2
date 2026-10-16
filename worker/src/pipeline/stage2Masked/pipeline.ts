@@ -66,6 +66,8 @@ import {
   REFLECTION_GATE,
   askReflectiveSurfaces,
   askDeskDoor,
+  askLivingDoor,
+  LIVING_DOOR_CHECK,
   alignStagedToOriginal,
   furnitureCutAtEmptyEdge,
   cutPieceCompletionZone,
@@ -880,6 +882,10 @@ export async function runMaskedStage2Job(p: {
       const deskDoorP = BED_WALL_CHECK && !ctx.offline && /study|office/i.test(p.roomType)
         ? getDoors().then((doors) => askDeskDoor(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
         : Promise.resolve(null);
+      // And for sofas, TV units and dining sets in living / dining rooms.
+      const livingDoorP = LIVING_DOOR_CHECK && !ctx.offline && /living|dining/i.test(p.roomType) && !/bed/i.test(p.roomType)
+        ? getDoors().then((doors) => askLivingDoor(ctx.originalPath, staged, doors || [], dir, ctx.name)).catch(() => null)
+        : Promise.resolve(null);
       const reflective = await reflectiveP;
       if (reflective) {
         row.reflectionGate = { reflective: reflective.reflective, what: reflective.what, model: reflective.model };
@@ -906,7 +912,7 @@ export async function runMaskedStage2Job(p: {
       const bedWall = await bedWallP;
       let placementRejected = false;
       if (bedWall) {
-        row.bedWall = { model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
         if (bedWall.failed) {
           const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
@@ -917,12 +923,23 @@ export async function runMaskedStage2Job(p: {
       }
       const deskDoor = await deskDoorP;
       if (deskDoor) {
-        row.deskDoor = { model: deskDoor.model, coversDoor: deskDoor.coversDoor, deskOnDoorWall: deskDoor.deskOnDoorWall, roomWidened: deskDoor.roomWidened, answer: deskDoor.answer, ...(deskDoor as any).error ? { error: (deskDoor as any).error } : {} };
+        row.deskDoor = { consensus: (deskDoor as any).consensus, model: deskDoor.model, coversDoor: deskDoor.coversDoor, deskOnDoorWall: deskDoor.deskOnDoorWall, roomWidened: deskDoor.roomWidened, answer: deskDoor.answer, ...(deskDoor as any).error ? { error: (deskDoor as any).error } : {} };
         if (deskDoor.failed) {
           const what = [deskDoor.coversDoor && "desk setup covers a door", deskDoor.deskOnDoorWall && "desk on a wall with a door", deskDoor.roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] desk placement rejected: ${what} — ${String(deskDoor.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
           reasons.push(deskDoor.roomWidened ? "room changed to fit the desk" : "desk blocking a door");
           row.deskDoor.restageHints = deskDoor.restageHints;
+          placementRejected = true;
+        }
+      }
+      const livingDoor = await livingDoorP;
+      if (livingDoor) {
+        row.livingDoor = { consensus: (livingDoor as any).consensus, model: livingDoor.model, blocksDoor: livingDoor.blocksDoor, roomWidened: livingDoor.roomWidened, answer: livingDoor.answer, ...(livingDoor as any).error ? { error: (livingDoor as any).error } : {} };
+        if (livingDoor.failed) {
+          const what = [livingDoor.blocksDoor && `furniture blocks a door (${String(livingDoor.answer?.blockedWhat || "").slice(0, 80)})`, livingDoor.roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
+          p.warn?.(`[${ctx.name}] living/dining placement rejected: ${what} — ${String(livingDoor.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
+          reasons.push(livingDoor.roomWidened ? "room changed to fit the furniture" : "furniture blocking a door");
+          row.livingDoor.restageHints = livingDoor.restageHints;
           placementRejected = true;
         }
       }
@@ -1061,6 +1078,7 @@ export async function runMaskedStage2Job(p: {
       ...(row.doorAccess?.blocked ? row.doorAccess.restageHints || [] : []),
       ...(row.bedWall?.restageHints || []),
       ...(row.deskDoor?.restageHints || []),
+      ...(row.livingDoor?.restageHints || []),
       // Floating furniture: Gemini's pieces ended above the real floor. Say so
       // in terms of the furniture only — "touch the floor" alone made Gemini
       // move the floor line or change the flooring. A piece the TRACE cut off

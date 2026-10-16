@@ -90,8 +90,16 @@ export function roomLabelFor(roomType: string): string {
 // What a well-staged room of each type contains and how it is arranged.
 function roomTypeGuidance(roomType: string): string {
   const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
-  const living = `LIVING AREA: a sofa (and an armchair if there is room), a coffee table and a rug, arranged as one conversation group. If the room has a TV wall bracket, the TV is mounted ON that bracket and the seating faces it; a low TV unit may sit on the floor below it. Without a bracket, put a TV unit against a solid, clearly visible wall opposite the seating — or, if no wall suits a TV, face the seating toward the window or fireplace and add no TV. Never mount a TV on a wall with a window; on such a wall a TV may only stand on a low unit, below the window sill, never in front of the glass.`;
+  const living = `LIVING AREA: a sofa (and an armchair if there is room), a coffee table and a rug, arranged as one conversation group. If the room has a TV wall bracket, the TV is mounted ON that bracket and the seating faces it; a low TV unit may sit on the floor below it. Without a bracket, put a TV unit against a solid, clearly visible wall opposite the seating — or, if no wall suits a TV, face the seating toward the window or fireplace and add no TV. Never mount a TV on a wall with a window; on such a wall a TV may only stand on a low unit, below the window sill, never in front of the glass.
+SOFA PLACEMENT, in this order: (1) its back against a plain solid wall with no door, doorway or sliding door along that stretch, facing the TV or focal point; (2) in an open-plan room only, a free-standing sofa may divide the living area from the dining area, with its back at least one door-width (about 0.8 m) from any walking path; (3) never in front of, across or touching a door, a doorway, the opening side of a sliding door, or the walking path between two doors. A piece may stand in front of a fixed glass panel beside a sliding door's opening. A sofa may sit below a window only if its back is clearly lower than the sill.
+DOOR SWING AND PATHS: every door must still be able to close and every doorway and sliding door stays walkable. The open door leaf, its frame, the floor it sweeps, the opening side of every sliding door, and a clear path about one door-width wide between the doors and to the kitchen stay completely clear — no sofa, armchair, coffee table, TV unit or rug edge may block them. Keep a TV unit at least one door-width from any door frame.
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide. A 3-seater sofa is about 2.75 door-widths long, a 2-seater about 2, an armchair about 1; the coffee table needs about half a door-width of space in front of the sofa. Photos make walls look longer than they are; when space is at all tight use a 2-seater and leave out the armchair.
+WHEN THE SOFA WALL IS SHORT OR ENDS AT A DOOR: never centre the sofa on it. Push it to the far end, away from the door — against the corner or out to the edge of the photo, letting the photo edge cut off part of it (a foreground sofa partly cut off by the photo edge looks natural).
+In "placement", always say what the sofa's back is against (or that it is free-standing between the areas) and where it sits relative to the nearest door (for example "back against the plain left wall, leaving a clear path to the sliding door on its right").`;
   const dining = `DINING AREA: a dining table with 4–6 chairs, freestanding with room to pull the chairs out — never pushed flat against a wall. Only when a ceiling light fitting is clearly visible in the dining area itself (and listed in "landmarks") may the placement say the table is centred under that light, naming it. Otherwise never mention lights, pendants or light fittings for the dining table — describe its position by the walls, windows, kitchen bench and walkways instead (a mention of a light makes the image AI invent one).
+DINING CLEARANCE: leave about one door-width (0.8 m) of clear floor on every side of the table so the chairs can be pulled out. The table and chairs never stand in a door's swing, across a sliding door's path, in a doorway, or on the walking line between two doorways or between the entrance and the kitchen.
+MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide. A 4-seat table is about 1.5–1.75 door-widths long, a 6-seat table about 2.25; with chairs pulled out the set needs roughly 2 door-widths more in each direction. When space is at all tight, use a round 4-seat table, then a round bistro table for two.
+A table in the foreground may be partly cut off by the edge of the photo. In "placement", say where the table sits relative to the nearest door or walkway (for example "in front of the kitchen bench, clear of the doorway on the left").
 DINING SPACE CHECK: first judge the open floor you can actually see. If a 4-seat table with chairs pulled out AND a clear walking path will not fit there, plan a small table for two (a round bistro table) instead. If even that would block a walkway, a door, the stairs or the kitchen's working area, plan NO dining table. Record your decision in "diningSpace".`;
   const kitchenOnly = `KITCHEN: do not add large furniture. Bar stools only where an island or peninsula has an overhang for seating; a few small items on the benches (a bowl of fruit, a plant, a chopping board) are enough.`;
   const openPlan = `OPEN-PLAN RULES: each area keeps its own furniture. The dining table goes in the area nearest the kitchen (in front of or beside the kitchen bench/island) — never inside the living area, never in front of the sofa, and never between the sofa and the TV. The living area is the part of the room furthest from the kitchen, around the TV bracket or focal wall. The back of the sofa may face the dining area to separate the two areas. Keep a clear walking path from the entrance to the kitchen.`;
@@ -478,6 +486,53 @@ export function makeDeskPlanConservative(brief: RoomBrief, roomType: string): { 
   return { brief: { ...brief, layout }, changed };
 }
 
+/**
+ * Living / dining plans, checked in code (same idea as beds and desks). The
+ * planner is asked to say where each main piece sits relative to the nearest
+ * door, so a door mention alone is fine ("leaving a clear path to the sliding
+ * door"); only a piece placed BESIDE / IN FRONT OF / ACROSS a door is pushed
+ * away, and an armchair, sideboard or shelf placed there is dropped.
+ */
+const NEXT_TO_DOOR = /\b(?:(?:next to|beside|near|by|in front of|across|adjacent to|alongside|against|blocking)\s+(?:the\s+|a\s+|an\s+)?(?:[\w-]+\s+){0,3}?|between\s[^,.;]{0,60}?\b)(door|doors|doorway|doorways|sliding door|sliding doors|entrance|entry)\b/i;
+export function makeLivingPlanConservative(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  if (!/living|dining/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return { brief, changed };
+  const item = (it: any) => String(it?.item || "");
+  const isMain = (it: any) =>
+    /\bsofa\b|couch|sectional|loveseat|lounge suite/i.test(item(it))
+    || (/\btable\b/i.test(item(it)) && /dining/i.test(item(it)))
+    || /tv unit|media (unit|console|cabinet)|entertainment unit|tv console|tv cabinet/i.test(item(it));
+  const isExtra = (it: any) => /armchair|accent chair|occasional chair|sideboard|buffet|console table|book ?shel|bookcase|shelving|side table/i.test(item(it)) && !/bedside/i.test(item(it));
+  let layout = brief.layout.filter((it: any) => {
+    if (isExtra(it) && NEXT_TO_DOOR.test(String(it?.placement || ""))) {
+      changed.push(`dropped "${item(it).slice(0, 40)}" placed by a door`);
+      return false;
+    }
+    return true;
+  });
+  layout = layout.map((it: any) => {
+    if (!isMain(it) || !NEXT_TO_DOOR.test(String(it?.placement || ""))) return it;
+    changed.push(`"${item(it).slice(0, 40)}" kept clear of the door`);
+    return {
+      ...it,
+      placement: `${String(it.placement || "").replace(/\bcente?red\b/gi, "placed").replace(/\.\s*$/, "")} — kept well clear of that door: at least one door-width of clear floor between it and the door frame, the door's swing and the path through the doorway; if the space is short it is pushed to the far end away from the door (the photo edge may cut it off), or made smaller`,
+    };
+  });
+  return { brief: { ...brief, layout }, changed };
+}
+
+/** Soft check: the sofa must say what its back is against (or that it divides the areas). */
+export function checkSofaPlacement(brief: RoomBrief, roomType: string): string[] {
+  if (!/living/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return [];
+  const sofa = brief.layout.find((it: any) => /\bsofa\b|couch|sectional|loveseat|lounge suite/i.test(String(it?.item || "")));
+  if (!sofa) return [];
+  const pl = String(sofa.placement || "");
+  if (!/\bwall\b|\bback\b|free-?standing|divid|separat/i.test(pl)) {
+    return ["the sofa's placement must say what its back is against (for example \"back against the plain left wall\") or that it stands free between the living and dining areas, and where it sits relative to the nearest door"];
+  }
+  return [];
+}
+
 /** Soft check: the desk must stand against a named wall, not float in the room. */
 export function checkDeskPlacement(brief: RoomBrief, roomType: string): string[] {
   if (!/study|office/i.test(String(roomType || "")) || !Array.isArray(brief?.layout)) return [];
@@ -560,6 +615,11 @@ export async function buildRoomBrief(params: {
       brief = lightRule.brief;
       console.log("[ROOM_BRIEF_LIGHT_MENTIONS_REMOVED]", JSON.stringify({ changed: lightRule.changed }));
     }
+    const livingRule = makeLivingPlanConservative(brief, params.roomType);
+    if (livingRule.changed.length) {
+      brief = livingRule.brief;
+      console.log("[ROOM_BRIEF_CONSERVATIVE_LIVING]", JSON.stringify({ changed: livingRule.changed }));
+    }
     const deskRule = makeDeskPlanConservative(brief, params.roomType);
     if (deskRule.changed.length) {
       brief = deskRule.brief;
@@ -572,6 +632,7 @@ export async function buildRoomBrief(params: {
     const bedFit = [
       ...(/^bedroom/i.test(String(params.roomType || "")) ? checkBedFits(brief) : []),
       ...checkDeskPlacement(brief, params.roomType),
+      ...checkSofaPlacement(brief, params.roomType),
     ];
     if (bedFit.length) console.log("[ROOM_BRIEF_FIT]", JSON.stringify({ attempt, bedSpace: (brief as any).bedSpace, issues: bedFit }));
     if (attempt === 1 && lastIssues.length === 0 && bedFit.length) usableBrief = brief;

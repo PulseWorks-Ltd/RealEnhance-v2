@@ -292,3 +292,36 @@ describe("light mentions for dining tables", () => {
     expect(t).toMatch(/a mention of a light makes the image AI invent one/);
   });
 });
+
+describe("living / dining plans", () => {
+  const { makeLivingPlanConservative, checkSofaPlacement, buildRoomBriefInstruction } = require("../src/pipeline/roomBrief");
+  it("gives the planner sofa and dining rules, with the light rule", () => {
+    const t = buildRoomBriefInstruction("kitchen_living_dining");
+    for (const s of ["SOFA PLACEMENT", "DOOR SWING AND PATHS", "WHEN THE SOFA WALL IS SHORT", "DINING CLEARANCE", "a mention of a light makes the image AI invent one"]) expect(t).toContain(s);
+  });
+  it("pushes a sofa, dining table or TV unit placed beside a door away from it, and drops an armchair there", () => {
+    const plan = { layout: [
+      { item: "Sofa", placement: "back against the left wall, next to the sliding door" },
+      { item: "Dining table", placement: "centred in front of the doorway to the hall" },
+      { item: "TV unit", placement: "against the left back wall, between the outlet and the hallway doorway" },
+      { item: "Armchair", placement: "beside the entrance door" },
+      { item: "Coffee table", placement: "in front of the sofa" },
+    ] };
+    const { brief, changed } = makeLivingPlanConservative(plan, "living_dining");
+    expect(brief.layout.map((l: any) => l.item)).toEqual(["Sofa", "Dining table", "TV unit", "Coffee table"]);
+    expect(brief.layout[0].placement).toMatch(/kept well clear of that door/);
+    expect(brief.layout[1].placement).toMatch(/kept well clear of that door/);
+    expect(brief.layout[1].placement).not.toMatch(/centred/);
+    expect(brief.layout[3].placement).toBe("in front of the sofa");
+    expect(changed.length).toBe(4);
+  });
+  it("leaves a placement alone that only names the door it keeps clear of", () => {
+    const plan = { layout: [{ item: "Sofa", placement: "back against the plain left wall, leaving a clear path to the sliding door on its right" }] };
+    expect(makeLivingPlanConservative(plan, "living_room").changed).toEqual([]);
+  });
+  it("asks again when the sofa has no anchor", () => {
+    expect(checkSofaPlacement({ layout: [{ item: "Sofa", placement: "placed centrally on the rug facing the TV" }] }, "living_room").length).toBe(1);
+    expect(checkSofaPlacement({ layout: [{ item: "Sofa", placement: "free-standing between the living and dining areas, facing the TV" }] }, "living_dining")).toEqual([]);
+    expect(checkSofaPlacement({ layout: [{ item: "Sofa", placement: "nowhere" }] }, "bedroom")).toEqual([]);
+  });
+});

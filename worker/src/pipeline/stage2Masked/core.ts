@@ -1443,8 +1443,8 @@ export function evaluateDoorAccess(raw: any) {
   };
 }
 
-export async function askDoorAccess(emptyPath: string, finalImage: Buffer, doors: DoorOpening[], roomType: string, dir: string, name: string) {
-  const finalPath = path.join(dir, "12_door_check_input.jpg");
+async function askDoorAccessOnce(emptyPath: string, finalImage: Buffer, doors: DoorOpening[], roomType: string, dir: string, name: string, run = 0) {
+  const finalPath = path.join(dir, `12_door_check_input${run ? `_${run}` : ""}.jpg`);
   fs.writeFileSync(finalPath, await sharp(finalImage).jpeg({ quality: 90 }).toBuffer());
   try {
     const { raw, model } = await callJsonModel(
@@ -1541,8 +1541,8 @@ export function evaluateDeskDoor(raw: any) {
   return { deskPresent: desk, coversDoor, deskOnDoorWall: doorWall, roomWidened, failed: coversDoor || doorWall || roomWidened, restageHints: hints, answer: raw };
 }
 
-export async function askDeskDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
-  const stagedPath = path.join(dir, "12_desk_door_check_input.jpg");
+async function askDeskDoorOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0) {
+  const stagedPath = path.join(dir, `12_desk_door_check_input${run ? `_${run}` : ""}.jpg`);
   fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
   try {
     const { raw, model } = await callJsonModel(
@@ -1557,6 +1557,92 @@ export async function askDeskDoor(emptyPath: string, stagedImage: Buffer, doors:
     // Unanswered: don't block the job.
     return { model: "none", error: String(e?.message || e).slice(0, 200), ...evaluateDeskDoor(null) };
   }
+}
+
+// ── Living / dining placement ───────────────────────────────────────────────
+// Same idea as the bed and desk checks, for sofas, armchairs, coffee tables,
+// TV units and dining sets. STAGE2_LIVING_DOOR_CHECK=0 turns it off.
+export const LIVING_DOOR_CHECK = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_LIVING_DOOR_CHECK || "").trim().toLowerCase());
+
+export function buildLivingDoorPrompt(doors: DoorOpening[]): string {
+  const list = doors.length
+    ? doors.map((d) => `- ${d.id}: ${d.description} (${d.type}), box [${d.bbox.map((v) => v.toFixed(2)).join(", ")}]`).join("\n")
+    : "- none found by the survey (still check the photo yourself)";
+  return `Image 1 is the empty room. Image 2 is the same room after virtual staging (same camera).
+Doors and doorways found in the room (boxes are [x1, y1, x2, y2] as fractions of the image):
+${list}
+
+Look at the furniture in Image 2 and the room in Image 1, and answer:
+1. furniturePresent: did staging add a sofa, armchair, coffee table, TV unit or dining table?
+2. blocksDoor: does any sofa, armchair, coffee table, TV unit, sideboard, dining table or dining chair stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway or an opening that Image 1 shows (including one missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, or right in the walking path through a doorway. For a sliding door, only its OPENING counts — the panel that slides open and the walking path through it; furniture in front of a FIXED glass panel beside the opening is fine and does not count. Furniture that only LOOKS close because of the camera angle, but stands well clear in the room, does not count.
+3. blockedWhat: which piece and which door, or "none".
+4. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that a piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
+Respond with ONLY a JSON object: { "furniturePresent": "yes" | "no", "blocksDoor": "yes" | "no", "blockedWhat": string, "roomWidened": "yes" | "no", "reason": string }`;
+}
+
+export function evaluateLivingDoor(raw: any) {
+  const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
+  const present = yes(raw?.furniturePresent);
+  const blocksDoor = present && yes(raw?.blocksDoor);
+  const roomWidened = yes(raw?.roomWidened);
+  const hints: string[] = [];
+  if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller sofa or table, leave out the armchair, or let the edge of the photo cut a piece off.");
+  if (blocksDoor) hints.push(`Your previous attempt placed furniture in front of a door (${String(raw?.blockedWhat || "a piece by a door").slice(0, 120)}). Every door, door leaf, doorway and the opening side of every sliding door — and the walking path through it — must stay fully visible and clear (furniture may stand in front of a fixed glass panel beside a sliding door's opening). Put the sofa with its back to a plain wall that has no door on it, keep the dining table and chairs clear of every doorway, use smaller pieces, leave out the armchair or sideboard, or slide a piece away from the door and let the edge of the photo cut it off.`);
+  return { furniturePresent: present, blocksDoor, roomWidened, failed: blocksDoor || roomWidened, restageHints: hints, answer: raw };
+}
+
+async function askLivingDoorOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0) {
+  const stagedPath = path.join(dir, `12_living_door_check_input${run ? `_${run}` : ""}.jpg`);
+  fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
+  try {
+    const { raw, model } = await callJsonModel(
+      [{ path: emptyPath, label: "Image 1 (empty room):" }, { path: stagedPath, label: "Image 2 (staged):" }],
+      "You are an experienced real-estate stager checking that staged furniture keeps every door and walkway clear.",
+      buildLivingDoorPrompt(doors),
+      name,
+      "living_door",
+    );
+    return { model, ...evaluateLivingDoor(raw) };
+  } catch (e: any) {
+    return { model: "none", error: String(e?.message || e).slice(0, 200), ...evaluateLivingDoor(null) };
+  }
+}
+
+// ── Consensus for the cheap AI checks ────────────────────────────────────────
+// One AI answer can flip on the same image (Oct 2026: the same bed check
+// said yes then no). Each check that can reject an image asks twice; if the
+// two agree, that decides; if not (or one call failed), a third call
+// decides. Rejecting needs two "fail" votes, so an error or a tie never
+// blocks. STAGE2_AI_CHECK_CONSENSUS=0 goes back to a single call.
+export const AI_CHECK_CONSENSUS = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_AI_CHECK_CONSENSUS || "").trim().toLowerCase());
+export async function withConsensus<T extends { error?: string }>(run: (k: number) => Promise<T>, fails: (r: T) => boolean): Promise<T & { consensus?: { votes: (boolean | null)[]; calls: number } }> {
+  if (!AI_CHECK_CONSENSUS) return run(0);
+  const vote = (r: T) => (r.error ? null : fails(r));
+  const results: T[] = await Promise.all([run(1), run(2)]);
+  const votes = results.map(vote);
+  if (votes[0] !== null && votes[0] === votes[1]) return { ...results[0], consensus: { votes, calls: 2 } };
+  const third = await run(3);
+  results.push(third);
+  votes.push(vote(third));
+  const failVotes = votes.filter((v) => v === true).length;
+  const decided = failVotes >= 2;
+  // An answer that voted the way the majority decided; failing that (no clear
+  // "pass" answer, only errors), a failed call's result, which never rejects.
+  const pick = results.find((r, i) => votes[i] === decided) ?? (decided ? third : results.find((r) => r.error)) ?? third;
+  return { ...pick, consensus: { votes, calls: 3 } };
+}
+
+export function askDoorAccess(emptyPath: string, finalImage: Buffer, doors: DoorOpening[], roomType: string, dir: string, name: string) {
+  return withConsensus((k) => askDoorAccessOnce(emptyPath, finalImage, doors, roomType, dir, name, k), (r: any) => Boolean(r.blocked));
+}
+export function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
+  return withConsensus((k) => askBedWallOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
+}
+export function askDeskDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
+  return withConsensus((k) => askDeskDoorOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
+}
+export function askLivingDoor(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
+  return withConsensus((k) => askLivingDoorOnce(emptyPath, stagedImage, doors, dir, name, k), (r: any) => Boolean(r.failed));
 }
 
 // ── Reflective surfaces (once per job, on the empty room) ───────────────────
@@ -1585,8 +1671,8 @@ export async function askReflectiveSurfaces(emptyPath: string, name: string) {
   return { reflective: ans !== "no", what: String(raw?.what || "").slice(0, 200), model };
 }
 
-export async function askBedWall(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string) {
-  const stagedPath = path.join(dir, "12_bed_wall_check_input.jpg");
+async function askBedWallOnce(emptyPath: string, stagedImage: Buffer, doors: DoorOpening[], dir: string, name: string, run = 0) {
+  const stagedPath = path.join(dir, `12_bed_wall_check_input${run ? `_${run}` : ""}.jpg`);
   fs.writeFileSync(stagedPath, await sharp(stagedImage).jpeg({ quality: 88 }).toBuffer());
   try {
     const { raw, model } = await callJsonModel(
