@@ -2691,7 +2691,7 @@ export async function realFloorLine(original: Buffer, w: number, h: number): Pro
   return line;
 }
 
-export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number };
+export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number; gapVsFloor?: { ratio: number; chroma: number } };
 
 export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8Array, w: number, h: number) {
   // Work at a fixed, modest size: the check is about shapes, not detail.
@@ -2699,6 +2699,7 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
   const line = await realFloorLine(original, W, H);
   const m = await sharp(Buffer.from(floorMask.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
     .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const rgb = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).blur(1.5).raw().toBuffer();
   const margin = (FLOAT_GROUND_MARGIN_PCT / 100) * H;
   const near = (FLOAT_NEAR_FLOOR_PCT / 100) * H;
   // Per column: lowest furniture pixel (-1 = no furniture in this column).
@@ -2752,6 +2753,7 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     return false;
   };
   const runs: FloatingRun[] = [];
+  const standingOnFloor: FloatingRun[] = [];
   for (let x = 0; x < W; ) {
     if (state[x] !== 2) { x++; continue; }
     let x2 = x;
@@ -2762,15 +2764,53 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
     if (widthPct >= FLOAT_MIN_WIDTH_PCT && (freeLeft || freeRight) && !standsOnLegBeside(x, x2, freeLeft, freeRight)) {
       let gapSum = 0, n = 0, bSum = 0, fSum = 0;
       for (let k = x; k <= x2; k++) { gapSum += line[k] - bottom[k]; bSum += bottom[k]; fSum += line[k]; n++; }
-      runs.push({
+      // Is the "gap" under the piece really floor? The floor line is the
+      // lowest strong edge in the empty room, which is usually the skirting
+      // but can be something standing IN the room — the bottom of an open
+      // door leaf, a carpet-to-timber threshold (Oct 2026, production: a bed
+      // beside an open door failed both attempts). In the empty photo, a
+      // piece that really floats has wall or skirting in the gap; one that
+      // stands on the floor has the same floor in the gap as just below the
+      // line.
+      const gapCheck = gapVsFloor(rgb, line, bottom, x, x2, W, H);
+      const run = {
         x1Pct: +((x / W) * 100).toFixed(1), x2Pct: +((x2 / W) * 100).toFixed(1),
         gapPct: +(((gapSum / n) / H) * 100).toFixed(1),
         bottomPct: +(((bSum / n) / H) * 100).toFixed(1), floorPct: +(((fSum / n) / H) * 100).toFixed(1),
-      });
+        ...(gapCheck ? { gapVsFloor: { ratio: gapCheck.ratio, chroma: gapCheck.chroma } } : {}),
+      };
+      if (gapCheck?.isFloor) standingOnFloor.push(run);
+      else runs.push(run);
     }
     x = x2 + 1;
   }
-  return { floating: runs.length > 0, runs };
+  return { floating: runs.length > 0, runs, ...(standingOnFloor.length ? { standingOnFloor } : {}) };
+}
+
+// Does the empty room show the same floor in the gap under a "floating" run as
+// just below the floor line (same columns)? Same floor = similar brightness
+// (shade allowed) and the same colour balance. On the labelled fixtures, real
+// floats have wall or skirting in the gap (brightness 0.3x or 1.5-5.7x the
+// floor); the open-door false alarms have carpet (0.85x and 1.2x, neutral).
+// null = too little of either to judge.
+export const FLOAT_GAP_FLOOR_MIN_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MIN_RATIO || 0.75);
+export const FLOAT_GAP_FLOOR_MAX_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MAX_RATIO || 1.3);
+export function gapVsFloor(rgb: Buffer, line: Int32Array, bottom: Int32Array, x1: number, x2: number, W: number, H: number): { ratio: number; chroma: number; isFloor: boolean } | null {
+  const g = [0, 0, 0], f = [0, 0, 0];
+  let gn = 0, fn = 0;
+  const band = Math.max(3, Math.round(H * 0.03));
+  for (let x = x1; x <= x2; x++) {
+    const fl = line[x], b = bottom[x];
+    if (fl < 0 || b < 0) continue;
+    for (let y = b + 2; y <= fl - 2; y++) { const i = (y * W + x) * 3; g[0] += rgb[i]; g[1] += rgb[i + 1]; g[2] += rgb[i + 2]; gn++; }
+    for (let y = fl + 2; y <= Math.min(H - 1, fl + band); y++) { const i = (y * W + x) * 3; f[0] += rgb[i]; f[1] += rgb[i + 1]; f[2] += rgb[i + 2]; fn++; }
+  }
+  if (gn < 20 || fn < 20) return null;
+  const gs = g[0] + g[1] + g[2], fs = f[0] + f[1] + f[2];
+  if (fs <= 0 || gs <= 0) return null;
+  const ratio = (gs / gn) / (fs / fn);
+  const chroma = Math.max(...[0, 1, 2].map((c) => Math.abs(g[c] / gs - f[c] / fs)));
+  return { ratio: +ratio.toFixed(2), chroma: +chroma.toFixed(3), isFloor: ratio >= FLOAT_GAP_FLOOR_MIN_RATIO && ratio <= FLOAT_GAP_FLOOR_MAX_RATIO && chroma < 0.03 };
 }
 
 // ---------------------------------------------------------------------------

@@ -18,3 +18,8 @@ both should NOT be patched (chest against open wall / chest carries on to the fl
   Should NOT be flagged (production false alarm, Oct 2026).
 - Kitchen_01_a2 — same room, re-stage: the TV unit's front-left leg stands on the skirting and the
   right legs end on the wall line. Should be flagged.
+
+- Bedroom_OpenDoor_a1 / _a2 — single bed beside a door left wide open into the room (production,
+  Oct 2026, both attempts failed). The "floor line" in those columns is the bottom of the open door
+  leaf, in front of the bed, so the bed looked like it floated. The empty photo shows the same carpet
+  in the gap as below the line. Should NOT be flagged.
