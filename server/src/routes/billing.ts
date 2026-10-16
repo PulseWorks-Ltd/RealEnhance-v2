@@ -1181,7 +1181,7 @@ const STRIPE_LISTING_PACK_20_PRICE_ID =
 
 /**
  * POST /api/billing/listing-pack/checkout
- * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD, 20 images)
+ * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD, 20 credits)
  */
 router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1205,7 +1205,7 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
               currency: "nzd",
               product_data: {
                 name: "Listing Pack",
-                description: "Enhance up to 20 images - no subscription required",
+                description: "20 credits - 1 per enhanced image, 2 per staged room. No subscription required",
               },
               unit_amount: LISTING_PACK_PRICE_NZD,
             },
@@ -1244,7 +1244,7 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
 
 /**
  * POST /api/billing/hero-pack/checkout
- * Create a Stripe Checkout session for a one-time Hero Pack purchase ($19 NZD, 7 images)
+ * Create a Stripe Checkout session for a one-time Hero Pack purchase ($19 NZD, 7 credits)
  */
 router.post("/hero-pack/checkout", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1268,7 +1268,7 @@ router.post("/hero-pack/checkout", requireAuth, async (req: Request, res: Respon
               currency: "nzd",
               product_data: {
                 name: "Hero Pack",
-                description: "Get 7 images for $19 - no subscription required",
+                description: "7 credits - 1 per enhanced image, 2 per staged room. No subscription required",
               },
               unit_amount: HERO_PACK_PRICE_NZD,
             },

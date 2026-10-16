@@ -1896,7 +1896,7 @@ export default function BatchProcessor({
                 <a href={billingHref}>Go to Billing</a>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <a href={addonHref}>Get 7 images for $19</a>
+                <a href={addonHref}>Get 7 credits for $19</a>
               </Button>
             </div>
           )}
@@ -9872,7 +9872,7 @@ export default function BatchProcessor({
             <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
               This enhancement requires {creditGateModal.requiredCredits} credits, but your plan currently includes {creditGateModal.availableCredits} remaining. Each image uses 1 credit; staging a room that needs decluttering first uses 2.
-              Add {creditGateModal.missingCredits} more credits to continue processing your batch. Get 7 images for $19 — no subscription required.
+              Add {creditGateModal.missingCredits} more credits to continue processing your batch. Get 7 credits for $19 — no subscription required.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
@@ -9885,7 +9885,7 @@ export default function BatchProcessor({
               type="button"
               onClick={handleContinueEnhancementCheckout}
             >
-              Get 7 images for $19 — no subscription required
+              Get 7 credits for $19 — no subscription required
             </Button>
             <Button
               type="button"

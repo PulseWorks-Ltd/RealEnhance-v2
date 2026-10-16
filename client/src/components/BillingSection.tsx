@@ -717,7 +717,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           <div className="text-xs text-muted-foreground pt-4 border-t">
             <p>✓ Unlimited users per agency</p>
             <p>✓ Monthly image allowances reset on your billing date</p>
-            <p>✓ Purchase additional image bundles anytime</p>
+            <p>✓ Purchase additional credit packs anytime</p>
           </div>
         </CardContent>
 
@@ -790,7 +790,7 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
               size="lg"
               title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
             >
-              {heroPackLoading ? "Loading..." : "Hero Pack - 7 images - $19"}
+              {heroPackLoading ? "Loading..." : "Hero Pack - 7 credits - $19"}
             </Button>
             <Button
               onClick={handleBuyListingPack}
@@ -800,16 +800,16 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
               variant="outline"
               title={manageDisabled ? "Only agency owners/admins can manage billing" : undefined}
             >
-              {listingPackLoading ? "Loading..." : "Listing Pack - 20 images - $49"}
+              {listingPackLoading ? "Loading..." : "Listing Pack - 20 credits - $49"}
             </Button>
           </div>
           {listingPackCredits > 0 && (
             <p className="text-sm text-muted-foreground text-center">
-              You have <span className="font-medium text-foreground">{listingPackCredits}</span> images remaining from your listing pack
+              You have <span className="font-medium text-foreground">{listingPackCredits}</span> credits remaining from your one-off packs
             </p>
           )}
           <p className="text-xs text-muted-foreground text-center">
-            Hero Pack: 7 images for $19. Listing Pack: 20 images for $49. No subscription required.
+            Hero Pack: 7 credits for $19. Listing Pack: 20 credits for $49. No subscription required. 1 credit per enhanced or decluttered image, 2 per staged room.
           </p>
         </CardContent>
       </Card>

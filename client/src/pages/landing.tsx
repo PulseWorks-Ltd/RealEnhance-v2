@@ -121,8 +121,8 @@ export default function Landing() {
   ] as const;
 
   const oneOffPacks = [
-    { name: 'Hero Pack', images: '7 images', price: '$19' },
-    { name: 'Listing Pack', images: '20 images', price: '$49' },
+    { name: 'Hero Pack', images: '7 credits', price: '$19' },
+    { name: 'Listing Pack', images: '20 credits', price: '$49' },
   ] as const;
 
   const bundles: {
@@ -433,7 +433,7 @@ export default function Landing() {
           {/* One-off packs */}
           <div className="mt-20 max-w-3xl mx-auto text-center">
             <h3 className="text-xl font-serif font-semibold text-slate-900">One-Off Packs</h3>
-            <p className="text-sm text-slate-500 mt-1">No subscription required — pay once, use anytime.</p>
+            <p className="text-sm text-slate-500 mt-1">No subscription required — pay once, use anytime. 1 credit per enhanced or decluttered image, 2 per staged room.</p>
             <div className="mt-6 grid sm:grid-cols-2 gap-6">
               {oneOffPacks.map((pack) => (
                 <div key={pack.name} className="rounded-xl border border-slate-200 bg-white p-6 text-left shadow-sm">
@@ -449,8 +449,8 @@ export default function Landing() {
 
           {/* Additional bundles */}
           <div className="mt-16 max-w-5xl mx-auto text-center">
-            <h3 className="text-xl font-serif font-semibold text-slate-900">Additional Image Bundles</h3>
-            <p className="text-sm text-slate-500 mt-1">For subscribers who need extra images this month.</p>
+            <h3 className="text-xl font-serif font-semibold text-slate-900">Additional Credit Bundles</h3>
+            <p className="text-sm text-slate-500 mt-1">For subscribers who need extra credits this month.</p>
             <div className="mt-6 grid sm:grid-cols-3 gap-6">
               {bundles.map((bundle) => (
                 <div
@@ -474,7 +474,7 @@ export default function Landing() {
               ))}
             </div>
             <p className="mt-6 text-xs text-slate-500 max-w-xl mx-auto">
-              Bundle images are used after your monthly allowance is exhausted. Secure payment powered by Stripe.
+              Bundle credits are used after your monthly allowance runs out. 1 credit per enhanced or decluttered image, 2 per staged room. Secure payment powered by Stripe.
             </p>
           </div>
 

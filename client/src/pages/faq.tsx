@@ -83,11 +83,11 @@ const FAQ_ITEMS: FaqItem[] = [
     },
   },
   {
-    q: "Can I buy images without a subscription?",
+    q: "Can I buy credits without a subscription?",
     a: {
       intro: "Yes. You can purchase one-off packs at any time:",
-      list: ["Hero Pack – 7 images for $19", "Listing Pack – 20 images for $49"],
-      outro: "Additional credit packs (20, 50, or 100 credits) are also available and remain valid for 30 days from purchase.",
+      list: ["Hero Pack – 7 credits for $19", "Listing Pack – 20 credits for $49"],
+      outro: "Pack credits work the same as plan credits: 1 credit per enhanced or decluttered image, 2 per staged room. Subscribers can also buy additional credit packs (20, 50, or 100 credits), valid for 30 days from purchase.",
     },
   },
   {

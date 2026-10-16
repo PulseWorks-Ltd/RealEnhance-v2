@@ -118,10 +118,10 @@ export function BundlePurchase() {
       <CardHeader>
         <div className="flex items-center gap-2">
           <Package className="h-5 w-5" />
-          <CardTitle>Additional Images</CardTitle>
+          <CardTitle>Additional Credits</CardTitle>
         </div>
         <CardDescription>
-          Need more images on top of your plan? Purchase a one-time image bundle
+          Need more credits on top of your plan? Purchase a one-time credit bundle
         </CardDescription>
       </CardHeader>
       <CardContent>

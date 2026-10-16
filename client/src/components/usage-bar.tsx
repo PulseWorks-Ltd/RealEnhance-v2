@@ -161,10 +161,10 @@ export function UsageSummary({
       <div className="text-xs text-gray-600 bg-gray-50 p-3 rounded border border-gray-200">
         <p className="font-semibold mb-1">How billing works:</p>
         <ul className="space-y-0.5 ml-2">
-          <li>• Enhanced only: <span className="font-medium">1 image</span></li>
-          <li>• Enhanced + Decluttered: <span className="font-medium">1 image</span></li>
-          <li>• Enhanced + Staged: <span className="font-medium">1 image</span></li>
-          <li>• Enhanced + Decluttered + Staged: <span className="font-medium">2 images</span></li>
+          <li>• Enhanced only: <span className="font-medium">1 credit</span></li>
+          <li>• Enhanced + Decluttered: <span className="font-medium">1 credit</span></li>
+          <li>• Enhanced + Staged (decluttering included): <span className="font-medium">2 credits</span></li>
+          <li>• If staging can't be completed, you're only charged <span className="font-medium">1 credit</span></li>
         </ul>
       </div>
 
