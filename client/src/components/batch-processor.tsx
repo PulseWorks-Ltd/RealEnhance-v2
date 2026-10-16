@@ -8,7 +8,7 @@ import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useImageUpload } from "@/hooks/useImageUpload";
-import { useFurniturePrecheck, precheckRequiresDeclutter, type FurniturePrecheckEntry } from "@/hooks/useFurniturePrecheck";
+import { useFurniturePrecheck, type FurniturePrecheckEntry } from "@/hooks/useFurniturePrecheck";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import {
@@ -151,14 +151,14 @@ function ensureDownloadFilename(filenameBase: string, mime?: string | null, data
   return `${normalizedBase}${inferredExtension || ".png"}`;
 }
 
-// Same rule as shared/src/billing/rules.ts estimateCredits: declutter + stage on
-// an interior image = 2 credits, everything else = 1.
-function estimateImageCredits(img: { sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }): number {
+// Same rule as shared/src/billing/rules.ts estimateCredits (switch on): a staged
+// interior image = 2 credits, everything else = 1. The quote is passed in.
+function estimateImageCredits(img: { sceneType: string; credits: number }): number {
   if (String(img.sceneType || "").toLowerCase() === "exterior") return 1;
-  return img.userSelectedStage1B && img.userSelectedStage2 ? 2 : 1;
+  return img.credits;
 }
 
-function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
+function estimateBatchCredits(images: Array<{ sceneType: string; credits: number }>): number {
   return images.reduce((sum, img) => sum + estimateImageCredits(img), 0);
 }
 
@@ -2351,34 +2351,23 @@ export default function BatchProcessor({
     isExterior: isExteriorImageId,
   });
 
-  type ImageQuoteKind = "declutter_stage" | "stage" | "stage_unknown" | "declutter" | "enhance" | "exterior";
-  const quoteForIndex = useCallback((index: number, entries: Record<string, FurniturePrecheckEntry>): { kind: ImageQuoteKind; credits: number } => {
-    const imageId = getImageIdForIndex(index);
+  // Staged image = 2 credits when the switch is on (with or without declutter,
+  // so no need to wait for the furniture pre-check); everything else 1.
+  type ImageQuoteKind = "stage" | "declutter" | "enhance" | "exterior";
+  const quoteForIndex = useCallback((index: number, _entries?: Record<string, FurniturePrecheckEntry>): { kind: ImageQuoteKind; credits: number } => {
     if (finalSceneForIndex(index) === "exterior") return { kind: "exterior", credits: 1 };
-    if (effectiveAllowStaging) {
-      const furnished = imageId ? precheckRequiresDeclutter(entries[imageId], imageRoomTypesById[imageId]) : null;
-      const extra = extraDeclutterCredit ? 2 : 1;
-      if (furnished === true) return { kind: "declutter_stage", credits: extra };
-      if (furnished === false) return { kind: "stage", credits: 1 };
-      return { kind: "stage_unknown", credits: extra };
-    }
+    if (effectiveAllowStaging) return { kind: "stage", credits: extraDeclutterCredit ? 2 : 1 };
     return { kind: declutter ? "declutter" : "enhance", credits: 1 };
-  }, [declutter, effectiveAllowStaging, extraDeclutterCredit, finalSceneForIndex, getImageIdForIndex, imageRoomTypesById]);
+  }, [declutter, effectiveAllowStaging, extraDeclutterCredit, finalSceneForIndex]);
 
   const batchCreditEstimateInputs = useMemo(
     () => files.map((_, index) => {
       const quote = quoteForIndex(index, furniturePrecheck.entries);
       return {
         sceneType: quote.kind === "exterior" ? "exterior" : "interior",
-        userSelectedStage1B: quote.credits === 2,
-        userSelectedStage2: quote.credits === 2,
+        credits: quote.credits,
       };
     }),
-    [files, furniturePrecheck.entries, quoteForIndex]
-  );
-
-  const precheckUnknownCount = useMemo(
-    () => files.reduce((n, _f, i) => n + (quoteForIndex(i, furniturePrecheck.entries).kind === "stage_unknown" ? 1 : 0), 0),
     [files, furniturePrecheck.entries, quoteForIndex]
   );
 
@@ -5159,20 +5148,12 @@ export default function BatchProcessor({
     }
 
     // Show exactly what this batch will use before anything is processed.
-    // Staging: wait (briefly) for the furniture pre-check so each interior
-    // photo is priced as furnished (declutter + stage = 2) or empty (1).
     if (extraDeclutterCredit && !costConfirmedRef.current) {
       setCostSummary({ checking: true, counts: {}, total: 0, available: availableCredits });
-      const interiorIds = files
-        .map((_, i) => (finalSceneForIndex(i) === "exterior" ? null : getImageIdForIndex(i)))
-        .filter((id): id is string => !!id);
-      const entries = effectiveAllowStaging
-        ? await furniturePrecheck.waitFor(interiorIds, 25_000)
-        : furniturePrecheck.entries;
       const counts: Record<string, number> = {};
       let total = 0;
       files.forEach((_, i) => {
-        const quote = quoteForIndex(i, entries);
+        const quote = quoteForIndex(i);
         counts[quote.kind] = (counts[quote.kind] || 0) + 1;
         total += quote.credits;
       });
@@ -7950,13 +7931,13 @@ export default function BatchProcessor({
                         </>
                       ) : effectiveAllowStaging ? (
                         <>
-                          <span className="font-semibold">Staging: 1 credit per room, or 2 if the room needs decluttering first.</span>{" "}
-                          We check each photo automatically and declutter rooms that need it. You'll see the exact cost before processing starts.
+                          <span className="font-semibold">Staging: 2 credits per room.</span>{" "}
+                          Decluttering before staging is included. Exterior photos are 1 credit. If staging can't be completed, your credits are refunded. You'll see the exact cost before processing starts.
                         </>
                       ) : (
                         <>
                           <span className="font-semibold">1 credit per image.</span>{" "}
-                          Staging a room that needs decluttering first (declutter + stage) uses 2 credits.
+                          Enhance and declutter are 1 credit; a staged room uses 2 credits.
                         </>
                       )}
                     </div>
@@ -8426,9 +8407,7 @@ export default function BatchProcessor({
                       <p className="mt-2 text-xs text-slate-600" data-testid="text-batch-credit-cost">
                         {!extraDeclutterCredit
                           ? `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}.`
-                          : precheckUnknownCount > 0
-                          ? `This batch uses up to ${requiredBatchCredits} credits (still checking ${precheckUnknownCount} room${precheckUnknownCount === 1 ? "" : "s"}…).`
-                          : `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}${requiredBatchCredits > files.length ? " (rooms that need decluttering: declutter + stage = 2 credits)" : ""}.`}
+                          : `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}${requiredBatchCredits > files.length ? " (staged rooms: 2 credits each)" : ""}.`}
                       </p>
                     )}
                     {isEnhanceCreditBlocked && (
@@ -9816,8 +9795,8 @@ export default function BatchProcessor({
             </DialogTitle>
             <DialogDescription>
               {costSummary?.checking
-                ? "We're checking which rooms need decluttering so we can show the exact cost."
-                : "Rooms with furniture or clutter to clear are decluttered automatically before staging."}
+                ? "Working out the cost…"
+                : "Staged rooms are 2 credits (decluttering before staging is included); everything else is 1 credit."}
             </DialogDescription>
           </DialogHeader>
           {costSummary?.checking ? (
@@ -9827,14 +9806,8 @@ export default function BatchProcessor({
           ) : costSummary ? (
             <div className="space-y-3 text-sm text-slate-700">
               <ul className="space-y-1">
-                {(costSummary.counts.declutter_stage || 0) > 0 && (
-                  <li>• {costSummary.counts.declutter_stage} room{costSummary.counts.declutter_stage === 1 ? "" : "s"} will be <b>decluttered and staged</b> — 2 credits each ({costSummary.counts.declutter_stage * 2})</li>
-                )}
-                {(costSummary.counts.stage_unknown || 0) > 0 && (
-                  <li>• {costSummary.counts.stage_unknown} room{costSummary.counts.stage_unknown === 1 ? "" : "s"} couldn't be checked — counted as <b>declutter and stage</b>, 2 credits each ({costSummary.counts.stage_unknown * 2}); 1 is refunded if no decluttering is needed</li>
-                )}
                 {(costSummary.counts.stage || 0) > 0 && (
-                  <li>• {costSummary.counts.stage} room{costSummary.counts.stage === 1 ? "" : "s"} will be <b>staged</b> (no decluttering needed) — 1 credit each ({costSummary.counts.stage})</li>
+                  <li>• {costSummary.counts.stage} room{costSummary.counts.stage === 1 ? "" : "s"} <b>staged</b> (decluttered first where needed) — 2 credits each ({costSummary.counts.stage * 2})</li>
                 )}
                 {(costSummary.counts.declutter || 0) > 0 && (
                   <li>• {costSummary.counts.declutter} photo{costSummary.counts.declutter === 1 ? "" : "s"} <b>decluttered</b> — 1 credit each ({costSummary.counts.declutter})</li>
@@ -9847,7 +9820,7 @@ export default function BatchProcessor({
                 )}
               </ul>
               <p className="text-xs text-slate-500">
-                If staging can't be completed for a room, you get the decluttered photo and only 1 credit is used.
+                If staging can't be completed for a room, you get the decluttered photo for 1 credit, or the enhanced photo with your credits refunded.
               </p>
               {costSummary.available !== null && (
                 <p className={costSummary.total > costSummary.available ? "font-medium text-amber-700" : "text-slate-600"}>

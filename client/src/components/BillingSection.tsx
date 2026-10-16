@@ -83,32 +83,32 @@ const PLAN_DISPLAY_OPTIONS: PlanDisplayOption[] = [
     value: "starter",
     displayName: "Starter",
     monthlyPriceNZD: 149,
-    monthlyAllowance: 75,
-    listingsRange: "Covers ~5-8 listings per month",
+    monthlyAllowance: 80,
+    listingsRange: "Covers ~10 listings per month",
     subtext: "Ideal for occasional use",
-    helperText: "Based on ~10-15 images per listing",
-    imageAllowanceText: "Includes ~75 images per month",
+    helperText: "Based on 1 exterior + 3–4 staged rooms per listing",
+    imageAllowanceText: "Includes 80 credits per month (1 per enhanced image, 2 per staged room)",
   },
   {
     value: "pro",
     displayName: "Pro",
     monthlyPriceNZD: 249,
-    monthlyAllowance: 150,
-    listingsRange: "Covers ~8-15 listings per month",
+    monthlyAllowance: 160,
+    listingsRange: "Covers ~20 listings per month",
     subtext: "Best for agencies running multiple listings each week",
-    helperText: "Based on ~10-15 images per listing",
-    imageAllowanceText: "Includes ~150 images per month",
+    helperText: "Based on 1 exterior + 3–4 staged rooms per listing",
+    imageAllowanceText: "Includes 160 credits per month (1 per enhanced image, 2 per staged room)",
     badge: "⭐ Most Popular",
   },
   {
     value: "agency",
     displayName: "Agency",
     monthlyPriceNZD: 449,
-    monthlyAllowance: 300,
-    listingsRange: "Covers ~15-30 listings per month",
+    monthlyAllowance: 320,
+    listingsRange: "Covers ~40 listings per month",
     subtext: "Designed for teams using this across most or all listings",
-    helperText: "Based on ~10-15 images per listing",
-    imageAllowanceText: "Includes ~300 images per month",
+    helperText: "Based on 1 exterior + 3–4 staged rooms per listing",
+    imageAllowanceText: "Includes 320 credits per month (1 per enhanced image, 2 per staged room)",
   },
 ];
 
@@ -729,12 +729,12 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="text-sm font-medium">{formatPlanDisplayName(option.planTier, option.displayName)}</p>
-                      <p className="text-xs text-muted-foreground">{option.monthlyAllowance} images / month</p>
+                      <p className="text-xs text-muted-foreground">{option.monthlyAllowance} credits / month</p>
                     </div>
                     <p className="text-sm font-semibold">{option.priceFormatted || `${option.price / 100}`}</p>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per image
+                    ${(option.price / 100 / option.monthlyAllowance).toFixed(2)} per credit
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {option.seatLimit ? `${option.seatLimit} seats included` : "Unlimited seats"}

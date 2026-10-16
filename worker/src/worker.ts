@@ -15,7 +15,7 @@ import {
   EditJobPayload,
   RegionEditJobPayload
 } from "@realenhance/shared/types";
-import { declutterStageExtraCreditEnabled, evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
+import { deliveredImageCharge, evaluateFairShare, markJobFinished, markJobStarted } from "@realenhance/shared";
 
 import fs from "fs";
 import path from "path";
@@ -8087,7 +8087,15 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
         const isTerminalComplete = completedStatus === "complete" || completedStatus === "completed";
         const hasUsableFinalOutput = typeof pub2Url === "string" && pub2Url.length > 0;
         const billableFinalSuccess = isTerminalComplete && hasUsableFinalOutput;
-        const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob ? 1 : 0;
+        // Staging delivered: same rule as the main pipeline (free when it is a
+        // manual retry, which is how stage-2-only jobs are created today).
+        const quotedCreditsS2 = Number((payload.options as any)?.quotedCredits);
+        const actualCharge = deliveredImageCharge({
+          billable: billableFinalSuccess && !isFreeManualRetry && isEnhancementJob,
+          sceneType: String(sceneLabel || "interior"),
+          stagedDelivered: billingStage2Success,
+          quotedCredits: Number.isFinite(quotedCreditsS2) ? quotedCreditsS2 : null,
+        });
 
         nLog("[BILLING_CHARGE_TELEMETRY]", {
           jobId: payload.jobId,
@@ -8134,7 +8142,6 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
             completionType: "full_success",
             finalDeliveredStage: "2",
             requestedBeyond1A: true,
-            // Staging an existing (already decluttered) image: no new declutter, 1 credit.
             stage1BUserSelected: false,
           });
         } catch (chargeErr) {
@@ -16368,24 +16375,17 @@ All openings must remain identical in position and size to the original image.`;
     billingStage1BSuccess &&
     (originalUserDeclutter || (frozenRoutingSnapshot?.geminiHasFurniture === true));
 
-  // Declutter + stage = 2 credits when the room was decluttered and staged
-  // and both images were delivered. The quote shown before submit (from the
-  // furniture pre-check) is the most that is charged: quoted 1 -> never 2.
-  // Jobs without a quote (older clients) use the detector's own verdict.
+  // Staged image = 2 credits (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT on) when
+  // the staged image was delivered, with or without declutter; anything else
+  // that was delivered costs 1. The quote shown before submit is the most
+  // that is charged (an older client's quote of 1 stays 1).
   const quotedCredits = Number((payload.options as any)?.quotedCredits);
-  const declutterAndStageBillable = Number.isFinite(quotedCredits)
-    ? quotedCredits >= 2
-    : billingEffectiveStage1B;
-  // BILLING_DECLUTTER_STAGE_EXTRA_CREDIT off (default): always 1 credit.
-  const declutterAndStageDelivered =
-    declutterStageExtraCreditEnabled() &&
-    String(sceneLabel || "interior").toLowerCase() !== "exterior" &&
-    declutterAndStageBillable &&
-    billingStage1BSuccess &&
-    billingStage2Success;
-  const actualCharge = billableFinalSuccess && !isFreeManualRetry && isEnhancementJob
-    ? (declutterAndStageDelivered ? 2 : 1)
-    : 0;
+  const actualCharge = deliveredImageCharge({
+    billable: billableFinalSuccess && !isFreeManualRetry && isEnhancementJob,
+    sceneType: String(sceneLabel || "interior"),
+    stagedDelivered: billingStage2Success,
+    quotedCredits: Number.isFinite(quotedCredits) ? quotedCredits : null,
+  });
 
   nLog("[BILLING_CHARGE_TELEMETRY]", {
     jobId: payload.jobId,
@@ -16399,7 +16399,6 @@ All openings must remain identical in position and size to the original image.`;
     geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
     billingEffectiveStage1B,
     quotedCredits: Number.isFinite(quotedCredits) ? quotedCredits : null,
-    declutterAndStageBillable,
     billableFinalSuccess,
     completedStatus: finalizedStatus,
     isEnhancementJob,
@@ -16443,7 +16442,6 @@ All openings must remain identical in position and size to the original image.`;
         requestedBeyond1A: !!(payload.options?.declutter || payload.options?.virtualStage),
         stage1BUserSelected: originalUserDeclutter,
         geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? undefined,
-        declutterAndStageBillable,
       });
     } catch (chargeErr) {
       // Billing errors must not crash the worker

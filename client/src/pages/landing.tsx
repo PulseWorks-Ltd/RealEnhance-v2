@@ -98,7 +98,7 @@ export default function Landing() {
       name: 'Starter',
       price: '$149',
       cadence: '/mo',
-      coverage: 'Covers ~5–8 listings per month (~75 images)',
+      coverage: 'Covers ~10 listings per month (80 credits)',
       audience: 'Ideal for occasional use',
       highlight: false,
     },
@@ -106,7 +106,7 @@ export default function Landing() {
       name: 'Pro',
       price: '$249',
       cadence: '/mo',
-      coverage: 'Covers ~8–15 listings per month (~150 images)',
+      coverage: 'Covers ~20 listings per month (160 credits)',
       audience: 'Best for agencies running multiple listings each week',
       highlight: true,
     },
@@ -114,7 +114,7 @@ export default function Landing() {
       name: 'Agency',
       price: '$449',
       cadence: '/mo',
-      coverage: 'Covers ~15–30 listings per month (~300 images)',
+      coverage: 'Covers ~40 listings per month (320 credits)',
       audience: 'Designed for teams using this across most or all listings',
       highlight: false,
     },
@@ -133,9 +133,9 @@ export default function Landing() {
     highlight: boolean;
     badge?: string;
   }[] = [
-    { name: 'Small Pack', images: '20 images', price: '$49 NZD', perImage: '$2.45 per image', highlight: false },
-    { name: 'Standard Pack', images: '50 images', price: '$99 NZD', perImage: '$1.98 per image', highlight: true, badge: 'Best Value' },
-    { name: 'Large Pack', images: '100 images', price: '$179 NZD', perImage: '$1.79 per image', highlight: false },
+    { name: 'Small Pack', images: '20 credits', price: '$49 NZD', perImage: '$2.45 per credit', highlight: false },
+    { name: 'Standard Pack', images: '50 credits', price: '$99 NZD', perImage: '$1.98 per credit', highlight: true, badge: 'Best Value' },
+    { name: 'Large Pack', images: '100 credits', price: '$179 NZD', perImage: '$1.79 per credit', highlight: false },
   ];
 
   const trustPoints = [
@@ -418,10 +418,10 @@ export default function Landing() {
 
           <ul className="mt-8 max-w-3xl mx-auto grid sm:grid-cols-2 gap-x-8 gap-y-2 text-sm text-slate-600">
             {[
-              "Based on ~10–15 images per listing",
+              "1 credit per enhanced image, 2 per staged room (~8 credits per listing)",
               "Plans reset monthly on your billing date",
               "Unlimited users per agency",
-              "Purchase additional image bundles anytime",
+              "Purchase additional credit packs anytime",
             ].map((note) => (
               <li key={note} className="flex items-start gap-2">
                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />

@@ -1,31 +1,12 @@
 import { Router, type Request, type Response } from "express";
-import { declutterStageExtraCreditEnabled, estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { requiredCreditsForJobOptions } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { enqueueStoredEnhanceJob, getJob, updateJob } from "../services/jobs.js";
 import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
 import { getUserById } from "../services/users.js";
 
 function deriveRequiredCreditsFromJobPayload(payload: any): number {
-  const options = payload?.options || {};
-  if (!declutterStageExtraCreditEnabled()) return 1;
-  // Quote made at upload from the furniture pre-check (1 or 2).
-  const quoted = Number(options?.quotedCredits);
-  if (Number.isFinite(quoted) && quoted >= 1) return Math.min(2, Math.floor(quoted));
-  const virtualStage = !!options?.virtualStage;
-  const declutter = !!options?.declutter;
-  const furnishedState = String(options?.furnishedState || "").toLowerCase();
-  const sceneType = String(options?.sceneType || "").toLowerCase() === "exterior" ? "exterior" : "interior";
-
-  // Match upload-side projection: declutter+stage with empty room can skip Stage 1B (1 credit total).
-  const stage1BProjected = declutter && options?.stage2Only !== true && (!virtualStage || furnishedState !== "empty");
-
-  return estimateBatchCredits([
-    {
-      sceneType,
-      userSelectedStage1B: stage1BProjected,
-      userSelectedStage2: virtualStage,
-    },
-  ]);
+  return requiredCreditsForJobOptions(payload?.options || {});
 }
 
 function isExpired(expiresAt: unknown): boolean {

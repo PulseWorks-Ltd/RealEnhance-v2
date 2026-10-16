@@ -730,7 +730,7 @@ export default function AgencyPage() {
                   <span>Monthly Usage</span>
                 </CardTitle>
                 <CardDescription>
-                  {(usage.planName || "Trial / No Plan")} includes {usage.mainAllowance} enhanced images per month
+                  {(usage.planName || "Trial / No Plan")} includes {usage.mainAllowance} credits per month (1 per enhanced image, 2 per staged room)
                 </CardDescription>
               </CardHeader>
               <CardContent>

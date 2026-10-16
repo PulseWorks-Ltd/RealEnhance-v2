@@ -153,11 +153,11 @@ export function BundlePurchase() {
 
                 <div className="space-y-1 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Images included:</span>
-                    <span className="font-medium">{bundle.images} images</span>
+                    <span className="text-muted-foreground">Credits included:</span>
+                    <span className="font-medium">{bundle.images} credits</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-muted-foreground">Price per image:</span>
+                    <span className="text-muted-foreground">Price per credit:</span>
                     <span className="font-medium">
                       ${(bundle.priceNZD / bundle.images).toFixed(2)} NZD
                     </span>

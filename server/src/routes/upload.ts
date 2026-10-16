@@ -14,7 +14,7 @@ import { enforceRetentionLimit } from "../services/imageRetention.js";
 import { reserveAllowance, commitReservation, releaseReservation, getUsageSnapshot } from "../services/usageLedger.js";
 import { getTrialSummary, releaseTrialReservation, reserveTrialCredits } from "../services/trials.js";
 import { declutterStageExtraCreditEnabled, estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
-import { loadFurniturePrecheck, precheckRequiresDeclutter, type FurniturePrecheckRecord } from "./furniturePrecheck.js";
+import { loadFurniturePrecheck, type FurniturePrecheckRecord } from "./furniturePrecheck.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
@@ -531,33 +531,10 @@ export function uploadRouter() {
         const sceneType = String(meta.sceneType || opts.sceneType || "auto").toLowerCase();
         const declutter = meta.declutter !== undefined ? meta.declutter : (opts.declutter !== undefined ? opts.declutter : declutterForm);
         const virtualStage = meta.virtualStage !== undefined ? meta.virtualStage : (opts.virtualStage !== undefined ? opts.virtualStage : allowStagingForm);
-        const stage2Variant =
-          (meta.stage2Variant === "2A" || meta.stage2Variant === "2B")
-            ? meta.stage2Variant
-            : ((opts.stage2Variant === "2A" || opts.stage2Variant === "2B")
-              ? opts.stage2Variant
-              : (stage2VariantForm === "2A" || stage2VariantForm === "2B" ? stage2VariantForm : undefined));
-        const furnishedState =
-          (meta.furnishedState === "furnished" || meta.furnishedState === "empty")
-            ? meta.furnishedState
-            : ((opts.furnishedState === "furnished" || opts.furnishedState === "empty")
-              ? opts.furnishedState
-              : (furnishedStateForm === "furnished" || furnishedStateForm === "empty"
-                ? furnishedStateForm
-                : (stage2Variant === "2A" ? "furnished" : stage2Variant === "2B" ? "empty" : undefined)));
-
-        // Staging: the furniture pre-check decides (furnished -> declutter +
-        // stage = 2 credits, empty -> 1). Without a pre-check answer, count 2
-        // (any extra is refunded when the job finishes).
-        const precheckDecision = precheckRequiresDeclutter(
-          precheckRecords[i],
-          normalizeRoomType(meta.roomType || opts.roomType)
-        );
-        const stage1BProjected = !!virtualStage && precheckDecision !== false;
-
+        // Staged image = 2 credits when BILLING_DECLUTTER_STAGE_EXTRA_CREDIT is on
+        // (with or without declutter); anything else 1. Exteriors are 1.
         return {
           sceneType: sceneType === "exterior" ? "exterior" : "interior",
-          userSelectedStage1B: stage1BProjected,
           userSelectedStage2: !!virtualStage,
         };
       });
@@ -858,19 +835,16 @@ export function uploadRouter() {
 
       const jobId = "job_" + crypto.randomUUID();
       const finalVirtualStage = parseStrictBool(opts.virtualStage);
-      // Staging an interior photo: the furniture pre-check decides. Furnished
-      // (declutter + stage) = 2 credits, empty = 1. Without a pre-check answer
-      // 2 are reserved and the worker refunds 1 if the room needed no
-      // declutter or staging falls back. The quote is passed to the job: it
-      // is the most that is charged, and the pre-check answer is reused for
-      // routing so the photo is processed as quoted.
+      // Staging an interior photo = 2 credits when BILLING_DECLUTTER_STAGE_EXTRA_CREDIT
+      // is on (with or without declutter); anything else 1. The worker refunds
+      // what isn't delivered (staging that falls back). The quote is passed to
+      // the job: it is the most that is charged. The furniture pre-check
+      // answer is still reused for routing so the photo is processed as shown.
       const precheckRecord = precheckRecords[i] ?? null;
-      const precheckDecision = precheckRequiresDeclutter(precheckRecord, opts.roomType);
-      const declutterAndStage =
+      const stagedInterior =
         String(opts.sceneType || "").toLowerCase() !== "exterior" &&
-        finalVirtualStage &&
-        precheckDecision !== false;
-      const requiredImages = declutterAndStage && declutterStageExtraCreditEnabled() ? 2 : 1;
+        finalVirtualStage;
+      const requiredImages = stagedInterior && declutterStageExtraCreditEnabled() ? 2 : 1;
       opts.quotedCredits = requiredImages;
       if (precheckRecord && precheckRecord.status === "done" && typeof precheckRecord.localEmpty === "boolean") {
         opts.furniturePrecheck = {

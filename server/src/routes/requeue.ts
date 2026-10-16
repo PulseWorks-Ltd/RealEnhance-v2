@@ -4,6 +4,7 @@ import { readJsonFile } from "../services/jsonStore.js";
 import { enqueueEnhanceJob, getJob } from "../services/jobs.js";
 import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
 import { getUserById } from "../services/users.js";
+import { requiredCreditsForJobOptions } from "@realenhance/shared/billing/rules.js";
 
 type ImagesState = Record<string, any>;
 
@@ -64,12 +65,17 @@ export function requeueRouter() {
 
     const jobId = `job_${crypto.randomUUID()}`;
 
+    // Same quote as an upload: a staged interior is 2 credits when
+    // BILLING_DECLUTTER_STAGE_EXTRA_CREDIT is on, anything else 1.
+    const requiredImages = requiredCreditsForJobOptions(options);
+    (options as any).quotedCredits = requiredImages;
+
     try {
       await reserveAllowance({
         jobId,
         agencyId,
         userId: sessUser.id,
-        requiredImages: 1,
+        requiredImages,
         requestedStage12: true,
         requestedStage2: !!options.virtualStage,
       });
@@ -130,12 +136,15 @@ export function requeueRouter() {
 
     const jobId = `job_${crypto.randomUUID()}`;
 
+    const requiredImages = requiredCreditsForJobOptions(options);
+    (options as any).quotedCredits = requiredImages;
+
     try {
       await reserveAllowance({
         jobId,
         agencyId,
         userId: prev.userId,
-        requiredImages: 1,
+        requiredImages,
         requestedStage12: true,
         requestedStage2: !!options.virtualStage,
       });

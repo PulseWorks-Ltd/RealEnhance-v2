@@ -74,12 +74,12 @@ const FAQ_ITEMS: FaqItem[] = [
     q: "What are the monthly plans and what do they include?",
     a: {
       list: [
-        "Starter – $149 NZD/month → approximately 5–8 listings / ~75 images",
-        "Pro – $249 NZD/month → approximately 8–15 listings / ~150 images (Most Popular)",
-        "Agency – $449 NZD/month → approximately 15–30 listings / ~300 images",
+        "Starter – $149 NZD/month → 80 credits, approximately 10 listings",
+        "Pro – $249 NZD/month → 160 credits, approximately 20 listings (Most Popular)",
+        "Agency – $449 NZD/month → 320 credits, approximately 40 listings",
       ],
       outro:
-        "Plans are based on ~10–15 images per listing. Allowances reset monthly on your billing date. Unlimited users per agency are included.",
+        "An enhanced or decluttered image uses 1 credit; a staged room uses 2 credits (decluttering before staging is included). If staging can't be completed, the staging credit is refunded. Listing estimates assume 1 exterior and 3–4 staged rooms per listing. Allowances reset monthly on your billing date. Unlimited users per agency are included.",
     },
   },
   {
@@ -87,7 +87,7 @@ const FAQ_ITEMS: FaqItem[] = [
     a: {
       intro: "Yes. You can purchase one-off packs at any time:",
       list: ["Hero Pack – 7 images for $19", "Listing Pack – 20 images for $49"],
-      outro: "Additional image bundles (20, 50, or 100 images) are also available and remain valid for 30 days from purchase.",
+      outro: "Additional credit packs (20, 50, or 100 credits) are also available and remain valid for 30 days from purchase.",
     },
   },
   {
