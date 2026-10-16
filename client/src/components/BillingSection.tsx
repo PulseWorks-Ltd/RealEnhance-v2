@@ -65,7 +65,7 @@ interface SubscriptionInfo {
 }
 
 interface PromoRedeemSuccess {
-  promoType: "trial" | "credit_bundle";
+  promoType: "trial" | "credit_bundle" | "lifetime_bonus";
   code: string;
   expiresAt: string | null;
   creditsTotal: number;
@@ -280,22 +280,27 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           AGENCY_ALREADY_USED_TRIAL: "This agency has already used a trial before.",
           AGENCY_PREVIOUSLY_SUBSCRIBED: "This agency has already had a paid subscription and is not eligible.",
           AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF: "This agency has already purchased a one-off bundle and is not eligible.",
+          LIFETIME_BONUS_ALREADY_REDEEMED: "That code has already been used.",
+          LIFETIME_BONUS_REQUIRES_SUBSCRIPTION: "This code needs an active subscription. Please subscribe first, then enter it again.",
         };
         throw new Error(messageMap[errorCode] || errorCode);
       }
 
       setPromoCode("");
       setPromoRedeemSuccess({
-        promoType: data?.promoType === "credit_bundle" ? "credit_bundle" : "trial",
+        promoType:
+          data?.promoType === "credit_bundle" || data?.promoType === "lifetime_bonus" ? data.promoType : "trial",
         code: data?.code || code,
         expiresAt: data?.trial?.expiresAt || data?.grant?.expiresAt || null,
-        creditsTotal: Number(data?.trial?.creditsTotal || data?.grant?.creditsTotal || 0),
+        creditsTotal: Number(data?.trial?.creditsTotal || data?.grant?.creditsTotal || data?.bonus?.monthlyCredits || 0),
         remaining: Number(data?.trial?.remaining || data?.grant?.remaining || 0),
       });
       toast({
         title: "Promo redeemed",
         description:
-          data?.promoType === "credit_bundle"
+          data?.promoType === "lifetime_bonus"
+            ? `Thank you! ${Number(data?.bonus?.monthlyCredits || 0)} bonus credits are now added to your plan every month.`
+            : data?.promoType === "credit_bundle"
             ? "Your promotional credits have been applied."
             : "Your free Starter trial has been applied.",
       });
@@ -538,7 +543,9 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           {promoRedeemSuccess && (
             <Alert>
               <AlertDescription>
-                {promoRedeemSuccess.promoType === "credit_bundle"
+                {promoRedeemSuccess.promoType === "lifetime_bonus"
+                  ? `Code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.creditsTotal} bonus credits are added to your monthly allowance for as long as your subscription is active.`
+                  : promoRedeemSuccess.promoType === "credit_bundle"
                   ? `Promo code ${promoRedeemSuccess.code} applied. ${promoRedeemSuccess.remaining ?? promoRedeemSuccess.creditsTotal} credits are now available and expire on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`
                   : `Promo code ${promoRedeemSuccess.code} applied. Your Starter trial is active for ${promoRedeemSuccess.creditsTotal} images and expires on ${promoRedeemSuccess.expiresAt ? new Date(promoRedeemSuccess.expiresAt).toLocaleDateString() : "the configured end date"}.`}
               </AlertDescription>

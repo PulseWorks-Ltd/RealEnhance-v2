@@ -32,6 +32,7 @@ import {
 } from "../services/pilotPromos.js";
 import { PILOT_PROMOS } from "@realenhance/shared/pilotPromos.js";
 import { pool } from "../db/index.js";
+import { findLifetimeBonusCode, redeemLifetimeBonusCode } from "../services/lifetimeBonus.js";
 
 const router = Router();
 
@@ -610,6 +611,42 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       });
     }
 
+    // Lifetime monthly bonus code (single use, one agency only).
+    const lifetimeBonus = await findLifetimeBonusCode(promoCodeInput);
+    if (lifetimeBonus) {
+      const subscribed =
+        !!agency.stripeSubscriptionId &&
+        (agency.subscriptionStatus === "ACTIVE" || agency.subscriptionStatus === "TRIAL");
+      if (!subscribed) {
+        // Don't burn the code on an account that can't use it yet.
+        return res.status(400).json({ error: "LIFETIME_BONUS_REQUIRES_SUBSCRIPTION" });
+      }
+      const { row, duplicated } = await redeemLifetimeBonusCode({
+        code: promoCodeInput,
+        agencyId: agency.agencyId,
+        userId: user.id,
+      });
+      console.log(
+        `[LIFETIME_BONUS] agency=${agency.agencyId} user=${user.id} label=${row.label} bonus=${row.bonus_credits} duplicated=${duplicated}`
+      );
+      const usage = await getUsageSnapshot(agency.agencyId);
+      return res.json({
+        success: true,
+        duplicated,
+        code: promoCodeInput.toUpperCase(),
+        promoType: "lifetime_bonus",
+        bonus: { monthlyCredits: row.bonus_credits },
+        allowance: {
+          monthlyIncluded: usage.includedLimit,
+          monthlyRemaining: usage.includedRemaining,
+          addonBalance: usage.addonBalance,
+          addonRemaining: usage.addonRemaining,
+          totalRemaining: usage.remaining,
+          monthKey: usage.monthKey,
+        },
+      });
+    }
+
     const creditGrantPromoCode = resolveCreditGrantPromoCode(promoCodeInput);
     if (creditGrantPromoCode) {
       const { bundle, promo, duplicated } = await redeemCreditPromoForExistingAgency({
@@ -694,7 +731,8 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "PILOT_PROMO_INACTIVE" ||
       code === "PILOT_PROMO_GLOBAL_CAP_REACHED" ||
       code === "PILOT_PROMO_ALREADY_REDEEMED_BY_USER" ||
-      code === "PILOT_PROMO_ALREADY_REDEEMED_BY_AGENCY"
+      code === "PILOT_PROMO_ALREADY_REDEEMED_BY_AGENCY" ||
+      code === "LIFETIME_BONUS_ALREADY_REDEEMED"
     ) {
       return res.status(400).json({ error: code });
     }
