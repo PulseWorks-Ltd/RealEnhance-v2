@@ -229,6 +229,9 @@ importers:
       redis:
         specifier: ^4.7.1
         version: 4.7.1
+      sharp:
+        specifier: ^0.34.5
+        version: 0.34.5
       stripe:
         specifier: ^20.1.0
         version: 20.1.0(@types/node@24.10.1)
@@ -7507,7 +7510,7 @@ snapshots:
 
   '@types/sharp@0.32.0':
     dependencies:
-      sharp: 0.33.5
+      sharp: 0.34.5
 
   '@types/stack-utils@2.0.3': {}
 

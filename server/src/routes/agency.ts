@@ -312,6 +312,7 @@ router.get("/info", requireAuth, async (req: Request, res: Response) => {
         isNew,
         promoCreditsGranted,
         upgradeBannerSeen: agency.upgradeBannerSeen === true,
+        stagedLabelEnabled: agency.stagedLabelEnabled === true,
       },
       activeUsers, // For informational purposes only - no limits
       trial,
@@ -360,6 +361,42 @@ router.post("/upgrade-banner-seen", requireAuth, requireAgencyAdmin, async (req:
   } catch (err) {
     console.error("[AGENCY] Failed to mark upgrade banner seen:", err);
     return res.status(500).json({ error: "Failed to update banner state" });
+  }
+});
+
+/**
+ * PATCH /api/agency/settings/staged-label
+ * Turn the "Virtually Staged" download label on or off (owner/admin only)
+ */
+router.patch("/settings/staged-label", requireAuth, requireAgencyAdmin, async (req: Request, res: Response) => {
+  try {
+    const user = (req as any).user as UserRecord;
+    if (!user.agencyId) {
+      return res.status(403).json({ error: "Agency membership required" });
+    }
+
+    const enabled = (req.body as any)?.enabled;
+    if (typeof enabled !== "boolean") {
+      return res.status(400).json({ error: "enabled must be true or false" });
+    }
+
+    const agency = await getAgency(user.agencyId);
+    if (!agency) {
+      return res.status(404).json({ error: "Agency not found" });
+    }
+
+    await updateAgency({ ...agency, stagedLabelEnabled: enabled });
+
+    console.log("[AGENCY_STAGED_LABEL_UPDATED]", {
+      agencyId: user.agencyId,
+      updatedByUserId: user.id,
+      stagedLabelEnabled: enabled,
+    });
+
+    return res.json({ ok: true, stagedLabelEnabled: enabled });
+  } catch (err) {
+    console.error("[AGENCY] Failed to update staged label setting:", err);
+    return res.status(500).json({ error: "Failed to update setting" });
   }
 });
 

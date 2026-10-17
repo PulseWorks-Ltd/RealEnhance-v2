@@ -6,7 +6,9 @@
  */
 
 import { Router, type Request, type Response } from 'express';
-import { listEnhancedImages, getEnhancedImage, getEnhancedImageDownloadTarget, softDeleteEnhancedImage } from '../services/enhancedImages.js';
+import { listEnhancedImages, getEnhancedImage, getEnhancedImageDownloadTarget, softDeleteEnhancedImage, isStagedImageForDownload } from '../services/enhancedImages.js';
+import { addStagedLabel } from '../services/stagedLabel.js';
+import { getAgency } from '@realenhance/shared/agencies.js';
 import { makeZip } from '../services/zipper.js';
 import { getS3ObjectBuffer } from '../utils/s3.js';
 
@@ -137,7 +139,55 @@ async function maybeConvertForDownload(buffer: Buffer, contentType?: string | nu
   }
 }
 
-async function prepareDownloadFile(req: Request, item: NormalizedDownloadItem, user?: DownloadUser | null): Promise<PreparedDownloadFile | null> {
+/**
+ * Adds the "Virtually Staged" label when the agency has it switched on and
+ * the file is a staged output. Any failure here returns the file unchanged:
+ * a missing label must never block a download.
+ */
+async function maybeAddStagedLabel(
+  prepared: PreparedDownloadFile,
+  item: NormalizedDownloadItem,
+  user: DownloadUser | null | undefined,
+  labelEnabled: boolean
+): Promise<PreparedDownloadFile> {
+  if (!labelEnabled || !user?.agencyId || !prepared.contentType.startsWith('image/')) return prepared;
+  try {
+    const staged = await isStagedImageForDownload({ agencyId: user.agencyId, imageId: item.imageId, url: item.url });
+    if (!staged) return prepared;
+    const labelled = await addStagedLabel(prepared.buffer, prepared.contentType);
+    return {
+      filename: ensureAttachmentFilename(prepared.filename, labelled.contentType),
+      buffer: labelled.buffer,
+      contentType: labelled.contentType,
+    };
+  } catch (error) {
+    console.warn('[enhanced-images] Staged label skipped', { imageId: item.imageId, error });
+    return prepared;
+  }
+}
+
+async function isStagedLabelEnabled(user?: DownloadUser | null): Promise<boolean> {
+  if (!user?.agencyId) return false;
+  try {
+    return (await getAgency(user.agencyId))?.stagedLabelEnabled === true;
+  } catch {
+    return false;
+  }
+}
+
+async function prepareDownloadFile(
+  req: Request,
+  item: NormalizedDownloadItem,
+  user?: DownloadUser | null,
+  labelEnabled?: boolean
+): Promise<PreparedDownloadFile | null> {
+  const prepared = await prepareRawDownloadFile(req, item, user);
+  if (!prepared) return null;
+  const enabled = labelEnabled ?? (await isStagedLabelEnabled(user));
+  return maybeAddStagedLabel(prepared, item, user, enabled);
+}
+
+async function prepareRawDownloadFile(req: Request, item: NormalizedDownloadItem, user?: DownloadUser | null): Promise<PreparedDownloadFile | null> {
   // Preferred path: resolve the S3 key fresh from the DB (scoped to the
   // requesting user/agency) and fetch it directly, instead of trusting a
   // publicUrl the client has been holding — that's a presigned link with a
@@ -358,7 +408,8 @@ export function enhancedImagesRouter() {
       const prepared = await prepareDownloadFile(req, {
         filename: `enhanced-${image.auditRef || image.id}.jpg`,
         url: image.publicUrl,
-      });
+        imageId: image.id,
+      }, user);
 
       if (!prepared) {
         return res.status(502).json({ error: 'Failed to download image' });
@@ -428,8 +479,9 @@ export function enhancedImagesRouter() {
       const zipInputs: Array<{ filename: string; dataUrl?: string; buffer?: Buffer; contentType?: string | null }> = [];
       let failedCount = 0;
 
+      const labelEnabled = await isStagedLabelEnabled(user);
       for (const item of manifest) {
-        const prepared = await prepareDownloadFile(req, item, user);
+        const prepared = await prepareDownloadFile(req, item, user, labelEnabled);
         if (!prepared) {
           failedCount += 1;
           continue;

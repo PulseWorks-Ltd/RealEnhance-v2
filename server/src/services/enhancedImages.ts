@@ -648,3 +648,58 @@ export async function deleteExpiredImagesFromStorage(
   console.log('[cleanup] Storage deletion not yet implemented');
   return 0;
 }
+
+/** Possible S3 keys for a published image URL (virtual-host and path-style). */
+function candidateKeysFromUrl(rawUrl?: string | null): string[] {
+  if (!rawUrl) return [];
+  try {
+    const raw = new URL(rawUrl).pathname.replace(/^\/+/, "");
+    if (!raw) return [];
+    let decoded = raw;
+    try { decoded = decodeURIComponent(raw); } catch { /* keep raw */ }
+    const keys = new Set<string>([raw, decoded]);
+    for (const k of [raw, decoded]) {
+      const slash = k.indexOf("/");
+      if (slash > 0) keys.add(k.slice(slash + 1)); // path-style: bucket/key
+    }
+    return Array.from(keys);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * True when the image being downloaded is a virtually staged output: its
+ * history row completed Stage 2, or it is an edit made on top of a staged
+ * image (followed through parent_image_id or the edit's source key).
+ * Intermediate outputs (enhanced / decluttered) have no history row of their
+ * own, so they never match.
+ */
+export async function isStagedImageForDownload(params: {
+  agencyId: string;
+  imageId?: string | null;
+  url?: string | null;
+}): Promise<boolean> {
+  const imageId = params.imageId ? String(params.imageId) : null;
+  const keys = candidateKeysFromUrl(params.url);
+  if (!params.agencyId || (!imageId && keys.length === 0)) return false;
+  const result = await pool.query(
+    `WITH RECURSIVE chain AS (
+       SELECT id, parent_image_id, original_s3_key, stages_completed, 0 AS depth
+         FROM enhanced_images
+        WHERE agency_id = $1
+          AND (id::text = $2 OR enhanced_s3_key = ANY($3::text[]) OR storage_key = ANY($3::text[]))
+       UNION
+       SELECT p.id, p.parent_image_id, p.original_s3_key, p.stages_completed, c.depth + 1
+         FROM chain c
+         JOIN enhanced_images p
+           ON p.agency_id = $1
+          AND (p.id = c.parent_image_id
+               OR (c.original_s3_key IS NOT NULL AND p.enhanced_s3_key = c.original_s3_key))
+        WHERE c.depth < 5 AND 'edit' = ANY(c.stages_completed)
+     )
+     SELECT EXISTS (SELECT 1 FROM chain WHERE '2' = ANY(stages_completed)) AS staged`,
+    [params.agencyId, imageId, keys]
+  );
+  return result.rows[0]?.staged === true;
+}

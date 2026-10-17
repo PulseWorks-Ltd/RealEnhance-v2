@@ -40,6 +40,11 @@ export interface Agency {
   // UI metadata for one-time agency-level upgrade banner display
   upgradeBannerSeen?: boolean;
 
+  // Add a "Virtually Staged" label to downloaded staged images.
+  // New agencies start with it on; agencies created before the feature have no
+  // stored value and read as off.
+  stagedLabelEnabled?: boolean;
+
   // Listing Pack credits (one-time purchase, no expiry for now)
   listingPackCredits?: number;
 
