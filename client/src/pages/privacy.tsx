@@ -45,10 +45,15 @@ export default function PrivacyPage() {
             <section className="space-y-3">
               <h2 className="text-xl font-semibold text-slate-900">Third-Party Services</h2>
               <p>
-                RealEnhance may use third-party infrastructure providers, payment processors, and image processing services to
-                operate the platform.
+                To provide the Service, RealEnhance uses trusted third-party providers for hosting, image processing,
+                data storage and payments. Some of these providers are located outside New Zealand.
               </p>
-              <p>These providers may process data only as necessary to provide their services.</p>
+              <p>
+                When we share information with them, we take reasonable steps to make sure it is protected to a
+                standard comparable to the New Zealand Privacy Act 2020. These providers may process data only as
+                necessary to provide their services.
+              </p>
+              <p>We do not sell your images or personal information.</p>
             </section>
 
             <section className="space-y-3">
