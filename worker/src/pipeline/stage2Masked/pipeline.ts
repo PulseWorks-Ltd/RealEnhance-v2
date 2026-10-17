@@ -73,6 +73,9 @@ import {
   cutPieceCompletionZone,
   applyCutPieceCompletion,
   REALIGN_MAX_EMPTY_PCT,
+  EDGE_CROP_ENABLED,
+  planEdgeCrop,
+  applyEdgeCrop,
   undoneOverlay,
   compositeLayers,
   removeSunPatches,
@@ -116,6 +119,8 @@ export type MaskedContext = {
   // Gemini's picture no longer covers; the blend continues the pieces there.
   completionZone?: Uint8Array | null;
   completionBand?: Uint8Array | null;
+  // The line-up's empty area (photo size), for the last-resort edge crop.
+  emptyStrip?: Uint8Array | null;
   // The empty room has no mirror, glass panel or glossy floor: the
   // reflections trace pass is skipped (one Gemini image call saved).
   skipReflections?: boolean;
@@ -949,7 +954,7 @@ export async function runMaskedStage2Job(p: {
           const cut = await furnitureCutAtEmptyEdge(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
           if (cut.cutPct > 0) {
             const cz = await cutPieceCompletionZone(layers.floor, prealigned.empty, prealigned.W, prealigned.H, w, h);
-            if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
+            if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band, emptyStrip: prealigned.empty };
           }
           row.prealign = { lined: true, scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct, emptyStripPct: prealigned.emptyPct, furnitureCutAtEdgePct: cut.cutPct };
         } else if (row.prealign && row.prealign.lined === false) {
@@ -972,7 +977,7 @@ export async function runMaskedStage2Job(p: {
             const cut = await furnitureCutAtEmptyEdge(layers.floor, al.empty, al.W, al.H, w, h);
             if (cut.cutPct > 0) {
               const cz = await cutPieceCompletionZone(layers.floor, al.empty, al.W, al.H, w, h);
-              if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band };
+              if (cz.zonePct > 0) ctx = { ...ctx, completionZone: cz.zone, completionBand: cz.band, emptyStrip: al.empty };
             }
             row.realign = {
               scale: row.cameraAlignment.scale, shiftPct: row.cameraAlignment.shiftPct,
@@ -1031,7 +1036,14 @@ export async function runMaskedStage2Job(p: {
           const hm = await harmonise(ctx, layers);
           final = hm.checkedBlend || hm.harmFinal;
           // A piece cut off by the line-up must have been continued by the blend.
-          if (ctx.completionZone && !(row.realignCompletion?.applied && row.realignCompletion.filledPct >= 30)) {
+          // If not, a small edge crop (below) may still save the photo.
+          const cutAtEdge = Boolean(ctx.completionZone && !(row.realignCompletion?.applied && row.realignCompletion.filledPct >= 30));
+          const edgeCrop = cutAtEdge && EDGE_CROP_ENABLED && ctx.emptyStrip ? planEdgeCrop(ctx.emptyStrip, w, h) : null;
+          if (cutAtEdge && !edgeCrop?.ok) {
+            if (edgeCrop) {
+              row.edgeCrop = { applied: false, reason: edgeCrop.reason, trimPct: edgeCrop.trimPct };
+              p.warn?.(`[${ctx.name}] edge crop not possible: ${edgeCrop.reason}`);
+            }
             reasons.push("furniture cut off at the photo edge");
           }
           if (floorPlan?.ok && final) {
@@ -1052,6 +1064,24 @@ export async function runMaskedStage2Job(p: {
             await finalDoorCheck(ctx, final, await getDoors());
             if (row.doorAccess?.blocked) reasons.push("doorway blocked");
             if (row.harmonise?.structureCheck && !row.harmonise.structureCheck.retained) reasons.push("structure check failed");
+          }
+          // Last step, after every check has passed on the full-size image:
+          // trim the empty strip so the cut pieces run off the photo's edge.
+          if (edgeCrop?.ok && final) {
+            if (reasons.length === 0) {
+              try {
+                final = await applyEdgeCrop(final, edgeCrop, w, h);
+                row.edgeCrop = { applied: true, trimPct: edgeCrop.trimPct, zoomPct: edgeCrop.zoomPct };
+                io.save?.("13_edge_cropped.webp", await sharp(final).webp({ quality: 92 }).toBuffer());
+                p.log?.(`[${ctx.name}] furniture cut off at the photo edge — saved by a ${edgeCrop.zoomPct}% edge crop (trim top ${edgeCrop.trimPct.top}%, bottom ${edgeCrop.trimPct.bottom}%, left ${edgeCrop.trimPct.left}%, right ${edgeCrop.trimPct.right}%)`);
+              } catch (e: any) {
+                row.edgeCrop = { applied: false, reason: `crop error: ${String(e?.message || e).slice(0, 200)}` };
+                reasons.push("furniture cut off at the photo edge");
+              }
+            } else {
+              row.edgeCrop = { applied: false, reason: "other checks failed", trimPct: edgeCrop.trimPct };
+              reasons.push("furniture cut off at the photo edge");
+            }
           }
         }
       }

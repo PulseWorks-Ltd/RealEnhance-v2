@@ -3242,6 +3242,69 @@ export async function alignStagedToOriginal(original: Buffer, staged: Buffer, ca
   return { aligned, empty, W, H, emptyPct: +((n / (W * H)) * 100).toFixed(1) };
 }
 
+// Edge crop: last resort when the blend could not continue the furniture cut
+// off by the line-up's empty strip. The strip is trimmed away (plus a matching
+// trim on the other axis so the photo keeps its shape) and the result is
+// enlarged back to full size, so the pieces simply run off the photo's edge.
+// Capped so it can never hide a real feature such as a heater or doorway.
+export const EDGE_CROP_ENABLED = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_EDGE_CROP || "").trim().toLowerCase());
+export const EDGE_CROP_MAX_PCT = Number(process.env.STAGE2_EDGE_CROP_MAX_PCT || 4); // max share of width / height trimmed
+
+export type EdgeCropPlan =
+  | { ok: true; left: number; top: number; width: number; height: number; trimPct: { top: number; bottom: number; left: number; right: number }; zoomPct: number }
+  | { ok: false; reason: string; trimPct?: { top: number; bottom: number; left: number; right: number } };
+
+// The line-up's empty area is everything outside one rectangle (the part of
+// the real photo Gemini's picture still covers), so each edge's strip is a run
+// of (nearly) fully empty rows or columns.
+export function planEdgeCrop(empty: Uint8Array, w: number, h: number, maxPct = EDGE_CROP_MAX_PCT): EdgeCropPlan {
+  const rowEmpty = (y: number) => { let n = 0; for (let x = 0; x < w; x++) n += empty[y * w + x] ? 1 : 0; return n / w; };
+  const colEmpty = (x: number) => { let n = 0; for (let y = 0; y < h; y++) n += empty[y * w + x] ? 1 : 0; return n / h; };
+  let top = 0, bottom = 0, left = 0, right = 0;
+  while (top < h && rowEmpty(top) > 0.5) top++;
+  while (bottom < h - top && rowEmpty(h - 1 - bottom) > 0.5) bottom++;
+  while (left < w && colEmpty(left) > 0.5) left++;
+  while (right < w - left && colEmpty(w - 1 - right) > 0.5) right++;
+  // A couple of extra pixels on each trimmed edge removes the soft seam.
+  const pad = Math.max(2, Math.round(Math.max(w, h) * 0.002));
+  if (top) top += pad; if (bottom) bottom += pad; if (left) left += pad; if (right) right += pad;
+  const pct = (v: number, of: number) => +((v / of) * 100).toFixed(2);
+  const trimPct = { top: pct(top, h), bottom: pct(bottom, h), left: pct(left, w), right: pct(right, w) };
+  if (!(top || bottom || left || right)) return { ok: false, reason: "no empty strip at the edges", trimPct };
+  // Nothing empty may be left inside the kept area.
+  let inside = 0;
+  for (let y = top; y < h - bottom; y++) for (let x = left; x < w - right; x++) inside += empty[y * w + x] ? 1 : 0;
+  const keptArea = (h - top - bottom) * (w - left - right);
+  if (keptArea <= 0 || inside / keptArea > 0.001) return { ok: false, reason: "empty area is not a plain edge strip", trimPct };
+  // Same share off both axes keeps the photo's shape: extra trim is split
+  // evenly between the two sides of the axis that needs it.
+  const share = Math.max((top + bottom) / h, (left + right) / w);
+  if (share * 100 > maxPct) return { ok: false, reason: `strip too wide to crop (${(share * 100).toFixed(1)}% > ${maxPct}%)`, trimPct };
+  const extraV = Math.max(0, Math.round(share * h) - (top + bottom));
+  const extraH = Math.max(0, Math.round(share * w) - (left + right));
+  top += Math.floor(extraV / 2); bottom += Math.ceil(extraV / 2);
+  left += Math.floor(extraH / 2); right += Math.ceil(extraH / 2);
+  return {
+    ok: true, left, top, width: w - left - right, height: h - top - bottom,
+    trimPct: { top: pct(top, h), bottom: pct(bottom, h), left: pct(left, w), right: pct(right, w) },
+    zoomPct: +((1 / (1 - share) - 1) * 100).toFixed(2),
+  };
+}
+
+// Apply the plan to the final image (at its own size) and enlarge back to it.
+export async function applyEdgeCrop(final: Buffer, plan: Extract<EdgeCropPlan, { ok: true }>, w: number, h: number): Promise<Buffer> {
+  const fm = await sharp(final).metadata();
+  const FW = fm.width!, FH = fm.height!;
+  const sx = FW / w, sy = FH / h;
+  const left = Math.round(plan.left * sx), top = Math.round(plan.top * sy);
+  const width = Math.min(FW - left, Math.round(plan.width * sx)), height = Math.min(FH - top, Math.round(plan.height * sy));
+  return sharp(final)
+    .extract({ left, top, width, height })
+    .resize(FW, FH, { fit: "fill", kernel: "lanczos3" })
+    .png()
+    .toBuffer();
+}
+
 // Furniture that runs into the empty strip: Gemini's picture ended there, so
 // the piece stops in a straight line short of the photo's edge. Returns the
 // share of the strip's border that furniture touches (0 = nothing cut).
