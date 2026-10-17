@@ -13,7 +13,6 @@
  */
 
 import { validateWindows } from "./windowValidator";
-import { validateWallStructure } from "./wallValidator";
 import { runGlobalEdgeMetrics, runGlobalEdgeMetricsFromBuffers } from "./globalStructuralValidator";
 import { validateStage2Structural } from "./stage2StructuralValidator";
 import { validateLineStructure } from "./lineEdgeValidator";
@@ -864,30 +863,22 @@ export async function runUnifiedValidation(
       };
       nLog("[unified-validator] Wall validation disabled for Stage1B");
     } else if (localValidatorsFull) {
-      try {
-        const wallResult = await validateWallStructure(originalPath, enhancedPath);
-        const passed = wallResult.ok;
-        results.walls = {
-          name: "walls",
-          passed,
-          score: passed ? 1.0 : 0.0,
-          message: wallResult.reason || (passed ? "Wall structure preserved" : "Wall structure issues"),
-          details: wallResult,
-        };
-        if (!passed) {
-          reasons.push(`Wall validation failed: ${wallResult.reason}`);
-        }
-      } catch (err) {
-        console.warn("[unified-validator] Wall validation error (fail-closed):", err);
-        results.walls = {
-          name: "walls",
-          passed: false,
-          score: 0,
-          message: "Wall validator error",
-          details: { error: String(err) },
-        };
-        reasons.push("Wall validation error");
-      }
+      // H3 (RealEnhance audit): this branch used to call
+      // validateWallStructure (validators/_unimplemented/wallValidator.ts),
+      // a stub — "TODO: Implement real wall line detection" — hardcoded to
+      // {ok:true} regardless of input, so it could never register a
+      // finding. Rather than call a function that can only ever report
+      // success, this branch now says so honestly. If real wall-structure
+      // validation is implemented in future, it replaces this block; it
+      // must not silently resume calling the quarantined stub.
+      results.walls = {
+        name: "walls",
+        passed: true,
+        score: 1,
+        message: "Wall validation not implemented (tier=full requested, but no real check exists)",
+        details: { skipped: true, tier: LOCAL_VALIDATOR_TIER, unimplemented: true },
+      };
+      nLog(`[unified-validator] Wall validation not implemented (tier=${LOCAL_VALIDATOR_TIER} requested a real check, none exists)`);
     } else {
       results.walls = {
         name: "walls",
@@ -1865,7 +1856,7 @@ export async function runUnifiedValidation(
       });
       warnings.push("stage2_direct_advisory: anchor_fixed_lighting_changed_uncorroborated");
       evidence.localFlags.push("anchor:lighting_advisory_uncorroborated");
-      console.log("[STAGE2_DIRECT_GATE_ADVISORY]", {
+      nLog("[STAGE2_DIRECT_GATE_ADVISORY]", {
         source: "anchor",
         reasonCode: "anchor_fixed_lighting_changed",
         corroborated: false,
@@ -1878,7 +1869,7 @@ export async function runUnifiedValidation(
     if (directAdvisories.length > 0) {
       warnings.push(...directAdvisories);
       directEvents.forEach((event) => {
-        console.log("[STAGE2_DIRECT_GATE]", {
+        nLog("[STAGE2_DIRECT_GATE]", {
           source: event.source,
           confidence: event.confidence,
           reasonCode: event.reasonCode,

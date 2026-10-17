@@ -1,0 +1,64 @@
+ANCHOR DIRECTIVE (MANDATORY):
+- Primary focal element: dining_table
+- Free-standing placement: position in the open floor area — do not push against, align to, or face any specific wall.
+- Placement mode: freestanding
+- Anchor furniture may be partially cropped by frame edges when composition is natural.
+
+PLAN_JSON:
+{
+  "room_type": "kitchen_dining",
+  "layout": [
+    {
+      "item": "dining_table",
+      "placement": "Center dining table in usable floor area with clear access around doors/openings."
+    },
+    {
+      "item": "dining_chairs",
+      "placement": "Add chairs only where pullback clearance does not overlap openings."
+    }
+  ],
+  "avoid_zones": [
+    "door:D1:bbox(0.853,0.354,1.000,0.951)",
+    "window:W1:bbox(0.610,0.411,0.822,0.641)",
+    "window:W3:bbox(0.440,0.421,0.567,0.552)",
+    "window:W2:bbox(0.245,0.410,0.435,0.564)"
+  ],
+  "anchor": {
+    "item": "dining_table",
+    "orientation": "floating_center",
+    "constraints": {
+      "mountMode": "freestanding",
+      "allowWallMount": true,
+      "avoidCoveringWindows": false,
+      "avoidAboveWindow": false,
+      "rules": [
+        "Position freely in the open floor area — do not push against, align to, or face any specific wall."
+      ]
+    },
+    "region": {
+      "x": 0.28,
+      "y": 0.48,
+      "width": 0.44,
+      "height": 0.4
+    },
+    "confidence": 0.98
+  },
+  "decorRestrictions": [
+    {
+      "target": "door_zone",
+      "rule": "Do not place furniture or decor that blocks any door/walkthrough opening."
+    },
+    {
+      "target": "closet_zone",
+      "rule": "Do not block closet doors and do not place wall art/decor above closet-door regions."
+    }
+  ],
+  "furnitureVisibilityRules": {
+    "allow_crop": true,
+    "assume_wall_continuation": false,
+    "rules": [
+      "Furniture may extend beyond frame boundaries when composition is natural.",
+      "Do not force the full anchor furniture item to be visible."
+    ]
+  }
+}

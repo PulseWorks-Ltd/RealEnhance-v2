@@ -4,6 +4,7 @@ import { Queue } from "bullmq";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
 import { getJob } from "../services/jobs.js";
+import { toPublicMessage } from "../utils/publicError.js";
 
 /**
  * Normalized job item type we send to the client.
@@ -129,7 +130,7 @@ function resolveTerminalMetadata(
   const terminalAt = local?.updatedAt || local?.updated_at || completedIso || null;
   const terminalReason =
     status === "failed"
-      ? (local?.errorMessage || failedReason || "failed")
+      ? toPublicMessage(local?.errorMessage || failedReason || "failed")
       : (local?.completionReason || "final_complete");
 
   return { isTerminal: true, terminalAt, terminalReason };
@@ -627,7 +628,7 @@ export function statusRouter() {
           originalUrl,
           maskUrl,
           publishedUrl: resolvedResultUrl,
-          warnings,
+          warnings: Array.from(new Set(warnings.map((w) => toPublicMessage(w) as string))),
           hardFail,
           validation: validationRaw,
           attempts,
@@ -656,7 +657,7 @@ export function statusRouter() {
           stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
           mode: mode || undefined,
           meta: local.meta ?? {},
-          error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,
+          error: uiStatus === "error" ? toPublicMessage(local.errorMessage || failedReason || null) : null,
         };
         // Add mode if it exists
         if (mode) {
@@ -665,7 +666,7 @@ export function statusRouter() {
 
         // Edge case: hardFail + outputs → downgrade error into warning text
         if (uiStatus === "warning" && hardFail && hasOutputs) {
-          item.warnings = [...(item.warnings || []), local.errorMessage || failedReason || "Output generated but flagged"];
+          item.warnings = [...(item.warnings || []), toPublicMessage(local.errorMessage || failedReason || "Output generated but flagged")];
         }
 
         // Reduce log verbosity: Only log failed jobs or every 10th request
@@ -734,7 +735,7 @@ export function statusRouter() {
       console.error("[status/batch] ERROR:", e);
       return res
         .status(500)
-        .json({ success: false, error: e?.message || "status_batch_failed" });
+        .json({ success: false, error: toPublicMessage(e?.message || "status_batch_failed") });
     }
   });
 
@@ -967,7 +968,7 @@ export function statusRouter() {
         originalUrl,
         maskUrl,
         publishedUrl: resolvedResultUrl,
-        warnings,
+        warnings: Array.from(new Set(warnings.map((w) => toPublicMessage(w) as string))),
         hardFail,
         finalStage: resolvedFinalStage || undefined,
         resultStage: resolvedFinalStage ?? null,
@@ -980,10 +981,10 @@ export function statusRouter() {
         retryInfo: local.retryInfo || payloadRetryInfo || undefined,
         stageUrls: Object.values(stageUrls).some(Boolean) ? (stageUrls as any) : null,
         meta: local.meta ?? {},
-        error: uiStatus === "error" ? (local.errorMessage || failedReason || null) : null,
+        error: uiStatus === "error" ? toPublicMessage(local.errorMessage || failedReason || null) : null,
       };
       if (uiStatus === "warning" && hardFail && hasOutputs) {
-        item.warnings = [...(item.warnings || []), local.errorMessage || failedReason || "Output generated but flagged"];
+        item.warnings = [...(item.warnings || []), toPublicMessage(local.errorMessage || failedReason || "Output generated but flagged")];
       }
       const base: any = {
         success: true,
@@ -1003,7 +1004,7 @@ export function statusRouter() {
       return res.json(base);
     } catch (e: any) {
       console.error("[status/:jobId] ERROR:", e);
-      return res.status(500).json({ success: false, error: e?.message || "status_single_failed" });
+      return res.status(500).json({ success: false, error: toPublicMessage(e?.message || "status_single_failed") });
     }
   });
 

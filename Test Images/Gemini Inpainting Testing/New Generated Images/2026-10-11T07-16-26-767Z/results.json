@@ -1,0 +1,49 @@
+[
+  {
+    "image": "realenhance-job_d6d060ea-Baseline",
+    "roomType": "bedroom",
+    "input": "1728x2304",
+    "aspectRatio": "3:4",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.1509,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 12.1,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 14,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "traced": 14.1,
+      "furniture": 15.6,
+      "afterGrow": 20.2
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 12.26,
+      "changedPixelPct": 24.82
+    },
+    "framingCheck": {
+      "tilesChecked": 91,
+      "tilesChanged": 35,
+      "changedPct": 38.5,
+      "medianDiff": 7.3,
+      "framingChanged": false
+    },
+    "finalSize": "1792x2389",
+    "colourGains": [
+      0.975,
+      0.994,
+      0.982
+    ],
+    "checkSeams": true,
+    "ok": true,
+    "oldFailedAttempt": "Test Images/Gemini Inpainting Testing/Previously Failed Image Pairs/realenhance-job_d6d060ea-STAGED1-failed downlight added.webp",
+    "seconds": 113.183
+  }
+]

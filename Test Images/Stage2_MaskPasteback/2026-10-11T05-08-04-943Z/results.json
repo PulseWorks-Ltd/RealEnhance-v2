@@ -1,0 +1,267 @@
+[
+  {
+    "image": "Living07",
+    "roomType": "living_room",
+    "input": "810x1080",
+    "aspectRatio": "3:4",
+    "staging": "reused Stage2_2K_Comparison/Living07__gemini-3.1-flash-image.webp",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.155,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 11.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 13.7,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "furniture": 13.7,
+      "afterGrow": 18.5
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 7.75,
+      "changedPixelPct": 14.27
+    },
+    "framingCheck": {
+      "tilesChecked": 127,
+      "tilesChanged": 43,
+      "changedPct": 33.9,
+      "medianDiff": 7.6,
+      "framingChanged": false
+    },
+    "finalSize": "1792x2389",
+    "colourGains": [
+      0.976,
+      0.999,
+      0.985
+    ],
+    "ok": true,
+    "seconds": 16.709
+  },
+  {
+    "image": "Living10",
+    "roomType": "living_room",
+    "input": "1198x800",
+    "aspectRatio": "3:2",
+    "staging": "reused Stage2_2K_Comparison/Living10__gemini-3.1-flash-image.webp",
+    "stagedSize": "2528x1696",
+    "traceCostUsd": 0.1507,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 26.3,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 26.4,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "furniture": 26.4,
+      "afterGrow": 31.7
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 5.72,
+      "changedPixelPct": 8.7
+    },
+    "framingCheck": {
+      "tilesChecked": 45,
+      "tilesChanged": 16,
+      "changedPct": 35.6,
+      "medianDiff": 6.6,
+      "framingChanged": false
+    },
+    "finalSize": "2528x1688",
+    "colourGains": [
+      0.994,
+      1.009,
+      1.011
+    ],
+    "ok": true,
+    "seconds": 14.151
+  },
+  {
+    "image": "Diningroom01",
+    "roomType": "dining_room",
+    "input": "1248x832",
+    "aspectRatio": "3:2",
+    "staging": "reused Stage2_2K_Comparison/Diningroom01__gemini-3.1-flash-image.webp",
+    "stagedSize": "2528x1696",
+    "traceCostUsd": 0.1501,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 10.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 10.9,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "furniture": 10.9,
+      "afterGrow": 16.1
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 6.23,
+      "changedPixelPct": 9.81
+    },
+    "framingCheck": {
+      "tilesChecked": 72,
+      "tilesChanged": 17,
+      "changedPct": 23.6,
+      "medianDiff": 4.2,
+      "framingChanged": false
+    },
+    "finalSize": "2528x1685",
+    "colourGains": [
+      0.99,
+      1.003,
+      0.996
+    ],
+    "ok": true,
+    "seconds": 14.706
+  },
+  {
+    "image": "Validator_2327860184",
+    "roomType": "living_room",
+    "input": "1440x1080",
+    "aspectRatio": "4:3",
+    "staging": "reused Stage2_2K_Comparison/Validator_2327860184__gemini-3.1-flash-image.webp",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.1525,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 5.1,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 5.3,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "furniture": 5.3,
+      "afterGrow": 8.4
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 4.47,
+      "changedPixelPct": 3.59
+    },
+    "framingCheck": {
+      "tilesChecked": 78,
+      "tilesChanged": 7,
+      "changedPct": 9,
+      "medianDiff": 2.2,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.979,
+      0.998,
+      0.985
+    ],
+    "ok": true,
+    "seconds": 14.69
+  },
+  {
+    "image": "Bedroom14",
+    "roomType": "bedroom",
+    "input": "1600x1200",
+    "aspectRatio": "4:3",
+    "staging": "reused Stage2_2K_Comparison/Bedroom14__gemini-3.1-flash-image.webp",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.151,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 14.1,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 14.9,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "furniture": 15,
+      "afterGrow": 20
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 4.94,
+      "changedPixelPct": 6.16
+    },
+    "framingCheck": {
+      "tilesChecked": 69,
+      "tilesChanged": 21,
+      "changedPct": 30.4,
+      "medianDiff": 2.3,
+      "framingChanged": false
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.992,
+      1.014,
+      1.004
+    ],
+    "ok": true,
+    "seconds": 14.813
+  },
+  {
+    "image": "Bedroom12",
+    "roomType": "bedroom",
+    "input": "1440x1080",
+    "aspectRatio": "4:3",
+    "staging": "reused Stage2_2K_Comparison/Bedroom12__gemini-3.1-flash-image.webp",
+    "stagedSize": "2400x1792",
+    "traceCostUsd": 0.1495,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 13,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 10.5,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "furniture": 13.1,
+      "afterGrow": 17.3
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 26.7,
+      "changedPixelPct": 42.75
+    },
+    "framingCheck": {
+      "tilesChecked": 66,
+      "tilesChanged": 47,
+      "changedPct": 71.2,
+      "medianDiff": 28.9,
+      "framingChanged": true
+    },
+    "finalSize": "2400x1800",
+    "colourGains": [
+      0.966,
+      0.978,
+      0.968
+    ],
+    "checkSeams": true,
+    "ok": true,
+    "seconds": 14.709
+  }
+]

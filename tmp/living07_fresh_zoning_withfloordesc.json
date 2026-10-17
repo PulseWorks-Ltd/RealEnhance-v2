@@ -1,0 +1,74 @@
+{
+  "zones": [
+    {
+      "id": "zone_living",
+      "purpose": "living",
+      "floorRegion": {
+        "polygon": [
+          [
+            0,
+            0.768
+          ],
+          [
+            0.46,
+            0.81
+          ],
+          [
+            0.789,
+            1
+          ],
+          [
+            0,
+            1
+          ]
+        ]
+      },
+      "borderingWallIndices": [
+        0,
+        3
+      ],
+      "reasoning": "The zone is defined by a clear change in flooring material, from carpet in this area to a hard surface in the adjacent area. The presence of a fireplace (F1) and a large sliding door (D1) to a deck further supports its function as a living area.",
+      "flooringDescription": "dark charcoal carpet"
+    },
+    {
+      "id": "zone_dining",
+      "purpose": "dining",
+      "floorRegion": {
+        "polygon": [
+          [
+            0.46,
+            0.81
+          ],
+          [
+            0.879,
+            0.855
+          ],
+          [
+            1,
+            0.89
+          ],
+          [
+            1,
+            1
+          ],
+          [
+            0.789,
+            1
+          ]
+        ]
+      },
+      "borderingWallIndices": [
+        0,
+        1
+      ],
+      "reasoning": "The zone is defined by a clear change in flooring material, from a hard surface in this area to carpet in the adjacent area. This hard surface flooring is practical and typical for a dining zone.",
+      "flooringDescription": "dark gray hard-surface flooring"
+    }
+  ],
+  "kitchenSignal": {
+    "present": false,
+    "openingId": null,
+    "confidence": 0.95,
+    "evidence": "No kitchen-related features such as cabinetry, appliances, countertops, or specific lighting are visible through any of the openings in the photograph."
+  }
+}

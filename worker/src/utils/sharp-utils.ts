@@ -37,7 +37,8 @@ export function cleanupTempFiles(jobId: string): void {
           skippedRecent++;
           continue; // Skip recently modified files to avoid race with concurrent jobs
         }
-        fs.unlinkSync(filePath);
+        if (stat.isDirectory()) fs.rmSync(filePath, { recursive: true, force: true });
+        else fs.unlinkSync(filePath);
         cleaned++;
       } catch (err) {
         console.warn(`[Cleanup] Failed to delete ${file}:`, err);

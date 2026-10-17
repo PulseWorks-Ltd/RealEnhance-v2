@@ -1,0 +1,241 @@
+{
+  "run1": {
+    "room_type": "bedroom",
+    "layout": [
+      {
+        "item": "Bed (Queen)",
+        "placement": "Against Far right wall (wall_1), within the clear segment described as \"Clear wall space\". Orient the bed so its foot end points toward D1 (the door on wall_3) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on. wall_1 is only partially visible in the frame (truncated at the right edge). Position the bed close to that edge — it is acceptable, even preferred, for part of the bed and wall to extend past the right edge of the photo, rather than centering the bed within only the visible portion of the wall."
+      },
+      {
+        "item": "Nightstand (x2)",
+        "placement": "Flanking the bed within the same segment on wall_1."
+      },
+      {
+        "item": "Accent item (e.g. small chair or plant)",
+        "placement": "On Wall with walkthrough opening (wall_0), within the segment described as \"Usable wall space to the right of the opening\" (width 0.664)."
+      },
+      {
+        "item": "Accent item (e.g. small chair or plant)",
+        "placement": "On Wall with glass door and AC unit (wall_3), within the segment described as \"Space to the left of the glass door\" (width 0.312)."
+      }
+    ],
+    "avoid_zones": [
+      "A1_(walkthrough)_zone",
+      "D1_(door)_zone",
+      "AC1_(ac_unit)_zone"
+    ],
+    "anchorItem": "bed",
+    "anchorWall": "Far right wall",
+    "anchorOrientation": "foot_toward_focal_feature",
+    "anchorOrientationInstruction": "Orient the bed so its foot end points toward D1 (the door on wall_3) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on.",
+    "anchorFramingInstruction": "wall_1 is only partially visible in the frame (truncated at the right edge). Position the bed close to that edge — it is acceptable, even preferred, for part of the bed and wall to extend past the right edge of the photo, rather than centering the bed within only the visible portion of the wall.",
+    "anchorConstraints": {
+      "allowWallMount": false,
+      "avoidAboveWindow": true,
+      "avoidCoveringWindows": true,
+      "mountMode": "freestanding",
+      "rules": [
+        "centered_or_edge_cropped_within_wall_1_clear_segment"
+      ]
+    },
+    "anchorRegion": {
+      "x": 0.998,
+      "y": 0.35,
+      "width": 0.002,
+      "height": 0.5
+    },
+    "anchorConfidence": 0.9,
+    "decorRestrictions": [
+      {
+        "target": "door_zone",
+        "rule": "Do not place furniture over D1."
+      },
+      {
+        "target": "anchor_wall",
+        "rule": "Do not place furniture over any opening/fixture zone on wall_1."
+      }
+    ],
+    "furnitureVisibilityRules": {
+      "allow_crop": true,
+      "assume_wall_continuation": true,
+      "rules": []
+    },
+    "reasoning": {
+      "wallCandidates": [
+        {
+          "wallId": "wall_0",
+          "wallLabel": "Wall with walkthrough opening",
+          "usableWidthFraction": 0.71,
+          "largestContiguousSegmentFraction": 0.664,
+          "openingIds": [
+            "A1"
+          ],
+          "meetsMinBedThreshold": true
+        },
+        {
+          "wallId": "wall_1",
+          "wallLabel": "Far right wall",
+          "usableWidthFraction": 1,
+          "largestContiguousSegmentFraction": 1,
+          "openingIds": [],
+          "meetsMinBedThreshold": true
+        },
+        {
+          "wallId": "wall_3",
+          "wallLabel": "Wall with glass door and AC unit",
+          "usableWidthFraction": 0.34,
+          "largestContiguousSegmentFraction": 0.312,
+          "openingIds": [
+            "D1",
+            "AC1"
+          ],
+          "meetsMinBedThreshold": false
+        }
+      ],
+      "selectedWallId": "wall_1",
+      "selectionReason": "wall_1 (Far right wall) selected: largest contiguous usable segment is 1.000 (\"Clear wall space\"), which meets the 0.35 minimum-width assumption for a bed and exceeds every other candidate wall's largest segment (wall_0=0.664, wall_3=0.312).",
+      "secondaryPlacementNotes": [
+        "Nightstands placed in-segment: bed segment width 1.000 exceeds bed+2*nightstand minimum (0.510).",
+        "wall_0: largest segment (0.664) clears the small-item threshold — assigned a small accent item only.",
+        "wall_3: largest segment (0.312) clears the small-item threshold — assigned a small accent item only."
+      ],
+      "orientation": {
+        "focalFeatureId": "D1",
+        "focalFeatureType": "door",
+        "focalFeatureWallIndex": 3,
+        "rule": "Selected D1 (type=\"door\") as the orientation focal feature: it is the highest-priority focal opening type (window > door, ranked above passage-only types walkthrough/closet_door) that is NOT on the anchor item's own wall."
+      },
+      "framing": {
+        "wallTouchesFrameEdge": true,
+        "edgeSide": "right",
+        "rule": "wall_1's extracted polygon touches the right image boundary (x=1.000, within 0.03 of frame edge) — treated as evidence the wall continues past the frame. Edge-cropped placement is explicitly permitted instead of forcing the item to center within only the visible portion."
+      }
+    }
+  },
+  "run2": {
+    "room_type": "bedroom",
+    "layout": [
+      {
+        "item": "Bed (Queen)",
+        "placement": "Against Blank wall (wall_1), within the clear segment described as \"Empty wall\". Orient the bed so its foot end points toward D1 (the door on wall_3) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on. wall_1 is only partially visible in the frame (truncated at the right edge). Position the bed close to that edge — it is acceptable, even preferred, for part of the bed and wall to extend past the right edge of the photo, rather than centering the bed within only the visible portion of the wall."
+      },
+      {
+        "item": "Nightstand (x2)",
+        "placement": "Flanking the bed within the same segment on wall_1."
+      },
+      {
+        "item": "Accent item (e.g. small chair or plant)",
+        "placement": "On Wall with walkthrough (wall_0), within the segment described as \"Space between left corner and walkthrough\" (width 0.304)."
+      },
+      {
+        "item": "Accent item (e.g. small chair or plant)",
+        "placement": "On Wall segment by right edge (wall_2), within the segment described as \"Empty wall segment\" (width 1.000)."
+      },
+      {
+        "item": "Accent item (e.g. small chair or plant)",
+        "placement": "On Wall with sliding door and AC unit (wall_3), within the segment described as \"Space to the left of the sliding door\" (width 0.323)."
+      }
+    ],
+    "avoid_zones": [
+      "A1_(walkthrough)_zone",
+      "D1_(door)_zone",
+      "AC1_(ac_unit)_zone"
+    ],
+    "anchorItem": "bed",
+    "anchorWall": "Blank wall",
+    "anchorOrientation": "foot_toward_focal_feature",
+    "anchorOrientationInstruction": "Orient the bed so its foot end points toward D1 (the door on wall_3) — NOT toward the camera. The camera should see the long side profile of the bed, not the headboard/footboard face-on.",
+    "anchorFramingInstruction": "wall_1 is only partially visible in the frame (truncated at the right edge). Position the bed close to that edge — it is acceptable, even preferred, for part of the bed and wall to extend past the right edge of the photo, rather than centering the bed within only the visible portion of the wall.",
+    "anchorConstraints": {
+      "allowWallMount": false,
+      "avoidAboveWindow": true,
+      "avoidCoveringWindows": true,
+      "mountMode": "freestanding",
+      "rules": [
+        "centered_or_edge_cropped_within_wall_1_clear_segment"
+      ]
+    },
+    "anchorRegion": {
+      "x": 0.725,
+      "y": 0.35,
+      "width": 0.255,
+      "height": 0.5
+    },
+    "anchorConfidence": 0.9,
+    "decorRestrictions": [
+      {
+        "target": "door_zone",
+        "rule": "Do not place furniture over D1."
+      },
+      {
+        "target": "anchor_wall",
+        "rule": "Do not place furniture over any opening/fixture zone on wall_1."
+      }
+    ],
+    "furnitureVisibilityRules": {
+      "allow_crop": true,
+      "assume_wall_continuation": true,
+      "rules": []
+    },
+    "reasoning": {
+      "wallCandidates": [
+        {
+          "wallId": "wall_0",
+          "wallLabel": "Wall with walkthrough",
+          "usableWidthFraction": 0.304,
+          "largestContiguousSegmentFraction": 0.304,
+          "openingIds": [
+            "A1"
+          ],
+          "meetsMinBedThreshold": false
+        },
+        {
+          "wallId": "wall_1",
+          "wallLabel": "Blank wall",
+          "usableWidthFraction": 1,
+          "largestContiguousSegmentFraction": 1,
+          "openingIds": [],
+          "meetsMinBedThreshold": true
+        },
+        {
+          "wallId": "wall_2",
+          "wallLabel": "Wall segment by right edge",
+          "usableWidthFraction": 1,
+          "largestContiguousSegmentFraction": 1,
+          "openingIds": [],
+          "meetsMinBedThreshold": true
+        },
+        {
+          "wallId": "wall_3",
+          "wallLabel": "Wall with sliding door and AC unit",
+          "usableWidthFraction": 0.323,
+          "largestContiguousSegmentFraction": 0.323,
+          "openingIds": [
+            "D1",
+            "AC1"
+          ],
+          "meetsMinBedThreshold": false
+        }
+      ],
+      "selectedWallId": "wall_1",
+      "selectionReason": "wall_1 (Blank wall) selected: largest contiguous usable segment is 1.000 (\"Empty wall\"), which meets the 0.35 minimum-width assumption for a bed and exceeds every other candidate wall's largest segment (wall_2=1.000, wall_3=0.323, wall_0=0.304).",
+      "secondaryPlacementNotes": [
+        "Nightstands placed in-segment: bed segment width 1.000 exceeds bed+2*nightstand minimum (0.510).",
+        "wall_0: largest segment (0.304) clears the small-item threshold — assigned a small accent item only.",
+        "wall_2: largest segment (1.000) clears the small-item threshold — assigned a small accent item only.",
+        "wall_3: largest segment (0.323) clears the small-item threshold — assigned a small accent item only."
+      ],
+      "orientation": {
+        "focalFeatureId": "D1",
+        "focalFeatureType": "door",
+        "focalFeatureWallIndex": 3,
+        "rule": "Selected D1 (type=\"door\") as the orientation focal feature: it is the highest-priority focal opening type (window > door, ranked above passage-only types walkthrough/closet_door) that is NOT on the anchor item's own wall."
+      },
+      "framing": {
+        "wallTouchesFrameEdge": true,
+        "edgeSide": "right",
+        "rule": "wall_1's extracted polygon touches the right image boundary (x=0.980, within 0.03 of frame edge) — treated as evidence the wall continues past the frame. Edge-cropped placement is explicitly permitted instead of forcing the item to center within only the visible portion."
+      }
+    }
+  }
+}

@@ -1,0 +1,420 @@
+{
+  "baseline": {
+    "openings": [
+      {
+        "id": "W1",
+        "type": "window",
+        "bbox": [
+          0.553,
+          0.329,
+          0.805,
+          0.639
+        ],
+        "area_pct": 7.82,
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "verticalBand": "mid_zone",
+        "wallCoverageBand": "20-40",
+        "orientation": "landscape",
+        "paneStructure": "sliding_panel",
+        "doorLeafState": "unknown",
+        "confidence": 1,
+        "wallPosition": "near_wall",
+        "relativeHorizontalPosition": "center",
+        "shape": "window",
+        "touchesFloor": false,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "D1",
+        "type": "door",
+        "bbox": [
+          0,
+          0.245,
+          0.462,
+          0.9
+        ],
+        "area_pct": 30.26,
+        "wallIndex": 0,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "40-60",
+        "orientation": "portrait",
+        "paneStructure": "sliding_panel",
+        "doorLeafState": "open",
+        "confidence": 1,
+        "wallPosition": "near_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      },
+      {
+        "id": "C1",
+        "type": "closet_door",
+        "bbox": [
+          0.879,
+          0.26,
+          1,
+          0.903
+        ],
+        "area_pct": 7.78,
+        "wallIndex": 1,
+        "horizontalBand": "left_third",
+        "verticalBand": "full_height",
+        "wallCoverageBand": "20-40",
+        "orientation": "portrait",
+        "paneStructure": "unknown",
+        "doorLeafState": "closed",
+        "confidence": 0.9,
+        "wallPosition": "right_wall",
+        "relativeHorizontalPosition": "left_third",
+        "shape": "closet_door",
+        "touchesFloor": true,
+        "touchesCeiling": false,
+        "approxCount": 1
+      }
+    ],
+    "anchorFixtures": [
+      {
+        "id": "L1",
+        "type": "light_fixture",
+        "wallIndex": 0,
+        "horizontalBand": "center_third",
+        "bbox": [
+          0.334,
+          0.188,
+          0.668,
+          0.399
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "F1",
+        "type": "fireplace",
+        "wallIndex": 3,
+        "horizontalBand": "left_third",
+        "bbox": [
+          0,
+          0.768,
+          0.196,
+          1
+        ],
+        "confidence": 0.9
+      }
+    ],
+    "graphMeta": {
+      "graphStable": false,
+      "graphConfidence": 0.5,
+      "extractionAgreement": 0.5,
+      "passCount": 1,
+      "openingCountVariance": 0,
+      "imageHash": "fadf93f175493c05102911077857d4babf62bfd42416255f0dc9a2767c40b191",
+      "graphHash": "6d8a85706b177196a271c8454d0dec7d0299b011447f20b2c7d668baac627811",
+      "cacheStatus": "unstable",
+      "candidateGraphHashes": [
+        "6d8a85706b177196a271c8454d0dec7d0299b011447f20b2c7d668baac627811"
+      ],
+      "openingCountRange": {
+        "min": 3,
+        "max": 3
+      },
+      "confirmedAt": "2026-08-13T11:32:41.990Z",
+      "baselineMethod": "graph_consensus",
+      "geminiCalls": 1,
+      "verification": {
+        "attempted": false,
+        "accepted": true,
+        "modelAccepted": true,
+        "additionalOpeningCount": 0,
+        "missingOpeningCount": 0,
+        "materiallyDifferentCount": 0,
+        "notPresentCount": 0,
+        "minorDifferenceCount": 0,
+        "rejectedReasonCodes": [],
+        "openingStatuses": [],
+        "additionalOpenings": [],
+        "missingOpenings": []
+      }
+    }
+  },
+  "wallVis": {
+    "wallCount": 3,
+    "wallCountReasoning": "A prominent back wall (wall_0) meets a right-side wall (wall_1) at a distinct interior corner. A second interior corner is visible on the far left, defining a left-side wall (wall_3) that contains a fireplace.",
+    "walls": [
+      {
+        "id": "wall_0",
+        "wallLabel": "Back Wall",
+        "extent": {
+          "polygon": [
+            [
+              0.197,
+              0.251
+            ],
+            [
+              0.861,
+              0.252
+            ],
+            [
+              0.852,
+              0.879
+            ],
+            [
+              0.208,
+              0.893
+            ]
+          ]
+        },
+        "openingIds": [
+          "D1",
+          "W1"
+        ],
+        "usableWidthFraction": 0.23,
+        "usableSegments": [
+          {
+            "range": [
+              0.402,
+              0.539
+            ],
+            "widthFraction": 0.137,
+            "description": "narrow vertical space between door and window"
+          },
+          {
+            "range": [
+              0.917,
+              1
+            ],
+            "widthFraction": 0.083,
+            "description": "very narrow vertical space between window and corner"
+          }
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "wall_1",
+        "wallLabel": "Right Wall",
+        "extent": {
+          "polygon": [
+            [
+              0.861,
+              0.252
+            ],
+            [
+              1,
+              0.211
+            ],
+            [
+              1,
+              0.923
+            ],
+            [
+              0.852,
+              0.879
+            ]
+          ]
+        },
+        "openingIds": [
+          "C1"
+        ],
+        "usableWidthFraction": 0.13,
+        "usableSegments": [
+          {
+            "range": [
+              0,
+              0.135
+            ],
+            "widthFraction": 0.135,
+            "description": "very narrow vertical space between corner and closet door"
+          }
+        ],
+        "confidence": 1
+      },
+      {
+        "id": "wall_3",
+        "wallLabel": "Left Wall",
+        "extent": {
+          "polygon": [
+            [
+              0,
+              0.244
+            ],
+            [
+              0.197,
+              0.251
+            ],
+            [
+              0.208,
+              0.893
+            ],
+            [
+              0,
+              0.9
+            ]
+          ]
+        },
+        "openingIds": [
+          "F1"
+        ],
+        "usableWidthFraction": 0,
+        "usableSegments": [],
+        "confidence": 0.95
+      }
+    ]
+  },
+  "zoning": {
+    "zones": [
+      {
+        "id": "zone_living",
+        "purpose": "living",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.47,
+              1
+            ],
+            [
+              0,
+              1
+            ],
+            [
+              0,
+              0.77
+            ],
+            [
+              0.82,
+              0.64
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          0,
+          3
+        ],
+        "reasoning": "Zone defined by the carpeted floor area. The presence of a fireplace (F1) and a large sliding door to a deck (D1) strongly indicate this is the primary living space. The boundary is formed by a clear change in flooring material."
+      },
+      {
+        "id": "zone_dining",
+        "purpose": "dining",
+        "floorRegion": {
+          "polygon": [
+            [
+              0.47,
+              1
+            ],
+            [
+              0.82,
+              0.64
+            ],
+            [
+              1,
+              0.64
+            ],
+            [
+              1,
+              1
+            ]
+          ]
+        },
+        "borderingWallIndices": [
+          0,
+          1
+        ],
+        "reasoning": "Zone defined by the hard flooring area, distinct from the carpeted living zone. This clear change in flooring material creates a natural division for a secondary function like dining or major circulation."
+      }
+    ],
+    "kitchenSignal": {
+      "present": false,
+      "openingId": null,
+      "confidence": 0.95,
+      "evidence": "No visual cues of a kitchen (e.g., appliances, countertops, cabinetry, kitchen-specific lighting) are visible through any of the openings or in any adjacent visible space."
+    }
+  },
+  "plan": {
+    "diningPlan": {
+      "center": [
+        0.8225,
+        0.8200000000000001
+      ],
+      "footprint": {
+        "halfWidth": 0.12,
+        "halfHeight": 0.08
+      },
+      "reasoning": "Table centered within zone_dining's floor region (centroid [0.823, 0.820]), inset from bordering walls for chair clearance."
+    },
+    "tvPlan": null,
+    "noTvReason": "no TV placed — no zone-exclusive wall clears the minimum usable-width threshold for a TV",
+    "sofaPlan": {
+      "wallId": null,
+      "floorCentered": true,
+      "facingWallId": null,
+      "orientationInstruction": "Orient the sofa to face toward W1 (the window on wall_0).",
+      "reasoning": "No living-zone wall cleared the sofa threshold; floor-centered. Orient the sofa to face toward W1 (the window on wall_0)."
+    },
+    "reasoning": [
+      "Living zone borders wall indices [0, 3]. Zone-exclusive: [3]. Shared (excluded from TV candidacy): [0].",
+      "Living zone floor-region depth proxy: 0.360 (threshold 0.25) — sufficient.",
+      "no TV placed — no zone-exclusive wall clears the minimum usable-width threshold for a TV",
+      "No living-zone wall cleared the sofa threshold; floor-centered. Orient the sofa to face toward W1 (the window on wall_0)."
+    ],
+    "livingZone": {
+      "id": "zone_living",
+      "purpose": "living",
+      "floorRegion": {
+        "polygon": [
+          [
+            0.47,
+            1
+          ],
+          [
+            0,
+            1
+          ],
+          [
+            0,
+            0.77
+          ],
+          [
+            0.82,
+            0.64
+          ]
+        ]
+      },
+      "borderingWallIndices": [
+        0,
+        3
+      ],
+      "reasoning": "Zone defined by the carpeted floor area. The presence of a fireplace (F1) and a large sliding door to a deck (D1) strongly indicate this is the primary living space. The boundary is formed by a clear change in flooring material."
+    },
+    "diningZone": {
+      "id": "zone_dining",
+      "purpose": "dining",
+      "floorRegion": {
+        "polygon": [
+          [
+            0.47,
+            1
+          ],
+          [
+            0.82,
+            0.64
+          ],
+          [
+            1,
+            0.64
+          ],
+          [
+            1,
+            1
+          ]
+        ]
+      },
+      "borderingWallIndices": [
+        0,
+        1
+      ],
+      "reasoning": "Zone defined by the hard flooring area, distinct from the carpeted living zone. This clear change in flooring material creates a natural division for a secondary function like dining or major circulation."
+    }
+  }
+}

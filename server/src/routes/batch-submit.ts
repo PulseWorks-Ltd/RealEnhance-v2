@@ -8,6 +8,7 @@ import { Queue } from 'bullmq';
 import crypto from 'crypto';
 import { JOB_QUEUE_NAME } from '@realenhance/shared/constants';
 import { enqueueEnhanceJob } from '../services/jobs.js';
+import { toPublicMessage } from "../utils/publicError.js";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || 'redis://localhost:6379';
 const enhanceQueue = new Queue(JOB_QUEUE_NAME, {
@@ -32,6 +33,7 @@ interface BatchUploadRequest {
       virtualStage?: boolean;
       stagingStyle?: string;
       replaceSky?: boolean;
+      enhanceExteriorSky?: boolean;
     };
   }>;
 }
@@ -120,7 +122,8 @@ router.post('/submit-disabled-ref', async (req, res) => {
           declutterMode,
           virtualStage,
           stagingStyle: image.options.stagingStyle,
-          replaceSky: image.options.replaceSky
+          replaceSky: image.options.replaceSky,
+          enhanceExteriorSky: !!image.options.enhanceExteriorSky
         }
       }, jobId);
 
@@ -189,7 +192,7 @@ router.get('/status/:batchId', async (req, res) => {
           state,
           progress,
           returnvalue: job.returnvalue,
-          failedReason: job.failedReason
+          failedReason: toPublicMessage(job.failedReason)
         };
       })
     );

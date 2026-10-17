@@ -24,6 +24,8 @@
     "@radix-ui/react-toast": "^1.2.15",
     "@stripe/stripe-js": "^8.1.0",
     "@tanstack/react-query": "^5.56.0",
+    "@vitejs/plugin-react-swc": "^4.2.0",
+    "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "express": "^4.21.2",
@@ -31,21 +33,19 @@
     "lucide-react": "^0.548.0",
     "p-limit": "^7.3.0",
     "pica": "^9.0.1",
+    "postcss": "^8.4.47",
     "react": "^18.2.0",
     "react-compare-slider": "^3.1.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.28.0",
     "tailwind-merge": "^3.3.1",
+    "tailwindcss": "^3.4.14",
+    "vite": "^5.4.21",
     "wouter": "^3.7.1"
   },
   "devDependencies": {
     "@types/react": "^18.3.26",
     "@types/react-dom": "^18.3.7",
-    "@vitejs/plugin-react-swc": "^4.2.0",
-    "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.14",
-    "typescript": "^5.9.3",
-    "vite": "^5.4.21"
+    "typescript": "^5.9.3"
   }
 }

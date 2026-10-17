@@ -1,0 +1,98 @@
+[
+  {
+    "photo": "Kitchen 01",
+    "roomType": "kitchen_living_dining",
+    "old": {
+      "ok": false,
+      "fallbackReason": "baseline_extraction_failed:ServerError: got status: 502 Bad Gateway. {\"error\":{\"message\":\"exception parsing response\",\"code\":502,\"status\":\"Bad Gateway\"}}",
+      "seconds": 61,
+      "calls": 2,
+      "byModel": {
+        "gemini-2.5-pro": 2
+      },
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "thinkingTokens": 0,
+      "diagnostics": {
+        "roomType": "kitchen_living_dining",
+        "baselineExtracted": false,
+        "wallVisibilityExtracted": false,
+        "anchorWallId": null,
+        "anchorConfidence": null,
+        "protectedFeatureCount": 0,
+        "protectedFeatureSentences": [],
+        "wallPartiallyVisible": false
+      }
+    },
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 19.8,
+      "calls": 1,
+      "byModel": {
+        "gemini-3.8-flash": 1
+      },
+      "inputTokens": 2236,
+      "outputTokens": 1228,
+      "thinkingTokens": 610,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2236,
+          "outputTokens": 1228,
+          "thinkingTokens": 610,
+          "latencyMs": 19731
+        }
+      ]
+    }
+  },
+  {
+    "photo": "Kitchen 12",
+    "roomType": "living_dining",
+    "old": {
+      "ok": false,
+      "fallbackReason": "baseline_extraction_failed:ServerError: got status: 502 Bad Gateway. {\"error\":{\"message\":\"exception parsing response\",\"code\":502,\"status\":\"Bad Gateway\"}}",
+      "seconds": 60.6,
+      "calls": 2,
+      "byModel": {
+        "gemini-2.5-pro": 2
+      },
+      "inputTokens": 0,
+      "outputTokens": 0,
+      "thinkingTokens": 0,
+      "diagnostics": {
+        "roomType": "living_dining",
+        "baselineExtracted": false,
+        "wallVisibilityExtracted": false,
+        "anchorWallId": null,
+        "anchorConfidence": null,
+        "protectedFeatureCount": 0,
+        "protectedFeatureSentences": [],
+        "wallPartiallyVisible": false
+      }
+    },
+    "new": {
+      "ok": true,
+      "model": "gemini-3.8-flash",
+      "issues": [],
+      "seconds": 50.6,
+      "calls": 2,
+      "byModel": {
+        "gemini-3.8-flash": 2
+      },
+      "inputTokens": 2238,
+      "outputTokens": 1529,
+      "thinkingTokens": 991,
+      "usageFromSdk": [
+        {
+          "model": "gemini-3.8-flash",
+          "inputTokens": 2238,
+          "outputTokens": 1529,
+          "thinkingTokens": 991,
+          "latencyMs": 20096
+        }
+      ]
+    }
+  }
+]

@@ -4,6 +4,7 @@ import type { ValidationEvidence, RiskLevel } from "./validationEvidence";
 import { createEmptyEvidence, shouldInjectEvidence } from "./validationEvidence";
 import { getEvidenceGatingVariant, isEvidenceGatingEnabledForJob } from "./evidenceGating";
 import { VALIDATION_FOCUS_MODE } from "../utils/logFocus";
+import { vDetailLog } from "../logger";
 import type { Stage2ValidationMode } from "./stage2ValidationMode";
 import { validateStage2Refresh } from "./stage2/refresh.validator";
 import { validateStage2Full } from "./stage2/full.validator";
@@ -18,20 +19,19 @@ import { STRUCTURAL_SIGNALS_ACTIVE, STRUCTURAL_SIGNALS_MODE } from "../config";
 import { buildStructuralClaimBlock, parseStructuralClaims } from "./structuralSignal";
 import type { StructuralSignal } from "./structuralSignal";
 
-const logger = console;
-const VALIDATOR_LOGS_FOCUS = process.env.VALIDATOR_LOGS_FOCUS === "1";
 const VALIDATOR_AUDIT_ENABLED = process.env.VALIDATOR_AUDIT === "1";
 
+// Delegates to the shared vDetailLog (worker/src/logger.ts) so this
+// validator's per-item debug output respects the same PRODUCTION_LOG_MODE /
+// VALIDATOR_LOGS_FOCUS tiering as the active split-validator path, should
+// this (currently dormant when STAGE2_SPECIALIST_VALIDATORS=off) validator
+// ever be re-enabled.
 function debugInfo(...args: any[]) {
-  if (!VALIDATOR_LOGS_FOCUS) {
-    logger.info(...args);
-  }
+  vDetailLog(...args);
 }
 
 function debugLog(...args: any[]) {
-  if (!VALIDATOR_LOGS_FOCUS) {
-    console.log(...args);
-  }
+  vDetailLog(...args);
 }
 
 function isKitchenContext(roomType?: string): boolean {

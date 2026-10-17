@@ -3,7 +3,18 @@ import { toBase64 } from "../utils/images";
 import { focusLog } from "../utils/logFocus";
 import type { StructuralBaseline, WallIndex } from "../validators/openingPreservationValidator";
 
-export type AnchorOrientation = "facing_camera" | "facing_anchor_wall";
+// "floating_center" — for anchor items that are genuinely free-standing in
+// real-world use (currently: dining_table) and must never be pushed flush
+// against a wall the way a bed/sofa/TV legitimately is. Real production
+// incident: Kitchen 06 (a kitchen_dining room with an island) had its
+// dining table anchored to "right_wall" with orientation
+// "facing_anchor_wall" — wall-hugging placement logic that's correct for
+// bed/tv_unit/sofa_group was being applied uniformly to dining_table too,
+// even though this planner's OWN layout text already correctly said
+// "Center dining table in usable floor area" — the two were contradicting
+// each other, and the wall-anchor directive is marked MANDATORY in the
+// formatted prompt, so it won.
+export type AnchorOrientation = "facing_camera" | "facing_anchor_wall" | "floating_center";
 export type AnchorItem = "bed" | "tv_unit" | "dining_table" | "sofa_group";
 
 export type AnchorRegion = {
@@ -121,6 +132,7 @@ function normalizeAnchorOrientation(value: unknown): AnchorOrientation | undefin
   const normalized = normalizeText(value).toLowerCase();
   if (normalized === "facing_camera") return "facing_camera";
   if (normalized === "facing_anchor_wall") return "facing_anchor_wall";
+  if (normalized === "floating_center") return "floating_center";
   return undefined;
 }
 
@@ -314,6 +326,19 @@ function buildAnchorRegionForWall(anchorWall: WallIndex, opts?: { preferLowerHal
   };
 }
 
+// For free-standing anchor items (currently: dining_table) — a generous,
+// wall-agnostic region roughly centered in the frame's open floor area,
+// rather than offset toward any particular wall edge the way
+// buildAnchorRegionForWall's wall-hugging regions are.
+function buildCenterFloorRegion(): AnchorRegion {
+  return {
+    x: 0.28,
+    y: 0.48,
+    width: 0.44,
+    height: 0.4,
+  };
+}
+
 function openingToAvoidZone(opening: StructuralBaseline["openings"][number]): string {
   const [x1, y1, x2, y2] = opening.bbox || [0, 0, 0, 0];
   const kind = opening.type === "closet_door" ? "closet" : opening.type;
@@ -362,6 +387,13 @@ function buildDeterministicLayoutPlan(opts: {
 }): Stage2LayoutPlan {
   const roomType = normalizeText(opts.roomType || "unknown") || "unknown";
   const anchorItem = resolveAnchorItemForRoom(roomType);
+  // Dining tables are free-standing in real-world use — they belong in the
+  // open floor area (often facing/near a kitchen island), never pushed
+  // flush against a wall the way a bed/sofa/TV legitimately is. Every
+  // wall-anchoring computation below is skipped for this item type; see
+  // the AnchorOrientation "floating_center" doc comment above for the
+  // production incident this fixes.
+  const isFloatingAnchor = anchorItem === "dining_table";
   const suitability = buildWallSuitability(opts.structuralBaseline);
 
   const idealWalls = suitability.filter((wall) => wall.classification === "ideal").sort((a, b) => b.score - a.score);
@@ -415,22 +447,26 @@ function buildDeterministicLayoutPlan(opts: {
     }
   }
 
-  if (usingFallback) {
+  if (isFloatingAnchor) {
+    anchorConstraints.rules?.push("Position freely in the open floor area — do not push against, align to, or face any specific wall.");
+  } else if (usingFallback) {
     anchorConstraints.rules?.push("Fallback wall mode: assume wall continuation beyond frame edges when needed.");
   }
 
   const furnitureVisibilityRules: FurnitureVisibilityRules = {
     allow_crop: true,
-    assume_wall_continuation: usingFallback || selectedWallIndex === 1 || selectedWallIndex === 3,
+    assume_wall_continuation: !isFloatingAnchor && (usingFallback || selectedWallIndex === 1 || selectedWallIndex === 3),
     rules: [
       "Furniture may extend beyond frame boundaries when composition is natural.",
       "Do not force the full anchor furniture item to be visible.",
     ],
   };
 
-  const anchorRegion = buildAnchorRegionForWall(selectedWallIndex, {
-    preferLowerHalf: anchorItem === "bed" && usingWindowWall,
-  });
+  const anchorRegion = isFloatingAnchor
+    ? buildCenterFloorRegion()
+    : buildAnchorRegionForWall(selectedWallIndex, {
+      preferLowerHalf: anchorItem === "bed" && usingWindowWall,
+    });
 
   const avoidZones = (opts.structuralBaseline.openings || []).map(openingToAvoidZone);
 
@@ -439,8 +475,8 @@ function buildDeterministicLayoutPlan(opts: {
     layout: buildBaseLayoutItems(anchorItem, roomType),
     avoid_zones: avoidZones,
     anchorItem,
-    anchorWall,
-    anchorOrientation: "facing_anchor_wall",
+    anchorWall: isFloatingAnchor ? undefined : anchorWall,
+    anchorOrientation: isFloatingAnchor ? "floating_center" : "facing_anchor_wall",
     anchorConstraints,
     anchorRegion,
     anchorConfidence: 0.98,
@@ -739,7 +775,11 @@ export function formatStage2LayoutPlanForPrompt(plan: Stage2LayoutPlan): string 
         "ANCHOR DIRECTIVE (MANDATORY):",
         `- Primary focal element: ${plan.anchorItem}`,
         plan.anchorWall ? `- Anchor wall: ${plan.anchorWall}` : null,
-        plan.anchorOrientation ? `- Anchor orientation: ${plan.anchorOrientation}` : null,
+        plan.anchorOrientation === "floating_center"
+          ? "- Free-standing placement: position in the open floor area — do not push against, align to, or face any specific wall."
+          : plan.anchorOrientation
+            ? `- Anchor orientation: ${plan.anchorOrientation}`
+            : null,
         plan.anchorConstraints?.mountMode ? `- Placement mode: ${plan.anchorConstraints.mountMode}` : null,
         plan.anchorConstraints?.avoidCoveringWindows === true ? "- Do not cover windows on or near anchor wall." : null,
         plan.anchorConstraints?.avoidAboveWindow === true ? "- Do not place this anchor over any window." : null,

@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import fs from "fs";
 import { enhanceWithStabilityConservativeStage1A } from "../ai/stabilityConservativeUpscaleStage1A";
 import { enhanceWithGemini } from "../ai/gemini";
 import { runStage1AContentDiff } from "../validators/stage1AContentDiff";
@@ -6,7 +7,7 @@ import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { computeEdgeMapFromGray } from "../validators/edgeUtils";
 import { getAverageLuminance, selectStage1APrompt } from "../ai/prompts.stage1ARealEstate";
 import { NZ_REAL_ESTATE_PRESETS, isNZStyleEnabled } from "../config/geminiPresets";
-import { buildStage1APromptNZStyle } from "../ai/prompts.nzRealEstate";
+import { buildStage1APromptNZStyle, buildStage1ADuskExteriorPromptNZStyle } from "../ai/prompts.nzRealEstate";
 import { INTERIOR_PROFILE_FROM_ENV, INTERIOR_PROFILE_CONFIG } from "../config/enhancementProfiles";
 import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import type { EnhancementProfile } from "../config/enhancementProfiles";
@@ -79,6 +80,7 @@ interface TransformTraceEvent {
   gain?: number;
   offset?: number;
   gamma?: number;
+  gammaOut?: number;
   values?: { brightness?: number; saturation?: number; hue?: number; lightness?: number };
   meta: TransformDiagnosticMeta;
 }
@@ -334,13 +336,15 @@ function applyGuardedGamma(
   branch: string,
   gamma: number,
   reason: string,
-  context?: TransformTelemetryContext
+  context?: TransformTelemetryContext,
+  gammaOut?: number
 ): sharp.Sharp {
   if (!isToneTransformCompatible(meta)) {
     console.warn("[stage1A] Skipping unsupported gamma() transform", {
       reason,
       branch,
       gamma,
+      gammaOut,
       width: meta.width,
       height: meta.height,
       space: meta.space,
@@ -348,16 +352,24 @@ function applyGuardedGamma(
       depth: meta.depth,
       hasAlpha: meta.hasAlpha,
     });
-    logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma });
-    recordTrace(context, { operation: "gamma", phase: "skipped", reason, gamma, meta });
+    logTransformDiagnostic("gamma", "skipped", meta, branch, { reason, gamma, gammaOut });
+    recordTrace(context, { operation: "gamma", phase: "skipped", reason, gamma, gammaOut, meta });
     bumpSkipCounter("skippedGammaCount", context, "gamma", reason, meta);
     return image;
   }
-  logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma });
-  recordTrace(context, { operation: "gamma", phase: "before", reason, gamma, meta });
-  const next = image.gamma(gamma);
+  // sharp.gamma(decodeGamma, encodeGamma): decodes with decodeGamma then
+  // re-encodes with encodeGamma. Called with a single argument (decode ==
+  // encode), the two stages nearly cancel out — confirmed empirically, a
+  // flat pixel moves by ~1/255 regardless of the value passed, for any
+  // gamma between 1.0 and 3.0. To actually brighten, decode must stay at
+  // identity (1.0) and only the encode gamma (gammaOut) should be raised —
+  // that's the asymptotic power curve (fixed at 0 and 255, so it can never
+  // clip highlights) callers here intend when they pass a value > 1.
+  logTransformDiagnostic("gamma", "before", meta, branch, { reason, gamma, gammaOut });
+  recordTrace(context, { operation: "gamma", phase: "before", reason, gamma, gammaOut, meta });
+  const next = gammaOut !== undefined ? image.gamma(gamma, gammaOut) : image.gamma(gamma);
   logTransformDiagnostic("gamma", "after", meta, branch, { reason });
-  recordTrace(context, { operation: "gamma", phase: "after", reason, gamma, meta });
+  recordTrace(context, { operation: "gamma", phase: "after", reason, gamma, gammaOut, meta });
   return next;
 }
 
@@ -513,27 +525,93 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
 }
 
 /**
+ * "Enhance Exterior Outlook" checkbox (reintroduced 2026-08-30 — ported from
+ * opening-validator-and-stage-2-prompt-amendments, deliberately excluding
+ * that lineage's later, separate Grok-as-Stage1A-generator experiment,
+ * which is unrelated and was confirmed to overreach). Appended to whichever
+ * interior Stage 1A prompt was already selected, ONLY for interior scenes —
+ * see the sceneType gate at its call site below. Exterior-scene photos
+ * already get their own dedicated sky/lighting treatment via
+ * selectStage1APrompt's exterior prompt variants; this block exists
+ * specifically for the outlook seen THROUGH a window/door in an interior
+ * shot, per this feature's own UI copy ("Brighten exterior outlook visible
+ * from interior shots").
+ *
+ * Narrowed (Stage 1A Exterior Enhancement safety pass): vegetation was
+ * previously allowed a colour/vibrancy boost (greener, healthier, more
+ * lush) while locking its size/shape/position/species. That permission is
+ * now removed entirely — vegetation must be left exactly as it appears in
+ * the original photo. Scope is now strictly: sky/weather condition,
+ * ambient brightness/sunlight, and removal of temporary glass artifacts
+ * (raindrops, fog, condensation) — nothing else about the exterior view may
+ * change. The closing summary line was tightened to match (it previously
+ * said "colour... may be improved" as a blanket allowance, which would have
+ * contradicted this narrower scope).
+ */
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR OUTLOOK — make the view through existing windows and doors look sunny, without changing what is out there.
+
+THE ONE RULE THAT OVERRIDES EVERYTHING BELOW: everything visible through a window or door — fences, lattice, trellis, screens, walls, gates, hedges, trees, shrubs, gardens, neighbouring houses, roofs, sheds, poles and power lines — must stay exactly where it is, with exactly the same outline, size and coverage of the glass. Nothing may be removed, lowered, thinned out, made see-through or painted over to reveal more sky or a different view, and nothing new may be added.
+
+Sky — make the outlook look sunny:
+- Wherever sky shows through a window or door — whether it is cloudy, grey, overcast or pale — replace it with a clear blue sky (a few light white clouds are fine), as if the photo was taken on a bright sunny day. Only treat an area as sky when you can see what it sits above in the original: a roofline, treetops, a fence top, hills or similar.
+- Let the exterior look sunlit: natural warm daylight and soft shadows on the things that are already out there, without changing their colour or shape.
+- The new sky fills exactly the same area the old sky did — it stops at the same rooflines, treetops, fence tops and lattice edges, and shows through the same gaps.
+- If a window or door shows no sky at all — for example the glass is filled by a fence, wall, hedge, trees or a neighbouring house — leave that view exactly as it is. Never create sky where there was none, and never enlarge the area of sky.
+
+Blown-out windows (overexposed glass):
+- If the glass is so bright that the view is plain white, with no roofline, trees, fence or other outside detail visible, the camera did not record what is out there. Leave it bright and plain. Never paint a sky, fence, lattice, roof, trees, garden or any other scenery into it, and never guess what might be outside.
+- The same applies to glass seen between the slats of blinds or through sheer curtains: if it is plain white in the original, it stays plain white.
+
+Weather and glass:
+- Only where real fog or mist clearly reduces visibility, you may clear it so the existing view is easier to see — without inventing anything that is not genuinely present in the original.
+- Where they are clearly visible, you may gently remove raindrops, water streaks, condensation, smudges and similar temporary marks from the glass.
+
+Light and detail:
+- Apart from the sky and sunlight above, keep the exterior view's exposure close to the original. Never brighten, soften or blur it so much that its detail fades — fence boards, lattice and trellis patterns, leaves and branches must stay as crisp and visible as in the original.
+- The daylight coming into the room should look consistent with the view.
+
+Never:
+- Add, remove, move, resize or reshape any building, house, roof, fence, lattice, trellis, wall, gate, deck, path, driveway, road, power line, pole, tree, shrub, hedge, lawn or garden.
+- Change the colour, vibrancy or saturation of vegetation.
+- Add new scenery, distant houses, rooftops, hills, water or views that are not in the original photo.
+- Open, move, remove or change blinds, curtains, shutters, window coverings or doors, or reveal anything hidden behind them.
+
+Keep the result realistic and natural, like a professionally edited real estate photograph. If you are unsure whether part of the view is sky, leave that part exactly as it is.`;
+
+/**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
  */
 async function enhanceWithGeminiStage1A(
   sharpPath: string,
   sceneType: string | undefined,
   replaceSky: boolean,
+  enhanceExteriorSky: boolean,
   applyInteriorProfile: boolean,
   interiorProfileKey: EnhancementProfile,
   skyMode: "safe" | "strong" = "safe",
   jobId: string,
   imageId: string,
   roomType?: string,
-  jobSampling?: { temperature?: number; topP?: number; topK?: number }
+  jobSampling?: { temperature?: number; topP?: number; topK?: number },
+  duskMode: boolean = false
 ): Promise<string> {
   let enhancementPrompt: string | undefined = undefined;
   let nzTemp: number | undefined = undefined;
   let nzTopP: number | undefined = undefined;
   let nzTopK: number | undefined = undefined;
 
-  // Priority 1: NZ-style prompts if enabled (for NZ market)
-  if (isNZStyleEnabled()) {
+  // Dusk/twilight exterior transformation (Stage 1A Exterior Enhancement).
+  // Hoisted above the isNZStyleEnabled() check below: a user-ticked dusk
+  // checkbox must not be silently voided by an unrelated NZ-style flag
+  // being off, so this branch calls the dusk prompt builder directly
+  // rather than going through the isNZStyleEnabled()-gated dispatch.
+  if (duskMode === true && sceneType === "exterior") {
+    enhancementPrompt = buildStage1ADuskExteriorPromptNZStyle();
+    const duskPreset = NZ_REAL_ESTATE_PRESETS.stage1AExteriorDusk;
+    nzTemp = duskPreset.temperature;
+    nzTopP = duskPreset.topP;
+    nzTopK = duskPreset.topK;
+  } else if (isNZStyleEnabled()) {
     const preset = sceneType === "interior" ? NZ_REAL_ESTATE_PRESETS.stage1AInterior : NZ_REAL_ESTATE_PRESETS.stage1AExterior;
     const interiorCfg = INTERIOR_PROFILE_CONFIG[interiorProfileKey];
 
@@ -556,6 +634,39 @@ async function enhanceWithGeminiStage1A(
     nzTopP = 0.9;
     nzTopK = 40;
   }
+
+  // Gated to interior scenes only (see this block's own header comment) —
+  // exterior-scene photos already get their own dedicated sky/lighting
+  // prompt via selectStage1APrompt above; this is specifically about the
+  // outlook seen through a window/door in an interior shot.
+  const stage1ASunnyExteriorPromptInjected =
+    enhanceExteriorSky === true
+    && sceneType === "interior"
+    && typeof enhancementPrompt === "string"
+    && enhancementPrompt.trim().length > 0;
+
+  // Kept only for the hallucination-check reroute below (blocking mode) —
+  // the prompt this job would have used had the checkbox been off.
+  const stage1APromptBeforeSunnyExterior = enhancementPrompt;
+
+  if (stage1ASunnyExteriorPromptInjected) {
+    enhancementPrompt = `${enhancementPrompt}\n\n${STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK}`;
+  }
+
+  console.log("[STAGE1A_SUNNY_EXTERIOR_PROMPT]", {
+    jobId,
+    sceneType,
+    enabled: enhanceExteriorSky === true,
+    promptInjected: stage1ASunnyExteriorPromptInjected,
+  });
+
+  console.log("[STAGE1A_DUSK_PROMPT]", {
+    jobId,
+    sceneType,
+    requested: duskMode === true,
+    active: duskMode === true && sceneType === "exterior",
+    promptChars: typeof enhancementPrompt === "string" ? enhancementPrompt.length : 0,
+  });
 
   const geminiPath = await enhanceWithGemini(sharpPath, {
     replaceSky: replaceSky,
@@ -584,7 +695,139 @@ async function enhanceWithGeminiStage1A(
     localPath: geminiPath,
   });
 
-  return geminiPath;
+  let finalGeminiPath = geminiPath;
+
+  // Blown-out window guard (interior): where the glass was plain white in the
+  // image sent to Gemini, the camera recorded no view, so detailed scenery
+  // there is invented — put the original white back. Code-only, no AI call.
+  if (sceneType === "interior") {
+    try {
+      const { blownWindowGuardEnabled, repairInventedBlownWindows } = await import("../validators/stage1ABlownWindowGuard.js");
+      if (blownWindowGuardEnabled()) {
+        const guard = await repairInventedBlownWindows(await fs.promises.readFile(sharpPath), await fs.promises.readFile(geminiPath));
+        const invented = guard.regions.filter((r) => r.invented);
+        if (guard.image) {
+          const repairedPath = geminiPath.replace(/\.(jpg|jpeg|png|webp)$/i, "") + "-blown-window-guard.webp";
+          await sharp(guard.image).webp({ quality: 95 }).toFile(repairedPath);
+          finalGeminiPath = repairedPath;
+        }
+        console.log("[STAGE1A_BLOWN_WINDOW_GUARD]", JSON.stringify({ jobId, imageId, outlookPrompt: stage1ASunnyExteriorPromptInjected, regions: guard.regions.length, repaired: invented.length, invented }));
+      }
+    } catch (guardErr) {
+      // Fail-open: never cost a customer their enhancement.
+      logIfNotFocusMode("[stage1A] Blown-out window guard failed to run — continuing without it", guardErr);
+    }
+  }
+
+  // Invented-sky guard (interior): trees or hedges trimmed to open up sky the
+  // camera never saw. Puts the original plants back, colour-matched to the
+  // enhanced view. Code-only, no AI call.
+  if (sceneType === "interior") {
+    try {
+      const { inventedSkyGuardEnabled, repairInventedSky } = await import("../validators/stage1ABlownWindowGuard.js");
+      if (inventedSkyGuardEnabled()) {
+        const sky = await repairInventedSky(await fs.promises.readFile(sharpPath), await fs.promises.readFile(finalGeminiPath));
+        if (sky.image) {
+          const repairedPath = finalGeminiPath.replace(/\.(jpg|jpeg|png|webp)$/i, "") + "-invented-sky-guard.webp";
+          await sharp(sky.image).webp({ quality: 95 }).toFile(repairedPath);
+          finalGeminiPath = repairedPath;
+        }
+        console.log("[STAGE1A_INVENTED_SKY_GUARD]", JSON.stringify({ jobId, imageId, outlookPrompt: stage1ASunnyExteriorPromptInjected, newSkyPct: sky.totalPct, repaired: !!sky.image, regions: sky.regions, colourMatch: sky.gain, align: sky.align }));
+      }
+    } catch (skyErr) {
+      // Fail-open: never cost a customer their enhancement.
+      logIfNotFocusMode("[stage1A] Invented-sky guard failed to run — continuing without it", skyErr);
+    }
+  }
+
+  // "Enhance Exterior Outlook" hallucination check — only runs when the
+  // checkbox actually granted permission to touch exterior content for this
+  // job (see stage1AExteriorHallucinationCheck.ts's header comment for why
+  // this is the missing enforcement backstop for that feature).
+  //
+  // DISCONNECTED (2026-09-16, user request): stage1AExteriorHallucinationCheckEnabled()
+  // defaults false, so this whole block is currently a no-op — the user
+  // wants to test the now vegetation-untouched prompt on its own against a
+  // set of real images first, then decide whether to reconnect this. Flip
+  // STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED=true to reconnect it.
+  if (stage1ASunnyExteriorPromptInjected) {
+    try {
+      const {
+        runStage1AExteriorHallucinationCheck,
+        stage1AExteriorHallucinationCheckBlocking,
+        stage1AExteriorHallucinationCheckEnabled,
+      } = await import("../validators/stage1AExteriorHallucinationCheck.js");
+
+      if (!stage1AExteriorHallucinationCheckEnabled()) {
+        logIfNotFocusMode("[stage1A] Exterior hallucination check disconnected (STAGE1A_EXTERIOR_HALLUCINATION_CHECK_ENABLED is not true) — skipping");
+        return finalGeminiPath;
+      }
+
+      const verdict = await runStage1AExteriorHallucinationCheck({
+        beforePath: sharpPath,
+        afterPath: geminiPath,
+        jobId,
+        imageId,
+      });
+      const blocking = stage1AExteriorHallucinationCheckBlocking();
+      let action: "none" | "advisory_only" | "rerouted_without_exterior_prompt" | "reroute_failed_kept_original" = "none";
+
+      if (verdict.hallucinationDetected && blocking) {
+        try {
+          const retryOutputPath = sharpPath.replace(/\.(jpg|jpeg|png|webp)$/i, "-gemini-1A-exterior-retry.webp");
+          finalGeminiPath = await enhanceWithGemini(sharpPath, {
+            replaceSky: replaceSky,
+            declutter: false,
+            sceneType: sceneType,
+            stage: "1A",
+            jobId,
+            imageId,
+            roomType,
+            modelReason: sceneType ? `${sceneType} enhance (exterior hallucination retry)` : "enhance (exterior hallucination retry)",
+            promptOverride: stage1APromptBeforeSunnyExterior,
+            temperature: jobSampling?.temperature ?? nzTemp,
+            topP: jobSampling?.topP ?? nzTopP,
+            topK: jobSampling?.topK ?? nzTopK,
+            floorClean: false,
+            // This retry only ever runs inside the interior-only gate above.
+            hardscapeClean: false,
+            outputPath: retryOutputPath,
+          });
+          await logImageAttemptUrl({
+            ctx: { jobId, imageId, stage: "1A", attempt: 2 },
+            localPath: finalGeminiPath,
+          });
+          action = "rerouted_without_exterior_prompt";
+        } catch (retryErr) {
+          finalGeminiPath = geminiPath;
+          action = "reroute_failed_kept_original";
+          logIfNotFocusMode("[stage1A] Exterior hallucination reroute failed — keeping original output", retryErr);
+        }
+      } else if (verdict.hallucinationDetected) {
+        action = "advisory_only";
+      }
+
+      console.log("[STAGE1A_EXTERIOR_HALLUCINATION_CHECK]", {
+        jobId,
+        imageId,
+        sceneType,
+        ran: verdict.ran,
+        error: verdict.error,
+        hallucinationDetected: verdict.hallucinationDetected,
+        reasons: verdict.reasons,
+        confidence: verdict.confidence,
+        blocking,
+        action,
+        model: verdict.model,
+      });
+    } catch (checkErr) {
+      // Fail-open at the outermost level too — this check must never cost a
+      // customer their enhancement.
+      logIfNotFocusMode("[stage1A] Exterior hallucination check failed to run — continuing without it", checkErr);
+    }
+  }
+
+  return finalGeminiPath;
 }
 
 /**
@@ -619,6 +862,34 @@ interface Stage1AFactors {
 
 const STAGE1A_BLUR_EDGE_THRESHOLD = 15;
 const STAGE1A_SOFT_SHARPEN_EDGE_THRESHOLD = 45;
+
+// Mean-luminance at which an interior stops being treated as under-exposed.
+// Previously hardcoded at 95 with a span of 50: at 95, every image in the very
+// common 95-135 "visibly dim but not dark" band received darkness = 0, which
+// zeroed gammaBoost/shadowLift/contrastBoost and skipped the entire pre-Gemini
+// tone stack (see computeStage1AFactors below). Raised to 135/90 so the dead
+// band gets a proportional ramp instead of a hard zero, while onset - span
+// still equals 45, keeping the existing full-darkness anchor unchanged.
+const STAGE1A_DARKNESS_ONSET = parseBoundedNumber(process.env.STAGE1A_DARKNESS_ONSET, 135, 60, 200);
+// Span over which darkness ramps 0 -> 1.
+const STAGE1A_DARKNESS_SPAN = parseBoundedNumber(process.env.STAGE1A_DARKNESS_SPAN, 90, 20, 160);
+// Exterior-only (Stage 1A Exterior Enhancement): high lumStdev relative to
+// what's typical for a bright, evenly-lit exterior indicates a hard local
+// shadow (driveway/facade shadow band) coexisting with sunlit areas, even
+// when overall mean luminance looks fine — the classic "bright day, hard
+// shadow" real estate exterior problem the mean-luminance darkness signal
+// above cannot see at all (a typical sunny exterior has lumMean well above
+// STAGE1A_DARKNESS_ONSET, so darknessFromMean is 0 regardless of how harsh
+// a local shadow is). Independently tunable so it can be dialled to zero
+// without touching interior or the existing mean-based signal.
+const STAGE1A_EXT_SHADOW_STDEV_ONSET = parseBoundedNumber(process.env.STAGE1A_EXT_SHADOW_STDEV_ONSET, 60, 30, 90);
+const STAGE1A_EXT_SHADOW_STDEV_SPAN = parseBoundedNumber(process.env.STAGE1A_EXT_SHADOW_STDEV_SPAN, 30, 10, 70);
+const STAGE1A_EXT_SHADOW_MAX_DARKNESS = parseBoundedNumber(process.env.STAGE1A_EXT_SHADOW_MAX_DARKNESS, 0.28, 0, 0.5);
+// Coefficient for the tone-stack gamma encode curve (see applyGuardedGamma).
+// Kept small: the asymptotic gamma(1, gammaOut) curve is much more potent
+// per unit of coefficient than the previously-inert gamma(g) call it
+// replaced, so this is not a like-for-like replacement of the old 0.6.
+const STAGE1A_GAMMA_ENCODE_SCALE = parseBoundedNumber(process.env.STAGE1A_GAMMA_ENCODE_SCALE, 0.15, 0, 0.6);
 
 const clampStage1AFactor = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 
@@ -742,8 +1013,27 @@ async function analyzeStage1AInput(
   };
 }
 
-function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
-  const darkness = clampStage1AFactor((95 - analysis.lumMean) / 50);
+export function computeStage1AFactors(analysis: Stage1AAnalysis): Stage1AFactors {
+  const darknessFromMean = clampStage1AFactor((STAGE1A_DARKNESS_ONSET - analysis.lumMean) / STAGE1A_DARKNESS_SPAN);
+
+  // Exterior-only local-shadow signal — see STAGE1A_EXT_SHADOW_* constants
+  // above. Adds to (never replaces) the mean-based signal, so a genuinely
+  // dark exterior's existing behavior is unaffected; this only lifts an
+  // otherwise-bright exterior that has a hard local shadow the mean alone
+  // can't see. Note: shadowLift/contrastBoost (derived from darkness below)
+  // also gate an img.normalize() pre-pass elsewhere in this file at
+  // thresholds 0.18/0.24 — currently inert for exterior in production
+  // (the live "exterior-nz-hero" ablation preset sets
+  // STAGE1A_PREGEN_NORMALIZE_ENABLED: false), but if that preset ever
+  // changes, this new signal feeds that same gate too.
+  let exteriorShadowSpread = 0;
+  if (analysis.isExterior) {
+    exteriorShadowSpread = clampStage1AFactor(
+      (analysis.lumStdev - STAGE1A_EXT_SHADOW_STDEV_ONSET) / STAGE1A_EXT_SHADOW_STDEV_SPAN
+    ) * STAGE1A_EXT_SHADOW_MAX_DARKNESS;
+  }
+
+  const darkness = clampStage1AFactor(darknessFromMean + exteriorShadowSpread);
   const brightness = clampStage1AFactor((analysis.lumMean - 180) / 40);
   const edgeDensity = normalizeRange(
     analysis.edgeDensity,
@@ -947,7 +1237,7 @@ async function applyStage1ANeutralBalance(
   };
 }
 
-function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: number): number {
+export function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: number): number {
   if (typeof meanBrightness !== "number" || !Number.isFinite(meanBrightness)) {
     return baseBrightness;
   }
@@ -966,8 +1256,10 @@ function applyStage1ABrightnessGuard(baseBrightness: number, meanBrightness?: nu
 
 export async function runStage1A(
   inputPath: string,
-  options: { 
+  options: {
     replaceSky?: boolean;
+    enhanceExteriorSky?: boolean;
+    duskMode?: boolean;
     declutter?: boolean;
     sceneType?: "interior" | "exterior" | string;
     interiorProfile?: EnhancementProfile;
@@ -980,7 +1272,7 @@ export async function runStage1A(
     jobSampling?: { temperature?: number; topP?: number; topK?: number };
   }
 ): Promise<string> {
-  const { replaceSky = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
+  const { replaceSky = false, enhanceExteriorSky = false, duskMode = false, declutter = false, sceneType, skyMode = "safe", jobId, imageId, roomType } = options;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__baseArtifacts" });
   const baseArtifacts = options.baseArtifacts ?? undefined;
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobId" });
@@ -1021,6 +1313,13 @@ export async function runStage1A(
   console.log("[stage1A] preset_summary", JSON.stringify(presetSummary));
   logIfNotFocusMode("GLOBAL_READ_REMOVED", { file: "pipeline/stage1A.ts", variable: "__jobSampling" });
   const effectiveSceneType = analysis.sceneType;
+  // Dusk/twilight exterior transformation (Stage 1A Exterior Enhancement).
+  // Gated on the scene classification actually resolved by analyzeStage1AInput
+  // (which can differ from the caller-supplied sceneType), not just the raw
+  // options flag — a photo that misclassifies as interior must not run the
+  // dusk pipeline regardless of what the checkbox requested.
+  const duskModeActive = duskMode === true && effectiveSceneType === "exterior";
+  logIfNotFocusMode("[STAGE1A_DUSK_MODE]", { jobId: jobIdResolved, imageId, requested: duskMode, sceneType: effectiveSceneType, active: duskModeActive });
   const isInterior = effectiveSceneType === "interior";
   const applyInteriorProfile = isInterior && !declutter && isNZStyleEnabled();
   let interiorProfileKey: EnhancementProfile = (options.interiorProfile && (options.interiorProfile in INTERIOR_PROFILE_CONFIG))
@@ -1064,13 +1363,15 @@ export async function runStage1A(
       sharpOutputPath,
       effectiveSceneType,
       replaceSky,
+      enhanceExteriorSky,
       applyInteriorProfile,
       interiorProfileKey,
       skyMode,
       jobIdResolved,
       imageId,
       roomTypeResolved,
-      options.jobSampling
+      options.jobSampling,
+      duskModeActive
     );
 
     if (!ablationSettings.STAGE1A_ENABLE_POSTGEN_FINISH) {
@@ -1120,7 +1421,10 @@ export async function runStage1A(
     }
   };
 
-  if (analysis.isBlurry && shouldUseStabilityStage1A()) {
+  // Dusk mode is forced to the Gemini path (see the other shouldUseStabilityStage1A()
+  // check below) — Stability's conservative-upscale call accepts no prompt
+  // override, so it can never perform the dusk repaint.
+  if (analysis.isBlurry && shouldUseStabilityStage1A() && !duskModeActive) {
     await img
       .clone()
       .webp(preGenWebpOptions)
@@ -1177,8 +1481,11 @@ export async function runStage1A(
   }
   
   // 4. Exposure triage: normalize only when the image is dark or compressed.
+  // Skipped entirely in dusk mode — a full histogram stretch would flatten
+  // the deliberate dark twilight sky the dusk prompt is asking Gemini for.
   if (
-    preGenControls.normalizeEnabled
+    !duskModeActive
+    && preGenControls.normalizeEnabled
     && (factors.shadowLift > preGenControls.normalizeShadowLiftThreshold
       || factors.contrastBoost > preGenControls.normalizeContrastThreshold)
   ) {
@@ -1189,26 +1496,47 @@ export async function runStage1A(
 
   // 4b. Re-anchor white balance on bright low-chroma regions so neutral walls
   // and ceilings stay optically neutral without flattening genuine warm lights.
-  const neutralBalanceResult = await applyStage1ANeutralBalance(img);
-  img = neutralBalanceResult.image;
-  if (neutralBalanceResult.balance) {
-    console.log("[Stage1A] Neutral balance applied:", neutralBalanceResult.balance);
-    logIfNotFocusMode(
-      `[stage1A] Neutral balance applied (samples=${neutralBalanceResult.balance.sampleCount}, redGain=${neutralBalanceResult.balance.redGain.toFixed(3)}, greenGain=${neutralBalanceResult.balance.greenGain.toFixed(3)}, blueGain=${neutralBalanceResult.balance.blueGain.toFixed(3)})`
-    );
+  // Skipped in dusk mode: this step exists specifically to strip color casts,
+  // which is the opposite of what a deliberate warm/cool twilight grade needs
+  // — running it here would fight the dusk prompt before Gemini ever sees
+  // the image.
+  if (!duskModeActive) {
+    const neutralBalanceResult = await applyStage1ANeutralBalance(img);
+    img = neutralBalanceResult.image;
+    if (neutralBalanceResult.balance) {
+      console.log("[Stage1A] Neutral balance applied:", neutralBalanceResult.balance);
+      logIfNotFocusMode(
+        `[stage1A] Neutral balance applied (samples=${neutralBalanceResult.balance.sampleCount}, redGain=${neutralBalanceResult.balance.redGain.toFixed(3)}, greenGain=${neutralBalanceResult.balance.greenGain.toFixed(3)}, blueGain=${neutralBalanceResult.balance.blueGain.toFixed(3)})`
+      );
+    } else {
+      logIfNotFocusMode("[stage1A] Neutral balance skipped (insufficient neutral highlights)");
+    }
   } else {
-    logIfNotFocusMode("[stage1A] Neutral balance skipped (insufficient neutral highlights)");
+    logIfNotFocusMode("[stage1A] dusk_mode_pregen_skip { step: \"neutral_balance\" }");
   }
-  
+
   // 5. Apply scaled corrections rather than hard switching.
-  if (factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
+  // All skipped in dusk mode: these are monotonic "brighten/lift an
+  // underexposed daytime photo" operations that directly fight a deliberate
+  // dusk color grade.
+  if (!duskModeActive && factors.shadowLift > 0.05 && preGenControls.toneStackScale > 0) {
+    // NOTE: sharp.gamma(decodeGamma, encodeGamma) only brightens when
+    // decodeGamma stays at identity (1.0) and encodeGamma is raised — see
+    // applyGuardedGamma. Calling gamma(g) with a single argument (as this
+    // did previously) decodes and re-encodes with the same value, which
+    // very nearly cancels out regardless of g. STAGE1A_GAMMA_ENCODE_SCALE
+    // (0.15) is deliberately conservative: because the encode-gamma curve
+    // is asymptotic at 0/255, it self-limits on both shadows and highlights,
+    // but its per-unit effect is much stronger than the old (inert) call,
+    // so this is intentionally a smaller coefficient than 0.6 was.
     img = applyGuardedGamma(
       img,
       stage1ATransformMeta,
       stage1ABranch,
-      1 + (factors.gammaBoost * 0.6 * preGenControls.toneStackScale),
+      1,
       "tone_stack_gamma",
-      transformTelemetry
+      transformTelemetry,
+      1 + (factors.gammaBoost * STAGE1A_GAMMA_ENCODE_SCALE * preGenControls.toneStackScale)
     );
     if (!analysis.isExterior) {
       img = applyGuardedLinear(
@@ -1223,7 +1551,7 @@ export async function runStage1A(
     }
   }
 
-  if (factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
+  if (!duskModeActive && factors.highlightCompress > 0.05 && preGenControls.toneStackScale > 0) {
     img = applyGuardedLinear(
       img,
       stage1ATransformMeta,
@@ -1235,7 +1563,7 @@ export async function runStage1A(
     );
   }
 
-  if (factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
+  if (!duskModeActive && factors.contrastBoost > 0.05 && preGenControls.toneStackScale > 0) {
     img = applyGuardedLinear(
       img,
       stage1ATransformMeta,
@@ -1247,7 +1575,7 @@ export async function runStage1A(
     );
   }
 
-  if ((factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
+  if (!duskModeActive && (factors.shadowLift > 0.05 || factors.gammaBoost > 0.05) && preGenControls.toneStackScale > 0.25) {
     const postToneNeutralBalance = await applyStage1ANeutralBalance(img, {
       strength: 0.4 * Math.min(1, preGenControls.toneStackScale),
       highlightBias: true,
@@ -1262,7 +1590,13 @@ export async function runStage1A(
   }
   
   // 6. Adaptive brightness/saturation (dynamic interior profile or default exterior)
-  if (applyInteriorProfile) {
+  // Skipped entirely in dusk mode: applyInteriorProfile is always false when
+  // duskModeActive (exterior-only), and the exterior "else" branch below
+  // brightens and saturates almost every exterior image — directly backwards
+  // for a deliberate twilight grade.
+  if (duskModeActive) {
+    logIfNotFocusMode("[stage1A] dusk_mode_pregen_skip { step: \"brightness_saturation_modulate\" }");
+  } else if (applyInteriorProfile) {
     const baseBrightness = 1 + (interiorCfg.brightnessBoost * (0.14 + (factors.shadowLift * 0.42)));
     const guardedBrightness = applyStage1ABrightnessGuard(baseBrightness, inputMeanBrightness);
     const brightness = scaleFromNeutral(guardedBrightness, preGenControls.modulateScale);
@@ -1338,11 +1672,16 @@ export async function runStage1A(
   }
   
   // 8. Sky enhancement (explicit-only): avoid implicit sky edits that can introduce haze.
-  if (effectiveSceneType === "exterior" && skyMode === "strong") {
+  // Guarded against dusk mode independently of skyMode (which worker.ts also
+  // forces to "safe" for dusk jobs) so this stays inert even if that
+  // upstream safeguard ever changes — applySkyEnhancement is a whole-frame
+  // saturation boost tuned for punching up an existing blue sky, not for a
+  // twilight gradient.
+  if (!duskModeActive && effectiveSceneType === "exterior" && skyMode === "strong") {
     img = applySkyEnhancement(img);
     logIfNotFocusMode("[stage1A] Sky enhancement pre-pass enabled (scene=exterior, skyMode=strong)");
   } else {
-    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${effectiveSceneType}, skyMode=${skyMode})`);
+    logIfNotFocusMode(`[stage1A] Sky enhancement pre-pass skipped (scene=${effectiveSceneType}, skyMode=${skyMode}, duskModeActive=${duskModeActive})`);
   }
   
   // 9. Keep edge brightening narrow and only for darker interiors.
@@ -1381,8 +1720,17 @@ export async function runStage1A(
   const buildArtifacts = !baseArtifactsCache.has(sharpOutputPath);
   const artifactsPromise: Promise<BaseArtifacts | null> | null = buildArtifacts ? (async (): Promise<BaseArtifacts | null> => {
     try {
-      const base = img.clone();
-      const meta = await base.metadata();
+      // Render the tone pipeline to pixels first, then derive the artifacts
+      // from those pixels. sharp runs its operations in a fixed internal
+      // order — greyscale() is applied BEFORE linear() — so asking for a
+      // greyscale copy of a pipeline that carries the per-channel neutral
+      // balance (linear with 3 values) fails with "Band expansion using
+      // linear is unsupported", and the artifacts were silently lost.
+      const rendered = await img.clone().raw().toBuffer({ resolveWithObject: true });
+      const base = sharp(rendered.data, {
+        raw: { width: rendered.info.width, height: rendered.info.height, channels: rendered.info.channels as 1 | 2 | 3 | 4 },
+      });
+      const meta = { width: rendered.info.width, height: rendered.info.height };
       const [gray, small] = await Promise.all([
         base.clone().greyscale().raw().toBuffer({ resolveWithObject: true }),
         base.clone().greyscale().resize(512, 512, { fit: "inside" }).raw().toBuffer({ resolveWithObject: true }),
@@ -1497,7 +1845,11 @@ export async function runStage1A(
   };
 
   // --- DETERMINISTIC AI ROUTING (Quality-Based Engine Selection) ---
-  if (shouldUseStabilityStage1A()) {
+  // Dusk mode always routes to Gemini below: Stability's conservative-upscale
+  // call accepts no prompt override at all, so without this, a ticked dusk
+  // checkbox would silently do nothing whenever Stability is the primary
+  // engine (the default — USE_STABILITY_STAGE1A defaults to true).
+  if (shouldUseStabilityStage1A() && !duskModeActive) {
     if (USE_STABILITY_STAGE1A_QUALITY_GATE) {
       const quality = await runLowQualityDetector(sharpOutputPath);
       const forceGemini =
@@ -1549,7 +1901,12 @@ export async function runStage1A(
       baseArtifacts
     );
 
-    if (!diffResult.passed && STAGE1A_STRICT_DIFF) {
+    // Dusk mode is expected to fail this diff by design (a full sky/lighting
+    // repaint greatly exceeds the ~1.2% mean-pixel-diff threshold this check
+    // uses) — bypassed defensively so enabling STAGE1A_STRICT_DIFF elsewhere
+    // can't send every dusk job through a second Gemini call that would only
+    // fail the same check again.
+    if (!diffResult.passed && STAGE1A_STRICT_DIFF && !duskModeActive) {
       logIfNotFocusMode("[stage1A] 🚨 Content diff FAIL — rerouting to Gemini (strict mode)");
 
       try {

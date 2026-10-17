@@ -158,20 +158,6 @@ type RegionEditTransformContract = {
   };
 };
 
-function isReinstateDebugArtifactsEnabled(): boolean {
-  return (
-    String(process.env.REGION_EDIT_DEBUG_ARTIFACTS || "").trim() === "1"
-    || isEditDebugOverlayEnabled()
-  );
-}
-
-function reinstateArtifactPath(outPath: string, label: string, regionIndex?: number): string {
-  const ext = path.extname(outPath) || ".webp";
-  const baseName = path.basename(outPath, ext);
-  const suffix = regionIndex === undefined ? `reinstate-${label}` : `reinstate-r${regionIndex}-${label}`;
-  return path.join(path.dirname(outPath), `${baseName}-${suffix}.png`);
-}
-
 function normalizeSceneDetailLabel(value: unknown): string {
   return String(value ?? "")
     .trim()
@@ -997,75 +983,6 @@ async function buildRegionEditTransformContract(params: {
       allowStage1AReprojection,
     },
   };
-}
-
-function assertStage1AParityForReinstate(params: {
-  canonicalWidth: number;
-  canonicalHeight: number;
-  stage1AMeta: sharp.Metadata | null;
-  stage1AReferencePath?: string;
-}): void {
-  const { canonicalWidth, canonicalHeight, stage1AMeta, stage1AReferencePath } = params;
-  if (!stage1AMeta?.width || !stage1AMeta?.height) {
-    throw new Error(`[editApply] Reinstate requires readable Stage1A metadata: ${stage1AReferencePath || "unknown"}`);
-  }
-
-  if (stage1AMeta.width !== canonicalWidth || stage1AMeta.height !== canonicalHeight) {
-    throw new Error(
-      `[editApply] Reinstate geometry mismatch: canonical=${canonicalWidth}x${canonicalHeight}, stage1A=${stage1AMeta.width}x${stage1AMeta.height}. `
-      + "Implicit reprojection is disabled; provide explicit registration before reinstate.",
-    );
-  }
-}
-
-async function compositeStrictMaskWithoutResize(params: {
-  baseBuffer: Buffer;
-  sourceBuffer: Buffer;
-  maskPngBuffer: Buffer;
-  width: number;
-  height: number;
-}): Promise<Buffer> {
-  const { baseBuffer, sourceBuffer, maskPngBuffer, width, height } = params;
-
-  const baseMeta = await sharp(baseBuffer).metadata();
-  const sourceMeta = await sharp(sourceBuffer).metadata();
-  const maskMeta = await sharp(maskPngBuffer).metadata();
-  if (baseMeta.width !== width || baseMeta.height !== height) {
-    throw new Error(`[editApply] strict composite base mismatch: ${baseMeta.width}x${baseMeta.height} vs ${width}x${height}`);
-  }
-  if (sourceMeta.width !== width || sourceMeta.height !== height) {
-    throw new Error(`[editApply] strict composite source mismatch: ${sourceMeta.width}x${sourceMeta.height} vs ${width}x${height}`);
-  }
-  if (maskMeta.width !== width || maskMeta.height !== height) {
-    throw new Error(`[editApply] strict composite mask mismatch: ${maskMeta.width}x${maskMeta.height} vs ${width}x${height}`);
-  }
-
-  const normalizedMask = await sharp(maskPngBuffer)
-    .removeAlpha()
-    .grayscale()
-    .threshold(127, { grayscale: true })
-    .png()
-    .toBuffer();
-  const invertedMask = await sharp(normalizedMask).negate().png().toBuffer();
-
-  const originalMasked = await sharp(baseBuffer)
-    .removeAlpha()
-    .png()
-    .composite([{ input: invertedMask, blend: "dest-in" }])
-    .png()
-    .toBuffer();
-
-  const generatedMasked = await sharp(sourceBuffer)
-    .removeAlpha()
-    .png()
-    .composite([{ input: normalizedMask, blend: "dest-in" }])
-    .png()
-    .toBuffer();
-
-  return sharp(originalMasked)
-    .composite([{ input: generatedMasked, blend: "over" }])
-    .png()
-    .toBuffer();
 }
 
 async function splitMaskIntoRegions(maskPngBuffer: Buffer, width: number, height: number): Promise<RegionComponent[]> {
@@ -2162,125 +2079,6 @@ async function compositeExpandedCrop(
     .toBuffer();
 }
 
-async function writeReinstateCropArtifacts(params: {
-  outPath: string;
-  regionIndex?: number;
-  croppedMaskPngBuffer: Buffer;
-  baselineCrop: Buffer;
-  enhancedCrop: Buffer;
-  strictComposite: Buffer;
-  finalCrop: Buffer;
-}): Promise<void> {
-  if (!isReinstateDebugArtifactsEnabled()) return;
-  const { outPath, regionIndex, croppedMaskPngBuffer, baselineCrop, enhancedCrop, strictComposite, finalCrop } = params;
-
-  await sharp(croppedMaskPngBuffer).png().toFile(reinstateArtifactPath(outPath, "canonical-mask", regionIndex));
-  await sharp(baselineCrop).png().toFile(reinstateArtifactPath(outPath, "stage1a-crop", regionIndex));
-  await sharp(enhancedCrop).png().toFile(reinstateArtifactPath(outPath, "current-crop", regionIndex));
-  await sharp(strictComposite).png().toFile(reinstateArtifactPath(outPath, "pre-composite-patch", regionIndex));
-  await sharp(finalCrop).png().toFile(reinstateArtifactPath(outPath, "post-composite-output", regionIndex));
-}
-
-async function compositeBaselineCrop(params: {
-  originalImage: string | Buffer;
-  baselineImagePath: string;
-  croppedMaskPngBuffer: Buffer;
-  box: PixelBox;
-  mode: EditMode;
-  regionIndex?: number;
-  outPath: string;
-  transformContract: RegionEditTransformContract;
-}): Promise<Buffer> {
-  const {
-    originalImage,
-    baselineImagePath,
-    croppedMaskPngBuffer,
-    box,
-    mode,
-    regionIndex,
-    outPath,
-    transformContract,
-  } = params;
-
-  const outOfBounds = (
-    box.x < 0
-    || box.y < 0
-    || (box.x + box.width) > transformContract.canonicalWidth
-    || (box.y + box.height) > transformContract.canonicalHeight
-  );
-  if (outOfBounds) {
-    throw new Error(`[editApply] Reinstate crop out of canonical bounds: ${JSON.stringify(box)}`);
-  }
-
-  const maskMeta = await sharp(croppedMaskPngBuffer).metadata();
-  if (maskMeta.width !== box.width || maskMeta.height !== box.height) {
-    throw new Error(
-      `[editApply] Reinstate cropped mask parity failure: mask=${maskMeta.width}x${maskMeta.height} box=${box.width}x${box.height}`,
-    );
-  }
-
-  const enhancedCrop = await sharp(originalImage)
-    .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
-    .removeAlpha()
-    .png()
-    .toBuffer();
-
-  const baselineCrop = await sharp(baselineImagePath)
-    .extract({ left: box.x, top: box.y, width: box.width, height: box.height })
-    .removeAlpha()
-    .png()
-    .toBuffer();
-
-  console.log("[editApply] BASELINE_COMPOSITE_CROP", {
-    mode,
-    regionIndex,
-    expandedBox: box,
-    cropWidth: box.width,
-    cropHeight: box.height,
-    contractCropBbox: transformContract.cropSpace.bbox,
-  });
-
-  const strictComposite = await compositeStrictMaskWithoutResize({
-    baseBuffer: enhancedCrop,
-    sourceBuffer: baselineCrop,
-    maskPngBuffer: croppedMaskPngBuffer,
-    width: box.width,
-    height: box.height,
-  });
-
-  const harmonized = await harmonizePatchToLocalNeighborhood({
-    candidateBuffer: strictComposite,
-    referenceBuffer: enhancedCrop,
-    binaryMaskBuffer: croppedMaskPngBuffer,
-    width: box.width,
-    height: box.height,
-    context: "reinstate_baseline_crop",
-  });
-
-  const blended = await blendMaskEdgeTones(
-    harmonized,
-    enhancedCrop,
-    croppedMaskPngBuffer,
-    box.width,
-    box.height,
-  );
-
-  await writeReinstateCropArtifacts({
-    outPath,
-    regionIndex,
-    croppedMaskPngBuffer,
-    baselineCrop,
-    enhancedCrop,
-    strictComposite,
-    finalCrop: blended,
-  });
-
-  return sharp(originalImage)
-    .composite([{ input: blended, left: box.x, top: box.y }])
-    .png()
-    .toBuffer();
-}
-
 async function buildMaskRegions(maskPngBuffer: Buffer, width: number, height: number): Promise<{
   innerMask: Buffer;
   projectionMask: Buffer;
@@ -3257,37 +3055,26 @@ export async function applyEdit({
       throw new Error("[editApply] Missing authoritative mask after normalization");
     }
 
-    let baselineCompositeBuffer: Buffer | undefined;
+    // Image-quality fix (2026-09-22): Reinstate used to paste baseline pixels
+    // directly onto the enhanced image through a hard-thresholded mask
+    // (compositeBaselineCrop / useBaselineCompositeMode below, now removed) —
+    // this produced a visible hard seam at the mask outline, since the
+    // tone-matching clamps (±8% gain, ±10 luma) can't reconcile Stage-1A's
+    // typical exposure/lighting changes. Reinstate now always goes through
+    // the same regionEditWithGemini pathway Remove/Add/Replace already use;
+    // stage1AReferenceBuffer is loaded unconditionally so it's available as
+    // Gemini's STAGE_1A_BASELINE_IMAGE reference (gemini.ts:100-102 already
+    // has Reinstate-specific framing for this) instead of only being loaded
+    // inside the now-removed composite branch. No pixel-dimension parity
+    // check is needed here (assertStage1AParityForReinstate was specifically
+    // about exact registration for the paste, not relevant to a reference
+    // image sent to Gemini).
     let stage1AReferenceBuffer: Buffer | undefined;
     let stage1AMeta: sharp.Metadata | null = null;
-    const useBaselineCompositeMode = normalizedMode === "reinstate" && !!stage1AReferencePath;
     if (stage1AReferencePath) {
       stage1AMeta = await sharp(stage1AReferencePath).metadata().catch(() => null);
-    }
-
-    if (useBaselineCompositeMode && stage1AReferencePath) {
       try {
-        assertStage1AParityForReinstate({
-          canonicalWidth: meta.width,
-          canonicalHeight: meta.height,
-          stage1AMeta,
-          stage1AReferencePath,
-        });
-
-        baselineCompositeBuffer = await sharp(stage1AReferencePath)
-          .removeAlpha()
-          .png()
-          .toBuffer();
         stage1AReferenceBuffer = await sharp(stage1AReferencePath).webp().toBuffer();
-        console.log("[editApply] Stage 1A baseline loaded with geometry parity", {
-          path: stage1AReferencePath,
-          mode,
-          canonicalWidth: meta.width,
-          canonicalHeight: meta.height,
-          stage1AWidth: stage1AMeta?.width,
-          stage1AHeight: stage1AMeta?.height,
-          reprojection: "disabled",
-        });
       } catch (err) {
         console.warn("[editApply] Could not load Stage 1A reference, proceeding without it", err);
       }
@@ -3312,15 +3099,10 @@ export async function applyEdit({
       cropSpace: transformContract.cropSpace,
       registration: transformContract.registration,
       assertions: transformContract.assertions,
-      useBaselineCompositeMode,
+      hasStage1AReference: !!stage1AReferenceBuffer,
     });
 
-    // 🔹 For Add/Remove/Replace modes (or if Restore failed), use Gemini unless baseline-driven restore is available
-    if (!useBaselineCompositeMode || !baselineCompositeBuffer) {
-      console.log("[editApply] Using Gemini for mode:", mode);
-    } else {
-      console.log("[editApply] Using baseline-driven deterministic composite for mode:", mode);
-    }
+    console.log("[editApply] Using Gemini for mode:", mode);
 
     const fullSceneReferenceBuffer = await sharp(baseImagePath).webp().toBuffer();
     console.log("[editApply] Images converted to base64 (implicit)");
@@ -3421,26 +3203,6 @@ export async function applyEdit({
             expandedBox: region.expandedBox,
             expansionFactor: Number(region.expansionFactor.toFixed(3)),
           });
-
-          if (useBaselineCompositeMode && baselineCompositeBuffer) {
-            workingImageBuffer = await compositeBaselineCrop({
-              originalImage: workingImageBuffer,
-              baselineImagePath: stage1AReferencePath,
-              croppedMaskPngBuffer,
-              box: region.expandedBox,
-              mode,
-              regionIndex,
-              outPath,
-              transformContract,
-            });
-            processedExpandedBoxes.push(region.expandedBox);
-
-            const perRegionAllowedMask = await buildFullImageBoxMask(region.expandedBox, meta.width, meta.height);
-            const perRegionAllowedMaskPath = regionAllowedMaskArtifactPathForOutput(outPath, regionIndex);
-            await sharp(perRegionAllowedMask).png().toFile(perRegionAllowedMaskPath);
-            perRegionAllowedMaskPaths.push(perRegionAllowedMaskPath);
-            continue;
-          }
 
           const regionPrompt = buildRegionScopedPrompt({
             userInstruction: region.instruction,
@@ -3549,85 +3311,6 @@ export async function applyEdit({
       minDimensionPx: MIN_EXPANDED_EDIT_DIMENSION_PX,
       minAreaPx: MIN_EXPANDED_EDIT_AREA_PX,
     });
-
-    if (useBaselineCompositeMode && baselineCompositeBuffer) {
-      console.log("[editApply] BASELINE_COMPOSITE_FULL_IMAGE", {
-        mode,
-        width: meta.width,
-        height: meta.height,
-      });
-
-      const baseCanonical = await sharp(baseImagePath)
-        .removeAlpha()
-        .png()
-        .toBuffer();
-
-      const strictComposite = await compositeStrictMaskWithoutResize({
-        baseBuffer: baseCanonical,
-        sourceBuffer: baselineCompositeBuffer,
-        maskPngBuffer,
-        width: meta.width,
-        height: meta.height,
-      });
-
-      const harmonizedStrictComposite = await harmonizePatchToLocalNeighborhood({
-        candidateBuffer: strictComposite,
-        referenceBuffer: baseCanonical,
-        binaryMaskBuffer: maskPngBuffer,
-        width: meta.width,
-        height: meta.height,
-        context: "reinstate_full_baseline",
-      });
-
-      const blendedComposite = await blendMaskEdgeTones(
-        harmonizedStrictComposite,
-        baseCanonical,
-        maskPngBuffer,
-        meta.width,
-        meta.height,
-      );
-
-      if (isReinstateDebugArtifactsEnabled()) {
-        await sharp(maskPngBuffer).png().toFile(reinstateArtifactPath(outPath, "canonical-mask"));
-        await sharp(baseCanonical).png().toFile(reinstateArtifactPath(outPath, "current-crop"));
-        await sharp(baselineCompositeBuffer).png().toFile(reinstateArtifactPath(outPath, "stage1a-crop"));
-        await sharp(strictComposite).png().toFile(reinstateArtifactPath(outPath, "pre-composite-patch"));
-        await sharp(blendedComposite).png().toFile(reinstateArtifactPath(outPath, "post-composite-output"));
-      }
-
-      const effectiveAllowedMask = await sharp(maskPngBuffer)
-        .removeAlpha()
-        .grayscale()
-        .threshold(127, { grayscale: true })
-        .png()
-        .toBuffer();
-      const allowedMaskArtifactPath = allowedMaskArtifactPathForOutput(outPath);
-      await sharp(effectiveAllowedMask).png().toFile(allowedMaskArtifactPath);
-      await sharp(blendedComposite).webp().toFile(outPath);
-
-      const outsideChangedPct = await computeOutsideAllowedChangedPct(
-        baseImagePath,
-        outPath,
-        effectiveAllowedMask,
-      );
-      console.log("[editApply] REINSTATE_FULL_ASSERTIONS", {
-        contractCanonical: `${transformContract.canonicalWidth}x${transformContract.canonicalHeight}`,
-        outsideAllowedChangedPct: outsideChangedPct,
-        leakClass: classifyOutsideLeakPct(outsideChangedPct),
-      });
-
-      const maskStats = await sharp(effectiveAllowedMask).stats();
-      console.log("[editApply] Saved deterministic baseline edit image to", outPath);
-      console.log("[editApply] Enforced mask zones", {
-        enforcementMode: "baseline_strict_hardened",
-        regionCount: expandedRegions.length,
-        processedExpandedBoxes: [],
-        allowedPixels: maskStats.channels[0]?.sum ?? 0,
-        allowedMaskArtifactPath,
-        perRegionAllowedMaskPaths: [],
-      });
-      return outPath;
-    }
 
     const editedBuffer = await regionEditWithGemini({
       prompt: fallbackPromptText,

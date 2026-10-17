@@ -59,6 +59,7 @@ interface AgencyInfo {
   name: string;
   planTier: "starter" | "pro" | "agency" | null;
   processingMode?: "full" | "safe";
+  stagedLabelEnabled?: boolean;
   isNew?: boolean;
   promoCreditsGranted?: boolean;
   upgradeBannerSeen?: boolean;
@@ -131,6 +132,7 @@ export default function AgencyPage() {
   const [profileBillingEmail, setProfileBillingEmail] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingProcessingMode, setSavingProcessingMode] = useState(false);
+  const [savingStagedLabel, setSavingStagedLabel] = useState(false);
   const [loading, setLoading] = useState(true);
   const [agencyName, setAgencyName] = useState("");
   const [creating, setCreating] = useState(false);
@@ -220,6 +222,7 @@ export default function AgencyPage() {
         name: infoData.agency.name,
         planTier: infoData.agency.planTier ?? null,
         processingMode: infoData.agency.processingMode === "safe" ? "safe" : "full",
+        stagedLabelEnabled: infoData.agency.stagedLabelEnabled === true,
         isNew: infoData.agency.isNew === true,
         promoCreditsGranted: infoData.agency.promoCreditsGranted === true,
         upgradeBannerSeen: infoData.agency.upgradeBannerSeen === true,
@@ -396,6 +399,43 @@ export default function AgencyPage() {
       toast({ title: "Error", description: error.message || "Failed to update agency profile", variant: "destructive" });
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleToggleStagedLabel = async (enabled: boolean) => {
+    if (!isAdminOrOwner || !agencyInfo) return;
+    const previous = agencyInfo.stagedLabelEnabled === true;
+    if (enabled === previous) return;
+
+    try {
+      setSavingStagedLabel(true);
+      setAgencyInfo((prev) => (prev ? { ...prev, stagedLabelEnabled: enabled } : prev));
+
+      const res = await apiFetch("/api/agency/settings/staged-label", {
+        method: "PATCH",
+        body: JSON.stringify({ enabled }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to update setting");
+      }
+
+      toast({
+        title: "Saved",
+        description: enabled
+          ? "Downloaded staged images will now include a \"Virtually Staged\" label."
+          : "Downloaded staged images will no longer include a label.",
+      });
+    } catch (error: any) {
+      setAgencyInfo((prev) => (prev ? { ...prev, stagedLabelEnabled: previous } : prev));
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update setting",
+        variant: "destructive",
+      });
+    } finally {
+      setSavingStagedLabel(false);
     }
   };
 
@@ -730,7 +770,7 @@ export default function AgencyPage() {
                   <span>Monthly Usage</span>
                 </CardTitle>
                 <CardDescription>
-                  {(usage.planName || "Trial / No Plan")} includes {usage.mainAllowance} enhanced images per month
+                  {(usage.planName || "Trial / No Plan")} includes {usage.mainAllowance} credits per month (1 per enhanced image, 2 per staged room)
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -867,6 +907,31 @@ export default function AgencyPage() {
                   </div>
                   {!isAdmin && (
                     <p className="text-xs text-muted-foreground">Only agency owners/admins can change Safe Mode.</p>
+                  )}
+                </div>
+
+                <div className="rounded-lg border border-border p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold">"Virtually Staged" label</p>
+                      <p className="text-xs text-muted-foreground">
+                        Adds a small "Virtually Staged" label to the bottom-left corner of staged images when they are
+                        downloaded. Enhanced and decluttered images are never labelled.
+                      </p>
+                    </div>
+                    <label className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={agencyInfo.stagedLabelEnabled === true}
+                        onChange={(e) => handleToggleStagedLabel(e.target.checked)}
+                        disabled={!isAdmin || savingStagedLabel}
+                      />
+                      {agencyInfo.stagedLabelEnabled === true ? "ON" : "OFF"}
+                    </label>
+                  </div>
+                  {!isAdmin && (
+                    <p className="text-xs text-muted-foreground">Only agency owners/admins can change this setting.</p>
                   )}
                 </div>
 

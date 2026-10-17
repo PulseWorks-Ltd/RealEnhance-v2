@@ -8,6 +8,7 @@ import { withDevice } from "@/lib/withDevice";
 import { api, apiFetch, apiJson } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useImageUpload } from "@/hooks/useImageUpload";
+import { useFurniturePrecheck, type FurniturePrecheckEntry } from "@/hooks/useFurniturePrecheck";
 import { useAuth } from "@/context/AuthContext";
 import { useAuthGuard } from "@/hooks/useAuthGuard";
 import {
@@ -40,6 +41,7 @@ import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-gua
 import { getCardArtifactView, resolveImageUrlRoles, type DisplayOutputKey } from "@/lib/card-artifacts";
 import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
+import { toPublicText } from "@/lib/publicText";
 
 type RunState = "idle" | "running" | "done" | "failed";
 type StageKey = "1A" | "1B" | "2";
@@ -102,7 +104,7 @@ const INTERIOR_ROOM_TYPES: Array<{ value: string; label: string }> = [
   { value: "kitchen_dining", label: "Kitchen & Dining" },
   { value: "kitchen_living", label: "Kitchen & Living" },
   { value: "living_dining", label: "Living & Dining" },
-  { value: "multiple_living", label: "Multiple Living" },
+  { value: "kitchen_living_dining", label: "Kitchen, Living & Dining" },
   { value: "study", label: "Study" },
   { value: "office", label: "Office" },
   { value: "bathroom-1", label: "Bathroom 1" },
@@ -150,8 +152,15 @@ function ensureDownloadFilename(filenameBase: string, mime?: string | null, data
   return `${normalizedBase}${inferredExtension || ".png"}`;
 }
 
-function estimateBatchCredits(images: Array<{ sceneType: string; userSelectedStage1B: boolean; userSelectedStage2: boolean }>): number {
-  return images.length;
+// Same rule as shared/src/billing/rules.ts estimateCredits (switch on): a staged
+// interior image = 2 credits, everything else = 1. The quote is passed in.
+function estimateImageCredits(img: { sceneType: string; credits: number }): number {
+  if (String(img.sceneType || "").toLowerCase() === "exterior") return 1;
+  return img.credits;
+}
+
+function estimateBatchCredits(images: Array<{ sceneType: string; credits: number }>): number {
+  return images.reduce((sum, img) => sum + estimateImageCredits(img), 0);
 }
 
 const fileIdMap = new WeakMap<File, string>();
@@ -631,7 +640,7 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
           return friendlyMsg;
         }
       }
-      return w;
+      return toPublicText(w);
     })
     .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
 }
@@ -731,14 +740,14 @@ function getDisplayError(result: any): string | null {
   }
   
   // Check if it's a technical error message (contains technical jargon)
-  const technicalTerms = ['redis', 'bullmq', 'worker', 'gemini api', 'timeout', 'updatejob', 'metadata'];
+  const technicalTerms = ['redis', 'bullmq', 'worker', 'gemini', 'stability', 'openai', 'timeout', 'updatejob', 'metadata'];
   const isTechnical = technicalTerms.some(term => errorLower.includes(term));
   
   if (isTechnical) {
     return 'Image processing encountered an issue. Please retry or contact support.';
   }
   
-  return rawError;
+  return toPublicText(rawError);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -778,6 +787,8 @@ interface PersistedBatchJob {
     outdoorStaging: string;
     furnitureReplacement: boolean;
     declutter: boolean;
+    enhanceExteriorSky?: boolean;
+    enhanceExteriorDusk?: boolean;
     stagingStyle: string;
     propertyAddress?: string;
   };
@@ -1272,7 +1283,22 @@ export default function BatchProcessor({
   const lastDisplayedProgressByImageRef = useRef<Record<number, number>>({});
   const currentMessageByImageRef = useRef<Record<number, string>>({});
   const [availableCredits, setAvailableCredits] = useState<number | null>(null);
+  // Server switch (BILLING_DECLUTTER_STAGE_EXTRA_CREDIT). Off: every image is
+  // 1 credit and no cost pop-up is shown before processing.
+  const [extraDeclutterCredit, setExtraDeclutterCredit] = useState(false);
+  // Server switch (STAGE1A_EXTERIOR_OUTLOOK). Off: the option is hidden and
+  // never sent, whatever an older saved setting says.
+  const [exteriorOutlookAvailable, setExteriorOutlookAvailable] = useState(false);
   const [isCreditSummaryLoading, setIsCreditSummaryLoading] = useState(false);
+  // Cost summary shown when Process is clicked (after the furniture pre-check):
+  // how many photos get declutter + stage (2 credits) vs stage / enhance (1).
+  const [costSummary, setCostSummary] = useState<null | {
+    checking: boolean;
+    counts: Record<string, number>;
+    total: number;
+    available: number | null;
+  }>(null);
+  const costConfirmedRef = useRef(false);
   const [creditGateModal, setCreditGateModal] = useState<{
     open: boolean;
     requiredCredits: number;
@@ -1508,6 +1534,13 @@ export default function BatchProcessor({
   const [furnitureReplacement, setFurnitureReplacement] = useState(true);
   // Declutter flag (drives Stage 1B in worker)
   const [declutter, setDeclutter] = useState<boolean>(false);
+  // "Enhance Exterior Outlook" checkbox — global Stage 1A toggle that
+  // brightens the exterior visible through windows/doors on interior shots.
+  const [enhanceExteriorSky, setEnhanceExteriorSky] = useState<boolean>(false);
+  // "Twilight / Dusk Photo" checkbox — global Stage 1A toggle that converts
+  // exterior daytime shots into a dusk/twilight marketing photo. Scene-
+  // disjoint from enhanceExteriorSky above (interior-only vs exterior-only).
+  const [enhanceExteriorDusk, setEnhanceExteriorDusk] = useState<boolean>(false);
   const [clientBatchId, setClientBatchId] = useState<string | null>(null);
 
   const clientBatchIdRef = useRef<string | null>(null);
@@ -1630,7 +1663,7 @@ export default function BatchProcessor({
   const [scenePredictionsById, setScenePredictionsById] = useState<Record<string, SceneDetectResult>>({});
   const [imageRoomTypesById, setImageRoomTypesById] = useState<Record<string, string>>({});
   const refreshModeOnlyRoomTypes = useMemo(() => new Set([
-    "multiple_living",
+    "kitchen_living_dining",
     "kitchen_dining",
     "kitchen_living",
     "living_dining",
@@ -1864,7 +1897,7 @@ export default function BatchProcessor({
                 <a href={billingHref}>Go to Billing</a>
               </Button>
               <Button asChild size="sm" variant="outline">
-                <a href={addonHref}>Get 7 images for $19</a>
+                <a href={addonHref}>Get 7 credits for $19</a>
               </Button>
             </div>
           )}
@@ -2301,24 +2334,42 @@ export default function BatchProcessor({
     return -1;
   }, [files.length, getImageIdForIndex, validationMap]);
 
+  // Furniture pre-check: each interior photo is checked in the background as
+  // soon as it is added (with staging on), so the exact cost is known before
+  // Process: furnished room = declutter + stage = 2 credits, empty room = 1.
+  const isExteriorImageId = useCallback((imageId: string) => {
+    const manual = manualSceneTypesById[imageId];
+    if (manual === "interior" || manual === "exterior") return manual === "exterior";
+    const explicit = imageSceneTypesById[imageId];
+    if (explicit === "interior" || explicit === "exterior") return explicit === "exterior";
+    return scenePredictionsById[imageId]?.scene === "exterior";
+  }, [imageSceneTypesById, manualSceneTypesById, scenePredictionsById]);
+
+  const furniturePrecheck = useFurniturePrecheck({
+    files,
+    getFileId,
+    enabled: !!effectiveAllowStaging,
+    isExterior: isExteriorImageId,
+  });
+
+  // Staged image = 2 credits when the switch is on (with or without declutter,
+  // so no need to wait for the furniture pre-check); everything else 1.
+  type ImageQuoteKind = "stage" | "declutter" | "enhance" | "exterior";
+  const quoteForIndex = useCallback((index: number, _entries?: Record<string, FurniturePrecheckEntry>): { kind: ImageQuoteKind; credits: number } => {
+    if (finalSceneForIndex(index) === "exterior") return { kind: "exterior", credits: 1 };
+    if (effectiveAllowStaging) return { kind: "stage", credits: extraDeclutterCredit ? 2 : 1 };
+    return { kind: declutter ? "declutter" : "enhance", credits: 1 };
+  }, [declutter, effectiveAllowStaging, extraDeclutterCredit, finalSceneForIndex]);
+
   const batchCreditEstimateInputs = useMemo(
     () => files.map((_, index) => {
-      const perImageMeta = (metaByIndex as Record<number, any>)[index] || {};
-      const scene = finalSceneForIndex(index) === "exterior" ? "exterior" : "interior";
-      const userSelectedStage1B = perImageMeta.declutter !== undefined
-        ? !!perImageMeta.declutter
-        : !!declutter;
-      const userSelectedStage2 = perImageMeta.virtualStage !== undefined
-        ? !!perImageMeta.virtualStage
-        : !!effectiveAllowStaging;
-
+      const quote = quoteForIndex(index, furniturePrecheck.entries);
       return {
-        sceneType: scene,
-        userSelectedStage1B,
-        userSelectedStage2,
+        sceneType: quote.kind === "exterior" ? "exterior" : "interior",
+        credits: quote.credits,
       };
     }),
-    [declutter, effectiveAllowStaging, files, finalSceneForIndex, metaByIndex]
+    [files, furniturePrecheck.entries, quoteForIndex]
   );
 
   const requiredBatchCredits = useMemo(
@@ -2504,6 +2555,8 @@ export default function BatchProcessor({
       const addonRemaining = Math.max(0, Number(summary?.addOns?.remaining ?? 0));
       const totalAvailable = monthlyRemaining + addonRemaining;
       setAvailableCredits(totalAvailable);
+      setExtraDeclutterCredit(summary?.declutterStageExtraCredit === true);
+      setExteriorOutlookAvailable(summary?.exteriorOutlookEnabled === true);
       return {
         monthlyRemaining,
         addonRemaining,
@@ -2602,10 +2655,22 @@ export default function BatchProcessor({
         const roomType = imageRoomTypesById[imageId];
         if (roomType) metaItem.roomType = roomType;
       }
+      // Furniture pre-check id (server re-reads the stored answer to reserve
+      // exactly the quoted credits and to route the photo the same way).
+      const precheckId = furniturePrecheck.entries[imageId]?.precheckId;
+      if (precheckId && sceneType !== "exterior") metaItem.furniturePrecheckId = precheckId;
       // Sky replacement (only for exteriors)
       if (sceneType === "exterior" && imageSkyReplacementById[imageId] !== undefined) {
         metaItem.replaceSky = imageSkyReplacementById[imageId];
       }
+      // Global Stage 1A "Enhance Exterior Outlook" toggle — brightens the
+      // exterior visible through windows/doors on interior shots (gated to
+      // interior scenes worker-side).
+      metaItem.enhanceExteriorSky = exteriorOutlookAvailable && enhanceExteriorSky;
+      // Global Stage 1A "Twilight / Dusk Photo" toggle — converts exterior
+      // daytime shots into a dusk/twilight photo (gated to exterior scenes
+      // worker-side).
+      metaItem.enhanceExteriorDusk = enhanceExteriorDusk;
       // Tuning controls
       if (samplingUiEnabled) {
         const tNum = temperatureInput.trim() ? Number(temperatureInput) : undefined;
@@ -2618,7 +2683,7 @@ export default function BatchProcessor({
       arr.push(metaItem);
     });
     return JSON.stringify(arr);
-  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById]);
+  }, [metaByIndex, files, finalSceneForIndex, imageSceneTypesById, imageRoomTypesById, imageSkyReplacementById, manualSceneOverrideById, linkImages, temperatureInput, topPInput, topKInput, results, effectiveAllowStaging, samplingUiEnabled, scenePredictionsById, enhanceExteriorSky, exteriorOutlookAvailable, enhanceExteriorDusk, furniturePrecheck.entries]);
 
   // Progressive display: Process ONE item per animation frame to prevent React batching
   const schedule = () => {
@@ -2883,6 +2948,8 @@ export default function BatchProcessor({
       setOutdoorStaging(savedState.settings.outdoorStaging as "auto" | "none");
       setFurnitureReplacement(savedState.settings.furnitureReplacement ?? true);
       setDeclutter(savedState.settings.declutter ?? false);
+      setEnhanceExteriorSky(savedState.settings.enhanceExteriorSky ?? false);
+      setEnhanceExteriorDusk(savedState.settings.enhanceExteriorDusk ?? false);
       setPropertyAddress(savedState.settings.propertyAddress ?? "");
       // DO NOT restore stagingStyle - always default to Standard Listing
       // User must explicitly select a different style for each new session
@@ -3040,6 +3107,8 @@ export default function BatchProcessor({
           outdoorStaging,
           furnitureReplacement,
           declutter,
+          enhanceExteriorSky,
+          enhanceExteriorDusk,
           stagingStyle,
           propertyAddress,
         },
@@ -3054,7 +3123,7 @@ export default function BatchProcessor({
       };
       saveBatchJobState(state, currentUserId);
     }
-  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, stagingStyle, propertyAddress, currentUserId]);
+  }, [jobId, jobIds, runState, completedAt, failedAt, results, processedImages, processedImagesByIndex, files, globalGoal, presetKey, preserveStructure, allowStaging, allowRetouch, outdoorStaging, furnitureReplacement, declutter, enhanceExteriorSky, enhanceExteriorDusk, stagingStyle, propertyAddress, currentUserId]);
 
   const startPollingExistingBatch = async (ids: string[]) => {
     if (!ids.length) return;
@@ -5079,6 +5148,27 @@ export default function BatchProcessor({
       return;
     }
 
+    // Show exactly what this batch will use before anything is processed.
+    if (extraDeclutterCredit && !costConfirmedRef.current) {
+      setCostSummary({ checking: true, counts: {}, total: 0, available: availableCredits });
+      const counts: Record<string, number> = {};
+      let total = 0;
+      files.forEach((_, i) => {
+        const quote = quoteForIndex(i);
+        counts[quote.kind] = (counts[quote.kind] || 0) + 1;
+        total += quote.credits;
+      });
+      const summaryNow = await refreshCreditSummary();
+      setCostSummary({
+        checking: false,
+        counts,
+        total,
+        available: summaryNow?.availableCredits ?? availableCredits,
+      });
+      return;
+    }
+    costConfirmedRef.current = false;
+
     const totalCreditsNeeded = requiredBatchCredits;
 
     const latestSummary = await refreshCreditSummary();
@@ -5187,6 +5277,8 @@ export default function BatchProcessor({
       allowRetouch: true,
       furnitureReplacement,
       declutter,
+      enhanceExteriorSky: exteriorOutlookAvailable && enhanceExteriorSky,
+      enhanceExteriorDusk,
       stage2Only,
       outdoorStaging,
       metaJson,
@@ -6672,14 +6764,16 @@ export default function BatchProcessor({
 
                 markRetryFailed(
                   imageIndex,
-                  (Array.isArray(job?.warnings) && job.warnings[0]) ||
-                    job?.error ||
-                    "Retry completed without a staged result."
+                  toPublicText(
+                    (Array.isArray(job?.warnings) && job.warnings[0]) ||
+                      job?.error ||
+                      "Retry completed without a staged result."
+                  )
                 );
 
                 toast({
                   title: "Retry failed",
-                  description: (Array.isArray(job?.warnings) && job.warnings[0]) || "Keeping the previously successful output.",
+                  description: toPublicText((Array.isArray(job?.warnings) && job.warnings[0]) || "Keeping the previously successful output."),
                   variant: "destructive"
                 });
                 return;
@@ -6695,9 +6789,9 @@ export default function BatchProcessor({
                 // ❌ setAbortController(null);
                 // ❌ setProgressText("Retry failed. Unable to enhance image.");
 
-                markRetryFailed(imageIndex, job.error || "The retry job failed to process.");
+                markRetryFailed(imageIndex, toPublicText(job.error || "The retry job failed to process."));
 
-                const errMsg = job.error || "The retry job failed to process.";
+                const errMsg = toPublicText(job.error || "The retry job failed to process.");
                 if (job.error === "image_not_found") {
                   toast({
                     title: "Image unavailable",
@@ -7829,6 +7923,82 @@ export default function BatchProcessor({
                       </p>
                     </button>
 
+                    <div
+                      className={`rounded-lg border px-3 py-2 text-xs leading-5 ${effectiveAllowStaging ? "border-amber-300 bg-amber-50 text-amber-900" : "border-slate-200 bg-slate-50 text-slate-600"}`}
+                      data-testid="text-credit-cost-note"
+                    >
+                      {!extraDeclutterCredit ? (
+                        <>
+                          <span className="font-semibold">1 credit per image.</span>{" "}
+                          Enhance, declutter and staging are all included.
+                        </>
+                      ) : effectiveAllowStaging ? (
+                        <>
+                          <span className="font-semibold">Staging: 2 credits per room.</span>{" "}
+                          Decluttering before staging is included. Exterior photos are 1 credit. If staging can't be completed, your credits are refunded. You'll see the exact cost before processing starts.
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-semibold">1 credit per image.</span>{" "}
+                          Enhance and declutter are 1 credit; a staged room uses 2 credits.
+                        </>
+                      )}
+                    </div>
+
+                    {exteriorOutlookAvailable && (
+                    <label
+                      htmlFor="enhance-exterior-outlook-global"
+                      className="block cursor-pointer py-2"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="enhance-exterior-outlook-global"
+                          type="checkbox"
+                          checked={enhanceExteriorSky}
+                          onChange={(e) => setEnhanceExteriorSky(e.target.checked)}
+                          className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-action-600 focus:ring-action-500"
+                          data-testid="checkbox-enhance-exterior-outlook"
+                        />
+
+                        <div className="leading-tight">
+                          <p className="text-xs font-medium text-slate-700">
+                            Enhance Exterior Outlook
+                          </p>
+
+                          <p className="text-[11px] text-slate-500 whitespace-nowrap">
+                            Brighten exterior outlook visible from interior shots.
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+                    )}
+
+                    <label
+                      htmlFor="enhance-exterior-dusk-global"
+                      className="block cursor-pointer py-2"
+                    >
+                      <div className="flex items-start gap-2">
+                        <input
+                          id="enhance-exterior-dusk-global"
+                          type="checkbox"
+                          checked={enhanceExteriorDusk}
+                          onChange={(e) => setEnhanceExteriorDusk(e.target.checked)}
+                          className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300 text-action-600 focus:ring-action-500"
+                          data-testid="checkbox-enhance-exterior-dusk"
+                        />
+
+                        <div className="leading-tight">
+                          <p className="text-xs font-medium text-slate-700">
+                            Twilight / Dusk Photo
+                          </p>
+
+                          <p className="text-[11px] text-slate-500">
+                            Convert exterior daytime shots into a dusk/twilight marketing photo.
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+
                     <div className="space-y-3 text-sm">
                       <div>
                         <label className="mb-1 block text-xs font-medium text-slate-600" htmlFor="property-address-input">
@@ -8236,6 +8406,13 @@ export default function BatchProcessor({
                     >
                       Process Batch #{Math.floor(Math.random() * 1000) + 2000} ({files.length} Images)
                     </button>
+                    {files.length > 0 && (
+                      <p className="mt-2 text-xs text-slate-600" data-testid="text-batch-credit-cost">
+                        {!extraDeclutterCredit
+                          ? `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}.`
+                          : `This batch uses ${requiredBatchCredits} credit${requiredBatchCredits === 1 ? "" : "s"}${requiredBatchCredits > files.length ? " (staged rooms: 2 credits each)" : ""}.`}
+                      </p>
+                    )}
                     {isEnhanceCreditBlocked && (
                       <button
                         type="button"
@@ -9604,6 +9781,85 @@ export default function BatchProcessor({
       />
 
       <Dialog
+        open={!!costSummary}
+        onOpenChange={(open) => {
+          if (open) return;
+          setCostSummary(null);
+          costConfirmedRef.current = false;
+          if (runState === "idle" && activeTab === "enhance") setActiveTab("images");
+        }}
+      >
+        <DialogContent data-testid="dialog-cost-summary">
+          <DialogHeader>
+            <DialogTitle>
+              {costSummary?.checking
+                ? "Checking rooms…"
+                : `${files.length} photo${files.length === 1 ? "" : "s"} — ${costSummary?.total ?? 0} credit${costSummary?.total === 1 ? "" : "s"}`}
+            </DialogTitle>
+            <DialogDescription>
+              {costSummary?.checking
+                ? "Working out the cost…"
+                : "Staged rooms are 2 credits (decluttering before staging is included); everything else is 1 credit."}
+            </DialogDescription>
+          </DialogHeader>
+          {costSummary?.checking ? (
+            <div className="flex items-center gap-2 py-4 text-sm text-slate-600">
+              <Loader2 className="h-4 w-4 animate-spin" /> Checking rooms…
+            </div>
+          ) : costSummary ? (
+            <div className="space-y-3 text-sm text-slate-700">
+              <ul className="space-y-1">
+                {(costSummary.counts.stage || 0) > 0 && (
+                  <li>• {costSummary.counts.stage} room{costSummary.counts.stage === 1 ? "" : "s"} <b>staged</b> (decluttered first where needed) — 2 credits each ({costSummary.counts.stage * 2})</li>
+                )}
+                {(costSummary.counts.declutter || 0) > 0 && (
+                  <li>• {costSummary.counts.declutter} photo{costSummary.counts.declutter === 1 ? "" : "s"} <b>decluttered</b> — 1 credit each ({costSummary.counts.declutter})</li>
+                )}
+                {(costSummary.counts.enhance || 0) > 0 && (
+                  <li>• {costSummary.counts.enhance} photo{costSummary.counts.enhance === 1 ? "" : "s"} <b>enhanced</b> — 1 credit each ({costSummary.counts.enhance})</li>
+                )}
+                {(costSummary.counts.exterior || 0) > 0 && (
+                  <li>• {costSummary.counts.exterior} exterior photo{costSummary.counts.exterior === 1 ? "" : "s"} <b>enhanced</b> — 1 credit each ({costSummary.counts.exterior})</li>
+                )}
+              </ul>
+              <p className="text-xs text-slate-500">
+                If staging can't be completed for a room, you get the decluttered photo for 1 credit, or the enhanced photo with your credits refunded.
+              </p>
+              {costSummary.available !== null && (
+                <p className={costSummary.total > costSummary.available ? "font-medium text-amber-700" : "text-slate-600"}>
+                  You have {Math.max(0, costSummary.available)} credit{costSummary.available === 1 ? "" : "s"} available
+                  {costSummary.total > costSummary.available ? ` — ${costSummary.total - costSummary.available} more needed.` : "."}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setCostSummary(null);
+                    costConfirmedRef.current = false;
+                    if (runState === "idle" && activeTab === "enhance") setActiveTab("images");
+                  }}
+                  data-testid="button-cost-summary-cancel"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => {
+                    costConfirmedRef.current = true;
+                    setCostSummary(null);
+                    void startBatchProcessing();
+                  }}
+                  data-testid="button-cost-summary-continue"
+                >
+                  Continue
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
         open={creditGateModal.open}
         onOpenChange={(open) => {
           setCreditGateModal((prev) => ({ ...prev, open }));
@@ -9618,21 +9874,21 @@ export default function BatchProcessor({
           <DialogHeader>
             <DialogTitle>Continue Enhancing Your Images</DialogTitle>
             <DialogDescription>
-              This enhancement requires {creditGateModal.requiredCredits} images, but your plan currently includes {creditGateModal.availableCredits} remaining.
-              Add {creditGateModal.missingCredits} more images to continue processing your batch. Get 7 images for $19 — no subscription required.
+              This enhancement requires {creditGateModal.requiredCredits} credits, but your plan currently includes {creditGateModal.availableCredits} remaining. Each image uses 1 credit; staging a room that needs decluttering first uses 2.
+              Add {creditGateModal.missingCredits} more credits to continue processing your batch. Get 7 credits for $19 — no subscription required.
             </DialogDescription>
           </DialogHeader>
           <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 space-y-1">
-            <div>Required: {creditGateModal.requiredCredits} images</div>
-            <div>Available: {creditGateModal.availableCredits} images</div>
-            <div>Needed: {creditGateModal.missingCredits} images</div>
+            <div>Required: {creditGateModal.requiredCredits} credits</div>
+            <div>Available: {creditGateModal.availableCredits} credits</div>
+            <div>Needed: {creditGateModal.missingCredits} credits</div>
           </div>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button
               type="button"
               onClick={handleContinueEnhancementCheckout}
             >
-              Get 7 images for $19 — no subscription required
+              Get 7 credits for $19 — no subscription required
             </Button>
             <Button
               type="button"

@@ -14,7 +14,7 @@ const num = (v: string | undefined, fallback: number) => {
 // Allow overriding allowances/retention per tier without code changes
 const STARTER_MAIN_ALLOWANCE = num(
   process.env.STARTER_MAIN_ALLOWANCE,
-  num(process.env.INITIAL_FREE_CREDITS, 75)
+  num(process.env.INITIAL_FREE_CREDITS, 80)
 );
 const STARTER_RET_MULT = num(process.env.STARTER_RETENTION_MULTIPLIER, 3);
 const STARTER_RETENTION = num(
@@ -22,7 +22,7 @@ const STARTER_RETENTION = num(
   STARTER_MAIN_ALLOWANCE * STARTER_RET_MULT
 );
 
-const PRO_MAIN_ALLOWANCE = num(process.env.PRO_MAIN_ALLOWANCE, 150);
+const PRO_MAIN_ALLOWANCE = num(process.env.PRO_MAIN_ALLOWANCE, 160);
 const PRO_RET_MULT = num(process.env.PRO_RETENTION_MULTIPLIER, 3);
 const PRO_RETENTION = num(
   process.env.PRO_RETENTION_LIMIT,
@@ -32,7 +32,7 @@ const PRO_RETENTION = num(
 // Studio tier (internally stored as "agency"), prefer STUDIO_* envs; fall back to legacy AGENCY_* if set
 const STUDIO_MAIN_ALLOWANCE = num(
   process.env.STUDIO_MAIN_ALLOWANCE ?? process.env.AGENCY_MAIN_ALLOWANCE,
-  300
+  320
 );
 const STUDIO_RET_MULT = num(
   process.env.STUDIO_RETENTION_MULTIPLIER ?? process.env.AGENCY_RETENTION_MULTIPLIER,

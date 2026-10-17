@@ -15,6 +15,7 @@ import {
   type PilotPromoRedemptionRow,
 } from "./pilotPromos.js";
 import type { PilotPromoInfo } from "@realenhance/shared/pilotPromos.js";
+import { getLifetimeMonthlyBonus } from "./lifetimeBonus.js";
 
 export type ReservationStatus = "reserved" | "committed" | "consumed" | "released" | "partially_released";
 
@@ -144,7 +145,9 @@ async function getPlanLimitForAgency(agencyId: string): Promise<number> {
 
   const tier = (agency?.planTier as PlanTier) || "starter";
   const limits = PLAN_LIMITS[tier];
-  return limits.mainAllowance;
+  // Lifetime bonus codes add to the monthly allowance while subscribed.
+  const bonus = await getLifetimeMonthlyBonus(agencyId);
+  return limits.mainAllowance + bonus;
 }
 
 async function getBillingCycleKey(agencyId: string): Promise<string> {

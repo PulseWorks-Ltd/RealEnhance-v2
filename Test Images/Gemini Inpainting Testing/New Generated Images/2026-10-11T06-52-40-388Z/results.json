@@ -1,0 +1,236 @@
+[
+  {
+    "image": "realenhance-job_2a506bdc-Baseline",
+    "roomType": "dining_room",
+    "input": "996x657",
+    "aspectRatio": "3:2",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2528x1696",
+    "traceCostUsd": 0.1504,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 11.9,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 11.8,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "traced": 11.9,
+      "furniture": 12.3,
+      "afterGrow": 16.1
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 13.39,
+      "changedPixelPct": 24.81
+    },
+    "framingCheck": {
+      "tilesChecked": 71,
+      "tilesChanged": 19,
+      "changedPct": 26.8,
+      "medianDiff": 7.6,
+      "framingChanged": false
+    },
+    "finalSize": "2528x1668",
+    "colourGains": [
+      0.973,
+      0.988,
+      0.974
+    ],
+    "checkSeams": true,
+    "ok": true,
+    "oldFailedAttempt": "Test Images/Gemini Inpainting Testing/Previously Failed Image Pairs/realenhance-job_2a506bdc-Staged1-failed fireplace removed.jpg",
+    "seconds": 177.918
+  },
+  {
+    "image": "realenhance-job_2f3fb6a8-Baseline",
+    "roomType": "bedroom",
+    "input": "1920x1080",
+    "aspectRatio": "16:9",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2752x1536",
+    "traceCostUsd": 0.1499,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 19.6,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 19.5,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "traced": 19.6,
+      "furniture": 20.1,
+      "afterGrow": 23.7
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 14.98,
+      "changedPixelPct": 35.39
+    },
+    "framingCheck": {
+      "tilesChecked": 51,
+      "tilesChanged": 25,
+      "changedPct": 49,
+      "medianDiff": 11.2,
+      "framingChanged": false
+    },
+    "finalSize": "2752x1548",
+    "colourGains": [
+      0.928,
+      0.948,
+      0.936
+    ],
+    "checkSeams": true,
+    "ok": true,
+    "oldFailedAttempt": "Test Images/Gemini Inpainting Testing/Previously Failed Image Pairs/realenhance-job_2f3fb6a8-Staged1-failed return wall on left removed.jpg",
+    "seconds": 106.791
+  },
+  {
+    "image": "realenhance-job_62e65384-Baseline",
+    "roomType": "living_room",
+    "input": "1198x800",
+    "aspectRatio": "3:2",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "2528x1696",
+    "traceCostUsd": 0.1498,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 19.4,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 22.3,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "traced": 22.3,
+      "furniture": 24.2,
+      "afterGrow": 29.9
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 5.16,
+      "changedPixelPct": 6.07
+    },
+    "framingCheck": {
+      "tilesChecked": 45,
+      "tilesChanged": 13,
+      "changedPct": 28.9,
+      "medianDiff": 5.3,
+      "framingChanged": false
+    },
+    "finalSize": "2528x1688",
+    "colourGains": [
+      0.992,
+      1.005,
+      0.998
+    ],
+    "ok": true,
+    "oldFailedAttempt": "Test Images/Gemini Inpainting Testing/Previously Failed Image Pairs/realenhance-job_62e65384-Staged1-failed opening in wall created.jpg",
+    "seconds": 132.004
+  },
+  {
+    "image": "realenhance-job_b8f6e340-Baseline",
+    "roomType": "bedroom",
+    "input": "1494x2048",
+    "aspectRatio": "3:4",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.1506,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 15,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 14.9,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "traced": 15,
+      "furniture": 15.3,
+      "afterGrow": 19.4
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 8.2,
+      "changedPixelPct": 14.24
+    },
+    "framingCheck": {
+      "tilesChecked": 111,
+      "tilesChanged": 51,
+      "changedPct": 45.9,
+      "medianDiff": 9.3,
+      "framingChanged": false
+    },
+    "finalSize": "1792x2457",
+    "colourGains": [
+      0.998,
+      1.017,
+      1.01
+    ],
+    "checkSeams": true,
+    "ok": true,
+    "oldFailedAttempt": "Test Images/Gemini Inpainting Testing/Previously Failed Image Pairs/realenhance-job_b8f6e340-Staged1-failed door added.jpg",
+    "seconds": 93.066
+  },
+  {
+    "image": "realenhance-job_d6d060ea-Baseline",
+    "roomType": "bedroom",
+    "input": "1728x2304",
+    "aspectRatio": "3:4",
+    "staging": "staged now (gemini-3.1-flash-image, STAGE2_PROMPT_VARIANT=combined)",
+    "stagedSize": "1792x2400",
+    "traceCostUsd": 0.1514,
+    "tracePasses": [
+      {
+        "pass": "primary",
+        "coveragePct": 18,
+        "coloursFlipped": false
+      },
+      {
+        "pass": "secondary",
+        "coveragePct": 13.3,
+        "coloursFlipped": false
+      }
+    ],
+    "maskPct": {
+      "traced": 18.2,
+      "furniture": 19.9,
+      "afterGrow": 25.1
+    },
+    "stagedChangesOutsideMask": {
+      "meanAbsoluteDelta": 16.88,
+      "changedPixelPct": 46.81
+    },
+    "framingCheck": {
+      "tilesChecked": 91,
+      "tilesChanged": 52,
+      "changedPct": 57.1,
+      "medianDiff": 15.8,
+      "framingChanged": true
+    },
+    "finalSize": "1792x2389",
+    "colourGains": [
+      0.955,
+      0.964,
+      0.947
+    ],
+    "checkSeams": true,
+    "ok": true,
+    "oldFailedAttempt": "Test Images/Gemini Inpainting Testing/Previously Failed Image Pairs/realenhance-job_d6d060ea-STAGED1-failed downlight added.webp",
+    "seconds": 97.313
+  }
+]

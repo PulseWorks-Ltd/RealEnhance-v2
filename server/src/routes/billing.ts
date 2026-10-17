@@ -19,6 +19,7 @@ import {
 } from "@realenhance/shared/billing/stripePlans.js";
 import { mapStripeStatusToInternal, type StripeSubscriptionStatus } from "@realenhance/shared/billing/stripeStatus.js";
 import { planTierToPlanCode } from "@realenhance/shared/plans.js";
+import { declutterStageExtraCreditEnabled, exteriorOutlookEnabled } from "@realenhance/shared/billing/rules.js";
 import { getUsageSnapshot } from "../services/usageLedger.js";
 import {
   convertTrialAndDetachUsageIfNeeded,
@@ -31,6 +32,7 @@ import {
 } from "../services/pilotPromos.js";
 import { PILOT_PROMOS } from "@realenhance/shared/pilotPromos.js";
 import { pool } from "../db/index.js";
+import { findLifetimeBonusCode, redeemLifetimeBonusCode } from "../services/lifetimeBonus.js";
 
 const router = Router();
 
@@ -609,6 +611,42 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       });
     }
 
+    // Lifetime monthly bonus code (single use, one agency only).
+    const lifetimeBonus = await findLifetimeBonusCode(promoCodeInput);
+    if (lifetimeBonus) {
+      const subscribed =
+        !!agency.stripeSubscriptionId &&
+        (agency.subscriptionStatus === "ACTIVE" || agency.subscriptionStatus === "TRIAL");
+      if (!subscribed) {
+        // Don't burn the code on an account that can't use it yet.
+        return res.status(400).json({ error: "LIFETIME_BONUS_REQUIRES_SUBSCRIPTION" });
+      }
+      const { row, duplicated } = await redeemLifetimeBonusCode({
+        code: promoCodeInput,
+        agencyId: agency.agencyId,
+        userId: user.id,
+      });
+      console.log(
+        `[LIFETIME_BONUS] agency=${agency.agencyId} user=${user.id} label=${row.label} bonus=${row.bonus_credits} duplicated=${duplicated}`
+      );
+      const usage = await getUsageSnapshot(agency.agencyId);
+      return res.json({
+        success: true,
+        duplicated,
+        code: promoCodeInput.toUpperCase(),
+        promoType: "lifetime_bonus",
+        bonus: { monthlyCredits: row.bonus_credits },
+        allowance: {
+          monthlyIncluded: usage.includedLimit,
+          monthlyRemaining: usage.includedRemaining,
+          addonBalance: usage.addonBalance,
+          addonRemaining: usage.addonRemaining,
+          totalRemaining: usage.remaining,
+          monthKey: usage.monthKey,
+        },
+      });
+    }
+
     const creditGrantPromoCode = resolveCreditGrantPromoCode(promoCodeInput);
     if (creditGrantPromoCode) {
       const { bundle, promo, duplicated } = await redeemCreditPromoForExistingAgency({
@@ -693,7 +731,8 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "PILOT_PROMO_INACTIVE" ||
       code === "PILOT_PROMO_GLOBAL_CAP_REACHED" ||
       code === "PILOT_PROMO_ALREADY_REDEEMED_BY_USER" ||
-      code === "PILOT_PROMO_ALREADY_REDEEMED_BY_AGENCY"
+      code === "PILOT_PROMO_ALREADY_REDEEMED_BY_AGENCY" ||
+      code === "LIFETIME_BONUS_ALREADY_REDEEMED"
     ) {
       return res.status(400).json({ error: code });
     }
@@ -789,6 +828,10 @@ router.get("/subscription", requireAuth, async (req: Request, res: Response) => 
       billingCurrency,
       seatLimit: effectivePlan?.seatLimit ?? null,
       allowInvites: effectivePlan?.allowInvites ?? false,
+      // false: 1 credit per image, no cost pop-up before processing
+      declutterStageExtraCredit: declutterStageExtraCreditEnabled(),
+      // false: "Enhance Exterior Outlook" is hidden and never applied
+      exteriorOutlookEnabled: exteriorOutlookEnabled(),
       allowance: {
         monthlyIncluded: effectiveMonthlyIncluded,
         monthlyUsed: effectiveMonthlyUsed,
@@ -1138,7 +1181,7 @@ const STRIPE_LISTING_PACK_20_PRICE_ID =
 
 /**
  * POST /api/billing/listing-pack/checkout
- * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD, 20 images)
+ * Create a Stripe Checkout session for a one-time Listing Pack purchase ($49 NZD, 20 credits)
  */
 router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1162,7 +1205,7 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
               currency: "nzd",
               product_data: {
                 name: "Listing Pack",
-                description: "Enhance up to 20 images - no subscription required",
+                description: "20 credits - 1 per enhanced image, 2 per staged room. No subscription required",
               },
               unit_amount: LISTING_PACK_PRICE_NZD,
             },
@@ -1201,7 +1244,7 @@ router.post("/listing-pack/checkout", requireAuth, async (req: Request, res: Res
 
 /**
  * POST /api/billing/hero-pack/checkout
- * Create a Stripe Checkout session for a one-time Hero Pack purchase ($19 NZD, 7 images)
+ * Create a Stripe Checkout session for a one-time Hero Pack purchase ($19 NZD, 7 credits)
  */
 router.post("/hero-pack/checkout", requireAuth, async (req: Request, res: Response) => {
   try {
@@ -1225,7 +1268,7 @@ router.post("/hero-pack/checkout", requireAuth, async (req: Request, res: Respon
               currency: "nzd",
               product_data: {
                 name: "Hero Pack",
-                description: "Get 7 images for $19 - no subscription required",
+                description: "7 credits - 1 per enhanced image, 2 per staged room. No subscription required",
               },
               unit_amount: HERO_PACK_PRICE_NZD,
             },

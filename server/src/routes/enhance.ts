@@ -1,26 +1,12 @@
 import { Router, type Request, type Response } from "express";
-import { estimateBatchCredits } from "@realenhance/shared/billing/rules.js";
+import { requiredCreditsForJobOptions } from "@realenhance/shared/billing/rules.js";
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { enqueueStoredEnhanceJob, getJob, updateJob } from "../services/jobs.js";
 import { commitReservation, releaseReservation, reserveAllowance } from "../services/usageLedger.js";
 import { getUserById } from "../services/users.js";
 
 function deriveRequiredCreditsFromJobPayload(payload: any): number {
-  const options = payload?.options || {};
-  const virtualStage = !!options?.virtualStage;
-  const declutter = !!options?.declutter;
-  const furnishedState = String(options?.furnishedState || "").toLowerCase();
-
-  // Match upload-side projection: declutter+stage with empty room can skip Stage 1B (1 credit total).
-  const stage1BProjected = declutter && (!virtualStage || furnishedState !== "empty");
-
-  return estimateBatchCredits([
-    {
-      sceneType: "interior",
-      userSelectedStage1B: stage1BProjected,
-      userSelectedStage2: virtualStage,
-    },
-  ]);
+  return requiredCreditsForJobOptions(payload?.options || {});
 }
 
 function isExpired(expiresAt: unknown): boolean {
@@ -160,7 +146,7 @@ export function enhanceRouter() {
           jobId,
           requiredCredits,
           currentCredits: await getAvailableCredits(sessUser.id),
-          missingCredits: 1,
+          missingCredits: Math.max(1, requiredCredits - (await getAvailableCredits(sessUser.id))),
         });
       }
 

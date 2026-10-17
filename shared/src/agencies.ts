@@ -29,6 +29,7 @@ export async function createAgency(params: {
     planTier,
     processingMode: "full",
     subscriptionStatus,
+    stagedLabelEnabled: true,
     createdAt: new Date().toISOString(),
   };
 
@@ -42,6 +43,7 @@ export async function createAgency(params: {
       planTier: agency.planTier || "",
       processingMode: agency.processingMode || "full",
       subscriptionStatus: agency.subscriptionStatus,
+      stagedLabelEnabled: "true",
       createdAt: agency.createdAt,
     });
 
@@ -89,6 +91,7 @@ export async function getAgency(agencyId: string): Promise<Agency | null> {
       promoCreditsGranted: data.promoCreditsGranted === "true",
       // Agency UI metadata
       upgradeBannerSeen: data.upgradeBannerSeen === "true",
+      stagedLabelEnabled: data.stagedLabelEnabled === "true",
       // Metadata
       createdAt: data.createdAt,
       updatedAt: data.updatedAt,
@@ -134,6 +137,9 @@ export async function updateAgency(agency: Agency): Promise<void> {
     }
     if (typeof agency.promoCreditsGranted === "boolean") {
       data.promoCreditsGranted = String(agency.promoCreditsGranted);
+    }
+    if (typeof agency.stagedLabelEnabled === "boolean") {
+      data.stagedLabelEnabled = String(agency.stagedLabelEnabled);
     }
 
     // Persist optional fields when present.
