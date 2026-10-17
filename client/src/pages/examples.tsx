@@ -3,7 +3,7 @@ import { ArrowRight, CloudSun, Sun, Trash2, Sofa, Crop } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/hooks/usePageMeta";
 
-const PAGE_TITLE = "Real Before & After Examples – RealEnhance | AI Real Estate Photo Enhancement";
+const PAGE_TITLE = "Real Before & After Examples – RealEnhance | Real Estate Photo Enhancement Software";
 const PAGE_DESCRIPTION =
   "See real before-and-after examples of RealEnhance in action — sky replacement, lighting and quality, decluttering, and virtual staging — all while preserving the true structure of the property.";
 
@@ -214,7 +214,7 @@ export default function ExamplesPage() {
           <div className="mt-8">
             <a href="/login">
               <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base shadow-lg transition-all rounded-md">
-                Start Free Trial — 3 images, no credit card
+                Start Free Trial — 5 credits, no credit card
               </Button>
             </a>
           </div>
@@ -293,7 +293,7 @@ export default function ExamplesPage() {
             Ready to enhance your own listings?
           </h2>
           <p className="text-lg text-slate-600 mb-8">
-            Start with 3 free images. No credit card required.
+            Start with 5 free credits. No credit card required.
           </p>
           <a href="/login">
             <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-10 h-14 text-lg shadow-xl hover:-translate-y-0.5 transition-all rounded-md">
@@ -302,7 +302,7 @@ export default function ExamplesPage() {
             </Button>
           </a>
           <p className="text-sm text-slate-500 mt-4">
-            No credit card required · 3 free images after sign-up and email confirmation · Originals preserved
+            No credit card required · 5 free credits after sign-up and email confirmation · Originals preserved
           </p>
         </div>
       </section>

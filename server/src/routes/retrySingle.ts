@@ -20,6 +20,7 @@ import { findScopedEnhancedImageByUrl } from "../services/enhancedImages.js";
 import { JOB_QUEUE_NAME } from "../shared/constants.js";
 import { REDIS_URL } from "../config.js";
 import { jobHasEditedArtifact } from "./retry-policy.js";
+import { toPublicMessage } from "../utils/publicError.js";
 
 const uploadRoot = path.join(process.cwd(), "server", "uploads");
 
@@ -1174,7 +1175,7 @@ export function retrySingleRouter() {
       return res.status(200).json({ success: true, jobId });
     } catch (err: any) {
       console.error("[retry-single] ERROR:", err);
-      return res.status(500).json({ success: false, error: err?.message || "Retry job failed" });
+      return res.status(500).json({ success: false, error: toPublicMessage(err?.message || "Retry job failed") });
     }
   });
 

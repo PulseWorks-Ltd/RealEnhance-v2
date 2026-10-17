@@ -18,6 +18,7 @@ import { loadFurniturePrecheck, type FurniturePrecheckRecord } from "./furniture
 import { getAvailableCredits } from "../services/awaitingPayment.js";
 import { findOrCreateProperty } from "../services/properties.js";
 import * as crypto from "node:crypto";
+import { toPublicMessage } from "../utils/publicError.js";
 
 function timingSafeEqual(a: string, b: string): boolean {
   try {
@@ -229,7 +230,7 @@ export function uploadRouter() {
       return res.json({ url: signed.url, key: signed.key });
     } catch (error: any) {
       console.error("[upload-url] failed to create signed URL", error);
-      return res.status(503).json({ error: "upload_url_failed", message: error?.message || "Failed to create upload URL" });
+      return res.status(503).json({ error: "upload_url_failed", message: toPublicMessage(error?.message || "Failed to create upload URL") });
     }
   });
 

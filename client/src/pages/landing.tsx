@@ -190,7 +190,7 @@ export default function Landing() {
               </a>
             </div>
             <p className="text-xs text-slate-500 mt-3">
-              No credit card required • 3 free images after sign-up and email confirmation • Originals always preserved
+              No credit card required • 5 free credits after sign-up and email confirmation • Originals always preserved
             </p>
 
             <div className="flex flex-col gap-3 pt-2">
@@ -481,7 +481,7 @@ export default function Landing() {
           <div className="mt-14 text-center">
             <a href="/login">
               <Button size="lg" className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 h-12 text-base shadow-lg transition-all rounded-md">
-                Start Free Trial (3 images)
+                Start Free Trial (5 credits)
               </Button>
             </a>
           </div>
@@ -536,7 +536,7 @@ export default function Landing() {
             Ready to improve your next listing?
           </h2>
           <p className="text-lg text-slate-600 mb-8">
-            Start with 3 free images. No credit card required.
+            Start with 5 free credits. No credit card required.
           </p>
           <div className="flex flex-col items-center gap-4">
             <a href="/login">
@@ -546,7 +546,7 @@ export default function Landing() {
               </Button>
             </a>
             <p className="text-sm text-slate-500 mt-4">
-              No credit card required · 3 free images after sign-up and email confirmation · Originals preserved
+              No credit card required · 5 free credits after sign-up and email confirmation · Originals preserved
             </p>
           </div>
         </div>

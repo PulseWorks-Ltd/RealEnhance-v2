@@ -41,6 +41,7 @@ import { isStagingUIEnabled, getStagingDisabledMessage } from "@/lib/staging-gua
 import { getCardArtifactView, resolveImageUrlRoles, type DisplayOutputKey } from "@/lib/card-artifacts";
 import { resolveSelectedEditSource, type SourceStageLabel } from "@/lib/edit-source";
 import { hasEditedArtifact } from "@/lib/retry-policy";
+import { toPublicText } from "@/lib/publicText";
 
 type RunState = "idle" | "running" | "done" | "failed";
 type StageKey = "1A" | "1B" | "2";
@@ -639,7 +640,7 @@ function filterWarningsForDisplay(warnings: string[]): string[] {
           return friendlyMsg;
         }
       }
-      return w;
+      return toPublicText(w);
     })
     .filter((w, i, arr) => arr.indexOf(w) === i); // Remove duplicates
 }
@@ -739,14 +740,14 @@ function getDisplayError(result: any): string | null {
   }
   
   // Check if it's a technical error message (contains technical jargon)
-  const technicalTerms = ['redis', 'bullmq', 'worker', 'gemini api', 'timeout', 'updatejob', 'metadata'];
+  const technicalTerms = ['redis', 'bullmq', 'worker', 'gemini', 'stability', 'openai', 'timeout', 'updatejob', 'metadata'];
   const isTechnical = technicalTerms.some(term => errorLower.includes(term));
   
   if (isTechnical) {
     return 'Image processing encountered an issue. Please retry or contact support.';
   }
   
-  return rawError;
+  return toPublicText(rawError);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -6763,14 +6764,16 @@ export default function BatchProcessor({
 
                 markRetryFailed(
                   imageIndex,
-                  (Array.isArray(job?.warnings) && job.warnings[0]) ||
-                    job?.error ||
-                    "Retry completed without a staged result."
+                  toPublicText(
+                    (Array.isArray(job?.warnings) && job.warnings[0]) ||
+                      job?.error ||
+                      "Retry completed without a staged result."
+                  )
                 );
 
                 toast({
                   title: "Retry failed",
-                  description: (Array.isArray(job?.warnings) && job.warnings[0]) || "Keeping the previously successful output.",
+                  description: toPublicText((Array.isArray(job?.warnings) && job.warnings[0]) || "Keeping the previously successful output."),
                   variant: "destructive"
                 });
                 return;
@@ -6786,9 +6789,9 @@ export default function BatchProcessor({
                 // ❌ setAbortController(null);
                 // ❌ setProgressText("Retry failed. Unable to enhance image.");
 
-                markRetryFailed(imageIndex, job.error || "The retry job failed to process.");
+                markRetryFailed(imageIndex, toPublicText(job.error || "The retry job failed to process."));
 
-                const errMsg = job.error || "The retry job failed to process.";
+                const errMsg = toPublicText(job.error || "The retry job failed to process.");
                 if (job.error === "image_not_found") {
                   toast({
                     title: "Image unavailable",

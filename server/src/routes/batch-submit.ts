@@ -8,6 +8,7 @@ import { Queue } from 'bullmq';
 import crypto from 'crypto';
 import { JOB_QUEUE_NAME } from '@realenhance/shared/constants';
 import { enqueueEnhanceJob } from '../services/jobs.js';
+import { toPublicMessage } from "../utils/publicError.js";
 
 const REDIS_URL = process.env.REDIS_PRIVATE_URL || process.env.REDIS_URL || 'redis://localhost:6379';
 const enhanceQueue = new Queue(JOB_QUEUE_NAME, {
@@ -191,7 +192,7 @@ router.get('/status/:batchId', async (req, res) => {
           state,
           progress,
           returnvalue: job.returnvalue,
-          failedReason: job.failedReason
+          failedReason: toPublicMessage(job.failedReason)
         };
       })
     );

@@ -3,7 +3,7 @@ import { ChevronDown, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { usePageMeta } from "@/hooks/usePageMeta";
 
-const PAGE_TITLE = "FAQ – RealEnhance | AI Real Estate Photo Enhancement New Zealand";
+const PAGE_TITLE = "FAQ – RealEnhance | Real Estate Photo Enhancement Software New Zealand";
 const PAGE_DESCRIPTION =
   "Everything New Zealand real estate agents need to know about RealEnhance — how it works, REA compliance, pricing, and more.";
 
@@ -23,7 +23,7 @@ type FaqItem = {
 // the two can never drift apart.
 const FAQ_ITEMS: FaqItem[] = [
   {
-    q: "Is AI photo enhancement allowed for real estate listings in New Zealand?",
+    q: "Is automated photo enhancement allowed for real estate listings in New Zealand?",
     a: {
       intro:
         "Yes. The Real Estate Authority (REA) allows digital enhancement of marketing photos provided the images remain a true representation of the property. RealEnhance is specifically designed to improve lighting, clarity, presentation, and weather conditions while preserving the true structure of rooms, walls, and windows — so your listings stay compliant.",
@@ -67,7 +67,7 @@ const FAQ_ITEMS: FaqItem[] = [
     q: "How does the free trial work?",
     a: {
       intro:
-        "After signing up and confirming your email, you receive 3 free image enhancements. No credit card is required to start the trial.",
+        "After signing up and confirming your email, you receive 5 free credits (for example, 1 enhanced exterior and 2 staged rooms). No credit card is required to start the trial.",
     },
   },
   {
@@ -261,7 +261,7 @@ export default function FaqPage() {
             Still have questions?
           </h2>
           <p className="mt-3 text-slate-600">
-            Start with 3 free images — no credit card required — or get in touch and we’ll help you out.
+            Start with 5 free credits — no credit card required — or get in touch and we’ll help you out.
           </p>
           <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
             <a href="/login">

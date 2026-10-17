@@ -7,7 +7,7 @@ export function SiteFooter() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <p className="text-sm text-slate-600">
             <span className="font-semibold text-slate-800">RealEnhance</span>
-            {" "}· AI photo enhancement for New Zealand real estate
+            {" "}· Automated photo enhancement and staging for New Zealand real estate
           </p>
           <nav className="flex flex-wrap items-center gap-x-6 gap-y-2 text-sm" aria-label="Footer links">
             <Link to="/privacy" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">

@@ -1,4 +1,5 @@
 import { Request, Response } from "express";
+import { toPublicMessage } from "../utils/publicError.js";
 
 // Example error handler for region-edit
 export function handleRegionEditError(err: any, req: Request, res: Response) {
@@ -17,6 +18,6 @@ export function handleRegionEditError(err: any, req: Request, res: Response) {
   // fallback
   return res.status(422).json({
     error: "UNPROCESSABLE_ENTITY",
-    message: err?.message || "Unprocessable request."
+    message: toPublicMessage(err?.message || "Unprocessable request.")
   });
 }
