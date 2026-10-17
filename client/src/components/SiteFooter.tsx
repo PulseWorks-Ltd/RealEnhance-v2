@@ -16,7 +16,7 @@ export function SiteFooter() {
             <Link to="/terms" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">
               Terms
             </Link>
-            <a href="mailto:support@realenhance.co.nz" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">
+            <a href="mailto:hello@pulseworks.co.nz" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">
               Contact
             </a>
             <Link to="/faq" className="font-medium text-slate-600 transition-colors hover:text-emerald-700">

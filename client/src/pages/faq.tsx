@@ -270,7 +270,7 @@ export default function FaqPage() {
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </a>
-            <a href="mailto:support@realenhance.co.nz" className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors">
+            <a href="mailto:hello@pulseworks.co.nz" className="text-sm font-medium text-slate-600 hover:text-emerald-700 transition-colors">
               Contact support
             </a>
           </div>

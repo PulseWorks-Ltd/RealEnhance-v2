@@ -152,7 +152,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
               <NavItem key={item.to} {...item} onClick={() => setSidebarOpen(false)} />
             ))}
             <a
-              href="mailto:support@realenhance.ai"
+              href="mailto:hello@pulseworks.co.nz"
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-200 hover:bg-brand-800/60 hover:text-white transition-colors"
             >
               <HelpCircle className="w-[18px] h-[18px]" />
