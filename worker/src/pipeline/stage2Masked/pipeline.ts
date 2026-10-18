@@ -159,6 +159,15 @@ const CUT_UNDER_MIN_PCT = Number(process.env.CUT_UNDER_MIN_PCT || 40);          
 function isCutUnder(m: any): boolean {
   return m.areaPct >= CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT && (m.shadowPct || 0) < CUT_UNDER_MAX_SHADOW_PCT;
 }
+// A SMALL changed area under traced furniture (below the re-stage size): the
+// piece's own shadow or a leg the trace left out. Pasting the real floor there
+// left a hard-edged rectangle of bare carpet under a bedside table (Oct 2026,
+// production: Bedroom_09, 0.44% of the photo, 71% under the table), so on every
+// attempt Gemini's own pixels are kept there instead.
+const FILL_SMALL_MISSED_UNDER = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_FILL_SMALL_MISSED_UNDER || "").trim().toLowerCase());
+function isSmallMissedUnder(m: any): boolean {
+  return FILL_SMALL_MISSED_UNDER && m.areaPct < CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT;
+}
 const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
@@ -477,23 +486,27 @@ export async function traceLayers(ctx: MaskedContext) {
   // differs from the original — bare floor showing between chair legs stays.
   const tightFloor = ctx.tight ? await fillChangedGaps(floor, original, staged, w, h) : null;
   if (tightFloor) row.possiblyMissedByTrace = (tightFloor as any).possiblyMissedByTrace;
-  if (tightFloor && ctx.fillMissedUnder) {
-    // Last attempt: rather than fail, keep Gemini's own pixels in those
-    // areas — the legs or base when the trace really cut a piece off, or a
-    // natural shadow/reflection when that is all it was. Pasting the real
-    // photo there instead broke up 007's bedside table (Oct 2026 replay).
+  if (tightFloor) {
+    // Keep Gemini's own pixels in areas missed under furniture — the legs or
+    // base when the trace really cut a piece off, or the piece's natural
+    // shadow when that is all it was. Pasting the real photo there instead
+    // broke up 007's bedside table (Oct 2026 replay). Small areas: every
+    // attempt. Re-stage-sized areas: last attempt only (else re-stage).
     const list: any[] = (tightFloor as any).possiblyMissedByTrace || [];
     const px: ArrayLike<number>[] = (tightFloor as any).missedPixels || [];
     const filled: any[] = [];
     list.forEach((m, k) => {
-      if (!isCutUnder(m) || !px[k]) return;
+      if (!px[k] || !((ctx.fillMissedUnder && isCutUnder(m)) || isSmallMissedUnder(m))) return;
       const piece = px[k];
       for (let j = 0; j < piece.length; j++) { floor[piece[j]] = 1; tightFloor[piece[j]] = 1; }
       filled.push(m);
     });
     if (filled.length) {
-      row.missedUnderFilled = filled;
-      log(ctx, `[${ctx.name}] last attempt: took ${filled.map((m) => `${m.areaPct}%`).join(", ")} under furniture from Gemini's picture (missed by the trace)`);
+      const big = filled.filter(isCutUnder);
+      if (big.length) row.missedUnderFilled = big;
+      const small = filled.filter((m) => !isCutUnder(m));
+      if (small.length) row.smallMissedUnderFilled = small;
+      log(ctx, `[${ctx.name}] took ${filled.map((m) => `${m.areaPct}%`).join(", ")} under furniture from Gemini's picture (missed by the trace${big.length ? "; last attempt" : ""})`);
     }
   }
   floor = fillFurnitureColumns(floor, w, h);
