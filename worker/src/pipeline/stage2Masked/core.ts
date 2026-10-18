@@ -942,6 +942,9 @@ export async function matchLocalLighting(
 // Edge matte: staged pixels this different from the real photo (max channel
 // difference, 0-255) are never handed back to the real photo by the matte.
 const MATTE_KEEP_DIFF = Number(process.env.STAGE2_MATTE_KEEP_DIFF || 45);
+// ...and the matte only runs where Gemini's surroundings differ from the real
+// photo's by at least this much (max channel, 0-255, averaged nearby).
+const MATTE_MIN_BG_CHANGE = Number(process.env.STAGE2_MATTE_MIN_BG_CHANGE || 12);
 
 export async function compositeLayers(
   original: Buffer,
@@ -1023,26 +1026,28 @@ export async function compositeLayers(
   // inside and the staged floor colour just outside: furniture-like -> staged,
   // floor-like -> original, in between -> blended (a natural soft edge).
   let matteF: Buffer | null = null, matteFd: Buffer | null = null, matteB: Buffer | null = null, matteBd: Buffer | null = null;
+  let matteBo: Buffer | null = null; // the REAL photo's colour just outside, same weighting as matteB
   if (matte) {
     const inF = Buffer.alloc(N, 0), inB = Buffer.alloc(N, 0);
-    const rgbF = Buffer.alloc(N * 3, 0), rgbB = Buffer.alloc(N * 3, 0);
+    const rgbF = Buffer.alloc(N * 3, 0), rgbB = Buffer.alloc(N * 3, 0), rgbBo = Buffer.alloc(N * 3, 0);
     for (let i = 0; i < N; i++) {
       if (coreA[i] > 200) {
         inF[i] = 255;
         for (let c = 0; c < 3; c++) rgbF[i * 3 + c] = sBlur[i * 3 + c];
       } else if (solidA[i] < 20) {
         inB[i] = 255;
-        for (let c = 0; c < 3; c++) rgbB[i * 3 + c] = sBlur[i * 3 + c];
+        for (let c = 0; c < 3; c++) { rgbB[i * 3 + c] = sBlur[i * 3 + c]; rgbBo[i * 3 + c] = oBlur[i * 3 + c]; }
       }
     }
     // Wide enough to reach across the whole band from both sides.
     const bandPx = ((srcW * (CORE_ERODE_PCT + SOLID_GROW_PCT)) / 100) * scale;
     const sig = Math.max(2, bandPx * 0.8);
-    [matteF, matteFd, matteB, matteBd] = await Promise.all([
+    [matteF, matteFd, matteB, matteBd, matteBo] = await Promise.all([
       sharp(rgbF, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
       sharp(inF, { raw: { width: fw, height: fh, channels: 1 } }).blur(sig).grayscale().raw().toBuffer(),
       sharp(rgbB, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
       sharp(inB, { raw: { width: fw, height: fh, channels: 1 } }).blur(sig).grayscale().raw().toBuffer(),
+      sharp(rgbBo, { raw: { width: fw, height: fh, channels: 3 } }).blur(sig).raw().toBuffer(),
     ]);
   }
   let matteUsed = 0;
@@ -1067,16 +1072,22 @@ export async function compositeLayers(
       if (matteF && matteFd && matteB && matteBd && matteFd[i] > 6 && matteBd[i] > 6) {
         // Average furniture (F) and staged-floor (B) colours nearby; project
         // this pixel onto the line between them to get how "furniture" it is.
-        let fb2 = 0, pf = 0;
+        let fb2 = 0, pf = 0, bgChanged = 0;
         for (let c = 0; c < 3; c++) {
           const F = (matteF[i * 3 + c] * 255) / matteFd[i];
           const B = (matteB[i * 3 + c] * 255) / matteBd[i];
           const S = sBlur[i * 3 + c];
           fb2 += (F - B) ** 2;
           pf += (S - B) * (F - B);
+          if (matteBo) bgChanged = Math.max(bgChanged, Math.abs(B - (matteBo[i * 3 + c] * 255) / matteBd[i]));
         }
-        // Only when furniture and floor clearly differ in colour.
-        if (fb2 > 25 * 25) {
+        // Only when furniture and floor clearly differ in colour, and only
+        // where Gemini changed the surroundings (its redrawn floor strip is what
+        // the matte trims). Where the staged surroundings match the real photo
+        // (a wall behind a table) there is nothing to trim, and light glossy
+        // wood near the wall read as wall and was hazed with it (Oct 2026,
+        // production Kitchen_06: pale patch on the table top).
+        if (fb2 > 25 * 25 && bgChanged >= MATTE_MIN_BG_CHANGE) {
           const alpha = Math.min(1, Math.max(0, pf / fb2));
           const diffTake = take[i] / 255;
           let t = Math.min(diffTake, Math.min(1, Math.max(0, (alpha - 0.2) / 0.6)));
