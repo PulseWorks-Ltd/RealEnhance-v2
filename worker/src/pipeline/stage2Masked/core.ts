@@ -457,6 +457,58 @@ export function fillFurnitureColumns(src: Uint8Array, w: number, h: number): Mas
   return out;
 }
 
+// Floor pockets under a piece, between its legs: columns where the piece ends
+// higher (a shelf or rail) than the legs on both sides of them. The column
+// fill stops at the shelf, so the real floor was pasted back there, while
+// Gemini drew the piece's shadow in that spot — a hard-edged rectangle of bare
+// carpet under bedside tables (Oct 2026, production: Bedroom_09, Bedroom_16).
+// A pocket is taken from Gemini's picture only when it is small and Gemini
+// really drew something different there (else the real floor matches anyway).
+export const LEG_POCKET_FILL = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_FILL_LEG_POCKETS || "").trim().toLowerCase());
+const LEG_POCKET_MAX_PCT = 1.0;      // a pocket bigger than this (open space under a dining table) is left alone
+const LEG_POCKET_MIN_MEAN_DIFF = 15; // average colour difference (0-255) between Gemini's and the real floor there
+
+export async function findLegPockets(floor: Uint8Array, original: Buffer, staged: Buffer, w: number, h: number) {
+  const cand = new Uint8Array(w * h);
+  const drop = Math.max(3, Math.round(h * 0.006));
+  for (const comp of labelComponents(floor, w, h)) {
+    if (comp.pixels.length < w * h * 0.002) continue;
+    const bottom = new Int32Array(w).fill(-1);
+    for (const i of comp.pixels) { const x = i % w, y = (i - x) / w; if (y > bottom[x]) bottom[x] = y; }
+    for (let x = comp.x1; x <= comp.x2; x++) {
+      if (bottom[x] < 0) continue;
+      let xl = -1, xr = -1;
+      for (let k = x - 1; k >= comp.x1; k--) if (bottom[k] > bottom[x] + drop) { xl = k; break; }
+      for (let k = x + 1; k <= comp.x2; k++) if (bottom[k] > bottom[x] + drop) { xr = k; break; }
+      if (xl < 0 || xr < 0 || xr - xl > w * 0.3) continue;
+      // down to the line joining the two leg bottoms (follows the perspective)
+      const line = Math.round(bottom[xl] + ((bottom[xr] - bottom[xl]) * (x - xl)) / (xr - xl));
+      for (let y = bottom[x] + 1; y <= line && y < h; y++) if (!floor[y * w + x]) cand[y * w + x] = 1;
+    }
+  }
+  const [a, b] = await Promise.all([
+    sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer(),
+    sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).raw().toBuffer(),
+  ]);
+  const grey = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(1.2).raw().toBuffer();
+  const fill = new Uint8Array(w * h);
+  const pockets: Array<{ areaPct: number; meanDiff: number; floorStd: number; filled: boolean; box: number[] }> = [];
+  for (const piece of labelComponents(cand, w, h)) {
+    if (piece.pixels.length < w * h * 0.0002) continue;
+    let d = 0;
+    for (const i of piece.pixels) d += (Math.abs(a[i * 3] - b[i * 3]) + Math.abs(a[i * 3 + 1] - b[i * 3 + 1]) + Math.abs(a[i * 3 + 2] - b[i * 3 + 2])) / 3;
+    const areaPct = +((piece.pixels.length / (w * h)) * 100).toFixed(2);
+    const meanDiff = +(d / piece.pixels.length).toFixed(1);
+    // Only plain floor in the real photo: a rug edge, or the line where carpet
+    // meets boards, inside the pocket means it is not just the space under a piece.
+    const floorStd = greyStd(grey, piece.pixels);
+    const filled = areaPct <= LEG_POCKET_MAX_PCT && meanDiff >= LEG_POCKET_MIN_MEAN_DIFF && floorStd <= PLAIN_FLOOR_MAX_STD;
+    if (filled) for (const i of piece.pixels) fill[i] = 1;
+    pockets.push({ areaPct, meanDiff, floorStd, filled, box: [+(piece.x1 / w).toFixed(2), +(piece.y1 / h).toFixed(2), +(piece.x2 / w).toFixed(2), +(piece.y2 / h).toFixed(2)] });
+  }
+  return { fill, pockets };
+}
+
 export function removeSmallComponents(src: Uint8Array, w: number, h: number, minArea: number): Mask {
   const out = src.slice();
   const seen = new Uint8Array(w * h);
@@ -531,6 +583,19 @@ function isShadowPixel(orig: Buffer, staged: Buffer, i: number): boolean {
 }
 const SHADOW_MIN_RATIO = 0.4;
 
+// How much the REAL photo varies inside an area (brightness standard
+// deviation, 0-255). Plain floor is low; a wall corner, skirting, a sun patch
+// or a hearth is high. Gemini's pixels may only replace plain floor: on saved
+// rooms, every wrong fill (a wall corner, a real sun patch, a fireplace hearth)
+// measured 23+, every right one (shadows under beds and tables) 3-14.
+export const PLAIN_FLOOR_MAX_STD = Number(process.env.STAGE2_PLAIN_FLOOR_MAX_STD || 20);
+function greyStd(grey: Buffer, pixels: ArrayLike<number>): number {
+  let sum = 0, sum2 = 0;
+  for (let k = 0; k < pixels.length; k++) { const v = grey[pixels[k]]; sum += v; sum2 += v * v; }
+  const n = Math.max(1, pixels.length), mean = sum / n;
+  return +Math.sqrt(Math.max(0, sum2 / n - mean * mean)).toFixed(1);
+}
+
 export async function fillChangedGaps(floor: Uint8Array, original: Buffer, staged: Buffer, w: number, h: number): Promise<Mask> {
   const out = fillEnclosedHoles(floor, w, h, Math.round(w * h * 0.02));
   const cols = fillFurnitureColumns(floor, w, h);
@@ -579,8 +644,9 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
   let cand = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) cand[i] = changed[i] && near[i] && !out[i] ? 1 : 0;
   cand = erode(dilate(cand, w, h, r), w, h, r);
-  const missed: Array<{ areaPct: number; touchingFurniturePct: number; underFurniturePct: number; shadowPct: number; box: number[] }> = [];
+  const missed: Array<{ areaPct: number; touchingFurniturePct: number; underFurniturePct: number; shadowPct: number; floorStd: number; box: number[] }> = [];
   const missedPixels: ArrayLike<number>[] = [];
+  const grey = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(1.2).raw().toBuffer();
   for (const piece of labelComponents(cand, w, h)) {
     if (piece.pixels.length < w * h * 0.002) continue;
     let edge = 0, touching = 0, topEdge = 0, under = 0, shadow = 0;
@@ -602,6 +668,7 @@ export async function fillChangedGaps(floor: Uint8Array, original: Buffer, stage
       touchingFurniturePct: Math.round((touching / Math.max(1, edge)) * 100),
       underFurniturePct: Math.round((under / Math.max(1, topEdge)) * 100),
       shadowPct: Math.round((shadow / piece.pixels.length) * 100),
+      floorStd: greyStd(grey, piece.pixels),
       box: [+(piece.x1 / w).toFixed(2), +(piece.y1 / h).toFixed(2), +(piece.x2 / w).toFixed(2), +(piece.y2 / h).toFixed(2)],
     });
   }

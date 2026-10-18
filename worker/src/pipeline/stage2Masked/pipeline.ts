@@ -74,6 +74,9 @@ import {
   applyCutPieceCompletion,
   REALIGN_MAX_EMPTY_PCT,
   EDGE_CROP_ENABLED,
+  LEG_POCKET_FILL,
+  findLegPockets,
+  PLAIN_FLOOR_MAX_STD,
   planEdgeCrop,
   applyEdgeCrop,
   undoneOverlay,
@@ -165,8 +168,11 @@ function isCutUnder(m: any): boolean {
 // production: Bedroom_09, 0.44% of the photo, 71% under the table), so on every
 // attempt Gemini's own pixels are kept there instead.
 const FILL_SMALL_MISSED_UNDER = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_FILL_SMALL_MISSED_UNDER || "").trim().toLowerCase());
+// Only where the real photo is plain floor there (see PLAIN_FLOOR_MAX_STD):
+// never over a wall corner, skirting, a real sun patch or a hearth.
 function isSmallMissedUnder(m: any): boolean {
-  return FILL_SMALL_MISSED_UNDER && m.areaPct < CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT;
+  return FILL_SMALL_MISSED_UNDER && m.areaPct < CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT
+    && typeof m.floorStd === "number" && m.floorStd <= PLAIN_FLOOR_MAX_STD;
 }
 const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
@@ -510,6 +516,16 @@ export async function traceLayers(ctx: MaskedContext) {
     }
   }
   floor = fillFurnitureColumns(floor, w, h);
+  // Floor under a piece, between its legs: keep Gemini's (its shadow there).
+  if (LEG_POCKET_FILL && ctx.tight) {
+    const lp = await findLegPockets(floor, original, staged, w, h).catch(() => null);
+    if (lp && lp.pockets.length) {
+      row.legPockets = lp.pockets;
+      for (let i = 0; i < floor.length; i++) if (lp.fill[i]) { floor[i] = 1; if (tightFloor) tightFloor[i] = 1; }
+      const filled = lp.pockets.filter((pk) => pk.filled);
+      if (filled.length) log(ctx, `[${ctx.name}] floor between furniture legs taken from Gemini's picture: ${filled.map((pk) => `${pk.areaPct}%`).join(", ")}`);
+    }
+  }
   const furnitureRatio = ratioOf(floor);
   save(ctx, "3_mask_traced.png", await maskToPng(floor, w, h));
   if (furnitureRatio < 0.01) throw new Error(`tracing found almost no furniture (${(furnitureRatio * 100).toFixed(2)}% of image)`);
