@@ -509,6 +509,45 @@ export async function findLegPockets(floor: Uint8Array, original: Buffer, staged
   return { fill, pockets };
 }
 
+// Legs in the edge band. A leg near the traced outline sits in the band,
+// where the matte decides by colour; a walnut chair leg over timber reads as
+// floor and was swapped for the real floor (Oct 2026, production Kitchen_06).
+// Shape tells them apart: a leg is a long, upright stripe darker than what is
+// on both sides of it, while floorboards and carpet edges run across. Returns
+// the leg pixels (inside the traced shape only) to treat as solid furniture.
+export const BAND_LEG_KEEP = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_BAND_LEG_KEEP || "").trim().toLowerCase());
+export async function findBandLegs(staged: Buffer, solid: Uint8Array, core: Uint8Array, w: number, h: number) {
+  const lum = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(1.2).raw().toBuffer();
+  const k = Math.max(3, Math.round(w * 0.006)); // look this far left and right (about a leg's width)
+  const valley = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = k; x < w - k; x++) {
+      const i = y * w + x;
+      if (!solid[i] || core[i]) continue; // band only
+      const v = lum[i];
+      if (v + 14 < lum[i - k] && v + 14 < lum[i + k]) valley[i] = 1;
+    }
+  }
+  // join the stripe vertically, then keep long upright pieces
+  const joined = dilate(valley, w, h, 1);
+  const out = new Uint8Array(w * h);
+  let n = 0;
+  for (const piece of labelComponents(joined, w, h)) {
+    const pw = piece.x2 - piece.x1 + 1, ph = piece.y2 - piece.y1 + 1;
+    if (ph < h * 0.03 || ph < 4 * pw) continue;
+    // the stripe itself plus its own width, inside the traced shape
+    for (const i of piece.pixels) {
+      const x = i % w;
+      for (let d = -Math.round(k / 2); d <= Math.round(k / 2); d++) {
+        const j = i + d;
+        if (x + d < 0 || x + d >= w || !solid[j]) continue;
+        if (lum[j] <= lum[i] + 12 && !out[j]) { out[j] = 1; n++; }
+      }
+    }
+  }
+  return { legs: out, pctOfImage: +((n / (w * h)) * 100).toFixed(2) };
+}
+
 export function removeSmallComponents(src: Uint8Array, w: number, h: number, minArea: number): Mask {
   const out = src.slice();
   const seen = new Uint8Array(w * h);
@@ -877,15 +916,21 @@ export async function matchLocalLighting(
   ]);
   // Where little room is visible nearby (deep under a big piece), the
   // correction fades to none rather than guessing.
+  // Brightness only, the same gain on all three channels: per-channel gains
+  // also copied the FLOOR's colour difference onto whatever sits on it (Oct
+  // 2026, production Kitchen_06: Gemini drew the timber redder, so a grey
+  // rug's edge turned pink, with a green fringe where the channels faded out
+  // at different rates). The overall colour shift is already removed globally.
   const gainSum = [0, 0, 0];
   let n = 0;
   for (let i = 0; i < N; i++) {
     const w = Math.min(1, mB[i] / 255 / 0.15);
     if (w <= 0) continue;
+    const sv = sB[i * 3] + sB[i * 3 + 1] + sB[i * 3 + 2];
+    const ov = oB[i * 3] + oB[i * 3 + 1] + oB[i * 3 + 2];
+    const r = sv > 18 ? Math.min(1.4, Math.max(0.7, ov / sv)) : 1;
+    const g = 1 + (r - 1) * w;
     for (let c = 0; c < 3; c++) {
-      const sv = sB[i * 3 + c];
-      const r = sv > 6 ? Math.min(1.4, Math.max(0.7, oB[i * 3 + c] / sv)) : 1;
-      const g = 1 + (r - 1) * w;
       stgAdj[i * 3 + c] = Math.min(255, Math.round(stgAdj[i * 3 + c] * g));
       gainSum[c] += g;
     }
@@ -893,6 +938,10 @@ export async function matchLocalLighting(
   }
   return { meanGain: gainSum.map((g) => Number((n ? g / n : 1).toFixed(3))) };
 }
+
+// Edge matte: staged pixels this different from the real photo (max channel
+// difference, 0-255) are never handed back to the real photo by the matte.
+const MATTE_KEEP_DIFF = Number(process.env.STAGE2_MATTE_KEEP_DIFF || 45);
 
 export async function compositeLayers(
   original: Buffer,
@@ -1029,7 +1078,17 @@ export async function compositeLayers(
         // Only when furniture and floor clearly differ in colour.
         if (fb2 > 25 * 25) {
           const alpha = Math.min(1, Math.max(0, pf / fb2));
-          take[i] = Math.round(Math.min(take[i] / 255, Math.min(1, Math.max(0, (alpha - 0.2) / 0.6))) * 255);
+          const diffTake = take[i] / 255;
+          let t = Math.min(diffTake, Math.min(1, Math.max(0, (alpha - 0.2) / 0.6)));
+          // The matte trims Gemini's floor strip back to the real floor, which
+          // only looks right where the two are alike. Where the staged pixel is
+          // far from the real photo it is the piece itself, kept even if its
+          // colour is close to the staged surroundings: a brown TV unit against
+          // a white wall, dark legs on dark carpet (Oct 2026, production
+          // Kitchen_01: white streaks down the unit's end, broken legs).
+          const keep = Math.min(1, Math.max(0, (diff - MATTE_KEEP_DIFF) / 25));
+          t = Math.max(t, keep * diffTake);
+          take[i] = Math.round(t * 255);
           matteUsed++;
         }
       }

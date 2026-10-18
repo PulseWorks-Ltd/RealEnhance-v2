@@ -76,6 +76,8 @@ import {
   EDGE_CROP_ENABLED,
   LEG_POCKET_FILL,
   findLegPockets,
+  BAND_LEG_KEEP,
+  findBandLegs,
   PLAIN_FLOOR_MAX_STD,
   planEdgeCrop,
   applyEdgeCrop,
@@ -167,6 +169,7 @@ function isCutUnder(m: any): boolean {
 // left a hard-edged rectangle of bare carpet under a bedside table (Oct 2026,
 // production: Bedroom_09, 0.44% of the photo, 71% under the table), so on every
 // attempt Gemini's own pixels are kept there instead.
+const THIN_PARTS_SOLID = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_THIN_PARTS_SOLID || "").trim().toLowerCase());
 const FILL_SMALL_MISSED_UNDER = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_FILL_SMALL_MISSED_UNDER || "").trim().toLowerCase());
 // Only where the real photo is plain floor there (see PLAIN_FLOOR_MAX_STD):
 // never over a wall corner, skirting, a real sun patch or a hearth.
@@ -599,7 +602,39 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   let tSolid = new Uint8Array(w * h);
   for (let i = 0; i < tSolid.length; i++) tSolid[i] = tightFloor[i] | artRegion[i];
   tSolid = dilate(tSolid, w, h, Math.max(1, Math.round((w * SOLID_GROW_PCT) / 100)));
-  const tCore = erode(tightFloor, w, h, Math.max(1, Math.round((w * CORE_ERODE_PCT) / 100)));
+  const coreR = Math.max(1, Math.round((w * CORE_ERODE_PCT) / 100));
+  const tCore = erode(tightFloor, w, h, coreR);
+  // Thin parts (legs, rails, thin frames) narrower than the edge band have no
+  // core at all, so the edge matte decided them pixel by pixel by colour: dark
+  // legs on dark carpet read as "floor" and were swapped for the real carpet
+  // (Oct 2026, production Kitchen_01: a TV unit's legs came out broken). They
+  // are made core here. A thin strip of staged floor along a big piece's edge
+  // is not thin by this test (it survives the opening), so the matte still
+  // trims it.
+  // Only upright pieces (legs, posts: at least 2.5x taller than wide); flat
+  // strips (under a seat, along a rail) are left to the matte.
+  let thinPct = 0;
+  if (THIN_PARTS_SOLID) {
+    const opened = dilate(tCore, w, h, coreR);
+    const residue = new Uint8Array(w * h);
+    for (let i = 0; i < residue.length; i++) if (tightFloor[i] && !opened[i]) residue[i] = 1;
+    let n = 0;
+    for (const piece of labelComponents(residue, w, h)) {
+      const pw = piece.x2 - piece.x1 + 1, ph = piece.y2 - piece.y1 + 1;
+      if (piece.pixels.length < 12 || ph < 2.5 * pw) continue;
+      for (const i of piece.pixels) tCore[i] = 1;
+      n += piece.pixels.length;
+    }
+    thinPct = +((n / tCore.length) * 100).toFixed(2);
+  }
+  let bandLegPct = 0;
+  if (BAND_LEG_KEEP) {
+    const bl = await findBandLegs(staged, tSolid, tCore, w, h).catch(() => null);
+    if (bl) {
+      for (let i = 0; i < tCore.length; i++) if (bl.legs[i]) tCore[i] = 1;
+      bandLegPct = bl.pctOfImage;
+    }
+  }
   for (let i = 0; i < tCore.length; i++) tCore[i] |= artRegion[i];
   const tSolidPng = await maskToPng(tSolid, w, h);
   const tCorePng = await maskToPng(tCore, w, h);
@@ -639,7 +674,7 @@ export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   const affected = new Uint8Array(w * h);
   for (let i = 0; i < affected.length; i++) affected[i] = tSolid[i] | hZone[i];
   save(ctx, "3_mask_harmonise_shadow_zone.png", await maskToPng(hZone, w, h));
-  row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1), edgeMattePctOfBand };
+  row.harmonise = { tightFurniturePct: +(ratioOf(tightFloor) * 100).toFixed(1), shadowZonePct: +(ratioOf(hZone) * 100).toFixed(1), edgeMattePctOfBand, thinPartsPctOfImage: thinPct, bandLegsPctOfImage: bandLegPct };
   let blendUsable = !!harmRaw;
   if (harmRaw) {
     // Did Gemini keep the room's framing in its blend? If not, its shadows
