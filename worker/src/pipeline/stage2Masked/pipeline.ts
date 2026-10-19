@@ -57,6 +57,8 @@ import {
   checkFraming,
   checkCameraAlignment,
   checkFloatingFurniture,
+  checkFloorMoved,
+  FLOOR_MOVED_CHECK,
   planFloorPatches,
   applyFloorPatches,
   canRealign,
@@ -981,7 +983,7 @@ export async function runMaskedStage2Job(p: {
       const bedWall = await bedWallP;
       let placementRejected = false;
       if (bedWall) {
-        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
         if (bedWall.failed) {
           const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
@@ -1079,6 +1081,15 @@ export async function runMaskedStage2Job(p: {
           row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
           (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
         }
+        // Floor moved: Gemini raised the floor / pushed a wall back to fit the
+        // furniture (walls and windows unchanged, so the room check passes).
+        // Merging would paste a rug or bed onto the real wall.
+        if (FLOOR_MOVED_CHECK) {
+          row.floorMovedCheck = await checkFloorMoved(original, ctx.staged, layers.solid, w, h).catch((e: any) => ({ moved: false, error: String(e?.message || e) }));
+          if (row.floorMovedCheck.moved) {
+            p.warn?.(`[${ctx.name}] Gemini moved the floor line to fit the furniture (its floor reaches up to ${row.floorMovedCheck.maxRisePct}% of the photo's height over the real wall, across ${row.floorMovedCheck.longestRunPct}% of the width) — re-staging`);
+          }
+        }
         // Last attempt: a piece "missed by the trace" alone no longer fails
         // the job. Most are a shadow or reflection on the floor (Oct 2026:
         // DSC07855 failed 3 jobs on a glossy floor's reflection); the area was
@@ -1094,6 +1105,8 @@ export async function runMaskedStage2Job(p: {
           // Reshaped room: paste-back can't fix it, so skip the blend and door
           // check (time and cost) and go straight to the re-stage / fallback.
           reasons.push("room reshaped");
+        } else if (row.floorMovedCheck?.moved) {
+          reasons.push("room changed to fit the furniture");
         } else if (row.floatingCheck.floating && !floorPlan?.ok) {
           reasons.push("furniture floating");
         } else {
@@ -1181,6 +1194,9 @@ export async function runMaskedStage2Job(p: {
         ? ["Some furniture legs ended above the floor. Place and size each piece so its legs or base rest on the existing floor exactly as the input photo shows it — move or resize the furniture, never the floor line, skirting boards, walls or flooring."]
         : []),
       ...(row.framingCheck?.framingChanged ? [reshapeHint(row.cameraAlignment)] : []),
+      ...(row.floorMovedCheck?.moved
+        ? ["Your previous attempt changed the room to make the furniture fit: the floor was raised or the bottom of a wall was pushed back, so a rug or piece of furniture stood where the photo shows wall. Keep every wall, skirting board and floor edge exactly where it is. The photo shows only a little floor: let the bed or other large pieces run off the bottom or side edge of the photo, use smaller pieces, and leave out the rug."]
+        : []),
     ];
   }
 }

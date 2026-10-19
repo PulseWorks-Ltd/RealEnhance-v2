@@ -13,6 +13,8 @@ import path from "path";
 import fs from "fs";
 import sharp from "sharp";
 import { generateContentViaRest } from "../../ai/geminiRestClient";
+import { realFloorLine } from "./floorLine";
+export { realFloorLine };
 import { callValidatorModel } from "../../validators/validatorModelCall";
 import { runWithForcedValidatorModel } from "../../validators/occlusionVsRemovalCheck";
 
@@ -1606,6 +1608,8 @@ async function askDoorAccessOnce(emptyPath: string, finalImage: Buffer, doors: D
 // against, so one small AI look at Gemini's staged image decides (runs
 // alongside the blend; bedrooms with a surveyed door only).
 // STAGE2_BED_WALL_CHECK=off disables it.
+// STAGE2_BED_UNDER_WINDOW_OK=off goes back to rejecting any glass covered.
+export const BED_UNDER_WINDOW_OK = String(process.env.STAGE2_BED_UNDER_WINDOW_OK ?? "on").trim().toLowerCase() !== "off";
 export const BED_WALL_CHECK = String(process.env.STAGE2_BED_WALL_CHECK ?? "on").trim().toLowerCase() !== "off";
 
 export function buildBedWallPrompt(doors: DoorOpening[]): string {
@@ -1622,24 +1626,33 @@ Look at the bed in Image 2 and the walls in Image 1, and answer:
 3. doorOnHeadboardWall: is there a door, doorway or wardrobe door anywhere on that same wall — including one beside the bed? Judge by the wall itself in Image 1, not by what the camera angle makes look close.
 4. otherPlainWallAvailable: does the room show another wall, long enough for the bed, with no door, doorway, wardrobe door or window on it?
 5. headboardCoversWindow: does the bed or its headboard cover any part of a window's glass?
+5b. windowCoverage: if the bed, headboard, pillows or a bedside lamp cover window glass, how much? "bottom" = only the lower part of the glass (no more than about a quarter of the window's height), with the rest of the window clearly visible; "more" = anything beyond that; "none" = no glass covered.
 6. bedCoversDoor: does the bed, its headboard, a bedside table or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, so the door could no longer close.
 7. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that the bed, a bedside table or any other piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
-Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
+Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "more", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
 }
 
 export function evaluateBedWall(raw: any) {
   const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
   const bed = yes(raw?.bedPresent);
   const doorWall = bed && yes(raw?.doorOnHeadboardWall) && yes(raw?.otherPlainWallAvailable);
-  const window = bed && yes(raw?.headboardCoversWindow);
+  // A bed under a window is accepted when every usable wall has a window
+  // (no other plain wall) and only the bottom of the glass is covered — what
+  // a real stager would do (owner decision, Oct 2026: 33 Golf Rd Image 03, a
+  // corner room with windows on both walls, failed both attempts).
+  const coverage = String(raw?.windowCoverage || "").trim().toLowerCase();
+  const underWindowOk = BED_UNDER_WINDOW_OK && !yes(raw?.otherPlainWallAvailable) && coverage === "bottom";
+  const window = bed && yes(raw?.headboardCoversWindow) && !underWindowOk;
   const coversDoor = bed && yes(raw?.bedCoversDoor);
   const roomWidened = yes(raw?.roomWidened);
   const hints: string[] = [];
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed, fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
   if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed; or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
-  if (window) hints.push("Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible.");
-  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
+  if (window) hints.push(yes(raw?.otherPlainWallAvailable)
+    ? "Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible."
+    : "Your previous attempt covered too much of a window with the bed. The bed may stand under the window, but use a low headboard and low pillows so they cover at most the very bottom of the glass; keep the rest of the window, its frame and the curtains fully visible.");
+  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
 }
 
 // ── Desk placement (studies / offices) ──────────────────────────────────────
@@ -2892,28 +2905,6 @@ export const FLOAT_GROUND_MARGIN_PCT = Number(process.env.FLOAT_GROUND_MARGIN_PC
 export const FLOAT_MIN_WIDTH_PCT = Number(process.env.FLOAT_MIN_WIDTH_PCT || 3);
 export const FLOAT_NEAR_FLOOR_PCT = Number(process.env.FLOAT_NEAR_FLOOR_PCT || 12);
 
-export async function realFloorLine(original: Buffer, w: number, h: number): Promise<Int32Array> {
-  const g = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).greyscale().blur(2).raw().toBuffer();
-  const step = Math.max(2, Math.round(h * 0.004));
-  const raw = new Int32Array(w).fill(-1);
-  for (let x = 0; x < w; x++) {
-    for (let y = h - 1 - step; y > h * 0.35; y--) {
-      if (Math.abs(g[(y - step) * w + x] - g[(y + step) * w + x]) >= 18) { raw[x] = y; break; }
-    }
-  }
-  const win = Math.max(3, Math.round(w * 0.01));
-  const line = new Int32Array(w).fill(-1);
-  for (let x = 0; x < w; x++) {
-    const v: number[] = [];
-    for (let k = -win; k <= win; k++) {
-      const xx = x + k;
-      if (xx >= 0 && xx < w && raw[xx] >= 0) v.push(raw[xx]);
-    }
-    if (v.length) { v.sort((a, b) => a - b); line[x] = v[v.length >> 1]; }
-  }
-  return line;
-}
-
 export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number; gapVsFloor?: { ratio: number; chroma: number } };
 
 export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8Array, w: number, h: number) {
@@ -3034,6 +3025,85 @@ export function gapVsFloor(rgb: Buffer, line: Int32Array, bottom: Int32Array, x1
   const ratio = (gs / gn) / (fs / fn);
   const chroma = Math.max(...[0, 1, 2].map((c) => Math.abs(g[c] / gs - f[c] / fs)));
   return { ratio: +ratio.toFixed(2), chroma: +chroma.toFixed(3), isFloor: ratio >= FLOAT_GAP_FLOOR_MIN_RATIO && ratio <= FLOAT_GAP_FLOOR_MAX_RATIO && chroma < 0.03 };
+}
+
+// ── Floor-moved check ────────────────────────────────────────────────────────
+// In a tight shot Gemini sometimes makes room by raising the floor / pushing
+// the bottom of a wall back while keeping walls and windows in place, so the
+// room check passes. The merge then pastes a rug or bed onto the real wall,
+// floating above the real skirting (Oct 2026, 33 Golf Rd Image 05).
+// For each column with no furniture near the floor line: does Gemini's floor
+// reach up over pixels where the real photo shows wall? No AI call.
+// STAGE2_FLOOR_MOVED_CHECK=off disables it.
+export const FLOOR_MOVED_CHECK = String(process.env.STAGE2_FLOOR_MOVED_CHECK ?? "on").trim().toLowerCase() !== "off";
+export const FLOOR_MOVED_RISE_PCT = Number(process.env.STAGE2_FLOOR_MOVED_RISE_PCT || 3);
+export const FLOOR_MOVED_MIN_RUN_PCT = Number(process.env.STAGE2_FLOOR_MOVED_MIN_RUN_PCT || 4);
+
+export async function checkFloorMoved(original: Buffer, staged: Buffer, furniture: Uint8Array, w: number, h: number) {
+  const W = 800, H = Math.max(8, Math.round((W * h) / w));
+  const ob = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).png().toBuffer();
+  const line = await realFloorLine(ob, W, H);
+  const orgb = await sharp(ob).blur(1.2).raw().toBuffer();
+  const srgb = await sharp(staged).removeAlpha().resize(W, H, { fit: "fill" }).blur(1.2).raw().toBuffer();
+  const mk = await sharp(Buffer.from(furniture.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
+    .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
+  const pad = Math.round(H * 0.08), side = Math.round(W * 0.012);
+  const bandTop = Math.round(H * 0.07), bandBot = Math.round(H * 0.015), floorBand = Math.round(H * 0.04);
+  const px = (b: Buffer, x: number, y: number) => { const i = (y * W + x) * 3; return [b[i], b[i + 1], b[i + 2]]; };
+  // Brightness plus colour balance, so timber vs paint separates by hue too.
+  const feat = (c: number[]) => { const s = c[0] + c[1] + c[2] + 1; return [s / 3, (c[0] / s) * 300, (c[2] / s) * 300]; };
+  const dist = (a: number[], b: number[]) => Math.hypot((a[0] - b[0]) * 0.5, a[1] - b[1], a[2] - b[2]);
+  // Whole-photo floor colour, for columns where the floor runs off the bottom.
+  const fs: number[][] = [];
+  for (let x = 0; x < W; x += 2) { const f = line[x]; if (f < 0) continue; for (let y = f + 3; y <= Math.min(H - 1, f + floorBand); y += 2) fs.push(feat(px(orgb, x, y))); }
+  const med = (k: number) => { const v = fs.map((c) => c[k]).sort((a, b) => a - b); return v[v.length >> 1] ?? 0; };
+  const floorG = [med(0), med(1), med(2)];
+  const moved = new Uint8Array(W);
+  let valid = 0, maxRise = 0;
+  for (let x = 0; x < W; x++) {
+    let f = line[x];
+    if (f < 0 || f >= H - 3) f = H; // no floor line near the bottom: the real floor runs off the photo here
+    if (f - bandTop < 0) continue;
+    let free = true;
+    for (let xx = Math.max(0, x - side); free && xx <= Math.min(W - 1, x + side); xx++)
+      for (let y = Math.max(0, f - pad); y < H; y++) if (mk[y * W + xx] > 127) { free = false; break; }
+    if (!free) continue;
+    const fl = [0, 0, 0]; let fn = 0;
+    for (let y = f + 3; y <= Math.min(H - 1, f + floorBand); y++) { const c = feat(px(orgb, x, y)); fl[0] += c[0]; fl[1] += c[1]; fl[2] += c[2]; fn++; }
+    const floorC = fn >= 3 ? fl.map((v) => v / fn) : floorG;
+    // The real photo must show WALL above here (not more floor, as in a
+    // corner where the floor fills the bottom of the photo).
+    const wr = [0, 0, 0]; let wn = 0;
+    for (let y = Math.max(0, f - Math.round(bandTop * 2.2)); y <= f - Math.round(bandTop * 1.2); y++) { const c = feat(px(orgb, x, y)); wr[0] += c[0]; wr[1] += c[1]; wr[2] += c[2]; wn++; }
+    if (wn < 3) continue;
+    const wallC = wr.map((v) => v / wn);
+    if (dist(wallC, floorC) < 15) continue;
+    valid++;
+    // How far above the real floor line does Gemini's floor reach, over
+    // pixels the real photo shows as wall? (small gaps allowed)
+    let rise = 0, gap = 0;
+    for (let y = Math.min(H - 1, f - 1); y >= Math.max(0, f - Math.round(H * 0.15)); y--) {
+      const oc = feat(px(orgb, x, y)), sc = feat(px(srgb, x, y));
+      const realWall = dist(oc, floorC) > 12 && dist(oc, wallC) < dist(oc, floorC);
+      const geminiFloor = dist(sc, floorC) < 9 && dist(sc, oc) > 10;
+      if (!realWall && y > f - bandBot) continue; // the skirting edge itself
+      if (realWall && geminiFloor) { rise = f - y; gap = 0; }
+      else if (++gap > Math.round(H * 0.012)) break;
+    }
+    if (rise >= (H * FLOOR_MOVED_RISE_PCT) / 100) moved[x] = 1;
+    maxRise = Math.max(maxRise, rise);
+  }
+  let total = 0, best = 0, run = 0, bestEnd = 0;
+  for (let x = 0; x < W; x++) { if (moved[x]) { total++; run++; if (run > best) { best = run; bestEnd = x; } } else run = 0; }
+  const longestRunPct = +((best / W) * 100).toFixed(1);
+  return {
+    moved: longestRunPct >= FLOOR_MOVED_MIN_RUN_PCT,
+    longestRunPct,
+    movedColsPct: +((total / W) * 100).toFixed(1),
+    checkedColsPct: +((valid / W) * 100).toFixed(1),
+    maxRisePct: +((maxRise / H) * 100).toFixed(1),
+    ...(best ? { atXPct: [+(((bestEnd - best + 1) / W) * 100).toFixed(0), +(((bestEnd + 1) / W) * 100).toFixed(0)] } : {}),
+  };
 }
 
 // ---------------------------------------------------------------------------

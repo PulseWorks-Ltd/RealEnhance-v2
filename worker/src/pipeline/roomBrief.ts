@@ -20,6 +20,7 @@
 import fs from "fs";
 import sharp from "sharp";
 import { getGeminiClient } from "../ai/gemini";
+import { visibleFloorPct } from "./stage2Masked/floorLine";
 
 export const ROOM_BRIEF_MODEL = String(process.env.ROOM_BRIEF_MODEL || "gemini-3.8-flash");
 const ROOM_BRIEF_MAX_SIDE = Math.max(512, Number(process.env.ROOM_BRIEF_IMAGE_MAX_SIDE || 1280));
@@ -56,6 +57,8 @@ export type RoomBrief = {
   relationships: string[];
   avoid: string[];
   keepUntouched: string[];
+  // Set in code (never by the model) when the photo shows very little floor.
+  tightShot?: { floorPct: number };
 };
 
 export type RoomBriefUsage = { model: string; inputTokens: number; outputTokens: number; thinkingTokens: number; latencyMs: number };
@@ -456,6 +459,77 @@ export function makeBedPlanConservative(brief: RoomBrief, roomType: string): { b
   return { brief: out, changed };
 }
 
+// ── Tight shots ─────────────────────────────────────────────────────────────
+// A photo taken from a doorway, high up or pointed up shows very little floor.
+// The plan still asked for a queen bed, bedside tables and a rug, and Gemini
+// made room by raising the floor / pushing a wall back; the merge then pasted
+// the rug onto the real wall (Oct 2026, 33 Golf Rd Image 05: 9.5% floor; a
+// normal room shot shows 15-30%). For these photos the plan is cut down in
+// code and the prompt says the furniture may run off the photo edge.
+// STAGE2_TIGHT_SHOT=off disables it.
+export const TIGHT_SHOT_ENABLED = String(process.env.STAGE2_TIGHT_SHOT ?? "on").trim().toLowerCase() !== "off";
+export const TIGHT_SHOT_MAX_FLOOR_PCT = Number(process.env.STAGE2_TIGHT_SHOT_MAX_FLOOR_PCT || 12);
+
+// Rooms where the floor line is a fair measure. Kitchens are left out: the
+// cabinet plinths read as the floor line, so the floor looks smaller than it is.
+export function tightShotApplies(roomType: string): boolean {
+  const key = String(roomType || "").toLowerCase().replace(/-/g, "_");
+  return !/kitchen|bath|laundry|pantry|closet|garage|stair|hall|entry/.test(key);
+}
+
+export function tightShotInstruction(floorPct: number): string {
+  return `TIGHT SHOT: this photo shows very little floor (about ${Math.round(floorPct)}% of the picture). Plan only what the visible floor really holds: the main piece pushed toward the far corner with the bottom or side edge of the photo cutting off its foot or near side (that is normal in a real listing photo), at most one bedside or side table, and NO rug. Choose the smaller size of every piece (a double bed rather than a queen or king). Never plan anything that needs more floor than the photo shows.`;
+}
+
+export function makeTightShotPlan(brief: RoomBrief, roomType: string, floorPct: number): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  if (!Array.isArray(brief?.layout)) return { brief, changed };
+  const isRug = (it: any) => /\brug\b|\bcarpet\b|\bmat\b/i.test(String(it?.item || ""));
+  let layout = brief.layout.filter((it: any) => {
+    if (!isRug(it)) return true;
+    changed.push(`dropped "${String(it.item || "").slice(0, 60)}"`);
+    return false;
+  });
+  // Mentions of the dropped rug elsewhere would bring it back.
+  const noRug = (t: string) => String(t || "").replace(/,?\s*(on|over|with|and)?\s*(an?|the)\s+(area\s+)?rug\b[^,.;]*/gi, "").trim();
+  layout = layout.map((it: any) => ({ ...it, placement: noRug(it.placement) || it.placement }));
+  let out: any = { ...brief, layout, relationships: (brief.relationships || []).map(noRug).filter(Boolean), tightShot: { floorPct } };
+  if (/^bedroom/i.test(String(roomType || "").toLowerCase().replace(/-/g, "_"))) {
+    const big = /\b(king|queen)(\s*-?\s*size(d)?)?\b/gi;
+    const bs = (brief as any).bedSpace;
+    if (bs && /king|queen/i.test(String(bs.bed || ""))) {
+      changed.push(`${bs.bed} bed -> double`);
+      out.bedSpace = { ...bs, bed: "double" };
+    }
+    const downsize = (t: string) => String(t || "").replace(big, "double");
+    out.layout = out.layout.map((it: any) => ({ ...it, item: downsize(it.item), placement: downsize(it.placement) }));
+    out.relationships = out.relationships.map(downsize);
+    const isBed = (it: any) => /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || ""));
+    out.layout = out.layout.map((it: any) => {
+      if (!isBed(it) || /photo edge|edge of the photo/i.test(String(it.placement || ""))) return it;
+      return { ...it, placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — the bottom or side edge of the photo may cut off the foot or near side of the bed` };
+    });
+    // One bedside table, on the far side: the near one is where the floor
+    // runs out of the photo first.
+    const isTable = (it: any) => /bedside|night ?stand|side table/i.test(String(it?.item || ""));
+    const text = (it: any) => `${String(it?.item || "")} ${String(it?.placement || "")}`;
+    const plural = /tables|set of (2|two)|pair|\btwo\b|each side|both sides|flanking|either side/i;
+    out.layout = out.layout.map((it: any) => (isTable(it) && plural.test(text(it))
+      ? { ...it, item: "Bedside table", placement: "a single bedside table on the far side of the bed, toward the far corner" }
+      : it));
+    const tables = out.layout.filter(isTable);
+    if (tables.length > 1) {
+      const near = /foreground|toward(s)? the camera|closest to the (camera|viewer)|\bnear (side|end)\b|\bnear bedside\b|\bfront\b/i;
+      const keep = tables.find((it: any) => !near.test(text(it))) || tables[0];
+      out.layout = out.layout.filter((it: any) => !isTable(it) || it === keep);
+      changed.push(`kept one bedside table of ${tables.length}`);
+    }
+    out = tidyToOneBedsideTable(out);
+    if (out.bedSpace && Number(out.bedSpace.bedsideTables) > 1) out.bedSpace = { ...out.bedSpace, bedsideTables: 1 };
+  }
+  return { brief: out, changed };
+}
+
 /**
  * Office/study plans, checked in code (Oct 2026, production: desks staged in
  * front of an alcove's door while a plain wall was free). A desk whose plan
@@ -581,7 +655,13 @@ export async function buildRoomBrief(params: {
   const model = params.model || ROOM_BRIEF_MODEL;
   const usage: RoomBriefUsage[] = [];
   const image = await loadImageForBrief(params.imagePath);
-  const base = buildRoomBriefInstruction(params.roomType, params.styleDescription);
+  let floorPct: number | null = null;
+  if (TIGHT_SHOT_ENABLED && tightShotApplies(params.roomType)) {
+    floorPct = await visibleFloorPct(fs.readFileSync(params.imagePath)).catch(() => null);
+  }
+  const tight = floorPct !== null && floorPct < TIGHT_SHOT_MAX_FLOOR_PCT;
+  console.log("[ROOM_BRIEF_FLOOR]", JSON.stringify({ roomType: params.roomType, visibleFloorPct: floorPct, tightShot: tight }));
+  const base = buildRoomBriefInstruction(params.roomType, params.styleDescription) + (tight ? `\n\n${tightShotInstruction(floorPct!)}` : "");
   let lastIssues: string[] = [];
   let lastBrief: RoomBrief | undefined;
   let usableBrief: RoomBrief | undefined; // passed every rule but the bed-fit one
@@ -624,6 +704,11 @@ export async function buildRoomBrief(params: {
     if (deskRule.changed.length) {
       brief = deskRule.brief;
       console.log("[ROOM_BRIEF_CONSERVATIVE_DESK]", JSON.stringify({ changed: deskRule.changed }));
+    }
+    if (tight) {
+      const tightRule = makeTightShotPlan(brief, params.roomType, floorPct!);
+      brief = tightRule.brief;
+      console.log("[ROOM_BRIEF_TIGHT_SHOT]", JSON.stringify({ visibleFloorPct: floorPct, changed: tightRule.changed }));
     }
     lastBrief = brief;
     lastIssues = checkRoomBrief(brief, params.roomType);
@@ -746,6 +831,9 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
       ? [`LAYOUT — place these pieces exactly as described:`, ...layoutLines]
       : [`LAYOUT — add no large furniture in this room. Add only the small finishing touches described below.`]),
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
+    ...(brief.tightShot
+      ? [``, `TIGHT SHOT — this photo shows very little floor. Put furniture only on the floor that is visible. Let the bottom or side edge of the photo cut off the foot or near side of the bed or other large pieces, exactly as in a real photo taken from the doorway. Add no rug. The floor, skirting boards and walls stay exactly where they are — never raise the floor or push a wall back to make more room.`]
+      : []),
     ...(avoid.length ? [``, `AVOID IN THIS ROOM`, ...avoid.map((a) => `- ${a}`)] : []),
     ``,
     `KEEP EXACTLY AS IN THE PHOTO`,
@@ -757,7 +845,7 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
     `- A piece may be partly cut off by the edge of the photo, or partly hidden behind a wall, doorframe, bench or other fixed feature, exactly as real furniture would be. Keep each piece in its planned spot — only its size and how much of it shows may change.`,
     ``,
     `FINISHING TOUCHES`,
-    `You may add a few small finishing touches that suit this room: ${finishingTouchesFor(opts.roomType)}. Do not add any other large furniture, and do not move the pieces listed above.`,
+    `You may add a few small finishing touches that suit this room: ${brief.tightShot ? finishingTouchesFor(opts.roomType).replace(/^a rug under the seating, bed or dining table, /, "") : finishingTouchesFor(opts.roomType)}. Do not add any other large furniture${brief.tightShot ? " and no rug" : ""}, and do not move the pieces listed above.`,
     ``,
     `The result must look like a real, professionally staged listing photograph of this exact room.`,
   ].join("\n");
