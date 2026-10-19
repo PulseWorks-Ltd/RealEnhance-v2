@@ -198,7 +198,7 @@ function BeforeAfterPair({ pair, eager }: { pair: ExamplePair; eager?: boolean }
 }
 
 export default function ExamplesPage() {
-  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION);
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/examples");
 
   return (
     <div className="min-h-screen bg-white font-sans text-slate-600">

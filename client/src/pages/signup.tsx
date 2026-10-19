@@ -6,11 +6,17 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { apiFetch } from "@/lib/api";
+import { usePageMeta } from "@/hooks/usePageMeta";
 
 const heroImage =
   "https://images.unsplash.com/photo-1505691938895-1758d7feb511?auto=format&fit=crop&w=1800&q=80"; // Replace with approved RealEnhance hero image when available
 
+const PAGE_TITLE = "Start Free – RealEnhance | Real Estate Photo Enhancement New Zealand";
+const PAGE_DESCRIPTION =
+  "Create your RealEnhance account and get 5 free credits to enhance, declutter and virtually stage your listing photos. No credit card required.";
+
 export default function Signup() {
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/signup");
   const [agencyName, setAgencyName] = useState("");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");

@@ -213,7 +213,7 @@ function FaqAccordionItem({
 }
 
 export default function FaqPage() {
-  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION);
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/faq");
   // Single item open at a time, per spec's stated preference.
   const [openIndex, setOpenIndex] = useState<number | null>(0);
   const schema = useMemo(() => buildFaqSchema(FAQ_ITEMS), []);

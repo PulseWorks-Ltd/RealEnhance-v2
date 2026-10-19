@@ -17,8 +17,14 @@ import {
   MapPin,
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
+import { usePageMeta } from "@/hooks/usePageMeta";
+
+const PAGE_TITLE = "RealEnhance – Real Estate Photo Enhancement & Virtual Staging Software New Zealand | Compliant Listing Photos";
+const PAGE_DESCRIPTION =
+  "RealEnhance is an image enhancement and staging platform that automatically brightens, straightens, declutters and stages real estate listing photos while preserving true room structure — built for New Zealand agents who need REA-compliant, listing-ready images fast. Start free with 5 credits, no credit card required.";
 
 export default function Landing() {
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/");
   const landingSliderImageClassName = 'h-full w-full object-contain object-center';
 
   // Real before/after pairs shipped with the app — covers 4 of the 5

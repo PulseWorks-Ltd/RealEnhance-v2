@@ -1,4 +1,11 @@
+import { usePageMeta } from "@/hooks/usePageMeta";
+
+const PAGE_TITLE = "Terms of Service – RealEnhance";
+const PAGE_DESCRIPTION =
+  "The terms that apply when you use RealEnhance, New Zealand's real estate photo enhancement and virtual staging platform.";
+
 export default function TermsPage() {
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/terms");
   return (
     <div className="bg-slate-50">
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8 lg:py-12">

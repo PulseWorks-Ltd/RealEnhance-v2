@@ -1,10 +1,17 @@
+import { usePageMeta } from "@/hooks/usePageMeta";
+
+const PAGE_TITLE = "Privacy Policy – RealEnhance";
+const PAGE_DESCRIPTION =
+  "How RealEnhance collects, uses and protects your information and the listing photos you upload.";
+
 export default function PrivacyPage() {
+  usePageMeta(PAGE_TITLE, PAGE_DESCRIPTION, "/privacy");
   return (
     <div className="bg-slate-50">
       <div className="mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 lg:px-8 lg:py-12">
         <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8 lg:p-10">
           <header className="mb-8 space-y-2">
-            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Privacy Policy (Draft)</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl">Privacy Policy</h1>
             <p className="text-sm text-slate-600">Effective Date: 9 March 2026</p>
             <p className="text-slate-700">
               RealEnhance respects your privacy and is committed to protecting your personal information.
