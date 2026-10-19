@@ -280,6 +280,9 @@ export function BillingSection({ agency, canManage = true, onUpgradeComplete }: 
           AGENCY_ALREADY_USED_TRIAL: "This agency has already used a trial before.",
           AGENCY_PREVIOUSLY_SUBSCRIBED: "This agency has already had a paid subscription and is not eligible.",
           AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF: "This agency has already purchased a one-off bundle and is not eligible.",
+          AGENCY_ALREADY_USED_NEW_USER_PROMO: "This agency has already used a new-user promo code.",
+          PROMO_MAXED_FOR_AGENCY: "This agency has already used that promo code.",
+          PROMO_ALREADY_REDEEMED_THIS_MONTH: "That promo code has already been used this month.",
           LIFETIME_BONUS_ALREADY_REDEEMED: "That code has already been used.",
           LIFETIME_BONUS_REQUIRES_SUBSCRIPTION: "This code needs an active subscription. Please subscribe first, then enter it again.",
         };

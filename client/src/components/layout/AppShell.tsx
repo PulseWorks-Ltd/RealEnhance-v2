@@ -11,6 +11,7 @@ import {
   X,
   Sparkles,
   LogOut,
+  ShieldCheck,
   type LucideIcon
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
@@ -151,6 +152,10 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             {systemNavItems.map(item => (
               <NavItem key={item.to} {...item} onClick={() => setSidebarOpen(false)} />
             ))}
+            {/* Site admins only (REALENHANCE_ADMIN_EMAILS on the server) */}
+            {user?.isSiteAdmin && (
+              <NavItem to="/admin" icon={ShieldCheck} label="Admin" onClick={() => setSidebarOpen(false)} />
+            )}
             <a
               href="mailto:hello@pulseworks.co.nz"
               className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-brand-200 hover:bg-brand-800/60 hover:text-white transition-colors"

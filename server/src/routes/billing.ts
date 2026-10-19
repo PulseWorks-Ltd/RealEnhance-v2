@@ -47,6 +47,7 @@ const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
 const CREDIT_GRANT_PROMO_CODES = new Set<string>([
   "giveme100",
   "newuser10",
+  "newuser20",
   "adminusermonthlytopup200",
 ]);
 
@@ -727,6 +728,7 @@ router.post("/redeem-promo", requireAuth, async (req: Request, res: Response) =>
       code === "AGENCY_ALREADY_USED_TRIAL" ||
       code === "AGENCY_PREVIOUSLY_SUBSCRIBED" ||
       code === "AGENCY_PREVIOUSLY_PURCHASED_ONE_OFF" ||
+      code === "AGENCY_ALREADY_USED_NEW_USER_PROMO" ||
       code === "PILOT_PROMO_NOT_FOUND" ||
       code === "PILOT_PROMO_INACTIVE" ||
       code === "PILOT_PROMO_GLOBAL_CAP_REACHED" ||
