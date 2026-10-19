@@ -3400,20 +3400,6 @@ async function debugRunInvariantReplay() {
   }
 }
 
-function getStage1BGeminiConfig(attempt: number) {
-  const baseTemp = 33;
-  const baseTopP = 0.70;
-  const baseTopK = 30;
-
-  const decayFactor = Math.pow(0.9, Math.max(0, attempt));
-
-  return {
-    temperature: Math.round(baseTemp * decayFactor),
-    topP: parseFloat((baseTopP * decayFactor).toFixed(2)),
-    topK: Math.round(baseTopK * decayFactor),
-  };
-}
-
 async function estimateClutterHeuristic(imagePath: string): Promise<Stage1BClutterHeuristicResult> {
   const { data, info } = await sharp(imagePath)
     .rotate()
@@ -10256,10 +10242,13 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
       }
 
       nLog(`[STAGE1B_ATTEMPT] attempt=${attempt} max=${maxAttempts}`);
-      const geminiConfig = getStage1BGeminiConfig(attempt);
-      nLog(`[STAGE1B_DECAY_CONFIG] temp=${geminiConfig.temperature} topP=${geminiConfig.topP.toFixed(2)} topK=${geminiConfig.topK}`);
-
-      const candidate = await withMemoryPhase(
+      // Sampling is set inside runStage1B (low temperature, lower again on a
+      // retry). The worker used to override it with temperature 33, which
+      // Gemini rejects (valid range 0-2): every light declutter failed and
+      // published a blurred copy of the 1A image (Oct 2026, 33 Golf Rd).
+      let candidate: string;
+      try {
+      candidate = await withMemoryPhase(
         "stage1b_generation_attempt",
         { attempt: attempt + 1, declutterMode },
         () => runStage1B(path1A, {
@@ -10274,12 +10263,36 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
           baseArtifacts: jobContext.baseArtifacts,
           curtainRailLikely: jobContext.curtainRailLikely,
           jobDeclutterIntensity: jobContext.jobDeclutterIntensity,
-          jobSampling: {
-            ...(jobContext.jobSampling || {}),
-            ...geminiConfig,
-          },
+          jobSampling: jobContext.jobSampling,
         })
       );
+      } catch (err: any) {
+        // Gemini could not declutter (after its own retries and fallback
+        // model). Deliver the enhanced image and say so — never a copy of
+        // the 1A image presented as decluttered.
+        nLog(`[STAGE1B_GENERATION_FAILED] jobId=${payload.jobId} attempt=${attempt} error=${String(err?.message || err).slice(0, 300)}`);
+        const latestJob = await getJob(payload.jobId);
+        if (isTerminalStatus(latestJob?.status)) return;
+        await completePartialJobWithSummary({
+          jobId: payload.jobId,
+          triggerStage: "1B",
+          finalStage: "1A",
+          finalPath: path1A,
+          pub1AUrl,
+          pub1BUrl,
+          sceneMeta,
+          userMessage: "We enhanced your image but could not declutter it.",
+          reason: "stage1b_generation_failed",
+          stageOutputs: { "1A": path1A },
+          billingContext: {
+            payload,
+            sceneType: sceneLabel || "interior",
+            stage1BUserSelected: originalUserDeclutter,
+            geminiHasFurniture: frozenRoutingSnapshot?.geminiHasFurniture ?? null,
+          },
+        });
+        return;
+      }
       await consumeManualRetryAttemptIfNeeded("stage1b", true);
 
       nLog(`[VALIDATOR_INPUT] stage=1B attempt=${attempt} using=${candidate}`);

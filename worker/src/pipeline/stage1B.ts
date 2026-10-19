@@ -6,7 +6,6 @@ import { validateStage } from "../ai/unified-validator";
 import { validateStage1BStructural } from "../validators/stage1BValidator";
 import type { BaseArtifacts } from "../validators/baseArtifacts";
 import { logIfNotFocusMode } from "../logger";
-import { applyTransformation } from "../utils/sharp-utils"; // AUDIT FIX: safe sharp wrapper
 import { logImageAttemptUrl } from "../utils/debugImageUrls";
 import type { PipelineContext } from "../types/pipelineContext";
 
@@ -223,7 +222,9 @@ If there is any ambiguity, leave the area unchanged.
       floorClean: sceneType === "interior",
       hardscapeClean: sceneType === "exterior",
       declutterIntensity: options.jobDeclutterIntensity || undefined,
-      ...(options.jobSampling || {}),
+      // Only per-job values actually set may override (an undefined one would
+      // wipe out the low temperature above).
+      ...Object.fromEntries(Object.entries(options.jobSampling || {}).filter(([, v]) => typeof v === "number")),
     });
     
     logIfNotFocusMode(`[stage1B] 📊 Gemini returned: ${declutteredPath}`);
@@ -265,28 +266,15 @@ If there is any ambiguity, leave the area unchanged.
       return outputPath;
     }
     
-    // Fallback: If Gemini unavailable, use Sharp-based gentle cleanup
-    logIfNotFocusMode(`[stage1B] ⚠️ Gemini unavailable or skipped, using Sharp fallback`);
-    const out = outputPath;
-    // AUDIT FIX: routed through applyTransformation for safe cleanup
-    await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
-    await logImageAttemptUrl({
-      ctx: stage1BCtx,
-      localPath: out,
-    });
-    logIfNotFocusMode(`[stage1B] ℹ️ Sharp fallback complete: ${out}`);
-    return out;
+    // Gemini unavailable or skipped: nothing was decluttered. Never return a
+    // blurred copy of the 1A image as the declutter result (see catch below).
+    throw new Error("stage1B: Gemini returned no decluttered image");
     
   } catch (error) {
     logIfNotFocusMode(`[stage1B] Error during declutter:`, error);
-    // Fallback to Sharp on error
-    const out = outputPath;
-    // AUDIT FIX: routed through applyTransformation for safe cleanup
-    await applyTransformation(stage1APath, out, s => s.rotate().median(3).blur(0.5).sharpen(0.4).webp({ quality: 90 }), jobId);
-    await logImageAttemptUrl({
-      ctx: stage1BCtx,
-      localPath: out,
-    });
-    return out;
+    // No silent fallback: a blurred copy of the 1A image used to be returned
+    // here, passed the validator (nothing was removed) and was published as
+    // "decluttered". The worker delivers the 1A image and says so instead.
+    throw error;
   }
 }

@@ -616,6 +616,13 @@ export async function enhanceWithGemini(
             topP: typeof topP === 'number' ? topP : (cfgTopP ?? envTopP ?? baseSampling.topP),
             topK: typeof topK === 'number' ? topK : (cfgTopK ?? envTopK ?? baseSampling.topK),
           };
+    // Gemini rejects a temperature outside 0-2 with a 400 and no image (Oct
+    // 2026: a stray temperature 33 failed every light declutter). Clamp it
+    // and say so, rather than lose the call.
+    if (typeof sampling.temperature === "number" && (sampling.temperature < 0 || sampling.temperature > 2)) {
+      console.warn(`[GEMINI_SAMPLING_CLAMPED] temperature ${sampling.temperature} is outside 0-2 — using ${Math.min(2, Math.max(0, sampling.temperature))}`);
+      sampling.temperature = Math.min(2, Math.max(0, sampling.temperature));
+    }
     const stage1ATempLocked = stage === "1A";
     const effectiveSampling = stage1ATempLocked
       ? {
