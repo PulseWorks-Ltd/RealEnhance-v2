@@ -179,6 +179,9 @@ function isSmallMissedUnder(m: any): boolean {
   return FILL_SMALL_MISSED_UNDER && m.areaPct < CUT_UNDER_MIN_AREA_PCT && (m.underFurniturePct || 0) >= CUT_UNDER_MIN_PCT
     && typeof m.floorStd === "number" && m.floorStd <= PLAIN_FLOOR_MAX_STD;
 }
+// Largest gap (percent of photo height) under a "floating" piece that is
+// still published on the last attempt. STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT=0 turns it off.
+const FLOAT_ACCEPT_LAST_GAP_PCT = Number(process.env.STAGE2_FLOAT_ACCEPT_LAST_GAP_PCT ?? 1.5);
 const PUBLISH_CUT_ON_LAST_ATTEMPT = !["0", "off", "false", "no"].includes(String(process.env.STAGE2_PUBLISH_CUT_ON_LAST_ATTEMPT || "").trim().toLowerCase());
 const CUT_UNDER_MAX_SHADOW_PCT = Number(process.env.CUT_UNDER_MAX_SHADOW_PCT || 80); // ...unless it is mostly the floor in shade
 const CLOSEUP_MAX_ADD_FACTOR = 3;     // may add at most 3x the flagged area...
@@ -1099,6 +1102,19 @@ export async function runMaskedStage2Job(p: {
           row.furnitureCutByTraceAccepted = true;
           p.warn?.(`[${ctx.name}] last attempt: publishing, with the area missed by the trace taken from Gemini's picture`);
         }
+        // Last attempt: a piece that hangs only a hair above the real floor
+        // line is published. The check can't tell a sofa's back leg (rightly
+        // on the wall line, arm overhanging beside it) from a front leg on
+        // the skirting; at this size it is not visible (Oct 2026, Bendale 011:
+        // sofa against a wall in front of a floor-level window, gaps 1.2% and
+        // 1.4%, both attempts visual passes, job fell back to 1A).
+        if (
+          row.floatingCheck.floating && !floorPlan?.ok && attempt > p.maxRestages &&
+          row.floatingCheck.runs.every((r: any) => r.gapPct <= FLOAT_ACCEPT_LAST_GAP_PCT)
+        ) {
+          row.floatingAccepted = true;
+          p.warn?.(`[${ctx.name}] last attempt: publishing — furniture ends only ${Math.max(...row.floatingCheck.runs.map((r: any) => r.gapPct))}% above the floor line (at most ${FLOAT_ACCEPT_LAST_GAP_PCT}% accepted)`);
+        }
         if (row.furnitureCutByTrace && !row.furnitureCutByTraceAccepted) {
           reasons.push("furniture cut off by the trace");
         } else if (row.framingCheck?.framingChanged) {
@@ -1107,7 +1123,7 @@ export async function runMaskedStage2Job(p: {
           reasons.push("room reshaped");
         } else if (row.floorMovedCheck?.moved) {
           reasons.push("room changed to fit the furniture");
-        } else if (row.floatingCheck.floating && !floorPlan?.ok) {
+        } else if (row.floatingCheck.floating && !floorPlan?.ok && !row.floatingAccepted) {
           reasons.push("furniture floating");
         } else {
           const hm = await harmonise(ctx, layers);
