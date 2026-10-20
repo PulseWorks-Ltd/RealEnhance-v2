@@ -21,18 +21,20 @@ describe("bed wall check", () => {
   it("fails a bed covering a window", () => {
     expect(evaluateBedWall({ ...base, headboardCoversWindow: "yes" }).failed).toBe(true);
   });
-  it("allows a bed under a window when every wall has a window and only the bottom of the glass is covered (33 Golf Rd Image 03)", () => {
-    const r = evaluateBedWall({ ...base, headboardCoversWindow: "yes", windowCoverage: "bottom" });
-    expect(r.failed).toBe(false);
-    expect(r.underWindowAccepted).toBe(true);
+  it("allows a bed covering only the bottom of a window's glass (33 Golf Rd Image 03), even when a plain wall exists", () => {
+    for (const other of ["no", "yes"]) {
+      const r = evaluateBedWall({ ...base, otherPlainWallAvailable: other, headboardCoversWindow: "yes", windowCoverage: "bottom" });
+      expect(r.failed).toBe(false);
+      expect(r.underWindowAccepted).toBe(true);
+    }
   });
-  it("still fails a bed under a window when it covers more than the bottom of the glass", () => {
-    const r = evaluateBedWall({ ...base, headboardCoversWindow: "yes", windowCoverage: "more" });
+  it("fails a bed that hides most of a window", () => {
+    const r = evaluateBedWall({ ...base, headboardCoversWindow: "yes", windowCoverage: "most" });
     expect(r.failed).toBe(true);
     expect(r.restageHints.join(" ")).toMatch(/low headboard/);
   });
-  it("still fails a bed under a window when a plain wall without a window exists", () => {
-    expect(evaluateBedWall({ ...base, otherPlainWallAvailable: "yes", headboardCoversWindow: "yes", windowCoverage: "bottom" }).failed).toBe(true);
+  it("fails a bed covering a window when the answer doesn't say how much", () => {
+    expect(evaluateBedWall({ ...base, headboardCoversWindow: "yes" }).failed).toBe(true);
   });
   it("ignores everything when there is no bed or no answer", () => {
     expect(evaluateBedWall({ ...base, bedPresent: "no", bedCoversDoor: "yes" }).failed).toBe(false);

@@ -1626,22 +1626,21 @@ Look at the bed in Image 2 and the walls in Image 1, and answer:
 3. doorOnHeadboardWall: is there a door, doorway or wardrobe door anywhere on that same wall — including one beside the bed? Judge by the wall itself in Image 1, not by what the camera angle makes look close.
 4. otherPlainWallAvailable: does the room show another wall, long enough for the bed, with no door, doorway, wardrobe door or window on it?
 5. headboardCoversWindow: does the bed or its headboard cover any part of a window's glass?
-5b. windowCoverage: if the bed, headboard, pillows or a bedside lamp cover window glass, how much? "bottom" = only the lower part of the glass (no more than about a quarter of the window's height), with the rest of the window clearly visible; "more" = anything beyond that; "none" = no glass covered.
+5b. windowCoverage: if the bed, headboard, pillows or a bedside lamp cover window glass, how much? "bottom" = only the lower part of the glass, with most of the window (more than half its height) still clearly visible; "most" = half or more of the window hidden, or the window painted or walled over; "none" = no glass covered.
 6. bedCoversDoor: does the bed, its headboard, a bedside table or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, so the door could no longer close.
 7. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that the bed, a bedside table or any other piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
-Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "more", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
+Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "most", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
 }
 
 export function evaluateBedWall(raw: any) {
   const yes = (v: any) => String(v || "").trim().toLowerCase() === "yes";
   const bed = yes(raw?.bedPresent);
   const doorWall = bed && yes(raw?.doorOnHeadboardWall) && yes(raw?.otherPlainWallAvailable);
-  // A bed under a window is accepted when every usable wall has a window
-  // (no other plain wall) and only the bottom of the glass is covered — what
-  // a real stager would do (owner decision, Oct 2026: 33 Golf Rd Image 03, a
-  // corner room with windows on both walls, failed both attempts).
+  // Covering the bottom of a window is fine; hiding most of it, or painting
+  // or walling it over, is not (owner rule, Oct 2026 — first for 33 Golf Rd
+  // Image 03, a corner room with windows on both walls, then for every room).
   const coverage = String(raw?.windowCoverage || "").trim().toLowerCase();
-  const underWindowOk = BED_UNDER_WINDOW_OK && !yes(raw?.otherPlainWallAvailable) && coverage === "bottom";
+  const underWindowOk = BED_UNDER_WINDOW_OK && coverage === "bottom";
   const window = bed && yes(raw?.headboardCoversWindow) && !underWindowOk;
   const coversDoor = bed && yes(raw?.bedCoversDoor);
   const roomWidened = yes(raw?.roomWidened);
@@ -1649,9 +1648,7 @@ export function evaluateBedWall(raw: any) {
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed, fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
   if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed; or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
-  if (window) hints.push(yes(raw?.otherPlainWallAvailable)
-    ? "Your previous attempt covered a window with the bed or headboard. Keep every window's glass, frame and sill fully visible."
-    : "Your previous attempt covered too much of a window with the bed. The bed may stand under the window, but use a low headboard and low pillows so they cover at most the very bottom of the glass; keep the rest of the window, its frame and the curtains fully visible.");
+  if (window) hints.push("Your previous attempt hid too much of a window with the bed. The bed may stand under a window, but use a low headboard and low pillows so they cover only the bottom of the glass; keep most of the window, its frame and the curtains visible, and never paint or wall over a window.");
   return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
 }
 
@@ -3006,8 +3003,11 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
 // (shade allowed) and the same colour balance. On the labelled fixtures, real
 // floats have wall or skirting in the gap (brightness 0.3x or 1.5-5.7x the
 // floor); the open-door false alarms have carpet (0.85x and 1.2x, neutral).
+// A sofa arm overhanging its legs against the wall under a window had floor
+// in the gap, only a little darker in the shade by the wall (0.73x, Oct 2026
+// production: a living room that fell back to 1A), so the lower bound is 0.65.
 // null = too little of either to judge.
-export const FLOAT_GAP_FLOOR_MIN_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MIN_RATIO || 0.75);
+export const FLOAT_GAP_FLOOR_MIN_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MIN_RATIO || 0.65);
 export const FLOAT_GAP_FLOOR_MAX_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MAX_RATIO || 1.3);
 export function gapVsFloor(rgb: Buffer, line: Int32Array, bottom: Int32Array, x1: number, x2: number, W: number, H: number): { ratio: number; chroma: number; isFloor: boolean } | null {
   const g = [0, 0, 0], f = [0, 0, 0];

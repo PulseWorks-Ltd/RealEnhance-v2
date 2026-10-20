@@ -23,3 +23,7 @@ both should NOT be patched (chest against open wall / chest carries on to the fl
   Oct 2026, both attempts failed). The "floor line" in those columns is the bottom of the open door
   leaf, in front of the bed, so the bed looked like it floated. The empty photo shows the same carpet
   in the gap as below the line. Should NOT be flagged.
+
+- Living_SofaUnderWindow — production living room (Oct 2026) that fell back to 1A: the sofa's arm
+  overhangs its legs against the wall under a window, and the empty photo shows floor in that gap,
+  just darker by the wall (0.73x). Should NOT be flagged. The mask is the final (slightly grown) one.

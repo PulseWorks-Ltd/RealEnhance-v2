@@ -43,7 +43,7 @@ describe("masked Stage 2 reshape checks", () => {
   const FIX = path.join(__dirname, "../../Test Images/Floating Check Fixtures");
   const haveFix = fs.existsSync(path.join(FIX, "Bedroom_14/3_mask_traced.png"));
   (haveFix ? it : it.skip)("flags furniture whose legs stop short of the real floor", async () => {
-    const expected: Record<string, boolean> = { Kitchen_01_a1: false, Kitchen_01_a2: true, Bedroom_05: true, Bedroom_14: true, Bedroom_07: true, Bedroom_11: false, Bedroom_12: false, Bedroom_OpenDoor_a1: false, Bedroom_OpenDoor_a2: false };
+    const expected: Record<string, boolean> = { Kitchen_01_a1: false, Kitchen_01_a2: true, Bedroom_05: true, Bedroom_14: true, Bedroom_07: true, Bedroom_11: false, Bedroom_12: false, Bedroom_OpenDoor_a1: false, Bedroom_OpenDoor_a2: false, Living_SofaUnderWindow: false };
     for (const [name, floats] of Object.entries(expected)) {
       const o = fs.readFileSync(path.join(FIX, name, "1_original.jpg"));
       const m = await sharp(o).metadata();
