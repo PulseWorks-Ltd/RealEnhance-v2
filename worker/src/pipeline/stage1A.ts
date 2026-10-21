@@ -525,58 +525,27 @@ async function applyLensCorrection(img: sharp.Sharp): Promise<sharp.Sharp> {
 }
 
 /**
- * "Enhance Exterior Outlook" checkbox (reintroduced 2026-08-30 — ported from
- * opening-validator-and-stage-2-prompt-amendments, deliberately excluding
- * that lineage's later, separate Grok-as-Stage1A-generator experiment,
- * which is unrelated and was confirmed to overreach). Appended to whichever
- * interior Stage 1A prompt was already selected, ONLY for interior scenes —
- * see the sceneType gate at its call site below. Exterior-scene photos
- * already get their own dedicated sky/lighting treatment via
- * selectStage1APrompt's exterior prompt variants; this block exists
- * specifically for the outlook seen THROUGH a window/door in an interior
- * shot, per this feature's own UI copy ("Brighten exterior outlook visible
- * from interior shots").
+ * "Enhance Exterior Outlook" checkbox — sky only (Oct 2026 rework).
  *
- * Narrowed (Stage 1A Exterior Enhancement safety pass): vegetation was
- * previously allowed a colour/vibrancy boost (greener, healthier, more
- * lush) while locking its size/shape/position/species. That permission is
- * now removed entirely — vegetation must be left exactly as it appears in
- * the original photo. Scope is now strictly: sky/weather condition,
- * ambient brightness/sunlight, and removal of temporary glass artifacts
- * (raindrops, fog, condensation) — nothing else about the exterior view may
- * change. The closing summary line was tightened to match (it previously
- * said "colour... may be improved" as a blanket allowance, which would have
- * contradicted this narrower scope).
+ * The old block let Gemini brighten and sun-light the whole outlook in the
+ * Stage 1A call, and it ran on every interior photo when ticked; in rooms
+ * with no real view Gemini invented windows and doorways. Now:
+ * - a cheap text-only survey first decides whether the photo has a usable
+ *   outside view at all (validators/stage1AExteriorOutlookSurvey.ts);
+ * - this block is added ONLY when a usable view shows grey/cloudy sky, and
+ *   it asks for nothing but the sky turning blue;
+ * - brightening, sunlit warmth and greener plants are done afterwards in
+ *   code, inside the views' boxes only (stage1AExteriorOutlookAdjust.ts).
+ * Interior scenes only (exterior photos have their own sky prompts).
  */
-const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR OUTLOOK — make the view through existing windows and doors look sunny, without changing what is out there.
+const STAGE1A_SUNNY_EXTERIOR_INSTRUCTION_BLOCK = `EXTERIOR SKY — wherever grey, overcast, hazy or white-cloudy sky shows through a window or glass door, make it a clear blue sky (a few light white clouds are fine), as if the photo was taken on a sunny day. That is the ONLY change allowed to the view outside.
 
-THE ONE RULE THAT OVERRIDES EVERYTHING BELOW: everything visible through a window or door — fences, lattice, trellis, screens, walls, gates, hedges, trees, shrubs, gardens, neighbouring houses, roofs, sheds, poles and power lines — must stay exactly where it is, with exactly the same outline, size and coverage of the glass. Nothing may be removed, lowered, thinned out, made see-through or painted over to reveal more sky or a different view, and nothing new may be added.
+- The blue sky fills exactly the same area the grey sky did: it stops at the same rooflines, treetops, fence tops and lattice edges, and shows through the same gaps. Never create sky where there was none, and never enlarge the area of sky.
+- Everything else seen through the glass — trees, shrubs, hedges, lawn, gardens, fences, lattice, walls, houses, roofs, sheds, poles, power lines — stays exactly as it is: same outline, size, position, colour and brightness. Nothing is removed, trimmed, thinned, added or redrawn.
+- Glass that is plain white (blown out) stays plain white. Glass behind blinds or curtains stays as it is.
+- Never add, remove, move or reshape any window, door, frame, wall or other part of the room.
 
-Sky — make the outlook look sunny:
-- Wherever sky shows through a window or door — whether it is cloudy, grey, overcast or pale — replace it with a clear blue sky (a few light white clouds are fine), as if the photo was taken on a bright sunny day. Only treat an area as sky when you can see what it sits above in the original: a roofline, treetops, a fence top, hills or similar.
-- Let the exterior look sunlit: natural warm daylight and soft shadows on the things that are already out there, without changing their colour or shape.
-- The new sky fills exactly the same area the old sky did — it stops at the same rooflines, treetops, fence tops and lattice edges, and shows through the same gaps.
-- If a window or door shows no sky at all — for example the glass is filled by a fence, wall, hedge, trees or a neighbouring house — leave that view exactly as it is. Never create sky where there was none, and never enlarge the area of sky.
-
-Blown-out windows (overexposed glass):
-- If the glass is so bright that the view is plain white, with no roofline, trees, fence or other outside detail visible, the camera did not record what is out there. Leave it bright and plain. Never paint a sky, fence, lattice, roof, trees, garden or any other scenery into it, and never guess what might be outside.
-- The same applies to glass seen between the slats of blinds or through sheer curtains: if it is plain white in the original, it stays plain white.
-
-Weather and glass:
-- Only where real fog or mist clearly reduces visibility, you may clear it so the existing view is easier to see — without inventing anything that is not genuinely present in the original.
-- Where they are clearly visible, you may gently remove raindrops, water streaks, condensation, smudges and similar temporary marks from the glass.
-
-Light and detail:
-- Apart from the sky and sunlight above, keep the exterior view's exposure close to the original. Never brighten, soften or blur it so much that its detail fades — fence boards, lattice and trellis patterns, leaves and branches must stay as crisp and visible as in the original.
-- The daylight coming into the room should look consistent with the view.
-
-Never:
-- Add, remove, move, resize or reshape any building, house, roof, fence, lattice, trellis, wall, gate, deck, path, driveway, road, power line, pole, tree, shrub, hedge, lawn or garden.
-- Change the colour, vibrancy or saturation of vegetation.
-- Add new scenery, distant houses, rooftops, hills, water or views that are not in the original photo.
-- Open, move, remove or change blinds, curtains, shutters, window coverings or doors, or reveal anything hidden behind them.
-
-Keep the result realistic and natural, like a professionally edited real estate photograph. If you are unsure whether part of the view is sky, leave that part exactly as it is.`;
+If you are unsure whether part of the view is sky, leave it exactly as it is.`;
 
 /**
  * Helper: Run Gemini Stage 1A enhancement with scene-adaptive prompts
@@ -639,9 +608,20 @@ async function enhanceWithGeminiStage1A(
   // exterior-scene photos already get their own dedicated sky/lighting
   // prompt via selectStage1APrompt above; this is specifically about the
   // outlook seen through a window/door in an interior shot.
+  // Which photos are eligible, and where their views are: one cheap text-only
+  // look first. No usable outside view -> nothing outlook-related runs.
+  let outlookSurvey: import("../validators/stage1AExteriorOutlookSurvey").OutlookSurvey | null = null;
+  if (enhanceExteriorSky === true && sceneType === "interior") {
+    const { surveyExteriorOutlook } = await import("../validators/stage1AExteriorOutlookSurvey.js");
+    outlookSurvey = await surveyExteriorOutlook({ imagePath: sharpPath, jobId, imageId });
+    console.log("[STAGE1A_OUTLOOK_SURVEY]", JSON.stringify({ jobId, imageId, eligible: outlookSurvey.eligible, skyToBlue: outlookSurvey.skyToBlue, reason: outlookSurvey.reason, views: outlookSurvey.views }));
+  }
+
   const stage1ASunnyExteriorPromptInjected =
     enhanceExteriorSky === true
     && sceneType === "interior"
+    && outlookSurvey?.eligible === true
+    && outlookSurvey.skyToBlue === true
     && typeof enhancementPrompt === "string"
     && enhancementPrompt.trim().length > 0;
 
@@ -737,6 +717,23 @@ async function enhanceWithGeminiStage1A(
     } catch (skyErr) {
       // Fail-open: never cost a customer their enhancement.
       logIfNotFocusMode("[stage1A] Invented-sky guard failed to run — continuing without it", skyErr);
+    }
+  }
+
+  // Brighter, sunnier, greener outlook — code only, inside the surveyed views.
+  if (outlookSurvey?.eligible) {
+    try {
+      const { outlookAdjustEnabled, applyOutlookAdjustments } = await import("../validators/stage1AExteriorOutlookAdjust.js");
+      if (outlookAdjustEnabled()) {
+        const adj = await applyOutlookAdjustments(await fs.promises.readFile(finalGeminiPath), outlookSurvey.views);
+        const adjustedPath = finalGeminiPath.replace(/\.(jpg|jpeg|png|webp)$/i, "") + "-outlook.webp";
+        await sharp(adj.image).webp({ quality: 95 }).toFile(adjustedPath);
+        finalGeminiPath = adjustedPath;
+        console.log("[STAGE1A_OUTLOOK_ADJUST]", JSON.stringify({ jobId, imageId, views: outlookSurvey.views.length, changedPctOfImage: adj.changedPctOfImage }));
+      }
+    } catch (adjErr) {
+      // Fail-open: the plain Stage 1A result is still a good enhancement.
+      logIfNotFocusMode("[stage1A] Outlook adjustments failed to run — continuing without them", adjErr);
     }
   }
 

@@ -1,12 +1,14 @@
 import type { EnhancedImageCompletionType } from "../completionTypes";
 
 /**
- * STAGE1A_EXTERIOR_OUTLOOK=on shows the "Enhance Exterior Outlook" option and
- * lets the worker use it. Default off. Set it the same on server and worker.
+ * Shows the "Enhance Exterior Outlook" option and lets the worker use it.
+ * On by default (the outlook now only runs on photos with a real outside
+ * view — see the worker's stage1AExteriorOutlookSurvey.ts).
+ * STAGE1A_EXTERIOR_OUTLOOK=off hides it. Set it the same on server and worker.
  */
 export function exteriorOutlookEnabled(): boolean {
   const raw = typeof process !== "undefined" ? process.env?.STAGE1A_EXTERIOR_OUTLOOK : undefined;
-  return ["1", "true", "on", "yes"].includes(String(raw || "").trim().toLowerCase());
+  return !["0", "false", "off", "no"].includes(String(raw || "").trim().toLowerCase());
 }
 
 /**

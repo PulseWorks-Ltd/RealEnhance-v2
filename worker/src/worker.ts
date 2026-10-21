@@ -8801,9 +8801,11 @@ async function handleEnhanceJob(payload: EnhanceJobPayload) {
   // excluding that lineage's later Grok-Stage1A-generator experiment).
   // Brightens the exterior visible through windows/doors on INTERIOR
   // shots only — see stage1A.ts's own gating on effectiveSceneType.
-  // Off unless STAGE1A_EXTERIOR_OUTLOOK=on (Oct 2026: with it on, Gemini
-  // invented windows and doorways in rooms without a visible view).
-  const exteriorOutlookAllowed = ["1", "true", "on", "yes"].includes(String(process.env.STAGE1A_EXTERIOR_OUTLOOK || "").trim().toLowerCase());
+  // On unless STAGE1A_EXTERIOR_OUTLOOK=off. It was switched off in Oct 2026
+  // (Gemini invented windows and doorways in rooms without a visible view);
+  // now a survey first checks for a real outside view, and only the sky is
+  // left to Gemini.
+  const exteriorOutlookAllowed = !["0", "false", "off", "no"].includes(String(process.env.STAGE1A_EXTERIOR_OUTLOOK || "").trim().toLowerCase());
   const stage1ASunnyExteriorEnabled = exteriorOutlookAllowed && strictBool((payload.options as any)?.enhanceExteriorSky);
   logIfNotFocusMode(`[STAGE1A] Final: sceneLabel=${sceneLabel} stage1AScene=${stage1ASceneLabel} skyMode=${skyModeForStage1A} safeReplaceSky=${safeReplaceSky}`);
   if (await stopIfCancelled("pre_stage1a")) return;
