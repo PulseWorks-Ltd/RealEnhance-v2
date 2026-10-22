@@ -596,6 +596,59 @@ export async function traceLayers(ctx: MaskedContext) {
   return { floor, tightFloor, artRegion, solid, zone, core, solidPng, traced, undone };
 }
 
+// ── Re-seat ──────────────────────────────────────────────────────────────────
+// Floating pieces whose join can't be hidden: move Gemini's picture and every
+// traced layer straight down by the gap, so the pieces stand on the real
+// floor line. Tries the median gap, then the largest; the first shift after
+// which the floating check passes is used. STAGE2_RESEAT=off disables it.
+export const RESEAT_ENABLED = String(process.env.STAGE2_RESEAT ?? "on").trim().toLowerCase() !== "off";
+export const RESEAT_MAX_PCT = Number(process.env.STAGE2_RESEAT_MAX_PCT || 6);
+
+export function shiftMaskDown(m: Uint8Array, w: number, h: number, dy: number): Uint8Array<ArrayBuffer> {
+  const out = new Uint8Array(w * h);
+  out.set(m.subarray(0, (h - dy) * w), dy * w);
+  return out;
+}
+
+export async function shiftPictureDown(staged: Buffer, original: Buffer, w: number, h: number, dy: number): Promise<Buffer> {
+  // Rows that move in at the top come from the real photo (nothing of
+  // Gemini's is taken from there: no layer covers them after the shift).
+  const top = await sharp(original).removeAlpha().resize(w, h, { fit: "fill" }).extract({ left: 0, top: 0, width: w, height: dy }).png().toBuffer();
+  const body = await sharp(staged).removeAlpha().resize(w, h, { fit: "fill" }).extract({ left: 0, top: 0, width: w, height: h - dy }).png().toBuffer();
+  return sharp({ create: { width: w, height: h, channels: 3, background: { r: 0, g: 0, b: 0 } } })
+    .composite([{ input: top, left: 0, top: 0 }, { input: body, left: 0, top: dy }]).png().toBuffer();
+}
+
+async function tryReseat(ctx: MaskedContext, layers: TraceLayers, runs: any[]) {
+  const { original, staged, w, h } = ctx;
+  const gaps = runs.map((r) => Number(r.gapPct)).filter((g) => g > 0).sort((a, b) => a - b);
+  if (!gaps.length) return { ok: false as const, report: { reason: "no gap measured" } };
+  const candidates = [...new Set([gaps[gaps.length >> 1], gaps[gaps.length - 1]].map((g) => +g.toFixed(1)))];
+  const tried: any[] = [];
+  for (const pct of candidates) {
+    if (pct > RESEAT_MAX_PCT) { tried.push({ shiftPct: pct, result: `more than ${RESEAT_MAX_PCT}%` }); continue; }
+    const dy = Math.round((pct / 100) * h);
+    if (dy < 1) continue;
+    const floor = shiftMaskDown(layers.floor, w, h, dy);
+    const recheck = await checkFloatingFurniture(original, floor, w, h);
+    tried.push({ shiftPct: pct, floating: recheck.floating });
+    if (recheck.floating) continue;
+    const solid = shiftMaskDown(layers.solid, w, h, dy);
+    const shifted = {
+      ...layers,
+      floor,
+      tightFloor: layers.tightFloor ? shiftMaskDown(layers.tightFloor, w, h, dy) : layers.tightFloor,
+      artRegion: shiftMaskDown(layers.artRegion, w, h, dy),
+      solid,
+      zone: shiftMaskDown(layers.zone, w, h, dy),
+      core: shiftMaskDown(layers.core, w, h, dy),
+      solidPng: await maskToPng(solid, w, h),
+    };
+    return { ok: true as const, staged: await shiftPictureDown(staged, original, w, h, dy), layers: shifted, recheck, report: { shiftPct: pct, tried } };
+  }
+  return { ok: false as const, report: { tried } };
+}
+
 export async function harmonise(ctx: MaskedContext, layers: TraceLayers) {
   const { original, staged, w, h, row } = ctx;
   const { tightFloor, artRegion } = layers;
@@ -986,11 +1039,11 @@ export async function runMaskedStage2Job(p: {
       const bedWall = await bedWallP;
       let placementRejected = false;
       if (bedWall) {
-        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
+        row.bedWall = { consensus: (bedWall as any).consensus, model: bedWall.model, bedOnDoorWall: bedWall.bedOnDoorWall, coversWindow: bedWall.coversWindow, ...((bedWall as any).underWindowAccepted ? { underWindowAccepted: true } : {}), coversDoor: bedWall.coversDoor, ...((bedWall as any).newWall ? { newWall: true } : {}), answer: bedWall.answer, ...(bedWall as any).error ? { error: (bedWall as any).error } : {} };
         if (bedWall.failed) {
-          const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture"].filter(Boolean).join("; ");
+          const what = [bedWall.coversDoor && "bed covers a door", bedWall.bedOnDoorWall && "headboard on a wall with a door", bedWall.coversWindow && "bed covers a window", (bedWall as any).roomWidened && "room widened to fit the furniture", (bedWall as any).newWall && "new wall drawn for the headboard"].filter(Boolean).join("; ");
           p.warn?.(`[${ctx.name}] bed placement rejected: ${what} — ${String(bedWall.answer?.reason || "").slice(0, 200)} (trace and blend skipped)`);
-          reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : "bed against a door wall or window");
+          reasons.push((bedWall as any).roomWidened ? "room changed to fit the bed" : (bedWall as any).newWall ? "new wall drawn for the bed" : "bed against a door wall or window");
           row.bedWall.restageHints = bedWall.restageHints;
           placementRejected = true;
         }
@@ -1083,6 +1136,26 @@ export async function runMaskedStage2Job(p: {
             .catch((e: any) => ({ ok: false as const, patches: [], notes: [`plan error: ${String(e?.message || e)}`] }));
           row.floorPatch = { planned: floorPlan.ok, notes: floorPlan.notes };
           (floorPlan.ok ? p.log : p.warn)?.(`[${ctx.name}] floor patch ${floorPlan.ok ? "planned" : "not possible"}: ${floorPlan.notes.join("; ")}`);
+        }
+        // Re-seat: the patch can't hide the join, so move Gemini's whole
+        // picture (furniture, its shadows and the traced layers) down by the
+        // measured gap, so the pieces stand on the real floor line; the real
+        // room is untouched (Oct 2026, f5b2478d: bed and bedside table drawn
+        // ~5% higher than the real skirting looked pushed into the wall).
+        // Kept only if the floating check then passes.
+        if (row.floatingCheck.floating && !floorPlan?.ok && RESEAT_ENABLED && !prealigned && !row.realign) {
+          const re = await tryReseat(ctx, layers, row.floatingCheck.runs).catch((e: any) => ({ ok: false as const, report: { error: String(e?.message || e) } }));
+          row.reseat = re.report;
+          if (re.ok) {
+            ctx = { ...ctx, staged: re.staged };
+            layers = re.layers;
+            row.floatingCheck = re.recheck;
+            floorPlan = null;
+            io.save?.("2_staged_reseated.webp", await sharp(re.staged).webp({ quality: 92 }).toBuffer());
+            p.log?.(`[${ctx.name}] furniture moved down ${re.report.shiftPct}% onto the real floor line (re-seat) — floating check now passes`);
+          } else {
+            p.warn?.(`[${ctx.name}] re-seat not possible: ${JSON.stringify(re.report).slice(0, 200)}`);
+          }
         }
         // Floor moved: Gemini raised the floor / pushed a wall back to fit the
         // furniture (walls and windows unchanged, so the room check passes).

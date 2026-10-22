@@ -52,7 +52,7 @@ export type RoomBrief = {
   diningSpace?: { fits: "full" | "small" | "none"; reason?: string };
   // Same idea for bedrooms: the largest bed and the number of bedside
   // tables the visible floor really takes.
-  bedSpace?: { bed: "king" | "queen" | "double" | "single"; bedsideTables: 0 | 1 | 2; wallMetres?: number; depthMetres?: number; wallRunsOffPhoto?: boolean; measuredWith?: string; reason?: string };
+  bedSpace?: { bed: "king" | "queen" | "double" | "single"; bedsideTables: 0 | 1 | 2; wallMetres?: number; depthMetres?: number; wallRunsOffPhoto?: boolean; headOffPhoto?: boolean; measuredWith?: string; reason?: string };
   layout: Array<{ item: string; placement: string }>;
   relationships: string[];
   avoid: string[];
@@ -119,6 +119,8 @@ BED WALL CHOICE, in this order: (1) a plain wall with no door, doorway, wardrobe
 DOOR SWING: every door must still be able to close. The open door leaf, its frame and the floor it sweeps when it closes stay completely clear — no bed, headboard, bedside table or lamp may touch, overlap or stand in front of them, even partly. Measure the plain wall available for the bed from the photo edge or room corner up to the door frame, minus the door's swing. If the bed with two bedside tables does not fit there, do this, in order, until it fits: (1) keep only the bedside table on the side away from the door; (2) choose a smaller bed; (3) slide the bed further away from the door, letting the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.
 MEASURE WITH THE DOOR AS A RULER: a standard door is about 0.8 m wide and 2 m tall. Photos make walls look longer than they are, so measure the plain stretch in door-widths before choosing: a queen bed with two bedside tables needs about 3.5 door-widths of plain wall (2.8 m), a queen with one table about 2.8, a double with one table about 2.4, a single with one table about 1.6 — plus one more door-width of clear wall between the setup and any door frame on the same wall. If unsure, go one size smaller.
 CHECK THE DEPTH TOO, NOT JUST THE WALL: the bed sticks out from the headboard wall about 2.6 door-widths (2.1 m) for a queen or double, 2.4 for a single, and still needs about one door-width (0.8 m) of clear floor beyond its foot to walk past. Measure the visible floor from the chosen wall to the opposite wall, cupboard or photo edge in that direction. If it is not clearly deep enough, that wall is wrong for the bed even when it is the plain one: in a narrow room, turn the bed so it runs along the room's LONGEST direction, with the headboard against a shorter end wall — even one with a window (low headboard below the sill) — rather than across the narrow width. A bed that fits beats the plain-wall preference. Never plan furniture that only fits if the walls, skirting or floor are moved.
+SIDE WALLS MUST BE VISIBLE: only call a wall the "left wall" or "right wall" when you can see its surface running toward the camera along that side of the photo. A plain stretch of the back wall that carries on past the photo edge is still the back wall — never a side wall.
+NO VISIBLE WALL FOR THE HEADBOARD: the headboard needs a wall you can see behind and above it. If no visible wall has room for the headboard, plan the bed with its HEAD RUNNING OUT OF THE PHOTO past the left or right edge: no headboard visible, no bedside table or wall art at that end, and the foot of the bed pointing into the room. Write it that way in "layout" (for example "Queen bed, its head running out of the photo past the left edge, the foot pointing toward the window") and set "headOffPhoto": true in "bedSpace". Never plan a headboard against a wall, corner or return that the photo doesn't show.
 FURNITURE NEEDS VISIBLE FLOOR UNDER IT: follow the headboard wall's skirting line. Where it runs off the bottom or side edge of the photo, the wall beyond that point has no visible floor in front of it — nothing can stand there (this is where a bedside table usually gets wrongly placed). The usable wall is only the stretch whose skirting AND the floor in front of it are both visible. Fit the bed and tables on that stretch, pushed toward the far corner, using one or no bedside table, and let the photo edge cut off the foot or near side of the bed if needed. If even that is too short, put the headboard against another wall (even a window wall, with a low headboard below the sill).
 NEVER CHANGE THE ROOM TO FIT THE FURNITURE: skirting lines, wall corners and the floor edge stay exactly where they are. If the furniture does not fit, use less or smaller furniture, or let the photo edge cut it off.
 SINGLE BEDS ARE NORMAL: many bedrooms, especially in older New Zealand houses, realistically take only a single bed. When a double would leave no clear walkway along at least one long side, or would need the bed pushed hard against two walls, plan a single bed (one bedside table or none), typically along the longest plain wall.
@@ -180,7 +182,7 @@ Return ONLY a JSON object:
   "kitchenVisible": boolean,
   "fridgeSpace": { "present": boolean, "description": string },   // true only for an empty cavity clearly built for a fridge
   "diningSpace": { "fits": "full" | "small" | "none", "reason": string },   // only for room types with a dining area
-  "bedSpace": { "bed": "king" | "queen" | "double" | "single", "bedsideTables": 0 | 1 | 2, "wallMetres": number, "depthMetres": number, "wallRunsOffPhoto": boolean, "measuredWith": string, "reason": string },   // only for bedrooms. wallRunsOffPhoto = true when the headboard wall's skirting runs off the bottom or side edge of the photo; wallMetres = the plain stretch of the headboard wall whose skirting AND the floor in front of it are both visible (stop where the skirting runs off the photo edge); depthMetres = the visible floor from the headboard wall straight out to the opposite wall, cupboard or photo edge; measuredWith = the reference you measured against (a door ~0.8 m wide, a window, a power socket, the skirting, floor boards)
+  "bedSpace": { "bed": "king" | "queen" | "double" | "single", "bedsideTables": 0 | 1 | 2, "wallMetres": number, "depthMetres": number, "wallRunsOffPhoto": boolean, "headOffPhoto": boolean, "measuredWith": string, "reason": string },   // only for bedrooms. headOffPhoto = true when no visible wall has room for the headboard, so the head of the bed runs out of the photo; wallRunsOffPhoto = true when the headboard wall's skirting runs off the bottom or side edge of the photo; wallMetres = the plain stretch of the headboard wall whose skirting AND the floor in front of it are both visible (stop where the skirting runs off the photo edge); depthMetres = the visible floor from the headboard wall straight out to the opposite wall, cupboard or photo edge; measuredWith = the reference you measured against (a door ~0.8 m wide, a window, a power socket, the skirting, floor boards)
   "layout": [ { "item": string, "placement": string } ],          // e.g. { "item": "TV", "placement": "mounted on the black TV wall bracket on the white wall on the right, covering the bracket" }
   "relationships": [ string ],    // how the areas and pieces relate, e.g. "The dining table stays at the back near the kitchen, never between the sofa and the TV."
   "avoid": [ string ],            // specific placements to avoid in THIS room
@@ -227,6 +229,8 @@ const WALKWAY_M = 0.7;
 export function checkBedFits(brief: RoomBrief): string[] {
   const bs: any = (brief as any).bedSpace;
   if (!bs) return ["record the bed decision in \"bedSpace\", including wallMetres, depthMetres and measuredWith"];
+  // Head of the bed out of shot: there is no headboard wall to measure.
+  if (bs.headOffPhoto === true) return [];
   const size = String(bs.bed || "").toLowerCase();
   const wall = Number(bs.wallMetres), depth = Number(bs.depthMetres);
   if (!BED_LENGTH_M[size]) return [];
@@ -532,6 +536,38 @@ export function makeTightShotPlan(brief: RoomBrief, roomType: string, floorPct: 
 }
 
 /**
+ * No visible wall for the headboard (Oct 2026, 681aa5f0 / d401119d: the
+ * planner called a stretch of the back wall a "plain left wall", and Gemini
+ * drew a new side wall with a corner for the headboard). The planner marks
+ * these with bedSpace.headOffPhoto; the head of the bed then runs out of the
+ * photo, so nothing that belongs at the head end — bedside tables, their
+ * lamps, wall art above the bed — is planned.
+ */
+export function makeHeadOffPhotoPlan(brief: RoomBrief, roomType: string): { brief: RoomBrief; changed: string[] } {
+  const changed: string[] = [];
+  const bs: any = (brief as any).bedSpace;
+  if (!/bed/i.test(String(roomType || "")) || bs?.headOffPhoto !== true || !Array.isArray(brief?.layout)) return { brief, changed };
+  const atHeadEnd = (it: any) => {
+    const item = String(it?.item || ""), t = `${item} ${String(it?.placement || "")}`;
+    if (/bedside|night ?stand|side table/i.test(item)) return true;
+    if (/lamp/i.test(item) && /bedside|night ?stand|side table|headboard/i.test(t) && !/floor lamp/i.test(item)) return true;
+    if (/art|picture|print|painting|mirror/i.test(item) && /headboard|above the bed|over the bed/i.test(t)) return true;
+    return false;
+  };
+  const layout = brief.layout.filter((it: any) => {
+    if (!atHeadEnd(it)) return true;
+    changed.push(`dropped "${String(it.item || "").slice(0, 60)}" (head of the bed out of shot)`);
+    return false;
+  }).map((it: any) => {
+    const isBed = /\bbed\b/i.test(String(it?.item || "")) && !/bedside|side table|bed end|bench/i.test(String(it?.item || ""));
+    if (!isBed || /out of the photo|past the (left|right) edge/i.test(String(it.placement || ""))) return it;
+    changed.push("bed head runs out of the photo");
+    return { ...it, placement: `${String(it.placement || "").replace(/\.\s*$/, "")} — its head and headboard run out of the photo past the side edge, with only the foot and side of the bed in view` };
+  });
+  return { brief: { ...brief, layout, bedSpace: { ...bs, bedsideTables: 0 } } as any, changed };
+}
+
+/**
  * Office/study plans, checked in code (Oct 2026, production: desks staged in
  * front of an alcove's door while a plain wall was free). A desk whose plan
  * mentions a door is pushed to the far end of its wall, away from the door,
@@ -686,7 +722,14 @@ export async function buildRoomBrief(params: {
       lastIssues = ["the answer was not valid JSON — return only the JSON object"];
       continue;
     }
-    const conservative = makeBedPlanConservative(brief, params.roomType);
+    const headOff = makeHeadOffPhotoPlan(brief, params.roomType);
+    if (headOff.changed.length) {
+      brief = headOff.brief;
+      console.log("[ROOM_BRIEF_HEAD_OFF_PHOTO]", JSON.stringify({ changed: headOff.changed }));
+    }
+    const conservative = (brief as any).bedSpace?.headOffPhoto === true
+      ? { brief, changed: [] as string[] }
+      : makeBedPlanConservative(brief, params.roomType);
     if (conservative.changed.length) {
       brief = conservative.brief;
       console.log("[ROOM_BRIEF_CONSERVATIVE_BED]", JSON.stringify({ changed: conservative.changed }));
@@ -832,6 +875,9 @@ export function buildStage2PromptFromRoomBrief(brief: RoomBrief, opts: { roomTyp
       ? [`LAYOUT — place these pieces exactly as described:`, ...layoutLines]
       : [`LAYOUT — add no large furniture in this room. Add only the small finishing touches described below.`]),
     ...(relationships.length ? [``, `How the pieces relate: ${relationships.join(" ")}`] : []),
+    ...((brief as any).bedSpace?.headOffPhoto === true && /bed/i.test(String(opts.roomType || ""))
+      ? [``, `HEAD OF THE BED OUT OF SHOT — no visible wall has room for the headboard, so the head of the bed and its headboard are outside the photo. Show the bed running out past the side edge of the photo, with only its foot and side in view. Do not draw a headboard, bedside tables, wall art, or any wall, corner or wall return behind or beside the head of the bed.`]
+      : []),
     ...(brief.tightShot
       ? [``, `TIGHT SHOT — this photo shows very little floor. Put furniture only on the floor that is visible. Let the bottom or side edge of the photo cut off the foot or near side of the bed or other large pieces, exactly as in a real photo taken from the doorway. Add no rug. The floor, skirting boards and walls stay exactly where they are — never raise the floor or push a wall back to make more room.`]
       : []),

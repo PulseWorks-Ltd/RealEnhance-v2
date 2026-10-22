@@ -27,3 +27,8 @@ both should NOT be patched (chest against open wall / chest carries on to the fl
 - Living_SofaUnderWindow — production living room (Oct 2026) that fell back to 1A: the sofa's arm
   overhangs its legs against the wall under a window, and the empty photo shows floor in that gap,
   just darker by the wall (0.73x). Should NOT be flagged. The mask is the final (slightly grown) one.
+
+- Bedroom_BedsideOverBeigeWall — production f5b2478d attempt 2 (Oct 2026): bedside table ends 5.2% above
+  the real floor, over a beige wall that matches the light grey carpet in brightness and colour (1.24x).
+  Passed as "standing on floor" until the texture test (smooth wall 0.46x the carpet's texture).
+  Should be flagged. Also carries Gemini's picture (2_staged_raw.jpg) for the re-seat test.

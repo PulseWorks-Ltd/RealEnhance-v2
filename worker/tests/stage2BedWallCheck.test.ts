@@ -36,6 +36,12 @@ describe("bed wall check", () => {
   it("fails a bed covering a window when the answer doesn't say how much", () => {
     expect(evaluateBedWall({ ...base, headboardCoversWindow: "yes" }).failed).toBe(true);
   });
+  it("fails when Gemini drew a new wall for the headboard (681aa5f0 / d401119d)", () => {
+    const r = evaluateBedWall({ ...base, newWallForBed: "yes" });
+    expect(r.failed).toBe(true);
+    expect(r.newWall).toBe(true);
+    expect(r.restageHints.join(" ")).toMatch(/run out of the photo/);
+  });
   it("ignores everything when there is no bed or no answer", () => {
     expect(evaluateBedWall({ ...base, bedPresent: "no", bedCoversDoor: "yes" }).failed).toBe(false);
     expect(evaluateBedWall(null).failed).toBe(false);
@@ -55,5 +61,6 @@ describe("bed wall check", () => {
     const p = buildBedWallPrompt([]);
     expect(p).toContain("none found by the survey");
     expect(p).toContain("roomWidened");
+    expect(p).toContain("newWallForBed");
   });
 });

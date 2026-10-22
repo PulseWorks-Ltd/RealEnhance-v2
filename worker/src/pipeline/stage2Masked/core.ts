@@ -1629,7 +1629,8 @@ Look at the bed in Image 2 and the walls in Image 1, and answer:
 5b. windowCoverage: if the bed, headboard, pillows or a bedside lamp cover window glass, how much? "bottom" = only the lower part of the glass, with most of the window (more than half its height) still clearly visible; "most" = half or more of the window hidden, or the window painted or walled over; "none" = no glass covered.
 6. bedCoversDoor: does the bed, its headboard, a bedside table or a lamp stand in front of, touch, cover or hide any part of a door, an open door leaf, a door frame, a doorway, an opening or a wardrobe door that Image 1 shows (including one that is missing from Image 2 because it was painted over)? Also answer "yes" if any of them stands on the floor an open door sweeps when it closes, so the door could no longer close.
 7. roomWidened: compare where each wall meets the floor (the skirting boards and the floor's edges) in Image 1 and Image 2. To make room for the furniture, was the floor extended, a wall pushed back, or a skirting line moved or re-angled — so that the bed, a bedside table or any other piece stands where Image 1 shows wall or skirting board? Answer "yes" only for a real change to the room, not for shadows or furniture covering things.
-Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "most", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "reason": string }`;
+8. newWallForBed: is the headboard (or the head end of the bed, its bedside tables or the wall art above it) standing against a wall, corner or wall section in Image 2 that does NOT exist in Image 1 — for example a new side wall or corner drawn at the edge of the photo? Answer "yes" only for wall that Image 1 does not show.
+Respond with ONLY a JSON object: { "bedPresent": "yes" | "no", "headboardWall": string, "doorOnHeadboardWall": "yes" | "no", "doorDescription": string, "otherPlainWallAvailable": "yes" | "no", "headboardCoversWindow": "yes" | "no", "windowCoverage": "none" | "bottom" | "most", "bedCoversDoor": "yes" | "no", "roomWidened": "yes" | "no", "newWallForBed": "yes" | "no", "reason": string }`;
 }
 
 export function evaluateBedWall(raw: any) {
@@ -1644,12 +1645,17 @@ export function evaluateBedWall(raw: any) {
   const window = bed && yes(raw?.headboardCoversWindow) && !underWindowOk;
   const coversDoor = bed && yes(raw?.bedCoversDoor);
   const roomWidened = yes(raw?.roomWidened);
+  // A wall drawn for the headboard (Oct 2026, 681aa5f0 / d401119d). Pasted
+  // onto the real photo the new wall is gone, and the bed sits at an odd
+  // angle in front of the real wall.
+  const newWall = bed && yes(raw?.newWallForBed);
   const hints: string[] = [];
+  if (newWall) hints.push("Your previous attempt drew a new wall or corner for the headboard that is not in the photo. There is no visible wall there for a headboard: let the head of the bed run out of the photo past the side edge, with no headboard, bedside table, wall art or wall drawn behind it — only the foot and side of the bed in view.");
   if (roomWidened) hints.push("Your previous attempt changed the room to make the furniture fit: the floor was extended or a wall/skirting line was moved, so furniture stood where the photo shows wall. The room is smaller than that layout needs. Keep every wall, skirting board and floor edge exactly where it is, and fit the furniture to the room instead: use a smaller bed, fewer or no bedside tables, turn the bed so it runs along the room's longest direction (headboard against a shorter wall, below any window sill), or let the edge of the photo cut it off.");
   if (coversDoor) hints.push("Your previous attempt placed the bed setup in front of a door: the bed, headboard or a bedside table overlapped the door, its frame or the space it swings through, so the door could not close. Every door, door leaf, doorway and wardrobe door must stay fully visible and clear. If the plain wall is too short, in this order: keep only the bedside table on the side away from the door; use a smaller bed; or slide the bed further from the door and let the edge of the photo cut off its far side or foot. Never let any part of the bed, headboard or bedside tables reach the door.");
   if (doorWall) hints.push(`Your previous attempt put the bed's headboard against a wall with a door on it (${String(raw?.doorDescription || "a door").slice(0, 120)}). Put the headboard against a plain wall that has no door, doorway or wardrobe door anywhere on it.`);
   if (window) hints.push("Your previous attempt hid too much of a window with the bed. The bed may stand under a window, but use a low headboard and low pillows so they cover only the bottom of the glass; keep most of the window, its frame and the curtains visible, and never paint or wall over a window.");
-  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, failed: doorWall || window || coversDoor || roomWidened, restageHints: hints, answer: raw };
+  return { bedPresent: bed, bedOnDoorWall: doorWall, coversWindow: window, underWindowAccepted: bed && yes(raw?.headboardCoversWindow) && underWindowOk, coversDoor, roomWidened, newWall, failed: doorWall || window || coversDoor || roomWidened || newWall, restageHints: hints, answer: raw };
 }
 
 // ── Desk placement (studies / offices) ──────────────────────────────────────
@@ -1832,7 +1838,7 @@ async function askBedWallOnce(emptyPath: string, stagedImage: Buffer, doors: Doo
     return { model, ...evaluateBedWall(raw) };
   } catch (e: any) {
     // A failed check never blocks.
-    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, roomWidened: false, failed: false, restageHints: [] as string[], answer: null };
+    return { model: "none", error: String(e?.message || e).slice(0, 200), bedPresent: false, bedOnDoorWall: false, coversWindow: false, coversDoor: false, roomWidened: false, newWall: false, failed: false, restageHints: [] as string[], answer: null };
   }
 }
 
@@ -2902,7 +2908,7 @@ export const FLOAT_GROUND_MARGIN_PCT = Number(process.env.FLOAT_GROUND_MARGIN_PC
 export const FLOAT_MIN_WIDTH_PCT = Number(process.env.FLOAT_MIN_WIDTH_PCT || 3);
 export const FLOAT_NEAR_FLOOR_PCT = Number(process.env.FLOAT_NEAR_FLOOR_PCT || 12);
 
-export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number; gapVsFloor?: { ratio: number; chroma: number } };
+export type FloatingRun = { x1Pct: number; x2Pct: number; gapPct: number; bottomPct: number; floorPct: number; gapVsFloor?: { ratio: number; chroma: number; texture?: number } };
 
 export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8Array, w: number, h: number) {
   // Work at a fixed, modest size: the check is about shapes, not detail.
@@ -2911,6 +2917,7 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
   const m = await sharp(Buffer.from(floorMask.map((v) => (v ? 255 : 0))), { raw: { width: w, height: h, channels: 1 } })
     .resize(W, H, { fit: "fill" }).extractChannel(0).raw().toBuffer();
   const rgb = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).blur(1.5).raw().toBuffer();
+  const grey = await sharp(original).removeAlpha().resize(W, H, { fit: "fill" }).greyscale().raw().toBuffer();
   const margin = (FLOAT_GROUND_MARGIN_PCT / 100) * H;
   const near = (FLOAT_NEAR_FLOOR_PCT / 100) * H;
   // Per column: lowest furniture pixel (-1 = no furniture in this column).
@@ -2983,12 +2990,12 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
       // piece that really floats has wall or skirting in the gap; one that
       // stands on the floor has the same floor in the gap as just below the
       // line.
-      const gapCheck = gapVsFloor(rgb, line, bottom, x, x2, W, H);
+      const gapCheck = gapVsFloor(rgb, line, bottom, x, x2, W, H, grey);
       const run = {
         x1Pct: +((x / W) * 100).toFixed(1), x2Pct: +((x2 / W) * 100).toFixed(1),
         gapPct: +(((gapSum / n) / H) * 100).toFixed(1),
         bottomPct: +(((bSum / n) / H) * 100).toFixed(1), floorPct: +(((fSum / n) / H) * 100).toFixed(1),
-        ...(gapCheck ? { gapVsFloor: { ratio: gapCheck.ratio, chroma: gapCheck.chroma } } : {}),
+        ...(gapCheck ? { gapVsFloor: { ratio: gapCheck.ratio, chroma: gapCheck.chroma, ...(gapCheck.texture !== undefined ? { texture: gapCheck.texture } : {}) } } : {}),
       };
       if (gapCheck?.isFloor) standingOnFloor.push(run);
       else runs.push(run);
@@ -3000,31 +3007,51 @@ export async function checkFloatingFurniture(original: Buffer, floorMask: Uint8A
 
 // Does the empty room show the same floor in the gap under a "floating" run as
 // just below the floor line (same columns)? Same floor = similar brightness
-// (shade allowed) and the same colour balance. On the labelled fixtures, real
-// floats have wall or skirting in the gap (brightness 0.3x or 1.5-5.7x the
-// floor); the open-door false alarms have carpet (0.85x and 1.2x, neutral).
+// (shade allowed), the same colour balance, and — right under the piece,
+// where it would touch the floor — at least FLOAT_GAP_FLOOR_MIN_TEXTURE of the
+// floor's fine texture. On the labelled fixtures, real floats have wall or
+// skirting in the gap (brightness 0.3x or 1.5-5.7x the floor); the open-door
+// false alarms have carpet (0.85x and 1.2x, neutral).
 // A sofa arm overhanging its legs against the wall under a window had floor
 // in the gap, only a little darker in the shade by the wall (0.73x, Oct 2026
 // production: a living room that fell back to 1A), so the lower bound is 0.65.
+// Texture: a beige wall can match a light grey carpet in brightness and colour
+// (Oct 2026, f5b2478d: bedside table 5.2% above the real floor passed as
+// "standing on floor" at 1.24x); painted wall is smooth (0.46x the carpet's
+// texture) where real floor in the gap measures 0.81-3.0x.
 // null = too little of either to judge.
 export const FLOAT_GAP_FLOOR_MIN_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MIN_RATIO || 0.65);
 export const FLOAT_GAP_FLOOR_MAX_RATIO = Number(process.env.FLOAT_GAP_FLOOR_MAX_RATIO || 1.3);
-export function gapVsFloor(rgb: Buffer, line: Int32Array, bottom: Int32Array, x1: number, x2: number, W: number, H: number): { ratio: number; chroma: number; isFloor: boolean } | null {
+export const FLOAT_GAP_FLOOR_MIN_TEXTURE = Number(process.env.FLOAT_GAP_FLOOR_MIN_TEXTURE || 0.7);
+export function gapVsFloor(rgb: Buffer, line: Int32Array, bottom: Int32Array, x1: number, x2: number, W: number, H: number, grey?: Buffer): { ratio: number; chroma: number; texture?: number; isFloor: boolean } | null {
   const g = [0, 0, 0], f = [0, 0, 0];
   let gn = 0, fn = 0;
   const band = Math.max(3, Math.round(H * 0.03));
+  // Fine texture (Laplacian) right under the piece vs the floor below the line.
+  const contact = Math.max(2, Math.round(H * 0.012));
+  const lap = (x: number, y: number) => { const i = y * W + x; return Math.abs(4 * grey![i] - grey![i - 1] - grey![i + 1] - grey![i - W] - grey![i + W]); };
+  let ct = 0, ctn = 0, ft = 0, ftn = 0;
   for (let x = x1; x <= x2; x++) {
     const fl = line[x], b = bottom[x];
     if (fl < 0 || b < 0) continue;
     for (let y = b + 2; y <= fl - 2; y++) { const i = (y * W + x) * 3; g[0] += rgb[i]; g[1] += rgb[i + 1]; g[2] += rgb[i + 2]; gn++; }
     for (let y = fl + 2; y <= Math.min(H - 1, fl + band); y++) { const i = (y * W + x) * 3; f[0] += rgb[i]; f[1] += rgb[i + 1]; f[2] += rgb[i + 2]; fn++; }
+    if (grey && x > 0 && x < W - 1) {
+      for (let y = b + 2; y <= Math.min(fl - 2, b + 1 + contact); y++) if (y > 0 && y < H - 1) { ct += lap(x, y); ctn++; }
+      for (let y = fl + 2; y <= Math.min(H - 2, fl + band); y++) { ft += lap(x, y); ftn++; }
+    }
   }
   if (gn < 20 || fn < 20) return null;
   const gs = g[0] + g[1] + g[2], fs = f[0] + f[1] + f[2];
   if (fs <= 0 || gs <= 0) return null;
   const ratio = (gs / gn) / (fs / fn);
   const chroma = Math.max(...[0, 1, 2].map((c) => Math.abs(g[c] / gs - f[c] / fs)));
-  return { ratio: +ratio.toFixed(2), chroma: +chroma.toFixed(3), isFloor: ratio >= FLOAT_GAP_FLOOR_MIN_RATIO && ratio <= FLOAT_GAP_FLOOR_MAX_RATIO && chroma < 0.03 };
+  const texture = ctn >= 10 && ftn >= 10 ? (ct / ctn) / Math.max(0.1, ft / ftn) : undefined;
+  const textureOk = texture === undefined || texture >= FLOAT_GAP_FLOOR_MIN_TEXTURE;
+  return {
+    ratio: +ratio.toFixed(2), chroma: +chroma.toFixed(3), ...(texture !== undefined ? { texture: +texture.toFixed(2) } : {}),
+    isFloor: ratio >= FLOAT_GAP_FLOOR_MIN_RATIO && ratio <= FLOAT_GAP_FLOOR_MAX_RATIO && chroma < 0.03 && textureOk,
+  };
 }
 
 // ── Floor-moved check ────────────────────────────────────────────────────────
